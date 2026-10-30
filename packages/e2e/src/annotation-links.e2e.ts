@@ -2046,10 +2046,8 @@ describe.skipIf(!reachable)("Annotation links", () => {
       async (_, url) => {
         const outcome = await hover({ url, gesture: "live-preview" });
 
-        expect(outcome).toMatchObject({
-          popover: true,
-          text: run.m.annotation_popover_unavailable(),
-        });
+        expect(outcome.popover).toBe(true);
+        expect(outcome.text).toContain(run.m.annotation_popover_unavailable());
       },
       120000,
     );

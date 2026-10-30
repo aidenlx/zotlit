@@ -473,7 +473,7 @@ describe("Annotation Citations in Live Preview", () => {
     );
   });
 
-  it("gives the hover the Annotation's Item, and opens that Item's note", () => {
+  it("hovers the link the citation stands for, and opens the Item's note", () => {
     const shown: AnnotationHoverRequest[] = [];
     const opened: unknown[] = [];
     const view = livePreviewEditor(
@@ -492,14 +492,7 @@ describe("Annotation Citations in Live Preview", () => {
 
     expect(shown).toHaveLength(1);
     expect(shown[0]!.link.annotationKey).toBe("FDRFQ7C2");
-    expect(shown[0]!.reference).toMatchObject({
-      work: { citekey: "doe2024", indexedKey: "ABCD2345" },
-      shown: {
-        citation: { source: CITATION },
-        at: { kind: "offset", start: CITATION_START },
-      },
-    });
-    shown[0]!.reference!.open("tab");
+    shown[0]!.open("ABCD2345", "tab");
     expect(opened).toEqual([["ABCD2345", "tab"]]);
   });
 

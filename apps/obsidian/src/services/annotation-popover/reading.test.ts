@@ -14,16 +14,12 @@ import type {
   MarkdownSectionInformation,
   WorkspaceLeaf,
 } from "obsidian";
-import { describe, expect, vi } from "vitest";
+import { describe, expect } from "vitest";
 
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
-import {
-  setup,
-  useFakeTimers,
-} from "@/services/annotation-repository/__fixtures__";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { presented } from "@/services/citation-text/__fixtures__";
 import type { DocumentCitations } from "@/services/citation-text/present";
@@ -32,7 +28,6 @@ import { CitekeyEditor } from "@/services/citekey-editor/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 
-import { AnnotationPopoverCore } from "./popover";
 import {
   AnnotationLinkReadingCore,
   layerAnnotationLinkReading,
@@ -45,8 +40,7 @@ const HREF = "zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5&page=1";
 
 /**
  * One rendered reading-view section holding a Durable Annotation Link, inside
- * a Markdown view, with the real popover over the real repository behind it.
- * Obsidian's post-processor registry and its workspace stand outside the
+ * a Markdown view, with the hovers it sends recorded. Obsidian's post-processor registry and its workspace stand outside the
  * test; the section is a real component Obsidian would unload.
  */
 async function harness(
@@ -64,22 +58,7 @@ async function harness(
     section?: MarkdownSectionInformation | null;
   } = {},
 ) {
-  const { service: repository, bridge } = await setup(stack);
-  const popover = stack.use(
-    new AnnotationPopoverCore({
-      annotations: repository,
-      read: (key) => bridge.runPromise(repository.read(key)),
-      bridge,
-      excerptDisplay: {
-        open: Effect.die(
-          new Error("The hovered Annotation has no Excerpt Image"),
-        ),
-      },
-      excerptRequest: () =>
-        Promise.reject(new Error("No Excerpt Image is asked for")),
-      commentRenderer: () => () => () => {},
-    }),
-  );
+  const hovers: AnnotationHoverRequest[] = [];
   let process: MarkdownPostProcessor | undefined;
   const container = document.body.appendChild(document.createElement("div"));
   stack.defer(() => container.remove());
@@ -101,7 +80,7 @@ async function harness(
           return postProcessor;
         },
       },
-      show: show ?? ((request) => popover.show(request)),
+      show: show ?? ((request) => hovers.push(request)),
       citations,
       openItem: () => {
         throw new Error("Nothing opens a Literature Note here");
@@ -121,22 +100,14 @@ async function harness(
       getSectionInfo: () => sectionInfo,
     }),
   );
-  // Obsidian's hover delay runs on a fake clock; the repository's reads do not.
-  useFakeTimers();
-  stack.defer(() => {
-    vi.useRealTimers();
-  });
   const anchor = el.querySelector("a")!;
   return {
     anchor,
     el,
     service,
     section,
-    /** Whether a popover opened on the view once Obsidian's delay passed. */
-    opened(): boolean {
-      vi.advanceTimersByTime(1000);
-      return view.hoverPopover !== null;
-    },
+    /** Whether a hover reached the popover. */
+    opened: () => hovers.length > 0,
   };
 }
 
@@ -283,7 +254,7 @@ function citationsOf(starts: readonly number[]): DocumentCitations {
 }
 
 describe("Annotation Citations in reading view", () => {
-  it("shows the formatted citation in an empty link, and its hover carries the Item", async () => {
+  it("shows the formatted citation in an empty link, and its hover names the Annotation", async () => {
     await using stack = new AsyncDisposableStack();
     const shown: AnnotationHoverRequest[] = [];
     const run = await harness(stack, {
@@ -295,16 +266,10 @@ describe("Annotation Citations in reading view", () => {
     expect(run.anchor.textContent).toBe("(Rougier 2014, 1)");
 
     enter(run.anchor);
-    expect(shown[0]?.reference).toMatchObject({
-      work: { citekey: "rougierTenSimpleRules2014", indexedKey: "RUGIER24" },
-      shown: {
-        citation: { source: CITATION },
-        at: { kind: "offset", start: 4 },
-      },
-    });
+    expect(shown[0]?.link.annotationKey).toBe("PUPR5FG5");
   });
 
-  it("keeps a link with text, and gives its hover no Item", async () => {
+  it("keeps a link with text", async () => {
     await using stack = new AsyncDisposableStack();
     const shown: AnnotationHoverRequest[] = [];
     const run = await harness(stack, {
@@ -313,8 +278,6 @@ describe("Annotation Citations in reading view", () => {
     });
 
     expect(run.anchor.textContent).toBe("p. 1");
-    enter(run.anchor);
-    expect(shown[0]?.reference).toBeUndefined();
   });
 
   it("matches each link to the citation its section holds", async () => {

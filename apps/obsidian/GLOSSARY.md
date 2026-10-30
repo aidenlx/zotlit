@@ -778,7 +778,7 @@ The concise hover popover that shows each cited entry's formatted bibliography t
 _Avoid_: concise popover (the working name), hover tooltip, hover card
 
 **Annotation Popover** _(Obsidian)_:
-The hover popover of a Durable Annotation Link in Live Preview, Source mode, or Reading view: the Annotation's quoted text, comment, page label, and colour, and the Excerpt Image of an image or ink Annotation, read from the Annotation repository with no reader open. It wears the Citation Popover's chrome and stays available on every annotation link; a link whose Annotation no longer exists shows a short unavailable state.
+The hover popover of a Durable Annotation Link in Live Preview, Source mode, or Reading view: the Annotation's quoted text, comment, page label, and colour, and the Excerpt Image of an image or ink Annotation, read from the Annotation repository with no reader open, above the parent Item's reference. It is the source-less Citation Popover with the Annotation drawn above the entry, and it stays available on every annotation link; a link whose Annotation no longer exists shows a short unavailable state.
 _Avoid_: annotation hover card, annotation preview (a page preview shows a note)
 
 **Citekey Reading Rendering** _(Obsidian)_:

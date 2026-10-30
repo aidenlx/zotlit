@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 // Annotation Citations shown as citations: a Durable Annotation Link with no
 // text renders as its parent Item's formatted citation, located by the
-// Annotation's page, while the setting asks for it; its hover then holds the
-// Annotation and the Item's reference in one popover. With the setting off,
-// the link stays a link and its hover shows the Annotation alone.
+// Annotation's page, while the setting asks for it. With the setting off, the
+// link stays a link. The hover holds the Annotation and the Item's reference
+// in one popover either way.
 
 import {
   annotationAttachment,
@@ -61,7 +61,7 @@ async function look({
       { notePath, url, noteGesture, renderCitations, hover, quote },
     ) => {
       const links = page.annotationLinkTools(() => zotlit.services);
-      const { until, sleep } = links;
+      const { until } = links;
       await using cleanup = new AsyncDisposableStack();
       links.applySettings(cleanup, {
         "citation.annotation-citations": true,
@@ -128,13 +128,10 @@ async function look({
         () => content.textContent?.includes(quote),
         () => `The popover never showed the Annotation: ${content.textContent}`,
       );
-      if (renderCitations)
-        await until(
-          () => content.querySelector("[data-citation-popover-actions]"),
-          () =>
-            `The popover never showed the reference: ${content.textContent}`,
-        );
-      else await sleep(1000);
+      await until(
+        () => content.querySelector("[data-citation-popover-actions]"),
+        () => `The popover never showed the reference: ${content.textContent}`,
+      );
       return {
         shown,
         popover: {
@@ -164,17 +161,18 @@ describe.skipIf(!reachable)("Annotation Citations", () => {
   registerEndToEndRunHooks();
 
   it.each(["live-preview", "reading"] as const)(
-    "stay links with the Annotation alone on hover while the setting is off, in %s",
+    "stay links, and hover with the Annotation and the reference, while the setting is off, in %s",
     async (gesture) => {
       const outcome = await look({ gesture, render: false });
 
       expect(outcome.shown).not.toContain("2014");
       expect(outcome.popover).toMatchObject({
         annotation: true,
-        references: 0,
-        actions: 0,
+        references: 1,
       });
       expect(outcome.popover.quote).toContain(FIRST_PAGE.text);
+      expect(outcome.popover.quote).toContain("Ten Simple Rules");
+      expect(outcome.popover.actions).toBeGreaterThanOrEqual(3);
     },
     120000,
   );

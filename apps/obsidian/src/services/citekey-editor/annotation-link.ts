@@ -26,11 +26,7 @@ import {
 import type { DocRange, TokenNode } from "@/lib/editor-decoration";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
-import type {
-  AnnotationHoverRequest,
-  AnnotationReference,
-} from "@/services/annotation-popover/service";
-import { heldCitekeyOf } from "@/services/citation-index/lookup";
+import type { AnnotationHoverRequest } from "@/services/annotation-popover/service";
 import {
   citationContent,
   citationElement,
@@ -54,9 +50,8 @@ export interface AnnotationLinkHoverHandlers {
   /** Show the popover of one hovered Durable Annotation Link. */
   showAnnotation: (request: AnnotationHoverRequest) => void;
   /**
-   * Whether Live Preview shows an Annotation Citation as its formatted text,
-   * which also gives its hover the Item's reference. Read per decoration build
-   * and per hover.
+   * Whether Live Preview shows an Annotation Citation as its formatted text.
+   * Read per decoration build.
    */
   showCitations: () => boolean;
   /**
@@ -268,41 +263,6 @@ function annotationCitationContent(
 }
 
 /**
- * What the hover of an Annotation Citation adds to its Annotation: the Item
- * the formatted text cites, and the occurrence it stands for.
- */
-function referenceOf(
-  state: EditorState,
-  span: AnnotationLinkSpan,
-  {
-    citations,
-    openItem,
-  }: {
-    citations: DocumentCitations;
-    openItem: AnnotationLinkHoverHandlers["openItem"];
-  },
-): AnnotationReference | undefined {
-  const content = annotationCitationContent(state, span, citations);
-  const indexedKey = content?.text.citations[0]?.id;
-  if (indexedKey === undefined) return undefined;
-  const source = state.sliceDoc(span.from, span.to);
-  return {
-    work: {
-      // An Item with no Citation Key, or one the answer does not cover, is
-      // named by its Indexed Key, which the popover shows only where the
-      // Item cannot be read.
-      citekey: heldCitekeyOf(citations.lookup, indexedKey) ?? indexedKey,
-      indexedKey,
-    },
-    shown: {
-      citation: { source, keys: [] },
-      at: { kind: "offset", start: span.from },
-    },
-    open: (pane) => openItem(indexedKey, pane),
-  };
-}
-
-/**
  * One Annotation Citation shown as the text a style formatted for it.
  *
  * The widget carries the link's wrapper class, so the hover reads it as the
@@ -374,20 +334,13 @@ function hoverAt(
     annotationKey: link.annotationKey,
     editorMode,
   });
-  const held = heldCitations(view, handlers);
   handlers.showAnnotation({
     event,
     hoverParent: info,
     targetEl,
     sourcePath: info.file?.path ?? "",
     link,
-    reference:
-      held === null
-        ? undefined
-        : referenceOf(view.state, span, {
-            citations: held,
-            openItem: handlers.openItem,
-          }),
+    open: handlers.openItem,
   });
 }
 

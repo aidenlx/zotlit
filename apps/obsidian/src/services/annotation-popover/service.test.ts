@@ -6,10 +6,7 @@
 // a hidden popover lets go, and image bytes that fail to decode.
 import { it } from "@effect/vitest";
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect";
-import { Component } from "obsidian";
 import type { App, HoverParent } from "obsidian";
-import { flushSync } from "react-dom";
-import { createRoot } from "react-dom/client";
 import { describe, expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -24,7 +21,8 @@ import type {
   AnnotationSource,
 } from "@/services/annotation-repository/service";
 import { CitationPopover } from "@/services/citation-popover/service";
-import type { LeadHoverRequest } from "@/services/citation-popover/service";
+import type { WorkHoverRequest } from "@/services/citation-popover/service";
+import { HoverVisits } from "@/services/citation-popover/visits";
 import { ExcerptDisplayFixture } from "@/services/excerpt-image/__fixtures__/display";
 import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -41,6 +39,52 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 import { AnnotationPopoverCore } from "./popover";
 import { AnnotationPopover, layerAnnotationPopover } from "./service";
 import type { AnnotationHoverRequest } from "./service";
+
+/**
+ * The Citation Popover's part of a hover: it opens the visit and starts the
+ * lead, and reads no entry.
+ */
+function leadOnlyPopover(): Partial<CitationPopover["Service"]> {
+  const visits = new HoverVisits(() => ({}));
+  return {
+    showWork: (request) =>
+      Effect.sync(() => {
+        const { popover, subscriptions } = visits.open(
+          request.hoverParent,
+          request.targetEl,
+        );
+        request.lead?.({
+          owner: popover,
+          subscriptions,
+          draw: (content) => popover.render(content),
+        });
+      }),
+  };
+}
+
+/**
+ * Hovers `targetEl` as the Citation Popover does: a visit of its own, which the
+ * core draws into.
+ */
+function hover(
+  core: AnnotationPopoverCore,
+  visits: HoverVisits<object>,
+  {
+    hoverParent,
+    targetEl,
+    link,
+  }: Pick<AnnotationHoverRequest, "hoverParent" | "targetEl" | "link">,
+): Promise<void> {
+  const { popover, subscriptions } = visits.open(hoverParent, targetEl);
+  return core.follow(
+    {
+      owner: popover,
+      subscriptions,
+      draw: (content) => popover.render(content),
+    },
+    { sourcePath: "note.md", link },
+  );
+}
 
 /** The card a hover parent shows, once Obsidian's opening delay has passed. */
 async function shownUnder(parent: HoverParent): Promise<HTMLElement> {
@@ -82,6 +126,8 @@ async function harness(stack: AsyncDisposableStack) {
     }),
   );
   const hoverParent: HoverParent = { hoverPopover: null };
+  const visits = new HoverVisits(() => ({}));
+  stack.defer(() => visits.hideAll());
   return {
     repository,
     client,
@@ -94,11 +140,9 @@ async function harness(stack: AsyncDisposableStack) {
         document.createElement("span"),
       );
       stack.defer(() => targetEl.remove());
-      return popover.show({
-        event: new MouseEvent("mouseover"),
+      return hover(popover, visits, {
         hoverParent,
         targetEl,
-        sourcePath: "note.md",
         link: {
           attachmentKey: "RGRPDF24",
           pageLabel: null,
@@ -119,11 +163,11 @@ const EDITED =
 
 /**
  * The popover's Effect layer over one stored Annotation, `LAYER001`, with the
- * Citation Popover an Annotation Citation's hover hands its reference to.
+ * Citation Popover a hover opens.
  */
 async function layerHarness(
   stack: AsyncDisposableStack,
-  citationPopover: Partial<CitationPopover["Service"]> = {},
+  citationPopover: Partial<CitationPopover["Service"]> = leadOnlyPopover(),
 ) {
   const annotation: AnnotationRecord = {
     key: "LAYER001",
@@ -211,6 +255,7 @@ describe("AnnotationPopover", () => {
         targetEl,
         sourcePath: "note.md",
         link: LAYER_LINK,
+        open: () => {},
       }),
     );
 
@@ -219,22 +264,17 @@ describe("AnnotationPopover", () => {
     );
   });
 
-  it("hands a link shown as a citation to the Citation Popover, with the Annotation above the reference", async () => {
+  it("asks the Citation Popover for the Annotation's Item, with the Annotation above the reference", async () => {
     await using stack = new AsyncDisposableStack();
-    const requests: LeadHoverRequest[] = [];
+    const requests: WorkHoverRequest[] = [];
+    const open = vi.fn();
     const runtime = await layerHarness(stack, {
-      show: (request) =>
+      showWork: (request) =>
         Effect.sync(() => {
-          requests.push(request as LeadHoverRequest);
+          requests.push(request);
         }),
     });
     const popover = runtime.runSync(AnnotationPopover);
-    const opened: [string, unknown][] = [];
-    const work = { citekey: "doe2024", indexedKey: "ABCD2345" };
-    const shown = {
-      citation: { source: "[](zotero://open/…)", keys: [] },
-      at: { kind: "offset" as const, start: 4 },
-    };
     const targetEl = document.body.appendChild(document.createElement("span"));
     stack.defer(() => targetEl.remove());
 
@@ -244,38 +284,19 @@ describe("AnnotationPopover", () => {
         hoverParent: { hoverPopover: null },
         targetEl,
         sourcePath: "note.md",
-        link: LAYER_LINK,
-        reference: {
-          work,
-          shown,
-          open: (pane) => opened.push([work.indexedKey, pane]),
-        },
+        link: { ...LAYER_LINK, groupID: 7 },
+        open,
       }),
     );
 
     expect(requests).toMatchObject([
-      { sourcePath: "note.md", targetEl, works: [work], shown },
-    ]);
-    requests[0]!.open("doe2024", "tab");
-    expect(opened).toEqual([["ABCD2345", "tab"]]);
-    const drawn = document.createElement("div");
-    const root = createRoot(drawn);
-    stack.defer(() => root.unmount());
-    const owner = new Component();
-    owner.load();
-    stack.defer(() => owner.unload());
-    const subscriptions = stack.use(new DisposableStack());
-    requests[0]!.lead({
-      owner,
-      subscriptions,
-      draw: (content) => {
-        flushSync(() => root.render(content));
-        return true;
+      {
+        targetEl,
+        work: { kind: "annotation", annotationKey: "LAYER001g7" },
+        open,
       },
-    });
-    await vi.waitFor(() =>
-      expect(drawn.textContent).toContain("Shown through the layer"),
-    );
+    ]);
+    expect(requests[0]!.lead).toBeTypeOf("function");
   });
 
   it.effect("interrupts a pending read when the plugin unloads", () =>
@@ -310,7 +331,7 @@ describe("AnnotationPopover", () => {
               ),
               Layer.mock(ZoteroPref, {}),
               Layer.succeed(ObsidianApp, stubService<App>("App", {})),
-              Layer.mock(CitationPopover, {}),
+              Layer.mock(CitationPopover, leadOnlyPopover()),
             ),
           ),
         ),
@@ -333,6 +354,7 @@ describe("AnnotationPopover", () => {
             pageLabel: null,
             groupID: null,
           },
+          open: () => {},
         })
         .pipe(Effect.forkChild({ startImmediately: true }));
       yield* Deferred.await(started);
@@ -401,7 +423,7 @@ describe("AnnotationPopover", () => {
             Layer.succeed(ZoteroReads, reads),
             Layer.succeed(ZoteroPref, pref),
             Layer.succeed(ObsidianApp, stubService<App>("App", {})),
-            Layer.mock(CitationPopover, {}),
+            Layer.mock(CitationPopover, leadOnlyPopover()),
           ),
         ),
       ),
@@ -430,14 +452,17 @@ describe("AnnotationPopover", () => {
               pageLabel: null,
               groupID: null,
             },
+            open: () => {},
           }),
         )
         .then(completed.resolve, completed.reject);
+      await completed.promise;
       vi.advanceTimersByTime(1000);
       const shown = hoverParent.hoverPopover!;
       shown.hide();
       held.resolve({ source, annotations: [annotation] });
-      await completed.promise;
+      await held.promise;
+      await vi.advanceTimersByTimeAsync(0);
 
       expect(hoverParent.hoverPopover).toBeNull();
       expect(shown.hoverEl.textContent).toBe("");
@@ -516,16 +541,16 @@ describe("AnnotationPopover", () => {
       }),
     );
     const hoverParent: HoverParent = { hoverPopover: null };
+    const visits = new HoverVisits(() => ({}));
+    stack.defer(() => visits.hideAll());
     const show = (link: { attachmentKey: string; annotationKey: string }) => {
       const targetEl = document.body.appendChild(
         document.createElement("span"),
       );
       stack.defer(() => targetEl.remove());
-      return service.show({
-        event: new MouseEvent("mouseover"),
+      return hover(service, visits, {
         hoverParent,
         targetEl,
-        sourcePath: "note.md",
         link: { ...link, pageLabel: null, groupID: null },
       });
     };
@@ -617,11 +642,11 @@ describe("AnnotationPopover with an Excerpt Image", () => {
     const hoverParent: HoverParent = { hoverPopover: null };
     const targetEl = document.body.appendChild(document.createElement("span"));
     stack.defer(() => targetEl.remove());
-    await service.show({
-      event: new MouseEvent("mouseover"),
+    const visits = new HoverVisits(() => ({}));
+    stack.defer(() => visits.hideAll());
+    await hover(service, visits, {
       hoverParent,
       targetEl,
-      sourcePath: "note.md",
       link: {
         attachmentKey: "RGRPDF24",
         annotationKey: "FDRFQ7C2",

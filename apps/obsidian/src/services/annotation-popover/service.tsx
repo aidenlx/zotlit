@@ -1,6 +1,8 @@
 // The Annotation Popover as an Effect service.
 import { Context, Effect, Layer } from "effect";
 
+import { formatIndexedKey } from "@zotlit/db";
+
 import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -20,19 +22,18 @@ import { createCommentRenderer } from "@/views/annot-view/comment-render";
 import { AnnotationPopoverCore } from "./popover";
 import type { AnnotationHoverRequest } from "./popover";
 
-export type { AnnotationHoverRequest, AnnotationReference } from "./popover";
+export type { AnnotationHoverRequest } from "./popover";
 
 export class AnnotationPopover extends Context.Service<
   AnnotationPopover,
   {
     /**
-     * Opens the popover for one hovered link and reads what it names. A link
-     * shown as a citation opens the Citation Popover of its Item instead, with
-     * the Annotation drawn above the Item's reference.
+     * Opens the Citation Popover of the Item a hovered link's Annotation
+     * belongs to, with the Annotation drawn above the Item's reference.
      *
-     * @returns settles once that first read has drawn, or has been dropped
-     *   because a newer read or a hide superseded it. A hover needs not wait
-     *   on it.
+     * @returns settles once the reference's first read has drawn, or has been
+     *   dropped because a newer read or a hide superseded it. A hover needs
+     *   not wait on it.
      */
     show(request: AnnotationHoverRequest): Effect.Effect<void>;
   }
@@ -84,25 +85,24 @@ export const layerAnnotationPopover: Layer.Layer<
       ),
     );
     return AnnotationPopover.of({
-      // The core catches read failures, and this starts its first read now.
-      show: Effect.fn("AnnotationPopover.show")(function* (request) {
-        const { reference } = request;
-        if (reference === undefined) {
-          return yield* Effect.promise(() => core.show(request));
-        }
-        yield* citationPopover.show({
+      show: (request) =>
+        citationPopover.showWork({
           event: request.event,
           hoverParent: request.hoverParent,
           targetEl: request.targetEl,
-          sourcePath: request.sourcePath,
-          works: [reference.work],
-          shown: reference.shown,
-          open: (_citekey, pane) => reference.open(pane),
+          work: {
+            kind: "annotation",
+            annotationKey: formatIndexedKey(
+              request.link.annotationKey,
+              request.link.groupID,
+            ),
+          },
+          open: request.open,
+          // The core catches read failures.
           lead: (part) => {
             void core.follow(part, request);
           },
-        });
-      }),
+        }),
     });
   }).pipe(withLogCategory("annotation-popover")),
 );

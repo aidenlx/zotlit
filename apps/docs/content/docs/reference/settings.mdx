@@ -281,11 +281,9 @@ format them.
 <UiLabel name={m.settings_citation_render_annotation_citations_name()} />: Show
 annotation links with no link text, such as `[](zotero://…)`, as the formatted
 citation of the annotation's item, with the annotation's page as the locator.
-`[](zotero://…?annotation=…&page=12)` shows as `[@key, p. 12]` would. Hovering
-the citation shows the annotation and, below it, the item's bibliography entry
-with the same actions as a citation popover. Selecting the citation still opens
-the annotation. When off, these links stay links, and hovering one shows the
-annotation alone. Source mode always shows Markdown.
+`[](zotero://…?annotation=…&page=12)` shows as `[@key, p. 12]` would. Selecting
+the citation still opens the annotation. When off, these links stay links.
+Source mode always shows Markdown.
 
 <UiLabel name={m.settings_citation_open_as_links_name()} />: Open literature
 notes when you select a Pandoc citation or a literature note wikilink shown as a
@@ -307,7 +305,7 @@ plugin settings.
 
 One hover shows one result. <UiLabel name={m.settings_citation_hover_action_popover()} /> shows the bibliography entry of every cited item. <UiLabel name={m.settings_citation_hover_action_page_preview()} /> shows the Literature Note of a single-item citation under the built-in Page preview plugin's own settings, and shows nothing for a multi-item citation. <UiLabel name={m.settings_citation_hover_action_off()} /> adds no ZotLit hover result.
 
-A durable annotation link shows its annotation on every hover, whatever <UiLabel name={m.settings_citation_hover_action_name()} /> is set to. This includes an annotation link shown as a citation: its hover holds the annotation and the item's bibliography entry.
+A durable annotation link shows its annotation on every hover, whatever <UiLabel name={m.settings_citation_hover_action_name()} /> is set to. Below the annotation, the popover shows the bibliography entry of the annotation's item, with the same actions as a citation popover. An annotation on a standalone PDF has no item, so its popover shows the annotation alone.
 
 #### Require modifier key
 
