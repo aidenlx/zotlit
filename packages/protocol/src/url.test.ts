@@ -2,18 +2,24 @@ import * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildImportProfileProtocolUrl,
+  parseImportProfileProtocolQuery,
+} from "./url";
+import {
   batchUpdateRequestSchema,
   buildBatchProtocolUrl,
   buildExploreProtocolUrl,
   buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
+  buildOpenAttachmentProtocolUrl,
   buildProtocolUrl,
   buildUpdateAllProtocolUrl,
   parseExploreProtocolQuery,
   parseImportAllNotesProtocolQuery,
   parseImportManyProtocolQuery,
   parseImportProtocolQuery,
+  parseOpenAttachmentProtocolQuery,
   parseProtocolBatchQuery,
   parseProtocolQuery,
   parseUpdateAllProtocolQuery,
@@ -22,6 +28,7 @@ import {
 } from "./url";
 
 const SOURCE = "a1b2c3d4";
+const PROFILE = "V1StGXR8Z5jd";
 
 /** Reconstruct the flat record Obsidian decodes from an `obsidian://zotlit/<action>` link. */
 function decode(url: string): Record<string, string> {
@@ -89,6 +96,68 @@ describe("zotlit obsidian protocol", () => {
   it("rejects an unknown scope", () => {
     expect(() =>
       parseProtocolQuery({ item: "42", "source-id": SOURCE, scope: "body" }),
+    ).toThrow();
+  });
+
+  it.each(["tab", "split", "window"] as const)(
+    "carries paneType=%s to the receiver",
+    (paneType) => {
+      expect(
+        parseProtocolQuery({ item: "42", "source-id": SOURCE, paneType }),
+      ).toEqual({ item: 42, sourceId: SOURCE, scope: "full", paneType });
+    },
+  );
+
+  it("leaves paneType absent so the last active tab is replaced", () => {
+    expect(
+      parseProtocolQuery({ item: "42", "source-id": SOURCE }),
+    ).not.toHaveProperty("paneType");
+  });
+
+  it("rejects a paneType outside Obsidian's vocabulary", () => {
+    expect(() =>
+      parseProtocolQuery({
+        item: "42",
+        "source-id": SOURCE,
+        paneType: "popout",
+      }),
+    ).toThrow();
+  });
+
+  it.each(["split"] as const)("builds + round-trips a %s link", (paneType) => {
+    const url = buildProtocolUrl("open", 42, { sourceId: SOURCE, paneType });
+    expect(url).toBe(
+      `obsidian://zotlit/open?item=42&source-id=${SOURCE}&paneType=${paneType}`,
+    );
+    expect(parseProtocolQuery(decode(url))).toMatchObject({ paneType });
+  });
+
+  it("omits paneType from the link when the builder names no pane", () => {
+    expect(buildProtocolUrl("open", 42, { sourceId: SOURCE })).not.toContain(
+      "paneType",
+    );
+  });
+
+  it("round-trips an explicit Literature Note Profile", () => {
+    const url = buildProtocolUrl("update", 42, {
+      sourceId: SOURCE,
+      profileId: PROFILE,
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/update?item=42&source-id=${SOURCE}&profile=${PROFILE}`,
+    );
+    expect(parseProtocolQuery(decode(url))).toMatchObject({
+      profileId: PROFILE,
+    });
+  });
+
+  it.each([
+    "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
+    "V1StGXR8_Z5j",
+    "V1StGXR8-Z5j",
+  ])("rejects an invalid Literature Note Profile id: %s", (profile) => {
+    expect(() =>
+      parseProtocolQuery({ item: "42", "source-id": SOURCE, profile }),
     ).toThrow();
   });
 });
@@ -183,6 +252,16 @@ describe("zotlit update-many protocol", () => {
       parseProtocolBatchQuery({ items: "1,x,3", "source-id": SOURCE }),
     ).toThrow();
   });
+
+  it("round-trips an explicit Literature Note Profile", () => {
+    const url = buildBatchProtocolUrl([1, 2], {
+      sourceId: SOURCE,
+      profileId: PROFILE,
+    });
+    expect(parseProtocolBatchQuery(decode(url))).toMatchObject({
+      profileId: PROFILE,
+    });
+  });
 });
 
 describe("batchUpdateRequestSchema (HTTP body)", () => {
@@ -197,6 +276,12 @@ describe("batchUpdateRequestSchema (HTTP body)", () => {
     expect(
       v.parse(batchUpdateRequestSchema, { items: [1], scope: "metadata" }),
     ).toEqual({ items: [1], scope: "metadata" });
+  });
+
+  it("parses an explicit Literature Note Profile", () => {
+    expect(
+      v.parse(batchUpdateRequestSchema, { items: [1], profile: PROFILE }),
+    ).toMatchObject({ profileId: PROFILE });
   });
 
   it("rejects an empty item list", () => {
@@ -240,8 +325,60 @@ describe("zotlit explore protocol", () => {
     expect(url).not.toContain("annotation");
   });
 
+  it("builds + round-trips a link with an anchor and a pane", () => {
+    const url = buildExploreProtocolUrl(42, {
+      sourceId: SOURCE,
+      annotation: "ABC23456",
+      paneType: "split",
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/explore?item=42&source-id=${SOURCE}&annotation=ABC23456&paneType=split`,
+    );
+    expect(parseExploreProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      annotation: "ABC23456",
+      sourceId: SOURCE,
+      paneType: "split",
+    });
+  });
+
+  it("omits paneType when the builder names no pane", () => {
+    expect(buildExploreProtocolUrl(42, { sourceId: SOURCE })).not.toContain(
+      "paneType",
+    );
+  });
+
   it("rejects a missing item", () => {
     expect(() => parseExploreProtocolQuery({ "source-id": SOURCE })).toThrow();
+  });
+
+  it.each(["window"] as const)(
+    "carries paneType=%s to the receiver",
+    (paneType) => {
+      expect(
+        parseExploreProtocolQuery({
+          item: "42",
+          "source-id": SOURCE,
+          paneType,
+        }),
+      ).toMatchObject({ paneType });
+    },
+  );
+
+  it("leaves paneType absent so the explorer keeps its usual placement", () => {
+    expect(
+      parseExploreProtocolQuery({ item: "42", "source-id": SOURCE }),
+    ).not.toHaveProperty("paneType");
+  });
+
+  it("rejects a paneType outside Obsidian's vocabulary", () => {
+    expect(() =>
+      parseExploreProtocolQuery({
+        item: "42",
+        "source-id": SOURCE,
+        paneType: "popout",
+      }),
+    ).toThrow();
   });
 
   it("rejects a missing source-id", () => {
@@ -260,6 +397,69 @@ describe("zotlit explore protocol", () => {
       ).toThrow();
     },
   );
+});
+
+describe("zotlit open-attachment protocol", () => {
+  it("builds + round-trips an item-only link", () => {
+    const url = buildOpenAttachmentProtocolUrl(42, { sourceId: SOURCE });
+    expect(url).toBe(
+      `obsidian://zotlit/open-attachment?item=42&source-id=${SOURCE}`,
+    );
+    expect(decode(url).action).toBe("zotlit/open-attachment");
+    expect(parseOpenAttachmentProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      sourceId: SOURCE,
+    });
+  });
+
+  it("builds + round-trips a link with a pane", () => {
+    const url = buildOpenAttachmentProtocolUrl(42, {
+      sourceId: SOURCE,
+      paneType: "split",
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/open-attachment?item=42&source-id=${SOURCE}&paneType=split`,
+    );
+    expect(parseOpenAttachmentProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      sourceId: SOURCE,
+      paneType: "split",
+    });
+  });
+
+  it("omits paneType when the builder names no pane", () => {
+    expect(
+      buildOpenAttachmentProtocolUrl(42, { sourceId: SOURCE }),
+    ).not.toContain("paneType");
+  });
+
+  it("omits a version param, since a Public URI Link is unversioned", () => {
+    expect(
+      buildOpenAttachmentProtocolUrl(42, { sourceId: SOURCE }),
+    ).not.toContain("version");
+  });
+
+  it("rejects a missing item", () => {
+    expect(() =>
+      parseOpenAttachmentProtocolQuery({ "source-id": SOURCE }),
+    ).toThrow();
+  });
+
+  it("rejects a malformed item", () => {
+    expect(() =>
+      parseOpenAttachmentProtocolQuery({ item: "abc", "source-id": SOURCE }),
+    ).toThrow();
+  });
+
+  it("rejects a missing source-id", () => {
+    expect(() => parseOpenAttachmentProtocolQuery({ item: "42" })).toThrow();
+  });
+
+  it("rejects a malformed source-id", () => {
+    expect(() =>
+      parseOpenAttachmentProtocolQuery({ item: "42", "source-id": "nope" }),
+    ).toThrow();
+  });
 });
 
 describe.each([
@@ -352,5 +552,27 @@ describe("protocolSourceMatches", () => {
 
   it("rejects when expected is null", () => {
     expect(protocolSourceMatches(query, null)).toBe(false);
+  });
+});
+
+describe("clipboard Profile handoff", () => {
+  it("carries only the clipboard flag and accepts Obsidian's action metadata", () => {
+    expect(buildImportProfileProtocolUrl()).toBe(
+      "obsidian://zotlit/import-profile?clipboard=true",
+    );
+    expect(
+      parseImportProfileProtocolQuery({
+        action: "zotlit/import-profile",
+        clipboard: "true",
+      }),
+    ).toEqual({ clipboard: "true" });
+  });
+  it.each([
+    {},
+    { clipboard: "false" },
+    { source: "document" },
+    { clipboard: true },
+  ])("refuses a handoff without the explicit clipboard flag: %o", (query) => {
+    expect(() => parseImportProfileProtocolQuery(query)).toThrow();
   });
 });

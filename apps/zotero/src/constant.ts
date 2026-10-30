@@ -1,6 +1,6 @@
 /**
  * String constants shared between the Vite/Rolldown build (filenames it
- * emits, FTL filename the build pipeline writes into `addon/locale/<locale>/`)
+ * emits, FTL filename the build pipeline derives into `addon/locale/<locale>/`)
  * and runtime code that has to reference the same names (e.g.
  * `loadSubScript("…/main.js")`, `new Localization(["zotlit.ftl"])`).
  *
@@ -8,7 +8,7 @@
  * sandbox (no Node globals) and in Node-side Vite plugins.
  */
 
-/** Authored under `locale/<locale>.ftl`; emitted at `addon/locale/<locale>/<this>`. */
+/** Derived from the inlang project; emitted at `addon/locale/<locale>/<this>`. */
 export const FLUENT_FILE_NAME = "zotlit.ftl";
 
 /** Plugin sandbox loader entry — `bootstrap.ts` does `loadSubScript("…/" + MAIN_BUNDLE_NAME)`. */

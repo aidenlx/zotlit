@@ -61,15 +61,18 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     groupID: null,
     dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
     dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
+    version: 0,
     type: 1,
     text: "excerpt",
     comment: null,
     color: "#ffd400",
     pageLabel: "5",
+    tags: [],
     sortIndex: "0",
     position: { pageIndex: 0, rects: [] },
     authorName: null,
     isExternal: false,
+    createdByUserID: null,
     parentItemID: 10,
     parentKey: "ATCH0001",
     ...overrides,
@@ -123,10 +126,10 @@ describe("buildNoteContext", () => {
       relatedItems: [],
       authorsShort: () => "Smith et al.",
       filePath: () => "/x/paper.pdf",
-      fileLink: (_attachment, page) => () =>
-        page == null
+      fileLink: (_attachment, anchor) => () =>
+        anchor?.page == null
           ? "[paper.pdf](file:///x/paper.pdf)"
-          : `[paper.pdf](file:///x/paper.pdf#page=${page})`,
+          : `[paper.pdf](file:///x/paper.pdf#page=${anchor.page})`,
       commentToMarkdown: (html) => `md(${html})`,
       notePath: () => "",
       noteLink: () => "",
@@ -134,6 +137,9 @@ describe("buildNoteContext", () => {
     });
 
     expect(ctx.backlink).toBe("zotero://select/library/items/ITEM2345");
+    expect(ctx.librarylink).toBe(
+      "obsidian://zotlit/show-in-library?item-key=ITEM2345",
+    );
     expect(ctx.tags).toEqual([{ name: "zt", type: "manual" }]);
     expect(ctx.authorsShort).toBe("Smith et al.");
 
@@ -162,6 +168,7 @@ describe("buildNoteContext", () => {
     expect(annot.parentItem?.citationKey).toBe("smith2024");
     // annotations have no web page
     expect("weblink" in annot).toBe(false);
+    expect("librarylink" in annot).toBe(false);
 
     expect(ctx.authors.map((a) => a.family)).toEqual(["Smith"]);
   });
@@ -243,10 +250,10 @@ describe("buildNoteContext", () => {
       relatedItems: [],
       authorsShort: () => "",
       filePath: () => null,
-      fileLink: (_attachment, page) => () =>
-        page == null
+      fileLink: (_attachment, anchor) => () =>
+        anchor?.page == null
           ? "[book.epub](file:///x/book.epub)"
-          : `[book.epub](file:///x/book.epub#page=${page})`,
+          : `[book.epub](file:///x/book.epub#page=${anchor.page})`,
       commentToMarkdown: (html) => html,
       notePath: () => "",
       noteLink: () => "",
@@ -317,6 +324,9 @@ describe("buildNoteContext", () => {
       annotationImageLink: () => null,
     });
     expect(ctx.backlink).toBe("zotero://select/groups/99/items/ITEM2345");
+    expect(ctx.librarylink).toBe(
+      "obsidian://zotlit/show-in-library?item-key=ITEM2345g99",
+    );
   });
 
   it("builds the username weblink for a personal-library item with a known username", () => {

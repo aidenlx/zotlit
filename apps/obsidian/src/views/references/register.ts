@@ -1,16 +1,10 @@
-import "./style.css";
 import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
-import type { CitationIndex } from "@/services/citation-index/service";
-import type { CitationText } from "@/services/citation-text/service";
-import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import type { DatabaseService } from "@/services/database/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
-import type { PandocEngineService } from "@/services/pandoc/service";
-import type { SettingsService } from "@/services/settings/service";
+
+import "./style.css";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 
 import { REFERENCES_VIEW_TYPE, ReferencesView } from "./view";
 import type { ReferencesViewDeps } from "./view";
@@ -21,15 +15,8 @@ type ReferencesPlugin = Pick<
 >;
 
 export interface ReferencesRegistrationDeps {
+  registry: ViewRegistryHandle;
   app: App;
-  db: DatabaseService;
-  citationIndex: CitationIndex;
-  libraryScope: LibraryScopeService;
-  citationText: CitationText;
-  citekeyEditor: CitekeyEditor;
-  pandocEngine: PandocEngineService;
-  bibliographyRender: BibliographyRenderCache;
-  settings: SettingsService;
 }
 
 export function registerReferencesView(
@@ -37,26 +24,16 @@ export function registerReferencesView(
   deps: ReferencesRegistrationDeps,
 ): void {
   const viewDeps: ReferencesViewDeps = {
+    registry: deps.registry,
     app: deps.app,
-    db: deps.db,
-    citationIndex: deps.citationIndex,
-    libraryScope: deps.libraryScope,
-    citationText: deps.citationText,
-    citekeyEditor: deps.citekeyEditor,
-    pandocEngine: deps.pandocEngine,
-    bibliographyRender: deps.bibliographyRender,
     openSettings: () => {
-      revealSetting(
-        plugin.app,
-        plugin.manifest.id,
-        m.settings_citation_engine_name(),
-      );
+      revealSetting(plugin.app, plugin.manifest.id, "settings_citation_engine");
     },
     openStyleSettings: () => {
       revealSetting(
         plugin.app,
         plugin.manifest.id,
-        m.settings_citation_references_style_name(),
+        "settings_citation_references_style",
       );
     },
   };

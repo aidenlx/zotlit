@@ -1,11 +1,11 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import collections from "collections/browser";
 
 import { CompanionNote } from "@/components/companion-note";
 import { getMDXComponents } from "@/components/mdx";
 import { SiteFooter } from "@/components/site-footer";
 import { cn } from "@/lib/cn";
+import { changelogs } from "@/lib/collections";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/lib/shared";
 import { getChangelogPages } from "@/lib/source";
 import { breadcrumbListSchema } from "@/lib/structured-data";
+import { m } from "@/paraglide/messages.js";
 
 const listReleases = createServerFn({ method: "GET" }).handler(() =>
   getChangelogPages().map((page) => ({
@@ -27,31 +28,30 @@ const listReleases = createServerFn({ method: "GET" }).handler(() =>
   })),
 );
 
-const releaseBody = collections.changelogs.createClientLoader<object>({
-  id: "changelogs",
-  component: ({ default: MDX }) => <MDX components={getMDXComponents()} />,
-});
-
-const crumbs = [
+const crumbs = () => [
   { name: appName, url: "/" },
-  { name: "Changelog", url: changelogRoute },
+  { name: m.docs_nav_changelog(), url: changelogRoute },
 ];
 
 export const Route = createFileRoute("/_home/changelog/")({
   component: ChangelogIndex,
   head: () =>
     pageHead({
-      title: "Changelog",
-      description: "Every ZotLit release, newest first.",
+      title: m.docs_nav_changelog(),
+      description: m.docs_changelog_description(),
       path: changelogRoute,
-      card: { type: "changelog", alt: "ZotLit Changelog" },
+      card: { type: "changelog", alt: m.docs_changelog_og_alt() },
       feeds: { "application/rss+xml": changelogFeedRoute },
-      schemas: [breadcrumbListSchema(crumbs)],
+      schemas: [breadcrumbListSchema(crumbs())],
     }),
   loader: async () => {
     const releases = await listReleases();
     await Promise.all(
-      releases.map((release) => releaseBody.preload(release.path)),
+      releases.map((release) => {
+        const page = changelogs.get(release.path);
+        if (!page) throw notFound();
+        return page.preload();
+      }),
     );
     return releases;
   },
@@ -63,16 +63,19 @@ function ChangelogIndex() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 font-serif">
       <header className="pt-14 pb-2">
-        <h1 className="mb-2.5 text-4xl font-medium">Changelog</h1>
+        <h1 className="mb-2.5 text-4xl font-medium">
+          {m.docs_nav_changelog()}
+        </h1>
         <p className="mb-6 max-w-[60ch] text-[16.5px] text-fd-muted-foreground italic">
-          Every ZotLit release, newest first. Companion releases are noted with
-          the plugin version they shipped beside.
+          {m.docs_changelog_intro()}
         </p>
       </header>
 
       <div className="pb-14">
         {releases.map((release, i) => {
-          const Body = releaseBody.getComponent(release.path);
+          const page = changelogs.get(release.path);
+          if (!page) throw notFound();
+          const Body = page.body;
           return (
             <section
               key={release.version}
@@ -110,7 +113,7 @@ function ChangelogIndex() {
                     "mt-2.5 prose-h2:mt-6 prose-h2:mb-2.5 prose-h2:text-xs prose-h2:tracking-[0.16em] prose-h2:before:mr-2 prose-h2:before:h-3 prose-h3:mt-4 prose-h3:mb-1 prose-h3:text-base prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-li:leading-[1.55]",
                   )}
                 >
-                  <Body />
+                  <Body components={getMDXComponents()} />
                 </div>
               </div>
             </section>

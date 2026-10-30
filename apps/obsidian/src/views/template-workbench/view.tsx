@@ -1,0 +1,3184 @@
+import { EditorView } from "@codemirror/view";
+// One file-backed authoring session; TextFileView owns vault updates and saves.
+import { useAtomValue } from "@effect/atom-react";
+import { Cause, Effect, Exit, Fiber, Schema, Semaphore } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import { apiVersion, Scope, TextFileView } from "obsidian";
+import type {
+  App,
+  Menu,
+  TFile,
+  HoverParent,
+  HoverPopover,
+  ViewStateResult,
+  WorkspaceLeaf,
+} from "obsidian";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type { ReactNode } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
+
+import type { CitationVariant } from "@zotlit/db";
+import type { TemplateLanguage } from "@zotlit/templates/facade";
+import {
+  externalEdit,
+  WorkbenchDocumentController,
+  entryPosition,
+} from "@zotlit/workbench/document";
+import type {
+  WorkbenchDocumentKind,
+  WorkbenchProblem,
+  WorkbenchSliceRange,
+} from "@zotlit/workbench/document";
+import type { DisplayNode } from "@zotlit/workbench/explorer";
+import {
+  DEFAULT_PARTIAL_CONTEXT,
+  currentCallSite,
+  failedRender,
+  isPartialContext,
+  renderIdentity,
+} from "@zotlit/workbench/render";
+import type {
+  CitationExampleId,
+  PartialChoice,
+  PartialContext,
+  RenderDiagnostic,
+  WorkbenchReportContext,
+} from "@zotlit/workbench/render";
+import { fieldSnippet } from "@zotlit/workbench/ui";
+import type { WorkbenchDiagnosis } from "@zotlit/workbench/ui";
+import {
+  AnnotationPane,
+  diagnosticText,
+  AnnotationPointer,
+  useWorkbenchHost,
+  createWorkbenchEditor,
+  BUILT_IN_BINDING_DEFAULTS,
+  diagnosisForOccurrence,
+  NameFolderPane,
+  NotePane,
+  PropertiesPane,
+  ProblemsFooter,
+  WorkbenchDiagnosticsProvider,
+  problemText,
+  useWorkbenchProblems,
+  workbenchDiagnoses,
+  renderDiagnosis,
+  SliceEditor,
+  usePartialBoxes,
+  TabBar,
+  TabPanel,
+  TABS,
+  tabsFor,
+  WorkbenchEditorProvider,
+  WorkbenchHostProvider,
+  WorkbenchThemeProvider,
+  useDocumentRevision,
+  useRenderState,
+  useParts,
+  useWorkbenchStore,
+} from "@zotlit/workbench/ui";
+import type {
+  RenderScheduler,
+  WorkbenchHostError,
+  WorkbenchEditorInstance,
+  WorkbenchHost,
+  WorkbenchInsertTarget,
+  WorkbenchStore,
+  WorkbenchItemChoice,
+  WorkbenchViewState,
+  TemplateRoot,
+  NameFolderPaneProps,
+  PartialPlaceholderHost,
+} from "@zotlit/workbench/ui";
+
+import { Icon } from "@/components/obsidian/icon";
+import { AppContext } from "@/lib/app-context";
+import { awaitConfirm } from "@/lib/confirm";
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
+import * as m from "@/lib/i18n/generated/messages";
+import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
+import { loadedTextFileView } from "@/lib/live-text";
+import { getLogger } from "@/lib/log";
+import { MENU_SECTION } from "@/lib/menu-section";
+import { BaseNotice } from "@/lib/notice";
+import { Notifier, withOutcome } from "@/lib/notifier";
+import type { NoticeMessage } from "@/lib/notifier";
+import { Vault } from "@/lib/obsidian-vault";
+import type { ProfileSelector } from "@/lib/profile-stamp";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
+import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
+import {
+  answerOf,
+  inFlightSlot,
+  joinOnView,
+  latestSlot,
+  makeViewRunner,
+} from "@/lib/view-runner";
+import type { InFlightSlot, LatestSlot, ViewRunner } from "@/lib/view-runner";
+import type { ArrivingProblem } from "@/lib/workbench-recovery";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
+import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
+import { plainNoteError } from "@/services/note-feature/errors";
+import type { UpdateResult } from "@/services/note-feature/operations";
+import { NoteFeature } from "@/services/note-feature/service";
+import { updateNoteToast } from "@/services/note-feature/update-single";
+import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
+import { defaultProfilePathAtom } from "@/services/profile/atoms";
+import { Profile } from "@/services/profile/service";
+import {
+  defaultBindingsAtom,
+  templateFolderAtom,
+} from "@/services/settings/atoms";
+import { reportCitationTemplateOpen } from "@/services/template/actions";
+import {
+  partialDocumentsAtom,
+  partialNamesAtom,
+  templateRevisionAtom,
+} from "@/services/template/atoms";
+import { Template } from "@/services/template/service";
+import type { PartialUnpackOutcome } from "@/services/template/service";
+import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
+import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
+import { openWorkbenchLayout, setLeafState } from "@/views/note-preview/layout";
+import { NativeMarkdown } from "@/views/note-preview/markdown";
+import type {
+  NativeRenderDeps,
+  NativeRenderResult,
+} from "@/views/note-preview/render";
+import {
+  nativeResult,
+  retainNativeOutputs,
+  makeNativeRenderer,
+} from "@/views/note-preview/render";
+import { NativePreviewSession } from "@/views/note-preview/session";
+import { makeExportTemplateDataCommand } from "@/views/template-data-explorer/atoms";
+import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
+import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
+
+import { templateWorkbenchAction } from "./actions";
+import {
+  builtInSource,
+  installedStyles,
+  materializeDefault,
+  profileOfFile,
+  readSelectableItem,
+} from "./atoms";
+import { templateDocumentKind, templatePartialName } from "./document-kind";
+import { partialCall } from "./extract-partial";
+import { createTemplateWorkbenchHost, hostEffect } from "./host";
+import { workbenchAnnotationChoice, workbenchItemChoice } from "./item-choice";
+import { createMatchData } from "./match-data";
+import { NativeMatchPane } from "./match-pane";
+import {
+  makeWorkbenchModel,
+  holdWorkbenchModel,
+  workbenchStore,
+  readWorkbenchRecord,
+  readWorkbenchString,
+  readWorkbenchBoolean,
+  readWorkbenchNumber,
+} from "./model";
+import type { CreateSharedPartialOptions } from "./new-partial";
+import { openTemplateWorkbench } from "./open";
+import { readPartialChoice, writePartialChoice } from "./partial-choice-memory";
+import { createSharedPartialEffect } from "./partial-command";
+import {
+  publishWorkbenchSelection,
+  selectionName,
+  subscribeWorkbenchSelection,
+} from "./selection";
+import { getSampleItem } from "./selection-data";
+import {
+  originatingNoteNotice,
+  templateWorkbenchButton,
+  templateWorkbenchTheme,
+  selectionBar,
+  selectionHint,
+} from "./theme";
+
+export const TEMPLATE_WORKBENCH_VIEW_TYPE = "zotlit-template-workbench";
+const logger = getLogger(["views", "template-workbench"]);
+
+/** A native read that a newer read, an edit, or another file outran. */
+class StaleSourceRead extends Schema.TaggedError<
+  StaleSourceRead,
+  { readonly brand: unique symbol }
+>()("StaleSourceRead", {}) {}
+export type OriginatingNoteUpdateOutcome =
+  | { outcome: "no-target" }
+  | { outcome: "unavailable" | "save-failed" | "not-ready"; name: string }
+  | { outcome: "updated" | "refused"; name: string; result: UpdateResult };
+
+/** The note operation failed while updating the originating note `note`. */
+export class OriginatingNoteUpdateError extends Schema.TaggedError<
+  OriginatingNoteUpdateError,
+  { readonly brand: unique symbol }
+>()("OriginatingNoteUpdateError", {
+  /** The originating note's name. */
+  note: Schema.String,
+  /** What the note operation rejected with. */
+  cause: Schema.Defect(),
+}) {}
+
+/** The notices that report what unpacking a Profile's bundled partials did. */
+export function unpackedPartialNotices(
+  result: Pick<
+    PartialUnpackOutcome,
+    "written" | "kept" | "otherCase" | "refused"
+  >,
+): string[] {
+  const { written, kept, otherCase, refused } = result;
+  return [
+    ...(written.length > 0
+      ? [m.notice_partials_unpacked({ names: written.join(", ") })]
+      : []),
+    ...(kept.length > 0
+      ? [m.notice_partials_kept({ names: kept.join(", ") })]
+      : []),
+    ...(otherCase.length > 0
+      ? [m.notice_partials_other_case({ names: otherCase.join(", ") })]
+      : []),
+    // The manifest entry stays, so without this the action reads as inert:
+    // the bundled-partial problem is still there the next time it is read.
+    ...(refused.length > 0
+      ? [m.notice_partials_refused({ names: refused.join(", ") })]
+      : []),
+  ];
+}
+
+/** The UI renders operation outcomes, keeping template saves separate from note updates. */
+export function originatingNoteUpdateNotice(
+  app: App,
+  result: OriginatingNoteUpdateOutcome,
+): string | DocumentFragment | null {
+  const feedback = updateNoteToast("full", { app });
+  switch (result.outcome) {
+    case "no-target":
+      return null;
+    case "unavailable":
+      return m.template_workbench_update_unavailable({ name: result.name });
+    case "save-failed":
+      return m.template_workbench_update_save_failed();
+    case "not-ready":
+      return m.template_workbench_update_not_ready();
+    case "refused":
+    case "updated": {
+      if (result.result.bodyUpdated && !result.result.diagnostic)
+        return m.template_workbench_updated_note({ name: result.name });
+      const message = feedback.success(result.result);
+      return !result.result.diagnostic && typeof message === "string"
+        ? m.template_workbench_note_update_result({
+            name: result.name,
+            result: message,
+          })
+        : message;
+    }
+  }
+}
+
+export interface TemplateWorkbenchDeps {
+  registry: ViewRegistryHandle;
+  render?: WorkbenchHost["render"];
+  nativePreview?: NativeRenderDeps;
+  pluginVersion?: string;
+  // The shared Item search modal still reads these capabilities.
+  itemLookup: Pick<ItemLookupHandle, "search" | "openSession">;
+  settings: ItemSearchDeps["settings"];
+  bridge: ItemSearchDeps["bridge"];
+}
+
+export interface TemplateAuthoringContext {
+  readonly leaf: WorkspaceLeaf;
+  readonly path: string | null;
+  /** The Template Document kind, which picks the preview's own root data. */
+  readonly kind: WorkbenchDocumentKind;
+  readonly item: WorkbenchItemChoice | null;
+  readonly root: TemplateRoot;
+  readonly tab: WorkbenchViewState["tab"];
+  readonly advanced: boolean;
+  readonly annotationId: string | null;
+  /**
+   * The Citation set and Variant a Citation Template renders under, so every
+   * pane that follows this editor reads the one selection. Null on a document
+   * of another kind, which has no Citation set to name.
+   */
+  readonly citation: {
+    readonly variant: CitationVariant;
+    readonly example: CitationExampleId | null;
+  } | null;
+  /**
+   * The Shared Partial this editor holds, the caller the reader chose to
+   * preview it as called from, and the Profile whose bindings that caller's
+   * data is built with. Null on a document of another kind.
+   */
+  readonly partial: {
+    readonly name: string;
+    readonly context: PartialContext;
+    readonly profile: string | null;
+  } | null;
+  readonly canInsertField?: boolean;
+}
+
+export class TemplateWorkbenchView extends TextFileView implements HoverParent {
+  /** The editor hover popover now open, which the next one replaces. */
+  hoverPopover: HoverPopover | null = null;
+  readonly store: WorkbenchStore;
+  readonly #editor: WorkbenchEditorInstance<NativeRenderResult>;
+  /** Renders compact examples independently of companion views. */
+  readonly scheduler: RenderScheduler<NativeRenderResult>;
+  readonly preview: NativePreviewSession | null;
+  readonly #revealListeners = new Set<
+    (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
+  >();
+  /**
+   * What each linked preview's last applicable render found, by preview. The
+   * editor owns the Problems area, so a Note Preview that renders a failure
+   * hands it here rather than explaining it beside its own empty result. A
+   * preview that closes or succeeds publishes an empty list, so nothing a
+   * superseded or closed context found stays visible.
+   */
+  readonly #previewProblems = new Map<string, readonly RenderDiagnostic[]>();
+  /** The flattened list, rebuilt only on publish so readers can compare it. */
+  #previewProblemList: readonly RenderDiagnostic[] = [];
+  readonly #previewProblemListeners = new Set<() => void>();
+  readonly #showProblemListeners = new Set<
+    (id: string | null, occurrence?: RenderDiagnostic) => void
+  >();
+  /**
+   * The captured failure a refused note operation asked this editor to explain.
+   * Its report remains available even when this editor's own check differs.
+   */
+  #arrival: ArrivingProblem | null = null;
+  readonly model = makeWorkbenchModel();
+  get registry() {
+    return this.#deps.registry;
+  }
+  /** Runs this leaf's Effects; closing the leaf interrupts them all. */
+  readonly #runner: ViewRunner;
+  /** The Item read of the latest selection; a newer one interrupts it. */
+  #selecting: Fiber.Fiber<WorkbenchItemChoice | null, unknown> | null = null;
+  readonly #exportCommand = makeExportTemplateDataCommand();
+  #release: (() => void) | null;
+  readonly #cleanup = new DisposableStack();
+  readonly #deps: TemplateWorkbenchDeps;
+  readonly #host: ReturnType<typeof createTemplateWorkbenchHost>;
+  #controller = new WorkbenchDocumentController("", { runtime: "native" });
+  #root: Root | null = null;
+  #updateActions = () => {};
+  #unsubscribe: (() => void) | null = null;
+  get #insertTarget(): WorkbenchInsertTarget | null {
+    return this.store.getState().presentation.selection;
+  }
+  set #insertTarget(selection: WorkbenchInsertTarget | null) {
+    this.setPresentation({ selection });
+  }
+  #insertRequest: WorkbenchInsertTarget | null = null;
+  #itemGeneration = 0;
+  #closed = false;
+  #generation = 0;
+  #bindingDefaults = BUILT_IN_BINDING_DEFAULTS;
+  #stylesUnavailable = false;
+  #citationStyles: NameFolderPaneProps["citationStyles"] = [];
+  /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
+  get #partialProfile(): string | null {
+    return this.registry.get(this.model.partialProfile);
+  }
+  set #partialProfile(profile: string | null) {
+    this.registry.set(this.model.partialProfile, profile);
+  }
+  /** The partial `#partialProfile` and this leaf's root were chosen for. */
+  #partialChoiceFile: string | null = null;
+  #defaultDraft = false;
+  #bindingDraft = false;
+  #receivingSource = false;
+  #sourceRevision = 0;
+  /** The file read; a newer read or a clear stops the one in flight. */
+  readonly #reads: LatestSlot<ViewServices>;
+  /** The read that a clearing load started, while it runs. */
+  #initialRead: object | null = null;
+  #pendingSource: string | null = null;
+  #clearing = false;
+  #originatingNote: {
+    file: TFile;
+    indexedKey: string;
+    template: TFile | null;
+    profile: ProfileSelector;
+  } | null = null;
+  /** The launch that sets the originating note; a later one stops an older one. */
+  readonly #origins: LatestSlot<ViewServices>;
+  /** One save at a time: a native save returns early while another runs. */
+  readonly #saveLock = Semaphore.makeUnsafe(1);
+  /** The originating-note update; a second press joins the one in flight. */
+  readonly #noteUpdates: InFlightSlot<
+    OriginatingNoteUpdateOutcome,
+    OriginatingNoteUpdateError
+  >;
+  /** Customize; a second press joins the materialization in flight. */
+  readonly #customizing: InFlightSlot<void, never>;
+  /** The Item chooser; a second request joins the chooser already open. */
+  readonly #choosing: InFlightSlot<boolean, never>;
+  /** The citation styles read; a request while one runs joins it. */
+  readonly #styles: InFlightSlot<void, never>;
+
+  /**
+   * Save this file after any save in progress. The write finishes once it
+   * starts, so closing the leaf waits for it.
+   */
+  #saveFile(clear?: boolean): Effect.Effect<void, Cause.UnknownError> {
+    const write = () => super.save(clear);
+    return this.#saveLock.withPermit(
+      Effect.uninterruptible(Effect.tryPromise(() => write())),
+    );
+  }
+  /** Obsidian's save, run on this leaf so its close waits for the write. */
+  override save(clear?: boolean): Promise<void> {
+    return answerOf(this.#runner.run(this.#saveFile(clear)), undefined);
+  }
+
+  get originatingNote(): TFile | null {
+    return this.#originatingNote?.file ?? null;
+  }
+  get updatingNote(): boolean {
+    return this.#noteUpdates.running();
+  }
+  /**
+   * Fork `flow` on this leaf, for a button or a menu entry. The flow reports
+   * its own outcome, so it fails with nothing.
+   */
+  #start(flow: Effect.Effect<unknown, never, ViewServices>): void {
+    this.#runner.run(flow);
+  }
+  /**
+   * A launch explicitly sets the target; focus and preview changes leave it
+   * intact. A later launch outranks one still reading its Profile.
+   *
+   * @returns the name of a note this editor cannot update, for the launch to
+   *   explain, or `null`.
+   */
+  setOriginatingNote(file: TFile | null) {
+    return this.#origins.join(
+      Effect.gen({ self: this }, function* () {
+        const indexedKey =
+          file &&
+          itemKeyFromFrontmatter(this.app.metadataCache.getFileCache(file));
+        const resolved = file ? yield* profileOfFile(file) : null;
+        this.#originatingNote =
+          file && indexedKey && resolved?.ok
+            ? {
+                file,
+                indexedKey,
+                template: this.file,
+                profile: resolved.profile.selector,
+              }
+            : null;
+        this.#mount();
+        return file && (!indexedKey || !resolved?.ok) ? file.basename : null;
+      }),
+      null,
+    );
+  }
+  /**
+   * Update the originating note and report the outcome in a notice. A second
+   * call while one runs joins it; closing the leaf before the note's write
+   * stops it quietly.
+   */
+  updateOriginatingNote(): Effect.Effect<
+    OriginatingNoteUpdateOutcome,
+    OriginatingNoteUpdateError
+  > {
+    return this.#noteUpdates.join;
+  }
+  /** Run a Workbench action on this leaf; closing the leaf stops it quietly. */
+  #act(operation: string, action: Effect.Effect<void, unknown, ViewServices>) {
+    this.#start(Effect.ignore(templateWorkbenchAction(operation, action)));
+  }
+  /** Update the originating note, for the button; the run reports its outcome. */
+  startNoteUpdate(): void {
+    this.#noteUpdates.start();
+  }
+  /** Customize the Default Profile, for the button. */
+  startCustomize(): void {
+    this.#customizing.start();
+  }
+  /** Open the Item chooser, for a button or a menu entry. */
+  startItemChoice(): void {
+    this.#choosing.start();
+  }
+  /** Open the annotation chooser, for a button or a menu entry. */
+  startAnnotationChoice(): void {
+    this.#start(this.#chooseAnnotation());
+  }
+  /** Read the citation styles again, as the Name tab asks on each visit. */
+  startStylesRefresh(): void {
+    this.#styles.start();
+  }
+  /** Update the originating note and report the outcome in a notice. */
+  #noteUpdate(): Effect.Effect<
+    OriginatingNoteUpdateOutcome,
+    OriginatingNoteUpdateError,
+    ViewServices
+  > {
+    return Effect.gen({ self: this }, function* () {
+      return yield* withOutcome(this.#updateOriginatingNote(), {
+        success: (result): NoticeMessage | undefined =>
+          originatingNoteUpdateNotice(this.app, result) ?? undefined,
+        error: (error) =>
+          updateNoteToast("full", { app: this.app }).error(
+            error instanceof OriginatingNoteUpdateError ? error.cause : error,
+          ),
+      });
+    });
+  }
+  /** `effect` as a Workbench host member that runs on this leaf's services. */
+  toHostEffect<A, E>(
+    effect: Effect.Effect<A, E, ViewServices>,
+  ): Effect.Effect<A, WorkbenchHostError> {
+    return hostEffect(this.#runner.provide(effect));
+  }
+  /**
+   * Save this template, wait for it to compile, and update the originating
+   * note with it. What stands in the way is an outcome; the note operation's
+   * own failure is an {@link OriginatingNoteUpdateError}.
+   */
+  #updateOriginatingNote(): Effect.Effect<
+    OriginatingNoteUpdateOutcome,
+    OriginatingNoteUpdateError,
+    ViewServices
+  > {
+    return Effect.gen({ self: this }, function* () {
+      const origin = this.#originatingNote;
+      if (!origin) return { outcome: "no-target" } as const;
+      const name = origin.file.basename;
+      // Session state only: the note update checks the note's own Zotero key
+      // against the content its one write replaces. Closing the leaf
+      // interrupts the update before the write; a write that started finishes.
+      const available = () =>
+        this.#originatingNote === origin &&
+        this.file === origin.template &&
+        this.app.vault.getFileByPath(origin.file.path) === origin.file;
+      if (!available()) return { outcome: "unavailable", name } as const;
+      const vault = yield* Vault;
+      /** Whether the file on disk holds what this editor shows; `false` where it cannot be read. */
+      const saved = Effect.gen({ self: this }, function* () {
+        const file = this.file;
+        return (
+          file !== null && (yield* vault.read(file)) === this.getViewData()
+        );
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logError("Failed to read the saved template").pipe(
+            Effect.annotateLogs({ error }),
+            Effect.as(false),
+          ),
+        ),
+      );
+      const written = yield* this.#saveFile().pipe(
+        Effect.as(true),
+        Effect.catch((error) =>
+          Effect.logError("Failed to save template before note update").pipe(
+            Effect.annotateLogs({ error }),
+            Effect.as(false),
+          ),
+        ),
+      );
+      if (!written || !(yield* saved))
+        return { outcome: "save-failed", name } as const;
+      // Settlement covers this revision. Later edits get their own update attempt.
+      const revision = this.#sourceRevision;
+      const settled = yield* (yield* Template).waitUntilSettled(10_000);
+      if (settled !== "settled") return { outcome: "not-ready", name } as const;
+      if (!(yield* saved)) return { outcome: "save-failed", name } as const;
+      /** What a write this editor can no longer stand behind answers. */
+      const refusal = () =>
+        !available()
+          ? ({ outcome: "unavailable", name } as const)
+          : this.#sourceRevision !== revision
+            ? ({ outcome: "not-ready", name } as const)
+            : null;
+      const before = refusal();
+      if (before) return before;
+      return yield* (yield* NoteFeature)
+        .updateNote(origin.file, {
+          indexedKey: origin.indexedKey,
+          scope: "full",
+          profile: origin.profile,
+          // The note operation stops its write where this throws.
+          beforeWrite: () => {
+            if (refusal()) throw new Error("The originating note moved on");
+          },
+        })
+        .pipe(
+          Effect.map((result): OriginatingNoteUpdateOutcome =>
+            // The note no longer belongs to the item this editor opened it for,
+            // so another update from here would be refused the same way.
+            result.diagnostic?.code === "literature-note-key-changed"
+              ? { outcome: "unavailable", name }
+              : {
+                  outcome: result.diagnostic ? "refused" : "updated",
+                  name,
+                  result,
+                },
+          ),
+          Effect.catch((error) => {
+            const refused = refusal();
+            return refused
+              ? Effect.succeed(refused)
+              : Effect.fail(
+                  new OriginatingNoteUpdateError({
+                    note: name,
+                    cause: plainNoteError(error),
+                  }),
+                );
+          }),
+        );
+    }).pipe(withLogCategory("template-workbench"));
+  }
+
+  constructor(leaf: WorkspaceLeaf, deps: TemplateWorkbenchDeps) {
+    super(leaf);
+    this.#deps = deps;
+    this.#release = holdWorkbenchModel(deps.registry, this.model);
+    // Closing the leaf interrupts every Effect it still runs.
+    this.#runner = makeViewRunner(deps.registry);
+    this.#origins = latestSlot(this.#runner.run);
+    this.#reads = latestSlot(this.#runner.run);
+    this.#noteUpdates = inFlightSlot(
+      this.#runner.run,
+      Effect.suspend(() => this.#noteUpdate()),
+      () => this.#mount(),
+    );
+    this.#customizing = inFlightSlot(
+      this.#runner.run,
+      Effect.suspend(() => this.#customize()),
+    );
+    this.#choosing = inFlightSlot(
+      this.#runner.run,
+      Effect.suspend(() => this.#chooseItem()),
+    );
+    this.#styles = inFlightSlot(
+      this.#runner.run,
+      Effect.suspend(() => this.#refreshStyles()),
+    );
+    this.store = workbenchStore(deps.registry, this.model);
+    this.#cleanup.defer(deps.registry.mount(this.#exportCommand));
+    this.#cleanup.defer(deps.registry.mount(templateFolderAtom));
+    this.#cleanup.defer(deps.registry.mount(defaultProfilePathAtom));
+    this.#cleanup.defer(deps.registry.mount(partialDocumentsAtom));
+    this.#cleanup.defer(deps.registry.mount(zoteroStateAtom));
+    this.contentEl.addClass("zt-root", "zt-template-workbench");
+    const nativeRenderer = deps.nativePreview
+      ? makeNativeRenderer(deps.nativePreview)
+      : null;
+    const render: WorkbenchHost["render"] =
+      (nativeRenderer
+        ? (request) => this.toHostEffect(nativeRenderer.render(request))
+        : deps.render) ??
+      ((request) =>
+        Effect.succeed(
+          failedRender(renderIdentity(request), { code: "render-error" }),
+        ));
+    this.#host = createTemplateWorkbenchHost(
+      this.app,
+      {
+        run: this.#runner.run,
+        render,
+        markdown: (props) => (
+          <NativeMarkdown
+            {...props}
+            app={this.app}
+            result={this.scheduler.getState().result}
+          />
+        ),
+        matchData: createMatchData(this.#runner.provide),
+        insertTarget: () => this.insertTarget,
+        partials: {
+          names: () => this.partialNames,
+          create: (query) =>
+            this.toHostEffect(
+              createSharedPartialEffect(this.app, { name: query }),
+            ),
+        },
+        // The menu runs this on the host's runner, which is this leaf's.
+        extractPartial: (source) =>
+          this.#runner.provide(this.#extractPartial(source)),
+        hoverParent: this,
+      },
+      (content) => this.provide(content),
+    );
+    this.#editor = createWorkbenchEditor({
+      host: this.#host,
+      store: this.store,
+      controller: this.#controller,
+      reportContext: () => this.reportContext(this.#defaultRoot),
+      mapResult: nativeResult,
+      retain: retainNativeOutputs,
+    });
+    this.scheduler = this.#editor.scheduler;
+    this.#cleanup.defer(
+      subscribeWorkbenchSelection(this, {
+        editor: () => this.leaf,
+        apply: (selection) => {
+          if (selection.kind === "item")
+            this.#start(this.#selectItem(selection.item));
+          else if (selection.kind === "annotation")
+            this.preview?.select(selection.annotationId);
+          else if (selection.kind === "partial")
+            this.setPartialSelection(selection);
+          else
+            this.preview?.setCitation({
+              variant: selection.variant,
+              citationExample: selection.example,
+            });
+        },
+      }),
+    );
+    this.preview = deps.nativePreview
+      ? new NativePreviewSession(deps.nativePreview, this.scheduler, {
+          item: this.store.getState().item,
+        })
+      : null;
+    this.#cleanup.defer(
+      this.store.subscribe((state, previous) => {
+        if (state.item !== previous.item) this.preview?.setItem(state.item);
+        // The one editor a Shared Partial opens completes under the caller the
+        // reader chose, which is this root.
+        if (state.root !== previous.root && this.documentKind === "partial") {
+          this.#controller.setPartialContext(this.partialContext);
+          this.#rememberPartialChoice();
+        }
+        if (
+          state.item !== previous.item ||
+          state.root !== previous.root ||
+          state.tab !== previous.tab ||
+          state.advanced !== previous.advanced
+        )
+          this.#publishAuthoringContext();
+      }),
+    );
+    if (this.preview)
+      this.#cleanup.defer(
+        this.preview.state.subscribe((state, previous) => {
+          if (
+            state.example !== previous.example ||
+            state.annotationId !== previous.annotationId ||
+            state.variant !== previous.variant ||
+            state.citationExample !== previous.citationExample
+          )
+            this.#publishAuthoringContext();
+          if (state.annotationId !== previous.annotationId)
+            this.app.workspace.requestSaveLayout();
+          if (state.status !== previous.status) this.#mount();
+        }),
+      );
+    this.scope = new Scope(this.app.scope);
+    this.scope.register(["Mod"], "z", (event) => this.#history(event, false));
+    this.scope.register(["Mod", "Shift"], "z", (event) =>
+      this.#history(event, true),
+    );
+    this.scope.register(["Mod"], "y", (event) => this.#history(event, true));
+    this.#subscribe();
+    this.registerEvent(
+      this.app.workspace.on("quick-preview", (file, source) => {
+        if (
+          this.#closed ||
+          this.#defaultDraft ||
+          this.#bindingDraft ||
+          file !== this.file
+        )
+          return;
+        if (this.#initialRead !== null) {
+          this.#pendingSource = source;
+          return;
+        }
+        if (source === this.#controller.source) return;
+        this.#receivingSource = true;
+        try {
+          this.#controller.applyExternalSource(source);
+          // Native external-file merging must include unsaved peer input.
+          this.dirty = true;
+        } finally {
+          this.#receivingSource = false;
+        }
+      }),
+    );
+    this.#cleanup.defer(
+      deps.registry.subscribe(
+        defaultBindingsAtom,
+        (bindings) => {
+          this.#bindingDefaults = {
+            folder: bindings["note.literature-folder"],
+            citationStyle: bindings["citation.references-style"],
+            importFolder: bindings["note.import-folder"],
+            importColoredHighlights: bindings["note.import-colored-highlights"],
+            importAnnotationsAsTemplate:
+              bindings["note.import-annotations-as-template"],
+          };
+          this.scheduler.invalidate();
+          this.#mount();
+        },
+        { immediate: true },
+      ),
+    );
+    this.#cleanup.defer(
+      this.store.subscribe((state, previous) => {
+        if (
+          state.tab !== previous.tab ||
+          state.root !== previous.root ||
+          state.advanced !== previous.advanced ||
+          state.item?.id !== previous.item?.id
+        )
+          this.app.workspace.requestSaveLayout();
+      }),
+    );
+  }
+
+  get nativeRenderDeps(): NativeRenderDeps | undefined {
+    return this.#deps.nativePreview;
+  }
+  /** The Template Document this view holds, which picks its tabs and its root. */
+  get documentKind(): WorkbenchDocumentKind {
+    return templateDocumentKind(this.file, this.#templateFolder);
+  }
+  /**
+   * What names this Workbench in a copied error report. Read once per failed
+   * attempt, so the report keeps the document, root, and Item that attempt
+   * ran against however the reader moves on afterwards.
+   *
+   * `selection` is the Item the attempt read, which a linked preview answers
+   * for itself: a pinned one keeps the Item it was pinned on while this editor
+   * moves to another. Left out, this editor's own choice answers.
+   */
+  reportContext(
+    root: TemplateRoot,
+    selection: string | null = this.store.getState().item?.id ?? null,
+  ): WorkbenchReportContext {
+    const path = this.file?.path;
+    const version = this.#deps.pluginVersion;
+    return {
+      ...(path === undefined ? {} : { document: path }),
+      language: this.#controller.language,
+      root,
+      ...(selection === null ? {} : { selection }),
+      ...(version === undefined ? {} : { zotlitVersion: version }),
+      hostVersion: `Obsidian ${apiVersion}`,
+    };
+  }
+  /** The folder a filename has to sit in to name a Template Document. */
+  get #templateFolder(): string {
+    return this.registry.get(templateFolderAtom);
+  }
+  /** The root an editor with no template region of its own writes. */
+  get #defaultRoot(): TemplateRoot {
+    if (this.documentKind === "citation") return "citation";
+    return this.documentKind === "partial" ? this.partialContext : "note";
+  }
+  /**
+   * The caller a Shared Partial is previewed as called from, which is the root
+   * its one editor completes and its companions read.
+   *
+   * @see {@link PartialContext} for whose choice it is.
+   */
+  get partialContext(): PartialContext {
+    const { root } = this.store.getState();
+    return isPartialContext(root) ? root : DEFAULT_PARTIAL_CONTEXT;
+  }
+  /** {@link TemplateWorkbenchView.#partialProfile} */
+  get partialProfile(): string | null {
+    return this.#partialProfile;
+  }
+  /** Applies the caller and Profile another pane chose for this partial. */
+  setPartialSelection(selection: PartialChoice): void {
+    if (this.documentKind !== "partial") return;
+    this.#partialProfile = selection.profile;
+    this.store.getState().setRoot(selection.context);
+    this.#rememberPartialChoice();
+    this.#publishAuthoringContext();
+  }
+
+  /**
+   * Hold this partial's caller and Profile against its own file, so reopening
+   * it — in a new leaf, or after a restart — shows the choice the reader made
+   * rather than the default the workspace has no leaf left to carry.
+   */
+  #rememberPartialChoice(): void {
+    if (this.documentKind !== "partial") return;
+    writePartialChoice(this.app, this.file?.path ?? null, {
+      context: this.partialContext,
+      profile: this.#partialProfile,
+    });
+  }
+  get authoringContext(): TemplateAuthoringContext {
+    const { item, root, tab, advanced } = this.store.getState();
+    const partialName = templatePartialName(
+      this.file?.path ?? "",
+      this.#templateFolder,
+    );
+    return {
+      leaf: this.leaf,
+      path: this.file?.path ?? null,
+      kind: this.documentKind,
+      item,
+      root,
+      tab,
+      advanced,
+      annotationId:
+        this.preview?.state.getState().annotationId ??
+        this.preview?.state.getState().example?.id ??
+        null,
+      // A partial previewed as called from a Citation reads the same set the
+      // Citation Template does, so both name it here for every pane to follow.
+      citation:
+        root === "citation" && this.preview
+          ? {
+              variant: this.preview.state.getState().variant,
+              example: this.preview.state.getState().citationExample,
+            }
+          : null,
+      partial:
+        this.documentKind === "partial" && partialName !== null
+          ? {
+              name: partialName,
+              context: this.partialContext,
+              profile: this.#partialProfile,
+            }
+          : null,
+      canInsertField:
+        !this.#closed &&
+        !this.#controller.readOnly &&
+        this.insertTarget !== null,
+    };
+  }
+  #publishAuthoringContext(): void {
+    const context = this.authoringContext;
+    // The session reads the kind from here, so the context lands before the
+    // source it picks the parser and the root data for.
+    this.preview?.setContext(context);
+    this.app.workspace.trigger("zotlit:authoring-context", context);
+  }
+
+  override onResize(): void {
+    super.onResize();
+    for (const element of this.contentEl.querySelectorAll<HTMLElement>(
+      ".cm-editor",
+    )) {
+      const editor = EditorView.findFromDOM(element);
+      if (editor && editor.root !== element.ownerDocument)
+        editor.setRoot(element.ownerDocument);
+    }
+  }
+  get unavailableDependencies(): string[] {
+    return [
+      ...(this.registry.get(zoteroStateAtom).state === "degraded"
+        ? [m.template_workbench_database_unavailable()]
+        : []),
+      ...(this.#stylesUnavailable
+        ? [m.template_workbench_styles_unavailable()]
+        : []),
+    ];
+  }
+
+  subscribeReveals(
+    listener: (
+      target: Pick<WorkbenchProblem, "slice" | "range" | "params">,
+    ) => void,
+  ): () => void {
+    this.#revealListeners.add(listener);
+    return () => {
+      this.#revealListeners.delete(listener);
+    };
+  }
+  /**
+   * What every linked preview has found, as one list. Read through
+   * `subscribePreviewProblems`, which changes whenever a preview publishes.
+   */
+  get previewProblems(): readonly RenderDiagnostic[] {
+    return this.#previewProblemList;
+  }
+  publishPreviewProblems(
+    preview: string,
+    diagnostics: readonly RenderDiagnostic[],
+  ): void {
+    if (diagnostics.length === 0) {
+      if (!this.#previewProblems.delete(preview)) return;
+    } else {
+      const held = this.#previewProblems.get(preview);
+      if (
+        held?.length === diagnostics.length &&
+        held.every((entry, index) => entry === diagnostics[index])
+      ) {
+        return;
+      }
+      this.#previewProblems.set(preview, diagnostics);
+    }
+    this.#previewProblemList = [...this.#previewProblems.values()].flat();
+    for (const listener of this.#previewProblemListeners) listener();
+  }
+  subscribePreviewProblems(listener: () => void): () => void {
+    this.#previewProblemListeners.add(listener);
+    return () => {
+      this.#previewProblemListeners.delete(listener);
+    };
+  }
+  /**
+   * Reads one problem in the Problems area, which is what a preview's Show
+   * problem and a failed deliberate Run ask for. A null id opens the area on
+   * whatever it already has selected.
+   */
+  showProblem(
+    id: string | null,
+    reveal = true,
+    occurrence?: RenderDiagnostic,
+  ): void {
+    for (const listener of this.#showProblemListeners) listener(id, occurrence);
+    // A deliberate request brings this editor forward; a failed automatic or
+    // Run attempt leaves the reader's pane where they put it.
+    if (reveal) void this.app.workspace.revealLeaf(this.leaf);
+  }
+  subscribeShowProblem(
+    listener: (id: string | null, occurrence?: RenderDiagnostic) => void,
+  ): () => void {
+    this.#showProblemListeners.add(listener);
+    return () => {
+      this.#showProblemListeners.delete(listener);
+    };
+  }
+  /** Records the captured failure that brought the reader here, and opens Problems. */
+  explainArrival(arrival: ArrivingProblem): void {
+    this.#arrival = arrival;
+    this.showProblem(null, false);
+  }
+  /** Takes one arrival so it opens one explanation. */
+  takeArrival(): ArrivingProblem | null {
+    const held = this.#arrival;
+    this.#arrival = null;
+    return held;
+  }
+  get arrival(): ArrivingProblem | null {
+    return this.#arrival;
+  }
+  revealSlice(slice: "advanced" | "annotation" | `entry:${number}`): void {
+    const range = this.#controller.sliceRange(slice);
+    for (const listener of this.#revealListeners)
+      listener({ slice, ...(range ? { range } : {}) });
+    void this.app.workspace.revealLeaf(this.leaf);
+  }
+  get bindingDefaults(): typeof BUILT_IN_BINDING_DEFAULTS {
+    return this.#bindingDefaults;
+  }
+  get citationStyles(): NameFolderPaneProps["citationStyles"] {
+    return this.#citationStyles;
+  }
+  get controller(): WorkbenchDocumentController {
+    return this.#controller;
+  }
+  /** The last focused slice remains the insertion target while a sidebar has focus. */
+  get insertTarget(): WorkbenchInsertTarget | null {
+    return this.#insertTarget &&
+      this.#controller.hasSlice(this.#insertTarget.slice)
+      ? this.#insertTarget
+      : null;
+  }
+
+  insertTemplateField(request: {
+    leaf: WorkspaceLeaf;
+    node: DisplayNode;
+  }): boolean {
+    if (request.leaf !== this.leaf || this.#closed || this.#controller.readOnly)
+      return false;
+    const target = this.insertTarget;
+    if (!target) return false;
+    const region = this.#controller.templateRegions.find(
+      (region) =>
+        target.range.from >= region.from && target.range.to <= region.to,
+    );
+    const mode = region?.expression
+      ? "expression"
+      : region?.language === "json-e"
+        ? "json-e"
+        : "template";
+    const engine = this.#documentLanguage;
+    return this.insertField(fieldSnippet(request.node, mode, { engine }));
+  }
+
+  insertField(snippet: string): boolean {
+    if (this.#controller.readOnly || this.#closed) return false;
+    const target = this.insertTarget;
+    if (!target) {
+      logger.trace("Rejected Explorer insertion", {
+        slice: this.#insertTarget?.slice ?? null,
+        reason: this.#insertTarget ? "removed-slice" : "no-selection",
+      });
+      return false;
+    }
+    const range = this.#controller.sliceRange(target.slice);
+    const from = Math.min(Math.max(target.range.from, range.from), range.to);
+    const to = Math.min(Math.max(target.range.to, from), range.to);
+    this.#controller.dispatch({
+      changes: { from, to, insert: snippet },
+      userEvent: "input.complete",
+    });
+    logger.debug("Applied Explorer insertion", { slice: target.slice });
+    const cursor = from + snippet.length;
+    this.#focusTarget({
+      slice: target.slice,
+      range: { from: cursor, to: cursor },
+    });
+    return true;
+  }
+
+  #focusTarget(target: WorkbenchInsertTarget): void {
+    this.#insertRequest = target;
+    this.#insertTarget = target;
+    this.#publishAuthoringContext();
+    const state = this.store.getState();
+    state.setAdvanced(target.slice === "advanced");
+    state.setTab(
+      entryPosition(target.slice) !== null
+        ? "properties"
+        : target.slice === "filename"
+          ? "name"
+          : target.slice === "annotation"
+            ? "annotation"
+            : target.slice === "source"
+              ? this.documentKind === "partial"
+                ? "partial"
+                : "citation"
+              : "note",
+    );
+    state.setRoot(
+      this.#controller.templateRegions.find(
+        (region) =>
+          target.range.from >= region.from && target.range.to <= region.to,
+      )?.root ?? this.#defaultRoot,
+    );
+    this.app.workspace.setActiveLeaf(this.leaf, { focus: false });
+    this.#mount();
+  }
+
+  override getViewType(): string {
+    return TEMPLATE_WORKBENCH_VIEW_TYPE;
+  }
+  override getDisplayText(): string {
+    if (this.documentKind === "citation")
+      return m.template_workbench_title_citation();
+    const name = templatePartialName(
+      this.file?.path ?? "",
+      this.#templateFolder,
+    );
+    if (name !== null) return m.template_workbench_title_partial({ name });
+    const label = this.profileLabel;
+    return label === null
+      ? m.template_workbench_name()
+      : m.template_workbench_title_profile({ label });
+  }
+  /**
+   * The name the Profile calls itself, which the tab title carries beside its
+   * kind. The manifest's own name leads, so a renamed file still reads as the
+   * Profile the reader knows; a draft that does not parse falls back to it.
+   */
+  get profileLabel(): string | null {
+    return (
+      this.#controller.document?.manifest.name ?? this.file?.basename ?? null
+    );
+  }
+  override getIcon(): string {
+    return "file-pen-line";
+  }
+  override getViewData(): string {
+    return this.#controller.source;
+  }
+  override setViewData(input: string, clear: boolean): void {
+    let source = input;
+    if (this.#bindingDraft) {
+      this.data = source;
+      return;
+    }
+    if (clear && this.file && !this.#clearing) {
+      source =
+        this.#pendingSource ??
+        loadedTextFileView(this.app, this.file, this)?.getViewData() ??
+        source;
+      this.#pendingSource = null;
+    }
+    if (clear) {
+      this.#host[Symbol.dispose]();
+      this.#unsubscribe?.();
+      this.#generation++;
+      this.#sourceRevision++;
+      this.#controller = new WorkbenchDocumentController(source, {
+        runtime: "native",
+        readOnly: this.#defaultDraft,
+        kind: this.documentKind,
+        context: this.partialContext,
+      });
+      this.#editor.attach(this.#controller);
+      this.setPresentation({
+        selection: null,
+        selected: null,
+        reveal: null,
+        fieldFocus: null,
+        scroll: {},
+        restoring: false,
+      });
+      this.#insertRequest = null;
+      this.#applyKindDefaults();
+      this.#publishAuthoringContext();
+      this.#subscribe();
+      this.#mount();
+    } else this.#controller.applyExternalSource(source);
+    this.data = this.#controller.source;
+    if (clear && this.file && !this.#clearing) {
+      if (this.data !== this.lastSavedData) this.dirty = true;
+      this.app.workspace.trigger("quick-preview", this.file, this.data);
+    }
+    this.#publishAuthoringContext();
+    this.preview?.setSource(this.#controller.source);
+  }
+  /** Obsidian's file read, run on this leaf so its close stops the read. */
+  override loadFileInternal(file: TFile, clear: boolean): Promise<void> {
+    return answerOf(this.#reads.run(this.#loadFile(file, clear)), undefined);
+  }
+  /**
+   * Read `file` into this view. A read that a newer read, an edit, or another
+   * file outran is discarded before it changes anything, and read again while
+   * the edit is the only change. Closing the leaf stops the read.
+   */
+  #loadFile(
+    file: TFile,
+    clear: boolean,
+  ): Effect.Effect<void, Cause.UnknownError> {
+    const loadBase = (receiver: this, reset: boolean) =>
+      super.loadFileInternal.call(receiver, file, reset);
+    return Effect.suspend(() => {
+      const initial = {};
+      let reset = clear;
+      if (clear) this.#initialRead = initial;
+      /** Set once the read is interrupted; the native read then stands down. */
+      let stopped = false;
+      const read = (): Effect.Effect<void, Cause.UnknownError> =>
+        Effect.suspend(() => {
+          if (file !== this.file) return Effect.void;
+          const revision = this.#sourceRevision;
+          const baseline = this.lastSavedData;
+          // TextFileView writes its baseline immediately after the awaited
+          // read, before its native three-way merge. Cancel there, before any
+          // mutation; native methods still run on this view so private fields
+          // keep their owner.
+          const receiver = new Proxy(this, {
+            get(target, property) {
+              const value = Reflect.get(target, property, target);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+            set: (target, property, value) => {
+              if (
+                property === "lastSavedData" &&
+                (stopped ||
+                  file !== this.file ||
+                  revision !== this.#sourceRevision ||
+                  baseline !== this.lastSavedData)
+              )
+                throw new StaleSourceRead();
+              return Reflect.set(target, property, value, target);
+            },
+          });
+          return Effect.tryPromise({
+            try: () => loadBase(receiver, reset),
+            catch: (cause) =>
+              cause instanceof StaleSourceRead
+                ? cause
+                : new Cause.UnknownError(cause),
+          }).pipe(
+            Effect.catchTag("StaleSourceRead", () =>
+              Effect.gen({ self: this }, function* () {
+                yield* Effect.logTrace(
+                  "Discarded stale Profile source read",
+                ).pipe(
+                  Effect.annotateLogs({
+                    path: file.path,
+                    fileChanged: file !== this.file,
+                    sourceChanged: revision !== this.#sourceRevision,
+                    baselineChanged: baseline !== this.lastSavedData,
+                  }),
+                );
+                if (revision !== this.#sourceRevision) reset = false;
+                yield* read();
+              }),
+            ),
+          );
+        });
+      return read().pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            stopped = true;
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (this.#initialRead === initial) {
+              this.#initialRead = null;
+              this.#pendingSource = null;
+            }
+          }),
+        ),
+        withLogCategory("template-workbench"),
+      );
+    });
+  }
+  override clear(): void {
+    if (this.#defaultDraft || this.#bindingDraft) return;
+    this.#reads.interrupt();
+    this.#clearing = true;
+    try {
+      this.setViewData("", true);
+    } finally {
+      this.#clearing = false;
+    }
+  }
+
+  override getState(): Record<string, unknown> {
+    const { tab, item, advanced } = this.store.getState();
+    return {
+      ...super.getState(),
+      ...(this.#defaultDraft ? { defaultDraft: true, file: null } : {}),
+      tab,
+      itemIndexedKey: item?.id ?? null,
+      annotationId: this.preview?.state.getState().annotationId ?? null,
+      advanced,
+      // A Shared Partial's caller is a choice nothing else can name, so the
+      // workspace carries it back with the file it belongs to. No other kind
+      // has one to carry.
+      ...(this.documentKind === "partial"
+        ? {
+            partialContext: this.partialContext,
+            partialProfile: this.#partialProfile,
+          }
+        : {}),
+    };
+  }
+  setPresentation(value: Partial<WorkbenchViewState["presentation"]>): void {
+    this.store.setState((state) => ({
+      presentation: { ...state.presentation, ...value },
+    }));
+  }
+  #presentationContext(): string {
+    return JSON.stringify([
+      this.file?.path ?? (this.#defaultDraft ? "default" : null),
+      this.store.getState().item?.id ?? null,
+    ]);
+  }
+  override getEphemeralState(): Record<string, unknown> {
+    const { presentation } = this.store.getState();
+    return {
+      zotlitTemplateWorkbench: {
+        context: this.#presentationContext(),
+        selection: presentation.selection,
+        selected: presentation.selected,
+        field: presentation.fieldFocus?.field ?? null,
+        scroll: presentation.scroll,
+      },
+    };
+  }
+  override setEphemeralState(input: unknown): void {
+    const value = readWorkbenchRecord(input);
+    if (!value) return;
+    const payload = value.zotlitTemplateWorkbench;
+    const state = readWorkbenchRecord(payload);
+    if (!state) return;
+    if (state.context !== this.#presentationContext()) return;
+    const selection = state.selection as WorkbenchInsertTarget | null;
+    const valid =
+      selection &&
+      typeof selection.slice === "string" &&
+      this.controller.hasSlice(selection.slice) &&
+      selection.range &&
+      readWorkbenchNumber(selection.range.from) !== null &&
+      readWorkbenchNumber(selection.range.to) !== null;
+    let restoredSelection: WorkbenchInsertTarget | null = null;
+    if (valid) {
+      const slice = this.controller.sliceRange(selection.slice);
+      const clamp = (position: number) =>
+        Math.max(slice.from, Math.min(slice.to, position));
+      const anchor = clamp(
+        readWorkbenchNumber(selection.range.anchor) !== null
+          ? selection.range.anchor!
+          : selection.range.from,
+      );
+      const head = clamp(
+        readWorkbenchNumber(selection.range.head) !== null
+          ? selection.range.head!
+          : selection.range.to,
+      );
+      restoredSelection = {
+        slice: selection.slice,
+        range: {
+          from: Math.min(anchor, head),
+          to: Math.max(anchor, head),
+          ...(anchor > head ? { anchor, head } : {}),
+        },
+      };
+    }
+    const selected =
+      Number.isInteger(state.selected) &&
+      (state.selected as number) >= 0 &&
+      (state.selected as number) < (this.controller.managedEntries?.length ?? 0)
+        ? (state.selected as number)
+        : null;
+    const scroll: WorkbenchViewState["presentation"]["scroll"] = {};
+    if (state.scroll && typeof state.scroll === "object") {
+      for (const [key, position] of Object.entries(state.scroll)) {
+        if (
+          position &&
+          typeof position === "object" &&
+          readWorkbenchNumber(position.top) !== null &&
+          readWorkbenchNumber(position.left) !== null
+        )
+          scroll[key] = {
+            top: Math.max(0, position.top),
+            left: Math.max(0, position.left),
+          };
+      }
+    }
+    this.setPresentation({
+      selection: restoredSelection,
+      selected,
+      reveal: restoredSelection
+        ? {
+            ...restoredSelection.range,
+            slice: restoredSelection.slice,
+            focus: value.focus === true,
+            scrollIntoView: false,
+          }
+        : null,
+      fieldFocus:
+        typeof state.field === "string"
+          ? {
+              field: state.field,
+              focus: value.focus === true,
+              scrollIntoView: false,
+            }
+          : null,
+      scroll,
+      restoreVersion: this.store.getState().presentation.restoreVersion + 1,
+      restoring: true,
+    });
+  }
+  restoreScroll(): void {
+    const { scroll, restoring } = this.store.getState().presentation;
+    if (
+      !restoring ||
+      this.preview?.state.getState().status === "loading" ||
+      !this.contentEl.querySelector("[data-workbench-scroll]")
+    )
+      return;
+    for (const element of this.contentEl.querySelectorAll<HTMLElement>(
+      "[data-workbench-scroll]",
+    )) {
+      const position = scroll[element.dataset.workbenchScroll!];
+      if (position) {
+        element.scrollTop = position.top;
+        element.scrollLeft = position.left;
+      }
+    }
+    this.setPresentation({ restoring: false });
+  }
+  /** Obsidian's view-state restore, run on this leaf. */
+  override async setState(
+    state: unknown,
+    result: ViewStateResult,
+  ): Promise<void> {
+    const previous = JSON.stringify(this.getState());
+    try {
+      await answerOf(
+        this.#runner.run(this.#restoreState(state, result)),
+        undefined,
+      );
+    } finally {
+      if (previous !== JSON.stringify(this.getState())) result.history = true;
+    }
+  }
+  #restoreState(state: unknown, result: ViewStateResult) {
+    const restoreBase = (state: unknown) =>
+      Effect.tryPromise(() => super.setState(state, result));
+    return Effect.gen({ self: this }, function* () {
+      const itemGeneration = ++this.#itemGeneration;
+      const builtin =
+        !!state &&
+        typeof state === "object" &&
+        "defaultDraft" in state &&
+        state.defaultDraft === true;
+      if (builtin) {
+        this.allowNoFile = true;
+        yield* restoreBase({ ...state, file: null });
+        this.#defaultDraft = true;
+        this.setViewData(yield* builtInSource, true);
+      } else {
+        if (
+          !this.#bindingDraft &&
+          state &&
+          typeof state === "object" &&
+          "file" in state &&
+          typeof state.file === "string"
+        ) {
+          this.#defaultDraft = false;
+          this.allowNoFile = false;
+        }
+        yield* restoreBase(state);
+      }
+      const value = readWorkbenchRecord(state);
+      if (!value) return;
+      const store = this.store.getState();
+      if (this.#applyKindDefaults()) {
+        // A plain document has one tab and one editor, so nothing of the saved
+        // tab or Basic and Source choice applies to it. A Shared Partial's root
+        // is the reader's own "as called from" choice, which the workspace
+        // carries with the Profile it was chosen beside. A descriptor that names
+        // the file alone — every open through `openTemplateWorkbench` — keeps
+        // what `#applyKindDefaults` read back from this device instead. The
+        // Profile is set first, so the root subscription remembers the pair.
+        if (
+          this.documentKind === "partial" &&
+          isPartialContext(value.partialContext)
+        ) {
+          this.#partialProfile =
+            typeof value.partialProfile === "string"
+              ? value.partialProfile
+              : null;
+          store.setRoot(value.partialContext);
+        }
+      } else {
+        const hasTab = TABS.some((tab) => tab === value.tab);
+        if (hasTab)
+          store.setTab(
+            value.tab === "match" && this.isDefaultProfile
+              ? "note"
+              : (value.tab as typeof store.tab),
+          );
+        if (
+          value.root === "note" ||
+          value.root === "annotation" ||
+          value.root === "filename"
+        )
+          store.setRoot(value.root);
+        else if (hasTab)
+          store.setRoot(
+            this.store.getState().tab === "annotation"
+              ? "annotation"
+              : this.store.getState().tab === "name"
+                ? "filename"
+                : "note",
+          );
+        if (readWorkbenchBoolean(value.advanced) !== null)
+          store.setAdvanced(readWorkbenchBoolean(value.advanced)!);
+      }
+
+      // A choice made while the document loaded outranks this saved selection.
+      if (itemGeneration !== this.#itemGeneration) return;
+      if (readWorkbenchString(value.itemIndexedKey) !== null) {
+        store.setItem({
+          id: readWorkbenchString(value.itemIndexedKey)!,
+          title: null,
+        });
+        yield* this.#selectKey(readWorkbenchString(value.itemIndexedKey)!);
+      } else if (value.itemIndexedKey === null) store.setItem(null);
+      if (typeof value.annotationId === "string" || value.annotationId === null)
+        this.preview?.select(value.annotationId);
+    });
+  }
+
+  /**
+   * The tab, root, and edit mode the kind fixes. A plain document is one
+   * editor over one source under one root, so it has no such choice to make or
+   * to restore. A Profile document keeps the reader's own choice, less a tab
+   * and root the leaf held for a document of another kind.
+   * @returns whether the kind fixed them.
+   */
+  #applyKindDefaults(): boolean {
+    const store = this.store.getState();
+    const kind = this.documentKind;
+    if (kind === "profile") {
+      // A tab and root this leaf kept from a document of another kind name no
+      // panel and no data here, which would leave every panel unmounted.
+      if (!TABS.includes(store.tab)) {
+        store.setTab("note");
+        store.setRoot("note");
+      }
+      return false;
+    }
+    store.setTab(kind);
+    store.setAdvanced(false);
+    if (kind === "citation") {
+      store.setRoot("citation");
+      return true;
+    }
+    // The caller and the Profile belong to the partial they were chosen for, so
+    // a leaf that moves to another partial — or that kept a root from a document
+    // of another kind — opens on the default caller rather than on that choice.
+    const path = this.file?.path ?? null;
+    if (path !== this.#partialChoiceFile) {
+      this.#partialChoiceFile = path;
+      const held = readPartialChoice(this.app, path);
+      this.#partialProfile = held.profile;
+      store.setRoot(held.context);
+    } else if (!isPartialContext(store.root))
+      store.setRoot(DEFAULT_PARTIAL_CONTEXT);
+    return true;
+  }
+
+  protected override onOpen(): Promise<void> {
+    this.#closed = false;
+    this.#release ??= holdWorkbenchModel(this.registry, this.model);
+    this.#cleanup.defer(
+      this.registry.subscribe(this.model.partialProfile, () =>
+        this.app.workspace.requestSaveLayout(),
+      ),
+    );
+    this.registerDomEvent(
+      this.contentEl,
+      "scroll",
+      (event) => {
+        const element = event.target as HTMLElement;
+        const key = element.dataset?.workbenchScroll;
+        if (!key || this.store.getState().presentation.restoring) return;
+        this.setPresentation({
+          scroll: {
+            ...this.store.getState().presentation.scroll,
+            [key]: { top: element.scrollTop, left: element.scrollLeft },
+          },
+        });
+      },
+      true,
+    );
+    this.registerEvent(
+      this.app.workspace.on("zotlit:insert-template-field", (request) =>
+        this.insertTemplateField(request),
+      ),
+    );
+    const source = this.addAction("code", m.workbench_advanced(), () => {
+      const state = this.store.getState();
+      state.setAdvanced(!state.advanced);
+    });
+    const choose = this.addAction("search", m.workbench_choose_item(), () => {
+      if (this.store.getState().root === "annotation")
+        this.startAnnotationChoice();
+      else this.startItemChoice();
+    });
+    const redo = this.addAction("redo-2", m.workbench_redo(), () => {
+      this.#controller.redo();
+    });
+    const undo = this.addAction("undo-2", m.workbench_undo(), () => {
+      this.#controller.undo();
+    });
+    this.#updateActions = () => {
+      choose.setAttribute(
+        "aria-label",
+        this.store.getState().root === "annotation"
+          ? m.workbench_choose_annotation()
+          : m.workbench_choose_item(),
+      );
+      for (const [action, enabled] of [
+        [undo, this.#controller.canUndo],
+        [redo, this.#controller.canRedo],
+      ] as const) {
+        action.setAttribute("aria-disabled", String(!enabled));
+        action.classList.toggle("is-disabled", !enabled);
+      }
+      // Basic and Source are two views of a Profile document's structure; a
+      // plain document is one source, so it is never offered the choice.
+      source.toggle(this.documentKind === "profile");
+      const advanced = this.store.getState().advanced;
+      source.setAttribute("aria-pressed", String(advanced));
+      source.classList.toggle("is-active", advanced);
+    };
+    const syncChrome = () => {
+      this.#updateActions();
+      const title = this.getDisplayText();
+      if (this.titleEl.textContent !== title) {
+        this.titleEl.textContent = title;
+        this.leaf.updateHeader();
+      }
+    };
+    this.#cleanup.defer(this.registry.subscribe(this.model.state, syncChrome));
+    this.#cleanup.defer(
+      this.registry.subscribe(this.model.documentRevision, syncChrome),
+    );
+    this.#cleanup.defer(
+      this.registry.subscribe(templateFolderAtom, syncChrome),
+    );
+    this.#cleanup.defer(
+      this.registry.subscribe(defaultProfilePathAtom, syncChrome),
+    );
+    syncChrome();
+    this.#updateActions();
+    this.#root = createRoot(this.contentEl);
+    this.#mount();
+    this.startStylesRefresh();
+    return Promise.resolve();
+  }
+  /**
+   * Obsidian's close. It waits for the write a running flow has started, such
+   * as a save or the originating note's write, and interrupts the rest.
+   */
+  protected override onClose(): Promise<void> {
+    this.#closed = true;
+    return super.onClose().finally(() => {
+      this.#root?.unmount();
+      this.#root = null;
+      this.#cleanup.dispose();
+      // Interrupts what still runs before the host and the editor go.
+      const stopped = this.#runner[Symbol.asyncDispose]();
+      this.preview?.[Symbol.dispose]();
+      this.#editor[Symbol.dispose]();
+      this.#host[Symbol.dispose]();
+      this.#unsubscribe?.();
+      this.#unsubscribe = null;
+      this.#release?.();
+      this.#release = null;
+      return stopped;
+    });
+  }
+
+  templateDataTarget(): TemplateDataExportTarget | null {
+    const { item, root } = this.store.getState();
+    if (!item || getSampleItem(item.id)) return null;
+    if (root !== "annotation") return { indexedKey: item.id, root };
+    const preview = this.preview?.state.getState();
+    const example = preview?.example;
+    const indexedKey = example?.root.indexedKey;
+    if (
+      typeof indexedKey === "string" &&
+      preview?.current.some((current) => current.id === example?.id)
+    )
+      return { indexedKey, root };
+    return { indexedKey: item.id, root: "note" };
+  }
+
+  templateDataExportLabel(): string {
+    return this.store.getState().root === "annotation" &&
+      this.templateDataTarget()?.root === "note"
+      ? m.template_data_explorer_export_selected_paper()
+      : m.template_data_explorer_menu_export_json();
+  }
+
+  override onPaneMenu(menu: Menu, source: string): void {
+    super.onPaneMenu(menu, source);
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.open)
+        .setTitle(m.template_workbench_open_layout())
+        .setIcon("panels-top-left")
+        .onClick(() => this.#act("open-workbench", openWorkbenchLayout(this))),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.action)
+        .setTitle(m.workbench_choose_item())
+        .setIcon("search")
+        .onClick(() => this.startItemChoice()),
+    );
+    if (this.documentKind !== "citation")
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.action)
+          .setTitle(m.workbench_choose_annotation())
+          .setIcon("highlighter")
+          .onClick(() => this.startAnnotationChoice()),
+      );
+    this.#addPartialsMenu(menu);
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.open)
+        .setTitle(m.template_workbench_open_citation())
+        .setIcon("quote")
+        .onClick(() => this.#start(Effect.ignore(reportCitationTemplateOpen))),
+    );
+    if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
+    const target = this.templateDataTarget();
+    const pluginVersion = this.#deps.pluginVersion;
+    if (target && pluginVersion)
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.action)
+          .setTitle(this.templateDataExportLabel())
+          .setIcon("file-json")
+          .onClick(() =>
+            this.registry.set(this.#exportCommand, {
+              ...target,
+              pluginVersion,
+            }),
+          ),
+      );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.open)
+        .setTitle(m.template_workbench_open_markdown())
+        .setIcon("file-text")
+        .setDisabled(!this.file)
+        .onClick(() => this.#act("open-markdown", this.#openMarkdown())),
+    );
+    if (this.file?.path === this.registry.get(defaultProfilePathAtom))
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.danger)
+          .setTitle(m.settings_profile_document_restore())
+          .setWarning(true)
+          .setIcon("rotate-ccw")
+          .onClick(() => this.#start(Effect.ignore(this.#restoreDefault()))),
+      );
+  }
+  /**
+   * Every Shared Partial the vault holds, so the reader moves between
+   * documents without leaving the view, and the create flow that ends the list.
+   */
+  #addPartialsMenu(menu: Menu): void {
+    const partials = this.registry.get(partialDocumentsAtom);
+    if (!AsyncResult.isSuccess(partials)) return;
+    // The partials this document still carries from the Profile it was shared
+    // with. Unpacking writes them into files, which is an ordinary partial
+    // operation and belongs beside the rest of them rather than inside the
+    // reading of a problem (ADR 0056).
+    const bundled = this.#controller.document?.manifest.partials ?? [];
+    menu.addItem((item) => {
+      item
+        .setSection(MENU_SECTION.open)
+        .setTitle(m.template_workbench_partials())
+        .setIcon("puzzle");
+      const submenu = item.setSubmenu();
+      for (const partial of partials.value)
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(partial.name)
+            .setChecked(this.file?.path === partial.path)
+            .onClick(() => this.#openPartial(partial.path)),
+        );
+      submenu.addSeparator();
+      submenu.addItem((entry) =>
+        entry
+          .setTitle(m.workbench_partial_new())
+          .setIcon("plus")
+          .onClick(() =>
+            this.#start(Effect.ignore(this.#createPartial({ name: "" }))),
+          ),
+      );
+      if (bundled.length > 0 && !this.#controller.readOnly)
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(m.workbench_problem_bundled_partial_unpack())
+            .setIcon("package-open")
+            .onClick(() =>
+              this.#start(Effect.ignore(this.#unpackBundledPartials())),
+            ),
+        );
+    });
+  }
+
+  #openPartial(path: string): void {
+    this.#act(
+      "open-partial",
+      Effect.gen(function* () {
+        const file = yield* (yield* Vault).getFileByPath(path);
+        if (file)
+          yield* openTemplateWorkbench(file, {
+            explainUnsupported: false,
+          });
+      }),
+    );
+  }
+
+  /**
+   * The shared create flow. A failure answers `null` as a dismissal does.
+   *
+   * @returns the created name, or `null` when the reader dismisses the prompt.
+   */
+  #createPartial(
+    options: CreateSharedPartialOptions,
+  ): Effect.Effect<string | null, never, ViewServices> {
+    return createSharedPartialEffect(this.app, options);
+  }
+
+  /**
+   * Move an editor selection into a new Shared Partial through the same create
+   * flow, under this document's own language. The language always writes a
+   * manifest, which is what keeps a selection that opens with its own `---`
+   * line out of the manifest position.
+   *
+   * @returns the call that replaces the selection, or `null` when the reader
+   *   dismisses the prompt.
+   */
+  extractPartial(source: string): Effect.Effect<string | null> {
+    return joinOnView(this.#runner.run, this.#extractPartial(source));
+  }
+  #extractPartial(source: string) {
+    const language = this.#documentLanguage;
+    return this.#createPartial({ source, language, open: "split" }).pipe(
+      Effect.map((name) =>
+        name === null ? null : partialCall(name, language),
+      ),
+    );
+  }
+
+  /** The language this document renders in; a document with no manifest is Liquid. */
+  get #documentLanguage(): TemplateLanguage {
+    return (
+      this.#controller.document?.manifest.language ??
+      this.#controller.plainDocument?.manifest.language ??
+      "liquid"
+    );
+  }
+
+  /**
+   * The rendering language, switched on the manifest key alone: a Template
+   * changes language by being rewritten, so no source is converted here.
+   */
+  #addLanguageMenu(menu: Menu): void {
+    const current = this.#controller.plainDocument?.manifest.language;
+    if (current === undefined) return;
+    menu.addItem((item) => {
+      item
+        .setSection(MENU_SECTION.action)
+        .setTitle(m.template_workbench_change_language())
+        .setIcon("code-2");
+      const submenu = item.setSubmenu().setNoIcon();
+      for (const [language, title] of [
+        ["liquid", m.workbench_name_language_liquid()],
+        ["eta", m.workbench_name_language_eta()],
+      ] as const)
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(title)
+            .setChecked(current === language)
+            .setDisabled(this.#controller.readOnly)
+            .onClick(() => this.#controller.setPlainLanguage(language)),
+        );
+    });
+  }
+  get isDefaultProfile(): boolean {
+    return (
+      this.#defaultDraft ||
+      Boolean(
+        this.file &&
+        this.file.path === this.registry.get(defaultProfilePathAtom),
+      )
+    );
+  }
+  get isDefaultDraft(): boolean {
+    return this.#defaultDraft;
+  }
+  /**
+   * Every Shared Partial the vault registers. Read during render, so it
+   * answers empty until the folder scan has run.
+   */
+  get partialNames(): readonly string[] {
+    if (this.#closed) return [];
+    return this.registry.get(partialNamesAtom);
+  }
+  /**
+   * Open the Shared Partial `name` in a Template Workbench View of its own.
+   * Edit partial reaches a document the vault already holds; a call to a name
+   * with no document offers Create instead.
+   */
+  openPartial(name: string): void {
+    const partials = this.registry.get(partialDocumentsAtom);
+    if (!AsyncResult.isSuccess(partials)) {
+      logger.debug("Edit partial before the folder scan settled", { name });
+      return;
+    }
+    const document = partials.value.find((partial) => partial.name === name);
+    if (!document) {
+      logger.debug("Edit partial for a name the vault holds no document for", {
+        name,
+      });
+      return;
+    }
+    this.#openPartial(document.path);
+  }
+  /**
+   * Write every partial this document still carries in its manifest into the
+   * Shared Partial file it belongs in, then drop the entries those names came
+   * from, so each partial is edited in one place from here on.
+   *
+   * A name the vault already holds a document for under this very spelling
+   * keeps that document, and its entry goes with the rest: the reader's own
+   * file answers the call. A name the vault holds a file for only under
+   * another case keeps its entry, which is all that still answers the call.
+   * The keep-or-replace ask belongs to import, which is where the bundle's copy
+   * still has somewhere to go.
+   */
+  unpackBundledPartials() {
+    return joinOnView(this.#runner.run, this.#unpackBundledPartials());
+  }
+  #unpackBundledPartials() {
+    return templateWorkbenchAction(
+      "unpack-partials",
+      Effect.gen({ self: this }, function* () {
+        const bundled = this.#controller.document?.manifest.partials ?? [];
+        if (this.#controller.readOnly || !bundled.length) return;
+        const template = yield* Template;
+        const result = yield* template.unpackPartials(
+          yield* template.planPartialUnpack(bundled),
+        );
+        this.#controller.dropBundledPartials(result.dropped);
+        const notifier = yield* Notifier;
+        for (const message of unpackedPartialNotices(result))
+          yield* notifier.show(message);
+      }),
+    );
+  }
+  /** Save this document, then restore the Default Profile and show it. */
+  restoreDefault() {
+    return joinOnView(this.#runner.run, this.#restoreDefault());
+  }
+  #restoreDefault() {
+    return templateWorkbenchAction(
+      "restore-default",
+      Effect.gen({ self: this }, function* () {
+        const path = this.registry.get(defaultProfilePathAtom);
+        const confirmed = yield* awaitConfirm(
+          {
+            title: m.settings_profile_document_restore_title(),
+            content: m.settings_profile_document_restore_desc({ path }),
+            action: m.settings_profile_document_restore_action(),
+            destructive: true,
+          },
+          this.app,
+        );
+        if (!confirmed) return;
+        yield* this.#saveFile();
+        this.allowNoFile = true;
+        this.#defaultDraft = true;
+        yield* setLeafState(this.leaf, {
+          type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+          state: { file: null, defaultDraft: true },
+          active: true,
+        });
+        const profile = yield* Profile;
+        yield* profile.restoreDefault;
+        this.setViewData(yield* profile.getSource("default"), true);
+      }),
+    );
+  }
+
+  /**
+   * Customize binds the existing document before enabling any edits. A second
+   * press while the Default Profile materializes joins that run, so the
+   * document is written once.
+   */
+  customizeDefault(): Effect.Effect<void> {
+    return this.#customizing.join;
+  }
+  #customize(): Effect.Effect<void, never, ViewServices> {
+    const path = this.registry.get(defaultProfilePathAtom);
+    if (!this.#defaultDraft) return Effect.void;
+    const controller = this.#controller;
+    this.store.setState({ customization: "pending" });
+    return Effect.gen({ self: this }, function* () {
+      yield* Effect.logDebug("Opening Default Profile for customization");
+      const { file } = yield* materializeDefault;
+      if (!this.#defaultDraft || this.#controller !== controller) return;
+      this.#bindingDraft = true;
+      yield* Effect.ensuring(
+        Effect.gen({ self: this }, function* () {
+          yield* setLeafState(this.leaf, {
+            type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+            state: { ...this.getState(), defaultDraft: false, file: file.path },
+            active: true,
+          });
+          const source =
+            loadedTextFileView(this.app, file, this)?.getViewData() ??
+            this.data;
+          this.#bindingDraft = false;
+          this.#defaultDraft = false;
+          controller.setReadOnly(false);
+          if (source !== controller.source) this.setViewData(source, true);
+          this.allowNoFile = false;
+          this.data = this.#controller.source;
+        }),
+        Effect.sync(() => {
+          this.#bindingDraft = false;
+        }),
+      );
+      this.#mount();
+      yield* openWorkbenchLayout(this);
+    }).pipe(
+      recover(
+        (cause) =>
+          Effect.logError("Failed to customize Default Profile").pipe(
+            Effect.annotateLogs({ error: Cause.squash(cause) }),
+            Effect.andThen(
+              Effect.sync(() =>
+                this.store.setState({ customization: "failed" }),
+              ),
+            ),
+          ),
+        Effect.void,
+      ),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          if (this.store.getState().customization === "pending")
+            this.store.setState({ customization: "idle" });
+        }),
+      ),
+      Effect.annotateLogs({ path }),
+      withLogCategory("template-workbench"),
+    );
+  }
+  /** Read the citation styles again; closing the leaf stops the read quietly. */
+  #refreshStyles(): Effect.Effect<void, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      this.#citationStyles = yield* installedStyles;
+      this.#stylesUnavailable = false;
+      this.#mount();
+    }).pipe(
+      recover(
+        (cause) =>
+          Effect.logWarning(
+            "Failed to read Template Workbench citation styles",
+          ).pipe(
+            Effect.annotateLogs({ error: Cause.squash(cause) }),
+            Effect.andThen(
+              Effect.sync(() => {
+                this.#stylesUnavailable = true;
+                this.#mount();
+              }),
+            ),
+          ),
+        Effect.void,
+      ),
+      withLogCategory("template-workbench"),
+    );
+  }
+  /**
+   * Read the citation styles again. A request while a read runs joins it, so
+   * an older read never lands after a newer one.
+   */
+  refreshStyles(): Effect.Effect<void> {
+    return this.#styles.join;
+  }
+  /** Save this document, then show it in Obsidian's Markdown view. */
+  #openMarkdown(): Effect.Effect<void, Cause.UnknownError> {
+    return Effect.gen({ self: this }, function* () {
+      const file = this.file;
+      if (!file) return;
+      yield* this.#saveFile();
+      yield* setLeafState(this.leaf, {
+        type: "markdown",
+        state: { file: file.path },
+        active: true,
+      });
+    });
+  }
+  /**
+   * Ask the reader for an Item. A second request while the chooser is open
+   * joins it.
+   *
+   * @returns whether the chosen Item became the selection.
+   */
+  chooseItem(): Effect.Effect<boolean> {
+    return this.#choosing.join;
+  }
+  #chooseItem(): Effect.Effect<boolean, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      const generation = this.#generation;
+      const itemGeneration = ++this.#itemGeneration;
+      const choice = yield* workbenchItemChoice(
+        this.#host,
+        {
+          app: this.app,
+          lookup: this.#deps.itemLookup,
+          settings: this.#deps.settings,
+          bridge: this.#deps.bridge,
+        },
+        this.store.getState().item ?? undefined,
+      );
+      if (
+        !choice ||
+        generation !== this.#generation ||
+        itemGeneration !== this.#itemGeneration
+      )
+        return false;
+      // A selection that a later one outran stays unpublished.
+      if (!(yield* this.#selectItem(choice))) return false;
+      publishWorkbenchSelection(
+        this,
+        { kind: "item", item: choice },
+        this.leaf,
+      );
+      return true;
+    });
+  }
+  /** Whether `item` became the selection; a later selection outranks it. */
+  selectItem(item: WorkbenchItemChoice): Effect.Effect<boolean> {
+    return joinOnView(this.#runner.run, this.#selectItem(item));
+  }
+  #selectItem(
+    item: WorkbenchItemChoice,
+  ): Effect.Effect<boolean, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      this.#itemGeneration++;
+      if (!(yield* this.#selectKey(item.id))) return false;
+      // An Item the reader picked is the Citation set they asked to see, so the
+      // built-in example that outranks it stands down.
+      if (this.store.getState().root === "citation")
+        this.preview?.setCitation({ citationExample: null });
+      return true;
+    });
+  }
+  /** Ask the reader for the annotation the preview renders. */
+  chooseAnnotation(): Effect.Effect<void> {
+    return joinOnView(this.#runner.run, this.#chooseAnnotation());
+  }
+  #chooseAnnotation(): Effect.Effect<void, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      const preview = this.preview;
+      if (!preview) return;
+      const generation = this.#generation;
+      const state = preview.state.getState();
+      const id = yield* workbenchAnnotationChoice(
+        this.#host,
+        state.current,
+        state.example?.id ?? null,
+      );
+      if (id === null || generation !== this.#generation) return;
+      if (preview !== this.preview) return;
+      preview.select(id);
+      publishWorkbenchSelection(
+        this,
+        { kind: "annotation", annotationId: id },
+        this.leaf,
+      );
+    });
+  }
+  /**
+   * Select the Item `indexedKey` names once a read confirms it. A newer
+   * selection interrupts the read.
+   *
+   * @returns whether it became the selection.
+   */
+  #selectKey(indexedKey: string): Effect.Effect<boolean, never, ViewServices> {
+    // The joinOnView shape: the fork and its finalizer are set up before an
+    // interrupt can land.
+    return Effect.uninterruptibleMask((restore) => {
+      const generation = this.#itemGeneration;
+      this.#selecting?.interruptUnsafe();
+      const reading = this.#runner.run(readSelectableItem(indexedKey));
+      this.#selecting = reading;
+      return restore(Fiber.await(reading)).pipe(
+        Effect.onInterrupt(() => Fiber.interrupt(reading)),
+        Effect.flatMap((exit) => {
+          if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
+            return Effect.logWarning(
+              "Failed to restore Template Workbench Item",
+            ).pipe(
+              Effect.annotateLogs({
+                indexedKey,
+                error: Cause.squash(exit.cause),
+              }),
+              withLogCategory("template-workbench"),
+              Effect.as(false),
+            );
+          // A newer selection interrupted the read, or outran it.
+          const choice = Exit.isSuccess(exit) ? exit.value : null;
+          if (!choice || generation !== this.#itemGeneration)
+            return Effect.succeed(false);
+          return Effect.sync(() => {
+            this.store.getState().setItem(choice);
+            if (!getSampleItem(indexedKey))
+              rememberTemplateItem(this.app, indexedKey);
+            return true;
+          });
+        }),
+      );
+    });
+  }
+
+  #subscribe(): void {
+    this.#unsubscribe = this.#controller.subscribe(
+      ({ docChanged, transaction }) => {
+        this.registry.update(
+          this.model.documentRevision,
+          (revision) => revision + 1,
+        );
+        if (!docChanged) return;
+        // What the scheduler follows on its own, named here so a diagnosis can
+        // read the edit that queued or dropped a render.
+        logger.trace("Preview source changed", {
+          live: this.preview?.state.getState().preview.live ?? true,
+        });
+        if (this.#insertTarget) {
+          const { slice, range } = this.#insertTarget;
+          this.#insertTarget = {
+            slice,
+            range: {
+              from: transaction.changes.mapPos(range.from, 1),
+              to: transaction.changes.mapPos(range.to, 1),
+              ...(range.anchor === undefined
+                ? {}
+                : {
+                    anchor: transaction.changes.mapPos(range.anchor, 1),
+                    head: transaction.changes.mapPos(range.head ?? range.to, 1),
+                  }),
+            },
+          };
+          this.#publishAuthoringContext();
+        }
+        this.#sourceRevision++;
+        this.data = this.#controller.source;
+        if (this.file && !this.#receivingSource)
+          this.app.workspace.trigger("quick-preview", this.file, this.data);
+        this.#publishAuthoringContext();
+        this.preview?.setSource(this.#controller.source);
+        if (transaction.annotation(externalEdit) !== true) {
+          if (!this.#defaultDraft) this.requestSave();
+        }
+      },
+    );
+  }
+  #history(event: KeyboardEvent, redo: boolean): boolean | void {
+    const target = event.target as Node | null;
+    if (
+      target?.instanceOf(HTMLElement) &&
+      target.closest("input, textarea, [contenteditable], .cm-editor")
+    )
+      return;
+    if (redo ? this.#controller.redo() : this.#controller.undo()) return false;
+  }
+  provide(content: ReactNode): ReactNode {
+    // The Match tab's selects are Choosers, which hold Obsidian's keyboard.
+    return (
+      <ViewRegistryProvider registry={this.registry}>
+        <AppContext value={this.app}>
+          <WorkbenchThemeProvider theme={templateWorkbenchTheme}>
+            <WorkbenchHostProvider host={this.#host}>
+              <WorkbenchEditorProvider
+                key={this.#generation}
+                controller={this.#controller}
+                store={this.store}
+                scheduler={this.scheduler}
+              >
+                {content}
+              </WorkbenchEditorProvider>
+            </WorkbenchHostProvider>
+          </WorkbenchThemeProvider>
+        </AppContext>
+      </ViewRegistryProvider>
+    );
+  }
+  #mount(): void {
+    if (this.#closed) return;
+    this.#updateActions();
+    this.#root?.render(
+      this.provide(
+        <EditorContent
+          view={this}
+          insertRequest={this.#insertRequest}
+          onSelection={(target) => {
+            this.#insertTarget = target;
+            this.#publishAuthoringContext();
+            const root =
+              this.#controller.templateRegions.find(
+                (region) =>
+                  target.range.from >= region.from &&
+                  target.range.from <= region.to,
+              )?.root ?? this.#defaultRoot;
+            if (this.store.getState().root !== root)
+              this.store.getState().setRoot(root);
+          }}
+        />,
+      ),
+    );
+  }
+}
+
+function EditorContent({
+  view,
+  insertRequest,
+  onSelection,
+}: {
+  view: TemplateWorkbenchView;
+  insertRequest: WorkbenchInsertTarget | null;
+  onSelection: (target: WorkbenchInsertTarget) => void;
+}) {
+  const controller = view.controller;
+  const host = useWorkbenchHost();
+  const resultPart = useParts("resultColumn");
+  useDocumentRevision(controller);
+  const { result, trigger, attempt, busy, stale } = useRenderState();
+  const previewProblems = usePreviewProblems(view);
+  const formatProblem = [
+    ...(result?.diagnostics ?? []),
+    ...previewProblems,
+  ].find(
+    ({ part, engine }) =>
+      part === "annotation" || engine?.template === "annotation",
+  );
+  // A render reads the selected example, so the inline preview waits on a
+  // choice rather than on a render while the reader has made none.
+  const annotation = useSelectedAnnotation(view);
+  const advanced = useWorkbenchStore((state) => state.advanced);
+  const [sourceVisited, setSourceVisited] = useState(advanced);
+  useEffect(() => {
+    if (advanced && !sourceVisited) setSourceVisited(true);
+  }, [advanced, sourceVisited]);
+  const kind = controller.kind;
+  const languageCaption =
+    controller.plainDocument?.manifest.language === "eta"
+      ? m.workbench_name_language_eta()
+      : m.workbench_name_language_liquid();
+  const customization = useWorkbenchStore((state) => state.customization);
+  const presentation = useWorkbenchStore((state) => state.presentation);
+  const { selected, reveal, fieldFocus } = presentation;
+  const setSelected = (selected: number | null) =>
+    view.setPresentation({ selected });
+  const setReveal = (reveal: WorkbenchViewState["presentation"]["reveal"]) =>
+    view.setPresentation({ reveal });
+  const setFieldFocus = (fieldFocus: { field: string } | null) =>
+    view.setPresentation({ fieldFocus });
+  const previewStatus = view.preview?.state.getState().status;
+  useEffect(
+    () => view.restoreScroll(),
+    [view, presentation.restoreVersion, previewStatus, reveal],
+  );
+  useEffect(() => {
+    if (!insertRequest) return;
+    const position = entryPosition(insertRequest.slice);
+    view.setPresentation({
+      ...(position === null ? {} : { selected: position }),
+      reveal: insertRequest.range,
+    });
+  }, [view, insertRequest]);
+  const manifest = useRef(controller.document?.manifest ?? null);
+  if (controller.document) manifest.current = controller.document.manifest;
+  const templateRevision = useAtomValue(templateRevisionAtom);
+  const dataRevision = usePreviewDataRevision(view);
+  // A missing partial is the engine's own render failure, so the boxes read
+  // the names the last render could not resolve rather than a scan.
+  const missingPartials = (result?.diagnostics ?? []).flatMap((diagnostic) =>
+    diagnostic.code === "missing-partial" &&
+    diagnostic.params?.name !== undefined
+      ? [String(diagnostic.params.name)]
+      : [],
+  );
+  const partialsFor = (
+    partialContext: PartialContext,
+  ): PartialPlaceholderHost | undefined => {
+    // Bound once: the box renders whatever this session produces, so a later
+    // session swap must not be read from inside the render callback.
+    const preview = view.preview;
+    if (!preview) return undefined;
+    return {
+      missing: missingPartials,
+      revision: templateRevision,
+      dataRevision,
+      onEdit: (name) => view.openPartial(name),
+      onShowProblem: (name) => {
+        const found = diagnoses.find(
+          (diagnosis) =>
+            diagnosis.kind === "render" &&
+            diagnosis.diagnostic.code === "missing-partial" &&
+            String(diagnosis.diagnostic.params?.name) === name,
+        );
+        if (found) problems.select(found.id);
+        else problems.setOpen(true);
+      },
+      onRender: (name) =>
+        view.toHostEffect(preview.renderPartial(name, partialContext)),
+    };
+  };
+  const sourceBoxes = usePartialBoxes(
+    controller,
+    "source",
+    kind === "profile"
+      ? undefined
+      : partialsFor(
+          kind === "citation" ? "citation" : controller.partialContext,
+        ),
+  );
+  // A manifest the parser never read has no field pane to open, so its
+  // problems are repaired in the source the reader can still see.
+  const documentProblems = controller.problems.map((entry) =>
+    entry.slice === "details" && manifest.current === null
+      ? { ...entry, slice: "advanced" as const }
+      : entry,
+  );
+  const [arrival, setArrival] = useState<ArrivingProblem | null>(null);
+  const arrivalAttempt = useRef(0);
+  const pendingArrival = view.arrival;
+  const arrivalDiagnostic = arrival?.diagnostic;
+  const diagnoses = workbenchDiagnoses(documentProblems, [
+    ...(result?.diagnostics ?? []),
+    ...previewProblems,
+    ...(arrivalDiagnostic === undefined ? [] : [arrivalDiagnostic]),
+  ]);
+  const [requestedOccurrence, setRequestedOccurrence] = useState<{
+    readonly id: string;
+    readonly occurrence: RenderDiagnostic;
+  } | null>(null);
+  const selectedDiagnoses = diagnoses.map((diagnosis) =>
+    requestedOccurrence?.id === diagnosis.id
+      ? diagnosisForOccurrence(diagnosis, requestedOccurrence.occurrence)
+      : diagnosis,
+  );
+  const problems = useWorkbenchProblems({
+    diagnoses: selectedDiagnoses,
+    trigger,
+    attempt,
+    // A parser problem never reached a render, so the area captures its report
+    // itself, naming this Workbench the way a failed render's report does.
+    capture: {
+      messages: workbenchM,
+      source: controller.source,
+      context: () => view.reportContext(view.store.getState().root),
+    },
+  });
+  const selectProblem = problems.select;
+  const openProblems = problems.setOpen;
+  useEffect(
+    () =>
+      view.subscribeShowProblem((id, occurrence) => {
+        if (id === null) {
+          setRequestedOccurrence(null);
+          openProblems(true);
+        } else {
+          setRequestedOccurrence(
+            occurrence === undefined ? null : { id, occurrence },
+          );
+          selectProblem(id);
+        }
+      }),
+    [view, selectProblem, openProblems],
+  );
+  // A refused note operation brings its own captured diagnosis here. Consume
+  // the arrival once, then keep its report available even when this editor's
+  // own check finds no matching failure.
+  useEffect(() => {
+    if (!pendingArrival) return;
+    arrivalAttempt.current = attempt;
+    setArrival(pendingArrival);
+    view.takeArrival();
+    openProblems(true);
+  }, [view, pendingArrival, openProblems, attempt]);
+  const arrivalSelection = useRef<ArrivingProblem | null>(null);
+  const detected = diagnoses.map(({ id }) => id).join("\n");
+  useEffect(() => {
+    if (!arrival || arrivalSelection.current === arrival) return;
+    const match = diagnoses.find(
+      (diagnosis) =>
+        diagnosis.kind === "render" &&
+        diagnosis.diagnostic.code === arrival.diagnostic.code &&
+        String(diagnosis.diagnostic.params?.name ?? "") ===
+          String(arrival.diagnostic.params?.name ?? ""),
+    );
+    if (!match) return;
+    arrivalSelection.current = arrival;
+    selectProblem(match.id);
+  }, [arrival, detected, diagnoses, selectProblem]);
+  useEffect(() => {
+    if (
+      !arrival ||
+      attempt <= arrivalAttempt.current ||
+      busy ||
+      stale ||
+      !result ||
+      documentProblems.length > 0
+    )
+      return;
+    const { report, part } = arrival.diagnostic;
+    const annotationCheck =
+      kind === "profile" &&
+      (part === "annotation" || report?.context.root === "annotation");
+    const output = annotationCheck
+      ? result.annotation
+      : kind === "profile"
+        ? result.creationBody
+        : kind === "citation"
+          ? result.citation
+          : result.partial;
+    if (output === null) return;
+    if (
+      result.diagnostics.some((diagnostic) =>
+        annotationCheck
+          ? diagnostic.part === "annotation"
+          : diagnostic.part !== "annotation",
+      )
+    )
+      return;
+    const context = view.reportContext(
+      kind === "profile"
+        ? "note"
+        : kind === "citation"
+          ? "citation"
+          : view.partialContext,
+    );
+    if (
+      (report?.context.document !== undefined &&
+        report.context.document !== context.document) ||
+      (report?.context.selection !== undefined &&
+        report.context.selection !== context.selection) ||
+      (report?.context.root !== undefined &&
+        report.context.root !== context.root &&
+        !(
+          report.context.root === "annotation" && result.annotation !== null
+        )) ||
+      (report?.context.selection === undefined &&
+        report?.identity.snapshotRevision &&
+        report.identity.snapshotRevision !== result.snapshotRevision) ||
+      (report?.identity.annotationId !== undefined &&
+        report.identity.annotationId !== result.annotationId) ||
+      (annotationCheck && result.annotation === null)
+    )
+      return;
+    // The Problems area already holds the inspected report. A fresh applicable
+    // success clears its active failure while that report remains available.
+    setArrival(null);
+  }, [
+    arrival,
+    attempt,
+    busy,
+    stale,
+    result,
+    documentProblems.length,
+    view,
+    kind,
+  ]);
+  const state = view.store.getState();
+  function openProblem(
+    problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
+  ) {
+    if (kind !== "profile" || problem.slice === "source") {
+      // A plain document's every problem is in the one editor it opens with,
+      // so every reveal target lands there and its tabs stay as they are.
+      setReveal(problem.range ?? null);
+      return;
+    }
+    const entry = entryPosition(problem.slice);
+    state.setAdvanced(problem.slice === "advanced");
+    state.setTab(
+      entry !== null
+        ? "properties"
+        : problem.slice === "details" &&
+            [
+              "name",
+              "description",
+              "version",
+              "author",
+              "sampleItemType",
+              "language",
+            ].includes(problem.params?.field ?? "")
+          ? "profile"
+          : problem.slice === "filename" || problem.slice === "details"
+            ? "name"
+            : problem.slice === "annotation"
+              ? "annotation"
+              : "note",
+    );
+    state.setRoot(
+      problem.slice === "annotation"
+        ? "annotation"
+        : problem.slice === "filename"
+          ? "filename"
+          : "note",
+    );
+    if (entry !== null) setSelected(entry);
+    setReveal(problem.range ?? null);
+    setFieldFocus(
+      problem.slice === "details" && problem.params?.field
+        ? { field: problem.params.field }
+        : null,
+    );
+  }
+  /**
+   * The pane whose own region holds `from`, which is where a verified call is
+   * repaired. Advanced holds whatever no editing pane covers.
+   */
+  function sliceHolding(from: number): WorkbenchProblem["slice"] {
+    if (kind !== "profile") return "source";
+    for (const slice of ["note", "annotation", "filename"] as const) {
+      const region = controller.sliceRange(slice);
+      if (region.from <= from && from < region.to) return slice;
+    }
+    return "advanced";
+  }
+  /** The pane one selected problem is repaired in, whichever kind it is. */
+  function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
+    if (diagnosis.kind === "document") {
+      openProblem(diagnosis.problem);
+      return;
+    }
+    const { part, position, callSite, sourceSite } = diagnosis.diagnostic;
+    // A verified call outranks the part the engine reported the failure under:
+    // a failure inside a called template is repaired where it was called.
+    if (callSite || sourceSite) {
+      const current = currentCallSite(diagnosis.diagnostic, controller);
+      if (current === undefined) {
+        new BaseNotice(m.workbench_problems_location_unknown());
+        return;
+      }
+      openProblem({ slice: sliceHolding(current.from), range: current });
+      return;
+    }
+    const slice: WorkbenchProblem["slice"] =
+      position === undefined
+        ? part === "annotation"
+          ? "annotation"
+          : // The note name is repaired in its own tab, whether or not the
+            // failure named a place inside it.
+            part === "filename" && kind === "profile"
+            ? "filename"
+            : kind === "profile"
+              ? "advanced"
+              : "source"
+        : `entry:${position}`;
+    const range = controller.sliceRange(slice);
+    openProblem({ slice, ...(range ? { range } : {}) });
+  }
+  /**
+   * Hands the reader the template back where they left it. The selection each
+   * pane reports as the reader moves through it is that place, so returning is
+   * revealing it again — with the caret and the focus that go with it.
+   */
+  function returnToTemplate(): void {
+    const target = view.insertTarget;
+    setReveal(
+      target ? { ...target.range, slice: target.slice } : { from: 0, to: 0 },
+    );
+  }
+  const revealHandler = useRef(openProblem);
+  revealHandler.current = openProblem;
+  useEffect(
+    () => view.subscribeReveals((target) => revealHandler.current(target)),
+    [view],
+  );
+  const selection =
+    (slice: WorkbenchInsertTarget["slice"]) => (range: WorkbenchSliceRange) =>
+      onSelection({ slice, range });
+  const content = (
+    // The pane the source and the Problems area share. It measures itself, so
+    // whether a reading fits beside the source is the pane's own question
+    // rather than the window's.
+    <div className="zt:@container-[size]/workbench-editor zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-sm">
+      {/* A Citation Template renders an example set, not the note of an Item,
+          so its selection is the preview pane's own. */}
+      {kind === "profile" && <EditorHeader view={view} />}
+      {view.originatingNote && (
+        <div
+          data-part="originating-note"
+          className={originatingNoteNotice.root}
+        >
+          <div className={originatingNoteNotice.guidance}>
+            <p className={originatingNoteNotice.scope}>
+              {m.template_workbench_shared_template({
+                name: view.profileLabel ?? m.settings_profile_default_name(),
+              })}
+            </p>
+            <p className={originatingNoteNotice.behavior}>
+              {m.template_workbench_auto_save_scope()}
+            </p>
+          </div>
+          <div className={originatingNoteNotice.action}>
+            <span className={originatingNoteNotice.note}>
+              <Icon name="file-text" aria-hidden="true" />
+              <span className={originatingNoteNotice["note-name"]}>
+                {view.originatingNote.basename}
+              </span>
+            </span>
+            <button
+              className={originatingNoteNotice.button}
+              disabled={view.updatingNote}
+              onClick={() =>
+                // The update reports its own outcome, failures included.
+                view.startNoteUpdate()
+              }
+            >
+              <span className={originatingNoteNotice.labels}>
+                <span
+                  className={
+                    view.updatingNote
+                      ? originatingNoteNotice["label-hidden"]
+                      : undefined
+                  }
+                  aria-hidden={view.updatingNote}
+                >
+                  {m.template_workbench_update_this_note()}
+                </span>
+                <span
+                  className={
+                    !view.updatingNote
+                      ? originatingNoteNotice["label-hidden"]
+                      : undefined
+                  }
+                  aria-hidden={!view.updatingNote}
+                >
+                  {m.notice_updating_note()}
+                </span>
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+      {view.isDefaultDraft && (
+        <p
+          role="status"
+          className="zt:px-3 zt:pb-2 zt:text-xs zt:leading-normal zt:text-muted-foreground"
+        >
+          {m.template_workbench_default_inspect()}
+          <button
+            className={templateWorkbenchButton}
+            disabled={customization === "pending"}
+            onClick={() => view.startCustomize()}
+          >
+            {customization === "pending"
+              ? m.template_workbench_default_creating()
+              : customization === "failed"
+                ? m.settings_citation_engine_retry()
+                : m.template_workbench_customize()}
+          </button>
+          {customization === "failed" && (
+            <span role="alert">
+              {m.notice_profile_document_customize_failed()}
+            </span>
+          )}
+        </p>
+      )}
+      {view.unavailableDependencies.map((message) => (
+        <p
+          key={message}
+          role="status"
+          className="zt:px-3 zt:pb-2 zt:text-xs zt:leading-normal zt:text-muted-foreground"
+        >
+          {message}
+        </p>
+      ))}
+      {!advanced && (
+        <TabBar
+          tabs={tabsFor(kind)}
+          defaultProfile={view.isDefaultProfile ? true : undefined}
+          onTabChange={(tab) => {
+            // The Partial tab keeps the caller the reader chose; every other
+            // tab names one root of its own.
+            if (tab !== "partial")
+              state.setRoot(
+                tab === "annotation"
+                  ? "annotation"
+                  : tab === "name"
+                    ? "filename"
+                    : tab === "citation"
+                      ? "citation"
+                      : "note",
+              );
+            setReveal(null);
+            if (tab === "name") view.startStylesRefresh();
+          }}
+        />
+      )}
+      <div
+        data-workbench-scroll="editor"
+        className="zt:min-h-0 zt:flex-1 zt:overflow-auto"
+      >
+        {kind !== "profile" ? (
+          <TabPanel tab={kind}>
+            <p className={selectionHint}>{languageCaption}</p>
+            <SliceEditor
+              controller={controller}
+              slice="source"
+              label={
+                kind === "citation"
+                  ? m.workbench_tab_citation()
+                  : m.workbench_tab_partial()
+              }
+              extensions={sourceBoxes.extensions}
+              reveal={reveal}
+              onSelection={selection("source")}
+            />
+            {sourceBoxes.boxes}
+          </TabPanel>
+        ) : (
+          <>
+            {(advanced || sourceVisited) && (
+              <div data-workbench-mode="source" hidden={!advanced}>
+                <SliceEditor
+                  controller={controller}
+                  slice="advanced"
+                  label={m.workbench_advanced()}
+                  reveal={advanced ? reveal : null}
+                  onSelection={selection("advanced")}
+                />
+              </div>
+            )}
+            <TabPanel tab="note" modeActive={!advanced}>
+              <NotePane
+                controller={controller}
+                preview={result?.annotation ?? null}
+                previewHint={
+                  annotation ? null : m.workbench_preview_choose_annotation()
+                }
+                formatProblem={
+                  formatProblem
+                    ? diagnosticText(workbenchM, formatProblem)
+                    : null
+                }
+                annotationSelector={
+                  view.preview ? (
+                    <PreviewAnnotationSelection session={view.preview} />
+                  ) : null
+                }
+                onOpenAnnotation={() => {
+                  state.setTab("annotation");
+                  state.setRoot("annotation");
+                }}
+                partials={partialsFor("note")}
+                reveal={advanced ? null : reveal}
+                onSelection={(range) => {
+                  selection("note")(range);
+                }}
+              />
+              {controller.noteRegions.annotationCalls.length === 0 && (
+                <AnnotationPointer
+                  disabled={controller.readOnly}
+                  onInsert={() => {
+                    const { repaired, caret } =
+                      controller.insertAnnotationLoop();
+                    setReveal({ from: caret, to: caret });
+                    if (repaired)
+                      host.notice(m.workbench_annotation_section_added());
+                  }}
+                />
+              )}
+            </TabPanel>
+            <TabPanel tab="properties" modeActive={!advanced}>
+              {controller.managedEntries === null ? (
+                <p>
+                  {m.template_workbench_properties_advanced()}{" "}
+                  <button
+                    className={templateWorkbenchButton}
+                    onClick={() => state.setAdvanced(true)}
+                  >
+                    {m.workbench_advanced()}
+                  </button>
+                </p>
+              ) : (
+                <PropertiesPane
+                  onChooseItem={() => view.startItemChoice()}
+                  onRetry={() => view.preview?.refresh()}
+                  onShowProblem={(id) => problems.select(id)}
+                  controller={controller}
+                  entries={controller.managedEntries}
+                  properties={result?.properties ?? []}
+                  fold={result?.fold ?? []}
+                  diagnostics={[
+                    ...(result?.diagnostics ?? []).flatMap((diagnostic) =>
+                      diagnostic.position === undefined
+                        ? []
+                        : [
+                            {
+                              position: diagnostic.position,
+                              message: diagnosticText(workbenchM, diagnostic),
+                            },
+                          ],
+                    ),
+                    ...controller.problems.flatMap((problem) => {
+                      const position = entryPosition(problem.slice);
+                      return position === null
+                        ? []
+                        : [
+                            {
+                              position,
+                              message: problemText(workbenchM, problem).message,
+                            },
+                          ];
+                    }),
+                  ]}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onOpenSource={(range) => {
+                    state.setAdvanced(true);
+                    setReveal(range);
+                  }}
+                  reveal={advanced ? null : reveal}
+                  onSelection={selection(
+                    selected === null ? "advanced" : `entry:${selected}`,
+                  )}
+                />
+              )}
+            </TabPanel>
+            <TabPanel tab="match" modeActive={!advanced}>
+              <NativeMatchPane
+                onChooseItem={() => view.startItemChoice()}
+                controller={controller}
+              />
+            </TabPanel>
+            <TabPanel tab="annotation" modeActive={!advanced}>
+              {formatProblem && (
+                <button
+                  type="button"
+                  {...resultPart("problem-open")}
+                  className={templateWorkbenchButton}
+                  onClick={() =>
+                    problems.select(renderDiagnosis(formatProblem).id)
+                  }
+                >
+                  {m.workbench_problem_show()}
+                </button>
+              )}
+              <AnnotationPane
+                finishHelp={
+                  view.originatingNote
+                    ? m.workbench_annotation_help_finish_note()
+                    : m.workbench_annotation_help_finish_native()
+                }
+                controller={controller}
+                problem={
+                  formatProblem
+                    ? diagnosticText(workbenchM, formatProblem)
+                    : null
+                }
+                partials={partialsFor("annotation")}
+                reveal={advanced ? null : reveal}
+                onSelection={selection("annotation")}
+              />
+            </TabPanel>
+            <TabPanel tab="name" modeActive={!advanced}>
+              <NameFolderPane
+                onChooseItem={() => view.startItemChoice()}
+                onRetry={() => view.preview?.refresh()}
+                controller={controller}
+                manifest={manifest.current}
+                defaults={view.bindingDefaults}
+                citationStyles={view.citationStyles}
+                focus={fieldFocus}
+                filename={result?.filename ?? null}
+                notePath={result?.notePath ?? null}
+                onOpenSource={() => state.setAdvanced(true)}
+                onShowProblem={(id) => problems.select(id)}
+                reveal={advanced ? null : reveal}
+                onSelection={selection("filename")}
+              />
+            </TabPanel>
+            <TabPanel tab="profile" modeActive={!advanced}>
+              <NameFolderPane
+                section="profile"
+                controller={controller}
+                manifest={manifest.current}
+                focus={fieldFocus}
+                filename={null}
+                notePath={null}
+                onOpenSource={() => state.setAdvanced(true)}
+              />
+            </TabPanel>
+          </>
+        )}
+      </div>
+      <ProblemsFooter
+        problems={problems}
+        onOpen={openDiagnosis}
+        onReturn={returnToTemplate}
+      />
+    </div>
+  );
+  return (
+    <WorkbenchDiagnosticsProvider
+      value={selectedDiagnoses}
+      onReveal={selectProblem}
+    >
+      {content}
+    </WorkbenchDiagnosticsProvider>
+  );
+}
+
+/**
+ * What every linked preview has found, so the editor's Problems area explains
+ * a Note render failure the reader saw in another pane.
+ */
+function usePreviewProblems(
+  view: TemplateWorkbenchView,
+): readonly RenderDiagnostic[] {
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => view.subscribePreviewProblems(listener),
+      [view],
+    ),
+    useCallback(() => view.previewProblems, [view]),
+  );
+}
+
+/**
+ * The example the preview session holds, live as the reader chooses another.
+ * The pane title carries the file, so the header names the selected data itself.
+ */
+function useSelectedAnnotation(view: TemplateWorkbenchView) {
+  const store = view.preview?.state;
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => store?.subscribe(listener) ?? (() => {}),
+      [store],
+    ),
+    () => store?.getState().example ?? null,
+  );
+}
+
+/**
+ * The data a Shared Partial preview reads, as one value that changes whenever
+ * the reader chooses another Item, annotation, or Citation example — which is
+ * what an open Partial Placeholder preview renders again for.
+ */
+function usePreviewDataRevision(view: TemplateWorkbenchView): string {
+  const store = view.preview?.state;
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => store?.subscribe(listener) ?? (() => {}),
+      [store],
+    ),
+    () => {
+      const state = store?.getState();
+      return state
+        ? [
+            state.item?.id ?? "",
+            state.annotationId ?? "",
+            state.example?.id ?? "",
+            state.variant,
+            state.citationExample ?? "",
+            state.snapshot?.revision ?? "",
+            state.context?.partial?.profile ?? "",
+          ].join(" ")
+        : "";
+    },
+  );
+}
+
+function EditorHeader({ view }: { view: TemplateWorkbenchView }) {
+  const root = useWorkbenchStore((state) => state.root);
+  const item = useWorkbenchStore((state) => state.item);
+  const annotation = useSelectedAnnotation(view);
+  const name = selectionName({
+    item,
+    annotation,
+    annotationMode: root === "annotation",
+  });
+  const { row, caption, trigger } = selectionBar({ placement: "header" });
+  return (
+    <div className={row()}>
+      {name && <p className={caption()}>{name}</p>}
+      <button
+        className={trigger()}
+        onClick={() =>
+          root === "annotation"
+            ? view.startAnnotationChoice()
+            : view.startItemChoice()
+        }
+      >
+        <Icon name="search" />
+        <span>
+          {root === "annotation"
+            ? m.workbench_choose_annotation()
+            : m.workbench_choose_item()}
+        </span>
+      </button>
+    </div>
+  );
+}

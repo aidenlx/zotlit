@@ -1,37 +1,60 @@
-// Lease-pinned batch write runner over the concurrent classify/execute primitives.
-import { chunk } from "@std/collections/chunk";
-import pLimit from "p-limit";
+// Concurrent classify/execute primitives for batch runs, and the Promise edge the batch modal calls.
+import { Cause, Deferred, Effect, Exit, Option, Ref, Stream } from "effect";
 
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-
-import { AbortError } from "@/lib/abort-error";
+import { exitOver, valueOr } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { settleAtEdge } from "@/lib/signal-edge";
 import { formatErrorMessage } from "@/lib/toast";
-import { yieldToMain } from "@/lib/yield-to-main";
-import type { DatabaseService } from "@/services/database/service";
 
 /** A failed-item payload the run reports; rendered by the modal's failure row. */
 export interface BatchFailure {
   label: string;
   message: string;
+  recovery?: { action: "switch-profile"; path: string };
 }
 
 export interface BatchClassifyControls {
   /** Reports how many ids have been classified, driving the loading bar against
    * the total passed at construction. */
   onProgress: (classified: number) => void;
+  /** The modal's cancel; a Promise caller turns it into an interrupt with
+   * {@link runBatchWith}. */
   signal: AbortSignal;
 }
 
 export interface BatchRunControls {
   /** Reports a single row reaching a terminal state. The shell owns the running
-   * counts and flips the row in place; aborted queued work never settles. */
+   * counts and flips the row in place; queued work a stop skips never settles. */
   onItemSettled: (
     event:
       | { id: number; status: "done" }
       | { id: number; status: "skipped" }
       | { id: number; status: "failed"; failure: BatchFailure },
   ) => void;
-  signal: AbortSignal;
+  /**
+   * The run's stop request, completed by the modal's cancel or dismissal. Once
+   * it is done, queued tasks never start and admitted tasks finish; the run
+   * still returns its {@link BatchRunResult}, with `cancelled` set when tasks
+   * were left.
+   */
+  stop: Deferred.Deferred<void>;
+}
+
+/**
+ * A new stop request for {@link BatchRunControls.stop}, for a plain caller (the
+ * batch modal): `request` completes it, and a second call does nothing.
+ */
+export function makeStopRequest(): {
+  stop: BatchRunControls["stop"];
+  request: () => void;
+} {
+  const stop = Deferred.makeUnsafe<void>();
+  return {
+    stop,
+    request: () => {
+      Deferred.doneUnsafe(stop, Exit.void);
+    },
+  };
 }
 
 export interface BatchRunResult {
@@ -44,28 +67,46 @@ export interface BatchRunResult {
   cancelled: boolean;
 }
 
-const CLASSIFY_CHUNK_SIZE = 50;
-
 /**
- * Chunked classify loop: yields between fixed-size slices so the loading bar
- * paints and Cancel stays responsive. The caller's `processSlice` handles the
- * per-id logic; this scaffold owns the progress, abort, and yield plumbing.
+ * Classify ids through sequential requests of at most 500 ids. `read` uses
+ * the caller's Snapshot so every request sees one database state. Each reply
+ * slice advances the loading bar, and the caller's `processSlice` handles the
+ * per-id logic. It cancels by interruption only: a Promise caller passes
+ * {@link BatchClassifyControls.signal} to {@link runBatchWith}, which interrupts it.
  *
- * @throws when {@link BatchClassifyControls.signal} aborts.
+ * @returns an Effect that fails with a read error.
  */
-export async function classifyChunked(
-  ids: readonly number[],
-  controls: BatchClassifyControls,
-  processSlice: (slice: readonly number[]) => void,
-): Promise<void> {
-  let classified = 0;
-  for (const slice of chunk(ids, CLASSIFY_CHUNK_SIZE)) {
-    controls.signal.throwIfAborted();
-    processSlice(slice);
-    classified += slice.length;
-    controls.onProgress(classified);
-    await yieldToMain();
-  }
+export function classifyStream<A, E>(
+  {
+    itemIDs,
+    read,
+  }: {
+    itemIDs: readonly number[];
+    read: (itemIDs: readonly number[]) => Stream.Stream<readonly A[], E>;
+  },
+  controls: Pick<BatchClassifyControls, "onProgress">,
+  processSlice: (slice: readonly A[]) => void,
+): Effect.Effect<void, E> {
+  return Effect.gen(function* () {
+    function* requests() {
+      for (let start = 0; start < itemIDs.length; start += 500) {
+        yield itemIDs.slice(start, start + 500);
+      }
+    }
+    // Bound request encoding and structured cloning on the renderer as well
+    // as the worker's reply slices. Pull one request only after the last ends.
+    const slices = Stream.fromIterable(requests(), { chunkSize: 1 }).pipe(
+      Stream.flatMap((ids) => read(ids)),
+    );
+    let classified = 0;
+    yield* Stream.runForEach(slices, (slice) =>
+      Effect.sync(() => {
+        processSlice(slice);
+        classified += slice.length;
+        controls.onProgress(classified);
+      }),
+    );
+  });
 }
 
 export interface BatchRunTask {
@@ -78,116 +119,186 @@ export interface BatchRunTask {
 export type RunOutcome = "created" | "updated" | "skipped";
 
 /**
- * Concurrent pLimit + allSettled executor that owns the abort/settle/error
- * contract between a modal's `onRun` callback and its shell. Each task returns
- * a {@link RunOutcome} (tallied into {@link BatchRunResult} and reported via
- * {@link BatchRunControls.onItemSettled}) or throws (reported as `"failed"`
- * with a formatted error message). Abort errors are suppressed from the
- * failure count; cancelled tasks are those that never ran.
+ * Concurrent Effect executor that owns the stop/settle/error contract between
+ * a modal's `onRun` callback and its shell. Each task returns a
+ * {@link RunOutcome} (tallied into {@link BatchRunResult} and reported via
+ * {@link BatchRunControls.onItemSettled}) or fails (reported as `"failed"` with
+ * a formatted error message). Only interruption leaves a task unreported:
+ * cancelled tasks are those that never ran, and a stop request interrupts task
+ * scheduling rather than producing a typed failure.
  *
- * @param opts.onTaskFailed Optional per-failure callback (non-abort only),
+ * The executor polls {@link BatchRunControls.stop} as each task starts: a stop
+ * skips queued tasks and leaves admitted work running to its own completion.
+ * An interrupt, such as unload, stops a task at once, except for the write
+ * steps its `run` makes uninterruptible; the task reports no settle event.
+ *
+ * @param opts.onTaskFailed Optional per-failure callback (non-interrupt only),
  *   called after the task is reported as failed; use for structured logging.
- * @param opts.haltOn Marks an error as configuration-level rather than
- *   per-item: the first task to throw a matching error aborts the whole run
+ * @param opts.haltOn Marks a typed failure as configuration-level rather than
+ *   per-item: the first task to fail with a matching error halts the whole run
  *   instead of reporting a failure row (and repeating the same message for
  *   every remaining item). Tasks that haven't started yet short-circuit once
- *   the halt is recorded; the run rejects with that error once all in-flight
- *   tasks settle.
+ *   the halt is recorded; the Effect fails with that error once all in-flight
+ *   tasks settle. A defect never halts the run.
+ *
+ * @returns an Effect that fails with a task error or the first halting error.
  */
-export async function executeBatchRun<T extends BatchRunTask>(opts: {
+export function executeBatchRun<T extends BatchRunTask, E>(opts: {
   tasks: readonly T[];
   controls: BatchRunControls;
   concurrency: number;
-  run: (task: T) => Promise<RunOutcome>;
+  run: (task: T) => Effect.Effect<RunOutcome, E>;
   onTaskFailed?: (task: T, error: unknown) => void;
-  haltOn?: (error: unknown) => boolean;
-}): Promise<BatchRunResult> {
+  haltOn?: (error: E) => boolean;
+}): Effect.Effect<BatchRunResult, E> {
   const { tasks, controls, concurrency, run, onTaskFailed, haltOn } = opts;
-  const limit = pLimit(concurrency);
-  const result: BatchRunResult = {
-    created: 0,
-    updated: 0,
-    skipped: 0,
-    failed: 0,
-    cancelled: false,
-  };
-  let haltError: unknown;
-  const settled = await Promise.allSettled(
-    tasks.map((task) =>
-      limit(async () => {
-        controls.signal.throwIfAborted();
-        if (haltError !== undefined) throw new AbortError("halted");
-        try {
-          const outcome = await run(task);
-          result[outcome] += 1;
-          const status: "done" | "skipped" =
-            outcome === "skipped" ? "skipped" : "done";
-          controls.onItemSettled({ id: task.id, status });
-        } catch (error) {
-          if (haltOn?.(error)) {
-            haltError ??= error;
-            throw new AbortError("halted");
-          }
-          if (!AbortError.test(error)) {
-            controls.onItemSettled({
-              id: task.id,
-              status: "failed",
-              failure: {
-                label: task.label,
-                message: formatErrorMessage(error),
-              },
-            });
-          }
-          throw error;
-        }
-      }),
-    ),
-  );
 
-  let completed = 0;
-  for (const [i, entry] of settled.entries()) {
-    if (entry.status === "fulfilled") {
-      completed += 1;
-    } else if (!AbortError.test(entry.reason)) {
-      result.failed += 1;
-      completed += 1;
-      onTaskFailed?.(tasks[i]!, entry.reason);
+  return Effect.gen(function* () {
+    const result = yield* Ref.make<BatchRunResult>({
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      cancelled: false,
+    });
+    const halt = yield* Ref.make<Cause.Cause<E> | null>(null);
+    const settled = yield* Effect.forEach(
+      tasks,
+      (task) =>
+        Effect.exit(
+          // The task's reads stay interruptible, so unload does not wait for
+          // them; its write steps are uninterruptible in their own services.
+          Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function* () {
+              if (yield* Deferred.isDone(controls.stop))
+                return yield* Effect.interrupt;
+              if ((yield* Ref.get(halt)) !== null)
+                return yield* Effect.interrupt;
+              const exit = yield* Effect.exit(restore(run(task)));
+              if (Exit.isFailure(exit)) {
+                if (Cause.hasInterruptsOnly(exit.cause))
+                  return yield* Effect.failCause(exit.cause);
+                const error = Cause.squash(exit.cause);
+                const failure = Cause.findErrorOption(exit.cause);
+                if (haltOn && Option.isSome(failure) && haltOn(failure.value)) {
+                  yield* Ref.update(halt, (current) => current ?? exit.cause);
+                  return yield* Effect.interrupt;
+                }
+                const recovery = profileRecovery(error);
+                yield* Effect.sync(() =>
+                  controls.onItemSettled({
+                    id: task.id,
+                    status: "failed",
+                    failure: {
+                      label: task.label,
+                      message: formatErrorMessage(error),
+                      ...(recovery ? { recovery } : {}),
+                    },
+                  }),
+                );
+                return yield* Effect.failCause(exit.cause);
+              }
+
+              const outcome = exit.value;
+              yield* Ref.update(result, (current) => ({
+                ...current,
+                [outcome]: current[outcome] + 1,
+              }));
+              const status: "done" | "skipped" =
+                outcome === "skipped" ? "skipped" : "done";
+              yield* Effect.sync(() =>
+                controls.onItemSettled({ id: task.id, status }),
+              );
+            }),
+          ),
+        ),
+      { concurrency },
+    );
+
+    let completed = 0;
+    for (const [i, entry] of settled.entries()) {
+      if (Exit.isSuccess(entry)) {
+        completed += 1;
+      } else if (!Cause.hasInterruptsOnly(entry.cause)) {
+        const error = Cause.squash(entry.cause);
+        yield* Ref.update(result, (current) => ({
+          ...current,
+          failed: current.failed + 1,
+        }));
+        completed += 1;
+        onTaskFailed?.(tasks[i]!, error);
+      }
     }
-  }
-  if (haltError !== undefined) throw haltError;
-  result.cancelled = controls.signal.aborted && completed < tasks.length;
-  return result;
+
+    const halted = yield* Ref.get(halt);
+    if (halted !== null) return yield* Effect.failCause(halted);
+    const stopped = yield* Deferred.isDone(controls.stop);
+    yield* Ref.update(result, (current) => ({
+      ...current,
+      cancelled: stopped && completed < tasks.length,
+    }));
+    return yield* Ref.get(result);
+  });
+}
+
+/** Preserve only actionable diagnostic data across the generic failure boundary. */
+function profileRecovery(error: unknown): BatchFailure["recovery"] {
+  if (!Error.isError(error) || !("diagnostic" in error)) return undefined;
+  const diagnostic = error.diagnostic;
+  if (
+    typeof diagnostic !== "object" ||
+    diagnostic === null ||
+    !("code" in diagnostic) ||
+    diagnostic.code !== "unknown-literature-note-profile" ||
+    !("path" in diagnostic) ||
+    typeof diagnostic.path !== "string" ||
+    !diagnostic.path
+  )
+    return undefined;
+  return { action: "switch-profile", path: diagnostic.path };
 }
 
 /**
- * Run a batch of write tasks under a single database read lease held for the
- * whole run, so every task's `run` sees one pinned client snapshot instead of a
- * client a refresh swap could close mid-run. The lease is released on success,
- * failure, and abort alike (scope-bound `using`). Callers create their per-run
- * memoized fetch caches before this call and close over them in `run`; the
- * pinned `client` is threaded to each task.
- *
- * @throws {@link DatabaseError} when the service is degraded (no lease acquired).
+ * Run an Effect-native batch operation from a Promise caller through
+ * `runExit`, such as the bridge's `runPromiseExit`: a modal callback runs a
+ * batch operation that unload interrupts. This is the caller boundary: typed
+ * failures and defects keep their identity, an aborted signal rejects with the
+ * signal's own abort reason, and an unload rejects with the interrupt.
  */
-export async function runBatchWrite<T extends BatchRunTask>(opts: {
-  db: Pick<DatabaseService, "acquireRead">;
-  tasks: readonly T[];
-  controls: BatchRunControls;
-  concurrency: number;
-  run: (task: T, client: NodeDatabaseClient) => Promise<RunOutcome>;
-  onTaskFailed?: (task: T, error: unknown) => void;
-  haltOn?: (error: unknown) => boolean;
-}): Promise<BatchRunResult> {
-  using lease = await opts.db.acquireRead();
-  // Awaited inside the `using` scope so the lease stays pinned until every task
-  // settles; returning the pending promise would dispose the lease early.
-  const result = await executeBatchRun({
-    tasks: opts.tasks,
-    controls: opts.controls,
-    concurrency: opts.concurrency,
-    run: (task) => opts.run(task, lease.client),
-    onTaskFailed: opts.onTaskFailed,
-    haltOn: opts.haltOn,
-  });
-  return result;
+export function runBatchWith<R = never>(
+  runExit: <A, E>(
+    effect: Effect.Effect<A, E, R>,
+    options?: { readonly signal?: AbortSignal },
+  ) => Promise<Exit.Exit<A, E>>,
+) {
+  return async <A, E>(
+    effect: Effect.Effect<A, E, R>,
+    signal?: AbortSignal,
+  ): Promise<A> => {
+    signal?.throwIfAborted();
+    const exit = await runExit(
+      effect,
+      signal === undefined ? undefined : { signal },
+    );
+    return settleAtEdge(exit, signal);
+  };
 }
+
+/**
+ * The runners a batch modal's callbacks enter Effect through, over the
+ * services this Effect runs with and through `bridge`, so unload interrupts
+ * them. `run` settles as {@link runBatchWith} settles. `settle` resolves
+ * `undefined` when unload interrupts it, for a choice the modal waits on.
+ */
+export const modalRunner = Effect.fnUntraced(function* <R>(
+  bridge: Pick<EffectBridge, "runPromiseExit">,
+) {
+  const runExit = exitOver(bridge, yield* Effect.context<R>());
+  return {
+    run: runBatchWith(runExit),
+    settle: async <A, E>(
+      effect: Effect.Effect<A, E, R>,
+    ): Promise<A | undefined> =>
+      valueOr<A | undefined, E>(await runExit(effect), undefined),
+  };
+});

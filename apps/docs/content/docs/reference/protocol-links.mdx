@@ -1,24 +1,41 @@
 ---
 title: "Protocol links"
-description: "Every obsidian://zotlit/* action, its parameters, and usage for scripting workflows."
-introduced: "2.0.0"
-updated: "2.1.0"
+description: "Every obsidian://zotlit/* action and its parameters, and the Zotero open links ZotLit opens in Obsidian's reader."
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
 This page documents every `obsidian://zotlit/*` protocol action. These deep links allow ZotLit Companion, the Zotero add-on, and external tools such as scripts and launchers to trigger ZotLit operations in Obsidian.
 
+It also documents which `zotero://` links ZotLit opens in Obsidian's reader when you click them in a note. See [Zotero open links](#zotero-open-links).
+
 ## Common parameters
 
-Every protocol link requires a `source-id` parameter: an 8-character hex string identifying the Zotero install that generated the link. ZotLit rejects links whose `source-id` does not match the connected database, showing:
+Every protocol link requires a `source-id` parameter: an 8-character hex string identifying the Zotero install that generated the link. ZotLit rejects links whose `source-id` does not match the connected database.
 
-> This link was created by a different Zotero install.
+If the Zotero database is not yet loaded, ZotLit shows <UiLabel name={m.notice_protocol_db_unavailable()} />.
 
-If the Zotero database is not yet loaded, ZotLit shows:
+## Where the link opens [#pane-type]
 
-> Open the Zotero database to handle this link.
+Four actions put something in front of you: `open`, `update`, `explore`, and `open-attachment`. Each takes an optional `paneType`, spelled as [Obsidian's own URI links](https://help.obsidian.md/Extending+Obsidian/Obsidian+URI) spell it.
+
+| Value    | Result                                |
+| -------- | ------------------------------------- |
+| `tab`    | Opens a new tab.                      |
+| `split`  | Opens a new tab group.                |
+| `window` | Opens a pop-out window. Desktop only. |
+
+```
+obsidian://zotlit/open?item=<id>&source-id=<hash>&paneType=tab
+```
+
+Omit the parameter to keep each action's usual placement: `open`, `update`, and `open-attachment` replace the last active tab, and `explore` reuses the Template Data Explorer already in the sidebar. A value outside the three shows <UiLabel name={m.notice_protocol_invalid()} /> and stops the action.
+
+ZotLit Companion writes the parameter onto the links its own Zotero menus open. Under the <UiLabel name={m["zotero.prefs_open_section"]()} /> section of the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane in Zotero's settings, <UiLabel name={m["zotero.prefs_pane_type"]()} /> picks the pane. <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />, the default, leaves the parameter off the link.
 
 ## Actions
 
@@ -30,10 +47,16 @@ Opens the existing literature note for a Zotero item, or creates one if none exi
 obsidian://zotlit/open?item=<id>&source-id=<hash>
 ```
 
-| Parameter   | Type       | Required | Description               |
-| ----------- | ---------- | -------- | ------------------------- |
-| `item`      | Integer    | Yes      | Zotero item ID            |
-| `source-id` | 8-char hex | Yes      | Zotero install identifier |
+| Parameter   | Type       | Required | Description                                                                                |
+| ----------- | ---------- | -------- | ------------------------------------------------------------------------------------------ |
+| `item`      | Integer    | Yes      | Zotero item ID                                                                             |
+| `source-id` | 8-char hex | Yes      | Zotero install identifier                                                                  |
+| `profile`   | 12-char id | No       | The profile that creates or updates the note, named by profile ID.                         |
+| `paneType`  | Pane value | No       | Where the note opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type). |
+
+`profile` picks the profile the action resolves the note against. The note is created with that profile when none exists yet. A note that already exists keeps the profile it carries. A link naming a different profile reports the profile the note kept and changes nothing.
+
+The value is 12 letters or digits, the `id` its [profile document](/docs/reference/templates/profile-document) declares, never a label. Omit the parameter to resolve the profile the usual way. An unknown ID shows a notice and stops the action.
 
 ---
 
@@ -50,6 +73,12 @@ obsidian://zotlit/update?item=<id>&source-id=<hash>
 | `item`      | Integer              | Yes      | Zotero item ID                                                                                            |
 | `source-id` | 8-char hex           | Yes      | Zotero install identifier                                                                                 |
 | `scope`     | `full` or `metadata` | No       | What to update. Default: `full` (frontmatter + managed body region). `metadata` updates frontmatter only. |
+| `profile`   | 12-char id           | No       | The profile that creates or updates the note, named by profile ID.                                        |
+| `paneType`  | Pane value           | No       | Where the note opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type).                |
+
+`profile` names the profile for the item. The update runs through the profile the note carries. A link naming a different profile reports the profile the note kept and skips the update. When the item has no note yet, the note is created with the named profile.
+
+The value is 12 letters or digits, the `id` its [profile document](/docs/reference/templates/profile-document) declares. An unknown ID shows a notice and stops the action.
 
 ---
 
@@ -66,11 +95,14 @@ obsidian://zotlit/update-many?items=<id,id,...>&source-id=<hash>
 | `items`     | Comma-separated integers | Yes      | Zotero item IDs (deduplicated; trailing comma tolerated) |
 | `source-id` | 8-char hex               | Yes      | Zotero install identifier                                |
 | `scope`     | `full` or `metadata`     | No       | Default: `full`                                          |
+| `profile`   | 12-char id               | No       | The profile for the notes the batch creates.             |
+
+`profile` is the companion profile of the batch. Every note the batch creates is created with it. A note that already exists keeps its own profile; the batch reports those notes as kept rather than re-rendering them. The value is 12 letters or digits, the `id` its [profile document](/docs/reference/templates/profile-document) declares. An unknown ID shows a notice and stops the batch.
 
 <Callout type="info">
   For batches too large for a URL, ZotLit also exposes `PUT {host}
-  /literature-notes` with the same parameters in the request body, gated by a
-  `source-id` header.
+  /literature-notes` with the same parameters in the request body, `profile`
+  included, gated by a `source-id` header.
 </Callout>
 
 ---
@@ -150,8 +182,8 @@ A link that omits `library` targets **My Library**, as it always has. A permanen
 
 Two results end the action before any note is written:
 
-- A `library` this Zotero database no longer holds reports "That Zotero library is not available."
-- A `collection` the target library does not hold reports "Collection not found in Zotero."
+- A `library` this Zotero database no longer holds reports <UiLabel name={m.batch_all_library_unavailable()} />.
+- A `collection` the target library does not hold reports <UiLabel name={m.notice_collection_not_found()} />.
 
 The Obsidian command palette runs the same two operations without an exact target. Those commands cover every available library in your library scope. See [Commands](/docs/reference/commands).
 
@@ -170,19 +202,99 @@ obsidian://zotlit/explore?item=<id>&source-id=<hash>
 | `item`       | Integer    | Yes      | Zotero item ID                                                                                             |
 | `source-id`  | 8-char hex | Yes      | Zotero install identifier                                                                                  |
 | `annotation` | 8-char key | No       | Zotero annotation key (charset: `23456789A-NP-Z`). When provided, the explorer focuses on this annotation. |
+| `paneType`   | Pane value | No       | Where the explorer opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type).             |
+
+---
+
+### open-attachment [#open-attachment]
+
+Opens a Zotero PDF attachment in Obsidian's own PDF reader.
+
+```
+obsidian://zotlit/open-attachment?item=<id>&source-id=<hash>
+```
+
+| Parameter   | Type       | Required | Description                                                                               |
+| ----------- | ---------- | -------- | ----------------------------------------------------------------------------------------- |
+| `item`      | Integer    | Yes      | Zotero item ID, naming either a PDF attachment or a regular item that has one             |
+| `source-id` | 8-char hex | Yes      | Zotero install identifier                                                                 |
+| `paneType`  | Pane value | No       | Where the PDF opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type). |
+
+`item` may name an attachment directly or the regular item it hangs from; ZotLit decides which it found and resolves the PDF from there. One PDF opens straight away. Several open a picker that lists them by file name.
+
+Only PDF attachments are offered; the action passes over EPUBs, web snapshots, and other file types. An item with no PDF shows <UiLabel name={m.notice_no_pdf_attachment()} /> A PDF whose file is no longer on disk shows <UiLabel name={m.notice_pdf_file_missing()} /> Neither case falls back to Zotero's own reader.
+
+The PDF opens whether the file sits inside the vault or in Zotero's storage folder.
+
+---
+
+### show-in-library [#show-in-library]
+
+Reveals a Zotero paper in the Library View.
+
+```
+obsidian://zotlit/show-in-library?item-key=<indexedKey>
+```
+
+| Parameter  | Type        | Required | Description                                                                                                                |
+| ---------- | ----------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `item-key` | Indexed Key | Yes      | Zotero item indexed key: the item key, such as `ABCD2345`, or `<key>g<groupID>` for a group item, such as `ABCD2345g12345` |
+
+This link carries no `source-id`, so a link from the `zt.librarylink` template variable works on every computer the vault syncs to.
+
+Triggering the link brings the Library View forward, clears active search text and filters so nothing hides the paper, and flashes the paper's row. If the paper is outside your current library scope, ZotLit displays <UiLabel name={m.library_view_reveal_not_found()} />.
 
 ## Action summary
 
-| Action             | Single item | Batch | Scope param | Mode param | Library param |
-| ------------------ | :---------: | :---: | :---------: | :--------: | :-----------: |
-| `open`             |     yes     |   —   |      —      |     —      |       —       |
-| `update`           |     yes     |   —   |     yes     |     —      |       —       |
-| `update-many`      |      —      |  yes  |     yes     |     —      |       —       |
-| `import-note`      |     yes     |   —   |      —      |    yes     |       —       |
-| `import-notes`     |      —      |  yes  |      —      |    yes     |       —       |
-| `update-all`       |      —      |  yes  |      —      |     —      |      yes      |
-| `import-all-notes` |      —      |  yes  |      —      |     —      |      yes      |
-| `explore`          |     yes     |   —   |      —      |     —      |       —       |
+| Action             | Single item | Batch | Scope param | Mode param | Library param | profile param | paneType param |
+| ------------------ | :---------: | :---: | :---------: | :--------: | :-----------: | :-----------: | :------------: |
+| `open`             |     yes     |   —   |      —      |     —      |       —       |      yes      |      yes       |
+| `update`           |     yes     |   —   |     yes     |     —      |       —       |      yes      |      yes       |
+| `update-many`      |      —      |  yes  |     yes     |     —      |       —       |      yes      |       —        |
+| `import-note`      |     yes     |   —   |      —      |    yes     |       —       |       —       |       —        |
+| `import-notes`     |      —      |  yes  |      —      |    yes     |       —       |       —       |       —        |
+| `update-all`       |      —      |  yes  |      —      |     —      |      yes      |       —       |       —        |
+| `import-all-notes` |      —      |  yes  |      —      |     —      |      yes      |       —       |       —        |
+| `explore`          |     yes     |   —   |      —      |     —      |       —       |       —       |      yes       |
+| `open-attachment`  |     yes     |   —   |      —      |     —      |       —       |       —       |      yes       |
+| `show-in-library`  |     yes     |   —   |      —      |     —      |       —       |       —       |       —        |
+
+`profile` belongs to the literature-note actions: `open`, `update`, and `update-many`, whose `PUT {host}/literature-notes` body carries it too. The note-import actions take none. `paneType` belongs to the actions that put something on screen: `open`, `update`, `explore`, and `open-attachment`. `show-in-library` brings the Library View forward in its own tab and takes no `paneType`. Every other action ends in a notice or a confirmation modal rather than an opened pane, so it takes none.
+
+## Zotero open links [#zotero-open-links]
+
+Every annotation ZotLit writes into a note links back with its durable link. That link is Zotero's own open link, naming the attachment and the annotation by their Zotero keys:
+
+```
+zotero://open/library/items/<attachmentKey>?annotation=<annotationKey>&page=<pageLabel>
+```
+
+A group library has `groups/<groupID>` in place of `library`. `page` is the annotation's printed page label, and the link omits it when there is none. The template field is [`zt.backlink`](/docs/reference/templates/data#annotation-template).
+
+The link appears wherever ZotLit writes an annotation: <UiLabel name={m.annot_view_menu_insert()} /> on an annotation view card, a card dragged from the annotation view, a query block, or the Query View, and the default annotation template. The placeholder for an unavailable excerpt image links back the same way.
+
+### Opened in Obsidian [#zotero-open-links-captured]
+
+While <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_file_links_name()} /> and <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_annotation_links_name()} /> are on, which is the default, ZotLit opens a durable annotation link in Obsidian's reader. The PDF opens with the annotation selected and scrolled into view. This applies to a link clicked in Live Preview, in Reading view, or in a Properties value.
+
+When Zotero no longer has the annotation, the PDF opens on the annotation's page alone. If that annotation's page label differs from the PDF's page number, the page jump can miss.
+
+### Passed to Zotero [#zotero-open-links-passed]
+
+ZotLit hands the link to Zotero, unchanged, in these cases:
+
+| Case                                                                     | Result                                       |
+| ------------------------------------------------------------------------ | -------------------------------------------- |
+| The PDF is not on this computer, or ZotLit does not know the attachment  | Zotero opens the annotation.                 |
+| <UiLabel name={m.settings_reader_open_file_links_name()} /> is off       | Zotero opens the annotation.                 |
+| <UiLabel name={m.settings_reader_open_annotation_links_name()} /> is off | Zotero opens the annotation. Hover shows it. |
+| You right-click the link and choose **Open in default browser**          | Zotero opens the annotation.                 |
+| A `zotero://open` link with no `annotation` parameter                    | Zotero handles it. ZotLit never captures it. |
+| A `zotero://select` link                                                 | Zotero handles it. ZotLit never captures it. |
+
+### Older file links [#zotero-open-links-file-links]
+
+Notes written by an earlier ZotLit link an annotation to the attachment file instead, in the form `file:///…/paper.pdf#page=N&zt-annotation=<key>`. These links keep opening in Obsidian's reader on the annotation, as before. They hold the file path of the computer that wrote them, so they open nothing on a computer whose Zotero storage folder sits elsewhere. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian#file-links).
 
 ## See also
 

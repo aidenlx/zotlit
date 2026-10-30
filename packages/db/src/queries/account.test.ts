@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 import type { NodeDatabaseClient } from "@/client/node";
 import { createFixtureSchema } from "@/test-utils";
 
-import { getZoteroIdentity } from "./account";
+import {
+  getAccountUserID,
+  getZoteroDatabaseIdentity,
+  getZoteroIdentity,
+} from "./account";
 
 function withFixture(
   test: (sqlite: DatabaseSync, db: NodeDatabaseClient) => void,
@@ -41,6 +45,30 @@ describe("getZoteroIdentity: username", () => {
       );
 
       expect(getZoteroIdentity(db).username).toBeNull();
+    });
+  });
+});
+
+describe("getZoteroDatabaseIdentity", () => {
+  it("reads the exact Local API database id when Zotero initialized it", () => {
+    withFixture((sqlite, db) => {
+      sqlite.exec(`
+        insert into settings (setting, key, value)
+        values ('account', 'localUserKey', 'v3aG8nQf'),
+               ('localAPI', 'serverID', 'A8sf5Zsz8ySw');
+      `);
+
+      expect(getZoteroDatabaseIdentity(db)).toEqual({
+        userID: null,
+        localUserKey: "v3aG8nQf",
+        serverID: "A8sf5Zsz8ySw",
+      });
+    });
+  });
+
+  it("leaves the server id null before Local API initialization", () => {
+    withFixture((_, db) => {
+      expect(getZoteroDatabaseIdentity(db).serverID).toBeNull();
     });
   });
 });
@@ -101,6 +129,18 @@ describe("getZoteroIdentity: account ids", () => {
         localUserKey: null,
         username: null,
       });
+    });
+  });
+});
+
+describe("getAccountUserID", () => {
+  it("reads the user ID stored as text, and null for a database that never synced", () => {
+    withFixture((sqlite, db) => {
+      expect(getAccountUserID(db)).toBeNull();
+      sqlite.exec(
+        "insert into settings (setting, key, value) values ('account', 'userID', '475425');",
+      );
+      expect(getAccountUserID(db)).toBe(475425);
     });
   });
 });

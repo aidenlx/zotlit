@@ -19,9 +19,11 @@ import type {
 } from "@/lib/context/zt-template-item";
 import { defineToString } from "@/lib/to-string";
 import type { Annotation } from "@/lib/zt-annot";
+import type { AnnotationFileLinkAnchor } from "@/lib/zt-annot-anchor";
 import type { Attachment } from "@/lib/zt-attach";
 import type { TemplateCollection } from "@/lib/zt-collection";
 import type { ItemTag } from "@/lib/zt-tag";
+import { itemSelectUri } from "@/lib/zt-uri";
 import type { Item } from "@/queries/items";
 import type { ChildNote } from "@/queries/notes";
 
@@ -48,15 +50,28 @@ export interface TemplateNoteLink {
   /** Note title as Zotero stores it; `null` when the row carries none. */
   title: string | null;
   /**
-   * Renders the Obsidian link; default alias is the live title. Rendering it
-   * queues the child note for import — a link never rendered creates no file,
-   * and an already-imported note links to the existing file without
-   * re-importing.
+   * Renders the link; default alias is the live title. It links the child
+   * note's imported note when one exists, and otherwise opens the note in
+   * Zotero. Rendering it never imports the child note.
    *
    * @ztFilter note_link
-   * @ztInert
    */
   noteLink: TemplateLink;
+}
+
+/**
+ * A Markdown link that opens `note` in Zotero, labelled `alias` or else the
+ * note's title (its key when untitled): what `noteLink` renders for a child
+ * note with no imported note.
+ */
+export function zoteroNoteLink(
+  note: Pick<ChildNote, "key" | "groupID" | "title">,
+  alias?: string,
+): string {
+  const label = (alias ?? (note.title || note.key))
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]");
+  return `[${label}](${itemSelectUri(note.key, note.groupID)})`;
 }
 
 export function withNotePreview(note: TemplateNoteLink): TemplateNoteLink {
@@ -104,13 +119,14 @@ export interface AnnotationResolvers {
   /** Resolve an attachment to its absolute on-disk path; `null` when unresolvable. */
   filePath: (attachment: Attachment) => string | null;
   /**
-   * Build an attachment's file-link helper. Pass a 1-based `page` to default the
-   * helper's subpath to `#page=N` (annotation-level links anchor to their page);
-   * the helper returns `null` when the file is unresolvable.
+   * Build an attachment's file-link helper. Pass the Annotation's page and
+   * Indexed Key to default the helper's subpath to `#page=N&zt-annotation=KEY`
+   * — the page Obsidian jumps to, and the Annotation Anchor ZotLit lands a Mark
+   * on; the helper returns `null` when the file is unresolvable.
    */
   fileLink: (
     attachment: Attachment,
-    page?: number | null,
+    anchor?: AnnotationFileLinkAnchor,
   ) => FallibleTemplateLink;
   /**
    * Build an annotation's excerpt-image link helper, or `null` when the
@@ -231,7 +247,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
       const data = annotationToTemplateData({
         annotation,
         tags: input.tagsByItemID.get(annotation.itemID) ?? [],
-        fileLink: (page) => input.fileLink(attachment, page),
+        fileLink: (anchor) => input.fileLink(attachment, anchor),
         annotationImageLink: input.annotationImageLink,
         commentToMarkdown: input.commentToMarkdown,
         getParentAttachment: () => tplAttachment,

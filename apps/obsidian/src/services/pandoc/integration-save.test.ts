@@ -1,5 +1,15 @@
+import { it } from "@effect/vitest";
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  PlatformError,
+  Scope,
+} from "effect";
 import { posix } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import {
   pandocCliFilter,
@@ -9,132 +19,207 @@ import {
 } from "./filter";
 import { pandocIntegrationFiles } from "./integration";
 import { savePandocIntegrationFiles } from "./integration-save";
-import type { IntegrationFileSystem } from "./integration-save";
 
 const FOLDER = "/project/pandoc";
 const FILTER_PATH = posix.join(FOLDER, PANDOC_FILTER_FILENAME);
 const DEFAULTS_PATH = posix.join(FOLDER, PANDOC_DEFAULTS_FILENAME);
 
-class MemoryFileSystem implements IntegrationFileSystem {
+class MemoryFileSystem {
   readonly files = new Map<string, string>();
   failRenameTo: string | null = null;
-  readonly rename = vi.fn(async (from: string, to: string) => {
-    if (to === this.failRenameTo) {
-      this.failRenameTo = null;
-      throw new Error(`Cannot replace ${to}`);
-    }
-    const value = this.files.get(from);
-    if (value === undefined) throw errno("ENOENT", from);
-    this.files.delete(from);
-    this.files.set(to, value);
+  readonly rename = vi.fn((from: string, to: string) =>
+    Effect.suspend(() => {
+      if (to === this.failRenameTo) {
+        this.failRenameTo = null;
+        return Effect.fail(failure("PermissionDenied", `Cannot replace ${to}`));
+      }
+      const value = this.files.get(from);
+      if (value === undefined) return Effect.fail(failure("NotFound", from));
+      this.files.delete(from);
+      this.files.set(to, value);
+      return Effect.void;
+    }),
+  );
+  readonly writeFileString = vi.fn((path: string, value: string) =>
+    Effect.suspend(() => {
+      if (this.files.has(path))
+        return Effect.fail(failure("AlreadyExists", path));
+      this.files.set(path, value);
+      return Effect.void;
+    }),
+  );
+  readonly service = FileSystem.makeNoop({
+    readFileString: (path) =>
+      Effect.suspend(() => {
+        const value = this.files.get(path);
+        return value === undefined
+          ? Effect.fail(failure("NotFound", path))
+          : Effect.succeed(value);
+      }),
+    makeTempDirectory: () =>
+      Effect.succeed(posix.join(FOLDER, ".zotlit-pandoc-test")),
+    writeFileString: this.writeFileString,
+    rename: this.rename,
+    remove: (path, options) =>
+      Effect.suspend(() => {
+        if (options?.recursive) {
+          for (const file of this.files.keys()) {
+            if (file.startsWith(`${path}/`)) this.files.delete(file);
+          }
+        } else if (!this.files.delete(path))
+          return Effect.fail(failure("NotFound", path));
+        return Effect.void;
+      }),
   });
-  readonly writeFile = vi.fn(async (path: string, value: string) => {
-    if (this.files.has(path)) throw errno("EEXIST", path);
-    this.files.set(path, value);
-  });
-  readonly unlink = vi.fn(async (path: string) => {
-    if (!this.files.delete(path)) throw errno("ENOENT", path);
-  });
-
-  async readFile(path: string): Promise<string> {
-    const value = this.files.get(path);
-    if (value === undefined) throw errno("ENOENT", path);
-    return value;
-  }
-
-  async mkdtemp(): Promise<string> {
-    return posix.join(FOLDER, ".zotlit-pandoc-test");
-  }
-
-  async rm(path: string): Promise<void> {
-    for (const file of this.files.keys()) {
-      if (file.startsWith(`${path}/`)) this.files.delete(file);
-    }
-  }
 }
 
-function errno(code: string, path: string): NodeJS.ErrnoException {
-  return Object.assign(new Error(`${code}: ${path}`), { code });
+function failure(
+  _tag: "NotFound" | "AlreadyExists" | "PermissionDenied",
+  description: string,
+) {
+  return PlatformError.systemError({
+    _tag,
+    module: "FileSystem",
+    method: "save",
+    description,
+  });
 }
 
 function save(
   fileSystem: MemoryFileSystem,
-  confirmReplacement = vi.fn(async () => true),
+  confirmReplacement = vi.fn(() => Effect.succeed(true)),
 ) {
   return savePandocIntegrationFiles({
     folder: FOLDER,
     files: pandocIntegrationFiles(),
     confirmReplacement,
-    fileSystem,
-  });
+  }).pipe(Effect.provideService(FileSystem.FileSystem, fileSystem.service));
 }
 
 describe("savePandocIntegrationFiles", () => {
-  it("cancels before writing when replacement is declined", async () => {
-    const fileSystem = new MemoryFileSystem();
-    fileSystem.files.set(FILTER_PATH, "old filter");
-    const confirmReplacement = vi.fn(async () => false);
+  it.effect(
+    "finishes the pair before its scope closes during an install (#1793)",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = new MemoryFileSystem();
+        fileSystem.files.set(FILTER_PATH, "old filter");
+        fileSystem.files.set(DEFAULTS_PATH, "old defaults");
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const service = FileSystem.makeNoop({
+          ...fileSystem.service,
+          rename: (from, to) =>
+            to === FILTER_PATH
+              ? Effect.gen(function* () {
+                  yield* Deferred.succeed(started, undefined);
+                  yield* Deferred.await(release);
+                  yield* fileSystem.rename(from, to);
+                })
+              : fileSystem.rename(from, to),
+        });
+        const scope = yield* Scope.fork(yield* Scope.Scope);
+        yield* savePandocIntegrationFiles({
+          folder: FOLDER,
+          files: pandocIntegrationFiles(),
+          confirmReplacement: () => Effect.succeed(true),
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, service),
+          Effect.forkIn(scope, { startImmediately: true }),
+        );
+        yield* Deferred.await(started);
+        const closing = yield* Scope.close(scope, Exit.void).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        expect(closing.pollUnsafe()).toBeUndefined();
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(closing);
+        expect(fileSystem.files.get(FILTER_PATH)).toBe(pandocCliFilter);
+        expect(fileSystem.files.get(DEFAULTS_PATH)).toBe(pandocDefaults);
+        expect([...fileSystem.files.keys()].sort()).toEqual(
+          [DEFAULTS_PATH, FILTER_PATH].sort(),
+        );
+      }),
+  );
 
-    await expect(save(fileSystem, confirmReplacement)).resolves.toEqual({
-      kind: "cancelled",
-    });
-    expect(confirmReplacement).toHaveBeenCalledWith([PANDOC_FILTER_FILENAME]);
-    expect(fileSystem.files.get(FILTER_PATH)).toBe("old filter");
-    expect(fileSystem.writeFile).not.toHaveBeenCalled();
-  });
+  it.effect("cancels before writing when replacement is declined", () =>
+    Effect.gen(function* () {
+      const fileSystem = new MemoryFileSystem();
+      fileSystem.files.set(FILTER_PATH, "old filter");
+      const confirmReplacement = vi.fn(() => Effect.succeed(false));
+      expect(yield* save(fileSystem, confirmReplacement)).toEqual({
+        kind: "cancelled",
+      });
+      expect(confirmReplacement).toHaveBeenCalledWith([PANDOC_FILTER_FILENAME]);
+      expect(fileSystem.files.get(FILTER_PATH)).toBe("old filter");
+      expect(fileSystem.writeFileString).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("saves the exact pair without confirmation when both targets are clear", async () => {
-    const fileSystem = new MemoryFileSystem();
-    const confirmReplacement = vi.fn(async () => true);
+  it.effect(
+    "saves the exact pair without confirmation when both targets are clear",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = new MemoryFileSystem();
+        const confirmReplacement = vi.fn(() => Effect.succeed(true));
+        expect(yield* save(fileSystem, confirmReplacement)).toEqual({
+          kind: "saved",
+          folder: FOLDER,
+        });
+        expect(confirmReplacement).not.toHaveBeenCalled();
+        expect(fileSystem.files.get(FILTER_PATH)).toBe(pandocCliFilter);
+        expect(fileSystem.files.get(DEFAULTS_PATH)).toBe(pandocDefaults);
+      }),
+  );
 
-    await expect(save(fileSystem, confirmReplacement)).resolves.toEqual({
-      kind: "saved",
-      folder: FOLDER,
-    });
-    expect(confirmReplacement).not.toHaveBeenCalled();
-    expect(fileSystem.files.get(FILTER_PATH)).toBe(pandocCliFilter);
-    expect(fileSystem.files.get(DEFAULTS_PATH)).toBe(pandocDefaults);
-  });
+  it.effect(
+    "confirms once and replaces both files when either target exists",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = new MemoryFileSystem();
+        fileSystem.files.set(DEFAULTS_PATH, "old defaults");
+        const confirmReplacement = vi.fn(() => Effect.succeed(true));
+        expect(yield* save(fileSystem, confirmReplacement)).toMatchObject({
+          kind: "saved",
+        });
+        expect(confirmReplacement).toHaveBeenCalledExactlyOnceWith([
+          PANDOC_DEFAULTS_FILENAME,
+        ]);
+        expect(fileSystem.files.get(FILTER_PATH)).toBe(pandocCliFilter);
+        expect(fileSystem.files.get(DEFAULTS_PATH)).toBe(pandocDefaults);
+      }),
+  );
 
-  it("confirms once and replaces both files when either target exists", async () => {
-    const fileSystem = new MemoryFileSystem();
-    fileSystem.files.set(DEFAULTS_PATH, "old defaults");
-    const confirmReplacement = vi.fn(async () => true);
+  it.effect("returns one failure result when replacement fails", () =>
+    Effect.gen(function* () {
+      const fileSystem = new MemoryFileSystem();
+      fileSystem.files.set(FILTER_PATH, "old filter");
+      fileSystem.files.set(DEFAULTS_PATH, "old defaults");
+      fileSystem.failRenameTo = DEFAULTS_PATH;
+      expect(yield* save(fileSystem)).toMatchObject({
+        kind: "failed",
+        restored: true,
+        error: {
+          reason: {
+            _tag: "PermissionDenied",
+            description: `Cannot replace ${DEFAULTS_PATH}`,
+          },
+        },
+      });
+    }),
+  );
 
-    await expect(save(fileSystem, confirmReplacement)).resolves.toMatchObject({
-      kind: "saved",
-    });
-    expect(confirmReplacement).toHaveBeenCalledExactlyOnceWith([
-      PANDOC_DEFAULTS_FILENAME,
-    ]);
-    expect(fileSystem.files.get(FILTER_PATH)).toBe(pandocCliFilter);
-    expect(fileSystem.files.get(DEFAULTS_PATH)).toBe(pandocDefaults);
-  });
-
-  it("returns one failure result when replacement fails", async () => {
-    const fileSystem = new MemoryFileSystem();
-    fileSystem.files.set(FILTER_PATH, "old filter");
-    fileSystem.files.set(DEFAULTS_PATH, "old defaults");
-    fileSystem.failRenameTo = DEFAULTS_PATH;
-
-    const result = await save(fileSystem);
-
-    expect(result).toMatchObject({
-      kind: "failed",
-      restored: true,
-      error: new Error(`Cannot replace ${DEFAULTS_PATH}`),
-    });
-  });
-
-  it("restores the complete prior pair after a failed replacement", async () => {
-    const fileSystem = new MemoryFileSystem();
-    fileSystem.files.set(FILTER_PATH, "old filter");
-    fileSystem.files.set(DEFAULTS_PATH, "old defaults");
-    fileSystem.failRenameTo = DEFAULTS_PATH;
-
-    await save(fileSystem);
-
-    expect(fileSystem.files.get(FILTER_PATH)).toBe("old filter");
-    expect(fileSystem.files.get(DEFAULTS_PATH)).toBe("old defaults");
-  });
+  it.effect("restores the complete prior pair after a failed replacement", () =>
+    Effect.gen(function* () {
+      const fileSystem = new MemoryFileSystem();
+      fileSystem.files.set(FILTER_PATH, "old filter");
+      fileSystem.files.set(DEFAULTS_PATH, "old defaults");
+      fileSystem.failRenameTo = DEFAULTS_PATH;
+      yield* save(fileSystem);
+      expect(fileSystem.files.get(FILTER_PATH)).toBe("old filter");
+      expect(fileSystem.files.get(DEFAULTS_PATH)).toBe("old defaults");
+      expect([...fileSystem.files.keys()].sort()).toEqual(
+        [DEFAULTS_PATH, FILTER_PATH].sort(),
+      );
+    }),
+  );
 });

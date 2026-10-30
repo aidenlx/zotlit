@@ -34,14 +34,14 @@ const execFileAsync = promisify(execFile);
  * fixes both the managed install and the schema era the Fixture targets.
  */
 export const PINNED_ZOTERO_VERSION = "10.0";
-export const PINNED_BETTER_BIBTEX_VERSION = "9.0.55";
+export const PINNED_BETTER_BIBTEX_VERSION = "9.0.64";
 
 export const ZOTERO_APP_ENV = "ZOTERO_APP";
 
 const DOWNLOAD_ROOT = `https://download.zotero.org/client/release/${PINNED_ZOTERO_VERSION}`;
 const BETTER_BIBTEX_ADDON_ID = "better-bibtex@iris-advies.com";
 const BETTER_BIBTEX_SHA256 =
-  "2d914ebb174c2c590ecff741a6903f1979065b42740f301d938ec2cb6c03e4d6";
+  "84c4b5b05ffac9a9c7e2ff79663612486f7781690dd59b12a1e62aecdcfa7c27";
 const BETTER_BIBTEX_ARCHIVE = `zotero-better-bibtex-${PINNED_BETTER_BIBTEX_VERSION}.xpi`;
 const BETTER_BIBTEX_DOWNLOAD_URL = `https://github.com/retorquere/zotero-better-bibtex/releases/download/v${PINNED_BETTER_BIBTEX_VERSION}/${BETTER_BIBTEX_ARCHIVE}`;
 
@@ -363,6 +363,20 @@ export const QUIET_FIRST_RUN_PREFS = [
   'user_pref("app.update.auto", false);',
 ] as const;
 
+/**
+ * What Zotero asks before it hands an `obsidian://` link to Obsidian: a
+ * confirmation dialog, on every click of a ZotLit backlink. Gecko reads
+ * `network.protocol-handler.external.<scheme>` as standing permission for that
+ * scheme, so the Fixture grants it and a smoke test reaches the vault in one
+ * click. The same preference is what the how-to asks a reader to add by hand.
+ *
+ * @see {@link https://searchfox.org/mozilla-central/source/uriloader/exthandler/ContentDispatchChooser.sys.mjs}
+ * for `_hasProtocolHandlerPermission`, which reads this preference.
+ */
+export const OBSIDIAN_PROTOCOL_PREFS = [
+  'user_pref("network.protocol-handler.external.obsidian", true);',
+] as const;
+
 /** The profile and data directory a Zotero process opens. */
 export interface ZoteroTarget {
   profileDir: string;
@@ -436,6 +450,13 @@ export function spawnZotero(
 export interface PairedZotero {
   applicationDir: string;
   pid: number;
+  /**
+   * The remote debugging port this instance listens on, for evaluating JS in
+   * Zotero's parent process (`packages/scripts/scripts/zotero-rdp.ts`). A
+   * Paired Run reports it; {@link launchPairedZotero} starts Zotero without a
+   * debugger, so it reports none.
+   */
+  debuggerPort?: number;
 }
 
 /**

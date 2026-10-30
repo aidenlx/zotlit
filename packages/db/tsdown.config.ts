@@ -1,27 +1,34 @@
-import { defineConfig } from "tsdown";
+import { defineLibrary } from "@zotlit/config/tsdown";
 
-export default defineConfig({
+import { CONTRACT_ROOTS } from "./src/contract/roots.ts";
+
+export default defineLibrary({
   entry: [
     {
       index: "./src/index.ts",
       "client/*": "./src/client/*.ts",
       "contract/ir": "./src/contract/ir.ts",
+      "item-query": "./src/item-query/index.ts",
       path: "./src/lib/zt-path.ts",
       "test-utils": "./src/test-utils.ts",
+      "test-scenario": "./src/test-scenario/index.ts",
     },
   ],
   tsconfig: "./tsconfig.lib.json",
   dts: true,
   exports: {
+    // The committed contract artifacts ship as JSON, so they are published
+    // from source rather than bundled. One schema per root, read from the
+    // registry the generator emits from, so a new root cannot land unpublished.
     customExports: {
       "./contract/ir.json": "./src/contract/generated/ir.json",
       "./contract/ir.runtime.json": "./src/contract/generated/ir.runtime.json",
-      "./contract/annotation.schema.json":
-        "./src/contract/generated/annotation.schema.json",
-      "./contract/filename.schema.json":
-        "./src/contract/generated/filename.schema.json",
-      "./contract/note.schema.json":
-        "./src/contract/generated/note.schema.json",
+      ...Object.fromEntries(
+        CONTRACT_ROOTS.map((root) => [
+          `./contract/${root}.schema.json`,
+          `./src/contract/generated/${root}.schema.json`,
+        ]),
+      ),
     },
   },
   unbundle: true,

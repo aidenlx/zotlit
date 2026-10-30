@@ -1,20 +1,34 @@
+import { Effect, Queue, Stream } from "effect";
 import type {
   DropdownComponent,
+  ExtraButtonComponent,
   Setting,
   SettingDefinitionItem,
   SettingDefinitionPage,
 } from "obsidian";
 
+import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
+import { ANNOTATION_SUGGESTER_ENABLED } from "@/lib/constants";
+import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
+import { listInstalledStyles } from "@/services/pandoc/installed-styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
-import type { HoverAction } from "@/services/settings/schema";
-import { RESET_SETTING } from "@/services/settings/service";
+import { defaults } from "@/services/settings/schema";
+import type { HoverAction, Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
+import { resolvedChanged, ZoteroPref } from "@/services/zotero-pref/service";
+import { annotationTriggerError } from "@/views/citation-suggest/annotation-trigger";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+import { zoteroDataDir } from "./database";
+import { paintEach } from "./effect-tab";
 import { pandocEngineDefinition } from "./pandoc-engine";
 import { pandocIntegrationDefinition } from "./pandoc-integration";
+import { citationTextItems } from "./templates";
+
+const currentSettings = PluginSettings.use((settings) => settings.current);
 
 /** Items for the "Citations" sub-page. */
 export function citationsPageItems(
@@ -23,21 +37,25 @@ export function citationsPageItems(
   return [
     {
       type: "group",
+      id: "settings_citation_suggestions",
       heading: m.settings_citation_suggestions_heading(),
       items: [
         {
+          id: "settings_citation_suggester",
           name: m.settings_citation_suggester_name(),
           desc: m.settings_citation_suggester_desc(),
           control: { type: "toggle", key: "citation.editor-suggester" },
         },
         {
+          id: "settings_citation_at_trigger",
           name: m.settings_citation_at_trigger_name(),
           desc: m.settings_citation_at_trigger_desc(),
           visible: () =>
-            ctx.settings.current?.["citation.editor-suggester"] ?? true,
+            ctx.tab.sync(currentSettings)["citation.editor-suggester"],
           control: { type: "toggle", key: "citation.at-trigger" },
         },
         {
+          id: "settings_citation_show_citekey",
           name: m.settings_citation_show_citekey_name(),
           desc: m.settings_citation_show_citekey_desc(),
           control: {
@@ -45,34 +63,83 @@ export function citationsPageItems(
             key: "citation.show-citekey-in-suggester",
           },
         },
+        ...(ANNOTATION_SUGGESTER_ENABLED
+          ? [
+              {
+                id: "settings_citation_annotation_trigger",
+                name: m.settings_citation_annotation_trigger_name(),
+                desc: m.settings_citation_annotation_trigger_desc(),
+                control: {
+                  type: "text",
+                  key: "citation.annotation-trigger",
+                  placeholder: defaults["citation.annotation-trigger"],
+                  validate: annotationTriggerError,
+                },
+              } satisfies SettingDefinitionItem<SettingsKey>,
+            ]
+          : []),
       ],
     },
     {
       type: "group",
+      id: "settings_citation_sources",
       heading: m.settings_citation_sources_heading(),
       items: [
         {
+          id: "settings_citation_pandoc_citations",
           name: m.settings_citation_pandoc_citations_name(),
           desc: m.settings_citation_pandoc_citations_desc(),
           control: { type: "toggle", key: "citation.pandoc-citations" },
         },
         {
+          id: "settings_citation_wikilink_citations",
           name: m.settings_citation_wikilink_citations_name(),
           desc: m.settings_citation_wikilink_citations_desc(),
           control: { type: "toggle", key: "citation.wikilink-citations" },
+        },
+        {
+          id: "settings_citation_annotation_citations",
+          name: m.settings_citation_annotation_citations_name(),
+          desc: m.settings_citation_annotation_citations_desc(),
+          control: { type: "toggle", key: "citation.annotation-citations" },
         },
       ],
     },
     {
       type: "group",
+      id: "settings_citation_graph_heading",
+      heading: m.settings_citation_graph_heading(),
+      items: [
+        {
+          id: "settings_citation_graph",
+          name: m.settings_citation_graph_name(),
+          desc: graphCitationsDescription(ctx),
+          control: { type: "toggle", key: "citation.graph-citations" },
+        },
+      ],
+    },
+    {
+      type: "group",
+      id: "settings_citation_editor",
       heading: m.settings_citation_editor_heading(),
       items: [
         {
+          id: "settings_citation_show_formatted",
           name: m.settings_citation_show_formatted_name(),
           desc: m.settings_citation_show_formatted_desc(),
           control: { type: "toggle", key: "citation.show-formatted" },
         },
         {
+          id: "settings_citation_render_annotation_citations",
+          name: m.settings_citation_render_annotation_citations_name(),
+          desc: m.settings_citation_render_annotation_citations_desc(),
+          control: {
+            type: "toggle",
+            key: "citation.render-annotation-citations",
+          },
+        },
+        {
+          id: "settings_citation_open_as_links",
           name: m.settings_citation_open_as_links_name(),
           desc: m.settings_citation_open_as_links_desc(),
           control: { type: "toggle", key: "citation.open-as-links" },
@@ -81,9 +148,11 @@ export function citationsPageItems(
     },
     {
       type: "group",
+      id: "settings_citation_hover",
       heading: m.settings_citation_hover_heading(),
       items: [
         {
+          id: "settings_citation_hover_action",
           name: m.settings_citation_hover_action_name(),
           desc: m.settings_citation_hover_action_desc(),
           control: {
@@ -97,14 +166,11 @@ export function citationsPageItems(
     },
     {
       type: "group",
+      id: "settings_citation_references",
       heading: m.settings_citation_references_heading(),
       items: [
         {
-          name: m.settings_citation_references_style_name(),
-          desc: referencesStyleDescription(false),
-          render: (setting) => renderReferencesStyleRow(setting, ctx),
-        },
-        {
+          id: "settings_citation_locale",
           name: m.settings_citation_locale_name(),
           desc: m.settings_citation_locale_desc(),
           control: {
@@ -119,8 +185,32 @@ export function citationsPageItems(
         pandocEngineDefinition(ctx),
       ],
     },
+    ...citationTextItems(ctx),
     pandocIntegrationDefinition(ctx),
   ];
+}
+
+/** The default Profile's Citation and References Style control. */
+export function referencesStyleDefinition(
+  ctx: SettingTabContext,
+): SettingDefinitionItem<SettingsKey> {
+  return {
+    id: "settings_citation_references_style",
+    name: m.settings_citation_references_style_name(),
+    desc: referencesStyleDescription(false),
+    render: (setting) => renderReferencesStyleRow(setting, ctx),
+  };
+}
+
+/**
+ * Names the Graph view core plugin while it is disabled, since the toggle
+ * then changes nothing on screen. Read at build time: the page is rebuilt on
+ * every open, which is when a core-plugin change can reach it.
+ */
+function graphCitationsDescription(ctx: SettingTabContext): string {
+  return ctx.app.internalPlugins.getEnabledPluginById(GRAPH_CORE_PLUGIN_ID)
+    ? m.settings_citation_graph_desc()
+    : m.settings_citation_graph_desc_disabled();
 }
 
 /** The Hover Action choices, in the order the select offers them. */
@@ -132,27 +222,35 @@ function hoverActionOptions(): Record<HoverAction, string> {
   };
 }
 
-/** The Require Mod toggle of each editing mode, in editing-mode order. */
+/** The Require Mod toggles for editing modes and graph views. */
 const REQUIRE_MOD_KEYS = [
   [
     "citation.hover-require-mod-source",
+    "settings_citation_hover_mod_source",
     m.settings_citation_hover_mod_source_name,
   ],
   [
     "citation.hover-require-mod-live-preview",
+    "settings_citation_hover_mod_live_preview",
     m.settings_citation_hover_mod_live_preview_name,
   ],
   [
     "citation.hover-require-mod-reading",
+    "settings_citation_hover_mod_reading",
     m.settings_citation_hover_mod_reading_name,
   ],
-] as const satisfies readonly (readonly [SettingsKey, () => string])[];
+  [
+    "citation.hover-require-mod-graph",
+    "settings_citation_hover_mod_graph",
+    m.settings_citation_hover_mod_graph_name,
+  ],
+] as const satisfies readonly (readonly [SettingsKey, string, () => string])[];
 
 /**
- * The Require Mod toggles, on a sub-page of their own that lists one editing
- * mode per row, like the Page preview plugin lists one hover source per row.
+ * The Require Mod toggles, on a sub-page of their own that lists one hover
+ * surface per row, like the Page preview plugin lists one hover source per row.
  * The page's own title names the list, so the rows carry the requirement in the
- * page description instead of repeating it three times.
+ * page description instead of repeating it on each row.
  *
  * The toggles gate the Citation Popover alone — under Page preview the Page
  * preview plugin's own settings own that gate, and under Off there is nothing
@@ -163,12 +261,13 @@ function requireModPage(
 ): SettingDefinitionPage<SettingsKey> {
   return {
     type: "page",
+    id: "settings_citation_hover_mod_page",
     name: m.settings_citation_hover_mod_page_name(),
     desc: m.settings_citation_hover_mod_desc(),
     visible: () =>
-      (ctx.settings.current?.["citation.hover-action"] ?? "popover") ===
-      "popover",
-    items: REQUIRE_MOD_KEYS.map(([key, name]) => ({
+      ctx.tab.sync(currentSettings)["citation.hover-action"] === "popover",
+    items: REQUIRE_MOD_KEYS.map(([key, id, name]) => ({
+      id,
       name: name(),
       control: { type: "toggle", key },
     })),
@@ -184,42 +283,6 @@ export function citationLocaleError(locale: string): string | undefined {
   return m.settings_citation_locale_invalid();
 }
 
-/** Dropdown sentinel for the embedded default style; a style ID is never empty. */
-export const STYLE_DEFAULT = "";
-
-/** One entry of the Citation and References Style picker. */
-export interface ReferencesStyleOption {
-  value: string;
-  label: string;
-  /** An entry the picker shows and refuses to take as a selection of its own. */
-  disabled?: boolean;
-}
-
-/**
- * The picker entries: the embedded default first, then the installed styles.
- * A selection Zotero no longer has keeps an entry of its own, so it stays
- * selected and visible until the user picks another style.
- */
-export function referencesStyleOptions(
-  styles: readonly InstalledCslStyle[],
-  selected: string,
-): ReferencesStyleOption[] {
-  const options: ReferencesStyleOption[] = [
-    {
-      value: STYLE_DEFAULT,
-      label: m.settings_citation_references_style_default(),
-    },
-    ...styles.map((style) => ({ value: style.id, label: style.title })),
-  ];
-  if (selected !== STYLE_DEFAULT && !styles.some((s) => s.id === selected)) {
-    options.push({
-      value: selected,
-      label: m.settings_citation_references_style_missing({ id: selected }),
-    });
-  }
-  return options;
-}
-
 /**
  * Citation and References Style picker, listing the styles installed in the Zotero data
  * directory. Zotero owns style installation, so the list is read-only, and the
@@ -230,22 +293,17 @@ function renderReferencesStyleRow(
   setting: Setting,
   ctx: SettingTabContext,
 ): () => void {
-  const stack = new DisposableStack();
-
   let dropdown: DropdownComponent | undefined;
   let styles: readonly InstalledCslStyle[] = [];
   let stylesLoaded = false;
-  let disposed = false;
-  stack.defer(() => {
-    disposed = true;
-  });
 
-  const selectedValue = (): string =>
-    ctx.settings.current?.["citation.references-style"] ?? STYLE_DEFAULT;
+  const selectedValue = (current: Readonly<Settings>): string =>
+    current["note.default-profile"].bindings["citation.references-style"] ??
+    STYLE_DEFAULT;
 
-  const repopulate = (): void => {
+  const repopulate = (settings: Readonly<Settings>): void => {
     if (!dropdown) return;
-    const current = selectedValue();
+    const current = selectedValue(settings);
     setting.setDesc(
       referencesStyleDescription(
         stylesLoaded &&
@@ -260,51 +318,80 @@ function renderReferencesStyleRow(
     dropdown.setValue(current);
   };
 
-  /**
-   * The read outlives the row only until disposal, so a live row always fills.
-   * Only the newest read applies, so overlapping reloads cannot land stale.
-   */
-  let latestRead = 0;
-  const reload = (): void => {
-    const read = ++latestRead;
-    void listInstalledStyles(ctx.zoteroPref.dataDir).then((installed) => {
-      if (disposed || read !== latestRead) return;
-      styles = installed;
-      stylesLoaded = true;
-      repopulate();
-    });
-  };
-
   // Zotero installs styles while this tab stays open, so the list re-reads the
   // data directory on demand instead of only on mount.
-  setting.addExtraButton((button) =>
-    button
+  let refresh: ExtraButtonComponent | undefined;
+  setting.addExtraButton((button) => {
+    refresh = button
       .setIcon("refresh-cw")
-      .setTooltip(m.settings_citation_references_style_refresh())
-      .onClick(reload),
-  );
+      .setTooltip(m.settings_citation_references_style_refresh());
+  });
 
   setting.addDropdown((d) => {
     dropdown = d;
     d.onChange((value) => {
-      ctx.settings.update({
-        "citation.references-style":
-          value === STYLE_DEFAULT ? RESET_SETTING : value,
-      });
+      void ctx.tab.run(
+        PluginSettings.use((settings) =>
+          settings.updateDefaultLiteratureNoteProfileBindings({
+            "citation.references-style": value === STYLE_DEFAULT ? null : value,
+          }),
+        ),
+        m.settings_failed_save(),
+      );
     });
-    repopulate();
+    repopulate(ctx.tab.sync(currentSettings));
   });
 
-  reload();
-  stack.defer(ctx.zoteroPref.on("resolved-changed", reload));
-  stack.defer(
-    ctx.settings.subscribe(() => {
-      if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
+  return ctx.tab.mount(
+    Effect.gen(function* () {
+      const settings = yield* PluginSettings;
+      const pref = yield* ZoteroPref;
+      const reloads = yield* Queue.unbounded<void>();
+      refresh?.onClick(() => Queue.offerUnsafe(reloads, undefined));
+
+      yield* Effect.forkScoped(
+        paintEach(settings.changes, (current) => {
+          if (dropdown && dropdown.getValue() !== selectedValue(current))
+            repopulate(current);
+        }),
+      );
+      // The list reads the data directory on mount, on Refresh, and when the
+      // directory moves; a newer read drops the one still in flight.
+      yield* Stream.merge(
+        Stream.make(undefined),
+        Stream.merge(resolvedChanged(pref), Stream.fromQueue(reloads)),
+      ).pipe(
+        // A failed read keeps the last list, so the row stays live.
+        Stream.switchMap(() =>
+          Stream.fromEffect(
+            installedStyles.pipe(
+              recover(
+                (cause) =>
+                  Effect.logWarning(
+                    "Cannot read the installed CSL styles",
+                    cause,
+                  ),
+                Effect.sync(() => styles),
+              ),
+            ),
+          ),
+        ),
+        Stream.runForEach((installed) =>
+          Effect.map(settings.current, (current) => {
+            styles = installed;
+            stylesLoaded = true;
+            repopulate(current);
+          }),
+        ),
+      );
     }),
   );
-
-  return () => stack.dispose();
 }
+
+/** The CSL styles installed in the current Zotero data directory. */
+const installedStyles = Effect.flatMap(zoteroDataDir, (dataDir) =>
+  listInstalledStyles(dataDir),
+);
 
 export function referencesStyleDescription(missing: boolean): DocumentFragment {
   const desc = createFragment();

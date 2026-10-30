@@ -2,22 +2,39 @@
 // decision taken against it while rendering, and the copy-time confirmation
 // that catches what a string cannot express (ADR 0019).
 
-import { constants } from "node:fs";
-import { open, realpath, stat } from "node:fs/promises";
+import { Effect, FileSystem } from "effect";
+import type { PlatformError, Scope } from "effect";
+import { realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
+import { isCaseInsensitivePlatform } from "@zotlit/db/path";
+
 import type { AttachmentCopySource } from "@/lib/copy-attachments";
-import { isErrno } from "@/lib/errno";
+import { withLogCategory } from "@/lib/effect-log";
+import { isErrno, nodeFileSystemCall } from "@/lib/errno";
+
+const logged = withLogCategory("attachment-import");
 
 /**
- * Read-only open that refuses a symbolic link at the final component. The path
- * being opened is already canonical, so a link there appeared after the
- * canonicalization and is an escape attempt. `O_NOFOLLOW` is POSIX-only.
+ * Whether the confirming open refuses a symbolic link at the final component.
+ * The path being opened is already canonical, so a link there appeared after
+ * the canonicalization and is an escape attempt. `FileSystem` supports
+ * `noFollow` on POSIX only, and fails it on Windows.
  */
-const OPEN_CONFIRMED =
-  process.platform === "win32"
-    ? constants.O_RDONLY
-    : constants.O_RDONLY | constants.O_NOFOLLOW;
+const OPEN_NO_FOLLOW = process.platform !== "win32";
+
+/**
+ * Resolve `path` through every symbolic link with the native `realpath`, which
+ * returns the letter case and long form stored on disk; `FileSystem.realPath`
+ * keeps the case it was given. Two spellings of one folder then give one
+ * canonical path, so one folder approved twice is one record. A failure is the
+ * `PlatformError` `FileSystem` would give: `NotFound`, or `BadResource` with
+ * the errno in `cause`.
+ */
+const nativeRealPath = (
+  path: string,
+): Effect.Effect<string, PlatformError.PlatformError> =>
+  nodeFileSystemCall("realPath", path, () => realpath(path));
 
 /**
  * Where an approved source's bytes came from. It selects the copy strategy:
@@ -137,34 +154,44 @@ export interface RootSources {
  * canonicalizes to itself, so a folder later replaced by a link to another
  * location drops the grant instead of moving it to the link's target.
  */
-export async function buildCanonicalRoots(
+export const buildCanonicalRoots = Effect.fnUntraced(function* (
   sources: RootSources,
-): Promise<CanonicalRoots> {
-  const [storage, annotationCache, base, approved] = await Promise.all([
-    trustedRoot(join(sources.dataDir, "storage")),
-    trustedRoot(join(sources.dataDir, "cache")),
-    sources.baseAttachmentPath === null
-      ? null
-      : trustedRoot(sources.baseAttachmentPath),
-    Promise.all(sources.approvedFolders.map(approvedRoot)),
-  ]);
-  return {
+  platform: NodeJS.Platform,
+) {
+  const [storage, annotationCache, base, approved] = yield* Effect.all(
+    [
+      trustedRoot(join(sources.dataDir, "storage")),
+      trustedRoot(join(sources.dataDir, "cache")),
+      sources.baseAttachmentPath === null
+        ? Effect.succeed(null)
+        : trustedRoot(sources.baseAttachmentPath),
+      Effect.forEach(
+        sources.approvedFolders,
+        (folder) => approvedRoot(folder),
+        {
+          concurrency: "unbounded",
+        },
+      ),
+    ],
+    { concurrency: "unbounded" },
+  );
+  const roots: CanonicalRoots = {
     storage,
     annotationCache,
     base,
     approved: approved.filter((root) => root !== null),
-    caseInsensitive:
-      process.platform === "darwin" || process.platform === "win32",
+    caseInsensitive: isCaseInsensitivePlatform(platform),
   };
-}
+  return roots;
+});
 
 /**
  * Decide whether `path` may be read as an attachment source. Synchronous and
- * memory-only by design: it runs inside link resolution, which renders a
- * template and populates a `dragstart` data transfer, neither of which can
- * await. The string check is complete for a hostile Zotero row, because the
- * pure layer in `@zotlit/db` already rejected every separator and parent
- * segment; a symbolic link on disk is left to {@link confirmSource}.
+ * memory-only by design: it runs inside link resolution during a template
+ * render, which cannot await. The string check is complete for a hostile
+ * Zotero row, because the pure layer in `@zotlit/db` already rejected every
+ * separator and parent segment; a symbolic link on disk is left to
+ * {@link confirmSource}.
  */
 export function decideSource(
   path: string,
@@ -207,37 +234,60 @@ export type ConfirmedSource =
  *
  * @returns The confirmed source in the form its origin copies from — a
  *   canonical path for a Zotero-managed origin, an open descriptor for a
- *   linked file. The caller owns the descriptor and closes it.
+ *   linked file. The Scope owns the descriptor and closes it.
  */
-export async function confirmSource(
+export const confirmSource = Effect.fnUntraced(function* (
   source: { path: string; root: string; origin: SourceOrigin },
   caseInsensitive: boolean,
-): Promise<ConfirmedSource> {
-  try {
-    const canonical = await realpath(source.path);
-    if (!(await stat(canonical)).isFile()) {
-      return { status: "refused", reason: "not-a-regular-file" };
-    }
-    if (!isInside(source.root, canonical, caseInsensitive)) {
-      return { status: "refused", reason: "escaped-root" };
-    }
-    if (!readsFromDescriptor(source.origin)) {
-      return { status: "confirmed", source: { kind: "path", path: canonical } };
-    }
-    const handle = await open(canonical, OPEN_CONFIRMED);
-    return { status: "confirmed", source: { kind: "handle", handle } };
-  } catch (error) {
-    if (isErrno(error, "ENOENT") || isErrno(error, "ENOTDIR")) {
-      return { status: "missing" };
-    }
-    // `OPEN_CONFIRMED` refused a symbolic link that took the canonical path's
-    // place after it was checked.
-    if (isErrno(error, "ELOOP")) {
-      return { status: "refused", reason: "escaped-root" };
-    }
-    throw error;
+): Effect.fn.Return<
+  ConfirmedSource,
+  PlatformError.PlatformError,
+  FileSystem.FileSystem | Scope.Scope
+> {
+  const fs = yield* FileSystem.FileSystem;
+  const located = yield* Effect.gen(function* () {
+    const canonical = yield* nativeRealPath(source.path);
+    const { type } = yield* fs.stat(canonical);
+    return { canonical, type };
+  }).pipe(
+    Effect.catchReason("PlatformError", "NotFound", () =>
+      Effect.succeed(MISSING),
+    ),
+    // `ENOTDIR` (a file where a folder belongs) leaves nothing to read; a
+    // link cycle (`ELOOP`) is refused as an escape.
+    Effect.catchReason("PlatformError", "BadResource", (reason) =>
+      Effect.succeed(isErrno(reason.cause, "ELOOP") ? ESCAPED : MISSING),
+    ),
+  );
+  if ("status" in located) return located;
+  const { canonical, type } = located;
+  if (type !== "File") {
+    return { status: "refused", reason: "not-a-regular-file" };
   }
-}
+  if (!isInside(source.root, canonical, caseInsensitive)) return ESCAPED;
+  if (!readsFromDescriptor(source.origin)) {
+    return { status: "confirmed", source: { kind: "path", path: canonical } };
+  }
+  return yield* fs.open(canonical, { noFollow: OPEN_NO_FOLLOW }).pipe(
+    Effect.map((handle): ConfirmedSource => ({
+      status: "confirmed",
+      source: { kind: "handle", handle },
+    })),
+    Effect.catchReason("PlatformError", "NotFound", () =>
+      Effect.succeed(MISSING),
+    ),
+    Effect.catchReason("PlatformError", "BadResource", (reason, error) => {
+      // `noFollow` refused a symbolic link that took the canonical path's
+      // place after it was checked.
+      if (isErrno(reason.cause, "ELOOP")) return Effect.succeed(ESCAPED);
+      if (isErrno(reason.cause, "ENOTDIR")) return Effect.succeed(MISSING);
+      return Effect.fail(error);
+    }),
+  );
+});
+
+const MISSING: ConfirmedSource = { status: "missing" };
+const ESCAPED: ConfirmedSource = { status: "refused", reason: "escaped-root" };
 
 /**
  * Whether an origin's copy reads from the descriptor opened at confirmation
@@ -311,10 +361,30 @@ function approve(
   return source;
 }
 
-async function trustedRoot(declared: string): Promise<CanonicalRoot | null> {
-  const canonical = await canonicalize(declared);
-  return canonical === null ? null : { declared, canonical };
-}
+const trustedRoot = (declared: string) =>
+  canonicalize(declared).pipe(
+    Effect.map((canonical): CanonicalRoot | null =>
+      canonical === null ? null : { declared, canonical },
+    ),
+    dropUnreadable,
+  );
+
+/**
+ * A root that exists but cannot be read, as one the user may not search,
+ * drops out of the snapshot like one that does not resolve; a log names why.
+ */
+const dropUnreadable = <A>(
+  root: Effect.Effect<A | null, PlatformError.PlatformError>,
+): Effect.Effect<A | null> =>
+  root.pipe(
+    Effect.catchTag("PlatformError", (error) =>
+      Effect.logWarning("Dropped an attachment root that cannot be read").pipe(
+        Effect.annotateLogs({ reason: error.reason._tag }),
+        logged,
+        Effect.as(null),
+      ),
+    ),
+  );
 
 /**
  * Re-canonicalize a stored approval. A record holds the folder's canonical
@@ -322,23 +392,30 @@ async function trustedRoot(declared: string): Promise<CanonicalRoot | null> {
  * after the grant: the approval leaves the snapshot entirely, granting neither
  * the path the user approved nor the link's target.
  */
-async function approvedRoot(folder: string): Promise<CanonicalRoot | null> {
-  const canonical = await canonicalize(folder);
-  return canonical === folder ? { declared: folder, canonical: folder } : null;
-}
+const approvedRoot = (folder: string) =>
+  canonicalize(folder).pipe(
+    Effect.map((canonical): CanonicalRoot | null =>
+      canonical === folder ? { declared: folder, canonical: folder } : null,
+    ),
+    dropUnreadable,
+  );
 
 /**
  * Resolve `path` through every symbolic link, or `null` when it does not
- * resolve. Also how an approved folder is reduced to the canonical form the
- * record holds.
+ * resolve: it is absent (`NotFound`), or a file or a link cycle stands in it
+ * (`BadResource`). Also how an approved folder is reduced to the canonical
+ * form the record holds. Fails with any other reason, such as
+ * `PermissionDenied`.
  */
-export async function canonicalize(path: string): Promise<string | null> {
-  try {
-    return await realpath(path);
-  } catch {
-    return null;
-  }
-}
+export const canonicalize = (
+  path: string,
+): Effect.Effect<string | null, PlatformError.PlatformError> =>
+  nativeRealPath(path).pipe(
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null)),
+    Effect.catchReason("PlatformError", "BadResource", () =>
+      Effect.succeed(null),
+    ),
+  );
 
 function fold(path: string, caseInsensitive: boolean): string {
   return caseInsensitive ? path.toLowerCase() : path;

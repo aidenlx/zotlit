@@ -29,7 +29,8 @@ Variables for Obsidian's app shell — ribbon, sidebar, status bar, dividers, sc
 | `--status-bar-text-color` | Text color |
 | `--status-bar-position` | `position` property |
 | `--status-bar-radius` | Corner radius |
-| `--status-bar-scroll-padding` | Scroll padding |
+
+With the default `--status-bar-position: fixed`, the bar overlays the bottom-right of every pane under it. A scrolling list clears it with end padding and `scroll-padding-bottom` on its own scroll box, so the last item scrolls clear of the bar.
 
 ## Dividers / resize handles
 
@@ -50,6 +51,12 @@ Between sidebars, tabs, and split panes.
 | `--scrollbar-bg` | Track background |
 | `--scrollbar-thumb-bg` | Thumb background |
 | `--scrollbar-active-thumb-bg` | Active thumb background |
+
+## Scroll containers
+
+- **Overlay scrollbar.** On macOS the scrollbar is the native overlay one (`body.styled-scrollbars` is off), painted as part of the scroll box: a `mask-image` or `opacity` on the box fades the scrollbar with the content. Fade an edge with a sticky child of the scrolled content instead; the scrollbar draws over it.
+- **Pane background.** A leaf paints `--background-primary` under `.mod-root` — the main area and every popout window — and `--background-secondary` in a sidebar dock. A strip that blends into the pane picks between the two with a `zt:[.mod-root_&]:` variant.
+- **Sticky offset.** A sticky child stops at the inner edge of the scroll box's padding; a negative `top` equal to the padding pins it to the visible edge.
 
 ## Window frame & title bar
 

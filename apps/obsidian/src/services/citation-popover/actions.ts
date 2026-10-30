@@ -1,17 +1,16 @@
-// What a Citation Popover entry can do: reach its Literature Note, its Zotero Item, and its Attachments.
+// What a Citation Popover entry can do: reach its Literature Note, its Zotero Item, its row in the Library View, and its Attachments.
 
 import { Keymap } from "obsidian";
 import type { MouseEvent } from "react";
 
-import { itemSelectUri } from "@zotlit/db";
+import { formatIndexedKey, itemSelectUri } from "@zotlit/db";
 
-import { openAttachments } from "@/lib/attachment-open";
-import { getLogger } from "@/lib/log";
+import { openAttachments, zoteroAttachmentReader } from "@/lib/attachment-open";
+import type { MenuAnchor } from "@/lib/menu";
+import type { WorkspaceEventHost } from "@/lib/obsidian-workspace";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
 import type { CitationEntryBlock } from "./blocks";
-
-const logger = getLogger("citation-popover");
 
 export interface CitationPopoverActions {
   /**
@@ -20,6 +19,7 @@ export interface CitationPopoverActions {
    */
   onOpenNote: (block: CitationEntryBlock, event: MouseEvent) => void;
   onOpenInZotero: (block: CitationEntryBlock) => void;
+  onShowInLibrary: (block: CitationEntryBlock) => void;
   /**
    * Open the work's Attachment in Zotero's reader: one opens straight away,
    * several offer a menu.
@@ -27,44 +27,111 @@ export interface CitationPopoverActions {
   onOpenAttachment: (block: CitationEntryBlock, event: MouseEvent) => void;
   /** Every action leaves the popover closed over what it just opened. */
   onDone: () => void;
+  onSwitchProfile: (path: string) => void;
 }
 
 export interface CitationPopoverActionDeps {
+  /** Raises the Attachment menu on its workspace. */
+  host: WorkspaceEventHost;
   /** The open-or-create flow the hovering surface carries. */
-  open: (citekey: string, pane: NavigationPane) => void;
+  open: (block: CitationEntryBlock, pane: NavigationPane) => void;
   /** Hide the popover the entries are shown in. */
   hide: () => void;
+  /** Open the Library View on the Item `indexedKey`. */
+  showInLibrary: (indexedKey: string) => void;
+  switchProfile: (path: string) => void;
+  /** Refresh source-less Item availability before any action. */
+  prepare?: (block: CitationEntryBlock) => Promise<CitationEntryBlock | null>;
+  log(level: "debug", message: string, fields: Record<string, unknown>): void;
 }
 
 export function createCitationPopoverActions({
+  host,
   open,
   hide,
+  showInLibrary,
+  switchProfile,
+  prepare,
+  log,
 }: CitationPopoverActionDeps): CitationPopoverActions {
+  /** Whether the last action ran; `onDone` hides only after one that did. */
+  let completed: boolean | Promise<boolean> = true;
+  /**
+   * Run `action` on the block as it stands now. Without `prepare` the action
+   * runs at once; with it, once the fresh read settles.
+   */
+  const act = (
+    block: CitationEntryBlock,
+    action: (current: CitationEntryBlock) => void,
+  ): void => {
+    if (!prepare) {
+      action(block);
+      completed = true;
+      return;
+    }
+    completed = prepare(block).then((current) => {
+      if (current) action(current);
+      return current !== null;
+    });
+  };
   return {
     onOpenNote(block, event) {
       const pane = navigationPaneOf(event);
-      logger.debug("Citation popover opens note", {
-        citekey: block.citekey,
-        pane,
+      act(block, (current) => {
+        log("debug", "Citation popover opens note", {
+          citekey: block.citekey,
+          pane,
+        });
+        open(current, pane);
       });
-      open(block.citekey, pane);
     },
     onOpenInZotero(block) {
-      // No reachability guard: the entry only shows because the Item resolved,
-      // and a Zotero-side deletion in between fails soft inside Zotero.
-      logger.debug("Citation popover selects in Zotero", {
-        itemKey: block.itemKey,
+      act(block, (current) => {
+        log("debug", "Citation popover selects in Zotero", {
+          itemKey: block.itemKey,
+        });
+        window.open(itemSelectUri(current.itemKey, current.groupID));
       });
-      window.open(itemSelectUri(block.itemKey, block.groupID));
+    },
+    onShowInLibrary(block) {
+      act(block, (current) => {
+        log("debug", "Citation popover shows in Library", {
+          itemKey: block.itemKey,
+        });
+        showInLibrary(formatIndexedKey(current.itemKey, current.groupID));
+      });
     },
     onOpenAttachment(block, event) {
-      logger.debug("Citation popover opens an attachment", {
-        itemKey: block.itemKey,
-        attachments: block.attachments.length,
+      // With `prepare` the picker opens after the fresh read, when the button
+      // is no longer the event's target, so its box is read while dispatch is
+      // live. Without it the picker opens at once, on the button itself.
+      const button = event.currentTarget as HTMLElement;
+      const anchor: MenuAnchor | undefined = prepare
+        ? { rect: button.getBoundingClientRect(), doc: button.ownerDocument }
+        : undefined;
+      act(block, (current) => {
+        log("debug", "Citation popover opens an attachment", {
+          itemKey: block.itemKey,
+          attachments: block.attachments.length,
+        });
+        openAttachments(current.attachments, {
+          reader: zoteroAttachmentReader,
+          host,
+          event,
+          anchor,
+        });
       });
-      openAttachments(block.attachments, event);
     },
-    onDone: hide,
+    onDone: () => {
+      if (typeof completed === "boolean") {
+        if (completed) hide();
+        return;
+      }
+      void completed.then((done) => {
+        if (done) hide();
+      });
+    },
+    onSwitchProfile: switchProfile,
   };
 }
 

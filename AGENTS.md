@@ -14,37 +14,52 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 - `packages/templates` — Eta-based template rendering.
 - `packages/zotero-types` — generated item-field shapes from Zotero's upstream schema.
 - `packages/obsidian-api` — **git submodule** (`obsidianmd/obsidian-api`). Init via `mise run init`.
+- `video/` — **private, opt-in git submodule**: the workbench for product videos. Check it out with `git submodule update --init --checkout video`, then follow `video/AGENTS.md`.
 
 ## Bootstrap & toolchain
 
 - `mise` pins to Node 26 version (see `mise.toml`). Its `idiomatic_version_file_enable_tools = ["pnpm"]` setting also activates pnpm at the version declared in root `package.json`'s `packageManager` field.
 - `mise run init` initializes git submodules, including `packages/obsidian-api` and `packages/zotero-types/zotero-schema`.
 - Resolve tool availability from the current workspace environment. Use `pnpm exec` for workspace binaries; use the Mise-managed toolchain defined by `mise.toml`.
+- `agent-browser` (>= 0.31.1) — browser automation via CDP. Run `agent-browser skills get core` once per session for the version-matched usage guide. Session conventions and gotchas: [`docs/agents/agent-browser.md`](docs/agents/agent-browser.md).
 
 ## Commands
 
-**Prefer turbo for `build` / `test` / `lint`.** Going through turbo resolves the workspace dependency graph and caches outputs, so repeat runs are near-instant. Those root scripts delegate to `turbo run` — run them from the repo root:
+Run these from the repo root. `build` / `test` / `lint` go through turbo, which builds workspace dependencies first and caches outputs. Scope `build` or `test` to one package with `turbo run <task> --filter=@zotlit/obsidian`; lint is the root task `//#lint:repo` and always covers the whole tree through `pnpm lint`. For an inner loop that needs no dependency build (single-file Vitest, `db:pull`), call the package tool directly — see each package's `AGENTS.md`. Run `typecheck` through turbo (`turbo run typecheck --filter=<package>`): turbo first regenerates the message types and language packs it reads.
 
 | Command                           | What it does                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm dev`                        | `turbo run dev` (persistent, no cache).                                                                                     |
-| `pnpm test`                       | `turbo run test` across packages that define a `test` script (typecheck + Vitest in each).                                  |
-| `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. Builds deps via turbo caching, then typechecks + lints in one pass. **A clean run verifies types — no separate `tsgo`/`turbo run typecheck` pass.** |
+| `pnpm test`                       | `turbo run test` behind the Memory Gate: Vitest in each package that defines a `test` script.                              |
+| `pnpm lint` / `pnpm lint:fix`     | Type-aware `oxlint` over the whole tree after dependencies build. **A clean run is the typecheck.**                          |
+| `pnpm lint:unused`                | Part of `pnpm lint`: knip fails on an export, type or enum member with no reader. Older findings sit in `packages/scripts/unused-code.json` until their code goes; a reader knip cannot see gets an entry in `knip.config.ts`. |
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt` over the whole tree, run directly. A full pass takes under a second.                                      |
-| `pnpm review` / `pnpm review:fix`  | Obsidian guideline scan of `apps/obsidian` (ESLint). Release-time only — `release.ts` gates on it and CI re-runs it on `release/**` PRs. Blocks on errors; warnings are reported. |
-| `pnpm quality[:fix]`              | Runs lint, then format.                                                                                                     |
-| `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `tmp/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
-| `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly (not part of `pnpm test`/CI) when none is reachable. |
+| `pnpm review` / `pnpm review:fix` | Obsidian guideline scan of `apps/obsidian`, release-time only (see below).                                                  |
+| `pnpm quality:fix`                | Fixes lint, then format. `pnpm verify` is the check.                                                                        |
+| `pnpm verify`                     | The quality gate, run by the pre-push hook: format, generated artifacts, lint, and typecheck and tests for the packages the branch changed and their dependents. `--release` checks every package and adds `pnpm review`; on the desktop it also runs the full End-to-end Run and `pnpm e2e:worker`. GitHub runs no PR checks, so keep the hook on ([ADR 0076](docs/adr/0076-checks-run-before-push-and-ci-runs-only-to-release.md)). A branch that changes only agent docs runs format only, so a doc push needs no skip. A push that changes `pnpm-lock.yaml` or `pnpm-workspace.yaml` runs the full hook even when asked to skip checks: a dependency bump changes runtime behavior that only the tests see (#1738). |
+| `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `.scratch/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
+| `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly when none is reachable. The release gate runs it and fails instead of skipping. |
 
-Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
+oxlint and oxfmt own linting and formatting; `oxlint.config.ts` / `oxfmt.config.ts` at root and per package extend `@zotlit/config/oxlint` / `@zotlit/config/oxfmt`. ESLint serves `pnpm review` alone: it runs only the `obsidianmd/*` rules against the official Obsidian developer guidelines. `pnpm verify --release` runs it, in `release.ts` before the version commit and in `release.yml` before publishing; errors block, warnings are reported. typescript-eslint needs TypeScript 6, so root `typescript` is aliased to `@typescript/typescript6` while workspace packages keep TypeScript 7 through the catalog. Keep `eslint.config.js` and that alias ([ADR 0020](docs/adr/0020-obsidian-guideline-review-runs-on-eslint-at-release.md)).
 
-ESLint is present at the root for **one** purpose: `pnpm review` checks `apps/obsidian` against the official Obsidian developer guidelines via `eslint-plugin-obsidianmd`, before a release is cut. Only the `obsidianmd/*` rules are enabled — oxlint owns everything else. Root `typescript` is aliased to `@typescript/typescript6` because typescript-eslint cannot run on TypeScript 7; workspace packages keep TypeScript 7 via the catalog. Leave `eslint.config.js` and that alias in place. See [ADR 0020](docs/adr/0020-obsidian-guideline-review-runs-on-eslint-at-release.md).
+### Testing
 
-Scope a task to one package with a turbo filter so its deps still build first: `turbo run <task> --filter=@zotlit/obsidian`. For tight inner-loop iteration that doesn't need the dep graph (single-file Vitest, `db:pull`, etc.), call the package tool directly — see each package's `AGENTS.md`.
+- **E2E-first:** A test in `packages/e2e` is the primary proof that a feature works. During development, iterate on typecheck and single test files, and walk the change through the running app (`/obsidian-debug`). When the walkthrough passes, encode it as an e2e test — the repeatable artifact of that proof.
+- **Final gate:** Run the affected End-to-end Run cases when the work is complete. `pnpm verify --release` runs the full suite for releases; run it yourself for changes to shared startup or lifecycle behavior across features, or an explicit full-run request. ZotLit Query CLI changes use `pnpm e2e:query`; other focused selections are described in `packages/e2e/AGENTS.md`. Prevent system sleep during desktop tests. The End-to-end Run tools take a Desktop Slot themselves; for a manual app session, run it under `pnpm desktop-slot run --for <duration> -- <command>`. Exit 75 means blocked at admission, not a test failure (see `packages/e2e/AGENTS.md`).
+- **Consumer suites:** A production change runs its package's full suite and the suites of the packages that consume it, not only the tests named for the change. A test elsewhere can read what the change touched, such as statement parameters.
+- **Writing a test:** Read [Testing strategy](policies/testing-strategy.md) before adding or changing a test: which tier, which mocks, and what earns a regression test.
 
 ## Truth-first
 
 Correctness before agreement. Treat every user claim as unverified until checked. Reserve "you're right" for verified claims; lead with the correction, not fake agreement. Hold a verified conclusion when pushed back — revise only on new evidence, and say what changed your mind.
+
+## First principles
+
+Start with the user's goal and necessary constraints. Separate these from assumptions in the current design, test assumptions that affect the solution, and derive the simplest approach that meets the requirements. Evaluate existing patterns by the problem they solve.
+
+## Target users
+
+ZotLit's primary users are non-technical academics: assume research expertise and little programming knowledge. Design around their research tasks, with familiar academic terms, useful defaults, and complete UI workflows for routine work. Explain choices in terms of research outcomes; introduce technical details when they help the user make a decision.
 
 ## Affirmative specs
 
@@ -56,34 +71,17 @@ Write reports to the user in ASD-STE100 Simplified Technical English.
 
 ## Surgical changes
 
-Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only orphans YOUR changes created; mention pre-existing dead code, don't delete it.
+Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only the orphans your own changes created; mention pre-existing dead code, don't delete it.
 
-## Code conventions
+## Speculative robustness
 
-Authoring conventions live in [`policies/`](policies/), one topic per file:
+Spend complexity on failures that happen. Before you add a guard, retry, lock or check for a race or security edge case that is speculative or very unlikely, tell the user the concrete failure, how likely it is and what the guard costs in complexity, and build it once they agree. A guard of this kind that is already in code you touch stays in place: report where it is, its failure, likelihood and cost, and the user decides. Keep the task's scope to what was asked.
 
-- [simplicity](policies/simplicity.md) — KISS, minimum viable code
-- [deep modules](policies/pure-logic.md) — default to one cohesive module; split only with concrete payoff
-- [comments](policies/comments.md) — JSDoc conventions, module-level comments
-- [function-parameters](policies/function-parameters.md) — max 3 positional, options object for the rest
-- [resource-disposal](policies/resource-disposal.md) — scope-bound `using`, safe-constructor, destructuring gotcha
-- [regex](policies/regex.md) — arkregex for typed captures; `/arkregex` skill
-- [event-naming](policies/event-naming.md) — nanoevents event names are dash-case, not camelCase
-- [scratch-artifacts](policies/scratch-artifacts.md) — probe scripts and trial output go in workspace `tmp/`, not `/tmp`
-- [package and workspace roots](policies/package-roots.md) — package-root paths and pnpm workspace discovery
-- [logging](policies/logging.md) — LogTape, structured fields
-- [observability](policies/observability.md) — lean `info`; permanent `debug` / `trace` at decision points
-- [temporal-dates](policies/temporal-dates.md) — Temporal API, not Date/date-fns/dayjs
-- [vocabulary](policies/vocabulary.md) — canonical terms for Zotero keys, citation keys, and `citekey`
-- [CLI + skill pair](policies/cli-skill-pair.md) — tooling facts in the CLI; process, policy, and tone in the skill
-- [CLI help](policies/cli-help.md) — help and reference generated from handler code; yargs for Node.js, guide commands for Obsidian
-- [grouping](policies/grouping.md) — `Map.groupBy` / `Object.groupBy` for keyed grouping
+## i18n
 
-### i18n
+User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade; ZotLit Companion copy lives in the same catalogs under the `zotero` object and compiles to Fluent at Companion build time. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
 
-User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
-
-User- and agent-facing copy has four sources: MDX under `apps/docs/content/`, i18n messages under `messages/`, Zotero companion locale files under `apps/zotero/locale/`, and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`. Use the canonical terms in [policies/vocabulary.md](policies/vocabulary.md).
+User- and agent-facing copy has three sources: MDX under `apps/docs/content/`, i18n messages under `messages/` (Obsidian, Companion, and docs alike), and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`.
 
 ## Conventions worth knowing
 
@@ -92,8 +90,24 @@ User- and agent-facing copy has four sources: MDX under `apps/docs/content/`, i1
 - `minimumReleaseAge` in `pnpm-workspace.yaml` is intentional, a supply-chain hardening measure.
 - `__DEV__` is replaced at build time (`true` in dev mode, `false` in production).
 - Use `pnpm exec` instead of `npx`.
-- ECMAScript private fields and methods (`#field`, `#method`) for internal state. Avoid TypeScript `private` for service internals.
 - Brand identity — logo geometry, palette, and wordmark (Archivo SemiBold) — is specified in [`docs/brand.md`](docs/brand.md); canonical SVGs live in `assets/logo/`. Consume those assets and follow that spec rather than redrawing the mark.
+
+## Working files
+
+Choose the destination by purpose:
+
+- **Session material** — `.scratch/`, under the workspace root or the package you are working in: probe scripts, experiment output, research notes at `.scratch/notes/`, draft specs and tickets, intermediate output. Git-ignored and inside the tree, so a script there resolves `node_modules` like any other file, and the artifacts stay visible and cleanable — `/tmp` and a session scratchpad give neither. Remove them when the work is done.
+- **Planned work** — the issue tracker: agreed specs and tickets, with progress, findings, and handoffs as comments on the owning ticket. See `docs/agents/issue-tracker.md`.
+- **Maintained reference** — `docs/`: architecture, runbooks, ADRs, research reports, process config. Create a new file there only with explicit user permission, skill output included; keep the draft in `.scratch/` until then.
+
+## Worktrees
+
+Worktrunk (`wt`) creates and removes every worktree. Its hooks place the worktree at the user's path template, bootstrap it through the `pre-start` hook in `.config/wt.toml`, and deinit submodules on removal.
+
+- **Create:** `wt switch --create <branch> --base <base>`; add `--no-cd` when the worktree is for another agent, and name the printed path in that agent's prompt. Name the branch by its change type, such as `feat/<topic>` or `fix/<topic>`.
+- **Remove:** `wt remove <branch>`.
+
+A plain `git worktree add` runs none of these hooks: the worktree has no dependencies or submodules and sits outside the path template.
 
 ## Agent skills
 
@@ -107,4 +121,25 @@ Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 ### Domain docs
 
-Multi-context layout — `CONTEXT-MAP.md` at the repo root points to per-workspace `CONTEXT.md` files under `apps/*` and `packages/*`. See `docs/agents/domain.md`. Context names there (e.g. "Zotero Data Model") are heading labels for that map; code, comments, and user-facing copy keep the casing their own convention calls for (see i18n above for UI text).
+Multi-context layout — `GLOSSARY-MAP.md` at the repo root points to per-workspace `GLOSSARY.md` files under `apps/*` and `packages/*`. See `docs/agents/domain.md`. Context names there (e.g. "Zotero Data Model") are heading labels for that map; code, comments, and user-facing copy keep the casing their own convention calls for (see i18n above for UI text).
+
+## Effect
+
+Build a new Obsidian service as an Effect service: a `Context.Service` tag and a scoped `Layer` that joins the plugin's Layer graph. Run `/obsidian-services` before creating or wiring a service.
+
+### This is NOT the Effect you know
+
+This repo runs Effect v4. Its modules, names, and signatures differ from the Effect v2/v3 that most training data covers. Take every Effect API from the installed package, not from memory.
+
+Resolve the `effect` package from the workspace you change; for example, run `node -p "require.resolve('effect/package.json')"` from `apps/obsidian`. Read `AGENTS.md` inside that package first, then the topic folder of its `ai-docs/src/` for the area being changed, and confirm each signature in its `dist/**/*.d.ts`. Search the installed source before adding helpers. These docs match the installed version and are available without network access.
+
+<!-- BEGIN:turborepo-agent-rules -->
+
+# This is NOT the Turborepo you know
+
+Turborepo configuration, task behavior, and CLI commands can vary between installed versions and may differ from your training data. Resolve the `turbo` package from this file's directory or relevant workspace; in monorepos, it may not be visible from the repository root. For example, run `node -p "require.resolve('turbo/package.json')"` from a workspace that depends on `turbo`.
+
+Read `docs/README.md` inside that installed package first, then read the relevant pages from its `docs/` directory before changing Turborepo configuration or commands. Heed deprecation notices. These bundled docs match the installed package version and are available without network access.
+
+This block is written and re-added by `turbo` before repository-scoped commands when an AI agent is detected. In the Turborepo source repository, its template is defined in `crates/turborepo-cli/src/cli/agent_guidance.rs`. Removing the managed block while updates are enabled means a later qualifying invocation will add it again. Set `"agentGuidance": false` in the root `turbo.json` or `turbo.jsonc` to opt out; this does not remove an existing block. Keep the block committed with your work to avoid an uncommitted change on the next agent invocation.
+<!-- END:turborepo-agent-rules -->

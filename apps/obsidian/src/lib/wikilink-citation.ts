@@ -1,15 +1,24 @@
+import { Effect, Stream } from "effect";
+
+import {
+  formatPandocCitation,
+  PandocCitationError,
+  scanPandocCitations,
+} from "@zotlit/templates/pandoc-citation";
 // The shared core that derives Citations from Literature Note wikilinks.
+import type {
+  PandocCitationForm,
+  PandocCitationItem,
+} from "@zotlit/templates/pandoc-citation";
 
 import { hoverPreferences } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
 import { defaults } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
+import type { Settings } from "@/services/settings/schema";
 
-import { citationRunItem, citationRunSource } from "./citation-fragment";
-import type { CitationRunItem, CitationSource } from "./citation-fragment";
-import { getLogger } from "./log";
-
-const logger = getLogger("wikilink-citation");
+import { citationRunItem } from "./citation-fragment";
+import type { CitationRunItem } from "./citation-fragment";
+import type { CitationSource } from "./citation-source";
 
 /** The `cite:` marker that tells a wikilink subpath from a heading or block one. */
 const FRAGMENT_PREFIX = "cite:";
@@ -33,7 +42,7 @@ interface CitationLinkTarget {
  *
  * @returns the target, or null when the link is none of the display's business.
  */
-function citationTarget(linktext: string): CitationLinkTarget | null {
+export function citationTarget(linktext: string): CitationLinkTarget | null {
   const hash = linktext.indexOf("#");
   if (hash === -1) {
     return linktext === "" ? null : { linkpath: linktext, fragment: null };
@@ -100,6 +109,12 @@ export function wikilinkCitation(
     fragment: target.fragment,
   });
   if (item === null) return null;
+  try {
+    formatPandocCitation([pandocItem(item)], pandocForm(item));
+  } catch (error) {
+    if (error instanceof PandocCitationError) return null;
+    throw error;
+  }
   return {
     item,
     indexedKey: note.indexedKey,
@@ -130,9 +145,43 @@ export interface RunCitationSource extends CitationSource {
 export function citationOfRun<T>(
   run: readonly RunMember<T>[],
 ): RunCitationSource {
+  const items = run.map(({ citation }) => citation.item);
+  const source = formatPandocCitation(
+    items.map(pandocItem),
+    pandocForm(items[0]!),
+  );
+  const [citation] = scanPandocCitations(source);
   return {
-    ...citationRunSource(run.map(({ citation }) => citation.item)),
+    source,
+    keys: citation!.items.map(({ citationKey, start, end }) => ({
+      citekey: citationKey,
+      start,
+      end,
+    })),
     works: run.map(({ citation }) => citation.indexedKey),
+  };
+}
+
+function pandocForm(item: CitationRunItem): PandocCitationForm {
+  return item.details.mode === "author-in-text"
+    ? "prefer-author-in-text"
+    : "normal";
+}
+
+function pandocItem({
+  citekey,
+  details,
+  labelShort,
+}: CitationRunItem): PandocCitationItem {
+  return {
+    citationKey: citekey,
+    prefix: details.prefix === null ? null : `${details.prefix} `,
+    suffix: details.suffix === null ? null : `, ${details.suffix}`,
+    locator:
+      details.locator === null
+        ? null
+        : { label: labelShort!, value: details.locator },
+    suppressAuthor: details.mode === "suppress-author",
   };
 }
 
@@ -184,7 +233,7 @@ const JOINS_RUN = /^[ \t]*;[ \t]*$/u;
 
 /**
  * The settings both wikilink display surfaces read, kept current for as long as
- * the surface watches them.
+ * the surface consumes its {@link WikilinkDisplaySettings.redraws}.
  *
  * One tracker per surface, so Live Preview and reading mode answer to the same
  * settings without either restating which ones they are.
@@ -228,45 +277,52 @@ export class WikilinkDisplaySettings {
   }
 
   /**
-   * Follows the settings, and asks for a redraw whenever they change what a
-   * link displays or who answers its hover.
+   * Takes `next` as the current settings.
    *
-   * `SettingsService.subscribe` invokes its listener immediately, so the first
-   * snapshot only seeds the values: everything drawn so far already read them,
-   * and a startup redraw would show nothing new. A first snapshot of null seeds
-   * the defaults, and the settings that arrive after it redraw like any change.
-   *
-   * @returns the unsubscribe.
+   * @returns whether they change what a link displays or who answers its
+   *   hover, which asks for a redraw.
    */
-  watch(
-    settings: Pick<SettingsService, "subscribe">,
-    redraw: () => void,
-  ): () => void {
-    let seeded = false;
-    return settings.subscribe((next) => {
-      const seeding = !seeded;
-      seeded = true;
-      if (!next) return;
-      const enabled =
-        next["citation.wikilink-citations"] && next["citation.show-formatted"];
-      // Read straight through: a hover answers from the newest snapshot, and
-      // only the listener the popover needs is drawn from it.
-      const popoverHover = this.popoverHover;
-      const clickIntercepted = this.clickIntercepted;
-      this.#hover = hoverPreferences(next);
-      this.#openAsLinks = next["citation.open-as-links"];
-      const changed =
-        enabled !== this.#enabled ||
-        popoverHover !== this.popoverHover ||
-        clickIntercepted !== this.clickIntercepted;
-      this.#enabled = enabled;
-      if (seeding || !changed) return;
-      logger.debug("Wikilink display settings changed", {
-        enabled,
-        popoverHover: this.popoverHover,
-        clickIntercepted: this.clickIntercepted,
-      });
-      redraw();
-    });
+  apply(next: Readonly<Settings>): boolean {
+    const enabled =
+      next["citation.wikilink-citations"] && next["citation.show-formatted"];
+    // Read straight through: a hover answers from the newest snapshot, and
+    // only the listener the popover needs is drawn from it.
+    const popoverHover = this.popoverHover;
+    const clickIntercepted = this.clickIntercepted;
+    this.#hover = hoverPreferences(next);
+    this.#openAsLinks = next["citation.open-as-links"];
+    const changed =
+      enabled !== this.#enabled ||
+      popoverHover !== this.popoverHover ||
+      clickIntercepted !== this.clickIntercepted;
+    this.#enabled = enabled;
+    return changed;
+  }
+
+  /**
+   * The settings in `changes` that change what a link displays or who answers
+   * its hover, each one taken as the current settings. A surface redraws on
+   * each.
+   *
+   * `changes` replays the current value first. That first snapshot only seeds
+   * the values: everything drawn so far already read them, and a startup
+   * redraw would show nothing new. The settings that arrive after it redraw
+   * like any change.
+   */
+  redraws(changes: Stream.Stream<Readonly<Settings>>): Stream.Stream<void> {
+    return changes.pipe(
+      Stream.map((next) => this.apply(next)),
+      Stream.drop(1),
+      Stream.filter((changed) => changed),
+      Stream.mapEffect(() =>
+        Effect.logDebug("Wikilink display settings changed").pipe(
+          Effect.annotateLogs({
+            enabled: this.#enabled,
+            popoverHover: this.popoverHover,
+            clickIntercepted: this.clickIntercepted,
+          }),
+        ),
+      ),
+    );
   }
 }

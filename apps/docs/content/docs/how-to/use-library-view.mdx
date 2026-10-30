@@ -1,0 +1,259 @@
+---
+title: "Browse your library in the Library View"
+description: "Find a paper by collection, recent activity, search, reading state, or tag, then open its PDF, write its note, or cite it."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+The Library View is a tab that lists your Zotero library inside Obsidian. Use it to find a paper and open its PDF, write its literature note, or cite it. Browsing and searching only read your library. Editing an annotation in the [Reading Card](#reading-card) changes it in Zotero. Reading a PDF can also update its read time, as described in [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian#recently-read).
+
+The Library View reads the Zotero database directly. Zotero does not need to be open, and you do not need ZotLit Companion, the Zotero add-on, to browse, search, or open a PDF.
+
+## Open the Library View [#open]
+
+Select the ZotLit icon in the ribbon, or open the command palette and run:
+
+<Command name={m.command_open_library_view_name()} />
+
+The view opens in a tab titled <UiLabel name={m.library_view_name()} />, with the cursor in its search box, unless the setup banner shows above it. If the tab is already open, ZotLit brings it forward instead of opening a second one.
+
+![The Library View with My Library selected in the tree and the tag filter below it, two papers listed on two lines each with an icon for their item type, a heading over the list that names My Library and counts its papers, with Sort and Save as query file at its right, and the Reading Card of Ten Simple Rules for Better Figures beside the list: its item type, serif title, authors, journal and citation key, its Open PDF and Write literature note buttons, where it is saved, its tags, its file, and a preview of its first annotations](/img/how-to/library-view.webp)
+
+On a new install, ZotLit opens the Library View for you. A setup banner sits above it until setup is complete. Its steps are <UiLabel name={m.welcome_step_connect_title()} />, <UiLabel name={m.welcome_step_folder_title()} />, and <UiLabel name={m.welcome_step_library_title()} />. A finished step takes one line with its action at the end, and only the next step opens to explain what to do. Beside the steps, or under them in a narrow pane, tiles link to <UiLabel name={m.welcome_docs_getting_started()} />, <UiLabel name={m.welcome_link_discussions()} />, <UiLabel name={m.welcome_help_github_title()} />, <UiLabel name={m.welcome_docs_templates()} />, and <UiLabel name={m.welcome_docs_citations()} />, with the blog, the changelog, and sponsorship below them. These links stay on the banner whatever else it shows. The banner goes away once ZotLit reads your Zotero database and your literature notes folder exists, or when you select <UiLabel name={m.welcome_dismiss()} />. To show it again, even after setup is complete, select <UiLabel name={m.library_view_help_action()} />, the question-mark icon at the top of the Library View tab, or run <Command inline name={m.command_open_welcome_name()} />. The icon looks pressed while the banner shows, and selecting it again puts the banner away.
+
+After ZotLit updates, it opens the Library View with the banner above it, saying <UiLabel name={m.welcome_update_title({ version: "…" })} />. Select <UiLabel name={m.welcome_update_action()} /> to read the release notes, or <UiLabel name={m.welcome_dismiss()} /> to put the banner away. Either way, the banner says nothing more about this version, and comes back after the next update. Turn off <UiLabel name={m.settings_update_notices_name()} /> in the Advanced settings to skip it.
+
+### When ZotLit cannot find Zotero [#not-found]
+
+ZotLit looks for your library in the default Zotero profile. When it finds no database there, or the data folder you set holds none it can read, the list and the tree pane both say <UiLabel name={m.library_view_not_found()} />, the list in place of the filters, the search box, and the papers. The setup banner leaves out its <UiLabel name={m.welcome_step_connect_title()} /> step meanwhile, since the list says the same. Select <UiLabel name={m.library_view_locate()} /> and choose your Zotero data folder, or select <UiLabel name={m.welcome_action_open_settings()} /> to set the location in settings. Your papers appear as soon as the folder is set.
+
+![The Library View with a one-line Zotero not found warning in the tree pane, and the card "Zotero not found" in place of the list, with Locate data folder and Open settings buttons](/img/how-to/library-view-not-found.webp)
+
+When ZotLit cannot find Zotero, it also shows the notice <UiLabel name={m.notice_db_not_found_on_device()} /> The notice has a <UiLabel name={m.notice_db_not_found_action()} /> button that opens the Library View. Only one such notice shows at a time. It does not show while a Library View is open, and it goes away once ZotLit reads your database again.
+
+If the database was readable and a later read fails, the view keeps the papers it read last. A note above the list says: <UiLabel name={m.library_view_refresh_failed()} /> Its <UiLabel name={m.library_view_locate()} /> button lets you choose the folder again in case it has moved.
+
+## Pick what the list shows [#tree]
+
+The tree on the left lists <UiLabel name={m.library_view_recent()} /> first, then each library in your [library scope](/docs/reference/settings#library-scope) with its collections nested as in Zotero. Each library and collection shows how many papers it holds.
+
+Select a library or a collection to list its papers. A collection also lists the papers in its subcollections. The heading above the list names your selection, with the library and the collections above it, such as "My Library › Thesis ›" over "Chapter 2". Under the name it counts the papers listed and, when the selection holds any, the unread ones, for example "<UiLabel name={m.library_view_heading_papers({ count: 12 })} /> · <UiLabel name={m.library_view_heading_unread({ count: 3 })} />". While a filter or a tag narrows the list, it counts what is left of the whole, for example <UiLabel name={m.library_view_heading_papers_of({ count: 3, total: 12 })} />. A paper counts as unread when it has no Zotero read time, no annotations, and no literature note. The unread count, like the paper count in the tree, ignores search, the reading-state filters, and selected tags.
+
+When your Zotero database holds libraries outside your library scope, <UiLabel name={m.library_view_all_libraries()} /> under the last library adds them for the current session. <UiLabel name={m.library_view_scope_libraries()} /> hides them again.
+
+If you rename or delete the collection you had selected, the view selects its library instead.
+
+Select <UiLabel name={m.library_view_show_tree()} /> next to the search box to hide the tree and give the list more room, and select it again to show the tree. ZotLit remembers your choice. To change the tree's width, drag its edge next to the list; double-click the edge to reset it. On a narrow pane the tree is hidden, and the same button opens it over the list.
+
+### Recent [#recent]
+
+<UiLabel name={m.library_view_recent()} /> lists every paper in your library
+scope by **Last Activity**, newest first. Last Activity is the newest time that
+you opened, read, or cited the paper in Obsidian; read it in Zotero; added it to
+Zotero; or edited one of its Zotero notes or annotations. An edit to the paper's
+own fields does not count. A new Library View opens on
+<UiLabel name={m.library_view_recent()} />.
+
+Each row gives the activity that set its place in the list:
+
+| Reason                                                                  | What it means                                                  |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------- |
+| <UiLabel name={m.library_recent_opened({ time: "3 min ago" })} />       | You opened the paper's literature note or returned to its tab. |
+| <UiLabel name={m.library_recent_read_obsidian({ time: "2 h ago" })} />  | You read the paper's PDF in Obsidian.                          |
+| <UiLabel name={m.library_recent_cited({ time: "yesterday" })} />        | You inserted the paper's citation or copied its citation key.  |
+| <UiLabel name={m.library_recent_read_zotero({ time: "yesterday" })} />  | You read one of the paper's attachments in Zotero.             |
+| <UiLabel name={m.library_recent_added({ time: "3 days ago" })} />       | You added the paper to Zotero.                                 |
+| <UiLabel name={m.library_recent_notes_edited({ time: "last week" })} /> | You edited a child note or annotation in Zotero.               |
+
+Opening and citing count on the device where they happen. They do not move the
+paper on another device. Reading recorded by Zotero syncs through Zotero and
+can move the paper on each device.
+
+<UiLabel name={m.library_view_recent()} /> shows no paper count in the tree, and
+<UiLabel name={m.library_view_all_libraries()} /> does not add libraries to it.
+You can sort it another way with <UiLabel name={m.query_view_sort()} /> in the
+heading. Select
+<UiLabel name={m.library_view_recent()} /> again to return to the newest-first
+order.
+
+## Search your papers [#search]
+
+Type in the <UiLabel name={m.library_view_search_label()} /> box at the top of the view. The results are ranked the way the [literature note quick switcher](/docs/reference/commands#quick-switcher) ranks them, best match first, and they stay inside the library or collection you selected. The heading becomes the match count, for example <UiLabel name={m.library_view_heading_search({ count: 12, query: "figure" })} />, with the library or collection searched above it, and screen readers announce the count as it changes. While the results are ranked, <UiLabel name={m.query_view_sort()} /> in the heading stays in place but is off; clear the search to sort the list again.
+
+To narrow to a Zotero tag, add a `tag:` token: `tag:methods`, or `tag:"machine learning"` for a tag with spaces. Several tokens narrow to papers that carry every tag. A search made only of `tag:` tokens keeps the list's sort instead of ranking.
+
+To search beyond your selection, select <UiLabel name={m.library_view_search_everywhere()} /> under the match count, or under the message when nothing matches. It searches every library in your library scope until you select a node in the tree or clear the search. Meanwhile the tree highlights no node, since the list is no longer the one it names. <UiLabel name={m.library_view_recent()} /> already covers your whole library scope, so it does not offer this.
+
+Press `Escape` in the box to clear the search. Press it again on the empty box to move to the list.
+
+When nothing matches, the heading reads <UiLabel name={m.library_view_heading_search({ count: 0, query: "glacier" })} /> and the list says how to go on: <UiLabel name={m.library_view_empty_search_widen()} /> Under it, <UiLabel name={m.library_view_search_everywhere()} /> repeats the search in every library of your library scope. When the search already covers them, on <UiLabel name={m.library_view_recent()} /> or after <UiLabel name={m.library_view_search_everywhere()} />, the list says <UiLabel name={m.library_view_empty_search_clear()} /> and offers <UiLabel name={m.library_view_search_clear()} /> instead.
+
+A search shows at most 500 matches.
+
+## Filter by reading state [#facets]
+
+The buttons below the tree narrow the list by what you have done with each paper:
+
+| Filter                                              | Shows the papers that                                      |
+| --------------------------------------------------- | ---------------------------------------------------------- |
+| <UiLabel name={m.library_view_facet_unread()} />    | Have no Zotero read time, annotations, or literature note. |
+| <UiLabel name={m.library_view_facet_annotated()} /> | Have at least one annotation.                              |
+| <UiLabel name={m.library_view_facet_has_note()} />  | Have a literature note in this vault.                      |
+| <UiLabel name={m.library_view_facet_pdf()} />       | Have a PDF attachment whose file is on this device.        |
+
+Each filter you turn on also shows as a chip under the heading. Select a chip to turn its filter off, or <UiLabel name={m.library_view_heading_clear_filters()} /> beside the chips to turn off every filter and let go of every tag at once.
+
+Turn on several filters to show only the papers that match all of them. The filters work with any tree selection, including <UiLabel name={m.library_view_recent()} />, and they stay on while you search. When no paper passes them, the list shows <UiLabel name={m.library_view_empty_facets()} />
+
+## Filter by tag [#tags]
+
+Under the reading-state filters, <UiLabel name={m.library_view_tags_label()} /> lists the Zotero tags of the papers in your tree selection, by name. Select a tag to show only the papers that carry it. Select more tags to show only the papers that carry all of them, as in Zotero. While tags are selected, the list of tags keeps only the tags of the papers still shown, and each selected tag shows as a chip under the heading, beside the reading-state filters. Select a chip to let go of its tag.
+
+Select a selected tag again to let go of it, or select <UiLabel name={m.library_view_tags_clear()} /> to let go of them all. The selected tags stay when you select another library or collection, and a selected tag stays in the list even where no paper there carries it.
+
+Type in the <UiLabel name={m.library_view_tags_filter()} /> box to find a tag in a long list. The box narrows only the tag names, not the papers.
+
+Selected tags work with the reading-state filters and the search. A `tag:` token in the search box narrows the same way.
+
+## Read the list [#layouts]
+
+The list draws each paper in two lines, in the <UiLabel name={m.library_view_papers_view_name()} /> layout: the title, then the creators, year, and publication. An icon at the end of the row shows the kind of the paper's main attachment, and a note icon shows that the paper has a literature note. Expand a paper to see its attachments, its child notes, its annotations, and its literature note.
+
+<UiLabel name={m.query_view_sort()} /> and
+<UiLabel name={m.annot_view_save_as_query_file()} /> sit at the right of the
+heading; on a narrow pane they show their icons only. The view lists at most
+1,000 papers at a time. When a selection holds more, the heading counts every
+paper it holds and adds
+<UiLabel name={m.library_view_heading_first_shown({ count: 1000 })} />. For a
+table, other layouts, filters, grouping, or a choice of properties, [save the
+view as a query file](#save-as-query-file) and work in its tab.
+
+The Library View remembers your tree selection, filters, selected tags, search text, and sort. It keeps them in this vault's plugin data, so they come back in every Library View you open and they sync with your vault.
+
+## Open, write, and cite from a row [#rows]
+
+Click a row to select it, and use the arrow keys to move the selection. A selected row answers the same keys as a result in the [literature note quick switcher](/docs/reference/commands#quick-switcher):
+
+| Action                                          | Result                                                                                                                                      |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Enter`                                         | Opens the paper's literature note. When the paper has none, ZotLit writes one first, through the same profile choice as the quick switcher. |
+| `Ctrl+Enter` (`Cmd+Enter` on macOS)             | The same, in a new tab.                                                                                                                     |
+| `Shift+Enter`                                   | Opens the paper's PDF in Obsidian.                                                                                                          |
+| `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) | The same, in a new tab.                                                                                                                     |
+| Double-click                                    | Opens the paper's PDF in Obsidian.                                                                                                          |
+| `Space`                                         | Shows or hides the [Reading Card](#reading-card).                                                                                           |
+
+To cite a paper, drag its row into a note. ZotLit inserts the citation where you drop it.
+
+### The row menu [#row-menu]
+
+Right-click a row for every action on the paper:
+
+| Menu item                                                                                                 | What it does                                                                |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| <UiLabel name={m.library_view_menu_open_pdf()} />                                                         | Opens the PDF in Obsidian. Only a paper with a PDF offers it.               |
+| <UiLabel name={m.library_view_menu_open_pdf_right()} />                                                   | Opens the PDF in a new pane to the right.                                   |
+| <UiLabel name={m.library_view_menu_open_note()} /> or <UiLabel name={m.library_view_menu_write_note()} /> | Opens the literature note, or writes it when the paper has none.            |
+| <UiLabel name={m.library_view_menu_insert_citation()} />                                                  | Inserts the paper's citation into the note you were in last, at the cursor. |
+| <UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                  | Copies the paper's citation key.                                            |
+| <UiLabel name={m.library_view_menu_show_in_zotero()} />                                                   | Selects the paper in Zotero. If Zotero is closed, your system starts it.    |
+
+When no note is open, <UiLabel name={m.library_view_menu_insert_citation()} /> shows <UiLabel name={m.library_view_cite_no_note()} />. Open the note you are writing, then try again.
+
+To open a PDF in Obsidian from other places, see [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+
+## Read a paper's Reading Card [#reading-card]
+
+When you select a row, the Reading Card shows it on the right of the view. It shows what Zotero shows for the paper, but only reads it: the card never changes the paper in Zotero.
+
+The card reads like the first page of the paper. From the top:
+
+- The item type, such as Journal Article or Letter, in small capitals.
+- The title.
+- The creators, in full. Past ten names the card adds "et al."; <UiLabel name={m.library_view_card_all_fields()} /> lists them all.
+- The journal or publisher, in italics, with the volume, issue, pages, and year.
+- The DOI, which opens in your browser, and the citation key, with a button that copies it.
+
+The buttons below run the actions of the row menu: <UiLabel name={m.library_view_menu_open_pdf()} />, and <UiLabel name={m.library_view_menu_open_note()} /> or <UiLabel name={m.library_view_menu_write_note()} />. The <UiLabel name={m.library_view_card_more()} /> button opens the full row menu, with <UiLabel name={m.library_view_menu_insert_citation()} />. The <UiLabel name={m.library_view_card_open_in_annot_view()} /> icon shows the paper's annotations in the <UiLabel name={m.annot_view_name()} /> view, which stays pinned to that paper until you unpin it; see [Use the annotation view](/docs/how-to/use-annotation-view).
+
+The rest of the card shows only what the paper has. A part with nothing in it is left out.
+
+- The abstract, cut to a few lines. Select <UiLabel name={m.library_view_card_show_more()} /> to read the rest.
+- <UiLabel name={m.library_view_card_where()} />: the library and the
+  collections that hold the paper.
+- <UiLabel name={m.library_view_card_tags()} />: the paper's tags. Select one to
+  [filter by that tag](#tags), as if you selected it under the tree.
+- <UiLabel name={m.library_view_card_files()} />: the paper's attachments.
+  Select one to open it: a PDF opens in Obsidian, and another file opens in
+  Zotero.
+- <UiLabel name={m.library_view_card_notes()} />: the notes the paper has in
+  Zotero. Select one to show it in Zotero.
+- The date the paper was added to Zotero, and <UiLabel name={m.library_view_card_all_fields()} />, which shows every other field the paper has, such as its URL or its full date, with the labels Zotero uses and in Zotero's order.
+- <UiLabel name={m.library_view_card_your_annotations()} />: how many
+  annotations the paper has in each colour, and its first two as short quotes,
+  each with its page. Select
+  <UiLabel name={m.library_view_card_see_all({ count: 8 })} /> to list them all,
+  as the same cards the annotation view shows. You can edit a comment or tags
+  there as you would in the sidebar; see [Edit PDF annotations in
+  Obsidian](/docs/how-to/edit-pdf-annotations) for what that needs.
+
+The card remembers whether <UiLabel name={m.library_view_card_all_fields()} /> and the annotations are open, and keeps them that way for the next paper you select.
+
+Select <UiLabel name={m.library_view_details_toggle()} /> at the end of the search box's row, or press `Space` on a selected row, to show or hide the card. <UiLabel name={m.library_view_card_close()} /> on the card hides it too, and ZotLit remembers your choice. While the card shows, it follows the paper you select, by a click or by the arrow keys; with no paper selected, it asks you to select one, and counts how many papers in the library or collection you selected are unread, annotated, have a literature note, or have a PDF. On a narrow pane it opens under the tree and the list; drag its top edge to change its height, or double-click the edge to reset it. When it has the room, it shows the paper in two columns. When a search, a filter, or another tree selection takes the selected paper out of the list, the selection goes and the card shows no paper.
+
+![The Library View in a narrow pane beside a thesis chapter, with the selected paper's details under the list at full width and the tooltip "Show item details" on the toggle at the end of the search row](/img/how-to/library-view-details-toggle.webp)
+
+## Show a paper in the library [#show-in-library]
+
+You can reveal a paper in the Library View from these places:
+
+- In the [literature note quick switcher](/docs/reference/commands#quick-switcher), press `Alt+Enter` (`Option+Enter` on macOS) on any result.
+- From an open literature note, run <Command inline name={m.command_show_in_library_name()} /> from the command palette, or select <UiLabel name={m.library_view_show_in_library()} /> from the note's tab menu or file menu.
+- In the <UiLabel name={m.references_view_name()} /> sidebar, select <UiLabel name={m.library_view_show_in_library()} /> on a reference row that matches a Zotero item.
+- In the <UiLabel name={m.cited_by_view_name()} /> view, select <UiLabel name={m.library_view_show_in_library()} /> in the toolbar.
+- In the citation hover popover, select <UiLabel name={m.library_view_show_in_library()} /> in the popover toolbar.
+- In the graph view, right-click a Cited Work Node whose citation key matches one Zotero item, and choose <UiLabel name={m.library_view_show_in_library()} />.
+- In template links, `zt.librarylink` creates an `obsidian://zotlit/show-in-library` protocol link that navigates to the paper on any synced device.
+
+![A thesis chapter with the citation popover open over a Rougier et al. citation and the tooltip "Show in Zotero library" on its library button, beside the Library View with that paper's row selected and its details below the list](/img/how-to/show-in-library.webp)
+
+When you trigger <UiLabel name={m.library_view_show_in_library()} />, ZotLit opens the Library View on the paper's collection (or its library if unfiled). It clears any active search text and turns off reading-state and tag filters so nothing hides the paper, then flashes the paper's row to highlight it.
+
+When the paper is in none of your libraries in scope, the view keeps your current search and filters and displays <UiLabel name={m.library_view_reveal_not_found()} />. When the paper falls beyond the view's 1,000-paper limit, a notice reports <UiLabel name={m.library_view_reveal_not_listed({ limit: 1000 })} />.
+
+## Save the view as a query file [#save-as-query-file]
+
+To keep what the Library View shows as a vault file, choose <UiLabel name={m.annot_view_save_as_query_file()} /> in the heading. The name starts as the library or collection you selected; change it if you like, and choose a folder. When the file leaves out part of the view, the dialog says which. ZotLit writes a [query file](/docs/how-to/use-query-files) and opens it in a tab.
+
+The file keeps the library or collection you selected, the selected tags, and the sort, opens in the <UiLabel name={m.library_view_papers_view_name()} /> layout, and lists at most 1,000 papers, as the view does. In its tab you can switch to the table, filter, group, and choose properties. Some parts of the view do not carry over:
+
+- The search does not carry over. Query files have no way to express a ranked search yet.
+- <UiLabel name={m.library_view_facet_has_note()} /> does not carry over, and
+  <UiLabel name={m.library_view_facet_unread()} /> keeps only its no-annotations
+  half. Both depend on the notes in your vault, which a query file cannot filter
+  by yet.
+- A file saved from a library outside your library scope lists nothing until you add that library to the scope.
+
+## See also
+
+<Cards>
+  <Card
+    title="Create your first literature note"
+    description="Start in the Library View, read a paper beside the library, and write its note."
+    href="/docs/tutorial/first-note"
+  />
+  <Card
+    title="Use query files and query blocks"
+    description="Save a filtered view of your library as a vault file, or embed one in a note."
+    href="/docs/how-to/use-query-files"
+  />
+  <Card
+    title="Keep Zotero and Obsidian in sync"
+    description="See your latest Zotero changes in Obsidian and run ZotLit actions from Zotero."
+    href="/docs/how-to/keep-zotero-and-obsidian-in-sync"
+  />
+</Cards>

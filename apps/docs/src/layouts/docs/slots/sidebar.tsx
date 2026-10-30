@@ -35,10 +35,6 @@ import { useMemo, useRef, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
-import type {
-  DocsPageTreeItem,
-  DocsSidebarBadge,
-} from "@/lib/docs-availability";
 import { mergeRefs } from "@/lib/merge-refs";
 
 const itemVariants = cva(
@@ -387,9 +383,6 @@ function SidebarItem({
 
 function SidebarPageItem({ item }: { item: PageTree.Item }) {
   const pathname = usePathname();
-  // Derived on the server, where the Docs Release Line lives — see the
-  // `/docs` route shell.
-  const availability = (item as DocsPageTreeItem).docsAvailability;
 
   return (
     <SidebarItem
@@ -399,30 +392,7 @@ function SidebarPageItem({ item }: { item: PageTree.Item }) {
       icon={item.icon}
     >
       <span className="min-w-0 flex-1">{item.name}</span>
-      {availability && <AvailabilityBadge status={availability} />}
     </SidebarItem>
-  );
-}
-
-function AvailabilityBadge({ status }: { status: DocsSidebarBadge }) {
-  return (
-    <span
-      aria-label={
-        {
-          new: "New feature",
-          updated: "Updated page",
-        }[status]
-      }
-      data-availability={status}
-      className={cn(
-        "ms-auto inline-flex h-4 shrink-0 items-center rounded-full px-1.5 font-mono text-[0.6rem] leading-none font-semibold tracking-[0.12em] uppercase",
-        status === "new" && "bg-fd-primary text-fd-primary-foreground",
-        status === "updated" &&
-          "bg-fd-primary/8 text-fd-primary ring-1 ring-fd-primary/30 ring-inset",
-      )}
-    >
-      {status}
-    </span>
   );
 }
 

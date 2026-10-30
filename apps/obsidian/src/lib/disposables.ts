@@ -1,19 +1,9 @@
 // oxlint-disable max-params
 
-import type {
-  EventRef,
-  Events,
-  KeymapEventListener,
-  Modifier,
-  Scope,
-} from "obsidian";
+import type { KeymapEventListener, Modifier, Scope } from "obsidian";
 
 export function disposable(dispose: () => void): Disposable {
   return { [Symbol.dispose]: dispose };
-}
-
-export function registerEvent(ref: EventRef): Disposable {
-  return disposable(() => (ref as { e: Events }).e.offref(ref));
 }
 
 export function registerKeymap(
@@ -56,6 +46,26 @@ export function registerDomEvent(
 ): Disposable {
   el.addEventListener(type, callback, options);
   return disposable(() => el.removeEventListener(type, callback, options));
+}
+
+/**
+ * Register a window event for the window that owns `el`, and follow `el` when
+ * Obsidian moves its view into or out of a pop-out window.
+ */
+export function registerMigratingWindowEvent<K extends keyof WindowEventMap>(
+  el: HTMLElement,
+  type: K,
+  callback: (this: HTMLElement, ev: WindowEventMap[K]) => any,
+): Disposable {
+  let event = registerDomEvent(el.win, type, callback);
+  const stopMigration = el.onWindowMigrated((win) => {
+    event[Symbol.dispose]();
+    event = registerDomEvent(win, type, callback);
+  });
+  return disposable(() => {
+    stopMigration();
+    event[Symbol.dispose]();
+  });
 }
 
 export class DisposableAbortController

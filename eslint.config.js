@@ -56,8 +56,13 @@ export default [
       "**/*.test.{ts,tsx}",
       // Test fixtures build DOM under Vitest alone, never inside a running
       // Obsidian window, so the guideline checks that assume Obsidian's
-      // globals (createDiv(), .win, …) don't apply to them.
+      // globals (createDiv(), .win, …) don't apply to them. Browser-test
+      // modules are the same: Vitest bundles them into a bare Electron
+      // renderer.
       "**/__fixtures__/**",
+      "**/*.browser-test.ts",
+      // Benchmarks run under Vitest and report results through the console.
+      "**/*.bench.ts",
     ],
   },
 

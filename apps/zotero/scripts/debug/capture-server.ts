@@ -10,7 +10,9 @@ const server = createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
-      console.log(`[${new Date().toISOString()}] ${body}`);
+      console.log(
+        `[${Temporal.Now.instant().toString({ smallestUnit: "millisecond" })}] ${body}`,
+      );
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end("{}");
     });

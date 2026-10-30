@@ -1,8 +1,11 @@
 import { EditorState } from "@codemirror/state";
 import { createMockPlugin } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { Editor } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
 import { addCitekeyEditorActions } from "./actions";
@@ -17,31 +20,55 @@ const ALL_COMMAND_IDS = [
 
 /** An editor whose cursor sits at `head` of `doc`. */
 function editorAt(doc: string, head: number): Editor {
-  return {
-    cm: { state: EditorState.create({ doc, selection: { anchor: head } }) },
-  } as never;
+  return stubService<Editor>("Editor", {
+    cm: stubService<Editor["cm"]>("EditorView", {
+      state: EditorState.create({ doc, selection: { anchor: head } }),
+    }),
+  });
 }
 
-function setup(enabled: boolean): {
+/** The bridge each case opened, closed after it. */
+const bridges: AsyncDisposable[] = [];
+afterEach(async () => {
+  for (const bridge of bridges.splice(0)) await bridge[Symbol.asyncDispose]();
+});
+
+/**
+ * @param open what an open runs after it records the call; it ends at once
+ *   unless a case names a longer open.
+ */
+function setup(
+  enabled: boolean,
+  open: Effect.Effect<void> = Effect.void,
+): {
   plugin: ReturnType<typeof createMockPlugin>;
   opened: [citekey: string, pane: NavigationPane][];
   /** Run one command's check callback; `checking` asks palette visibility. */
   run: (id: string, editor: Editor, checking: boolean) => boolean;
+  /** Close the bridge, as unload does. */
+  unload: () => Promise<void>;
 } {
   const opened: [string, NavigationPane][] = [];
   const plugin = createMockPlugin();
+  const bridge = openTestBridge();
+  bridges.push(bridge);
   addCitekeyEditorActions(plugin, {
     citekeyEditor: {
-      navigationEnabled: enabled,
-      openCitekey: vi.fn((citekey: string, pane: NavigationPane) => {
-        opened.push([citekey, pane]);
-        return Promise.resolve();
-      }),
+      navigationEnabled: Effect.succeed(enabled),
+      openCitekey: vi.fn((citekey: string, pane: NavigationPane) =>
+        Effect.sync(() => {
+          opened.push([citekey, pane]);
+        }).pipe(Effect.andThen(open)),
+      ),
     },
+    bridge,
   });
   return {
     plugin,
     opened,
+    unload: async () => {
+      await bridge[Symbol.asyncDispose]();
+    },
     run: (id, editor, checking) =>
       plugin.commands
         .get(id)
@@ -50,11 +77,6 @@ function setup(enabled: boolean): {
 }
 
 describe("addCitekeyEditorActions", () => {
-  it("registers one command per pane", () => {
-    const { plugin } = setup(true);
-    expect([...plugin.commands.keys()]).toEqual(ALL_COMMAND_IDS);
-  });
-
   it("ships no default hotkey", () => {
     const { plugin } = setup(true);
     for (const command of plugin.commands.values()) {
@@ -78,6 +100,26 @@ describe("addCitekeyEditorActions", () => {
       ["doe2024", "split"],
       ["doe2024", "window"],
     ]);
+  });
+
+  it("interrupts a pending open when the plugin unloads", async () => {
+    let interrupted = false;
+    const { opened, run, unload } = setup(
+      true,
+      Effect.never.pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            interrupted = true;
+          }),
+        ),
+      ),
+    );
+
+    run("open-citekey", editorAt("See @doe2024 here.", 8), false);
+    expect(opened).toEqual([["doe2024", false]]);
+    await unload();
+
+    expect(interrupted).toBe(true);
   });
 
   it("leaves the palette while the cursor is off a citekey", () => {

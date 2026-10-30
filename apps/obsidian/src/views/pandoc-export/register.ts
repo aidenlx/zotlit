@@ -1,53 +1,76 @@
+import { Cause, Effect, FileSystem, Schema } from "effect";
+import type { Context } from "effect";
 // Registers the built-in export command and drives one export end to end:
 // modal → resolution → bibliography → engine → chosen destination.
-
-import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { requestUrl } from "obsidian";
 import type { App, FileSystemAdapter, Plugin, TFile } from "obsidian";
 
-import { parseIndexedKey, resolveIndexedKeyLibrary } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import type { Library } from "@zotlit/db";
 
+import { citationStyleLabel } from "@/lib/citation-style";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { BaseNotice, LazyNotice } from "@/lib/notice";
-import type { DatabaseService } from "@/services/database/service";
+import { withProgress } from "@/lib/notifier";
+import type { Notifier } from "@/lib/notifier";
+import { requestProfileSwitch } from "@/lib/profile-recovery";
+import { ZoteroHttp } from "@/lib/zotero-http";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import { CitationParse } from "@/services/citation-parse/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
   fetchBibliography,
   LOCAL_API_PREF,
 } from "@/services/pandoc/bibliography";
-import type {
-  BibliographyItemRef,
-  BibliographyTransport,
-} from "@/services/pandoc/bibliography";
+import type { BibliographyItemRef } from "@/services/pandoc/bibliography";
 import {
   documentPresentation,
+  profileReaderOf,
   effectivePresentation,
+  styleSourceOf,
   vaultPresentation,
 } from "@/services/pandoc/document-presentation";
+import type { CitationEngine } from "@/services/pandoc/engine";
 import { describeError, exportCitedDocument } from "@/services/pandoc/export";
 import type { ExportPorts } from "@/services/pandoc/export";
-import type { PandocEngineService } from "@/services/pandoc/service";
+import { PandocEngine } from "@/services/pandoc/service";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { Profile } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
+import type { PandocExportChoices } from "./modal";
 import { openPandocExportModal } from "./modal";
-import { showEngineMissing, showExportFailure } from "./notices";
+import { engineMissingMessage, exportFailureMessage } from "./notices";
+import type { ExportProblem } from "./notices";
 
-const logger = getLogger(["views", "pandoc-export"]);
+/**
+ * The services an export reads. `ZoteroHttp` is the loopback client the
+ * bibliography is fetched over.
+ */
+export type PandocExportServices =
+  | CitationLookup
+  | CitationParse
+  | FileSystem.FileSystem
+  | Notifier
+  | PandocEngine
+  | PluginSettings
+  | Profile
+  | ZoteroHttp
+  | ZoteroPref
+  | ZoteroReads;
 
 export interface PandocExportDeps {
   app: App;
-  db: Pick<DatabaseService, "acquireRead">;
-  pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
-  zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "httpPort" | "get">;
-  settings: Pick<SettingsService, "current">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;
+  /** The services the command callback runs each export with. */
+  context: Context.Context<PandocExportServices>;
 }
 
 export function registerPandocExport(
@@ -68,30 +91,133 @@ export function registerPandocExport(
 }
 
 /**
- * One export, from the dialog to the written file. The engine is the one
- * prerequisite the command cannot supply itself, so its absence is answered
- * with the settings page that installs it.
+ * One export, from the dialog to the written file, with its outcome shown as
+ * a notice. The engine is the one prerequisite the command cannot supply
+ * itself, so its absence is answered with the settings page that installs it.
  */
-export async function runPandocExport(
+class PandocExportError extends Schema.TaggedError<
+  PandocExportError,
+  { readonly brand: unique symbol }
+>()("PandocExportError", {
+  notice: Schema.declare<DocumentFragment>(
+    (value): value is DocumentFragment => value instanceof DocumentFragment,
+  ),
+}) {}
+
+export function runPandocExport(
   file: TFile,
   deps: PandocExportDeps,
-): Promise<void> {
-  const { app, pandocEngine, zoteroPref, settings } = deps;
-  if (pandocEngine.getStatus().kind !== "installed") {
-    showEngineMissing(deps.openSettings);
-    return;
-  }
+): Promise<unknown> {
+  return deps.bridge.runPromiseExit(
+    prepareExport(file, deps).pipe(
+      Effect.flatMap(({ run }) =>
+        withProgress(
+          run.pipe(
+            Effect.flatMap((outcome) => {
+              if (outcome.kind === "stopped") return Effect.interrupt;
+              if (
+                outcome.kind === "engine-missing" ||
+                outcome.kind === "failed"
+              )
+                return Effect.fail(
+                  new PandocExportError({
+                    notice:
+                      outcome.kind === "engine-missing"
+                        ? engineMissingMessage(deps.openSettings)
+                        : exportFailureMessage(outcome.problem),
+                  }),
+                );
+              return Effect.succeed(outcome);
+            }),
+          ),
+          {
+            loading: m.notice_pandoc_export_running(),
+            success: (outcome) =>
+              m.notice_pandoc_export_done({
+                file: basename(outcome.destination),
+                style: outcome.styleTitle,
+              }),
+            error: (error) => {
+              if (!(error instanceof PandocExportError))
+                return exportFailureMessage({
+                  kind: "engine",
+                  detail: describeError(error),
+                });
+              return error.notice;
+            },
+          },
+        ),
+      ),
+      Effect.provideContext(deps.context),
+    ),
+  );
+}
+
+/** How one export ended. */
+export type PandocExportOutcome =
+  | { kind: "engine-missing" }
+  | { kind: "failed"; problem: ExportProblem }
+  /** The user dismissed the dialog, or the plugin unloaded during the run. */
+  | { kind: "stopped" }
+  | { kind: "exported"; destination: string; styleTitle: string };
+
+/** One export, from the dialog to the written file. */
+export const exportWithCitations = Effect.fn(
+  "PandocExport.exportWithCitations",
+)((file: TFile, deps: PandocExportDeps) =>
+  prepareExport(file, deps).pipe(Effect.flatMap(({ run }) => run)),
+);
+
+const prepareExport = Effect.fn("PandocExport.prepareExport")(function* (
+  file: TFile,
+  deps: PandocExportDeps,
+): Effect.fn.Return<
+  { run: Effect.Effect<PandocExportOutcome> },
+  never,
+  PandocExportServices
+> {
+  const { app, bridge } = deps;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const pandocEngine = yield* PandocEngine;
+  const settings = yield* PluginSettings;
+  const citationParse = yield* CitationParse;
+  const zoteroHttp = yield* ZoteroHttp;
+  const zoteroPref = yield* ZoteroPref;
+  const citationLookup = yield* CitationLookup;
+  const db = yield* ZoteroReads;
+  const pref = yield* zoteroPref.current;
+  if ((yield* pandocEngine.getStatus).kind !== "installed")
+    return { run: Effect.succeed({ kind: "engine-missing" }) };
   // A note whose own presentation property names nothing stops here: a vault
   // selection never stands in for it, in the dialog or in the exported run.
-  const declared = documentPresentation(app.metadataCache, file);
+  const declared = documentPresentation(
+    app.metadataCache,
+    file,
+    profileReaderOf(
+      yield* Profile,
+      Effect.runSyncWith(yield* Effect.context<never>()),
+    ),
+  );
   if (declared.kind === "unusable") {
-    showExportFailure({
-      kind:
-        declared.property === "language"
-          ? "document-language-invalid"
-          : "document-style-invalid",
-    });
-    return;
+    return {
+      run: Effect.succeed({
+        kind: "failed",
+        problem:
+          declared.property === "profile"
+            ? {
+                kind: "document-profile-invalid",
+                stamp: declared.diagnostic.stamp,
+                target: declared.target,
+                recover: () => requestProfileSwitch(app, declared.target),
+              }
+            : {
+                kind:
+                  declared.property === "language"
+                    ? "document-language-invalid"
+                    : "document-style-invalid",
+              },
+      }),
+    };
   }
   // Where this export starts: the document's own effective Citation
   // Presentation, read through the boundary every in-app surface reads it
@@ -104,75 +230,123 @@ export async function runPandocExport(
   // it the exported document's language.
   const effective = effectivePresentation(
     declared.presentation,
-    vaultPresentation(settings.current),
+    vaultPresentation(yield* settings.current),
   );
-  await zoteroPref.ready;
+  // A literal citation key resolves through the snapshot, so this export waits
+  // for its first rebuild the way every in-app surface does.
 
-  const choices = await openPandocExportModal(app, {
-    dataDir: zoteroPref.dataDir,
-    referencesStyleId: effective.styleId,
-    notePath: absolutePath(app, file),
-  });
-  if (!choices) return;
-
-  // The style the note itself named, carried into this run unchanged, stops it
-  // where Zotero cannot supply that style: the run never falls back to another.
-  const style = await exportPresentation(
-    zoteroPref.dataDir,
-    { styleId: choices.styleId, locale: effective.locale },
-    { documentStyle: choices.styleId === declared.presentation.styleId },
-  );
-  if (style === null) {
-    showExportFailure({ kind: "document-style-invalid" });
-    return;
-  }
-
-  using notice = new LazyNotice();
-  notice.setMessage(m.notice_pandoc_export_running());
-
-  let output: Uint8Array;
-  try {
-    const result = await exportCitedDocument(
+  const choices = yield* awaitModal<PandocExportChoices | null>((resolve) =>
+    openPandocExportModal(
+      app,
       {
-        document: {
-          sourcePath: file.path,
-          links: app.metadataCache.getFileCache(file)?.links ?? [],
-        },
-        markdown: await app.vault.cachedRead(file),
-        format: choices.format,
-        ...style,
+        dataDir: pref.dataDir,
+        fileSystem,
+        bridge,
+        referencesStyleId: effective.styleId,
+        styleSource: styleSourceOf(declared),
+        notePath: absolutePath(app, file),
       },
-      exportPorts(deps, await pandocEngine.getEngine()),
-    );
-    if ("error" in result) {
-      showExportFailure(result.error);
-      return;
-    }
-    output = result.output;
-  } catch (error) {
-    logger.error("The Pandoc export failed", { error });
-    showExportFailure({ kind: "engine", detail: describeError(error) });
-    return;
+      resolve,
+    ),
+  );
+  if (!choices) return { run: Effect.succeed({ kind: "stopped" }) };
+
+  // A style Zotero cannot supply stops the run, whichever place selected it:
+  // the run never falls back to another style.
+  const style = yield* exportPresentation(pref.dataDir, {
+    styleId: choices.styleId,
+    locale: effective.locale,
+  });
+  if (style === null) {
+    const noteStyle = choices.styleId === declared.presentation.styleId;
+    return {
+      run: Effect.succeed({
+        kind: "failed",
+        problem:
+          noteStyle &&
+          declared.profileStyle &&
+          typeof choices.styleId === "string"
+            ? { kind: "profile-style-invalid", styleId: choices.styleId }
+            : noteStyle
+              ? { kind: "document-style-invalid" }
+              : { kind: "style-invalid", style: choices.styleId ?? "" },
+      }),
+    };
   }
 
-  // The bytes exist by now, so a refusal here is the destination's, not Pandoc's.
-  try {
-    await writeFile(choices.destination, output);
-  } catch (error) {
-    logger.error("The exported document could not be written", {
-      error,
-      destination: choices.destination,
-    });
-    showExportFailure({
-      kind: "destination-unwritable",
-      detail: describeError(error),
-    });
-    return;
-  }
-  new BaseNotice(
-    m.notice_pandoc_export_done({ file: basename(choices.destination) }),
-  );
-}
+  const { title: styleTitle, ...engineStyle } = style;
+  return {
+    run: Effect.gen(function* (): Effect.fn.Return<PandocExportOutcome> {
+      const conversion = yield* Effect.gen(function* () {
+        const engine = yield* pandocEngine.getEngine;
+        if (!engine) return yield* Effect.interrupt;
+        const markdown = yield* Effect.promise(() =>
+          app.vault.cachedRead(file),
+        );
+        const localApiEnabled =
+          (yield* zoteroPref.get(LOCAL_API_PREF)) === true;
+        return yield* exportCitedDocument(
+          {
+            document: {
+              sourcePath: file.path,
+              links: app.metadataCache.getFileCache(file)?.links ?? [],
+            },
+            markdown,
+            format: choices.format,
+            ...engineStyle,
+          },
+          exportPorts(deps, engine, {
+            ...pref,
+            localApiEnabled,
+            citationLookup,
+            db,
+            zoteroHttp,
+          }),
+        ).pipe(Effect.provideService(CitationParse, citationParse));
+      }).pipe(
+        // This outcome keeps the engine's actual detail; its fallback depends
+        // on the cause rather than the fixed fallback that recover accepts.
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+          return Effect.logError("The Pandoc export failed").pipe(
+            Effect.annotateLogs({
+              cause,
+              source: file.path,
+              destination: choices.destination,
+              format: choices.format,
+            }),
+            withLogCategory("views", "pandoc-export"),
+            Effect.as({
+              error: {
+                kind: "engine" as const,
+                detail: describeError(Cause.squash(cause)),
+              },
+            }),
+          );
+        }),
+      );
+      if ("error" in conversion)
+        return { kind: "failed", problem: conversion.error };
+      const written = yield* fileSystem
+        .writeFile(choices.destination, conversion.output)
+        .pipe(Effect.uninterruptible, Effect.result);
+      if (written._tag === "Failure")
+        return {
+          kind: "failed",
+          problem: {
+            kind: "destination-unwritable",
+            detail: describeError(written.failure),
+          },
+        };
+
+      return {
+        kind: "exported",
+        destination: choices.destination,
+        styleTitle,
+      };
+    }),
+  };
+});
 
 /**
  * What the engine formats the exported run with, read through the resolver the
@@ -181,105 +355,79 @@ export async function runPandocExport(
  * content with that locale already applied; the embedded default style takes
  * the locale beside it.
  *
- * A vault selection Zotero cannot supply falls back to the embedded default
- * style, still in the Citation Locale the request named.
- *
- * @param documentStyle whether the request carries the style the note itself
- *   named, which speaks for that note alone.
- * @returns what the engine formats with, or `null` where the note's own style
- *   is unusable — that document stops rather than exporting in another style.
+ * @returns what the engine formats with and the style's title, or `null` where
+ *   the requested style is unusable — the document stops rather than exporting
+ *   in another style.
  */
-async function exportPresentation(
-  dataDir: string,
-  request: CslStyleRequest,
-  { documentStyle }: { documentStyle: boolean },
-): Promise<{ styleXml?: string; locale?: string } | null> {
-  const style = await resolveInstalledStyle(dataDir, request);
-  if (style.kind === "installed") return { styleXml: style.xml };
-  if (style.kind === "failed") {
-    const unusable = {
-      styleId: style.styleId,
-      parentId: style.parentId,
-      reason: style.reason,
-    };
-    if (documentStyle) {
-      logger.warn(
-        "Stopping the export: the note's own style is unusable",
-        unusable,
-      );
-      return null;
-    }
-    logger.warn(
-      "Exporting with the embedded style: the chosen one is unusable",
-      unusable,
-    );
-    return { locale: request.locale ?? undefined };
-  }
-  return { locale: style.locale };
-}
+const exportPresentation = Effect.fn("PandocExport.exportPresentation")(
+  function* (dataDir: string, request: CslStyleRequest) {
+    const style = yield* resolveInstalledStyle(dataDir, request);
+    if (style.kind === "installed")
+      return { styleXml: style.xml, title: style.title };
+    if (style.kind === "failed") return null;
+    return { locale: style.locale, title: citationStyleLabel() };
+  },
+);
 
 function exportPorts(
   deps: PandocExportDeps,
-  engine: Awaited<ReturnType<PandocEngineService["getEngine"]>>,
+  engine: CitationEngine,
+  pref: {
+    dataDir: string;
+    httpPort: number | null;
+    localApiEnabled: boolean;
+    /** Resolves the literal citation keys of the exported document. */
+    citationLookup: CitationLookup["Service"];
+    db: ZoteroReads["Service"];
+    /** The loopback client the bibliography is fetched over. */
+    zoteroHttp: ZoteroHttp["Service"];
+  },
 ): ExportPorts {
-  const { app, db, zoteroPref } = deps;
+  const { app } = deps;
+  const { citationLookup, db } = pref;
   return {
     engine,
-    dataDir: () => zoteroPref.dataDir,
+    dataDir: () => pref.dataDir,
     resolveIndexedKey: (linkpath, sourcePath) =>
       resolveIndexedKey(linkpath, sourcePath, app),
+    readLookup: (request) => citationLookup.read(request),
     readItemRefs: (indexedKeys) => readItemRefs(db, indexedKeys),
     fetchBibliography: (refs) =>
       fetchBibliography(refs, {
-        request: zoteroRequest,
-        httpPort: zoteroPref.httpPort,
-        localApiEnabled: zoteroPref.get(LOCAL_API_PREF) === true,
-      }),
+        httpPort: pref.httpPort,
+        localApiEnabled: pref.localApiEnabled,
+      }).pipe(Effect.provideService(ZoteroHttp, pref.zoteroHttp)),
   };
 }
 
-/** One read lease per export, however many Literature Notes it cites. */
-async function readItemRefs(
-  db: PandocExportDeps["db"],
-  indexedKeys: readonly string[],
-): Promise<ReadonlyMap<string, BibliographyItemRef> | null> {
-  try {
-    using lease = await db.acquireRead();
+const readItemRefs = Effect.fn("PandocExport.readItemRefs")(
+  function* (db: ZoteroReads["Service"], indexedKeys: readonly string[]) {
+    const libraries = yield* db.reads.Libraries({});
     const refs = new Map<string, BibliographyItemRef>();
     for (const indexedKey of new Set(indexedKeys)) {
-      const ref = placeItem(lease.client, indexedKey);
+      const ref = placeItem(libraries, indexedKey);
       if (ref) refs.set(indexedKey, ref);
     }
     return refs;
-  } catch (error) {
-    logger.warn("Cannot read the Zotero database", { error });
-    return null;
-  }
-}
+  },
+  Effect.orElseSucceed(() => null),
+);
 
 /** Both identities the two bibliography sources address one Item by. */
 function placeItem(
-  client: NodeDatabaseClient,
+  libraries: readonly Library[],
   indexedKey: string,
 ): BibliographyItemRef | null {
   const parsed = parseIndexedKey(indexedKey);
-  const selector = resolveIndexedKeyLibrary(client, indexedKey);
-  if (!parsed || !selector) return null;
-  return {
-    itemKey: selector.key,
-    libraryID: selector.libraryID,
-    groupID: parsed.groupID,
-  };
+  if (!parsed) return null;
+  const { key: itemKey, groupID } = parsed;
+  const libraryID =
+    groupID == null
+      ? USER_LIBRARY_ID
+      : libraries.find((library) => library.groupID === groupID)?.libraryID;
+  if (libraryID === undefined) return null;
+  return { itemKey, libraryID, groupID };
 }
-
-/**
- * Zotero's HTTP server over Obsidian's own transport, which reaches localhost
- * without CORS. A refusal comes back as a status; only a dead port rejects.
- */
-const zoteroRequest: BibliographyTransport = async (request) => {
-  const response = await requestUrl({ ...request, throw: false });
-  return { status: response.status, text: response.text };
-};
 
 /** Desktop-only plugin: the adapter is always a `FileSystemAdapter`. */
 function absolutePath(app: App, file: TFile): string {

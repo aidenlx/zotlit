@@ -73,9 +73,10 @@ export function createCommentRenderer(
  * anchor behavior.
  */
 function openInternalLink(app: App, sourcePath: string, evt: MouseEvent): void {
-  if (!(evt.target instanceof HTMLElement)) return;
-  const anchor = evt.target.closest("a.internal-link");
-  if (!(anchor instanceof HTMLAnchorElement)) return;
+  const target = evt.target as Node | null;
+  if (!target?.instanceOf(HTMLElement)) return;
+  const anchor = target.closest("a.internal-link");
+  if (!anchor?.instanceOf(HTMLAnchorElement)) return;
   const href = anchor.dataset.href ?? anchor.getAttribute("href");
   if (!href) return;
   evt.preventDefault();

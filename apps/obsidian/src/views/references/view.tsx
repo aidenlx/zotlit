@@ -1,96 +1,40 @@
-// ItemView orchestrator for the References Sidebar: reads the active document's Citations from the index and renders them through the Pandoc engine.
+// The Obsidian leaf adapter for the References model in the plugin's view registry.
 import { ItemView } from "obsidian";
-import type { App, TFile, WorkspaceLeaf } from "obsidian";
+import type { App, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
-import type { Root } from "react-dom/client";
 
 import { writeClipboardRichText } from "@/lib/clipboard";
-import type { Held } from "@/lib/held-reads";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { describeCandidates } from "@/services/citation-index/ambiguity";
-import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
-import {
-  citationsEqual,
-  documentCitationErrorsEqual,
-  readReferenceSources,
-} from "@/services/citation-index/service";
-import type {
-  Citation,
-  CitationIndex,
-  DocumentCitationError,
-  DocumentCitationSet,
-  ReferenceSource,
-} from "@/services/citation-index/service";
-import type { CitationText } from "@/services/citation-text/service";
-import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import type { DatabaseService } from "@/services/database/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
-import {
-  documentCitationPresentation,
-  documentPresentation,
-  samePresentation,
-} from "@/services/pandoc/document-presentation";
-import type {
-  DocumentPresentation,
-  UnusableProperty,
-} from "@/services/pandoc/document-presentation";
-import type {
-  BibliographyRenderCache,
-  BibliographyRenderResult,
-} from "@/services/pandoc/render-cache";
-import type { PandocEngineService } from "@/services/pandoc/service";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { showInLibraryCommand } from "@/views/library/atoms";
 
-import { createReferenceActions, ReferenceActionsContext } from "./actions";
-import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
-import type { CopiedBibliographyEntry } from "./copied-bibliography";
-import { buildReferenceEntries } from "./entries";
-import type { ReferenceEntry, RenderedReference } from "./entries";
-import { References } from "./References";
 import {
-  createReferencesStore,
-  minimalReferencesState,
-  referencesCopyState,
-  ReferencesStoreProvider,
-} from "./store";
-import type {
-  ReferencesCopyBlock,
-  ReferencesCopyState,
-  ReferencesCopyTarget,
-  ReferencesFormatting,
-  ReferencesListMode,
-} from "./store";
+  copyBibliographyMessage,
+  createReferenceActions,
+  ReferenceActionsContext,
+} from "./actions";
+import {
+  dismissEngineHintCommand,
+  openIndexedKeyCommand,
+  openReferenceLinkCommand,
+  revealReferenceOccurrenceCommand,
+  referencesSelectionAtom,
+} from "./atoms";
+import {
+  advanceOccurrence,
+  holdReferencesModel,
+  makeReferencesModel,
+  ReferencesModelContext,
+} from "./model";
+import { References } from "./References";
 
 export const REFERENCES_VIEW_TYPE = "zotlit-references";
 
-const logger = getLogger(["views", "references"]);
-
 export interface ReferencesViewDeps {
+  registry: ViewRegistryHandle;
   app: App;
-  db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
-  citationIndex: Pick<
-    CitationIndex,
-    "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
-  >;
-  /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
-  libraryScope: Pick<LibraryScopeService, "current">;
-  /** Opens the Literature Note a citekey names, creating it first when it has none. */
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
-  /**
-   * The active document's formatted citations, which say whether that document
-   * shows Entry Serials — the gutter follows what the citations show.
-   */
-  citationText: Pick<CitationText, "peek" | "on">;
-  pandocEngine: Pick<
-    PandocEngineService,
-    "getStatus" | "subscribe" | "decline"
-  >;
-  /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
-  bibliographyRender: Pick<
-    BibliographyRenderCache,
-    "render" | "on" | "vaultPresentation"
-  >;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
   /** Reveals the Citation and References Style row in settings. */
@@ -98,562 +42,87 @@ export interface ReferencesViewDeps {
 }
 
 export class ReferencesView extends ItemView {
-  readonly #store = createReferencesStore();
-  readonly #deps: ReferencesViewDeps;
-  /**
-   * Rendered bibliography entries by CSL id, in the engine's bibliography
-   * order. Kept across reloads so an entry that is already formatted never
-   * falls back to its summary mid-edit.
-   */
-  readonly #onScreen = new Map<string, RenderedReference>();
-  /**
-   * Entry Marker ownership of the last completed render for the current style,
-   * or `null` while the list on screen is the minimal one.
-   */
-  #entryMarkers: boolean | null = null;
-  /** Whether the document's citations put this list's gutter on Entry Serials. */
-  #entrySerials = false;
-  /** The current list is minimal because a completed formatting attempt failed. */
-  #formattingFailed = false;
-  #root: Root | null = null;
-  #actions: ReferenceActions | null = null;
-  /** Bumped when copy readiness moves to another on-screen result. */
-  #copyGeneration = 0;
-  /** The Held Read whose events can repaint this list. */
-  #renderKey: string | null = null;
-  /** Bumped per rescan, the same way, since a query may await a file read. */
-  #scan = 0;
-  /** The Markdown note the current list was read from; `null` for none. */
-  #file: TFile | null = null;
-  /** Path of that note, which is what a document-scoped event names. */
-  #path: string | null = null;
-  /** Citations of that note, as the current list was built from. */
-  #citations: readonly Citation[] = [];
-  /** Explicit citation-source errors of that note. */
-  #errors: readonly DocumentCitationError[] = [];
-  /** Citation Presentation of that note, as the current list was rendered under. */
-  #presentation: DocumentPresentation = { kind: "read", presentation: {} };
-  /**
-   * The note property that put the current minimal list on screen; `null` while
-   * the note's own presentation is not what stopped the render.
-   */
-  #documentPresentationError: UnusableProperty | null = null;
-  /** Where the current list's render stands, as copy readiness reads it. */
-  #formatting: ReferencesFormatting = "pending";
-  /** Copy readiness as it was last published, so only a change is logged. */
-  #copyLabel: "ready" | ReferencesCopyBlock = "no-note";
-  /** The bibliography a copy would take; `null` while copy is unavailable. */
-  #copySnapshot: CopyBibliographySnapshot | null = null;
+  readonly model = makeReferencesModel();
+  readonly #deps;
+  #release: (() => void) | null;
+  #cleanup: DisposableStack | null = null;
 
   constructor(leaf: WorkspaceLeaf, deps: ReferencesViewDeps) {
     super(leaf);
     this.contentEl.addClass("zt-root");
     this.contentEl.addClass("zt-references-view");
     this.#deps = deps;
+    this.#release = holdReferencesModel(deps.registry, this.model);
   }
 
   override getViewType(): string {
     return REFERENCES_VIEW_TYPE;
   }
-
   override getDisplayText(): string {
     return m.references_view_name();
   }
-
   override getIcon(): string {
     return "quote";
   }
 
   protected override async onOpen(): Promise<void> {
-    const {
+    using cleanup = new DisposableStack();
+    const { registry, app } = this.#deps;
+    this.#release ??= holdReferencesModel(registry, this.model);
+    cleanup.defer(registry.mount(openIndexedKeyCommand));
+    cleanup.defer(registry.mount(showInLibraryCommand));
+    cleanup.defer(registry.mount(dismissEngineHintCommand));
+    cleanup.defer(registry.mount(openReferenceLinkCommand));
+    cleanup.defer(registry.mount(revealReferenceOccurrenceCommand));
+    const actions = createReferenceActions({
       app,
-      db,
-      citationIndex,
-      citationText,
-      citekeyEditor,
-      pandocEngine,
-      bibliographyRender,
-    } = this.#deps;
-
-    this.#actions = createReferenceActions({
-      app,
-      getSourcePath: () => app.workspace.getActiveFile()?.path ?? null,
-      openCitekey: (citekey) => void citekeyEditor.openCitekey(citekey, false),
-      onOpenEngineSettings: () => this.#deps.openSettings(),
-      onChangeStyle: () => this.#deps.openStyleSettings(),
-      onDismissEngineHint: () => pandocEngine.decline(),
-      getCopySnapshot: () => this.#copySnapshot,
+      getSourcePath: () => registry.get(referencesSelectionAtom).path,
+      openIndexedKey: (key) => registry.set(openIndexedKeyCommand, key),
+      showInLibrary: (key) => registry.set(showInLibraryCommand, key),
+      openLinkText: (linkpath, sourcePath) =>
+        registry.set(openReferenceLinkCommand, { linkpath, sourcePath }),
+      nextOccurrence: (id, count) => {
+        registry.update(this.model.cursors, advanceOccurrence(id, count));
+        return registry.get(this.model.cursors)[id]!;
+      },
+      revealOccurrence: (sourcePath, occurrence) =>
+        registry.set(revealReferenceOccurrenceCommand, {
+          sourcePath,
+          occurrence,
+        }),
+      onOpenEngineSettings: this.#deps.openSettings,
+      onChangeStyle: this.#deps.openStyleSettings,
+      onDismissEngineHint: () =>
+        registry.set(dismissEngineHintCommand, undefined),
+      getCopySnapshot: () => registry.get(this.model.snapshot),
       writeClipboard: writeClipboardRichText,
-      notify: (message) => void new BaseNotice(message),
+      reportCopy: (outcome) =>
+        void new BaseNotice(copyBibliographyMessage(outcome)),
     });
-
-    this.#root = createRoot(this.contentEl);
-    this.#root.render(
-      <ReferencesStoreProvider value={this.#store}>
-        <ReferenceActionsContext value={this.#actions}>
-          <References />
-        </ReferenceActionsContext>
-      </ReferencesStoreProvider>,
+    // References has no saved layout fields; its title is fixed and its actions
+    // read the current model. The registry owns their refresh with the leaf.
+    cleanup.defer(
+      registry.subscribe(this.model.state, () => this.leaf.updateHeader()),
     );
-
-    // The index answers for the active document alone, so the pane follows
-    // whichever document that is, and every signal that can change its
-    // Citations: its own citekeys through the index, its wikilinks and the
-    // frontmatter that resolves either syntax through the metadata cache. A
-    // rescan that finds the same Citations of the same note rebuilds nothing.
-    this.registerEvent(
-      app.workspace.on("active-leaf-change", () => this.#rescan()),
+    const root = cleanup.adopt(createRoot(this.contentEl), (root) =>
+      root.unmount(),
     );
-    this.register(
-      citationIndex.on("changed", (path) => {
-        if (path === app.workspace.getActiveFile()?.path) this.#rescan();
-      }),
+    root.render(
+      <ViewRegistryProvider registry={registry}>
+        <ReferencesModelContext value={this.model}>
+          <ReferenceActionsContext value={actions}>
+            <References />
+          </ReferenceActionsContext>
+        </ReferencesModelContext>
+      </ViewRegistryProvider>,
     );
-    // Vault-wide: the citekey resolution snapshot rebuilt and now answers
-    // differently, so the active document's Citations may resolve to a
-    // different Item — or a citekey that resolved before now resolves to
-    // none — regardless of which document changed to trigger the rebuild.
-    // The resolution state is published on its own, because a settle that
-    // leaves the Citations identical — every key still unresolved — skips the
-    // reload, and the pending label must still give way to the verdict.
-    this.register(
-      citationIndex.on("resolution-changed", () => {
-        this.#publishResolution();
-        this.#rescan();
-      }),
-    );
-    // A rebuild that settles with the maps unchanged emits no
-    // resolution-changed — only cited-by-invalidated announces the state
-    // flip — so this is what returns the pending label to a verdict.
-    this.register(
-      citationIndex.on("cited-by-invalidated", () => this.#publishResolution()),
-    );
-    this.register(citationIndex.on("membership-changed", () => this.#rescan()));
-    this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
-    // What the document's own citations show decides what this gutter shows,
-    // so a fresh read of the note on screen republishes the list.
-    this.register(
-      citationText.on("changed", (path) => {
-        if (path === this.#path) this.#reload();
-      }),
-    );
-    this.register(db.on("changed", () => this.#reload()));
-    this.register(pandocEngine.subscribe(() => this.#reload()));
-    // What the cache holds is what this pane shows, so its wholesale drop —
-    // for a Zotero change, a Citation and References Style change, or an engine
-    // that came or went — makes the formatted entries here stale rather than
-    // wrong. The reload's own render is what replaces them, so they stay on
-    // screen while it runs and a Zotero refresh that changes nothing never
-    // flashes the minimal list; an unavailable or failed outcome still clears
-    // them through #showMinimal.
-    this.register(bibliographyRender.on("invalidated", () => this.#reload()));
-    const repaint = (key: string): void => {
-      if (key === this.#renderKey) this.#reload();
-    };
-    this.register(bibliographyRender.on("changed", repaint));
-    this.register(bibliographyRender.on("settled", repaint));
-    this.#reload();
-    this.#rescan();
-    await db.ready;
-    this.#reload();
+    this.#cleanup = cleanup.move();
   }
 
   protected override async onClose(): Promise<void> {
-    this.#root?.unmount();
-    this.#root = null;
-    this.#actions = null;
+    this.#cleanup?.dispose();
+    this.#cleanup = null;
+    this.#release?.();
+    this.#release = null;
   }
-
-  /**
-   * Ask the index what the active document cites, and rebuild the list when the
-   * answer differs. The query is answered from the index, so a document the
-   * vault-wide backfill has not reached is scanned on demand rather than waited
-   * for; the read yields, so a stale answer is discarded.
-   *
-   * A rescan starts when the active note may have moved on, while the list
-   * still answers for the note its Citations were read from, so copy readiness
-   * is republished before the read rather than after it. The note is part of
-   * the answer, so a switch to a note citing the same works rebuilds the list
-   * all the same, and the copy it offers names the note now on screen.
-   */
-  #rescan(): void {
-    const scan = ++this.#scan;
-    // A presentation change makes the entries on screen stale the moment it is
-    // read, and the read that follows lands a turn later at the earliest, so
-    // the formatted entries go out of reach here rather than after it: no copy
-    // taken while the read runs carries the presentation left behind.
-    if (
-      !samePresentation(
-        this.#presentation,
-        this.#readPresentation(this.#activeMarkdownFile()),
-      )
-    ) {
-      this.#formatting = "pending";
-    }
-    this.#refreshCopy();
-    void this.#readCitationSet().then(({ file, citations, errors }) => {
-      const path = file?.path ?? null;
-      // The note's own presentation properties decide what its list is rendered
-      // under, so a frontmatter edit that leaves the Citations untouched still
-      // moves this list — and the entries formatted before it are stale.
-      const presentation = this.#readPresentation(file);
-      const restyled = !samePresentation(this.#presentation, presentation);
-      if (
-        scan !== this.#scan ||
-        (path === this.#path &&
-          !restyled &&
-          citationsEqual(this.#citations, citations) &&
-          documentCitationErrorsEqual(this.#errors, errors))
-      ) {
-        return;
-      }
-      this.#file = file;
-      this.#path = path;
-      this.#citations = citations;
-      this.#errors = errors;
-      this.#presentation = presentation;
-      logger.trace("References citations changed", {
-        path,
-        count: citations.length,
-        restyled,
-      });
-      this.#reload();
-    });
-  }
-
-  /**
-   * Scope is `.md`, the only files the index covers. The note travels with the
-   * answer, so the list keeps naming the note it was read from however the
-   * active note moves while the read runs.
-   */
-  async #readCitationSet(): Promise<
-    DocumentCitationSet & { file: TFile | null }
-  > {
-    const file = this.#activeMarkdownFile();
-    if (!file) {
-      return { file: null, occurrences: [], citations: [], errors: [] };
-    }
-    return {
-      file,
-      ...(await this.#deps.citationIndex.getDocumentCitationSet(file)),
-    };
-  }
-
-  /**
-   * The Items an Ambiguous Citation Key names, or `null` for a citekey that
-   * names no Item at all. Read as the list is built, so a row states the
-   * candidates the current Library Scope names. Bound once, since every build
-   * of the list hands the same reader over.
-   */
-  readonly #ambiguousCandidates: AmbiguousCandidatesOf = (citekey) => {
-    const resolved = this.#deps.citationIndex.resolveCitekey(citekey);
-    return resolved?.kind === "ambiguous"
-      ? describeCandidates(this.#deps, resolved.candidates)
-      : null;
-  };
-
-  /** The Citation Presentation one note renders under; no note renders as none. */
-  #readPresentation(file: TFile | null): DocumentPresentation {
-    return file === null
-      ? { kind: "read", presentation: {} }
-      : documentPresentation(this.#deps.app.metadataCache, file);
-  }
-
-  /** Re-read the cited Items and re-render the whole list. */
-  #reload(): void {
-    this.#entrySerials = this.#readEntrySerials();
-    this.#copyGeneration += 1;
-    const citations = this.#citations;
-    const { sources } = readReferenceSources(this.#deps.db, citations);
-    const engine = this.#deps.pandocEngine.getStatus();
-    const entries = buildReferenceEntries(citations, sources, {
-      bibliography: {
-        entries: this.#onScreen,
-        complete: false,
-      },
-      errors: this.#errors,
-      ambiguous: this.#ambiguousCandidates,
-    });
-
-    // Retained formatted entries answer for the render that is about to be
-    // replaced, so the reload alone puts copy out of reach.
-    this.#formatting = engine.kind === "installed" ? "pending" : "unavailable";
-    this.#store.setState({
-      entries,
-      listMode: this.#listMode(),
-      engine,
-      formattingFailed: this.#formattingFailed,
-      documentPresentationError: this.#documentPresentationError,
-      dbReady: this.#deps.db.state === "ready",
-      citekeyResolution: this.#deps.citationIndex.resolution,
-      copy: this.#trackCopy(entries),
-    });
-    void this.#render(citations, sources);
-  }
-
-  /** Republish the resolution state alone, for a settle the list survives. */
-  #publishResolution(): void {
-    const citekeyResolution = this.#deps.citationIndex.resolution;
-    if (this.#store.getState().citekeyResolution !== citekeyResolution) {
-      this.#store.setState({ citekeyResolution });
-    }
-  }
-
-  /**
-   * Publish copy readiness, and hold the bibliography a ready copy takes.
-   *
-   * The note travels with the Citations the list was built from, rather than
-   * being read back off the workspace here: once another note takes over, the
-   * list on screen answers for the note it was read from alone, so copy waits
-   * for the rescan that follows the switch whatever this render did.
-   *
-   * The snapshot names the note and the generation it answers for, so the copy
-   * action can refuse a write once either has moved on.
-   */
-  #trackCopy(entries: readonly ReferenceEntry[]): ReferencesCopyState {
-    const path = this.#path;
-    const generation = this.#copyGeneration;
-    const copy = referencesCopyState({
-      path,
-      generation,
-      entries,
-      // A list the active note has moved past is the previous note's until the
-      // rescan that follows the switch hands this pane the new note's own
-      // Citations, so it waits on that rescan the way it waits on a render.
-      formatting:
-        this.#activeMarkdownPath() === path ? this.#formatting : "pending",
-    });
-    // The list a snapshot is taken from stands for one note and one generation,
-    // and neither moves without a reload, so a snapshot already taken for the
-    // same pair is the same snapshot and the entries are shown once for it.
-    this.#copySnapshot =
-      copy.kind === "ready"
-        ? (this.#heldSnapshot(copy.target) ?? {
-            ...copy.target,
-            entries: copiedEntries(entries),
-          })
-        : null;
-
-    const label = copy.kind === "ready" ? "ready" : copy.reason;
-    if (label !== this.#copyLabel) {
-      this.#copyLabel = label;
-      logger.debug("References copy readiness changed", {
-        state: label,
-        path,
-        generation,
-      });
-    }
-    return copy;
-  }
-
-  /** The snapshot already taken for `target`, when one was. */
-  #heldSnapshot(target: ReferencesCopyTarget): CopyBibliographySnapshot | null {
-    const held = this.#copySnapshot;
-    return held?.path === target.path && held.generation === target.generation
-      ? held
-      : null;
-  }
-
-  /**
-   * Republish copy readiness alone, for a change that leaves the list itself
-   * standing: the active note moving away from the note the list answers for,
-   * and back to it. The readiness label carries that whole change — neither the
-   * note nor the generation of a ready copy moves without a reload — so an
-   * unchanged label publishes nothing and the pane stays put.
-   */
-  #refreshCopy(): void {
-    const label = this.#copyLabel;
-    const copy = this.#trackCopy(this.#store.getState().entries);
-    if (label !== this.#copyLabel) this.#store.setState({ copy });
-  }
-
-  /** The active file when it is a note the citation index answers for. */
-  #activeMarkdownFile(): TFile | null {
-    const file = this.#deps.app.workspace.getActiveFile();
-    return file?.extension === "md" ? file : null;
-  }
-
-  #activeMarkdownPath(): string | null {
-    return this.#activeMarkdownFile()?.path ?? null;
-  }
-
-  /**
-   * Formats the whole list through the plugin-wide render cache, which answers
-   * from a render another consumer already paid for whenever this document
-   * cites the same works in the same order.
-   *
-   * Formatted entries stay on screen while a render is pending. An unavailable
-   * style or engine returns the list to its supported minimal state. A failed
-   * completed render also shows the failure state. A completed render is
-   * applied even when it is empty, so each source it omitted becomes a
-   * Reference Error.
-   *
-   * A note whose own presentation is unusable never reaches the vault
-   * selections: it shows the minimal list with the error that names the note as
-   * the thing to repair, which also leaves the Copied Bibliography out of reach.
-   */
-  async #render(
-    citations: readonly Citation[],
-    sources: ReadonlyMap<string, ReferenceSource>,
-  ): Promise<void> {
-    const file = this.#file;
-    const declared = this.#presentation;
-    // One value for this render: the style and Citation Locale the note is
-    // shown under, and the works it cites in the order it cites them.
-    const presented = documentCitationPresentation(
-      declared,
-      this.#deps.bibliographyRender.vaultPresentation,
-      { citations, works: sources },
-    );
-    if (presented.kind === "unusable") {
-      this.#renderKey = null;
-      this.#documentPresentationError = presented.property;
-      this.#showMinimal(citations, sources, false);
-      return;
-    }
-
-    const outcome = await this.#deps.bibliographyRender.render(
-      presented.items,
-      presented.presentation,
-    );
-    if (
-      file !== this.#file ||
-      citations !== this.#citations ||
-      declared !== this.#presentation
-    ) {
-      return;
-    }
-
-    if (outcome.kind === "unavailable") {
-      this.#renderKey = null;
-      // A style the note itself named is the note's to repair; one it inherited
-      // from the vault is the vault selection's, which its own warning names.
-      this.#documentPresentationError =
-        outcome.reason === "style-missing" &&
-        declared.kind === "read" &&
-        declared.presentation.styleId !== undefined
-          ? "style"
-          : null;
-      this.#showMinimal(citations, sources, outcome.reason === "failed");
-      return;
-    }
-    this.#renderKey = outcome.key;
-    this.#documentPresentationError = null;
-    if (outcome.record.status === "failed") {
-      this.#showMinimal(citations, sources, true);
-      return;
-    }
-    this.#paint(outcome.record, citations, sources);
-  }
-
-  #paint(
-    record: Held<BibliographyRenderResult>,
-    citations: readonly Citation[],
-    sources: ReadonlyMap<string, ReferenceSource>,
-  ): void {
-    const { entries: rendered, hasEntryMarkers } = record.value;
-    // Refilled rather than merged: the render covers every cited Item, so
-    // what it leaves out is no longer cited, and the map's order is the
-    // bibliography order the list reads in.
-    this.#onScreen.clear();
-    for (const { id, marker, content } of rendered) {
-      this.#onScreen.set(id, { marker, content });
-    }
-    this.#entryMarkers = hasEntryMarkers;
-    this.#formattingFailed = false;
-    this.#formatting =
-      record.status === "revalidating" ? "pending" : "complete";
-    logger.debug("References bibliography rendered", {
-      count: rendered.length,
-      hasEntryMarkers,
-      status: record.status,
-    });
-    const entries = buildReferenceEntries(citations, sources, {
-      bibliography: {
-        entries: this.#onScreen,
-        complete: true,
-      },
-      errors: this.#errors,
-      ambiguous: this.#ambiguousCandidates,
-    });
-    this.#store.setState({
-      entries,
-      listMode: this.#listMode(),
-      formattingFailed: false,
-      documentPresentationError: null,
-      copy: this.#trackCopy(entries),
-    });
-  }
-
-  /**
-   * Which list is on screen, and what its gutter carries.
-   *
-   * The two answers are read apart — a completed render says whether the style
-   * writes Entry Markers, the document's own citations say whether they show
-   * Entry Serials — and either can settle first, so the mode is composed as it
-   * is published rather than held.
-   */
-  #listMode(): ReferencesListMode {
-    return this.#entryMarkers === null
-      ? { kind: "minimal" }
-      : {
-          kind: "bibliography",
-          hasEntryMarkers: this.#entryMarkers,
-          entrySerials: this.#entrySerials,
-        };
-  }
-
-  /**
-   * Whether the note this list answers for shows Entry Serials.
-   *
-   * The answer is the held citation text of that note — the very text its own
-   * surfaces show — so the digits in this gutter are the digits those surfaces
-   * print. A note nothing has read yet is read now, and that read announces
-   * itself when it settles.
-   */
-  #readEntrySerials(): boolean {
-    const file = this.#file;
-    if (file === null) return false;
-    const held = this.#deps.citationText.peek(file.path);
-    return held?.value.entrySerials ?? false;
-  }
-
-  /** Replace stale formatted entries with the current minimal reference list. */
-  #showMinimal(
-    citations: readonly Citation[],
-    sources: ReadonlyMap<string, ReferenceSource>,
-    formattingFailed: boolean,
-  ): void {
-    this.#onScreen.clear();
-    this.#entryMarkers = null;
-    this.#formattingFailed = formattingFailed;
-    this.#formatting = formattingFailed ? "failed" : "unavailable";
-    const minimal = minimalReferencesState({
-      citations,
-      sources,
-      errors: this.#errors,
-      formattingFailed,
-      ambiguous: this.#ambiguousCandidates,
-    });
-    this.#store.setState({
-      ...minimal,
-      documentPresentationError: this.#documentPresentationError,
-      copy: this.#trackCopy(minimal.entries),
-    });
-  }
-}
-
-/**
- * The completed entries of a ready list, in the style's bibliography order.
- *
- * The clipboard serializer reads the formatted flows themselves, so an entry
- * travels as the engine handed it over and is written for the destination once,
- * at the copy.
- */
-function copiedEntries(
-  entries: readonly ReferenceEntry[],
-): CopiedBibliographyEntry[] {
-  return entries
-    .filter((entry) => entry.kind === "rendered")
-    .map(({ marker, content }) => ({ marker, content }));
 }

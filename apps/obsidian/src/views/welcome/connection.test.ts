@@ -1,146 +1,187 @@
+import { it } from "@effect/vitest";
+import { Effect, Layer, Stream } from "effect";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect } from "vitest";
 
-import type { IndexSignature, Library } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { readsFixture } from "@/services/zotero-reads/__fixtures__";
+import { layerRcRef } from "@/services/zotero-reads/connection";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import {
+  inProcessClient,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
-import { DatabaseError } from "@/services/database/service";
+import { makeWelcomeHost, waitFor } from "./__fixtures__";
+import {
+  connectionLifecycleAtom,
+  readConnectionStatus,
+  readConnectionSync,
+} from "./connection";
 
-import { readConnectionStatus } from "./connection";
+/** One regular item per row in `libraryItems`, as [libraryID, count] pairs. */
+function itemsSql(libraryItems: [libraryID: number, count: number][]): string {
+  let itemID = 0;
+  return libraryItems
+    .map(([libraryID, count]) => {
+      const library =
+        libraryID === 1
+          ? `insert into libraries (libraryID, type) values (1, 'user');`
+          : `insert into libraries (libraryID, type) values (${libraryID}, 'group');
+             insert into groups (groupID, libraryID, name) values (${libraryID * 100}, ${libraryID}, 'Group ${libraryID}');`;
+      const items = Array.from({ length: count }, () => {
+        itemID += 1;
+        return `insert into items (itemID, itemTypeID, libraryID, key) values (${itemID}, 1, ${libraryID}, 'ITEM${String(itemID).padStart(4, "0")}');`;
+      });
+      return [library, ...items].join("\n");
+    })
+    .join("\n");
+}
 
-const CLIENT = {} as NodeDatabaseClient;
+const ONE_LIBRARY = `insert into itemTypes (itemTypeID, typeName) values (1, 'book');
+${itemsSql([[1, 2]])}`;
+
+const setup = Effect.fnUntraced(function* (
+  seeds: (string | null)[],
+  dataDir = "/opt/zotero-data",
+) {
+  const { open } = memoryOpener((n) => seeds[n - 1] ?? null);
+  const { service } = yield* readsFixture(inProcessClient(layerRcRef(open)));
+  yield* Stream.runHead(
+    Stream.filter(service.changes, (state) => state.state !== "loading"),
+  );
+  const host = yield* Effect.acquireRelease(
+    Effect.promise(() =>
+      makeWelcomeHost({
+        dataDir,
+        services: Layer.succeed(ZoteroReads, service),
+      }),
+    ),
+    (host) => Effect.promise(() => host.close()),
+  );
+  return {
+    reads: service,
+    read: Effect.provideContext(readConnectionStatus, host.context),
+    sync: Effect.provideContext(readConnectionSync, host.context),
+    host,
+  };
+});
 
 describe("readConnectionStatus", () => {
-  it("db not ready → missing, without touching the injected queries", async () => {
-    const loadLibraries = vi.fn(() => {
-      throw new Error("must not be called");
-    });
-    const loadIndexSignature = vi.fn(() => {
-      throw new Error("must not be called");
-    });
+  it.effect("database that cannot open → missing", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([null]);
 
-    const result = await readConnectionStatus({
-      db: {
-        state: "degraded",
-        ready: Promise.resolve(),
-        client: CLIENT,
-        error: null,
-      },
-      zoteroPref: { dataDir: "/opt/zotero-data" },
-      loadLibraries,
-      loadIndexSignature,
-    });
+      expect(yield* deps.read).toEqual({ status: "missing" });
+    }),
+  );
 
-    expect(result).toEqual({ status: "missing" });
-    expect(loadLibraries).not.toHaveBeenCalled();
-    expect(loadIndexSignature).not.toHaveBeenCalled();
-  });
+  it.effect("ready but last refresh failed → missing", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([ONE_LIBRARY, null]);
+      yield* deps.read;
 
-  it("ready but last refresh failed → missing, without touching the queries", async () => {
-    const loadLibraries = vi.fn(() => {
-      throw new Error("must not be called");
-    });
-    const loadIndexSignature = vi.fn(() => {
-      throw new Error("must not be called");
-    });
+      yield* Effect.ignore(deps.reads.refresh);
+      yield* Stream.runHead(
+        Stream.filter(deps.reads.changes, (state) => state.error !== null),
+      );
 
-    const result = await readConnectionStatus({
-      db: {
-        state: "ready",
-        ready: Promise.resolve(),
-        client: CLIENT,
-        error: new DatabaseError("refresh-failed"),
-      },
-      zoteroPref: { dataDir: "/opt/zotero-data" },
-      loadLibraries,
-      loadIndexSignature,
-    });
+      expect(yield* deps.read).toEqual({ status: "missing" });
+    }),
+  );
 
-    expect(result).toEqual({ status: "missing" });
-    expect(loadLibraries).not.toHaveBeenCalled();
-    expect(loadIndexSignature).not.toHaveBeenCalled();
-  });
+  it.effect("ready → connected with the item count of the one library", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([ONE_LIBRARY]);
 
-  it("ready → connected with the item count of the one library", async () => {
-    const loadLibraries = vi.fn((): Library[] => [
-      { libraryID: 1, type: "user", groupID: null, name: null },
-    ]);
-    const loadIndexSignature = vi.fn(
-      (): IndexSignature => ({ count: 42, checksum: 0 }),
-    );
+      expect(yield* deps.read).toEqual({
+        status: "connected",
+        path: "/opt/zotero-data",
+        itemCount: 2,
+      });
+    }),
+  );
 
-    const result = await readConnectionStatus({
-      db: {
-        state: "ready",
-        ready: Promise.resolve(),
-        client: CLIENT,
-        error: null,
-      },
-      zoteroPref: { dataDir: "/opt/zotero-data" },
-      loadLibraries,
-      loadIndexSignature,
-    });
+  it.effect(
+    "totals every library the database holds, whatever the library scope is",
+    () =>
+      Effect.gen(function* () {
+        const deps = yield* setup([
+          `insert into itemTypes (itemTypeID, typeName) values (1, 'book');
+       ${itemsSql([
+         [1, 4],
+         [2, 2],
+         [3, 1],
+       ])}`,
+        ]);
 
-    expect(result).toEqual({
-      status: "connected",
-      path: "/opt/zotero-data",
-      itemCount: 42,
-    });
-    expect(loadIndexSignature).toHaveBeenCalledWith(CLIENT, 1);
-  });
-
-  it("totals every library the database holds, whatever the library scope is", async () => {
-    const loadLibraries = vi.fn((): Library[] => [
-      { libraryID: 1, type: "user", groupID: null, name: null },
-      { libraryID: 2, type: "group", groupID: 99, name: "Shared Library" },
-      { libraryID: 3, type: "group", groupID: 100, name: "Reading Group" },
-    ]);
-    const counts = new Map([
-      [1, 42],
-      [2, 7],
-      [3, 3],
-    ]);
-    const loadIndexSignature = vi.fn(
-      (_client: NodeDatabaseClient, libraryID: number): IndexSignature => ({
-        count: counts.get(libraryID) ?? 0,
-        checksum: 0,
+        expect(yield* deps.read).toMatchObject({
+          status: "connected",
+          itemCount: 7,
+        });
       }),
-    );
+  );
 
-    const result = await readConnectionStatus({
-      db: {
-        state: "ready",
-        ready: Promise.resolve(),
-        client: CLIENT,
-        error: null,
-      },
-      zoteroPref: { dataDir: "/opt/zotero-data" },
-      loadLibraries,
-      loadIndexSignature,
-    });
+  it.effect("abbreviates a data dir under the home directory to ~", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([ONE_LIBRARY], join(homedir(), "Zotero"));
 
-    expect(result).toMatchObject({ status: "connected", itemCount: 52 });
-  });
+      expect(yield* deps.read).toMatchObject({
+        path: "~/Zotero",
+      });
+    }),
+  );
+});
 
-  it("abbreviates a data dir under the home directory to ~", async () => {
-    const loadLibraries = vi.fn((): Library[] => []);
-    const loadIndexSignature = vi.fn(
-      (): IndexSignature => ({ count: 0, checksum: 0 }),
-    );
+describe("readConnectionSync", () => {
+  it.effect("answers nothing until a count is held, then the held count", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([ONE_LIBRARY]);
 
-    const result = await readConnectionStatus({
-      db: {
-        state: "ready",
-        ready: Promise.resolve(),
-        client: CLIENT,
-        error: null,
-      },
-      zoteroPref: { dataDir: join(homedir(), "Zotero") },
-      loadLibraries,
-      loadIndexSignature,
-    });
+      expect(yield* deps.sync).toBeNull();
+      yield* deps.read;
 
-    expect(result).toMatchObject({ path: "~/Zotero", itemCount: 0 });
-  });
+      expect(yield* deps.sync).toEqual({
+        status: "connected",
+        path: "/opt/zotero-data",
+        itemCount: 2,
+      });
+    }),
+  );
+
+  it.effect(
+    "keeps the previous count after a refresh until the fresh readout lands",
+    () =>
+      Effect.gen(function* () {
+        const deps = yield* setup([
+          ONE_LIBRARY,
+          `insert into itemTypes (itemTypeID, typeName) values (1, 'book');
+       ${itemsSql([[1, 5]])}`,
+        ]);
+        yield* deps.read;
+
+        yield* deps.reads.refresh;
+        // Invalidation is delivered before the revision changes in the view registry.
+        yield* Effect.promise(() =>
+          waitFor(() =>
+            expect(
+              deps.host.registry.get(connectionLifecycleAtom).revision,
+            ).toBeGreaterThan(0),
+          ),
+        );
+
+        expect(yield* deps.sync).toMatchObject({ itemCount: 2 });
+        expect(yield* deps.read).toMatchObject({ itemCount: 5 });
+        expect(yield* deps.sync).toMatchObject({ itemCount: 5 });
+      }),
+  );
+
+  it.effect("answers missing when the database cannot open", () =>
+    Effect.gen(function* () {
+      const deps = yield* setup([null]);
+      yield* deps.read;
+
+      expect(yield* deps.sync).toEqual({ status: "missing" });
+    }),
+  );
 });

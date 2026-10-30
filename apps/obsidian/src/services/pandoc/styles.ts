@@ -1,13 +1,11 @@
 // Discovery of the CSL styles Zotero installed, and the Resolved CSL Style each selection renders with.
 
 import { regex } from "arkregex";
-import { readdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { Effect, FileSystem } from "effect";
+import type { PlatformError } from "effect";
+import { join } from "node:path";
 
-import { isErrno } from "@/lib/errno";
-import { getLogger } from "@/lib/log";
-
-const logger = getLogger(["pandoc", "styles"]);
+import { withLogCategory } from "@/lib/effect-log-category";
 
 /**
  * Zotero installs styles in `styles/`, and keeps the independent parents that
@@ -15,9 +13,9 @@ const logger = getLogger(["pandoc", "styles"]);
  *
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/style.js#L94-L155
  */
-const STYLES_DIR = "styles";
-const HIDDEN_DIR = "hidden";
-const CSL_EXT = ".csl";
+export const STYLES_DIR = "styles";
+export const HIDDEN_DIR = "hidden";
+export const CSL_EXT = ".csl";
 
 /** One installed style, as the Citation and References Style picker lists it. */
 export interface InstalledCslStyle {
@@ -27,7 +25,8 @@ export interface InstalledCslStyle {
   title: string;
 }
 
-interface StyleFile extends InstalledCslStyle {
+/** One installed CSL file, as discovery reads it. */
+export interface StyleFile extends InstalledCslStyle {
   path: string;
   /** Style ID of the independent parent, when this is a dependent style. */
   parentId: string | undefined;
@@ -86,6 +85,8 @@ export type ResolvedCslStyle =
       styleId: string;
       /** CSL ID of the independent parent, when the requested style is dependent. */
       parentId: string | undefined;
+      /** The requested style's title, as the style picker lists it. */
+      title: string;
       /**
        * Standalone CSL: the independent style's formatting under the effective
        * Citation Locale.
@@ -105,21 +106,17 @@ export type ResolvedCslStyle =
     };
 
 /**
- * The styles a user can select, sorted by title. Zotero owns installation, so
- * an install ZotLit cannot read simply offers nothing to select.
- *
- * Hidden styles stay out of the list: Zotero keeps them as independent parents
- * of dependent styles, not as choices of their own.
+ * The styles a user can select from the files of the styles folder and its
+ * hidden folder, sorted by title. Hidden styles stay out of the list: Zotero
+ * keeps them as independent parents of dependent styles, not as choices of
+ * their own.
  */
-export async function listInstalledStyles(
-  dataDir: string,
-): Promise<InstalledCslStyle[]> {
-  const root = join(dataDir, STYLES_DIR);
-  const visible = indexById((await readStyleDir(root)).files);
-  const all = indexById([
-    ...visible.values(),
-    ...(await readStyleDir(join(root, HIDDEN_DIR))).files,
-  ]);
+export function selectableStyles(
+  visibleFiles: readonly StyleFile[],
+  hiddenFiles: readonly StyleFile[],
+): InstalledCslStyle[] {
+  const visible = indexById(visibleFiles);
+  const all = indexById([...visible.values(), ...hiddenFiles]);
   return [...visible.values()]
     .filter(({ parentId }) => parentId === undefined || all.has(parentId))
     .map(({ id, title }) => ({ id, title }))
@@ -134,7 +131,7 @@ export async function listInstalledStyles(
 export function resolveInstalledStyle(
   dataDir: string,
   request: CslStyleRequest,
-): Promise<ResolvedCslStyle> {
+): Effect.Effect<ResolvedCslStyle, never, FileSystem.FileSystem> {
   return new InstalledStyleCache().resolve(dataDir, request);
 }
 
@@ -151,6 +148,7 @@ export function styleHasEntryMarkers(styleXml: string | undefined): boolean {
 /** One resolution's identity and content, before a Citation Locale applies. */
 interface StyleContent {
   styleId: string;
+  title: string;
   parentId: string | undefined;
   /** `default-locale` of the requested style, which outlives its parent's. */
   defaultLocale: string | undefined;
@@ -187,92 +185,109 @@ export class InstalledStyleCache {
   #held: HeldStyle | undefined;
 
   /** @returns the Resolved CSL Style, from the held copy where it stands. */
-  async resolve(
-    dataDir: string,
-    { styleId, locale }: CslStyleRequest,
-  ): Promise<ResolvedCslStyle> {
-    if (!styleId) return { kind: "default", locale: locale ?? undefined };
+  resolve = Effect.fn("InstalledStyleCache.resolve")(
+    function* (
+      this: InstalledStyleCache,
+      dataDir: string,
+      { styleId, locale }: CslStyleRequest,
+    ): Effect.fn.Return<ResolvedCslStyle, never, FileSystem.FileSystem> {
+      if (!styleId) return { kind: "default", locale: locale ?? undefined };
 
-    const held = this.#held;
-    if (held && held.dataDir === dataDir && held.styleId === styleId) {
-      if (await contentUnchanged(held.reads)) {
-        logger.trace("CSL style cache hit", { styleId });
-        return resolvedUnderLocale(held, locale);
+      const held = this.#held;
+      if (held && held.dataDir === dataDir && held.styleId === styleId) {
+        if (yield* contentUnchanged(held.reads)) {
+          yield* Effect.logTrace("CSL style cache hit").pipe(
+            Effect.annotateLogs({ styleId }),
+          );
+          return resolvedUnderLocale(held, locale);
+        }
       }
-    }
-    this.#held = undefined;
+      this.#held = undefined;
 
-    const located = await locateStyle(dataDir, styleId);
-    if ("reason" in located) {
-      return {
+      const located = yield* locateStyle(dataDir, styleId);
+      if ("reason" in located) {
+        return {
+          kind: "failed",
+          styleId,
+          parentId: located.parentId,
+          reason: located.reason,
+        };
+      }
+      const { requested, independent } = located;
+      const failed = (reason: CslStyleFailure): ResolvedCslStyle => ({
         kind: "failed",
         styleId,
-        parentId: located.parentId,
-        reason: located.reason,
-      };
-    }
-    const { requested, independent } = located;
-    const failed = (reason: CslStyleFailure): ResolvedCslStyle => ({
-      kind: "failed",
-      styleId,
-      parentId: requested.parentId,
-      reason,
-    });
-
-    // Every CSL file is one `cs:style` document, a dependent style as much as
-    // the independent style it points at, so the requested file answers for its
-    // own markup before a parent's formatting stands in for it. A parent stands
-    // in for the formatting a dependent file leaves out, never for markup it
-    // holds broken.
-    const requestedXml = await readStyleXml(requested.path);
-    if (requestedXml === undefined) return failed("unreadable");
-    if (cslStyleRoot(requestedXml) === null) {
-      logger.warn("The installed CSL file is no readable CSL style", {
-        styleId,
-        path: requested.path,
+        parentId: requested.parentId,
+        reason,
       });
-      return failed("invalid");
-    }
 
-    const xml =
-      requested.path === independent.path
-        ? requestedXml
-        : await readStyleXml(independent.path);
-    if (xml === undefined) return failed("unreadable");
-    if (!isStandaloneCslStyle(xml)) {
-      logger.warn("The installed CSL style renders nothing on its own", {
-        styleId,
-        path: independent.path,
-      });
-      return failed("invalid");
-    }
+      // Every CSL file is one `cs:style` document, a dependent style as much as
+      // the independent style it points at, so the requested file answers for its
+      // own markup before a parent's formatting stands in for it. A parent stands
+      // in for the formatting a dependent file leaves out, never for markup it
+      // holds broken.
+      const requestedXml = yield* readStyleXml(requested.path);
+      if (requestedXml === undefined) return failed("unreadable");
+      if (cslStyleRoot(requestedXml) === null) {
+        yield* Effect.logWarning(
+          "The installed CSL file is no readable CSL style",
+        ).pipe(
+          Effect.annotateLogs({
+            styleId,
+            path: requested.path,
+          }),
+        );
+        return failed("invalid");
+      }
 
-    const content: StyleContent = {
-      styleId,
-      parentId: requested.parentId,
-      defaultLocale: requested.defaultLocale,
-      xml,
-    };
-    // The content this resolution stands on, which the next one is checked
-    // against: the requested file alone where it is the independent style too.
-    this.#held = {
-      ...content,
-      dataDir,
-      reads:
+      const xml =
         requested.path === independent.path
-          ? [{ path: requested.path, xml: requestedXml }]
-          : [
-              { path: requested.path, xml: requestedXml },
-              { path: independent.path, xml },
-            ],
-    };
-    logger.debug("CSL style resolved", {
-      styleId,
-      parentId: requested.parentId,
-      path: independent.path,
-    });
-    return resolvedUnderLocale(content, locale);
-  }
+          ? requestedXml
+          : yield* readStyleXml(independent.path);
+      if (xml === undefined) return failed("unreadable");
+      if (!isStandaloneCslStyle(xml)) {
+        yield* Effect.logWarning(
+          "The installed CSL style renders nothing on its own",
+        ).pipe(
+          Effect.annotateLogs({
+            styleId,
+            path: independent.path,
+          }),
+        );
+        return failed("invalid");
+      }
+
+      const content: StyleContent = {
+        styleId,
+        title: requested.title,
+        parentId: requested.parentId,
+        defaultLocale: requested.defaultLocale,
+        xml,
+      };
+      // The content this resolution stands on, which the next one is checked
+      // against: the requested file alone where it is the independent style too.
+      this.#held = {
+        ...content,
+        dataDir,
+        reads:
+          requested.path === independent.path
+            ? [{ path: requested.path, xml: requestedXml }]
+            : [
+                { path: requested.path, xml: requestedXml },
+                { path: independent.path, xml },
+              ],
+      };
+      yield* Effect.logDebug("CSL style resolved").pipe(
+        Effect.annotateLogs({
+          styleId,
+          parentId: requested.parentId,
+          path: independent.path,
+        }),
+      );
+      return resolvedUnderLocale(content, locale);
+    },
+    withLogCategory("pandoc", "styles"),
+  );
 }
 
 /**
@@ -287,6 +302,7 @@ function resolvedUnderLocale(
   return {
     kind: "installed",
     styleId: content.styleId,
+    title: content.title,
     parentId: content.parentId,
     xml: withDefaultLocale(content.xml, locale ?? content.defaultLocale),
   };
@@ -305,15 +321,19 @@ interface StyleLookupFailure {
   parentId?: string | undefined;
 }
 
-async function locateStyle(
+const locateStyle = Effect.fnUntraced(function* (
   dataDir: string,
   styleId: string,
-): Promise<StyleSources | StyleLookupFailure> {
+): Effect.fn.Return<
+  StyleSources | StyleLookupFailure,
+  never,
+  FileSystem.FileSystem
+> {
   const root = join(dataDir, STYLES_DIR);
-  const [visible, hidden] = await Promise.all([
-    readStyleDir(root),
-    readStyleDir(join(root, HIDDEN_DIR)),
-  ]);
+  const [visible, hidden] = yield* Effect.all(
+    [readStyleDirOrEmpty(root), readStyleDirOrEmpty(join(root, HIDDEN_DIR))],
+    { concurrency: "unbounded" },
+  );
   const styles = indexById([...visible.files, ...hidden.files]);
   // A file discovery could not read may be the very style the lookup wants, so
   // it stands in front of every answer that the install is short a style.
@@ -322,16 +342,22 @@ async function locateStyle(
   const requested = styles.get(styleId);
   if (!requested) {
     if (unreadable) {
-      logger.warn("A CSL style file the request may name refuses to be read", {
-        styleId,
-        dataDir,
-      });
+      yield* Effect.logWarning(
+        "A CSL style file the request may name refuses to be read",
+      ).pipe(
+        Effect.annotateLogs({
+          styleId,
+          dataDir,
+        }),
+      );
       return { reason: "unreadable" };
     }
-    logger.debug("The requested CSL style is not installed", {
-      styleId,
-      dataDir,
-    });
+    yield* Effect.logDebug("The requested CSL style is not installed").pipe(
+      Effect.annotateLogs({
+        styleId,
+        dataDir,
+      }),
+    );
     return { reason: "style-missing" };
   }
   if (requested.parentId === undefined) {
@@ -342,41 +368,59 @@ async function locateStyle(
   const independent = styles.get(parentId);
   if (!independent) {
     if (unreadable) {
-      logger.warn("The independent parent of a CSL style refuses to be read", {
-        styleId,
-        parentId,
-      });
+      yield* Effect.logWarning(
+        "The independent parent of a CSL style refuses to be read",
+      ).pipe(
+        Effect.annotateLogs({
+          styleId,
+          parentId,
+        }),
+      );
       return { reason: "unreadable", parentId };
     }
-    logger.debug("The independent parent of a CSL style is not installed", {
-      styleId,
-      parentId,
-    });
+    yield* Effect.logDebug(
+      "The independent parent of a CSL style is not installed",
+    ).pipe(
+      Effect.annotateLogs({
+        styleId,
+        parentId,
+      }),
+    );
     return { reason: "parent-missing", parentId };
   }
   // CSL allows one level of dependency, so a parent that depends on a style of
   // its own leaves nothing to render with.
   if (independent.parentId !== undefined) {
-    logger.warn("The independent parent of a CSL style is itself dependent", {
-      styleId,
-      parentId,
-    });
+    yield* Effect.logWarning(
+      "The independent parent of a CSL style is itself dependent",
+    ).pipe(
+      Effect.annotateLogs({
+        styleId,
+        parentId,
+      }),
+    );
     return { reason: "invalid", parentId };
   }
   return { requested, independent };
-}
+});
 
 /**
  * Whether the files a held style was read from still hold that very content.
  * A file that changed — or one no longer readable at all — leaves the held
  * style standing for content Zotero no longer installs.
  */
-async function contentUnchanged(reads: readonly FileRead[]): Promise<boolean> {
-  const current = await Promise.all(
-    reads.map(({ path }) => readStyleXml(path)),
+const contentUnchanged = Effect.fnUntraced(function* (
+  reads: readonly FileRead[],
+) {
+  const current = yield* Effect.forEach(
+    reads,
+    ({ path }) => readStyleXml(path),
+    {
+      concurrency: "unbounded",
+    },
   );
   return reads.every((read, index) => read.xml === current[index]);
-}
+});
 
 /** First file wins, so a visible style shadows a hidden one with the same ID. */
 function indexById(files: readonly StyleFile[]): Map<string, StyleFile> {
@@ -399,24 +443,28 @@ interface StyleDirectory {
   unreadable: boolean;
 }
 
-async function readStyleDir(dir: string): Promise<StyleDirectory> {
-  let names: string[];
-  try {
-    names = await readdir(dir);
-  } catch (error) {
-    // A directory that is absent holds no style at all; one that refuses to be
-    // read may hold every style the lookup is short of.
-    if (isErrno(error, "ENOENT")) return { files: [], unreadable: false };
-    logger.warn("Cannot read the Zotero styles directory", { dir, error });
-    return { files: [], unreadable: true };
-  }
-  const contents = await Promise.all(
-    names
-      .filter((name) => name.endsWith(CSL_EXT))
-      .map(async (name) => {
-        const path = join(dir, name);
-        return { path, xml: await readStyleXml(path) };
-      }),
+export const readStyleDir = Effect.fnUntraced(function* (
+  dir: string,
+): Effect.fn.Return<
+  StyleDirectory,
+  PlatformError.PlatformError,
+  FileSystem.FileSystem
+> {
+  const fs = yield* FileSystem.FileSystem;
+  const names = yield* fs
+    .readDirectory(dir)
+    .pipe(
+      Effect.catchReason("PlatformError", "NotFound", () =>
+        Effect.succeed<string[]>([]),
+      ),
+    );
+  const contents = yield* Effect.forEach(
+    names.filter((name) => name.endsWith(CSL_EXT)),
+    Effect.fnUntraced(function* (name) {
+      const path = join(dir, name);
+      return { path, xml: yield* readStyleXml(path) };
+    }),
+    { concurrency: "unbounded" },
   );
   const files: StyleFile[] = [];
   let unreadable = false;
@@ -427,35 +475,66 @@ async function readStyleDir(dir: string): Promise<StyleDirectory> {
     }
     const file = styleFileOf(path, xml);
     if (file) files.push(file);
+    else
+      yield* Effect.logWarning(
+        "Skipped a CSL file that declares no style ID",
+      ).pipe(
+        Effect.annotateLogs({
+          path,
+        }),
+      );
   }
   return { files, unreadable };
-}
+});
 
-function styleFileOf(path: string, xml: string): StyleFile | undefined {
+/** A resolver keeps the unreadable-directory diagnostic beside the discovered files. */
+export const readStyleDirOrEmpty = (dir: string) =>
+  readStyleDir(dir).pipe(
+    Effect.catchTag("PlatformError", (error) =>
+      Effect.as(
+        Effect.logWarning("Cannot read the Zotero styles directory").pipe(
+          Effect.annotateLogs({ dir, error }),
+        ),
+        { files: [], unreadable: true } satisfies StyleDirectory,
+      ),
+    ),
+  );
+
+/** The style a CSL file declares; `undefined` for one that declares no style ID. */
+export function styleFileOf(path: string, xml: string): StyleFile | undefined {
   const info = INFO_BLOCK.exec(xml)?.groups.info;
   const id = info && ID.exec(info)?.groups.id.trim();
   if (!info || !id) {
-    logger.warn("Skipped a CSL file that declares no style ID", { path });
     return undefined;
   }
+  const styleId = decodeXmlText(id);
   const title = TITLE.exec(info)?.groups.title.trim();
+  // A style with no title lists under its own ID; a file name would put a path
+  // fragment of the user's machine in front of them.
   return {
-    id: decodeXmlText(id),
-    title: title ? decodeXmlText(title) : basename(path, CSL_EXT),
+    id: styleId,
+    title: title ? decodeXmlText(title) : styleId,
     path,
     parentId: parentIdOf(info),
     defaultLocale: defaultLocaleOf(xml),
   };
 }
 
-async function readStyleXml(path: string): Promise<string | undefined> {
-  try {
-    return await readFile(path, "utf8");
-  } catch (error) {
-    logger.warn("Cannot read a CSL style file", { path, error });
-    return undefined;
-  }
-}
+const readStyleXml = Effect.fnUntraced(function* (path: string) {
+  const fs = yield* FileSystem.FileSystem;
+  return yield* fs
+    .readFileString(path)
+    .pipe(
+      Effect.catchTag("PlatformError", (error) =>
+        Effect.as(
+          Effect.logWarning("Cannot read a CSL style file").pipe(
+            Effect.annotateLogs({ path, error }),
+          ),
+          undefined,
+        ),
+      ),
+    );
+});
 
 /**
  * The namespace prefix an element may be written under. CSL declares one
@@ -564,7 +643,8 @@ function parentIdOf(info: string): string | undefined {
   return undefined;
 }
 
-function defaultLocaleOf(xml: string): string | undefined {
+/** The `default-locale` a style's root element declares. */
+export function defaultLocaleOf(xml: string): string | undefined {
   const root = STYLE_ROOT.exec(xml)?.[0];
   const locale = root && DEFAULT_LOCALE.exec(root)?.groups.locale.trim();
   return locale ? decodeXmlText(locale) : undefined;

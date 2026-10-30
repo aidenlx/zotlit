@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 import { Keymap, Menu } from "obsidian";
+import type { Workspace } from "obsidian";
 import type { MouseEvent } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { createCitationPopoverActions } from "./actions";
 import type { CitationEntryBlock } from "./blocks";
@@ -46,12 +49,20 @@ function click({
 function actions() {
   const opened: [citekey: string, pane: unknown][] = [];
   const hide = vi.fn();
+  const showInLibrary = vi.fn();
   return {
     opened,
     hide,
+    showInLibrary,
     ...createCitationPopoverActions({
-      open: (citekey, pane) => opened.push([citekey, pane]),
+      host: {
+        workspace: stubService<Workspace>("Workspace", { trigger: vi.fn() }),
+      },
+      open: (entry, pane) => opened.push([entry.citekey!, pane]),
       hide,
+      showInLibrary,
+      switchProfile: vi.fn(),
+      log: vi.fn(),
     }),
   };
 }
@@ -85,6 +96,15 @@ describe("createCitationPopoverActions", () => {
     expect(open).toHaveBeenCalledExactlyOnceWith(
       "zotero://select/groups/7/items/ITEM0009",
     );
+  });
+
+  it("shows the Item in the Library View by its Indexed Key", () => {
+    const { onShowInLibrary, showInLibrary } = actions();
+
+    onShowInLibrary(block({ itemKey: "ITEM0009", groupID: 7 }));
+    onShowInLibrary(block({ itemKey: "BOOK0001", groupID: null }));
+
+    expect(showInLibrary.mock.calls).toEqual([["ITEM0009g7"], ["BOOK0001"]]);
   });
 
   it("opens a single Attachment straight away", () => {
@@ -143,7 +163,13 @@ describe("createCitationPopoverActions", () => {
       click({ detail: 0 }),
     );
 
-    expect(menuMock.instances[0]?.position).toEqual({ x: 0, y: 0 });
+    expect(menuMock.instances[0]?.position).toEqual({
+      x: 0,
+      y: 0,
+      width: 0,
+      overlap: true,
+      left: false,
+    });
   });
 
   it("hides the popover once an action has run", () => {

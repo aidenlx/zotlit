@@ -3,6 +3,8 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+
 const { livePreview, tokenClassNodeProp } = vi.hoisted(() => ({
   livePreview: vi.fn(() => true),
   tokenClassNodeProp: {},
@@ -23,7 +25,7 @@ vi.mock("@codemirror/language", async (importOriginal) => {
       iterate: ({ enter }: { enter: (node: object) => void }) => {
         const text = state.doc.toString();
         const nodes = [];
-        for (let at = text.indexOf("[["); at !== -1; ) {
+        for (let at = text.indexOf("[["); at !== -1;) {
           const closing = text.indexOf("]]", at);
           if (closing === -1) break;
           nodes.push(
@@ -70,13 +72,15 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { Keymap, editorInfoField } from "obsidian";
 
-import type { Held } from "@/lib/held-reads";
+import { lookupObservation } from "@/services/citation-index/__fixtures__/citation-lookup";
+import { heldCitekeyOf } from "@/services/citation-index/lookup";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import { hoverPreferences } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -126,17 +130,26 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
     return {
       entrySerials: false,
       formatted: new Map([
-        heldText("[@example, p. 7]", [LITERATURE_NOTE.indexedKey], {
+        heldText("[@example, {p. 7}]", [LITERATURE_NOTE.indexedKey], {
           text: "(Example 2020, p. 7)",
           start,
         }),
         heldText(
-          "[@example, p. 7; @other]",
+          "[@example, {p. 7}; @other]",
           [LITERATURE_NOTE.indexedKey, OTHER_NOTE.indexedKey],
           { text: "(Example 2020, p. 7; Other 2021)", start },
         ),
       ]),
       summaries: new Map(),
+      lookup: lookupAnswer(
+        {},
+        Object.fromEntries(
+          [LITERATURE_NOTE, OTHER_NOTE].map((note) => [
+            note.indexedKey,
+            note.citationKey,
+          ]),
+        ),
+      ),
       literalWorks: new Map(),
     };
   }
@@ -148,12 +161,37 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
       extensions: [
         editorInfoField,
         wikilinkEditorExtension({
-          literatureNote: (linkpath) =>
-            linkpath === "literatures/example"
-              ? LITERATURE_NOTE
-              : linkpath === "literatures/other"
-                ? OTHER_NOTE
-                : null,
+          literatureNote: (linkpath, _sourcePath, lookup) => {
+            const note =
+              linkpath === "literatures/example"
+                ? LITERATURE_NOTE
+                : linkpath === "literatures/other"
+                  ? OTHER_NOTE
+                  : null;
+            return note
+              ? {
+                  ...note,
+                  citationKey: heldCitekeyOf(lookup, note.indexedKey) ?? null,
+                }
+              : null;
+          },
+          observeLookup: (changed) =>
+            lookupObservation(
+              async ({ indexedKeys = [] }) =>
+                lookupAnswer(
+                  {},
+                  Object.fromEntries(
+                    indexedKeys.map((key) => [
+                      key,
+                      [LITERATURE_NOTE, OTHER_NOTE].find(
+                        (note) => note.indexedKey === key,
+                      )?.citationKey ?? null,
+                    ]),
+                  ),
+                ),
+              changed,
+              () => undefined,
+            ),
           enabled: () => true,
           citationText: () => held,
           open: (citekey, pane) => opened.push([citekey, pane]),

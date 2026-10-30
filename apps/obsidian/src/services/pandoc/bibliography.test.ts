@@ -1,15 +1,27 @@
+import { it } from "@effect/vitest";
 import { regex } from "arkregex";
-import { describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
+import { describe, expect } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
-import { fetchBibliography, LOCAL_API_PREF } from "./bibliography";
+import { fakeFetchClient } from "@/lib/__fixtures__/fake-fetch";
+import { withZoteroHeaders, ZoteroHttp } from "@/lib/zotero-http";
+
+import {
+  fetchBibliography as fetchEffect,
+  LOCAL_API_PREF,
+} from "./bibliography";
 import type {
-  BibliographyHttpRequest,
   BibliographyItemRef,
   BibliographyPorts,
   BibliographyResult,
 } from "./bibliography";
+
+const fetchBibliography = (
+  refs: readonly BibliographyItemRef[],
+  deps: BibliographyPorts & { http: ZoteroHttp["Service"] },
+) => fetchEffect(refs, deps).pipe(Effect.provideService(ZoteroHttp, deps.http));
 
 const DEFAULT_HTTP_PORT = 23_119;
 const ORIGIN = `http://127.0.0.1:${DEFAULT_HTTP_PORT}`;
@@ -50,29 +62,44 @@ interface Fixture {
   zoteroClosed?: boolean;
 }
 
-type Call = BibliographyHttpRequest & { rpcMethod?: string };
+/** One call as it would go on the wire. */
+interface Call {
+  url: string;
+  method: string;
+  headers: Headers;
+  body?: string;
+  rpcMethod?: string;
+}
 
 function ports(
   fixture: Fixture,
   httpPort: number | null = DEFAULT_HTTP_PORT,
-): BibliographyPorts & { calls: Call[] } {
+): BibliographyPorts & { calls: Call[]; http: ZoteroHttp["Service"] } {
   const calls: Call[] = [];
   const rpcUrl = `http://127.0.0.1:${httpPort}/better-bibtex/json-rpc`;
-  const request = vi.fn(async (req: BibliographyHttpRequest) => {
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    // A closed Zotero fails the connection.
     if (fixture.zoteroClosed) throw new Error("ECONNREFUSED");
-    if (req.url === rpcUrl) {
-      const { method, params } = JSON.parse(req.body ?? "{}") as {
+    const url = String(input);
+    const call: Call = {
+      url,
+      method: init?.method ?? "GET",
+      headers: new Headers(init?.headers),
+      body: typeof init?.body === "string" ? init.body : undefined,
+    };
+    if (url === rpcUrl) {
+      const { method, params } = JSON.parse(call.body ?? "{}") as {
         method: string;
         params: unknown[];
       };
-      calls.push({ ...req, rpcMethod: method });
+      calls.push({ ...call, rpcMethod: method });
       if (fixture.rpcError?.method === method) {
         return rpcBody({
           error: { code: -32602, message: fixture.rpcError.message },
         });
       }
       if (!fixture.rpc || !(method in fixture.rpc)) {
-        return { status: 404, text: "Endpoint does not exist" };
+        return new Response("Endpoint does not exist", { status: 404 });
       }
       const answer = fixture.rpc[method];
       return rpcBody({
@@ -82,41 +109,37 @@ function ports(
             : answer,
       });
     }
-    calls.push({ ...req });
+    calls.push(call);
     if (fixture.apiStatus !== undefined) {
-      return { status: fixture.apiStatus, text: "Local API is not enabled" };
+      return new Response("Local API is not enabled", {
+        status: fixture.apiStatus,
+      });
     }
-    const library = LIBRARY_ROUTE.exec(req.url)?.groups.library ?? "";
+    const library = LIBRARY_ROUTE.exec(url)?.groups.library ?? "";
     const entries = fixture.api?.[library] ?? [];
     const requested = new Set(
-      new URL(req.url).searchParams.get("itemKey")?.split(",") ?? [],
+      new URL(url).searchParams.get("itemKey")?.split(",") ?? [],
     );
-    return {
-      status: 200,
-      text: JSON.stringify(
-        entries
-          .filter((entry) => requested.has(entry.key))
-          .map((entry) => ({
-            key: entry.key,
-            version: 1,
-            csljson: JSON.stringify(entry.csljson),
-          })),
-      ),
-    };
-  });
+    return Response.json(
+      entries
+        .filter((entry) => requested.has(entry.key))
+        .map((entry) => ({
+          key: entry.key,
+          version: 1,
+          csljson: JSON.stringify(entry.csljson),
+        })),
+    );
+  };
   return {
     calls,
-    request,
+    http: withZoteroHeaders(fakeFetchClient(fetch)),
     httpPort,
     localApiEnabled: fixture.localApiEnabled ?? true,
   };
 }
 
 function rpcBody(payload: object) {
-  return {
-    status: 200,
-    text: JSON.stringify({ jsonrpc: "2.0", ...payload, id: 1 }),
-  };
+  return Response.json({ jsonrpc: "2.0", ...payload, id: 1 });
 }
 
 function entries(result: BibliographyResult): [string, string][] {
@@ -141,260 +164,310 @@ function failure(result: BibliographyResult) {
 }
 
 describe("fetchBibliography", () => {
-  it("prefers Better BibTeX when its endpoint answers", async () => {
-    const deps = ports({
-      rpc: {
-        "api.ready": { zotero: "7.0.9", betterbibtex: "6.7.200" },
-        "item.citationkey": { "1:AAAA1111": "doe2020" },
-        "item.export": JSON.stringify([csl("doe2020", "On Things")]),
-      },
-      api: { "users/0": [{ key: "AAAA1111", csljson: [csl("uri", "Stale")] }] },
-    });
-
-    const result = await fetchBibliography([DOE], deps);
-
-    expect(entries(result)).toEqual([["AAAA1111", "doe2020"]]);
-    expect("source" in result && result.source).toBe("better-bibtex");
-    expect(deps.calls.every((call) => call.url === RPC_URL)).toBe(true);
-  });
-
-  it("uses the Zotero HTTP port supplied by the selected profile", async () => {
-    const httpPort = 45_678;
-    const deps = ports(
-      {
+  it.effect("prefers Better BibTeX when its endpoint answers", () =>
+    Effect.gen(function* () {
+      const deps = ports({
         rpc: {
-          "api.ready": {},
+          "api.ready": { zotero: "7.0.9", betterbibtex: "6.7.200" },
           "item.citationkey": { "1:AAAA1111": "doe2020" },
           "item.export": JSON.stringify([csl("doe2020", "On Things")]),
         },
-      },
-      httpPort,
-    );
-
-    await fetchBibliography([DOE], deps);
-
-    expect(deps.calls).not.toHaveLength(0);
-    expect(
-      deps.calls.every((call) =>
-        call.url.startsWith(`http://127.0.0.1:${httpPort}/`),
-      ),
-    ).toBe(true);
-  });
-
-  it("asks Better BibTeX for the Better CSL JSON translator, one library at a time", async () => {
-    const deps = ports({
-      rpc: {
-        "api.ready": {},
-        "item.citationkey": {
-          "1:AAAA1111": "doe2020",
-          "5:BBBB2222": "lee2023",
+        api: {
+          "users/0": [{ key: "AAAA1111", csljson: [csl("uri", "Stale")] }],
         },
-        "item.export": JSON.stringify([
-          csl("doe2020", "On Things"),
-          csl("lee2023", "On Others"),
-        ]),
-      },
-    });
+      });
 
-    await fetchBibliography([DOE, LEE], deps);
+      const result = yield* fetchBibliography([DOE], deps);
 
-    const exports = deps.calls
-      .filter((call) => call.rpcMethod === "item.export")
-      .map(
-        (call) =>
-          (JSON.parse(call.body ?? "{}") as { params: unknown[] }).params,
+      expect(entries(result)).toEqual([["AAAA1111", "doe2020"]]);
+      expect("source" in result && result.source).toBe("better-bibtex");
+      expect(deps.calls.every((call) => call.url === RPC_URL)).toBe(true);
+    }),
+  );
+
+  it.effect("uses the Zotero HTTP port supplied by the selected profile", () =>
+    Effect.gen(function* () {
+      const httpPort = 45_678;
+      const deps = ports(
+        {
+          rpc: {
+            "api.ready": {},
+            "item.citationkey": { "1:AAAA1111": "doe2020" },
+            "item.export": JSON.stringify([csl("doe2020", "On Things")]),
+          },
+        },
+        httpPort,
       );
-    expect(exports).toEqual([
-      [["doe2020"], "f4b52ab0-f878-4556-85a0-c7aeedd09dfc", 1],
-      [["lee2023"], "f4b52ab0-f878-4556-85a0-c7aeedd09dfc", 5],
-    ]);
-  });
 
-  it("keeps a citation key two libraries share bound to its own library", async () => {
-    const deps = ports({
-      rpc: {
-        "api.ready": {},
-        "item.citationkey": {
-          "1:AAAA1111": "doe2020",
-          "5:BBBB2222": "doe2020",
+      yield* fetchBibliography([DOE], deps);
+
+      expect(deps.calls).not.toHaveLength(0);
+      expect(
+        deps.calls.every((call) =>
+          call.url.startsWith(`http://127.0.0.1:${httpPort}/`),
+        ),
+      ).toBe(true);
+    }),
+  );
+
+  it.effect(
+    "asks Better BibTeX for the Better CSL JSON translator, one library at a time",
+    () =>
+      Effect.gen(function* () {
+        const deps = ports({
+          rpc: {
+            "api.ready": {},
+            "item.citationkey": {
+              "1:AAAA1111": "doe2020",
+              "5:BBBB2222": "lee2023",
+            },
+            "item.export": JSON.stringify([
+              csl("doe2020", "On Things"),
+              csl("lee2023", "On Others"),
+            ]),
+          },
+        });
+
+        yield* fetchBibliography([DOE, LEE], deps);
+
+        const exports = deps.calls
+          .filter((call) => call.rpcMethod === "item.export")
+          .map(
+            (call) =>
+              (JSON.parse(call.body ?? "{}") as { params: unknown[] }).params,
+          );
+        expect(exports).toEqual([
+          [["doe2020"], "f4b52ab0-f878-4556-85a0-c7aeedd09dfc", 1],
+          [["lee2023"], "f4b52ab0-f878-4556-85a0-c7aeedd09dfc", 5],
+        ]);
+      }),
+  );
+
+  it.effect(
+    "keeps a citation key two libraries share bound to its own library",
+    () =>
+      Effect.gen(function* () {
+        const deps = ports({
+          rpc: {
+            "api.ready": {},
+            "item.citationkey": {
+              "1:AAAA1111": "doe2020",
+              "5:BBBB2222": "doe2020",
+            },
+            "item.export": (params: unknown[]) =>
+              JSON.stringify([
+                csl("doe2020", params[2] === 1 ? "On Things" : "On Others"),
+              ]),
+          },
+        });
+
+        const result = yield* fetchBibliography([DOE, LEE], deps);
+
+        expect(titles(result)).toEqual([
+          ["AAAA1111", "On Things"],
+          ["BBBB2222g42", "On Others"],
+        ]);
+      }),
+  );
+
+  it.effect(
+    "reads the local API once per library, with the allowed-request header",
+    () =>
+      Effect.gen(function* () {
+        const deps = ports({
+          api: {
+            "users/0": [
+              { key: "AAAA1111", csljson: [csl("doe2020", "On Things")] },
+            ],
+            "groups/42": [
+              { key: "BBBB2222", csljson: [csl("lee2023", "On Others")] },
+            ],
+          },
+        });
+
+        const result = yield* fetchBibliography([DOE, LEE], deps);
+
+        expect(entries(result)).toEqual([
+          ["AAAA1111", "doe2020"],
+          ["BBBB2222g42", "lee2023"],
+        ]);
+        expect("source" in result && result.source).toBe("local-api");
+        const reads = deps.calls.filter((call) => call.url !== RPC_URL);
+        expect(reads.map((call) => call.url)).toEqual([
+          `${ORIGIN}/api/users/0/items?itemKey=AAAA1111&include=csljson`,
+          `${ORIGIN}/api/groups/42/items?itemKey=BBBB2222&include=csljson`,
+        ]);
+        expect(
+          reads.map((call) => call.headers.get("Zotero-Allowed-Request")),
+        ).toEqual(["1", "1"]);
+      }),
+  );
+
+  it.effect("sends every item key of a library in one read", () =>
+    Effect.gen(function* () {
+      const other = { itemKey: "CCCC3333", libraryID: 1, groupID: null };
+      const deps = ports({
+        api: {
+          "users/0": [
+            { key: "AAAA1111", csljson: [csl("doe2020", "On Things")] },
+            { key: "CCCC3333", csljson: [csl("roe2021", "On More")] },
+          ],
         },
-        "item.export": (params: unknown[]) =>
-          JSON.stringify([
-            csl("doe2020", params[2] === 1 ? "On Things" : "On Others"),
-          ]),
-      },
-    });
+      });
 
-    const result = await fetchBibliography([DOE, LEE], deps);
+      const result = yield* fetchBibliography([DOE, other], deps);
 
-    expect(titles(result)).toEqual([
-      ["AAAA1111", "On Things"],
-      ["BBBB2222g42", "On Others"],
-    ]);
-  });
+      expect(entries(result)).toEqual([
+        ["AAAA1111", "doe2020"],
+        ["CCCC3333", "roe2021"],
+      ]);
+      expect(deps.calls).toHaveLength(2);
+      expect(deps.calls[1]!.url).toContain("itemKey=AAAA1111%2CCCCC3333");
+    }),
+  );
 
-  it("reads the local API once per library, with the allowed-request header", async () => {
-    const deps = ports({
-      api: {
-        "users/0": [
-          { key: "AAAA1111", csljson: [csl("doe2020", "On Things")] },
-        ],
-        "groups/42": [
-          { key: "BBBB2222", csljson: [csl("lee2023", "On Others")] },
-        ],
-      },
-    });
+  it.effect(
+    "keeps the item URI of an item Zotero holds no citation key for",
+    () =>
+      Effect.gen(function* () {
+        const uri = "http://zotero.org/users/123/items/AAAA1111";
+        const deps = ports({
+          api: {
+            "users/0": [{ key: "AAAA1111", csljson: [csl(uri, "On Things")] }],
+          },
+        });
 
-    const result = await fetchBibliography([DOE, LEE], deps);
+        expect(entries(yield* fetchBibliography([DOE], deps))).toEqual([
+          ["AAAA1111", uri],
+        ]);
+      }),
+  );
 
-    expect(entries(result)).toEqual([
-      ["AAAA1111", "doe2020"],
-      ["BBBB2222g42", "lee2023"],
-    ]);
-    expect("source" in result && result.source).toBe("local-api");
-    const reads = deps.calls.filter((call) => call.url !== RPC_URL);
-    expect(reads.map((call) => call.url)).toEqual([
-      `${ORIGIN}/api/users/0/items?itemKey=AAAA1111&include=csljson`,
-      `${ORIGIN}/api/groups/42/items?itemKey=BBBB2222&include=csljson`,
-    ]);
-    expect(reads.map((call) => call.headers["Zotero-Allowed-Request"])).toEqual(
-      ["1", "1"],
-    );
-  });
+  it.effect("reports the disabled local API from prefs, before any read", () =>
+    Effect.gen(function* () {
+      const deps = ports({ localApiEnabled: false });
 
-  it("sends every item key of a library in one read", async () => {
-    const other = { itemKey: "CCCC3333", libraryID: 1, groupID: null };
-    const deps = ports({
-      api: {
-        "users/0": [
-          { key: "AAAA1111", csljson: [csl("doe2020", "On Things")] },
-          { key: "CCCC3333", csljson: [csl("roe2021", "On More")] },
-        ],
-      },
-    });
+      expect(failure(yield* fetchBibliography([DOE], deps))).toEqual({
+        code: "local-api-disabled",
+        pref: LOCAL_API_PREF,
+      });
+      expect(deps.calls.every((call) => call.url === RPC_URL)).toBe(true);
+    }),
+  );
 
-    const result = await fetchBibliography([DOE, other], deps);
+  it.effect("reports the disabled local API when Zotero refuses the read", () =>
+    Effect.gen(function* () {
+      const deps = ports({ apiStatus: 403 });
 
-    expect(entries(result)).toEqual([
-      ["AAAA1111", "doe2020"],
-      ["CCCC3333", "roe2021"],
-    ]);
-    expect(deps.calls).toHaveLength(2);
-    expect(deps.calls[1]!.url).toContain("itemKey=AAAA1111%2CCCCC3333");
-  });
+      expect(failure(yield* fetchBibliography([DOE], deps))).toEqual({
+        code: "local-api-disabled",
+        pref: LOCAL_API_PREF,
+      });
+    }),
+  );
 
-  it("keeps the item URI of an item Zotero holds no citation key for", async () => {
-    const uri = "http://zotero.org/users/123/items/AAAA1111";
-    const deps = ports({
-      api: {
-        "users/0": [{ key: "AAAA1111", csljson: [csl(uri, "On Things")] }],
-      },
-    });
+  it.effect(
+    "reports the selected profile port when Zotero is unreachable",
+    () =>
+      Effect.gen(function* () {
+        const httpPort = 45_678;
+        const deps = ports({ zoteroClosed: true }, httpPort);
 
-    expect(entries(await fetchBibliography([DOE], deps))).toEqual([
-      ["AAAA1111", uri],
-    ]);
-  });
+        expect(failure(yield* fetchBibliography([DOE], deps))).toEqual({
+          code: "zotero-unreachable",
+          port: httpPort,
+        });
+      }),
+  );
 
-  it("reports the disabled local API from prefs, before any read", async () => {
-    const deps = ports({ localApiEnabled: false });
+  it.effect(
+    "fails before requesting an undiscoverable automatic Zotero port",
+    () =>
+      Effect.gen(function* () {
+        const deps = ports({}, null);
 
-    expect(failure(await fetchBibliography([DOE], deps))).toEqual({
-      code: "local-api-disabled",
-      pref: LOCAL_API_PREF,
-    });
-    expect(deps.calls.every((call) => call.url === RPC_URL)).toBe(true);
-  });
+        expect(failure(yield* fetchBibliography([DOE], deps))).toEqual({
+          code: "zotero-port-automatic",
+          pref: "httpServer.port",
+        });
+        expect(deps.calls).toHaveLength(0);
+      }),
+  );
 
-  it("reports the disabled local API when Zotero refuses the read", async () => {
-    const deps = ports({ apiStatus: 403 });
+  it.effect("reports a local API that answers with an error status", () =>
+    Effect.gen(function* () {
+      const deps = ports({ apiStatus: 500 });
 
-    expect(failure(await fetchBibliography([DOE], deps))).toEqual({
-      code: "local-api-disabled",
-      pref: LOCAL_API_PREF,
-    });
-  });
+      expect(failure(yield* fetchBibliography([DOE], deps))).toMatchObject({
+        code: "source-failed",
+        source: "local-api",
+      });
+    }),
+  );
 
-  it("reports the selected profile port when Zotero is unreachable", async () => {
-    const httpPort = 45_678;
-    const deps = ports({ zoteroClosed: true }, httpPort);
+  it.effect(
+    "fails the whole request when Better BibTeX has no citation key",
+    () =>
+      Effect.gen(function* () {
+        const deps = ports({
+          rpc: {
+            "api.ready": {},
+            "item.citationkey": { "1:AAAA1111": "doe2020", "5:BBBB2222": null },
+            "item.export": JSON.stringify([csl("doe2020", "On Things")]),
+          },
+        });
 
-    expect(failure(await fetchBibliography([DOE], deps))).toEqual({
-      code: "zotero-unreachable",
-      port: httpPort,
-    });
-  });
+        expect(failure(yield* fetchBibliography([DOE, LEE], deps))).toEqual({
+          code: "citation-key-missing",
+          indexedKeys: ["BBBB2222g42"],
+        });
+      }),
+  );
 
-  it("fails before requesting an undiscoverable automatic Zotero port", async () => {
-    const deps = ports({}, null);
+  it.effect(
+    "fails the whole request when a requested item is absent from the answer",
+    () =>
+      Effect.gen(function* () {
+        const deps = ports({
+          api: {
+            "users/0": [
+              { key: "AAAA1111", csljson: [csl("doe2020", "On Things")] },
+            ],
+          },
+        });
 
-    expect(failure(await fetchBibliography([DOE], deps))).toEqual({
-      code: "zotero-port-automatic",
-      pref: "httpServer.port",
-    });
-    expect(deps.calls).toHaveLength(0);
-  });
+        expect(failure(yield* fetchBibliography([DOE, LEE], deps))).toEqual({
+          code: "items-missing",
+          source: "local-api",
+          indexedKeys: ["BBBB2222g42"],
+        });
+      }),
+  );
 
-  it("reports a local API that answers with an error status", async () => {
-    const deps = ports({ apiStatus: 500 });
+  it.effect("reports a Better BibTeX export it refused", () =>
+    Effect.gen(function* () {
+      const deps = ports({
+        rpc: {
+          "api.ready": {},
+          "item.citationkey": { "1:AAAA1111": "doe2020" },
+        },
+        rpcError: { method: "item.export", message: "not found: doe2020" },
+      });
 
-    expect(failure(await fetchBibliography([DOE], deps))).toMatchObject({
-      code: "source-failed",
-      source: "local-api",
-    });
-  });
+      expect(failure(yield* fetchBibliography([DOE], deps))).toEqual({
+        code: "source-failed",
+        source: "better-bibtex",
+        detail: "not found: doe2020",
+      });
+    }),
+  );
 
-  it("fails the whole request when Better BibTeX has no citation key", async () => {
-    const deps = ports({
-      rpc: {
-        "api.ready": {},
-        "item.citationkey": { "1:AAAA1111": "doe2020", "5:BBBB2222": null },
-        "item.export": JSON.stringify([csl("doe2020", "On Things")]),
-      },
-    });
+  it.effect("asks nothing of Zotero when the document cites nothing", () =>
+    Effect.gen(function* () {
+      const deps = ports({ zoteroClosed: true });
 
-    expect(failure(await fetchBibliography([DOE, LEE], deps))).toEqual({
-      code: "citation-key-missing",
-      indexedKeys: ["BBBB2222g42"],
-    });
-  });
-
-  it("fails the whole request when a requested item is absent from the answer", async () => {
-    const deps = ports({
-      api: {
-        "users/0": [
-          { key: "AAAA1111", csljson: [csl("doe2020", "On Things")] },
-        ],
-      },
-    });
-
-    expect(failure(await fetchBibliography([DOE, LEE], deps))).toEqual({
-      code: "items-missing",
-      source: "local-api",
-      indexedKeys: ["BBBB2222g42"],
-    });
-  });
-
-  it("reports a Better BibTeX export it refused", async () => {
-    const deps = ports({
-      rpc: {
-        "api.ready": {},
-        "item.citationkey": { "1:AAAA1111": "doe2020" },
-      },
-      rpcError: { method: "item.export", message: "not found: doe2020" },
-    });
-
-    expect(failure(await fetchBibliography([DOE], deps))).toEqual({
-      code: "source-failed",
-      source: "better-bibtex",
-      detail: "not found: doe2020",
-    });
-  });
-
-  it("asks nothing of Zotero when the document cites nothing", async () => {
-    const deps = ports({ zoteroClosed: true });
-
-    expect(entries(await fetchBibliography([], deps))).toEqual([]);
-    expect(deps.calls).toHaveLength(0);
-  });
+      expect(entries(yield* fetchBibliography([], deps))).toEqual([]);
+      expect(deps.calls).toHaveLength(0);
+    }),
+  );
 });

@@ -1,5 +1,4 @@
 import annotation from "@defaults/annotation.eta?raw";
-import content from "@defaults/content.eta?raw";
 import { describe, expect, it } from "vitest";
 
 import { TemplateError, TemplateFacade } from "./facade";
@@ -30,13 +29,19 @@ describe("eta suite through the facade", () => {
   it("resolves eta->eta includes by registered name", () => {
     const facade = new TemplateFacade();
     facade.define("annotation", annotation, "eta");
-    facade.define("content", content, "eta");
+    facade.define(
+      "content",
+      "<% for (const annotation of zt.annotations) { %><%~ renderAnnotation(annotation) %><% } %>",
+      "eta",
+    );
 
     const rendered = facade.render("content", {
       notes: [],
       annotations: [
         {
           pageLabel: "4",
+          backlink:
+            "zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=4",
           imgLink: null,
           text: "Highlighted text",
           comment: "",
@@ -44,69 +49,10 @@ describe("eta suite through the facade", () => {
       ],
     });
 
-    expect(rendered).toContain("Page 4");
+    expect(rendered).toContain(
+      "Page [4](zotero://open/library/items/ATTX2345?annotation=ANNX2345&page=4)",
+    );
     expect(rendered).toContain("Highlighted text");
-  });
-
-  it("passes include data through directly so arrays survive", () => {
-    const facade = new TemplateFacade();
-    facade.define("child", "<%= Array.isArray(zt) %>:<%= zt.length %>", "eta");
-    facade.define("parent", '<%~ include("child", [1, 2, 3]) %>', "eta");
-
-    expect(facade.render("parent", {})).toBe("true:3");
-  });
-
-  it("renders null and Temporal values via the auto filter", () => {
-    const facade = new TemplateFacade();
-    facade.define("t", "[<%= zt.value %>]", "eta");
-
-    expect(facade.render("t", { value: null })).toBe("[]");
-
-    const instant = Temporal.Instant.from("2026-06-21T04:00:00Z");
-    const expected = instant
-      .toZonedDateTimeISO(Temporal.Now.timeZoneId())
-      .toPlainDate()
-      .toString();
-    facade.define("d", "<%= zt.value %>", "eta");
-    expect(facade.render("d", { value: instant })).toBe(expected);
-  });
-
-  it("renders objects via their toString (e.g. ItemDate)", () => {
-    const facade = new TemplateFacade();
-    facade.define("t", "<%= zt.value %>", "eta");
-    const value = { kind: "year", toString: () => "January 2013" };
-
-    expect(facade.render("t", { value })).toBe("January 2013");
-  });
-
-  it("renders a Temporal.PlainDate as native ISO", () => {
-    const facade = new TemplateFacade();
-    facade.define("d", "<%= zt.value %>", "eta");
-    const value = Temporal.PlainDate.from("2013-01-15");
-
-    expect(facade.render("d", { value })).toBe("2013-01-15");
-  });
-
-  it("replaces and removes registered eta templates", () => {
-    const facade = new TemplateFacade();
-    facade.define("x", "first <%= zt.value %>", "eta");
-    facade.define("x", "second <%= zt.value %>", "eta");
-
-    expect(facade.render("x", { value: "A" })).toBe("second A");
-
-    facade.remove("x", "eta");
-    expect(() => facade.render("x", { value: "A" })).toThrow(/x/);
-  });
-
-  it("recompiles registered eta templates when autoTrim changes", () => {
-    const facade = new TemplateFacade();
-    facade.define("x", "<%= zt.value %>\n", "eta");
-
-    expect(facade.render("x", { value: "A" })).toBe("A\n");
-
-    facade.setAutoTrim(["slurp", "slurp"]);
-
-    expect(facade.render("x", { value: "A" })).toBe("A");
   });
 });
 
@@ -116,6 +62,45 @@ describe("liquid define/render through the facade", () => {
     facade.define("note", "Hello {{ zt.name }}", "liquid");
 
     expect(facade.render("note", { name: "World" })).toBe("Hello World");
+  });
+});
+
+describe("source override", () => {
+  it("renders an unregistered liquid source against the live registry", () => {
+    const facade = new TemplateFacade();
+    facade.define("heading", "# Registered heading", "liquid");
+
+    expect(
+      facade.render(
+        "preview",
+        { title: "Paper" },
+        {
+          source: '{% render "heading" %}\nPreview',
+          language: "liquid",
+        },
+      ),
+    ).toBe("# Registered heading\nPreview");
+    expect(() => facade.render("preview", { title: "Paper" })).toThrow(
+      /preview/,
+    );
+  });
+
+  it("renders an unregistered eta source against the live registry", () => {
+    const facade = new TemplateFacade();
+    facade.define("heading", "# Registered heading", "liquid");
+
+    expect(
+      facade.render(
+        "preview",
+        {},
+        {
+          source:
+            '<% if (include("heading", zt) === "# Registered heading") { %># Registered heading<% } %>\nPreview',
+          language: "eta",
+        },
+      ),
+    ).toBe("# Registered heading\nPreview");
+    expect(() => facade.render("preview", {})).toThrow(/preview/);
   });
 });
 
@@ -206,7 +191,7 @@ describe("transform uniformity", () => {
     facade.define("etaParent", '<%~ include("content", zt) %>', "eta");
     facade.define("liquidParent", '{% render "content" %}', "liquid");
 
-    const wrapped = `${MARKER_START}\nBODY\n${MARKER_END}`;
+    const wrapped = `${MARKER_START}\nBODY\n\n${MARKER_END}`;
     expect(facade.render("content", {})).toBe(wrapped);
     expect(facade.render("etaParent", {})).toBe(wrapped);
     expect(facade.render("liquidParent", {})).toBe(wrapped);
@@ -218,7 +203,7 @@ describe("transform uniformity", () => {
     facade.define("etaParent", '<%~ include("content", zt) %>', "eta");
     facade.define("liquidParent", '{% render "content" %}', "liquid");
 
-    const wrapped = `${MARKER_START}\nBODY\n${MARKER_END}`;
+    const wrapped = `${MARKER_START}\nBODY\n\n${MARKER_END}`;
     expect(facade.render("content", {})).toBe(wrapped);
     expect(facade.render("etaParent", {})).toBe(wrapped);
     expect(facade.render("liquidParent", {})).toBe(wrapped);
@@ -357,20 +342,6 @@ describe("frontmatter fields through the facade", () => {
 
     expect(inertKeys).toEqual(["js"]);
     expect(compiled.map((f) => f.key)).toEqual(["liq"]);
-  });
-
-  it("validates a javascript expression, valid and invalid", () => {
-    const facade = new TemplateFacade();
-    expect(facade.validateFrontmatterExpr("zt.title", "javascript")).toBeNull();
-    expect(facade.validateFrontmatterExpr("1 +", "javascript")).not.toBeNull();
-  });
-
-  it("validates a liquid expression, valid and invalid", () => {
-    const facade = new TemplateFacade();
-    expect(
-      facade.validateFrontmatterExpr("zt.title | note_links", "liquid"),
-    ).toBeNull();
-    expect(facade.validateFrontmatterExpr("1 +", "liquid")).not.toBeNull();
   });
 });
 

@@ -1,0 +1,112 @@
+// The Attachments dataset: Attachment Query over the non-trashed Attachments
+// of the Target Libraries, on the same bounded execution as Item Query.
+import { Effect } from "effect";
+
+import { formatIndexedKey } from "@zotlit/db";
+import {
+  readAttachmentCandidateSet,
+  readRelationCandidateSet,
+  readParentCandidateSet,
+  readAttachmentRowCount,
+  readAttachmentScanPage,
+  readAttachmentUniverseRows,
+} from "@zotlit/db/item-query";
+
+import { lowerAttachmentCandidate } from "./attachment-candidates";
+import {
+  ATTACHMENT_FIELDS,
+  ATTACHMENT_PARENTS,
+  ATTACHMENT_SORT_FIELDS,
+  attachmentFieldDefinition,
+  attachmentFilterRegistry,
+  attachmentSortableField,
+  DEFAULT_ATTACHMENT_FIELDS,
+} from "./attachment-fields";
+import type { QueryAttachment } from "./attachment-fields";
+import { ATTACHMENT_LOADING } from "./attachment-hydration";
+import type { QueryDataset } from "./dataset";
+import type { DatasetRun } from "./execution";
+import { matches as isMatch } from "./filter-evaluate";
+import { planFilter, planSubexpression } from "./filter-plan";
+import { projectColumns } from "./formulas";
+import { parentPathResolver, parentRootName } from "./parent-records";
+import { ANNOTATIONS } from "./query-annotations";
+import { ITEMS } from "./query-items";
+import { openRecordLoader } from "./record-loader";
+import type { ItemQueryRequest } from "./request";
+
+/** Attachment Query: one Attachment Row for each non-trashed Attachment. */
+export const ATTACHMENTS: QueryDataset<ItemQueryRequest> = {
+  id: "attachments",
+  noun: "Attachment",
+  family: "Attachment Query",
+  customPrefix: `${attachmentFilterRegistry.prefix}.`,
+  defaultFields: DEFAULT_ATTACHMENT_FIELDS,
+  defaultSort: [{ field: "dateModified", direction: "desc" }],
+  tieBreakers: [],
+  get names() {
+    return [
+      ...ATTACHMENT_FIELDS.keys(),
+      ...ATTACHMENT_PARENTS.flatMap((parent) => parent.names()),
+    ];
+  },
+  lowerCandidate: lowerAttachmentCandidate,
+  readCandidate: readAttachmentCandidateSet,
+  readRowCount: readAttachmentRowCount,
+  candidateParents: ATTACHMENT_PARENTS,
+  candidateRelations: {
+    item: {
+      dataset: () => ITEMS,
+      readChildren: ({ leaf, ...page }) =>
+        readParentCandidateSet({ ...page, leaf, relation: "attachment-item" }),
+    },
+    annotations: {
+      dataset: () => ANNOTATIONS,
+      readParents: (chunk) =>
+        readRelationCandidateSet({
+          ...chunk,
+          relation: "attachment-annotations",
+        }),
+    },
+  },
+  planSubexpression: (text, at, options) =>
+    planSubexpression(text, at, {
+      registry: attachmentFilterRegistry,
+      ...options,
+    }),
+  sortableFields: ATTACHMENT_SORT_FIELDS,
+  definition: attachmentFieldDefinition,
+  filterField: (name) => attachmentFilterRegistry.field(name),
+  planFilter: (text, context, formula) =>
+    planFilter(text, { registry: attachmentFilterRegistry, context, formula }),
+  sortable: attachmentSortableField,
+  resolvePath: parentPathResolver(
+    attachmentFieldDefinition,
+    ATTACHMENT_PARENTS,
+  ),
+  rootName: (name) => parentRootName(name, ATTACHMENT_PARENTS),
+  readScanPage: readAttachmentScanPage,
+  readUniverseRows: readAttachmentUniverseRows,
+  open: (plan, request, { clock, sources }) =>
+    Effect.gen(function* () {
+      const { filter, columns } = plan;
+      const hydration = yield* openRecordLoader(ATTACHMENT_LOADING, plan, {
+        libraries: request.libraries,
+        sources,
+      });
+      const run: DatasetRun<QueryAttachment> = {
+        scan: hydration.scan,
+        projection: hydration.projection,
+        matches: (item) => !filter || isMatch(filter.root, item, clock),
+        project: (item, library) => ({
+          indexedKey: formatIndexedKey(item.scan.key, library.groupID),
+          itemIndexedKey: formatIndexedKey(
+            item.scan.parent.key,
+            library.groupID,
+          ),
+          values: projectColumns(columns, item, clock),
+        }),
+      };
+      return run;
+    }),
+};

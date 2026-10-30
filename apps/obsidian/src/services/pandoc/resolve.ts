@@ -1,5 +1,6 @@
 // Resolves one document's Literature Note links to the citation keys Pandoc cites.
 
+import { Effect } from "effect";
 import { parseLinktext } from "obsidian";
 import type { LinkCache } from "obsidian";
 
@@ -15,7 +16,9 @@ export type ResolveErrorCode =
   | "item-not-found"
   | "citation-key-missing"
   | "duplicate-citation-key"
-  | "unresolved-citation-intent";
+  | "unresolved-citation-intent"
+  /** The command was given a parameter it does not take, or no `file`. */
+  | "flags-invalid";
 
 export interface ResolveError {
   code: ResolveErrorCode;
@@ -64,14 +67,14 @@ export interface ResolvePorts {
    */
   resolveIndexedKey: (linkpath: string, sourcePath: string) => string | null;
   database: {
-    describe: () => DatabaseDescription;
+    describe: () => Effect.Effect<DatabaseDescription>;
     /**
      * Every lookup under one read lease, keyed by Indexed Key. A key the
      * database has no live Item for is absent; `null` means no read lease.
      */
     read: (
       indexedKeys: readonly string[],
-    ) => Promise<ReadonlyMap<string, ResolvedItem> | null>;
+    ) => Effect.Effect<ReadonlyMap<string, ResolvedItem> | null>;
   };
 }
 
@@ -87,10 +90,10 @@ export interface CitationLink {
  * `zotlit:resolve` contract. All-or-nothing: one error suppresses every
  * citation, and every discoverable error is reported together.
  */
-export async function resolveCitations(
+export const resolveCitations = Effect.fn("Pandoc.resolveCitations")(function* (
   absolutePath: string,
   ports: ResolvePorts,
-): Promise<ResolveResponse> {
+): Effect.fn.Return<ResolveResponse> {
   const document = ports.readDocument(absolutePath);
   if (!document) {
     return {
@@ -111,9 +114,11 @@ export async function resolveCitations(
     return errors.length > 0 ? { errors } : { citations: {} };
   }
 
-  const items = await ports.database.read(links.map((link) => link.indexedKey));
+  const items = yield* ports.database.read(
+    links.map((link) => link.indexedKey),
+  );
   if (!items) {
-    const { dataDir, readMode } = ports.database.describe();
+    const { dataDir, readMode } = yield* ports.database.describe();
     errors.push({
       code: "database-unavailable",
       message: `Cannot read the Zotero database in data directory "${dataDir}" (read mode: ${readMode ?? "unavailable"}).`,
@@ -159,7 +164,7 @@ export async function resolveCitations(
   }
 
   return errors.length > 0 ? { errors } : { citations };
-}
+});
 
 /**
  * The Literature Note links of one document, one entry per unique decoded bare

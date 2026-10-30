@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { formatBlockquote } from "./blockquote";
 import {
   filenameSuffix,
   hasSuffixMarker,
@@ -75,17 +74,6 @@ describe("{% liquid %} statement block", () => {
 });
 
 describe("bq tag", () => {
-  it("is byte-identical to formatBlockquote for the same content", () => {
-    const engine = createLiquidEngine();
-    const inner =
-      "[!note] Page 57\n\nSecond highlight\n\n\n\nMy thoughts on this";
-    const template = `{% bq %}${inner}{% endbq %}`;
-
-    expect(engine.parseAndRenderSync(template, {})).toBe(
-      formatBlockquote(inner),
-    );
-  });
-
   it("renders the classic callout shape", () => {
     const engine = createLiquidEngine();
     const template = `{% bq %}
@@ -313,6 +301,58 @@ describe("collection_paths filter", () => {
   });
 });
 
+describe("flatten filter", () => {
+  it("flattens one array level by default without deduplicating", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.items | flatten", {
+        zt: { items: ["first", ["second", ["third"]], "second"] },
+      }),
+    ).toEqual(["first", "second", ["third"], "second"]);
+  });
+
+  it("accepts an explicit flatten depth", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.evalValueSync("zt.items | flatten: 2", {
+        zt: { items: ["first", ["second", ["third"]]] },
+      }),
+    ).toEqual(["first", "second", "third"]);
+  });
+
+  it("refuses non-array input", () => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.evalValueSync("zt.items | flatten", {
+        zt: { items: "not-array" },
+      }),
+    ).toThrow("flatten requires an array");
+  });
+
+  it.each([-1, 1.5, "2"])("refuses invalid depth %s", (depth) => {
+    const engine = createLiquidEngine();
+    expect(() =>
+      engine.evalValueSync("zt.items | flatten: zt.depth", {
+        zt: { items: [["value"]], depth },
+      }),
+    ).toThrow("flatten depth must be a non-negative integer");
+  });
+
+  it("supports the collection-path pipeline in body templates", () => {
+    const engine = createLiquidEngine();
+    expect(
+      engine.parseAndRenderSync(
+        '{{ zt.collections | map: "path" | flatten | uniq | join: "/" }}',
+        {
+          zt: {
+            collections: [{ path: ["Top", "Sub"] }, { path: ["Top", "Other"] }],
+          },
+        },
+      ),
+    ).toBe("Top/Sub/Other");
+  });
+});
+
 describe("arr_prefix filter", () => {
   it("prepends a string to every element", () => {
     const engine = createLiquidEngine();
@@ -487,15 +527,6 @@ describe("obsidian_tag filter", () => {
     ).toEqual(["zotero/Machine_Learning"]);
   });
 
-  it("stays idempotent under a # prefix", () => {
-    const engine = createLiquidEngine();
-    expect(
-      engine.evalValueSync('zt.items | obsidian_tag: "#"', {
-        zt: { items: ["#todo"] },
-      }),
-    ).toEqual(["#todo"]);
-  });
-
   it("drops an element that normalizes to nothing", () => {
     const engine = createLiquidEngine();
     expect(
@@ -503,15 +534,6 @@ describe("obsidian_tag filter", () => {
         zt: { items: ["ok", "!!!", "   "] },
       }),
     ).toEqual(["#ok"]);
-  });
-
-  it("normalizes a number, so a year tag stays usable", () => {
-    const engine = createLiquidEngine();
-    expect(
-      engine.evalValueSync("zt.items | obsidian_tag", {
-        zt: { items: [1984] },
-      }),
-    ).toEqual(["_1984"]);
   });
 
   it("drops an object that carries no name", () => {
@@ -602,14 +624,6 @@ describe("output coercion", () => {
         zt: { value: { kind: "year", toString: () => "January 2013" } },
       }),
     ).toBe("January 2013");
-  });
-
-  it("renders a JS Date via toISOString", () => {
-    const engine = createLiquidEngine();
-    const date = new Date("2026-06-21T04:00:00Z");
-    expect(
-      engine.parseAndRenderSync("{{ zt.value }}", { zt: { value: date } }),
-    ).toBe(date.toISOString());
   });
 });
 

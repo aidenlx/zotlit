@@ -1,7 +1,11 @@
+import type { BibliographyItemRef } from "@/services/pandoc/bibliography";
+import { Effect } from "effect";
 // The module doubles of a Citation Presentation suite, importing nothing at run
 // time so a `vi.mock` factory can reach them while its module graph still loads.
 
 import type { CslItemData } from "@zotlit/db";
+
+import type { SeededWork } from "@/services/zotero-reads/test-utils";
 
 /** Everything the clipboard double was handed, newest last. */
 export const clipboardWrites: { html: string; text: string }[] = [];
@@ -27,25 +31,21 @@ export const exportRun = {
 export function answerExportModal(
   _app: unknown,
   options: { referencesStyleId: string | null },
-): Promise<{ format: "html"; styleId: string | null; destination: string }> {
+  resolve: (choices: { format: "html"; styleId: string | null; destination: string }) => void,
+): { close(): void } {
   exportRun.referencesStyleId = options.referencesStyleId;
-  return Promise.resolve({
+  resolve({
     format: "html",
-    styleId:
-      exportRun.override === undefined
-        ? options.referencesStyleId
-        : exportRun.override,
+    styleId: exportRun.override === undefined ? options.referencesStyleId : exportRun.override,
     destination: exportRun.destination,
   });
+  return { close() {} };
 }
 
 /** One cited work, as both Zotero itself and an export read it. */
 export interface CitedWork {
-  libraryID: number;
-  /** The Item key the Zotero database answers under. */
-  key: string;
-  /** The row the database hands the app. */
-  row: unknown;
+  /** The work as the Zotero database holds it. */
+  work: SeededWork;
   /** The same work as CSL-JSON, as Zotero hands it to an export. */
   csl: CslItemData;
 }
@@ -54,40 +54,16 @@ export interface CitedWork {
 export const citedWorks = new Map<string, CitedWork>();
 
 /** Zotero itself, answering for the works this vault cites. */
-export function fetchCitedBibliography(): Promise<{
+export function fetchCitedBibliography(_refs: readonly BibliographyItemRef[]): Effect.Effect<{
   source: "local-api";
   items: Map<string, CslItemData>;
 }> {
-  return Promise.resolve({
+  return Effect.succeed({
     source: "local-api",
     items: new Map(
       [...citedWorks].map(([indexedKey, work]) => [indexedKey, work.csl]),
     ),
   });
-}
-
-/** The Zotero database, answering for those same works and nothing else. */
-export function zoteroDatabaseDoubles(): Record<string, unknown> {
-  return {
-    getZoteroIdentity: () => ({
-      userID: 1,
-      localUserKey: null,
-      username: null,
-    }),
-    resolveIndexedKeyLibrary: (_client: unknown, indexedKey: string) => {
-      const work = citedWorks.get(indexedKey);
-      return work ? { libraryID: work.libraryID, key: work.key } : null;
-    },
-    getItemsByKey: (
-      _client: unknown,
-      _libraryID: number,
-      keys: readonly string[],
-    ) =>
-      [...citedWorks.values()]
-        .filter((work) => keys.includes(work.key))
-        .map((work) => work.row),
-    getAttachmentsByParents: () => [],
-  };
 }
 
 /** Leave no clipboard write, export run, or cited work behind for the next test. */

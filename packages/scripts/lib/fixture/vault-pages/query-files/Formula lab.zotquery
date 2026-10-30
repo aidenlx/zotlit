@@ -1,0 +1,190 @@
+filters:
+  not:
+    - 'creators.contains("Lena Collator")'
+formulas:
+  titleKey: 'title.lower().replace(/^(the|a|an) /, "")'
+  shortTitle: 'if(title.length > 32, title.slice(0, 30).trim() + "…", title)'
+  mainTitle: 'title.split(/[:?]/, 1)[0].trim()'
+  titleWords: 'title.split(/\s+/).length'
+  authorLabel: 'if(firstAuthor.given, firstAuthor.family + ", " + firstAuthor.given.slice(0, 1) + ".", firstAuthor.fullName)'
+  initials: 'creators.map(value.split(" ").map(value.slice(0, 1)).join("")).join(", ")'
+  creatorCount: 'creators.length'
+  kind: 'itemType.replace(/([A-Z])/g, " $1").lower()'
+  age: 'today().year - date.year'
+  decade: '(date.year / 10).floor() * 10'
+  decadeLabel: 'formula.decade.toString() + "s"'
+  addedOn: 'dateAdded.format("YYYY-MM-DD")'
+  reviewBy: '(dateAdded + duration("30d")).format("YYYY-MM-DD")'
+  daysInLibrary: '((now().timestamp - dateAdded.timestamp) / 86400000).floor()'
+  isClassic: 'date.year < 1990 && /^[A-Z]/.matches(title)'
+  tagList: 'tags.sort().join(", ")'
+  numberedTags: 'tags.map((index + 1).toString() + ". " + value).join(" · ")'
+  tagChars: 'tags.reduce(acc + value.length, 0)'
+  pdfCount: 'attachments.filter(value.contentType == "application/pdf").length'
+  highlightShare: 'if(annotations.length > 0, (annotations.filter(value.type == "highlight").length / annotations.length * 100).round(1), 0)'
+  readingScore: 'min(10, max(formula.pdfCount * 2 + annotations.length, tags.length)).abs()'
+properties:
+  formula.titleKey:
+    displayName: Sort title
+  formula.shortTitle:
+    displayName: Short title
+  formula.mainTitle:
+    displayName: Main title
+  formula.titleWords:
+    displayName: Title words
+  formula.authorLabel:
+    displayName: Author label
+  formula.initials:
+    displayName: Creator initials
+  formula.creatorCount:
+    displayName: Creators
+  formula.kind:
+    displayName: Kind
+  formula.age:
+    displayName: Age (years)
+  formula.decade:
+    displayName: Decade
+  formula.decadeLabel:
+    displayName: Decade label
+  formula.addedOn:
+    displayName: Added on
+  formula.reviewBy:
+    displayName: Review by
+  formula.daysInLibrary:
+    displayName: Days in library
+  formula.isClassic:
+    displayName: Classic
+  formula.tagList:
+    displayName: Tag list
+  formula.numberedTags:
+    displayName: Numbered tags
+  formula.tagChars:
+    displayName: Tag characters
+  formula.pdfCount:
+    displayName: PDFs
+  formula.highlightShare:
+    displayName: Highlight share (%)
+  formula.readingScore:
+    displayName: Reading score
+  vault.status:
+    displayName: Reading status
+  vault.rating:
+    displayName: Rating
+  vault.projects:
+    displayName: Projects
+views:
+  - type: table
+    name: Text and creators
+    from: items
+    sort:
+      - property: title
+        direction: ASC
+    order:
+      - title
+      - formula.titleKey
+      - formula.shortTitle
+      - formula.mainTitle
+      - formula.titleWords
+      - firstAuthor
+      - formula.authorLabel
+      - formula.initials
+      - formula.creatorCount
+      - formula.kind
+    limit: 100
+  - type: table
+    name: Dates and numbers
+    from: items
+    sort:
+      - property: date
+        direction: ASC
+    order:
+      - title
+      - date
+      - formula.age
+      - formula.decade
+      - formula.decadeLabel
+      - formula.isClassic
+      - dateAdded
+      - formula.addedOn
+      - formula.reviewBy
+      - formula.daysInLibrary
+    limit: 100
+  - type: table
+    name: Lists and relations
+    from: items
+    filters:
+      or:
+        - '!tags.isEmpty()'
+        - 'formula.pdfCount > 0'
+    order:
+      - title
+      - formula.tagList
+      - formula.numberedTags
+      - formula.tagChars
+      - formula.pdfCount
+      - formula.highlightShare
+      - formula.readingScore
+    limit: 100
+  - type: table
+    name: Advanced filters
+    from: items
+    filters:
+      and:
+        - 'date.year >= 1950'
+        - or:
+            - 'itemType == "book"'
+            - 'tags.containsAny("methodology", "visualization")'
+            - and:
+                - 'title.lower().contains("reading")'
+                - '!/^the /i.matches(title)'
+        - not:
+            - 'title.contains("duplicate")'
+            - 'creators.filter(value.lower().startsWith("j")).length > 0'
+    sort:
+      - property: title
+        direction: ASC
+    order:
+      - title
+      - itemType
+      - date
+      - creators
+    limit: 100
+  - type: table
+    name: Formula filters
+    from: items
+    filters:
+      and:
+        - 'formula.decade >= 1960'
+        - or:
+            - 'formula.readingScore >= 4'
+            - 'formula.creatorCount > 1 && formula.kind.contains("article")'
+    sort:
+      - property: title
+        direction: ASC
+    order:
+      - title
+      - formula.decade
+      - formula.kind
+      - formula.creatorCount
+      - formula.readingScore
+    limit: 100
+  - type: table
+    name: Vault filters
+    from: items
+    filters:
+      and:
+        - 'vault["rating"] >= 4'
+        - 'vault.status == "read" || vault.projects.contains("zettelkasten")'
+        - 'formula.decade < 2020'
+        - 'firstAuthor.family.length > 3'
+    sort:
+      - property: date
+        direction: ASC
+    order:
+      - title
+      - firstAuthor
+      - formula.decadeLabel
+      - vault.status
+      - vault.rating
+      - vault.projects
+    limit: 100

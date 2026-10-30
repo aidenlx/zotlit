@@ -1,0 +1,231 @@
+// Draft citations use their own source and presentation, without entering the saved-note cache.
+import { Effect } from "effect";
+
+import { isChildItemFields, itemToCsl } from "@zotlit/db";
+import type { CslItemData } from "@zotlit/db";
+import type { RenderDiagnostic } from "@zotlit/workbench/render";
+
+import type { CitationSource } from "@/lib/citation-source";
+import * as m from "@/lib/i18n/generated/messages";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import type { ViewServices } from "@/lib/view-atoms";
+import type { WikilinkCitation } from "@/lib/wikilink-citation";
+import {
+  citationOfRun,
+  citationRuns,
+  citationTarget,
+  wikilinkCitation,
+} from "@/lib/wikilink-citation";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import { CitationParse } from "@/services/citation-parse/service";
+import type { PresentedCitation } from "@/services/citation-text/present";
+import { resolveLiteratureNoteIn } from "@/services/note-index/service";
+import { holdsNote } from "@/services/pandoc/inline-content";
+import { BibliographyRender } from "@/services/pandoc/render-cache";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+
+export interface PreviewCitation extends PresentedCitation {
+  source: string;
+  start: number;
+  /** An empty list identifies a literal Citation. */
+  links: readonly { target: string; citation: WikilinkCitation }[];
+}
+interface DraftCitation extends CitationSource {
+  start: number;
+  works: (string | null)[];
+  links: readonly { target: string; citation: WikilinkCitation }[];
+}
+
+export const renderDraftCitations = Effect.fn(
+  "NotePreview.renderDraftCitations",
+)(function* (input: {
+  markdown: string;
+  sourcePath: string;
+  styleId: string | null;
+  locale: string | null;
+  wikilinks: boolean;
+}): Effect.fn.Return<
+  { citations: readonly PreviewCitation[]; diagnostics: RenderDiagnostic[] },
+  unknown,
+  ViewServices
+> {
+  const citationParse = yield* CitationParse;
+  const citationLookup = yield* CitationLookup;
+  const bibliographyRender = yield* BibliographyRender;
+  const { record } = yield* citationParse.parse({
+    path: input.sourcePath,
+    generation: 0,
+    text: input.markdown,
+  });
+  const scanned = record.citations;
+  const links = input.wikilinks
+    ? record.wikilinks.map(({ position }) => ({
+        start: position.start.offset,
+        end: position.end.offset,
+        target: input.markdown.slice(
+          position.start.offset + 2,
+          position.end.offset - 2,
+        ),
+      }))
+    : [];
+  const metadata = yield* MetadataCache;
+  const notes = new Map<
+    string,
+    Effect.Success<ReturnType<typeof resolveLiteratureNoteIn>>
+  >();
+  for (const link of links) {
+    const target = citationTarget(link.target);
+    if (target)
+      notes.set(
+        target.linkpath,
+        yield* resolveLiteratureNoteIn(
+          metadata,
+          target.linkpath,
+          input.sourcePath,
+        ),
+      );
+  }
+
+  const lookup = yield* citationLookup.read({
+    citekeys: scanned.flatMap((citation) =>
+      citation.keys.map((key) => key.citekey),
+    ),
+    indexedKeys: [...notes.values()].flatMap((note) =>
+      note ? [note.indexedKey] : [],
+    ),
+  });
+  const placed: DraftCitation[] = scanned.map(({ start, end, keys }) => ({
+    start,
+    source: input.markdown.slice(start, end),
+    links: [],
+    keys: keys.map((key) => ({
+      ...key,
+      start: key.start - start,
+      end: key.end - start,
+    })),
+    works: keys.map(({ citekey }) => {
+      const found = lookup.resolve(citekey);
+      return found.kind === "unique" ? found.item.indexedKey : null;
+    }),
+  }));
+  if (input.wikilinks) {
+    const runs = citationRuns(
+      links,
+      (link) =>
+        wikilinkCitation(link.target, {
+          enabled: true,
+          literatureNote: (linkpath) => {
+            const note = notes.get(linkpath) ?? null;
+            return (
+              note && {
+                ...note,
+                citationKey: lookup.citekeyOf(note.indexedKey),
+              }
+            );
+          },
+        }),
+      (left, right) => input.markdown.slice(left.end, right.start),
+    );
+    for (const run of runs)
+      placed.push({
+        ...citationOfRun(run),
+        start: run[0]!.source.start,
+        links: run.map(({ source, citation }) => ({
+          target: source.target,
+          citation,
+        })),
+      });
+  }
+  placed.sort((left, right) => left.start - right.start);
+  if (placed.length === 0) return { citations: [], diagnostics: [] };
+  const items = new Map<string, CslItemData>();
+  {
+    const keys = [...new Set(placed.flatMap(({ works }) => works))].filter(
+      (key) => key !== null,
+    );
+    const [user, found] = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const reads = yield* (yield* ZoteroReads).snapshot;
+        return yield* Effect.all(
+          [
+            reads.DatabaseIdentity({}),
+            reads.ItemsByIndexedKeys({ indexedKeys: keys }),
+          ],
+          { concurrency: "unbounded" },
+        );
+      }),
+    );
+    for (const key of keys) {
+      const item = found.get(key);
+      if (item && !isChildItemFields(item.fields))
+        items.set(key, { ...itemToCsl(item, user), id: key });
+    }
+  }
+  const complete = placed.filter(({ works }) =>
+    works.every((key) => key !== null && items.has(key)),
+  );
+  if (complete.length === 0) return { citations: [], diagnostics: [] };
+  const sources = complete.map(namedSource);
+  const presentation = { styleId: input.styleId, locale: input.locale };
+  // The outcome says which of the three reasons a preview shows; the read that
+  // follows it answers with the render that stands, rather than with one an
+  // invalidation superseded halfway.
+  const outcome = yield* bibliographyRender.renderCitations(
+    sources,
+    [...items.values()],
+    presentation,
+  );
+  const formatted =
+    outcome.kind === "held"
+      ? yield* bibliographyRender
+          .readCitations(sources, [...items.values()], { presentation })
+          .pipe(Effect.orElseSucceed(() => null))
+      : null;
+  if (formatted === null)
+    return {
+      citations: [],
+      diagnostics: [
+        {
+          code: "citation-style-error",
+          part: "render",
+          message:
+            outcome.kind === "unavailable" && outcome.reason === "engine-absent"
+              ? m.profile_preview_citation_engine_absent()
+              : outcome.kind === "unavailable" &&
+                  outcome.reason === "style-missing"
+                ? m.profile_preview_citation_style_missing()
+                : m.profile_preview_citation_failed(),
+        },
+      ],
+    };
+  const serials = new Map<string, number>();
+  if (formatted.some(({ content }) => holdsNote(content))) {
+    const bibliography = yield* bibliographyRender
+      .readBibliography([...items.values()], { presentation })
+      .pipe(Effect.orElseSucceed(() => null));
+    bibliography?.entries.forEach(({ id }, index) =>
+      serials.set(id, index + 1),
+    );
+  }
+  return {
+    citations: formatted.map((text, index) => ({
+      source: complete[index]!.source,
+      start: complete[index]!.start,
+      links: complete[index]!.links,
+      text,
+      serials: holdsNote(text.content)
+        ? text.citations.map(({ id }) => serials.get(id))
+        : [],
+    })),
+    diagnostics: [],
+  };
+});
+function namedSource(citation: DraftCitation): string {
+  let source = citation.source;
+  for (let index = citation.keys.length - 1; index >= 0; index--) {
+    const key = citation.keys[index]!;
+    const marker = source[key.start] === "-" ? "-@" : "@";
+    source = `${source.slice(0, key.start)}${marker}${citation.works[index]}${source.slice(key.end)}`;
+  }
+  return source;
+}

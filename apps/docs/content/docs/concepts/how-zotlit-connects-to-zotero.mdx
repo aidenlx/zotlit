@@ -1,30 +1,41 @@
 ---
 title: "How ZotLit connects to Zotero"
 description: "How database reads, Zotero actions, and optional live updates connect Zotero to Obsidian."
-introduced: "2.0.0"
-updated: "2.1.0"
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
-ZotLit reads your library from the Zotero database. ZotLit Companion, the Zotero add-on, keeps recent changes available and connects Zotero actions to Obsidian. Live updates provide an optional third connection.
+ZotLit reads your library from the Zotero database. Browsing and reading need the database only: the Library View, search, and opening a PDF in Obsidian work with Zotero closed and with no add-on in Zotero. ZotLit Companion, the Zotero add-on, keeps recent changes available and connects Zotero actions to Obsidian. Live updates provide an optional third connection.
 
-ZotLit supports Zotero 9 or later and requires the Companion.
+ZotLit supports Zotero 9 or later. To save annotation changes from Obsidian, you need Zotero 10 or later. With Zotero 9, you can read PDFs and their annotations, but you cannot edit them.
 
-## Reading the Zotero database
+## Reading the Zotero database [#reading-the-zotero-database]
 
 Zotero can keep recent changes in a separate database file while it is running. ZotLit uses a read mode to access your library without interfering with Zotero.
 
-The default **Auto** setting picks the best available mode. It attempts a **Reflink clone** on macOS and Linux. Auto uses the clone on APFS, Btrfs, and reflink-enabled XFS filesystems. On Windows and other filesystems, such as ext4, Auto falls back to **Immutable source**. You can override this in Settings.
+The default <UiLabel name={m.settings_db_read_mode_auto()} /> setting picks the best available mode. It attempts a <UiLabel name={m.settings_db_read_mode_reflink()} /> on macOS and Linux. <UiLabel name={m.settings_db_read_mode_auto()} /> uses the clone on APFS, Btrfs, and reflink-enabled XFS filesystems. On Windows and other filesystems, such as ext4, <UiLabel name={m.settings_db_read_mode_auto()} /> falls back to <UiLabel name={m.settings_db_read_mode_immutable()} />. You can override this in Settings.
 
-**Reflink clone** creates a fast, lightweight snapshot of the database. It sees recent edits, and it is what Auto uses on any macOS or Linux filesystem that supports cloning.
+<UiLabel name={m.settings_db_read_mode_reflink()} /> creates a fast, lightweight
+snapshot of the database. It sees recent edits, and it is what
+<UiLabel name={m.settings_db_read_mode_auto()} /> uses on any macOS or Linux
+filesystem that supports cloning.
 
-**Immutable source** reads the database file directly without creating a copy. It is what Auto uses when cloning is unavailable. This mode reads only the main database file. Recent edits can stay in Zotero's separate write-ahead log until Zotero writes them to the main file.
+<UiLabel name={m.settings_db_read_mode_immutable()} /> reads the database file
+directly without creating a copy. It is what
+<UiLabel name={m.settings_db_read_mode_auto()} /> uses when cloning is
+unavailable. This mode reads only the main database file. Recent edits can stay
+in Zotero's separate write-ahead log until Zotero writes them to the main file.
 
-The Companion keeps the main database file current by writing recent changes into it. Its **Keep the database file up to date for Obsidian** setting is enabled by default. This database checkpoint works without [live updates](/docs/how-to/set-up-live-updates).
+The Companion keeps the main database file current by writing recent changes into it. Its <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> setting is enabled by default. This database checkpoint works without [live updates](/docs/how-to/set-up-live-updates).
 
-**Full copy** works on any filesystem and sees recent edits. It copies the entire database each time, so it is slower and uses more disk space, especially with large Zotero libraries. Auto never selects this mode; choose it manually if other modes are unavailable.
+<UiLabel name={m.settings_db_read_mode_copy()} /> works on any filesystem and
+sees recent edits. It copies the entire database each time, so it is slower and
+uses more disk space, especially with large Zotero libraries.
+<UiLabel name={m.settings_db_read_mode_auto()} /> never selects this mode;
+choose it manually if other modes are unavailable.
 
 See the [Settings reference](/docs/reference/settings) for the full option list and descriptions.
 
@@ -36,7 +47,7 @@ For step-by-step instructions, see [Use ZotLit on multiple devices](/docs/how-to
 
 ## ZotLit Companion
 
-The Companion adds context-menu actions inside Zotero. These actions open, update, and import notes. The Companion can also push live events to Obsidian.
+The Companion adds context-menu actions inside Zotero. These actions open, update, and import notes, and open an item's PDF in Obsidian. The Companion can also push live events to Obsidian.
 
 The Companion keeps the main Zotero database file current for ZotLit. Zotero uses a write-ahead log, or WAL, to hold recent database changes before it writes them to the main file. The Companion tells Zotero to write those changes to the main file after Zotero updates your library. This behavior is enabled by default and works without a server.
 
@@ -48,7 +59,7 @@ ZotLit uses two transport mechanisms between Zotero and Obsidian. They serve dif
 
 ### Protocol links (no server required)
 
-When you right-click an item in Zotero and choose a ZotLit action (open note, update note, import), the Companion builds an `obsidian://zotlit/...` URL and opens it. Obsidian receives the URL and ZotLit handles the action.
+When you right-click an item in Zotero and choose a ZotLit action (open note, update note, import, open PDF), the Companion builds an `obsidian://zotlit/...` URL and opens it. Obsidian receives the URL and ZotLit handles the action.
 
 Protocol links work out of the box after you install ZotLit and the Companion. They carry a source identifier so ZotLit only processes links originating from the expected Zotero install.
 
@@ -67,7 +78,7 @@ The database checkpoint that writes those changes into the main file works indep
 
 Live updates require two things enabled:
 
-- **In Obsidian:** the ZotLit server (a local HTTP listener on port 9091 by default).
+- **In Obsidian:** the ZotLit server (a local HTTP listener on port 9091 by default), with <UiLabel name={m.settings_live_updates_enabled_name()} /> on.
 - **In Zotero:** the Companion's notify preference, pointed at the same address.
 
 Both sides carry a source identifier and a protocol version. The server discards requests from unrecognized Zotero installs (source mismatch) and rejects requests with an incompatible protocol version.
@@ -78,9 +89,20 @@ Both sides carry a source identifier and a protocol version. The server discards
   live updates only when you want real-time push from Zotero.
 </Callout>
 
+## Saving annotation changes to Zotero
+
+The database connection only reads. When you edit an annotation in Obsidian, ZotLit sends the change to Zotero while Zotero is running. Zotero saves it like an annotation you made in its own reader, so the change syncs with your Zotero library.
+
+ZotLit sends these changes through Zotero's local API, a connection that Zotero provides for other applications on the same computer. Two things must be in place:
+
+- **In Zotero:** **Allow other applications on this computer to communicate with Zotero** is on, under Settings → Advanced.
+- **Your permission:** the first time you allow editing, Zotero shows a permission dialog. You choose **Always Allow** once. ZotLit saves this permission for the current vault on the current device only, so you give it once for each vault on each computer.
+
+This connection does not use protocol links or the ZotLit server. For the steps, see [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
+
 ## How the pieces fit together
 
-ZotLit can read the database while Zotero is closed. Install the Companion in Zotero to keep data current after changes. Protocol links and live updates also depend on the Companion.
+ZotLit can read the database while Zotero is closed, and that is all browsing and reading need. Install the Companion in Zotero to keep data current after changes, especially where ZotLit reads in <UiLabel name={m.settings_db_read_mode_immutable()} /> mode. Protocol links and live updates also depend on the Companion. [Keep Zotero and Obsidian in sync](/docs/how-to/keep-zotero-and-obsidian-in-sync) walks through the setup.
 
 ## See also
 
@@ -97,7 +119,7 @@ ZotLit can read the database while Zotero is closed. Install the Companion in Zo
   />
   <Card
     title="Install ZotLit Companion"
-    description="Download and install the required Zotero add-on."
+    description="Download and install the Zotero add-on."
     href="/docs/install-companion"
   />
   <Card

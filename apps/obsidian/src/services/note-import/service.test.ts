@@ -1,47 +1,54 @@
-import { TFile, TFolder } from "obsidian";
-import type { App } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
+import { stringifyYaml } from "obsidian";
+import type { TFile } from "obsidian";
+import { afterAll, beforeEach, describe, expect, vi } from "vitest";
 
-import {
-  formatIndexedKey,
-  getAnnotationsByKey,
-  getNoteByKey,
-  USER_LIBRARY_ID,
-} from "@zotlit/db";
+import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import type { AnnotationTemplateContext } from "@zotlit/db";
+import { rowInstant } from "@zotlit/db/test-utils";
 
-import { renderAnnotations } from "@/lib/annotation-render";
-import { AttachmentImportService } from "@/services/attachment-import/service";
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { renderAnnotationSources } from "@/lib/annotation-render";
+import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
+import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
+import { attachmentImportFixture } from "@/services/attachment-import/__fixtures__";
+import { AttachmentCopyError } from "@/services/attachment-import/service";
 import type {
+  AttachmentImport,
+  AttachmentImportBatch,
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
+import type { TemplateOperations } from "@/services/template/service";
+import {
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
-import { parseNote } from "./note-parser";
-import { createNoteImporter, NoteImportMintError } from "./service";
-import type {
-  ImportVaultApp,
-  NoteImporter,
-  PrepareNoteImportOptions,
-} from "./service";
-
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return { ...actual, getNoteByKey: vi.fn(), getAnnotationsByKey: vi.fn() };
-});
+import { noteImporterOver } from "./__fixtures__/importer";
+import { childNoteLink } from "./child-note-link";
+import type { ChildNoteLinkDeps } from "./child-note-link";
+import { noteAnnotationKeys, parseNote } from "./note-parser";
+import { NoteImportMintError, NoteImportParseError } from "./service";
 
 // The service owns the annotation renderer now; stub the leaf so the test asserts
-// the wiring (resolveLink binding, library scoping) without the DB template pipeline.
+// the wiring (resolveLink binding, library scoping) without the template pipeline.
 vi.mock("@/lib/annotation-render", () => ({
-  renderAnnotations: vi.fn(() => new Map<string, string>()),
+  renderAnnotationSources: vi.fn(() => new Map<string, string>()),
 }));
 
 // `parseNote` is stubbed to echo its HTML and any annotation-callout output, so
 // the service-built `renderAnnotationParagraph` is exercised through the write.
 vi.mock("./note-parser", () => ({
+  noteAnnotationKeys: vi.fn(() => []),
+  noteReferences: vi.fn(() => ({ citedIndexedKeys: [], attachmentKeys: [] })),
   parseNote: vi.fn(
     (
       _td: unknown,
@@ -66,9 +73,53 @@ vi.mock("./note-parser", () => ({
 // stub it so the bare reference resolves.
 vi.stubGlobal("TurndownService", class {});
 
-function makeFile(path: string): TFile {
-  return Object.assign(Object.create(TFile.prototype) as TFile, { path });
-}
+const NOTE_BODY = "<h1>Methods</h1><p>body</p>";
+
+/**
+ * The Zotero rows every import reads: a parent item (1) with the child notes
+ * the tests import — NOTE1234 in the personal library and in group 42, plus
+ * NOTE0001/NOTE0002 — and an annotation ANNOT1 in each library.
+ */
+const SEED = `
+  insert into libraries (libraryID, type) values (1, 'user'), (2, 'group');
+  insert into groups (groupID, libraryID, name) values (42, 2, 'Team');
+  insert into itemTypes (itemTypeID, typeName)
+    values (1, 'journalArticle'), (2, 'attachment'), (3, 'note'),
+           (4, 'annotation');
+  insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+    values
+      (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'PRNT2345'),
+      (50, 3, '2024-01-01 10:00:00', '2024-02-03 08:30:00', 1, 'NOTE1234'),
+      (51, 3, '2024-01-01 10:00:00', '2024-02-03 08:30:00', 1, 'NOTE0001'),
+      (52, 3, '2024-01-01 10:00:00', '2024-02-03 08:30:00', 1, 'NOTE0002'),
+      (60, 3, '2024-01-01 10:00:00', '2024-02-03 08:30:00', 2, 'NOTE1234'),
+      (10, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ATCH2345'),
+      (70, 2, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 2, 'ATCH2345'),
+      (100, 4, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ANNOT1'),
+      (110, 4, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 2, 'ANNOT1');
+  insert into itemNotes (itemID, parentItemID, note, title)
+    values (50, 1, '${NOTE_BODY}', 'Methods'),
+           (51, 1, '${NOTE_BODY}', 'Methods'),
+           (52, 1, '${NOTE_BODY}', 'Methods'),
+           (60, null, '${NOTE_BODY}', 'Methods');
+  insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+    values (10, 1, 0, 'application/pdf', 'storage:paper.pdf'),
+           (70, null, 0, 'application/pdf', 'storage:paper.pdf');
+  insert into itemAnnotations (
+    itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex,
+    position, isExternal
+  )
+    values
+      (100, 10, 1, 'personal', null, '#ffd400', '1', '00000|000000|00000',
+       '{"pageIndex":0,"rects":[[0,0,1,1]]}', 0),
+      (110, 70, 1, 'group', null, '#ffd400', '1', '00000|000000|00000',
+       '{"pageIndex":0,"rects":[[0,0,1,1]]}', 0);
+`;
+
+/** The reads every write in this suite runs on: the in-process adapter over {@link SEED}. */
+const suiteReads = inProcessReadsService(memoryOpener(() => SEED).open);
+afterAll(() => suiteReads[Symbol.asyncDispose]());
+const { reads } = await suiteReads.ready;
 
 function makeNote(overrides: Partial<ReturnType<typeof baseNote>> = {}) {
   const base = baseNote({
@@ -89,38 +140,26 @@ function baseNote(overrides?: { key?: string; groupID?: number | null }) {
     key,
     indexedKey: formatIndexedKey(key, groupID),
     title: "Methods",
-    note: "<h1>Methods</h1><p>body</p>",
-    dateAdded: Temporal.Instant.from("2024-01-01T10:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-02-03T08:30:00Z"),
+    note: NOTE_BODY,
+    dateAdded: rowInstant("2024-01-01T10:00:00Z"),
+    dateModified: rowInstant("2024-02-03T08:30:00Z"),
   };
 }
 
-interface AppStub {
-  app: ImportVaultApp;
-  create: ReturnType<typeof vi.fn>;
-  createFolder: ReturnType<typeof vi.fn>;
-  process: ReturnType<typeof vi.fn>;
-}
-
-function makeApp(): AppStub {
-  const create = vi.fn(async (path: string) => makeFile(path));
-  const createFolder = vi.fn(async (path: string) => {
-    const folder = new TFolder();
-    folder.path = path;
-    return folder;
-  });
-  const process = vi.fn(async (_file: TFile, fn: (data: string) => string) => {
-    return fn("");
-  });
+/** A host holding a note at each path, carrying the given Properties. */
+function makeApp(
+  propertiesByPath: Readonly<Record<string, Record<string, unknown>>> = {},
+) {
+  const host = createObsidianHost(
+    Object.fromEntries(
+      Object.entries(propertiesByPath).map(([path, properties]) => [
+        path,
+        noteText(properties),
+      ]),
+    ),
+  );
   const app = {
-    vault: {
-      getAbstractFileByPath: () => null,
-      getFileByPath: (path: string) => makeFile(path),
-      getRoot: () => new TFolder(),
-      create,
-      createFolder,
-      process,
-    },
+    ...host.app,
     fileManager: {
       // Mirrors Obsidian's (file, sourcePath, subpath, alias) signature.
       generateMarkdownLink: (...args: unknown[]) => {
@@ -130,12 +169,25 @@ function makeApp(): AppStub {
       },
     },
   };
-  return { app, create, createFolder, process };
+  return {
+    app,
+    host,
+    create: vi.spyOn(host.vault, "create"),
+    createFolder: vi.spyOn(host.vault, "createFolder"),
+    process: vi.spyOn(host.vault, "process"),
+  };
+}
+
+/** A note carrying `properties` over an empty body. */
+function noteText(properties: Record<string, unknown>): string {
+  return Object.keys(properties).length === 0
+    ? ""
+    : `---\n${stringifyYaml(properties)}---\n`;
 }
 
 /** Per-note attachment batch stub; `flush` records whether copies were committed. */
 function makeAttachmentImport() {
-  const flush = vi.fn(async () => ({
+  const flush = vi.fn(() => ({
     copied: 0,
     skipped: 0,
     missing: 0,
@@ -151,9 +203,17 @@ function makeAttachmentImport() {
     }),
   );
   const resolveLink = vi.fn(() => () => "[[image.png]]");
-  const discard = vi.fn();
-  const prepare = vi.fn(async () => ({ decide, resolveLink, flush, discard }));
-  return { prepare, flush, decide, resolveLink };
+  const batch: AttachmentImportBatch = {
+    decide,
+    resolveLink,
+    flush: Effect.sync(flush),
+    discard: Effect.void,
+  };
+  const prepare = vi.fn(
+    (..._args: Parameters<AttachmentImport["Service"]["prepare"]>) =>
+      Effect.succeed(batch),
+  );
+  return { prepare, flush, decide, resolveLink, batch };
 }
 
 /**
@@ -161,401 +221,1059 @@ function makeAttachmentImport() {
  * and no approved folder, so every source it judges blocks. Lets a test observe
  * the `file://` fallback the production seam renders, rather than a stub's.
  */
-function makeBlockingAttachmentImport(): AttachmentImportService {
-  return new AttachmentImportService({
-    app: {
-      loadLocalStorage: () => null,
-      saveLocalStorage: () => undefined,
-    } as unknown as App,
-    settings: {
-      loaded: Promise.resolve({
-        "attachment.import": true,
-        "attachment.folder-path": "Attachments",
-      }),
-      subscribe: () => () => undefined,
-    } as unknown as SettingsService,
-    zoteroPref: {
-      dataDir: "/nonexistent-zotero-data",
-      baseAttachmentPath: null,
-      on: () => () => undefined,
-    },
-  });
-}
+const makeBlockingAttachmentImport = () =>
+  attachmentImportFixture({
+    dataDir: "/nonexistent-zotero-data",
+    baseAttachmentPath: null,
+  }).pipe(Effect.map(({ service }) => service));
 
-function makeService(
-  app: ImportVaultApp,
+/**
+ * The real importer over `app`'s host, with the note index answering
+ * `existing` and `literatureNotes`. Each call's settings feed the Profile
+ * reader, as the plugin's settings would.
+ */
+const makeService = Effect.fnUntraced(function* (
+  app: ReturnType<typeof makeApp>["app"],
   options: {
     existing?: TFile[];
-    attachmentImport?: Pick<AttachmentImportService, "prepare">;
+    literatureNotes?: TFile[];
+    attachmentImport?: Pick<AttachmentImport["Service"], "prepare">;
+    template?: Pick<
+      TemplateOperations,
+      "render" | "renderCitation" | "renderProfileAnnotation"
+    >;
   } = {},
-): NoteImporter {
-  return createNoteImporter({
-    app,
-    noteIndex: { getImportedNoteByNoteKey: () => options.existing ?? [] },
-    // `render` is generic (`<T>(name, data) => string`); a concrete mock can't
-    // mirror that signature, so this one stub keeps a cast.
-    template: { render: vi.fn(() => "[@cite]") } as Pick<
-      TemplateService,
-      "render"
-    >,
+) {
+  let current: Settings = defaults;
+  const importer = yield* noteImporterOver({
+    profile: profileReader(() => current, app.metadataCache),
+    vault: app.vault,
+    workspace: app.workspace,
+    noteIndex: {
+      getImportedNoteByNoteKey: () => options.existing ?? [],
+      getNotesByItemKey: () => options.literatureNotes ?? [],
+    },
+    template:
+      options.template ??
+      stubService<
+        Pick<
+          TemplateOperations,
+          "render" | "renderCitation" | "renderProfileAnnotation"
+        >
+      >("Template", {
+        render: () => "[@cite]",
+        renderCitation: () => "[@cite]",
+        renderProfileAnnotation: () => "profile annotation",
+      }),
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     attachmentImport: options.attachmentImport ?? makeAttachmentImport(),
   });
-}
-
-function makePrepare(
-  overrides: Omit<Partial<PrepareNoteImportOptions>, "settings"> & {
-    settings?: Partial<Settings>;
-  } = {},
-): PrepareNoteImportOptions {
-  const { settings: settingsOverrides, ...rest } = overrides;
   return {
-    client: {} as any,
-    sourcePath: "Literature/Paper.md",
-    settings: {
-      ...defaults,
-      "note.import-folder": "Imported",
-      ...settingsOverrides,
+    importNote: (
+      note: Parameters<typeof importer.importNote>[0],
+      importOptions: Parameters<typeof importer.importNote>[1],
+    ) =>
+      Effect.suspend(() => {
+        current = importOptions.settings as Settings;
+        return importer.importNote(note, importOptions);
+      }),
+    prepareExplicitImport: (
+      note: Parameters<typeof importer.prepareExplicitImport>[0],
+      prepareOptions: Parameters<typeof importer.prepareExplicitImport>[1],
+    ) =>
+      Effect.suspend(() => {
+        current = profileSettings();
+        return importer.prepareExplicitImport(note, prepareOptions);
+      }),
+  };
+});
+
+/** Settings whose default Profile imports into `Imported`, with `bindings` over it. */
+function importSettings(
+  bindings: Partial<ResolvedLiteratureNoteProfileBindings> = {},
+): Settings {
+  return {
+    ...defaults,
+    "note.default-profile": {
+      ...defaults["note.default-profile"],
+      bindings: {
+        ...defaults["note.default-profile"].bindings,
+        "note.import-folder": "Imported",
+        ...bindings,
+      },
     },
-    ...rest,
   };
 }
 
-const PREPARE = makePrepare();
+const PROFILE_A = "Bk3Qn7XvT2Lp" as ProfileId;
+const PROFILE_B = "Rz9Wm4YfH6Kd" as ProfileId;
+
+function profileSettings(): Settings {
+  return {
+    ...defaults,
+    profiles: [
+      {
+        id: PROFILE_A,
+        label: "Law",
+        bindings: {
+          "note.import-folder": "Law/Imported",
+          "note.import-colored-highlights": true,
+          "note.import-annotations-as-template": false,
+        },
+      },
+      {
+        id: PROFILE_B,
+        label: "History",
+        bindings: {
+          "note.import-folder": "History/Imported",
+          "note.import-colored-highlights": false,
+          "note.import-annotations-as-template": true,
+        },
+      },
+    ],
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getNoteByKey).mockReturnValue(makeNote());
-  vi.mocked(getAnnotationsByKey).mockReturnValue([]);
-  vi.mocked(renderAnnotations).mockReturnValue(new Map());
+  vi.mocked(noteAnnotationKeys).mockReturnValue([]);
+  vi.mocked(renderAnnotationSources).mockReturnValue(new Map());
 });
 
-describe("createNoteImporter", () => {
-  it("mints a flat path, renders the title alias, and creates the mirror on flush", async () => {
-    const { app, create, createFolder } = makeApp();
-    const attachmentImport = makeAttachmentImport();
-    const batch = await makeService(app, { attachmentImport }).prepare(PREPARE);
+describe("NoteImporter", () => {
+  it.effect(
+    "skips when an existing note changes Profile after its import preview",
+    () =>
+      Effect.gen(function* () {
+        const { app, host, process } = makeApp({
+          "Imported/Existing.md": {
+            [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A,
+          },
+        });
+        const target = host.file("Imported/Existing.md");
+        const service = yield* makeService(app, { existing: [target] });
+        const prepared = yield* service.prepareExplicitImport(makeNote(), {
+          reads,
+        });
+        host.vault.modifyFile(
+          target.path,
+          noteText({ [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B }),
+        );
 
-    const link = batch.resolveChildNote({
-      itemID: 50,
-      libraryID: USER_LIBRARY_ID,
-      groupID: null,
-      parentItemID: 1,
-      key: "NOTE1234",
-      indexedKey: "NOTE1234",
-      title: "Methods",
-      dateModified: Temporal.Instant.from("2024-02-03T08:30:00Z"),
+        expect(
+          yield* prepared.import(makeNote(), {
+            reads,
+            settings: profileSettings(),
+          }),
+        ).toBe("skipped");
+        expect(process).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "refuses an unknown orphan Profile before preparing any writes",
+    () =>
+      Effect.gen(function* () {
+        const { app, create, createFolder } = makeApp();
+        expect(
+          yield* Effect.flip(
+            (yield* makeService(app)).prepareExplicitImport(makeNote(), {
+              reads,
+              orphanProfile: "Qt5Nb8ZcV3Jm" as ProfileId,
+            }),
+          ),
+        ).toMatchObject({
+          name: "NoteImportProfileError",
+          diagnostic: { stamp: "Qt5Nb8ZcV3Jm", indexedKey: "NOTE1234" },
+        });
+        expect(create).not.toHaveBeenCalled();
+        expect(createFolder).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "skips a collision at the previewed path without overwriting or copying attachments",
+    () =>
+      Effect.gen(function* () {
+        const { app, host, create, process } = makeApp();
+        const attachmentImport = makeAttachmentImport();
+        const prepared = yield* (yield* makeService(app, {
+          attachmentImport,
+        })).prepareExplicitImport(makeNote(), {
+          reads,
+          orphanProfile: PROFILE_A,
+        });
+        host.vault.createFile(prepared.path, "Arrived after preview");
+
+        expect(
+          yield* prepared.import(makeNote(), {
+            reads,
+            settings: profileSettings(),
+          }),
+        ).toBe("skipped");
+        expect(create).not.toHaveBeenCalled();
+        expect(host.vault.contents.get(prepared.path)).toBe(
+          "Arrived after preview",
+        );
+        expect(process).not.toHaveBeenCalled();
+        expect(attachmentImport.flush).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect.each(["existing", "parent"] as const)(
+    "skips a prepared orphan if a %s note appears before confirmation",
+    (source) =>
+      Effect.gen(function* () {
+        const { app, host, create, process } = makeApp();
+        const existing: TFile[] = [];
+        const literatureNotes: TFile[] = [];
+        const service = yield* makeService(app, { existing, literatureNotes });
+        const note = makeNote();
+        const prepared = yield* service.prepareExplicitImport(note, {
+          reads,
+          orphanProfile: PROFILE_A,
+        });
+        (source === "existing" ? existing : literatureNotes).push(
+          host.vault.createFile("Arrived.md", ""),
+        );
+
+        expect(
+          yield* prepared.import(note, {
+            reads,
+            settings: profileSettings(),
+          }),
+        ).toBe("skipped");
+        expect(create).not.toHaveBeenCalled();
+        expect(process).not.toHaveBeenCalled();
+      }),
+  );
+
+  const importWithOrphanChoice = Effect.fnUntraced(function* (
+    source: "existing" | "parent",
+  ) {
+    const { app, host, create } = makeApp({
+      "History/Existing.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
     });
+    const target = host.file("History/Existing.md");
+    const service = yield* makeService(
+      app,
+      source === "existing"
+        ? { existing: [target] }
+        : { literatureNotes: [target] },
+    );
+    const prepared = yield* service.prepareExplicitImport(makeNote(), {
+      reads,
+      orphanProfile: PROFILE_A,
+    });
+
+    expect(prepared.source).toBe(source);
+    expect(prepared.profile.selector).toBe(PROFILE_B);
+    yield* prepared.import(makeNote(), {
+      reads,
+      settings: profileSettings(),
+    });
+    return { host, create, target, prepared };
+  });
+
+  it.effect(
+    "keeps the existing Profile when an orphan choice is supplied",
+    () =>
+      Effect.gen(function* () {
+        const { host, create, target, prepared } =
+          yield* importWithOrphanChoice("existing");
+        expect(prepared.path).toBe(target.path);
+        expect(create).not.toHaveBeenCalled();
+        expect(host.text(target.path)).toContain("History (Rz9Wm4YfH6Kd)");
+      }),
+  );
+
+  it.effect("keeps the parent Profile when an orphan choice is supplied", () =>
+    Effect.gen(function* () {
+      const { create, prepared } = yield* importWithOrphanChoice("parent");
+      expect(prepared.path.startsWith("History/Imported/Methods_")).toBe(true);
+      expect(create.mock.calls[0]![0]).toBe(prepared.path);
+      expect(create.mock.calls[0]![1]).toContain("History (Rz9Wm4YfH6Kd)");
+    }),
+  );
+
+  it.effect(
+    "prepares an orphan under its chosen Profile without writes and imports at the previewed path",
+    () =>
+      Effect.gen(function* () {
+        const { app, create, createFolder } = makeApp();
+        const service = yield* makeService(app);
+        const note = { ...makeNote(), parentItemID: null };
+        const prepared = yield* service.prepareExplicitImport(note, {
+          reads,
+          orphanProfile: PROFILE_A,
+        });
+
+        expect(prepared.source).toBe("orphan");
+        expect(prepared.profile.selector).toBe(PROFILE_A);
+        expect(prepared.path.startsWith("Law/Imported/Methods_")).toBe(true);
+        expect(create).not.toHaveBeenCalled();
+        expect(createFolder).not.toHaveBeenCalled();
+
+        expect(
+          yield* prepared.import(note, {
+            reads,
+            settings: profileSettings(),
+          }),
+        ).toBe("created");
+        expect(create.mock.calls[0]![0]).toBe(prepared.path);
+        expect(create.mock.calls[0]![1]).toContain(
+          `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
+        );
+      }),
+  );
+
+  it.effect(
+    "creates a flat mirror in the import folder and commits its copies",
+    () =>
+      Effect.gen(function* () {
+        const { app, create, createFolder } = makeApp();
+        const attachmentImport = makeAttachmentImport();
+
+        expect(
+          yield* (yield* makeService(app, { attachmentImport })).importNote(
+            makeNote(),
+            {
+              reads,
+              settings: importSettings(),
+            },
+          ),
+        ).toBe("created");
+
+        expect(createFolder).toHaveBeenCalledExactlyOnceWith("Imported");
+        const [path, content] = create.mock.calls[0]!;
+        expect(path).toMatch(/^Imported\/Methods_[\w-]{6}\.md$/);
+        expect(content).toContain("zotero-note-key: NOTE1234");
+        expect(content).toMatch(
+          /\ndate: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}\n/,
+        );
+        expect(content).toContain("md(<h1>Methods</h1><p>body</p>)");
+        // A written note commits its queued image copies.
+        expect(attachmentImport.flush).toHaveBeenCalledOnce();
+      }),
+  );
+
+  it.effect(
+    "commits the copies of a note whose write an interrupt reached while it was pending",
+    () =>
+      Effect.gen(function* () {
+        const { app, host, create } = makeApp();
+        const attachmentImport = makeAttachmentImport();
+        const started = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const write = host.vault.create.bind(host.vault);
+        create.mockImplementationOnce(async (...args) => {
+          started.resolve();
+          await held.promise;
+          return write(...args);
+        });
+        const service = yield* makeService(app, { attachmentImport });
+        const running = yield* service
+          .importNote(makeNote(), { reads, settings: importSettings() })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => started.promise);
+        const interrupted = yield* Fiber.interrupt(running).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        held.resolve();
+        yield* Fiber.join(interrupted);
+
+        // The note is written, so its copies are too.
+        expect(host.text(create.mock.calls[0]![0])).toContain(
+          "zotero-note-key: NOTE1234",
+        );
+        expect(attachmentImport.flush).toHaveBeenCalledOnce();
+      }),
+  );
+
+  it.effect(
+    "mints a bare root-relative path when the import folder is the vault root",
+    () =>
+      Effect.gen(function* () {
+        const { app, create, createFolder } = makeApp();
+
+        yield* (yield* makeService(app)).importNote(makeNote(), {
+          reads,
+          settings: importSettings({ "note.import-folder": "" }),
+        });
+
+        expect(create.mock.calls[0]![0]).toMatch(/^Methods_[\w-]{6}\.md$/);
+        // Root needs no folder creation.
+        expect(createFolder).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect("scopes the identity key by groupID", () =>
+    Effect.gen(function* () {
+      const { app, create } = makeApp();
+
+      yield* (yield* makeService(app)).importNote(
+        makeNote({ groupID: 42, libraryID: 2 }),
+        {
+          reads,
+          settings: importSettings(),
+        },
+      );
+
+      expect(create.mock.calls[0]![1]).toContain(
+        "zotero-note-key: NOTE1234g42",
+      );
+    }),
+  );
+
+  it.effect(
+    "throws NoteImportMintError when the minted path is already occupied",
+    () =>
+      Effect.gen(function* () {
+        const { app, host } = makeApp({ "occupied.md": {} });
+        // Any note path the mint checks reports as occupied, forcing the hard
+        // collision; the import folder itself is still free.
+        const occupied = host.file("occupied.md");
+        vi.spyOn(host.vault, "getAbstractFileByPath").mockImplementation(
+          (path) => (path.endsWith(".md") ? occupied : null),
+        );
+
+        expect(
+          yield* Effect.flip(
+            (yield* makeService(app)).importNote(makeNote(), {
+              reads,
+              settings: importSettings(),
+            }),
+          ),
+        ).toBeInstanceOf(NoteImportMintError);
+      }),
+  );
+
+  it.effect(
+    "falls back to a key-based name when the title sanitizes to empty",
+    () =>
+      Effect.gen(function* () {
+        const { app, create } = makeApp();
+
+        yield* (yield* makeService(app)).importNote(
+          makeNote({ title: "..." }),
+          {
+            reads,
+            settings: importSettings(),
+          },
+        );
+
+        expect(create.mock.calls[0]![0]).toMatch(
+          /^Imported\/zotero_note_NOTE1234_[\w-]{6}\.md$/,
+        );
+      }),
+  );
+
+  it.effect(
+    "renders annotations through the template when the setting is on, resolveLink bound to the note's batch",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(noteAnnotationKeys).mockReturnValue(["ANNOT1"]);
+        vi.mocked(renderAnnotationSources).mockReturnValue(
+          new Map([["ANNOT1", "> [!note]\n>\n> callout"]]),
+        );
+        const { app, create } = makeApp();
+        const attachmentImport = makeAttachmentImport();
+
+        yield* (yield* makeService(app, { attachmentImport })).importNote(
+          makeNote(),
+          {
+            reads,
+            settings: importSettings({
+              "note.import-annotations-as-template": true,
+            }),
+          },
+        );
+
+        // The service scopes the annotation lookup to the note's library.
+        const [sources] = vi.mocked(renderAnnotationSources).mock.calls[0]!;
+        expect(
+          sources.annotations.map(({ key, libraryID, text }) => ({
+            key,
+            libraryID,
+            text,
+          })),
+        ).toEqual([
+          { key: "ANNOT1", libraryID: USER_LIBRARY_ID, text: "personal" },
+        ]);
+        // The template-rendered callout lands in the written file.
+        expect(create.mock.calls[0]![1]).toContain("> [!note]\n>\n> callout");
+
+        // The attachment-import port handed to the renderer is the note's batch.
+        const opts = vi.mocked(renderAnnotationSources).mock.calls[0]![1];
+        const source = opts.attachmentImport.decide(
+          "/a.png",
+          "annotation-cache",
+        );
+        opts.attachmentImport.resolveLink({ source, vaultName: "a.png" });
+        expect(attachmentImport.decide).toHaveBeenCalledWith(
+          "/a.png",
+          "annotation-cache",
+        );
+        expect(attachmentImport.resolveLink).toHaveBeenCalledWith({
+          source,
+          vaultName: "a.png",
+        });
+      }),
+  );
+
+  it.effect(
+    "renders annotation paragraphs through the imported note's Profile",
+    () =>
+      Effect.gen(function* () {
+        const renderProfileAnnotation = vi.fn();
+        const template = stubService<
+          Pick<
+            TemplateOperations,
+            "render" | "renderCitation" | "renderProfileAnnotation"
+          >
+        >("Template", {
+          render: () => "[@cite]",
+          renderCitation: () => "[@cite]",
+          renderProfileAnnotation: (data, options) => {
+            renderProfileAnnotation(data, options);
+            return "profile annotation";
+          },
+        });
+        const { app, host } = makeApp({
+          "History/Imported/Existing.md": {
+            [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B,
+          },
+        });
+
+        yield* (yield* makeService(app, { template })).importNote(makeNote(), {
+          reads,
+          settings: profileSettings(),
+          targetFile: host.file("History/Imported/Existing.md"),
+        });
+
+        const render = vi.mocked(renderAnnotationSources).mock.calls[0]![1]
+          .renderAnnotation;
+        expect(
+          render?.(
+            stubService<AnnotationTemplateContext>("AnnotationTemplate", {
+              text: "Excerpt",
+            }),
+          ),
+        ).toBe("profile annotation");
+        expect(renderProfileAnnotation).toHaveBeenCalledWith(
+          { text: "Excerpt" },
+          {
+            profile: expect.objectContaining({
+              selector: PROFILE_B,
+              label: "History",
+              stamp: "History (Rz9Wm4YfH6Kd)",
+            }),
+          },
+        );
+      }),
+  );
+
+  it.effect(
+    "passes no annotation renderer to parseNote when the setting is off",
+    () =>
+      Effect.gen(function* () {
+        const { app } = makeApp();
+
+        yield* (yield* makeService(app)).importNote(makeNote(), {
+          reads,
+          settings: importSettings(),
+        });
+
+        expect(
+          vi.mocked(parseNote).mock.calls[0]![2].renderAnnotationParagraph,
+        ).toBeUndefined();
+        expect(renderAnnotationSources).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "passes the colored highlight toggle and mappings to the note parser",
+    () =>
+      Effect.gen(function* () {
+        const { app } = makeApp();
+        const mappings = {
+          blue: { output: "custom", customEmoji: "👩‍🔬" },
+        } as const;
+
+        yield* (yield* makeService(app)).importNote(makeNote(), {
+          reads,
+          settings: {
+            ...importSettings({ "note.import-colored-highlights": true }),
+            "note.import-highlight-mappings": mappings,
+          },
+        });
+
+        expect(
+          vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
+        ).toBe(true);
+        expect(
+          vi.mocked(parseNote).mock.calls[0]![2].highlightMappings,
+        ).toEqual(mappings);
+      }),
+  );
+
+  it.effect(
+    "still writes a note whose embedded images are all blocked, as file:// embeds",
+    () =>
+      Effect.gen(function* () {
+        const { app, create } = makeApp();
+        const attachmentImport = yield* makeBlockingAttachmentImport();
+        // Stand in for the parser's embedded-image rule: decide each image, then
+        // embed whatever link resolution hands back.
+        vi.mocked(parseNote).mockImplementationOnce((_td, _html, deps) =>
+          ["/elsewhere/one.png", "/elsewhere/two.png"]
+            .map((path) => {
+              const source = deps.attachmentImport.decide(
+                path,
+                "linked-absolute",
+              );
+              const link = deps.attachmentImport.resolveLink({
+                source,
+                vaultName: "image.png",
+              });
+              return `!${link()}`;
+            })
+            .join("\n"),
+        );
+
+        expect(
+          yield* (yield* makeService(app, { attachmentImport })).importNote(
+            makeNote(),
+            {
+              reads,
+              settings: importSettings(),
+            },
+          ),
+        ).toBe("created");
+
+        const content = create.mock.calls[0]![1] as string;
+        expect(content).toContain("![image.png](file:///elsewhere/one.png)");
+        expect(content).toContain("![image.png](file:///elsewhere/two.png)");
+        // No embed claims a vault file that was never written.
+        expect(content).not.toContain("[[");
+      }),
+  );
+
+  it.effect(
+    "overwrites an existing note without creating the import folder",
+    () =>
+      Effect.gen(function* () {
+        // Outside the import folder, so ensuring that folder would create it.
+        const { app, host, create, createFolder, process } = makeApp({
+          "Notes/Existing.md": {},
+        });
+        const target = host.file("Notes/Existing.md");
+        const service = yield* makeService(app);
+
+        const outcome = yield* service.importNote(makeNote(), {
+          reads,
+          settings: importSettings(),
+          targetFile: target,
+        });
+
+        expect(outcome).toBe("overwritten");
+        expect(process).toHaveBeenCalledOnce();
+        expect(create).not.toHaveBeenCalled();
+        // The deliberate fix: an overwrite never mints or ensures the import folder.
+        expect(createFolder).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "follows and re-emits the existing stamp on whole-body overwrite",
+    () =>
+      Effect.gen(function* () {
+        const { app, host, createFolder } = makeApp({
+          "Imported/Existing.md": {
+            [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A,
+          },
+        });
+        const target = host.file("Imported/Existing.md");
+        const service = yield* makeService(app);
+
+        yield* service.importNote(makeNote(), {
+          reads,
+          settings: profileSettings(),
+          targetFile: target,
+        });
+
+        expect(host.text(target.path)).toContain(
+          `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
+        );
+        expect(
+          vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
+        ).toBe(true);
+        expect(createFolder).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "refreshes a stale hint to the Profile's current label on re-import",
+    () =>
+      Effect.gen(function* () {
+        const { app, host } = makeApp({
+          "Imported/Existing.md": {
+            [FIELD_LITERATURE_NOTE_PROFILE]: `Statutes (${PROFILE_A})`,
+          },
+        });
+        const target = host.file("Imported/Existing.md");
+        const service = yield* makeService(app);
+
+        yield* service.importNote(makeNote(), {
+          reads,
+          settings: profileSettings(),
+          targetFile: target,
+        });
+
+        expect(host.text(target.path)).toContain(
+          `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
+        );
+      }),
+  );
+
+  it.effect("treats a stampless overwrite as the default Profile", () =>
+    Effect.gen(function* () {
+      const { app, host } = makeApp({ "Imported/Existing.md": {} });
+      const target = host.file("Imported/Existing.md");
+      const settings: Settings = {
+        ...defaults,
+        "note.default-profile": {
+          ...defaults["note.default-profile"],
+          bindings: {
+            ...defaults["note.default-profile"].bindings,
+            "note.import-colored-highlights": true,
+          },
+        },
+      };
+      const service = yield* makeService(app);
+
+      yield* service.importNote(makeNote(), {
+        reads,
+        settings,
+        targetFile: target,
+      });
+
+      expect(
+        vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
+      ).toBe(true);
+      expect(host.text(target.path)).not.toContain(
+        FIELD_LITERATURE_NOTE_PROFILE,
+      );
+    }),
+  );
+
+  it.effect("converts one mixed batch under each Imported Note stamp", () =>
+    Effect.gen(function* () {
+      const { app, host } = makeApp({
+        "Imported/First.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
+        "Imported/Second.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
+      });
+      const first = host.file("Imported/First.md");
+      const second = host.file("Imported/Second.md");
+      const service = yield* makeService(app);
+      const settings = profileSettings();
+
+      yield* Effect.all([
+        service.importNote(makeNote({ key: "NOTE0001" }), {
+          reads,
+          settings,
+          targetFile: first,
+        }),
+        service.importNote(makeNote({ key: "NOTE0002" }), {
+          reads,
+          settings,
+          targetFile: second,
+        }),
+      ]);
+
+      const parserOptions = vi
+        .mocked(parseNote)
+        .mock.calls.map((call) => call[2]);
+      expect(parserOptions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ useColoredHighlightSyntax: true }),
+          expect.objectContaining({
+            useColoredHighlightSyntax: false,
+            renderAnnotationParagraph: expect.any(Function),
+          }),
+        ]),
+      );
+    }),
+  );
+
+  it.effect(
+    "refuses an unknown Imported Note stamp with a recovery diagnostic",
+    () =>
+      Effect.gen(function* () {
+        const unknown = "Qt5Nb8ZcV3Jm";
+        const { app, host, process } = makeApp({
+          "Imported/Unknown.md": { [FIELD_LITERATURE_NOTE_PROFILE]: unknown },
+        });
+        const target = host.file("Imported/Unknown.md");
+        const service = yield* makeService(app);
+
+        expect(
+          yield* Effect.flip(
+            service.importNote(makeNote(), {
+              reads,
+              settings: profileSettings(),
+              targetFile: target,
+            }),
+          ),
+        ).toMatchObject({
+          name: "NoteImportProfileError",
+          message: m.notice_imported_note_profile_unknown({
+            stamp: unknown,
+            target: target.path,
+          }),
+          diagnostic: {
+            code: "unknown-literature-note-profile",
+            hint: expect.stringContaining("Switch profile..."),
+            recovery: { action: "switch-profile" },
+            stamp: unknown,
+            path: target.path,
+          },
+        });
+        expect(process).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "keeps the parent Literature Note path and kind when a new child inherits an unavailable Profile",
+    () =>
+      Effect.gen(function* () {
+        const { app, host, create, process } = makeApp({
+          "Literature/Parent.md": {
+            [FIELD_LITERATURE_NOTE_PROFILE]: "Missing",
+          },
+        });
+        const parent = host.file("Literature/Parent.md");
+        const service = yield* makeService(app, { literatureNotes: [parent] });
+        expect(
+          yield* Effect.flip(
+            service.importNote(makeNote(), {
+              reads,
+              settings: profileSettings(),
+            }),
+          ),
+        ).toMatchObject({
+          imported: false,
+          message: m.notice_literature_note_profile_unknown({
+            stamp: "Missing",
+          }),
+          diagnostic: {
+            path: parent.path,
+            recovery: { action: "switch-profile" },
+          },
+        });
+        expect(create).not.toHaveBeenCalled();
+        expect(process).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "copies the parent Literature Note stamp on explicit attached-note creation",
+    () =>
+      Effect.gen(function* () {
+        const { app, host, create } = makeApp({
+          "Law/Parent.md": { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A },
+        });
+        const literatureNote = host.file("Law/Parent.md");
+        const service = yield* makeService(app, {
+          literatureNotes: [literatureNote],
+        });
+
+        yield* service.importNote(makeNote(), {
+          reads,
+          settings: profileSettings(),
+        });
+
+        expect(create.mock.calls[0]![0]).toMatch(/^Law\/Imported\//);
+        expect(create.mock.calls[0]![1]).toContain(
+          `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
+        );
+      }),
+  );
+
+  it("links a Child Note to its Imported Note by identity", () => {
+    const { app, host, create } = makeApp({
+      "Imported/Old name_abc123.md": {},
+    });
+    const existing = host.file("Imported/Old name_abc123.md");
+    const link = childNoteLink(
+      {
+        importedNote: () => existing,
+        link: (file, sourcePath, options) =>
+          app.fileManager.generateMarkdownLink(
+            file,
+            sourcePath,
+            options?.subpath,
+            options?.alias,
+          ),
+      },
+      makeNote({ title: "Renamed" }),
+      "Literature/Paper.md",
+    );
+
     expect(link.indexedKey).toBe("NOTE1234");
-    const rendered = link.noteLink();
-    expect(rendered).toMatch(
-      /^\[\[Imported\/Methods_[\w-]{6}\.md\|Methods\]\]$/,
-    );
-
-    await expect(batch.flush()).resolves.toEqual({
-      created: 1,
-      skipped: 0,
-      failed: 0,
-    });
-    expect(createFolder).toHaveBeenCalledExactlyOnceWith("Imported");
-    const [path, content] = create.mock.calls[0]!;
-    expect(path).toMatch(/^Imported\/Methods_[\w-]{6}\.md$/);
-    expect(content).toContain("zotero-note-key: NOTE1234");
-    expect(content).toMatch(
-      /\ndate: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}\n/,
-    );
-    expect(content).toContain("md(<h1>Methods</h1><p>body</p>)");
-    // A written note commits its queued image copies.
-    expect(attachmentImport.flush).toHaveBeenCalledOnce();
-  });
-
-  it("mints a bare root-relative path when the import folder is the vault root", async () => {
-    const { app, create, createFolder } = makeApp();
-    const batch = await makeService(app).prepare(
-      makePrepare({ settings: { "note.import-folder": "" } }),
-    );
-
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
-    expect(create.mock.calls[0]![0]).toMatch(/^Methods_[\w-]{6}\.md$/);
-    // Root needs no folder creation.
-    expect(createFolder).not.toHaveBeenCalled();
-  });
-
-  it("scopes the identity key by groupID", async () => {
-    vi.mocked(getNoteByKey).mockReturnValue(makeNote({ groupID: 42 }));
-    const { app, create } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
-
-    const link = batch.resolveChildNote(makeNote({ groupID: 42 }));
-    expect(link.indexedKey).toBe("NOTE1234g42");
-    link.noteLink();
-    await batch.flush();
-    expect(create.mock.calls[0]![1]).toContain("zotero-note-key: NOTE1234g42");
-  });
-
-  it("links to an existing imported note by identity, queuing nothing", async () => {
-    const existing = makeFile("Imported/Old name_abc123.md");
-    const { app, create } = makeApp();
-    const batch = await makeService(app, { existing: [existing] }).prepare(
-      PREPARE,
-    );
-
-    const link = batch.resolveChildNote(makeNote({ title: "Renamed" }));
     // The file is never renamed; only the alias reflects the new title.
     expect(link.noteLink()).toBe("[[Imported/Old name_abc123.md|Renamed]]");
-    await expect(batch.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 0,
-      failed: 0,
-    });
+    expect(link.noteLink("Summary")).toBe(
+      "[[Imported/Old name_abc123.md|Summary]]",
+    );
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("queues nothing when the link is never rendered", async () => {
-    const { app, create } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
+  it("links a Child Note with no Imported Note to Zotero and writes nothing", () => {
+    const { app, create, createFolder } = makeApp();
+    const deps: ChildNoteLinkDeps = {
+      importedNote: () => undefined,
+      link: (file, sourcePath, options) =>
+        app.fileManager.generateMarkdownLink(
+          file,
+          sourcePath,
+          options?.subpath,
+          options?.alias,
+        ),
+    };
 
-    batch.resolveChildNote(makeNote());
-    await expect(batch.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 0,
-      failed: 0,
-    });
+    const personal = childNoteLink(
+      deps,
+      makeNote({ title: "Methods [draft]" }),
+      "Literature/Paper.md",
+    );
+    const group = childNoteLink(
+      deps,
+      { ...makeNote({ groupID: 42, libraryID: 2 }), title: null },
+      "Literature/Paper.md",
+    );
+
+    expect(personal.noteLink()).toBe(
+      "[Methods \\[draft\\]](zotero://select/library/items/NOTE1234)",
+    );
+    expect(personal.noteLink("Summary", "#Heading")).toBe(
+      "[Summary](zotero://select/library/items/NOTE1234)",
+    );
+    expect(group.noteLink()).toBe(
+      "[NOTE1234](zotero://select/groups/42/items/NOTE1234)",
+    );
     expect(create).not.toHaveBeenCalled();
-  });
-
-  it("skips and warns when the note vanished before flush", async () => {
-    vi.mocked(getNoteByKey).mockReturnValue(null);
-    const { app, create } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
-
-    batch.resolveChildNote(makeNote()).noteLink();
-    await expect(batch.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 1,
-      failed: 0,
-    });
-    expect(create).not.toHaveBeenCalled();
-  });
-
-  it("skips on a file-exists collision at write time without flushing copies", async () => {
-    const { app, create } = makeApp();
-    create.mockRejectedValueOnce(new Error("File already exists."));
-    const attachmentImport = makeAttachmentImport();
-    const batch = await makeService(app, { attachmentImport }).prepare(PREPARE);
-
-    batch.resolveChildNote(makeNote()).noteLink();
-    await expect(batch.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 1,
-      failed: 0,
-    });
-    // The note wasn't written, so its queued image copies stay inert.
-    expect(attachmentImport.flush).not.toHaveBeenCalled();
-  });
-
-  it("isolates a note's hard write error so siblings still import", async () => {
-    const { app, create } = makeApp();
-    // A non-file-exists failure (disk full, permission, parse error) on one note.
-    create.mockRejectedValueOnce(new Error("EACCES: permission denied"));
-    const batch = await makeService(app).prepare(PREPARE);
-
-    batch.resolveChildNote(makeNote({ key: "NOTE0001" })).noteLink();
-    batch.resolveChildNote(makeNote({ key: "NOTE0002" })).noteLink();
-
-    await expect(batch.flush()).resolves.toEqual({
-      created: 1,
-      skipped: 0,
-      failed: 1,
-    });
-    // Both notes were attempted; the failure didn't short-circuit the sibling.
-    expect(create).toHaveBeenCalledTimes(2);
-  });
-
-  it("reuses the minted path across a second prepare() batch while the note index lags", async () => {
-    // Simulates a double-triggered "Update in Obsidian": the note index hasn't
-    // caught up (metadataCache 'changed' lands async after vault.create), so
-    // both batches see no existing imported note for this key.
-    const { app, create } = makeApp();
-    const service = makeService(app);
-
-    const batch1 = await service.prepare(PREPARE);
-    const link1 = batch1.resolveChildNote(makeNote());
-    const rendered1 = link1.noteLink();
-
-    const batch2 = await service.prepare(PREPARE);
-    const link2 = batch2.resolveChildNote(makeNote());
-    const rendered2 = link2.noteLink();
-
-    // Both renders resolve to the same minted path, not two distinct ones.
-    expect(rendered2).toBe(rendered1);
-
-    await batch1.flush();
-    // The second batch's write attempt lands on the same already-created
-    // path, so it hits the existing file-exists collision handling.
-    create.mockRejectedValueOnce(new Error("File already exists."));
-    await expect(batch2.flush()).resolves.toEqual({
-      created: 0,
-      skipped: 1,
-      failed: 0,
-    });
-
-    // Only one path was ever minted for the key.
-    expect(create).toHaveBeenCalledTimes(2);
-    expect(create.mock.calls[0]![0]).toBe(create.mock.calls[1]![0]);
-  });
-
-  it("throws NoteImportMintError when the minted path is already occupied", async () => {
-    const { app } = makeApp();
-    // Any path the mint checks reports as occupied, forcing the hard collision.
-    app.vault.getAbstractFileByPath = () => makeFile("occupied.md");
-    const batch = await makeService(app).prepare(PREPARE);
-
-    expect(() => batch.resolveChildNote(makeNote())).toThrow(
-      NoteImportMintError,
-    );
-  });
-
-  it("falls back to a key-based name when the title sanitizes to empty", async () => {
-    const { app, create } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
-
-    batch.resolveChildNote(makeNote({ title: "..." })).noteLink();
-    await batch.flush();
-    expect(create.mock.calls[0]![0]).toMatch(
-      /^Imported\/zotero_note_NOTE1234_[\w-]{6}\.md$/,
-    );
-  });
-
-  it("renders annotations through the template when the setting is on, resolveLink bound to the note's batch", async () => {
-    vi.mocked(renderAnnotations).mockReturnValue(
-      new Map([["ANNOT1", "> [!note]\n>\n> callout"]]),
-    );
-    const { app, create } = makeApp();
-    const attachmentImport = makeAttachmentImport();
-    const batch = await makeService(app, { attachmentImport }).prepare(
-      makePrepare({
-        settings: { "note.import-annotations-as-template": true },
-      }),
-    );
-
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
-
-    // The service scopes the annotation lookup to the note's library.
-    expect(getAnnotationsByKey).toHaveBeenCalledWith(
-      expect.anything(),
-      ["ANNOT1"],
-      USER_LIBRARY_ID,
-    );
-    // The template-rendered callout lands in the written file.
-    expect(create.mock.calls[0]![1]).toContain("> [!note]\n>\n> callout");
-
-    // The attachment-import port handed to the renderer is the note's batch.
-    const opts = vi.mocked(renderAnnotations).mock.calls[0]![2];
-    const source = opts.attachmentImport.decide("/a.png", "annotation-cache");
-    opts.attachmentImport.resolveLink({ source, vaultName: "a.png" });
-    expect(attachmentImport.decide).toHaveBeenCalledWith(
-      "/a.png",
-      "annotation-cache",
-    );
-    expect(attachmentImport.resolveLink).toHaveBeenCalledWith({
-      source,
-      vaultName: "a.png",
-    });
-  });
-
-  it("passes no annotation renderer to parseNote when the setting is off", async () => {
-    const { app } = makeApp();
-    const batch = await makeService(app).prepare(PREPARE);
-
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
-
-    expect(
-      vi.mocked(parseNote).mock.calls[0]![2].renderAnnotationParagraph,
-    ).toBeUndefined();
-    expect(renderAnnotations).not.toHaveBeenCalled();
-  });
-
-  it("passes the colored highlight setting to the note parser", async () => {
-    const { app } = makeApp();
-    const batch = await makeService(app).prepare(
-      makePrepare({ settings: { "note.import-colored-highlights": true } }),
-    );
-
-    batch.resolveChildNote(makeNote()).noteLink();
-    await batch.flush();
-
-    expect(
-      vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
-    ).toBe(true);
-  });
-
-  it("still writes a note whose embedded images are all blocked, as file:// embeds", async () => {
-    const { app, create } = makeApp();
-    const attachmentImport = makeBlockingAttachmentImport();
-    await attachmentImport.ready;
-    // Stand in for the parser's embedded-image rule: decide each image, then
-    // embed whatever link resolution hands back.
-    vi.mocked(parseNote).mockImplementationOnce((_td, _html, deps) =>
-      ["/elsewhere/one.png", "/elsewhere/two.png"]
-        .map((path) => {
-          const source = deps.attachmentImport.decide(path, "linked-absolute");
-          const link = deps.attachmentImport.resolveLink({
-            source,
-            vaultName: "image.png",
-          });
-          return `!${link()}`;
-        })
-        .join("\n"),
-    );
-    const batch = await makeService(app, { attachmentImport }).prepare(PREPARE);
-
-    batch.resolveChildNote(makeNote()).noteLink();
-    await expect(batch.flush()).resolves.toEqual({
-      created: 1,
-      skipped: 0,
-      failed: 0,
-    });
-
-    const content = create.mock.calls[0]![1] as string;
-    expect(content).toContain("![image.png](file:///elsewhere/one.png)");
-    expect(content).toContain("![image.png](file:///elsewhere/two.png)");
-    // No embed claims a vault file that was never written.
-    expect(content).not.toContain("[[");
-  });
-
-  it("overwrites an existing note without creating the import folder", async () => {
-    const { app, create, createFolder, process } = makeApp();
-    const target = makeFile("Imported/Existing.md");
-    const service = makeService(app);
-
-    const outcome = await service.importNote(makeNote(), {
-      client: {} as any,
-      settings: PREPARE.settings,
-      targetFile: target,
-    });
-
-    expect(outcome).toBe("overwritten");
-    expect(process).toHaveBeenCalledOnce();
-    expect(create).not.toHaveBeenCalled();
-    // The deliberate fix: an overwrite never mints or ensures the import folder.
     expect(createFolder).not.toHaveBeenCalled();
   });
 
-  it("ensures the import folder on the create branch of importNote", async () => {
-    const { app, create, createFolder } = makeApp();
-    const service = makeService(app);
+  it.effect(
+    "uses the default Profile when an attached note has no Literature Note",
+    () =>
+      Effect.gen(function* () {
+        const { app, create } = makeApp();
+        const service = yield* makeService(app);
 
-    const outcome = await service.importNote(makeNote(), {
-      client: {} as any,
-      settings: PREPARE.settings,
-    });
+        yield* service.importNote(makeNote(), {
+          reads,
+          settings: profileSettings(),
+        });
 
-    expect(outcome).toBe("created");
-    expect(createFolder).toHaveBeenCalledExactlyOnceWith("Imported");
-    expect(create).toHaveBeenCalledOnce();
-  });
+        expect(create.mock.calls[0]![0]).toMatch(/^zotero_notes\//);
+        expect(create.mock.calls[0]![1]).not.toContain(
+          FIELD_LITERATURE_NOTE_PROFILE,
+        );
+      }),
+  );
+
+  it.effect("holds at most 16 note writes at once across callers", () =>
+    Effect.gen(function* () {
+      const { app, create } = makeApp();
+      const base = makeAttachmentImport();
+      const gate = Promise.withResolvers<void>();
+      const full = Promise.withResolvers<void>();
+      let started = 0;
+      const prepare = vi.fn((...args: Parameters<typeof base.prepare>) =>
+        Effect.promise(async () => {
+          started += 1;
+          if (started === 16) full.resolve();
+          await gate.promise;
+        }).pipe(Effect.andThen(base.prepare(...args))),
+      );
+      const service = yield* makeService(app, {
+        attachmentImport: { prepare },
+      });
+      const writes = yield* Effect.forEach(
+        Array.from({ length: 17 }, (_, i) => i),
+        () =>
+          Effect.forkChild(
+            service.importNote(makeNote(), {
+              reads,
+              settings: importSettings(),
+            }),
+          ),
+      );
+
+      yield* Effect.promise(() => full.promise);
+      // The seventeenth write waits for a permit while sixteen hold theirs.
+      expect(started).toBe(16);
+      gate.resolve();
+      for (const write of writes)
+        expect(yield* Fiber.join(write)).toBe("created");
+      expect(started).toBe(17);
+      expect(create).toHaveBeenCalledTimes(17);
+    }),
+  );
+
+  it.effect("fails with the typed error of a failed attachment copy", () =>
+    Effect.gen(function* () {
+      const { app } = makeApp();
+      const { batch } = makeAttachmentImport();
+      const copyFailed = new AttachmentCopyError({
+        message: "EACCES: permission denied",
+        cause: new Error("EACCES: permission denied"),
+      });
+      const service = yield* makeService(app, {
+        attachmentImport: {
+          prepare: () =>
+            Effect.succeed({ ...batch, flush: Effect.fail(copyFailed) }),
+        },
+      });
+
+      const error = yield* Effect.flip(
+        service.importNote(makeNote(), {
+          reads,
+          settings: importSettings(),
+        }),
+      );
+
+      expect(error).toBe(copyFailed);
+    }),
+  );
+
+  it.effect(
+    "fails with a typed error that keeps what the note conversion threw",
+    () =>
+      Effect.gen(function* () {
+        const { app, create } = makeApp();
+        const renderFailed = new Error("Citation Template failed");
+        vi.mocked(parseNote).mockImplementationOnce(() => {
+          throw renderFailed;
+        });
+        const service = yield* makeService(app);
+
+        const error = yield* Effect.flip(
+          service.importNote(makeNote(), {
+            reads,
+            settings: importSettings(),
+          }),
+        );
+
+        expect(error).toBeInstanceOf(NoteImportParseError);
+        expect(error).toMatchObject({
+          cause: renderFailed,
+          message: "Citation Template failed",
+        });
+        expect(create).not.toHaveBeenCalled();
+      }),
+  );
 });

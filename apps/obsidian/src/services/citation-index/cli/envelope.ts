@@ -8,7 +8,10 @@
 
 import type { Loc } from "obsidian";
 
+import { createCliDiagnostics } from "@/lib/cli-diagnostic";
 import type {
+  AnnotationOccurrence,
+  AnnotationUse,
   CitationCoverage,
   CitationKeyResolution,
   CitationOccurrence,
@@ -20,7 +23,7 @@ import type {
 } from "@/services/citation-index/service";
 
 /** The wire format of the `zotlit:` citation commands, versioned on its own. */
-export const CONTRACT_VERSION = 3;
+export const CONTRACT_VERSION = 4;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface CitationsIdentity {
@@ -36,7 +39,7 @@ export interface CitationsIdentity {
 }
 
 /**
- * The documented diagnostic codes of contract version 3, each defined with
+ * The documented diagnostic codes of contract version 4, each defined with
  * the recovery action its diagnostic carries. This record is the single source
  * of both, so a new code arrives with its own hint.
  */
@@ -60,7 +63,8 @@ export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
 export interface Diagnostic {
   code: DiagnosticCode;
   message: string;
-  /** The recovery action for `code`, taken from `DIAGNOSTIC_HINTS`. */
+  /** The recovery action to follow: by default `DIAGNOSTIC_HINTS[code]`; a
+   *  rejected parameter can carry its own, such as its `name=value` form. */
   hint: string;
   details?:
     | { parameter: string }
@@ -96,18 +100,15 @@ export function reportCandidates(
 }
 
 /**
- * Report a fault with the recovery action its code defines. Every diagnostic is
- * built here, so `hint` can never disagree with `code`.
+ * Report a fault with the recovery action registered for its code.
  */
-export function diagnostic(
-  code: DiagnosticCode,
-  message: string,
-  details?: Diagnostic["details"],
-): Diagnostic {
-  return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
-}
+export const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
+  typeof DIAGNOSTIC_HINTS,
+  Diagnostic["details"]
+>(DIAGNOSTIC_HINTS, "INVALID_SELECTOR");
 
 export type CitationsCommand =
+  | "zotlit:annotation-uses"
   | "zotlit:cited-by"
   | "zotlit:references"
   | "zotlit:citations-guide";
@@ -144,6 +145,7 @@ interface ReportedLoc {
 export interface ReportedOccurrence {
   kind: CitationSyntax;
   raw: string;
+  pageLabel?: string | null;
   position: { start: ReportedLoc; end: ReportedLoc };
 }
 
@@ -163,9 +165,10 @@ interface ReportedGroup {
 export function reportOccurrences(
   occurrences: readonly CitationOccurrence[],
 ): ReportedOccurrence[] {
-  return occurrences.map(({ kind, raw, position }) => ({
+  return occurrences.map(({ kind, raw, position, pageLabel }) => ({
     kind,
     raw,
+    ...(pageLabel === undefined ? {} : { pageLabel }),
     position: {
       start: reportLoc(position.start),
       end: reportLoc(position.end),
@@ -184,6 +187,39 @@ export function reportGroups(groups: readonly CitedByGroup[]): ReportedGroup[] {
  *  base that makes `end.offset - start.offset` the fragment's length. */
 function reportLoc({ line, col, offset }: Loc): ReportedLoc {
   return { line: line + 1, col: col + 1, offset };
+}
+
+interface ReportedAnnotationOccurrence {
+  form: AnnotationOccurrence["form"];
+  text: string;
+  position: { start: ReportedLoc; end: ReportedLoc };
+}
+
+interface AnnotationUsesPayload {
+  groups: { path: string; occurrences: ReportedAnnotationOccurrence[] }[];
+  coverage: CitationCoverage;
+}
+
+export function reportAnnotationUses(
+  uses: readonly AnnotationUse[],
+): AnnotationUsesPayload["groups"] {
+  const groups = new Map<string, ReportedAnnotationOccurrence[]>();
+  for (const {
+    path,
+    occurrence: { form, text, position },
+  } of uses) {
+    const occurrences = groups.get(path) ?? [];
+    occurrences.push({
+      form,
+      text,
+      position: {
+        start: reportLoc(position.start),
+        end: reportLoc(position.end),
+      },
+    });
+    groups.set(path, occurrences);
+  }
+  return [...groups].map(([path, occurrences]) => ({ path, occurrences }));
 }
 
 /** `zotlit:cited-by`'s result: index facts, never view presentation (ADR 0024). */
@@ -207,7 +243,7 @@ interface CitedByPayload {
  * distinction only reports Pandoc Engine state (ADR 0024):
  *
  * - `resolved` — a cited Item the connected Zotero source holds, with its identity.
- * - `unresolved` — a citation key that names no live Zotero Item.
+ * - `unresolved` — a citation key or Annotation Citation naming no live Zotero Item.
  * - `ambiguous` — a citation key several Items carry in the current library
  *   scope, so it names none of them; the candidates carry the exact keys that
  *   each select one.
@@ -223,11 +259,12 @@ export type ReferenceEntry = { occurrences: readonly ReportedOccurrence[] } & (
       key: string;
       citekey: string | null;
       /** `Creators (Year): Title` from the shared item-summary rendering. */
-      summary: string;
+      summary: string | null;
       /** Linkpath of the Literature Note, or `null` when the Item has none yet. */
       linkpath: string | null;
     }
   | { refNumber: number; kind: "unresolved"; citekey: string }
+  | { refNumber: number; kind: "unresolved"; annotationKey: string }
   | {
       refNumber: number;
       kind: "ambiguous";
@@ -236,24 +273,23 @@ export type ReferenceEntry = { occurrences: readonly ReportedOccurrence[] } & (
       candidates: readonly AmbiguousCandidateKey[];
     }
   | { refNumber: number; kind: "missing"; key: string }
+  | { refNumber: number; kind: "unreadable" }
   | { kind: "malformed" }
 );
 
 /**
  * `zotlit:references`'s result: index facts, never view presentation (ADR 0024).
  *
- * The two states are what an entry kind means: they report a degraded read as
- * data instead of as entries. Coverage stays out — a document is read on
- * demand, so the vault-wide scan cannot change this answer.
+ * Membership, source choices and coverage describe the same captured records.
  */
 interface ReferencesPayload {
+  coverage: CitationCoverage;
   /** The document's entries in first-occurrence order. */
   entries: readonly ReferenceEntry[];
   /** The excluded Citation Syntaxes that wrote occurrences in this document
    *  this answer left out. `[]` means the answer withheld nothing. */
   omittedSyntaxes: readonly CitationSyntax[];
-  /** `"unreadable"` reports every cited work as `missing`, whether or not the
-   *  Zotero source still holds it. */
+  /** A failed source read is distinct from a missing Item. */
   database: DatabaseReadability;
   /** An `unresolved` entry names a citation key no Item carries only while
    *  this is `"fresh"`; a stale snapshot resolves a live key to nothing. */
@@ -278,7 +314,11 @@ interface EnvelopeFacts {
  */
 export type EnvelopeTail =
   | (EnvelopeFacts & { ok: false; diagnostic: Diagnostic })
-  | (EnvelopeFacts & { ok: true } & (CitedByPayload | ReferencesPayload));
+  | (EnvelopeFacts & { ok: true } & (
+        | CitedByPayload
+        | ReferencesPayload
+        | AnnotationUsesPayload
+      ));
 
 export function envelope(
   command: CitationsCommand,

@@ -1,41 +1,86 @@
 // Materializes the Fixture described by `spec.ts`.
 
+import { readFileSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { SQLInputValue } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 
-import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import {
+  formatAnnotationSubpath,
+  formatIndexedKey,
+  USER_LIBRARY_ID,
+} from "@zotlit/db";
+import type { FrontmatterField } from "@zotlit/templates/constants";
+import {
+  DEFAULT_CITATION_BRANCHES,
+  formatPlainTemplateDocument,
+} from "@zotlit/templates/facade";
 
 import { FIXTURE_PLUGIN_ID } from "./layout.ts";
 import type { FixtureLayout } from "./layout.ts";
-import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
+import {
+  BETTER_BIBTEX_PREFS,
+  OBSIDIAN_PROTOCOL_PREFS,
+  QUIET_FIRST_RUN_PREFS,
+} from "./paired-zotero.ts";
 import {
   assertSchemaVersions,
   writePristineDatabase,
   writePristineStyles,
 } from "./pristine.ts";
 import {
-  ANNOTATIONS,
+  ASSET_DIR,
+  assertSeededCitationKeys,
   ATTACHMENTS,
   BUILD_TIMESTAMP,
+  CITATION_DOCUMENT_EDIT,
   COLLECTIONS,
   createStressItems,
+  createStressLibraryCorpus,
   DEFAULT_SCOPE_CASE,
+  DEFAULT_VAULT_CASE,
+  DEMO_ATTACHMENTS,
+  DEMO_ITEMS,
+  DEMO_PROFILE_DOCUMENT,
+  EXCERPT_RENDERING_PDFS,
+  EXCERPT_RENDERING_VAULT_DIR,
   findScopeCase,
+  findVaultCase,
+  FIXTURE_ITEM_FIELDS,
   FIXTURE_ITEM_TYPES,
+  GRAPH_ITEMS,
+  GRAPH_LITERATURE_NOTE_BODIES,
+  GRAPH_VIEW_OPTIONS,
   INSTALLED_STYLES,
   ITEMS,
+  LITERATURE_NOTE_DOCUMENTS,
+  LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
+  SHARED_PARTIAL_DOCUMENTS,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_TEMPLATES,
+  UPGRADER_PLUGIN_VERSION,
+  UPGRADER_SETTINGS_VERSION,
+  vaultCaseZoteroData,
+  VAULT_PROPERTY_TYPES,
 } from "./spec.ts";
 import type {
+  FixtureAnnotation,
   FixtureAttachment,
   FixtureCreator,
   FixtureItem,
+  FixtureItemField,
+  FixtureLegacyTemplate,
+  FixtureLegacyTemplateOrigin,
   FixtureNote,
+  FixtureTemplateEdit,
+  FixtureVaultCase,
+  FixtureVaultValue,
+  FixtureZoteroData,
   PersistedLibraryScope,
 } from "./spec.ts";
 
@@ -43,25 +88,60 @@ import type {
 // covers building the Fixture and reading what it is supposed to contain.
 export {
   ANNOTATIONS,
+  ASSET_DIR,
   ATTACHMENTS,
   BUILD_TIMESTAMP,
   COLLECTIONS,
   createStressItems,
+  createStressLibraryCorpus,
   DEFAULT_SCOPE_CASE,
+  DEFAULT_VAULT_CASE,
+  DEMO_ANNOTATIONS,
+  DEMO_ATTACHMENTS,
+  DEMO_ITEMS,
+  DEMO_PAPERS_DIR,
+  DEMO_PROFILE_DOCUMENT,
+  EXCERPT_RENDERING_CASES,
+  EXCERPT_RENDERING_PDFS,
+  EXCERPT_RENDERING_VAULT_DIR,
   findScopeCase,
+  findVaultCase,
   FIXTURE_ITEM_TYPES,
+  FIXTURE_PARTIAL_NAME,
+  GRAPH_ITEMS,
+  GRAPH_LITERATURE_NOTE_BODIES,
+  GRAPH_RESEARCH_FOLDERS,
+  GRAPH_VIEW_OPTIONS,
   INSTALLED_STYLES,
   ITEMS,
+  LITERATURE_NOTE_DOCUMENTS,
+  LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
+  PARITY_PDFS,
   PERSONAL_SELECTOR,
   SCOPE_CASES,
+  SEEDED_CITATION_KEYS,
+  seededCitationKeyDrift,
   UNAVAILABLE_GROUP_IDS,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_PARTIAL_NAME,
+  UPGRADER_LEGACY_TEMPLATES,
+  UPGRADER_PLUGIN_VERSION,
+  UPGRADER_SETTINGS_VERSION,
+  VAULT_CASES,
 } from "./spec.ts";
 export {
   DEFAULT_STRESS_ITEM_COUNT,
+  STRESS_GROUP_LIBRARY,
+  STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT,
   STRESS_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_MIN_ITEM_COUNT,
+  STRESS_LIBRARY_TIERS,
+  STRESS_LIBRARY_VALUES,
 } from "./spec.ts";
 export type {
   FixtureAnnotation,
@@ -70,22 +150,55 @@ export type {
   FixtureAttachment,
   FixtureCollection,
   FixtureCreator,
+  FixtureExcerptCase,
+  FixtureExcerptPdf,
   FixtureItem,
   FixtureLibrary,
   FixtureNote,
+  FixtureParityBranch,
+  FixtureParityPdf,
   FixtureScopeCase,
   FixtureStyle,
+  FixtureVaultCase,
   LibrarySelector,
   PersistedLibraryScope,
+  StressLibraryCorpus,
 } from "./spec.ts";
 export { getFixtureLayout, getFixtureRoot } from "./layout.ts";
 export type { FixtureLayout } from "./layout.ts";
+export {
+  clearPairedRunState,
+  livePairedZotero,
+  pairedRunStatePath,
+  readPairedRunState,
+  writePairedRunState,
+} from "./run-state.ts";
+export type { PairedRunState } from "./run-state.ts";
 
 export interface BuildOptions {
   /** Scope case the fresh vault starts on. */
   scopeCase?: string;
+  /**
+   * Vault case the vault is written in. `fresh` writes no settings file, so
+   * it accepts only the default Scope Case.
+   */
+  vaultCase?: string;
   /** Number of additive synthetic Items in an on-demand Stress Build. */
   stressItemCount?: number;
+  /** Group Library with only the first and last ten Stress Items, modeling an import gap. */
+  stressSparseLibraryID?: number;
+  /**
+   * Exact Item count of My Library in a one-Library Stress Build: synthetic
+   * Items fill it past its Fixture Spec Items. Excludes
+   * {@link BuildOptions.stressItemCount}.
+   */
+  stressLibraryItemCount?: number;
+  /**
+   * Exact Item count of the group Library `STRESS_GROUP_LIBRARY` in a
+   * two-Library Stress Build, filled by the rules of My Library. Needs
+   * {@link BuildOptions.stressLibraryItemCount}.
+   */
+  stressGroupLibraryItemCount?: number;
   /**
    * Built plugin bundle to copy into the vault (`apps/obsidian/dist-dev`).
    * Absent, the vault carries the Fixture's data with ZotLit neither installed
@@ -101,6 +214,26 @@ export interface BuildOptions {
   liveUpdatePort?: number;
   /** TCP port written to the generated Zotero profile's HTTP server pref. */
   zoteroHttpPort?: number;
+  /**
+   * Open Zotero's Local API in the generated profile. A caller that asks for it
+   * also passes {@link BuildOptions.zoteroHttpPort}, so Paired Zotero serves the
+   * API on a port of this Fixture's own and ZotLit reads that same port back
+   * from the profile.
+   */
+  localApi?: boolean;
+  /**
+   * Seed one remembered Zotero Local API write key for the Development Vault.
+   * This applies only when {@link BuildOptions.localApi} is true.
+   *
+   * @default false
+   */
+  grantLocalApiWrites?: boolean;
+  /**
+   * The upgrader case's `note.frontmatter-fields`, such as a reader's own list.
+   *
+   * @default UPGRADER_FRONTMATTER_FIELDS
+   */
+  upgraderFields?: readonly FrontmatterField[];
   /** Development Vault root used by vault-backed linked Attachment rows. */
   linkedAttachmentVaultDir?: string;
 }
@@ -118,24 +251,82 @@ export async function buildFixture(
   layout: FixtureLayout,
   options: BuildOptions = {},
 ): Promise<void> {
+  if (
+    options.stressItemCount !== undefined &&
+    options.stressLibraryItemCount !== undefined
+  ) {
+    throw new Error(
+      "a build takes one Stress Build: an additive Item count or a My Library Item count",
+    );
+  }
+  const vaultCase = findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE);
+  if (
+    options.stressLibraryItemCount !== undefined &&
+    vaultCase.ownItems !== undefined
+  ) {
+    throw new Error(
+      `the "${vaultCase.id}" vault case holds only its own Items: build the Stress Build of My Library with another vault case`,
+    );
+  }
+  if (
+    options.stressGroupLibraryItemCount !== undefined &&
+    options.stressLibraryItemCount === undefined
+  ) {
+    throw new Error(
+      "a Stress Build fills the group Library together with My Library: give both Item counts",
+    );
+  }
+  const stressLibrary =
+    options.stressLibraryItemCount === undefined
+      ? undefined
+      : createStressLibraryCorpus(
+          options.stressLibraryItemCount,
+          options.stressGroupLibraryItemCount,
+        );
   const items =
-    options.stressItemCount === undefined
-      ? ITEMS
-      : [...ITEMS, ...createStressItems(options.stressItemCount)];
+    options.stressItemCount !== undefined
+      ? [
+          ...ITEMS,
+          ...createStressItems(options.stressItemCount, {
+            sparseLibraryID: options.stressSparseLibraryID,
+          }),
+        ]
+      : stressLibrary
+        ? [...ITEMS, ...stressLibrary.items]
+        : ITEMS;
+
+  assertSeededCitationKeys(items);
+  const baseData = vaultCaseZoteroData(
+    vaultCase.id,
+    items,
+    stressLibrary ? [...COLLECTIONS, ...stressLibrary.collections] : undefined,
+  );
+
+  const data = stressLibrary
+    ? {
+        ...baseData,
+        attachments: [...baseData.attachments, ...stressLibrary.attachments],
+        annotations: [...baseData.annotations, ...stressLibrary.annotations],
+      }
+    : baseData;
 
   await rm(layout.root, { recursive: true, force: true });
   await mkdir(layout.dataDir, { recursive: true });
   await mkdir(layout.profileDir, { recursive: true });
-  await writeDatabase(layout, items, options.linkedAttachmentVaultDir);
+  await writeDatabase(layout, data, options);
   // A Paired Zotero unpacks its bundled styles seconds after it starts, so the
   // build lays them down itself: every Fixture offers the same Citation and
   // References Style choices from the moment it exists, Zotero running or not.
   await writePristineStyles(layout.dataDir);
   await writeInstalledStyles(layout);
-  await writeAttachmentFiles(layout);
-  await writeAnnotationCacheFiles(layout);
+  const demo = options.vaultCase === "demo";
+  await writeAttachmentFiles(layout, data.attachments, demo);
+  await writeAnnotationCacheFiles(layout, data.annotations);
   await writePrefs(layout, options);
+  await writeLocalApiAuthorizations(layout, options);
   await writeVault(layout, options);
+  if (vaultCase.ownItems === undefined)
+    await writeExcerptAcceptanceFiles(layout);
 }
 
 /** Rewrite only the saved Library Scope of an already-built vault. */
@@ -164,8 +355,11 @@ const ATTACHMENT_LINK_MODES = {
   linked_url: 3,
 } as const;
 
-const ASSET_DIR = join(import.meta.dirname, "assets");
 const VAULT_PAGES_DIR = join(import.meta.dirname, "vault-pages");
+/** The Demo Vault Case's notes, each one ZotLit wrote in a real session. */
+const DEMO_PAGES_DIR = join(import.meta.dirname, "demo-pages");
+/** The Graph Vault Case's research notes, which cite its Items. */
+const GRAPH_PAGES_DIR = join(import.meta.dirname, "graph-pages");
 const VAULT_PLUGINS_DIR = join(import.meta.dirname, "vault-plugins");
 
 function attachmentDatabasePath(
@@ -210,17 +404,44 @@ function attachmentFilePath(
   }
 }
 
-async function writeAttachmentFiles(layout: FixtureLayout): Promise<void> {
-  for (const attachment of ATTACHMENTS) {
+async function writeAttachmentFiles(
+  layout: FixtureLayout,
+  attachments: readonly FixtureAttachment[],
+  demo: boolean,
+): Promise<void> {
+  for (const attachment of attachments) {
     if (attachment.sourceAsset === null) continue;
+    // A vault holds the linked PDFs of its own case: the demo vault the demo
+    // papers', every other vault the test Items'.
+    if (
+      attachment.linkMode === "linked_file" &&
+      attachment.fileRoot === "vault" &&
+      DEMO_ATTACHMENTS.includes(attachment) !== demo
+    )
+      continue;
     const destination = attachmentFilePath(attachment, layout)!;
     await mkdir(dirname(destination), { recursive: true });
     await cp(join(ASSET_DIR, attachment.sourceAsset), destination);
   }
 }
 
-async function writeAnnotationCacheFiles(layout: FixtureLayout): Promise<void> {
-  for (const annotation of ANNOTATIONS) {
+async function writeExcerptAcceptanceFiles(
+  layout: FixtureLayout,
+): Promise<void> {
+  const destination = join(layout.vaultDir, EXCERPT_RENDERING_VAULT_DIR);
+  await mkdir(destination, { recursive: true });
+  for (const { asset } of EXCERPT_RENDERING_PDFS)
+    await cp(
+      join(ASSET_DIR, asset),
+      join(destination, asset.split("/").at(-1)!),
+    );
+}
+
+async function writeAnnotationCacheFiles(
+  layout: FixtureLayout,
+  annotations: readonly FixtureAnnotation[],
+): Promise<void> {
+  for (const annotation of annotations) {
     if (annotation.cacheImageAsset === null) continue;
     const groupID = LIBRARIES.find(
       (library) => library.libraryID === annotation.libraryID,
@@ -261,8 +482,8 @@ async function writeInstalledStyles(layout: FixtureLayout): Promise<void> {
  */
 async function writeDatabase(
   layout: FixtureLayout,
-  items: readonly FixtureItem[],
-  linkedAttachmentVaultDir?: string,
+  data: FixtureZoteroData,
+  options: BuildOptions,
 ): Promise<void> {
   await writePristineDatabase(layout.databasePath);
   using db = new DatabaseSync(layout.databasePath);
@@ -280,9 +501,14 @@ async function writeDatabase(
   try {
     seedDatabase(db, readSchemaIDs(db), {
       layout,
-      items,
-      linkedAttachmentVaultDir,
+      data,
+      linkedAttachmentVaultDir: options.linkedAttachmentVaultDir,
     });
+    if (options.localApi) {
+      db.prepare(
+        "replace into settings values ('localAPI', 'serverID', ?)",
+      ).run(FIXTURE_LOCAL_API_SERVER_ID);
+    }
     db.exec("commit");
   } catch (error) {
     db.exec("rollback");
@@ -306,6 +532,11 @@ interface SchemaIDs {
    * never asks the Spec author to know Zotero's base-field table.
    */
   roleFields: Record<FixtureItem["itemType"], VenueRoleFields>;
+  /** Per-Item-type ids of the {@link FixtureItem.fields} the type carries. */
+  itemFields: Record<
+    FixtureItem["itemType"],
+    Partial<Record<FixtureItemField, number>>
+  >;
   charsets: Record<"utf-8", number>;
   creatorTypes: Record<FixtureCreator["creatorType"], number>;
 }
@@ -355,6 +586,12 @@ function readSchemaIDs(db: DatabaseSync): SchemaIDs {
         readVenueRoleFields(db, itemTypes[itemType]),
       ]),
     ) as Record<FixtureItem["itemType"], VenueRoleFields>,
+    itemFields: Object.fromEntries(
+      FIXTURE_ITEM_TYPES.map((itemType) => [
+        itemType,
+        readItemFields(db, itemTypes[itemType]),
+      ]),
+    ) as SchemaIDs["itemFields"],
     charsets: lookup(
       "select charsetID from charsets where charset = ?",
       "charsetID",
@@ -397,6 +634,41 @@ function readVenueRoleFields(
   };
 }
 
+/** The {@link FixtureItemField}s the Item type carries, by field id. */
+function readItemFields(
+  db: DatabaseSync,
+  itemTypeID: number,
+): Partial<Record<FixtureItemField, number>> {
+  const native = db.prepare(
+    "select itf.fieldID as fieldID from itemTypeFieldsCombined itf" +
+      " join fieldsCombined f on f.fieldID = itf.fieldID" +
+      " where itf.itemTypeID = ? and f.fieldName = ?",
+  );
+  return Object.fromEntries(
+    FIXTURE_ITEM_FIELDS.flatMap((fieldName) => {
+      const row = native.get(itemTypeID, fieldName) as
+        | { fieldID: number }
+        | undefined;
+      return row === undefined ? [] : [[fieldName, row.fieldID]];
+    }),
+  );
+}
+
+/** Where an Item's {@link FixtureItem.fields} entry is stored. */
+function itemFieldID(
+  ids: SchemaIDs,
+  item: FixtureItem,
+  fieldName: FixtureItemField,
+): number {
+  const fieldID = ids.itemFields[item.itemType][fieldName];
+  if (fieldID === undefined) {
+    throw new Error(
+      `item "${item.key}" names a ${fieldName}, which item type "${item.itemType}" cannot hold.`,
+    );
+  }
+  return fieldID;
+}
+
 /**
  * Where an Item's Venue is stored: its container-role field, or its
  * publisher-role field for a type with no container. A Spec entry naming a
@@ -429,11 +701,11 @@ function seedDatabase(
   ids: SchemaIDs,
   {
     layout,
-    items,
+    data: { items, notes, attachments, annotations, libraries, collections },
     linkedAttachmentVaultDir,
   }: {
     layout: FixtureLayout;
-    items: readonly FixtureItem[];
+    data: FixtureZoteroData;
     linkedAttachmentVaultDir?: string;
   },
 ): void {
@@ -448,7 +720,7 @@ function seedDatabase(
     "insert into libraries (libraryID, type, editable, filesEditable) values (?, ?, ?, ?)" +
       " on conflict (libraryID) do update set type = excluded.type," +
       " editable = excluded.editable, filesEditable = excluded.filesEditable",
-    LIBRARIES.map((library) => [
+    libraries.map((library) => [
       library.libraryID,
       library.type,
       library.editable,
@@ -457,18 +729,17 @@ function seedDatabase(
   );
   insert(
     "insert into groups (groupID, libraryID, name, description, version) values (?, ?, ?, '', 0)",
-    LIBRARIES.filter((library) => library.groupID !== null).map((library) => [
-      library.groupID,
-      library.libraryID,
-      library.name,
-    ]),
+    libraries
+      .filter((library) => library.groupID !== null)
+      .map((library) => [library.groupID, library.libraryID, library.name]),
   );
 
   insert(
-    "insert into collections (collectionID, collectionName, libraryID, key) values (?, ?, ?, ?)",
-    COLLECTIONS.map((collection) => [
+    "insert into collections (collectionID, collectionName, parentCollectionID, libraryID, key) values (?, ?, ?, ?, ?)",
+    collections.map((collection) => [
       collection.collectionID,
       collection.name,
+      collection.parentCollectionID ?? null,
       collection.libraryID,
       collection.key,
     ]),
@@ -497,18 +768,18 @@ function seedDatabase(
       " values (?, ?, ?, ?, ?, ?, ?)",
     [
       ...items.map((item) => itemRow(item, ids.itemTypes[item.itemType])),
-      ...NOTES.map((note) => itemRow(note, ids.itemTypes.note)),
-      ...ATTACHMENTS.map((attachment) =>
+      ...notes.map((note) => itemRow(note, ids.itemTypes.note)),
+      ...attachments.map((attachment) =>
         itemRow(attachment, ids.itemTypes.attachment),
       ),
-      ...ANNOTATIONS.map((annotation) =>
+      ...annotations.map((annotation) =>
         itemRow(annotation, ids.itemTypes.annotation),
       ),
     ],
   );
   insert(
     "insert into itemNotes (itemID, parentItemID, note, title) values (?, ?, ?, ?)",
-    NOTES.map((note) => [
+    notes.map((note) => [
       note.itemID,
       note.parentItemID,
       note.note,
@@ -516,8 +787,8 @@ function seedDatabase(
     ]),
   );
   insert(
-    "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, charsetID, path) values (?, ?, ?, ?, ?, ?)",
-    ATTACHMENTS.map((attachment) => [
+    "insert into itemAttachments (itemID, parentItemID, linkMode, contentType, charsetID, path, lastRead) values (?, ?, ?, ?, ?, ?, ?)",
+    attachments.map((attachment) => [
       attachment.itemID,
       attachment.parentItemID,
       ATTACHMENT_LINK_MODES[attachment.linkMode],
@@ -527,12 +798,13 @@ function seedDatabase(
         ? ids.charsets["utf-8"]
         : null,
       attachmentDatabasePath(attachment, layout, linkedAttachmentVaultDir),
+      attachment.lastRead ?? null,
     ]),
   );
   insert(
     "insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal)" +
-      " values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
-    ANNOTATIONS.map((annotation) => [
+      " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    annotations.map((annotation) => [
       annotation.itemID,
       annotation.parentItemID,
       annotation.type,
@@ -542,10 +814,11 @@ function seedDatabase(
       annotation.pageLabel,
       annotation.sortIndex,
       JSON.stringify(annotation.position),
+      annotation.isExternal ? 1 : 0,
     ]),
   );
 
-  seedItemData(insert, ids, { items, attachments: ATTACHMENTS });
+  seedItemData(insert, ids, { items, attachments });
 
   // `creators` is keyed by name across the whole database, so two items by the
   // same person would share one row. Ids follow first use, which the Spec's own
@@ -579,7 +852,9 @@ function seedDatabase(
   );
 
   const tags = new Map<string, number>();
-  for (const tag of items.flatMap((item) => item.tags ?? [])) {
+  for (const tag of [...items, ...attachments, ...annotations].flatMap(
+    (item) => item.tags ?? [],
+  )) {
     if (!tags.has(tag.name)) tags.set(tag.name, tags.size + 1);
   }
   insert(
@@ -588,7 +863,7 @@ function seedDatabase(
   );
   insert(
     "insert into itemTags (itemID, tagID, type) values (?, ?, ?)",
-    items.flatMap((item) =>
+    [...items, ...attachments, ...annotations].flatMap((item) =>
       (item.tags ?? []).map((tag) => [
         item.itemID,
         tags.get(tag.name)!,
@@ -611,15 +886,14 @@ function seedDatabase(
 
   insert(
     "insert into deletedItems (itemID, dateDeleted) values (?, ?)",
-    NOTES.filter((note) => note.trashed).map((note) => [
-      note.itemID,
-      note.dateModified,
-    ]),
+    notes
+      .filter((note) => note.trashed)
+      .map((note) => [note.itemID, note.dateModified]),
   );
 
   insert(
     "insert into collectionItems (collectionID, itemID) values (?, ?)",
-    [...items, ...NOTES].flatMap((item) =>
+    [...items, ...notes].flatMap((item) =>
       item.collectionIDs.map((collectionID) => [collectionID, item.itemID]),
     ),
   );
@@ -717,6 +991,11 @@ function seedItemData(
               value: item.publisher,
             },
           ]),
+      ...Object.entries(item.fields ?? {}).map(([fieldName, value]) => ({
+        itemID: item.itemID,
+        fieldID: itemFieldID(ids, item, fieldName as FixtureItemField),
+        value,
+      })),
       ...(item.citationKey === null
         ? []
         : [
@@ -769,21 +1048,67 @@ function seedItemData(
 }
 
 /**
+ * Zotero ships its Local API off, and a build turns it on only where
+ * {@link BuildOptions.localApi} asks. Paired Zotero then answers reads on its
+ * HTTP port. A Paired Run seeds a remembered Write Authorization unless its
+ * caller asks to exercise Zotero's run-time authorization dialog.
+ *
+ * @see {@link https://www.zotero.org/support/dev/web_api/v3/local_api} for the
+ * endpoint set and the authorization flow.
+ */
+const LOCAL_API_PREF =
+  'user_pref("extensions.zotero.httpServer.localAPI.enabled", true);';
+
+/** Stable identity shared by the generated Zotero database and vault grant. */
+export const FIXTURE_LOCAL_API_SERVER_ID = "zotlitserver";
+
+/** A credential for this disposable Fixture profile only. */
+export const FIXTURE_LOCAL_API_WRITE_KEY = "zotlitFixtureWriteAuthorization1";
+
+/**
+ * Seed Zotero's side of the Development Vault's remembered write grant.
+ * Paired Run setup writes the matching record through Obsidian SecretStorage.
+ */
+function writeLocalApiAuthorizations(
+  layout: FixtureLayout,
+  options: BuildOptions,
+): Promise<void> {
+  if (!options.localApi || options.grantLocalApiWrites !== true) {
+    return Promise.resolve();
+  }
+  return writeJson(join(layout.profileDir, "localAPIKeys.json"), {
+    keys: [
+      {
+        key: FIXTURE_LOCAL_API_WRITE_KEY,
+        appName: "ZotLit Fixture",
+        remember: true,
+        createdAt: `${BUILD_TIMESTAMP.replace(" ", "T")}Z`,
+      },
+    ],
+  });
+}
+
+/**
  * A Zotero profile whose prefs point at the Fixture's data directory, so one
  * profile-directory override in ZotLit switches the whole install over. The
- * same profile carries {@link QUIET_FIRST_RUN_PREFS}, because a Paired Zotero
- * launches on it. Port overrides also configure the Companion's notify URL and
- * Zotero's HTTP server for a Paired Run.
+ * same profile carries {@link QUIET_FIRST_RUN_PREFS} and
+ * {@link OBSIDIAN_PROTOCOL_PREFS}, because a Paired Zotero launches on it. Port
+ * overrides also configure the Companion's notify URL and Zotero's HTTP server
+ * for a Paired Run.
  */
 function writePrefs(
   layout: FixtureLayout,
   options: BuildOptions,
 ): Promise<void> {
   const lines = [
+    'user_pref("intl.locale.requested", "en-US");',
+    'user_pref("intl.regional_prefs.use_os_locales", false);',
     'user_pref("extensions.zotero.useDataDir", true);',
     `user_pref("extensions.zotero.dataDir", ${JSON.stringify(layout.dataDir)});`,
     ...QUIET_FIRST_RUN_PREFS,
+    ...OBSIDIAN_PROTOCOL_PREFS,
     ...BETTER_BIBTEX_PREFS,
+    ...(options.localApi ? [LOCAL_API_PREF] : []),
     ...(options.zoteroHttpPort === undefined
       ? []
       : [
@@ -804,16 +1129,160 @@ function writePrefs(
 }
 
 /** ZotLit's settings version, so the vault loads without a migration pass. */
-const SETTINGS_VERSION = 9;
+const SETTINGS_VERSION = 11;
+
+/** ZotLit's right-sidebar view types, as `registerView` declares them. */
+const ZOTLIT_SIDEBAR_VIEW_TYPES = [
+  "zotero-annotation-view",
+  "zotlit-references",
+  "zotlit-cited-by",
+];
+
+/** One saved sidebar tab. Obsidian fills the rest of the leaf state itself. */
+function workspaceLeaf(type: string): Record<string, unknown> {
+  return { id: `zt-leaf-${type}`, type: "leaf", state: { type, state: {} } };
+}
+
+/**
+ * The saved layout a Fixture Vault opens with: the file explorer and search on
+ * the left, and the three ZotLit tabs beside Obsidian's backlink and
+ * outgoing-link tabs on the right. Obsidian rewrites `workspace.json` as a
+ * session goes on, so this preset decides the first open only.
+ *
+ * Obsidian shows a placeholder for a view type no loaded plugin registers, so
+ * the ZotLit tabs join the layout only when the build installs the bundle.
+ */
+function workspacePreset(options: BuildOptions): Record<string, unknown> {
+  return {
+    main: {
+      id: "zt-main",
+      type: "split",
+      direction: "vertical",
+      children: [
+        {
+          id: "zt-main-tabs",
+          type: "tabs",
+          children: [workspaceLeaf("empty")],
+        },
+      ],
+    },
+    left: {
+      id: "zt-left",
+      type: "split",
+      direction: "horizontal",
+      width: 300,
+      children: [
+        {
+          id: "zt-left-tabs",
+          type: "tabs",
+          children: [workspaceLeaf("file-explorer"), workspaceLeaf("search")],
+        },
+      ],
+    },
+    right: {
+      id: "zt-right",
+      type: "split",
+      direction: "horizontal",
+      width: 340,
+      collapsed: false,
+      children: [
+        {
+          id: "zt-right-tabs",
+          type: "tabs",
+          currentTab: 0,
+          children: [
+            ...(options.pluginBundleDir
+              ? ZOTLIT_SIDEBAR_VIEW_TYPES.map(workspaceLeaf)
+              : []),
+            workspaceLeaf("backlink"),
+            workspaceLeaf("outgoing-link"),
+          ],
+        },
+      ],
+    },
+    active: "zt-leaf-empty",
+    lastOpenFiles: [],
+  };
+}
 
 async function writeVault(
   layout: FixtureLayout,
   options: BuildOptions,
 ): Promise<void> {
+  const vaultCase = findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE);
+  const scopeCase = findScopeCase(options.scopeCase ?? DEFAULT_SCOPE_CASE);
+  if (vaultCase.id === "fresh" && scopeCase.id !== DEFAULT_SCOPE_CASE) {
+    throw new Error(
+      `the fresh Vault Case writes no settings file, so it cannot save the "${scopeCase.id}" Scope Case`,
+    );
+  }
+
+  await writeVaultConfig(layout, options);
+  if (vaultCase.id === "fresh") {
+    // A Paired Run passes a Development Vault's plugin folder as the bundle,
+    // and that folder carries the settings ZotLit last saved there. A fresh
+    // vault promises no settings file at all.
+    await rm(layout.pluginDataPath, { force: true });
+    return;
+  }
+
+  if (vaultCase.id === "demo") {
+    // The demo vault's notes render through ZotLit's shipped templates and
+    // read the way a new user's do. Its one Profile document has no match,
+    // so it changes a note only when the reader chooses it.
+    await cp(DEMO_PAGES_DIR, layout.vaultDir, { recursive: true });
+    await mkdir(join(layout.vaultDir, "templates"), { recursive: true });
+    await writeFile(
+      join(layout.vaultDir, "templates", DEMO_PROFILE_DOCUMENT.filename),
+      DEMO_PROFILE_DOCUMENT.source,
+    );
+  } else if (vaultCase.id === "graph") {
+    await writeGraphVault(layout);
+  } else {
+    // The v2.1 vault predates Profiles, so it seeds every note unstamped.
+    await writeVaultNotes(
+      layout,
+      options,
+      vaultCase.id === "upgrader" ? [] : LITERATURE_NOTE_PROFILES,
+    );
+  }
+  if (vaultCase.id === "upgrader") {
+    await writeLegacyTemplates(layout);
+  } else if (vaultCase.ownItems === undefined) {
+    for (const document of LITERATURE_NOTE_DOCUMENTS) {
+      await writeFile(
+        join(layout.vaultDir, "templates", document.filename),
+        document.source,
+      );
+    }
+    for (const partial of SHARED_PARTIAL_DOCUMENTS) {
+      await writeFile(
+        join(layout.vaultDir, "templates", `zotlit-partial.${partial.name}.md`),
+        formatPlainTemplateDocument(partial.source, partial.language),
+      );
+    }
+    await writeFile(
+      join(layout.vaultDir, "templates", "zotlit-citation.md"),
+      formatPlainTemplateDocument(fixtureCitationSource(), "liquid"),
+    );
+  }
+
+  // After the bundle copy: a Paired Run passes a Development Vault's plugin
+  // folder as the bundle, and that folder carries the settings ZotLit last
+  // saved there. The generated settings are the ones this build promises.
+  await writeJson(
+    layout.pluginDataPath,
+    vaultSettings(vaultCase, scopeCase.scope, options),
+  );
+}
+
+/** The `.obsidian` configuration, the Hot Reload plugin, and the ZotLit bundle. */
+async function writeVaultConfig(
+  layout: FixtureLayout,
+  options: BuildOptions,
+): Promise<void> {
   const configDir = join(layout.vaultDir, ".obsidian");
   await mkdir(layout.pluginDir, { recursive: true });
-  await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
-  await mkdir(join(layout.vaultDir, "zotero_notes"), { recursive: true });
 
   await writeJson(join(configDir, "app.json"), {});
   // Native menus interfere with automated Paired Run / E2E flows on
@@ -836,30 +1305,69 @@ async function writeVault(
     "command-palette": true,
     "editor-status": true,
     outline: true,
+    ...findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE).corePlugins,
   });
-  await cp(VAULT_PAGES_DIR, layout.vaultDir, { recursive: true });
+  await writeJson(join(configDir, "workspace.json"), workspacePreset(options));
+  // The types the vault cells showcase notes need, as the Properties panel
+  // records them once a property's type is set.
+  await writeJson(join(configDir, "types.json"), {
+    types: VAULT_PROPERTY_TYPES,
+  });
   await cp(
     join(VAULT_PLUGINS_DIR, "hot-reload"),
     join(configDir, "plugins", "hot-reload"),
     { recursive: true },
   );
 
-  const scope: PersistedLibraryScope = findScopeCase(
-    options.scopeCase ?? DEFAULT_SCOPE_CASE,
-  ).scope;
+  if (options.pluginBundleDir) {
+    await cp(options.pluginBundleDir, layout.pluginDir, { recursive: true });
+  }
+}
+
+/** The committed test pages, the Literature Notes, and the Imported Notes. */
+async function writeVaultNotes(
+  layout: FixtureLayout,
+  options: BuildOptions,
+  profiles: readonly (typeof LITERATURE_NOTE_PROFILES)[number][],
+): Promise<void> {
+  await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
+  await mkdir(join(layout.vaultDir, "templates"), { recursive: true });
+  await mkdir(join(layout.vaultDir, "zotero_notes"), { recursive: true });
+  for (const profile of profiles) {
+    await mkdir(
+      join(layout.vaultDir, profile.bindings["note.literature-folder"]),
+      { recursive: true },
+    );
+  }
+  await cp(VAULT_PAGES_DIR, layout.vaultDir, { recursive: true });
+  await writeFile(
+    join(layout.vaultDir, "mark-landing-test.md"),
+    markLandingPage(layout, options),
+  );
 
   // Literature Notes for the My Library items give an update batch existing
-  // notes to act on and leave every other Fixture item as create work.
+  // notes to act on and leave every other Fixture item as create work. The
+  // demo papers' PDFs live only in the demo vault, so they get no note here.
+  // An Item whose note is a committed vault page gets only that page.
   for (const item of ITEMS.filter(
-    (candidate) => candidate.libraryID === USER_LIBRARY_ID,
+    (candidate) =>
+      candidate.libraryID === USER_LIBRARY_ID &&
+      !DEMO_ITEMS.includes(candidate) &&
+      candidate.literatureNotePage === undefined,
   )) {
+    const profile = profiles.find(
+      ({ id }) => id === item.literatureNoteProfile,
+    );
     await writeFile(
       join(
         layout.vaultDir,
-        "literatures",
+        profile?.bindings["note.literature-folder"] ?? "literatures",
         `${item.literatureNoteName ?? item.key}.md`,
       ),
-      literatureNote(item, layout, options.linkedAttachmentVaultDir),
+      literatureNote(item, layout, {
+        profile,
+        linkedAttachmentVaultDir: options.linkedAttachmentVaultDir,
+      }),
     );
   }
 
@@ -875,30 +1383,200 @@ async function writeVault(
       importedNote(note, indexedKey, note.importedNoteBody),
     );
   }
+}
 
-  if (options.pluginBundleDir) {
-    await cp(options.pluginBundleDir, layout.pluginDir, { recursive: true });
+/**
+ * The Graph Vault Case's research notes, a Literature Note for each Graph
+ * Item in My Library, and the saved global graph. The works in a group
+ * Library get no note, so the graph draws each one as a Cited Work Node.
+ */
+async function writeGraphVault(layout: FixtureLayout): Promise<void> {
+  await cp(GRAPH_PAGES_DIR, layout.vaultDir, { recursive: true });
+  await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
+  for (const item of GRAPH_ITEMS.filter(
+    ({ libraryID }) => libraryID === USER_LIBRARY_ID,
+  )) {
+    await writeFile(
+      join(layout.vaultDir, "literatures", `${item.citationKey}.md`),
+      graphLiteratureNote(item),
+    );
   }
+  await writeJson(
+    join(layout.vaultDir, ".obsidian", "graph.json"),
+    GRAPH_VIEW_OPTIONS,
+  );
+}
 
-  // After the bundle copy: a Paired Run passes a Development Vault's plugin
-  // folder as the bundle, and that folder carries the settings ZotLit last
-  // saved there. The generated settings are the ones this build promises.
-  await writeJson(layout.pluginDataPath, {
-    __VERSION__: SETTINGS_VERSION,
-    "note.literature-folder": "literatures",
-    "note.import-folder": "zotero_notes",
+/**
+ * A Graph Vault Case Literature Note: what the shipped default templates
+ * render for an Item with no Annotations, with the researcher's reading notes
+ * typed above the Annotations section.
+ */
+function graphLiteratureNote(item: FixtureItem): string {
+  const body = GRAPH_LITERATURE_NOTE_BODIES[item.citationKey ?? ""];
+  if (body === undefined) {
+    throw new Error(`Graph Item ${item.key} needs a Literature Note body`);
+  }
+  return [
+    "---",
+    `title: ${JSON.stringify(item.title)}`,
+    `zotero-key: ${item.key}`,
+    `citekey: ${item.citationKey}`,
+    "---",
+    `# ${item.title}`,
+    "",
+    `[Zotero](zotero://select/library/items/${item.key})`,
+    "",
+    "## Reading notes",
+    "",
+    body,
+    "",
+    renderedAnnotationsSection(),
+    "",
+  ].join("\n");
+}
+
+/** Eject the Upgrader vault's Legacy Template Files, each with its visible edit applied. */
+async function writeLegacyTemplates(layout: FixtureLayout): Promise<void> {
+  for (const template of UPGRADER_LEGACY_TEMPLATES) {
+    await writeFile(
+      join(layout.vaultDir, "templates", legacyTemplateFilename(template)),
+      await legacyTemplateSource(template),
+    );
+  }
+}
+
+/** Vault path of one Legacy Template File, in ZotLit's `zotlit-<name>.<language>.md` form. */
+export function legacyTemplateFilename(
+  template: FixtureLegacyTemplate,
+): string {
+  return `zotlit-${template.name}.${template.language}.md`;
+}
+
+/**
+ * The shipped default one Legacy Template File starts from, with the Spec's
+ * edit applied.
+ * @throws when the default no longer holds the text the edit expects, so a
+ *   drifted default fails the build rather than ejecting an unedited file.
+ */
+export async function legacyTemplateSource(
+  template: FixtureLegacyTemplate,
+): Promise<string> {
+  const origin = "from" in template ? template.from : template.name;
+  return applyTemplateEdit(
+    await shippedDefaultSource(origin, template.language),
+    template,
+    `the default ${origin} template`,
+  );
+}
+
+/** The Citation Variant each 2.1.x citation slot rendered. */
+const CITATION_SLOT_VARIANTS: Partial<
+  Record<FixtureLegacyTemplateOrigin, "main" | "alt">
+> = { cite: "main", cite2: "alt" };
+
+/**
+ * The shipped default text of one Literature Note slot or 2.1.x citation
+ * branch. A slot's default is a file under `@zotlit/templates/defaults`; a
+ * citation branch is the one-line source the 2.1.x slot rendered with no
+ * vault file, which the fold still falls back to.
+ */
+async function shippedDefaultSource(
+  origin: FixtureLegacyTemplateOrigin,
+  language: "liquid" | "eta",
+): Promise<string> {
+  const variant = CITATION_SLOT_VARIANTS[origin];
+  if (variant) return `${DEFAULT_CITATION_BRANCHES[language][variant]}\n`;
+  return await readFile(
+    new URL(
+      import.meta.resolve(`@zotlit/templates/defaults/${origin}.${language}`),
+    ),
+    "utf-8",
+  );
+}
+
+/**
+ * The Citation Template the Fixture Vault holds: the shipped default with the
+ * Spec's visible edit. Every reader of the vault's citation text answers from
+ * here, so the mock Local Bridge offers what the file on disk holds.
+ * @throws when the shipped default no longer holds the text the edit expects.
+ */
+export function fixtureCitationSource(): string {
+  return applyTemplateEdit(
+    readFileSync(
+      new URL(
+        import.meta.resolve("@zotlit/templates/defaults/citation.liquid"),
+      ),
+      "utf-8",
+    ),
+    CITATION_DOCUMENT_EDIT,
+    "the default citation template",
+  );
+}
+
+/**
+ * One Fixture edit applied to the shipped default it names.
+ * @throws when the default drifted away from the text the edit expects.
+ */
+function applyTemplateEdit(
+  source: string,
+  edit: FixtureTemplateEdit,
+  subject: string,
+): string {
+  if (!source.includes(edit.find)) {
+    throw new Error(
+      `${subject} no longer contains ${JSON.stringify(edit.find)}; update the Fixture Spec`,
+    );
+  }
+  return source.replace(edit.find, edit.replace);
+}
+
+function vaultSettings(
+  vaultCase: FixtureVaultCase,
+  scope: PersistedLibraryScope,
+  { liveUpdatePort, upgraderFields }: BuildOptions,
+): Record<string, unknown> {
+  const shared = {
     "server.enabled": true,
-    ...(options.liveUpdatePort === undefined
-      ? {}
-      : { "server.port": options.liveUpdatePort }),
+    ...(liveUpdatePort === undefined ? {} : { "server.port": liveUpdatePort }),
     [LIBRARY_SCOPE_SETTING_KEY]: scope,
-  });
+    ...(vaultCase.id === "graph" ? { "citation.graph-citations": true } : {}),
+  };
+  if (vaultCase.id === "upgrader") {
+    // The flat v2.1 shape: note bindings still vault-global, no Profiles, and
+    // a recorded launch version so the release check sees a real upgrade.
+    return {
+      __VERSION__: UPGRADER_SETTINGS_VERSION,
+      "note.literature-folder": "literatures",
+      "note.import-folder": "zotero_notes",
+      "note.frontmatter-fields": upgraderFields ?? UPGRADER_FRONTMATTER_FIELDS,
+      "release.previous-version": UPGRADER_PLUGIN_VERSION,
+      ...shared,
+    };
+  }
+  return {
+    __VERSION__: SETTINGS_VERSION,
+    "note.default-profile": {
+      bindings: {
+        "note.literature-folder": "literatures",
+        "citation.references-style": null,
+        "note.import-folder": "zotero_notes",
+        "note.import-colored-highlights": false,
+        "note.import-annotations-as-template": false,
+      },
+    },
+    ...shared,
+  };
 }
 
 function literatureNote(
   item: FixtureItem,
   layout: FixtureLayout,
-  linkedAttachmentVaultDir?: string,
+  options: {
+    /** Profile the note is stamped with; absent leaves it on the default. */
+    profile?: (typeof LITERATURE_NOTE_PROFILES)[number];
+    linkedAttachmentVaultDir?: string;
+  },
 ): string {
   const attachments = ATTACHMENTS.filter(
     (attachment) =>
@@ -908,22 +1586,285 @@ function literatureNote(
     const path = attachmentFilePath(
       attachment,
       layout,
-      linkedAttachmentVaultDir,
+      options.linkedAttachmentVaultDir,
     )!;
     return `[${attachment.path}](${pathToFileURL(path).href})`;
+  });
+  const { profile } = options;
+  if (item.literatureNoteRendered === true) {
+    return renderedLiteratureNote(item, layout, options);
+  }
+  return [
+    "---",
+    `title: ${JSON.stringify(item.title)}`,
+    `zotero-key: ${item.key}`,
+    // The Profile stamp: the Profile label, then its id in parentheses.
+    ...(profile === undefined
+      ? []
+      : [`zotlit-profile: ${profile.label} (${profile.id})`]),
+    // `citekey` is the compatibility frontmatter key ZotLit still reads.
+    ...(item.citationKey === null ? [] : [`citekey: ${item.citationKey}`]),
+    ...vaultPropertyLines(item.vaultProperties ?? {}),
+    "---",
+    `# ${item.title}`,
+    "",
+    ...(profile === undefined
+      ? []
+      : [
+          "%%zt-managed%%",
+          "## Book details",
+          "",
+          `Citation key: ${item.citationKey ?? ""}`,
+          "",
+          "> [!info] Book details",
+          `> Type: ${item.itemType}`,
+          `> Citation key: ${item.citationKey ?? item.key}`,
+          "%%/zt-managed%%",
+          "",
+        ]),
+    ...(item.literatureNoteCitations === undefined
+      ? []
+      : [
+          `This note rests on ${item.literatureNoteCitations
+            .map((key) => `[@${key}]`)
+            .join(" ")}.`,
+          "",
+        ]),
+    ...attachments,
+    ...(attachments.length === 0 ? [] : [""]),
+    ...(item.literatureNoteQueryBlock === true ? QUERY_BLOCK : []),
+  ].join("\n");
+}
+
+/**
+ * Frontmatter lines for a note's vault properties: a list as a block list,
+ * `null` as an empty key, a string quoted so YAML keeps it a string.
+ */
+function vaultPropertyLines(
+  properties: Readonly<Record<string, FixtureVaultValue>>,
+): string[] {
+  return Object.entries(properties).flatMap(([name, value]) => {
+    if (value === null) return [`${name}:`];
+    if (typeof value === "object") {
+      return value.length === 0
+        ? [`${name}: []`]
+        : [`${name}:`, ...value.map((entry) => `  - ${JSON.stringify(entry)}`)];
+    }
+    return [`${name}: ${JSON.stringify(value)}`];
+  });
+}
+
+/**
+ * The Annotations section the default note template renders, read from the
+ * shipped `content` template. The section holds no Liquid, so its text is its
+ * own render output.
+ * @throws when the section is gone or holds Liquid, so a changed template
+ *   fails the build rather than seeding text no render produces.
+ */
+function renderedAnnotationsSection(): string {
+  const source = readFileSync(
+    new URL(import.meta.resolve("@zotlit/templates/defaults/content.liquid")),
+    "utf-8",
+  );
+  const start = source.indexOf("## Annotations\n");
+  const section = source.slice(start).trimEnd();
+  if (start === -1 || section.includes("{%") || section.includes("{{")) {
+    throw new Error(
+      "the default content template no longer ends with a plain Annotations section; update the Fixture",
+    );
+  }
+  return section;
+}
+
+/** The Query File view a rendered Literature Note embeds. */
+const RENDERED_NOTE_EMBED = "Lab annotations.zotquery#This item";
+
+/**
+ * A Literature Note as an earlier default note template rendered it: its
+ * Annotations section sits in a Managed Region, which Update Note refills with
+ * the same text, so Update Note leaves the note as it is. Below the managed
+ * region, outside what Update Note rewrites, the note embeds
+ * {@link RENDERED_NOTE_EMBED}, so one note holds both a Query Block and a
+ * Query File embed whose edits save to the file.
+ */
+function renderedLiteratureNote(
+  item: FixtureItem,
+  layout: FixtureLayout,
+  options: { linkedAttachmentVaultDir?: string },
+): string {
+  if (item.libraryID !== USER_LIBRARY_ID) {
+    throw new Error(
+      `Rendered Literature Note ${item.key} must be in My Library`,
+    );
+  }
+  if (NOTES.some(({ parentItemID }) => parentItemID === item.itemID)) {
+    throw new Error(
+      `Rendered Literature Note ${item.key} must have no child Notes`,
+    );
+  }
+  const fileLinks = ATTACHMENTS.filter(
+    (attachment) =>
+      attachment.parentItemID === item.itemID &&
+      attachment.sourceAsset !== null,
+  ).map((attachment) => {
+    const path = attachmentFilePath(
+      attachment,
+      layout,
+      options.linkedAttachmentVaultDir,
+    )!;
+    return `[${basename(path)}](${pathToFileURL(path).href})`;
   });
   return [
     "---",
     `title: ${JSON.stringify(item.title)}`,
     `zotero-key: ${item.key}`,
-    // `citekey` is the compatibility frontmatter key ZotLit still reads.
     ...(item.citationKey === null ? [] : [`citekey: ${item.citationKey}`]),
+    ...vaultPropertyLines(item.vaultProperties ?? {}),
     "---",
     `# ${item.title}`,
     "",
-    ...attachments,
-    ...(attachments.length === 0 ? [] : [""]),
+    [`[Zotero](zotero://select/library/items/${item.key})`, ...fileLinks].join(
+      " ",
+    ),
+    "",
+    "%%zt-managed%%",
+    renderedAnnotationsSection(),
+    "",
+    "%%/zt-managed%%",
+    "",
+    "The Annotations of this note's Item, from a Query File.",
+    "",
+    `![[${RENDERED_NOTE_EMBED}]]`,
+    "",
+    ...(item.literatureNoteCitations === undefined
+      ? []
+      : [
+          `This note rests on ${item.literatureNoteCitations
+            .map((key) => `[@${key}]`)
+            .join(" ")}.`,
+          "",
+        ]),
   ].join("\n");
+}
+
+/** A Query Block of the note's own Item's Annotations. */
+const QUERY_BLOCK = [
+  "```zotquery",
+  "views:",
+  "  - type: annotations",
+  "    name: This item",
+  "    from: annotations",
+  "    filters: item == this.item",
+  "    limit: 100",
+  "```",
+  "",
+];
+
+/**
+ * The Mark Landing walkthrough (#1156). Generated rather than committed,
+ * because a `file://` link names an absolute path and the Fixture learns its
+ * own paths only at build time. The Anchors come from the shipped codec, so
+ * the page cannot spell one differently from the reader that reads it.
+ */
+function markLandingPage(layout: FixtureLayout, options: BuildOptions): string {
+  const link = (
+    attachmentKey: string,
+    label: string,
+    anchor: { page?: number | null; annotation?: string | null },
+  ): string => {
+    const attachment = ATTACHMENTS.find(({ key }) => key === attachmentKey)!;
+    const path = attachmentFilePath(
+      attachment,
+      layout,
+      options.linkedAttachmentVaultDir,
+    )!;
+    const href = pathToFileURL(path).href;
+    return `[${label}](${href}${formatAnnotationSubpath(anchor)})`;
+  };
+  const rougier = (label: string, anchor: Parameters<typeof link>[2]): string =>
+    link("RGRPDF24", label, anchor);
+
+  return `---
+title: Mark Landing Test
+---
+
+# Mark Landing Test
+
+This note exercises Mark Landing (#1156): an Attachment File Link carrying an
+Annotation Anchor opens the PDF in Obsidian's reader, selects the Annotation's
+own Mark, and scrolls it into view.
+
+**Settings for a full pass**: **Open PDF file links in Obsidian** on, in
+**Settings → ZotLit → Reader**. Zotero running, so the Annotations resolve.
+
+**Pass condition for every landing case below**: the reader opens on the page
+the Annotation sits on, exactly one Mark carries the selection outline, that
+Mark is on screen, and no Mark Popup opens.
+
+## A Mark on the page the reader opens
+
+\`PUPR5FG5\` is a highlight on page 1 of the Rougier PDF, a linked file inside
+the vault. Page 1 has rendered by the time the Landing resolves, so the Mark is
+selected at once.
+
+- File link: ${rougier("rougier-2014.pdf", { page: 1, annotation: "PUPR5FG5" })}
+- Wikilink: [[attachments/rougier-2014.pdf#page=1&zt-annotation=PUPR5FG5]]
+
+Both cross \`WorkspaceLeaf.setEphemeralState\`, so both land the same way. The
+wikilink proves the notation is writable by hand, not an internal detail.
+
+## A Mark on a page that has not rendered
+
+\`FDRFQ7C2\` is the image annotation on page 2. That page is unbuilt when the
+reader opens, so the Landing waits for its render instead of for an event that
+never comes.
+
+- ${rougier("rougier-2014.pdf", { page: 2, annotation: "FDRFQ7C2" })}
+
+## The Annotation wins over the page the link names
+
+This link names page 1 and an Annotation that sits on page 2. The Indexed Key is
+the durable identity and the page is a hint, so the reader lands on page 2 — the
+behaviour a replaced PDF depends on.
+
+- ${rougier("rougier-2014.pdf", { page: 1, annotation: "FDRFQ7C2" })}
+
+## A reader that is already open re-aims
+
+Click the page 1 case, then this one, without closing the tab. The open reader
+takes the new Annotation. Obsidian's own **Copy link to annotation** lands on
+the first click and does nothing on the second; this one lands every time.
+
+- ${rougier("rougier-2014.pdf", { page: 1, annotation: "K3JRFLFQ" })}
+
+Click the same link twice. The second click lands exactly like the first.
+
+## A PDF in Zotero storage, outside the vault
+
+\`HIGHLGHT\` is on the Sakima's Song PDF, imported into Zotero's storage rather
+than linked into the vault.
+
+- ${link("PDFSTR22", "sakimas-song.pdf", { page: 2, annotation: "HIGHLGHT" })}
+
+## Degrades to the page, in silence
+
+Each case here lands on the page Obsidian jumped to, selects nothing, and shows
+no notice. Each writes one \`debug\` record naming the reason.
+
+- An Annotation Zotero does not have: ${rougier("rougier-2014.pdf", { page: 1, annotation: "MISSING2" })}
+- An Annotation of another Attachment: ${rougier("rougier-2014.pdf", { page: 1, annotation: "HIGHLGHT" })}
+- No Anchor at all: ${rougier("rougier-2014.pdf", { page: 2 })}
+
+## Zotero's own annotation link stays Zotero's
+
+ZotLit does not claim Zotero's own annotation deep link. ADR 0046 defers that as
+the next step rather than rejecting it.
+
+- [Ten Simple Rules for Better Figures](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2)
+
+**Pass condition**: Zotero comes forward and opens its own reader on that
+annotation. Obsidian's reader does not open, and no ZotLit notice appears.
+`;
 }
 
 function fixtureIndexedKey(note: FixtureNote): string {

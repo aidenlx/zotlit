@@ -1,0 +1,748 @@
+import { it } from "@effect/vitest";
+import { ToggleComponent, controlsOf } from "@mock/obsidian";
+import { Context, Effect, Fiber, Layer } from "effect";
+// @vitest-environment happy-dom
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ButtonComponent, Modal, SuggestModal, TextComponent } from "obsidian";
+import type { App } from "obsidian";
+import { expect, vi } from "vitest";
+
+import { until } from "@/lib/__fixtures__/eventually";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
+import type { ProfileId } from "@/lib/profile-stamp";
+import * as nativeDialog from "@/lib/require";
+import {
+  MY_LIBRARY_SCOPE,
+  resolveLibraryScope,
+} from "@/services/library-scope/scope";
+import { LibraryScope } from "@/services/library-scope/service";
+import { NoteFeature } from "@/services/note-feature/service";
+import type { ProfileNoteDraft } from "@/services/note-feature/service";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import { Profile } from "@/services/profile/service";
+import type {
+  PreparedProfileImport,
+  ProfileImport,
+  ProfileImportOptions,
+} from "@/services/profile/service";
+import { workbenchContext } from "@/services/template-workbench/__fixtures__";
+import { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { layerRcRef } from "@/services/zotero-reads/connection";
+import { layerZoteroReads } from "@/services/zotero-reads/service";
+import {
+  inProcessClient,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
+
+import { ImportProfileModal } from "./import-profile-modal";
+import type { ImportProfileDeps } from "./import-profile-modal";
+import { importProfileDialog } from "./profile-dialogs";
+
+const id = "Ry4Ua8Nv2Mx6" as ProfileId;
+/** The keep-or-replace toggle of one partial, read off the row that names it. */
+function replaceToggle(container: HTMLElement, name: string) {
+  const label = m.profile_import_partial_replace({ name });
+  // The row is the one element that both names this partial and holds a toggle.
+  const row = [...container.querySelectorAll<HTMLElement>("*")].find(
+    (element) =>
+      element.textContent === label &&
+      controlsOf(element).some((control) => control instanceof ToggleComponent),
+  )!;
+  return controlsOf(row).find((control) => control instanceof ToggleComponent)!;
+}
+function observeButtons() {
+  using stack = new DisposableStack();
+  const labels = stack.use(
+    vi.spyOn(ButtonComponent.prototype, "setButtonText"),
+  );
+  const clicks = stack.use(vi.spyOn(ButtonComponent.prototype, "onClick"));
+  const disabled = stack.use(
+    vi.spyOn(ButtonComponent.prototype, "setDisabled"),
+  );
+  const cleanup = stack.move();
+  return {
+    click(label: string) {
+      const instance =
+        labels.mock.instances[
+          labels.mock.calls.findIndex(([text]) => text === label)
+        ];
+      return clicks.mock.calls[clicks.mock.instances.indexOf(instance)]![0](
+        {} as MouseEvent,
+      );
+    },
+    disabled(label: string) {
+      const instance =
+        labels.mock.instances[
+          labels.mock.calls.findLastIndex(([text]) => text === label)
+        ];
+      const index = disabled.mock.instances.lastIndexOf(instance!);
+      return disabled.mock.calls[index]?.[0] ?? false;
+    },
+    labels: () => labels.mock.calls.map(([label]) => label),
+    [Symbol.dispose]: () => cleanup.dispose(),
+  };
+}
+/** A previewed note; the import tests never write it. */
+function draft(note: Partial<ProfileNoteDraft> = {}): ProfileNoteDraft {
+  return {
+    path: "Reading/Paper.md",
+    properties: {},
+    body: "Preview",
+    create: Effect.die("The import test does not create the preview"),
+    ...note,
+  };
+}
+
+function fixture(
+  kind: "fresh" | "replace" = "fresh",
+  partials: PreparedProfileImport["partials"][number][] = [
+    { name: "summary", verdict: "write", document: "Summary" },
+    { name: "authors", verdict: "conflict", document: "Authors" },
+    { name: "venue-line", verdict: "unchanged", document: "Venue" },
+  ],
+) {
+  const save = vi.fn(async () => ({
+    id,
+    label: "Shared",
+    path: "templates/zotlit-profile.shared.md",
+    document: "zotlit-profile.shared.md",
+    bindings: {},
+    match: {
+      state: "absent" as const,
+      summary: m.profile_match_absent(),
+    },
+  }));
+  const plan: PreparedProfileImport = {
+    kind,
+    held: {
+      label: "Held",
+      version: "1.0.0",
+      literatureNotes: 2,
+      importedNotes: 1,
+    },
+    manifest: {
+      id,
+      name: "Shared",
+      version: "2.0.0",
+      contract: 2,
+      author: "Research group",
+      description: "Reading notes",
+      filename: "{{ zt.title }}",
+      language: "liquid",
+      folder: "Sender",
+      citationStyle: "missing-style",
+      partials: [
+        { name: "summary", language: "liquid", source: "Summary" },
+        { name: "authors", language: "liquid", source: "Authors" },
+        { name: "venue-line", language: "liquid", source: "Venue" },
+      ],
+    },
+    partials,
+    source: "Shared source",
+    path: "templates/zotlit-profile.shared.md",
+    profile: {
+      ...profileReader().resolveProfile("default")!,
+      bindings: {
+        ...profileReader().resolveProfile("default")!.bindings,
+        "citation.references-style": "missing-style",
+      },
+    },
+    previewSource: () => "Shared source",
+    import: save,
+  };
+  const prepareImport = vi.fn<ImportProfileDeps["prepareImport"]>(
+    async () => plan,
+  );
+  const deps: ImportProfileDeps = {
+    app: stubService<App>("App", {}),
+    base: profileReader().resolveProfile("default")!,
+    prepareImport,
+    previewNote: async () =>
+      draft({
+        properties: { "zotlit-profile": "Shared (Ry4Ua8Nv2Mx6)" },
+        body: "Recipient item",
+      }),
+  };
+  const modal = new ImportProfileModal(deps, {
+    source: "IMPORTED SOURCE",
+    plan,
+    styles: [],
+  });
+  modal.contentEl = document.createElement("div");
+  modal.modalEl = document.createElement("div");
+  return { modal, prepareImport, save, deps, plan };
+}
+
+it("opens fresh consent with metadata, recipient preview, editable bindings and one-file effects", async () => {
+  using buttons = observeButtons();
+  using text = vi.spyOn(TextComponent.prototype, "onChange");
+  const f = fixture();
+  f.modal.onOpen();
+  expect(f.modal.contentEl.querySelector("textarea")).toBeNull();
+  expect(buttons.labels()).toEqual([
+    m.profile_import_confirm(),
+    m.profile_import_cancel(),
+  ]);
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Recipient item"),
+  );
+  expect(f.modal.contentEl.textContent).toContain("Research group");
+  expect(f.modal.contentEl.textContent).toContain("Shared (Ry4Ua8Nv2Mx6)");
+  // Only the partials that reach a new file are announced; the one whose name
+  // the vault already holds waits for the reader's word, and the one whose
+  // text this vault already holds changes nothing and is passed over.
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_partials({ names: "summary" }),
+  );
+  expect(f.modal.contentEl.textContent).not.toContain("venue-line");
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_partial_replace({ name: "authors" }),
+  );
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_missing_style({ style: "missing-style" }),
+  );
+  await vi.waitFor(() =>
+    expect(f.prepareImport).toHaveBeenCalledWith("IMPORTED SOURCE", {
+      citationStyle: null,
+      includeMatch: true,
+    }),
+  );
+  text.mock.calls[0]![0]("Reading");
+  await vi.waitFor(() =>
+    expect(f.prepareImport).toHaveBeenLastCalledWith("IMPORTED SOURCE", {
+      folder: "Reading",
+      citationStyle: null,
+      includeMatch: true,
+    }),
+  );
+  expect(f.save).not.toHaveBeenCalled();
+  // The preview renders after the plan, so Import waits for both.
+  await vi.waitFor(() =>
+    expect(buttons.disabled(m.profile_import_confirm())).toBe(false),
+  );
+  buttons.click(m.profile_import_confirm());
+  await expect(f.modal.result).resolves.toMatchObject({ id });
+  expect(f.save).toHaveBeenCalledWith({
+    includeMatch: true,
+    replacePartials: [],
+  });
+});
+
+it("names each reason a partial stays in the profile", () => {
+  const f = fixture("fresh", [
+    { name: "../../../escape", verdict: "refused", document: "Escaped" },
+    { name: "Authors", verdict: "other-case", document: "Theirs" },
+  ]);
+  f.modal.onOpen();
+  // The name rule speaks for the escaping name alone: `Authors` is a
+  // well-formed name, kept because one file already answers it in another case.
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_partials_refused({ names: "../../../escape" }),
+  );
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_partials_other_case({ names: "Authors" }),
+  );
+  expect(f.modal.contentEl.textContent).not.toContain(
+    m.profile_import_partials_refused({ names: "Authors" }),
+  );
+});
+
+it("keeps a partial the reader leaves alone and replaces the one they approve", async () => {
+  using buttons = observeButtons();
+  const f = fixture();
+  f.modal.onOpen();
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Recipient item"),
+  );
+  const toggle = replaceToggle(f.modal.contentEl, "authors");
+  expect(toggle.getValue()).toBe(false);
+  toggle.toggle(true);
+  await vi.waitFor(() =>
+    expect(buttons.disabled(m.profile_import_confirm())).toBe(false),
+  );
+  buttons.click(m.profile_import_confirm());
+  await expect(f.modal.result).resolves.toMatchObject({ id });
+  expect(f.save).toHaveBeenCalledWith({
+    includeMatch: true,
+    replacePartials: ["authors"],
+  });
+});
+
+it("previews a conflicting partial with the reader's keep-or-replace choice", async () => {
+  const f = fixture();
+  Object.assign(f.plan, {
+    previewSource: ({
+      replacePartials = [],
+    }: {
+      replacePartials?: string[];
+    }) =>
+      replacePartials.includes("authors")
+        ? "Bundled authors preview"
+        : "Local authors preview",
+  });
+  f.deps.previewNote = async (_profile, source) => draft({ body: source });
+
+  f.modal.onOpen();
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Local authors preview"),
+  );
+  replaceToggle(f.modal.contentEl, "authors").toggle(true);
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Bundled authors preview"),
+  );
+});
+
+it("shows only Replace and Cancel for a held ID, naming version and separate note counts", async () => {
+  using buttons = observeButtons();
+  using title = vi.spyOn(Modal.prototype, "setTitle");
+  const f = fixture("replace");
+  f.modal.onOpen();
+  await vi.waitFor(() =>
+    expect(title).toHaveBeenLastCalledWith(
+      m.profile_import_replace_title({ label: "Held" }),
+    ),
+  );
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_replace_effects({
+      version: "1.0.0",
+      literature: 2,
+      imported: 1,
+    }),
+  );
+  expect(f.modal.contentEl.querySelector("textarea")).toBeNull();
+  expect(f.modal.contentEl.textContent).not.toContain(
+    m.profile_import_none_changed(),
+  );
+  expect(f.save).not.toHaveBeenCalled();
+  buttons.click(m.profile_import_replace());
+  await expect(f.modal.result).resolves.toMatchObject({ id });
+  expect(f.save).toHaveBeenCalledOnce();
+});
+
+/** My Library, which holds no item: the preview reads none. */
+const SEED = `
+  insert into version (schema, version) values ('userdata', 129);
+  insert into libraries (libraryID, type, version, clientVersion)
+    values (1, 'user', 1, 1);
+`;
+
+/**
+ * The import dialog over fakes of its services, with a clipboard and a file
+ * that hold a Profile document. `resolveLibraries` records each preview read.
+ * The modals open in place of drawing.
+ */
+const importerFixture = Effect.fnUntraced(function* (
+  kind: "fresh" | "replace" = "fresh",
+) {
+  const folder = yield* Effect.acquireRelease(
+    Effect.promise(() => mkdtemp(join(tmpdir(), "zotlit-profile-source-"))),
+    (folder) =>
+      Effect.promise(() => rm(folder, { recursive: true, force: true })),
+  );
+  const filePath = join(folder, "profile.md");
+  yield* Effect.promise(() => writeFile(filePath, "FILE SOURCE"));
+  const f = fixture(kind);
+  const spy = <A extends Disposable>(acquire: () => A) =>
+    Effect.acquireDisposable(Effect.sync(acquire));
+  const clipboard = yield* spy(() =>
+    vi
+      .spyOn(navigator.clipboard, "readText")
+      .mockResolvedValue("CLIPBOARD SOURCE"),
+  );
+  const showOpenDialog = vi.fn(async () => ({
+    canceled: false,
+    filePaths: [filePath],
+  }));
+  yield* spy(() =>
+    vi.spyOn(nativeDialog, "requireDialog").mockReturnValue(
+      stubService<ReturnType<typeof nativeDialog.requireDialog>>("Dialog", {
+        showOpenDialog,
+      }),
+    ),
+  );
+  const opened = yield* spy(() =>
+    vi.spyOn(Modal.prototype, "open").mockImplementation(function (
+      this: Modal,
+    ) {
+      this.contentEl = document.createElement("div");
+    }),
+  );
+  const suggestions = yield* spy(() =>
+    vi.spyOn(SuggestModal.prototype, "open"),
+  );
+  const plan: ProfileImport = {
+    ...f.plan,
+    previewSource: () => Effect.succeed("Shared source"),
+    import: () => Effect.promise(() => f.save()),
+  };
+  const prepareImport = vi.fn((_source: string) => Effect.succeed(plan));
+  const resolveLibraries = vi.fn(
+    (libraries: Parameters<LibraryScope["Service"]["resolveLibraries"]>[0]) =>
+      Effect.sync(() => resolveLibraryScope(libraries, MY_LIBRARY_SCOPE)),
+  );
+  const reads = yield* Layer.build(
+    layerZoteroReads(
+      inProcessClient(layerRcRef(memoryOpener(() => SEED).open)),
+    ),
+  );
+  const notifier = testNotifier();
+  const services = Context.mergeAll(
+    workbenchContext(
+      reads,
+      Context.make(
+        Profile,
+        stubService<Profile["Service"]>("Profile", {
+          resolveProfile: () =>
+            Effect.succeed(profileReader().resolveProfile("default")!),
+          prepareImport,
+        }),
+      ),
+      Context.make(Template, stubService<Template["Service"]>("Template", {})),
+      Context.make(
+        ZoteroPref,
+        stubService<ZoteroPref["Service"]>("ZoteroPref", {
+          current: Effect.succeed(
+            stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+              dataDir: "",
+            }),
+          ),
+        }),
+      ),
+    ),
+    Context.make(
+      LibraryScope,
+      stubService<LibraryScope["Service"]>("LibraryScope", {
+        resolveLibraries,
+      }),
+    ),
+    Context.make(
+      NoteFeature,
+      stubService<NoteFeature["Service"]>("NoteFeature", {}),
+    ),
+    yield* Layer.build(notifier.layer),
+  );
+  /** Start the dialog as the user would, from the command or a menu. */
+  const run = (options?: Parameters<typeof importProfileDialog>[1]) =>
+    importProfileDialog(f.deps.app, options).pipe(
+      Effect.provideContext(services),
+      Effect.forkChild({ startImmediately: true }),
+    );
+  return {
+    ...f,
+    run,
+    clipboard,
+    showOpenDialog,
+    prepareImport,
+    resolveLibraries,
+    opened,
+    suggestions,
+  };
+});
+
+it.effect(
+  "offers two source suggestions and reads only after native close-before-choice selection",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture();
+      const pending = yield* f.run();
+      yield* until(() => f.suggestions.mock.calls.length === 1);
+      expect(f.clipboard).not.toHaveBeenCalled();
+      expect(f.showOpenDialog).not.toHaveBeenCalled();
+      expect(f.resolveLibraries).not.toHaveBeenCalled();
+      expect(f.opened).not.toHaveBeenCalled();
+      const picker = f.suggestions.mock.instances[0] as SuggestModal<
+        "clipboard" | "file"
+      >;
+      const options = yield* Effect.promise(async () =>
+        picker.getSuggestions(""),
+      );
+      expect(
+        options.map((option) => {
+          const row = document.createElement("div");
+          picker.renderSuggestion(option, row);
+          return row.textContent;
+        }),
+      ).toEqual([m.profile_import_clipboard(), m.profile_import_file()]);
+      picker.onClose();
+      picker.onChooseSuggestion("clipboard", new MouseEvent("click"));
+      yield* until(() => f.opened.mock.calls.length === 1);
+      expect(f.clipboard).toHaveBeenCalledOnce();
+      expect(f.prepareImport).toHaveBeenCalledWith("CLIPBOARD SOURCE", {});
+      expect(f.resolveLibraries).toHaveBeenCalledOnce();
+      expect(f.opened.mock.instances[0]).toBeInstanceOf(ImportProfileModal);
+      (f.opened.mock.instances[0] as ImportProfileModal).onClose();
+      expect(yield* Fiber.join(pending)).toBeUndefined();
+      expect(f.save).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect(
+  "cancels the source suggester without reading or opening consent",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture();
+      const pending = yield* f.run();
+      yield* until(() => f.suggestions.mock.calls.length === 1);
+      (f.suggestions.mock.instances[0] as SuggestModal<unknown>).onClose();
+      expect(yield* Fiber.join(pending)).toBeUndefined();
+      expect(f.clipboard).not.toHaveBeenCalled();
+      expect(f.showOpenDialog).not.toHaveBeenCalled();
+      expect(f.resolveLibraries).not.toHaveBeenCalled();
+      expect(f.opened).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect(
+  "closes the source suggester when the import is interrupted, before any read",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture();
+      const closed = yield* Effect.acquireDisposable(
+        Effect.sync(() => vi.spyOn(SuggestModal.prototype, "close")),
+      );
+      const pending = yield* f.run();
+      yield* until(() => f.suggestions.mock.calls.length === 1);
+      yield* Fiber.interrupt(pending);
+      expect(closed).toHaveBeenCalledOnce();
+      expect(f.clipboard).not.toHaveBeenCalled();
+      expect(f.showOpenDialog).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect(
+  "logs no failure when the import is interrupted during its write",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture("replace");
+      const failed = yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          vi.spyOn(getLogger(["setting-tab", "profile-import"]), "error"),
+        ),
+      );
+      f.save.mockImplementationOnce(() => new Promise(() => {}));
+      using buttons = observeButtons();
+      const pending = yield* f.run({ source: "clipboard" });
+      yield* until(() => f.opened.mock.calls.length === 1);
+      const modal = f.opened.mock.instances[0] as ImportProfileModal;
+      modal.onOpen();
+      // The save handler's own Promise ends once its catch has run.
+      const saved: unknown = buttons.click(m.profile_import_replace());
+      yield* until(() => f.save.mock.calls.length === 1);
+      yield* Fiber.interrupt(pending);
+      yield* Effect.promise(async () => {
+        await saved;
+      });
+      expect(failed).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect.each([
+  { source: "clipboard", text: "CLIPBOARD SOURCE", dialogs: 0 },
+  { source: "file", text: "FILE SOURCE", dialogs: 1 },
+] as const)(
+  "opens consent directly for the menu's $source source",
+  ({ source, text, dialogs }) =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture("replace");
+      const pending = yield* f.run({ source });
+      yield* until(() => f.opened.mock.calls.length === 1);
+      expect(f.suggestions).not.toHaveBeenCalled();
+      expect(f.resolveLibraries).not.toHaveBeenCalled();
+      expect(f.prepareImport).toHaveBeenCalledWith(text, {});
+      expect(f.showOpenDialog).toHaveBeenCalledTimes(dialogs);
+      (f.opened.mock.instances[0] as ImportProfileModal).onClose();
+      expect(yield* Fiber.join(pending)).toBeUndefined();
+      expect(f.save).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect.each(["empty", "read-error", "file-cancel"] as const)(
+  "opens no consent for %s and allows retry through the entry",
+  (failure) =>
+    Effect.gen(function* () {
+      const f = yield* importerFixture();
+      const source = failure === "file-cancel" ? "file" : "clipboard";
+      if (failure === "empty") f.clipboard.mockResolvedValueOnce(" \n");
+      else if (failure === "read-error")
+        f.clipboard.mockRejectedValueOnce(new Error("Clipboard unavailable"));
+      else
+        f.showOpenDialog.mockResolvedValueOnce({
+          canceled: true,
+          filePaths: [],
+        });
+      expect(yield* Fiber.join(yield* f.run({ source }))).toBeUndefined();
+      expect(f.prepareImport).not.toHaveBeenCalled();
+      expect(f.resolveLibraries).not.toHaveBeenCalled();
+      expect(f.opened).not.toHaveBeenCalled();
+      expect(f.save).not.toHaveBeenCalled();
+      const retry = yield* f.run({ source });
+      yield* until(() => f.opened.mock.calls.length === 1);
+      (f.opened.mock.instances[0] as ImportProfileModal).onClose();
+      expect(yield* Fiber.join(retry)).toBeUndefined();
+    }),
+);
+
+const incomingMatch = 'library == "group:987654"';
+const incomingPrefix = `---
+# Sender's layout
+id: Ry4Ua8Nv2Mx6
+name: Shared
+version: 2.0.0
+contract: 2
+filename: '{{ zt.title }}'
+`;
+const incomingSuffix = `# Body stays intact
+---
+{% managed %}Incoming body{% endmanaged %}
+--- zotlit:annotation ---
+Annotation`;
+const incoming = `${incomingPrefix}match: '${incomingMatch}'\n${incomingSuffix}`;
+const importedPath = "templates/zotlit-profile.shared.md";
+
+function matchToggle(modal: ImportProfileModal) {
+  return [
+    modal.contentEl,
+    ...modal.contentEl.querySelectorAll<HTMLElement>("*"),
+  ]
+    .flatMap(controlsOf)
+    .findLast((component) => component instanceof ToggleComponent);
+}
+
+async function realImportFixture(held: boolean, source = incoming) {
+  await using stack = new AsyncDisposableStack();
+  const f = stack.use(
+    await profileServiceFixture(
+      held ? { [importedPath]: incoming.replace("2.0.0", "1.0.0") } : {},
+    ),
+  );
+  // The modal's Promise members over the Profile service, as the import
+  // dialog builds them.
+  const importOn = (plan: ProfileImport): PreparedProfileImport => ({
+    ...plan,
+    previewSource: (preview) => f.bridge.runSync(plan.previewSource(preview)),
+    import: (choice) => f.bridge.runPromise(plan.import(choice)),
+  });
+  const prepareImport = (text: string, options?: ProfileImportOptions) =>
+    f.bridge.runPromise(
+      f.profileService
+        .prepareImport(text, options)
+        .pipe(Effect.map((next) => importOn(next))),
+    );
+  const deps: ImportProfileDeps = {
+    app: f.app,
+    base: f.bridge.runSync(f.profile.resolveProfile("default"))!,
+    prepareImport,
+    previewNote: async () => draft(),
+  };
+  const plan = await prepareImport(source);
+  const modal = new ImportProfileModal(deps, { source, plan, styles: [] });
+  modal.contentEl = document.createElement("div");
+  modal.modalEl = document.createElement("div");
+  const cleanup = stack.move();
+  return { ...f, modal, [Symbol.asyncDispose]: () => cleanup.disposeAsync() };
+}
+
+// A fresh import previews the note it renders; a replacement reports the overwrite instead.
+const fresh = {
+  held: false,
+  consent: "Preview",
+  confirm: m.profile_import_confirm(),
+};
+const replace = {
+  held: true,
+  consent: "Your file (version 1.0.0) is overwritten",
+  confirm: m.profile_import_replace(),
+};
+it.each([
+  { ...fresh, includeMatch: true },
+  { ...fresh, includeMatch: false },
+  { ...replace, includeMatch: true },
+  { ...replace, includeMatch: false },
+])(
+  "writes consented match bytes for held=$held and includeMatch=$includeMatch",
+  async ({ held, consent, confirm, includeMatch }) => {
+    await using f = await realImportFixture(held);
+    using buttons = observeButtons();
+    f.modal.onOpen();
+    expect(f.modal.contentEl.textContent).toContain(
+      'library == "group:987654"',
+    );
+    expect(matchToggle(f.modal)?.getValue()).toBe(true);
+    await vi.waitFor(() =>
+      expect(f.modal.contentEl.textContent).toContain(consent),
+    );
+    matchToggle(f.modal)!.toggle(includeMatch);
+    await vi.waitFor(() => expect(buttons.disabled(confirm)).toBe(false));
+    await buttons.click(confirm);
+    await expect(f.modal.result).resolves.toMatchObject({ id });
+    expect(f.vault.contents.get(importedPath)).toBe(
+      includeMatch ? incoming : incomingPrefix + incomingSuffix,
+    );
+  },
+);
+
+it.each([false, true])(
+  "shows absent summary and no checkbox for held=%s",
+  async (held) => {
+    await using f = await realImportFixture(
+      held,
+      incomingPrefix + incomingSuffix,
+    );
+    const before = new Map(f.vault.contents);
+    f.modal.onOpen();
+    expect(f.modal.contentEl.textContent).toContain(m.profile_match_absent());
+    expect(matchToggle(f.modal)).toBeUndefined();
+    f.modal.onClose();
+    await expect(f.modal.result).resolves.toBeUndefined();
+    expect(f.vault.contents).toEqual(before);
+  },
+);
+
+it("retains unchecked consent when a fresh ID becomes Replace, and cancels without writes", async () => {
+  await using f = await realImportFixture(false);
+  using buttons = observeButtons();
+  f.modal.onOpen();
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Preview"),
+  );
+  f.vault.createFile(importedPath, incoming.replace("2.0.0", "1.0.0"));
+  matchToggle(f.modal)!.toggle(false);
+  await vi.waitFor(() =>
+    expect(buttons.labels()).toContain(m.profile_import_replace()),
+  );
+  expect(matchToggle(f.modal)?.getValue()).toBe(false);
+  expect(f.modal.contentEl.textContent).toContain('library == "group:987654"');
+  const before = new Map(f.vault.contents);
+  f.modal.onClose();
+  await expect(f.modal.result).resolves.toBeUndefined();
+  expect(f.vault.contents).toEqual(before);
+});
+
+it.each(["3.0.0", "1.0.0"])(
+  "keeps Replace consent stale after the local file changes to %s and Match is toggled",
+  async (version) => {
+    await using f = await realImportFixture(true);
+    using buttons = observeButtons();
+    f.modal.onOpen();
+    const changed = incoming
+      .replace("2.0.0", version)
+      .replace("Incoming body", "New local body");
+    f.vault.modifyFile(importedPath, changed);
+    matchToggle(f.modal)!.toggle(false);
+    await vi.waitFor(() =>
+      expect(buttons.disabled(m.profile_import_replace())).toBe(false),
+    );
+    await buttons.click(m.profile_import_replace());
+    expect(f.vault.contents.get(importedPath)).toBe(changed);
+    expect(f.modal.contentEl.textContent).toContain(m.profile_import_changed());
+    f.modal.onClose();
+  },
+);

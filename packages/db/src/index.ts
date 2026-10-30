@@ -4,7 +4,7 @@ export {
   getLibraryByGroupID,
   type Library,
 } from "./queries/libraries";
-export { type GroupIDMemo } from "./queries/_groups";
+export { type GroupIDMemo } from "./queries/libraries";
 export {
   getItemsByID,
   getItemTypeByKey,
@@ -28,7 +28,20 @@ export {
   type CslItemData,
   type CslName,
 } from "./lib/zt-csl-item";
-export { getZoteroIdentity, type ZoteroUserIdentity } from "./queries/account";
+export {
+  getAccountUserID,
+  getZoteroDatabaseIdentity,
+  getZoteroIdentity,
+  type ZoteroDatabaseIdentity,
+  type ZoteroUserIdentity,
+} from "./queries/account";
+export {
+  NotZoteroDatabaseError,
+  readDatabaseLayout,
+  type DatabaseLayout,
+  type LayoutGap,
+  type LayoutVersions,
+} from "./layout";
 export {
   getSchemaVersions,
   SUPPORTED_SCHEMA_VERSIONS,
@@ -37,58 +50,102 @@ export {
 export {
   getItemDisplayInfoByID,
   getItemDisplayRefByID,
+  getItemDisplayRefsByIDs,
   getItemRefByID,
   type ItemDisplayInfo,
   type ItemRef,
 } from "./queries/item-ref";
+export {
+  ANNOTATION_ANCHOR_KEY,
+  ATTACHMENT_ANCHOR_KEY,
+  formatAnnotationFragment,
+  formatAnnotationSubpath,
+  parseAnnotationSubpath,
+  type AnnotationFileLinkAnchor,
+  type ParsedAnnotationSubpath,
+} from "./lib/zt-annot-anchor";
 export {
   formatIndexedKey,
   isIndexedKey,
   parseIndexedKey,
   type ParsedIndexedKey,
   resolveIndexedKeyLibrary,
+  resolveIndexedKeyLibraryIn,
 } from "./lib/zt-key";
 export { isItemKey } from "./lib/zt-item-key";
 export {
   annotationOpenUri,
   attachmentOpenUri,
   itemSelectUri,
+  libraryViewUri,
+  parseAnnotationOpenUri,
+  type AnnotationOpenUriOptions,
 } from "./lib/zt-uri";
 export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
-  getAnnotationsByItemId,
+  getAnnotationParentKeys,
+  getAnnotationsByParent,
 } from "./queries/annotations";
 export {
+  getAttachmentByItemId,
+  getAttachmentPage,
   getAttachmentByKey,
+  getAttachmentsByKey,
   getAttachmentsByParents,
+  type AttachmentWithParentKey,
 } from "./queries/attachments";
 export {
   getChildNotesByParentIDs,
-  getNoteByItemID,
   getNoteByKey,
+  getNotesByKey,
   getNoteRefsByItemIDs,
-  getTrashedNoteItemIDs,
   type ChildNote,
   type Note,
+  type NoteRef,
 } from "./queries/notes";
 export {
   getCitekeyByItemKey,
+  getCitekeyWindow,
+  getLastItemID,
   getCitekeysByLibrary,
   getItemIDByCitekey,
   type LibraryCitekey,
+  type CitekeyRow,
 } from "./queries/citekey";
-export { resolveItemTags, type TagMemo } from "./queries/tags";
-export { getRelatedKeysByItemID } from "./queries/item-relations";
-export { CollectionCache, type TemplateCollection } from "./lib/zt-collection";
 export {
-  getAnnotViewAnnotations,
+  getAllTagNames,
+  getLibraryTagNames,
+  resolveItemTags,
+  type TagMemo,
+} from "./queries/tags";
+export { getRelatedKeysByItemID } from "./queries/item-relations";
+export {
+  CollectionCache,
+  toTemplateCollection,
+  type TemplateCollection,
+} from "./lib/zt-collection";
+export {
+  getCollectionIDsByItem,
+  getCollectionNodesByLibrary,
+  type CollectionNode,
+} from "./queries/collections";
+export {
+  getAttachmentAnnotationCount,
   getAnnotViewAttachments,
   type AnnotViewAttachment,
-  type AnnotViewItem,
 } from "./queries/annot-view";
-export { type ItemTag, type TemplateTag } from "./lib/zt-tag";
-export { type Attachment } from "./lib/zt-attach";
+export {
+  type ItemTag,
+  type TagType,
+  type TemplateTag,
+  tagTypeToName,
+} from "./lib/zt-tag";
+export { type Attachment, linkModeToName } from "./lib/zt-attach";
+export {
+  type CreatorFieldMode,
+  creatorFieldModeToName,
+} from "./lib/zt-creator";
 export {
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
@@ -99,18 +156,31 @@ export {
   getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
   getIndexSignature,
+  getIndexSignatureRange,
+  getItemIDBounds,
+  sumSignatureRanges,
   type IndexedCreator,
   type IndexedItem,
   type IndexSignature,
 } from "./queries/index-items";
 export { formatItemDate, parseItemDate, type ItemDate } from "./lib/zt-date";
 export { parseItemExtra, type ExtraLine, type ItemExtra } from "./lib/zt-extra";
+export { isPageNumber } from "./lib/zt-page-label";
 export {
+  annotationHasCacheImage,
   annotationTypeToName,
   type Annotation,
   type AnnotationType,
   type ResolvedAnnotationTypeName,
 } from "./lib/zt-annot";
+export { type AnnotationPositionRaw } from "@drizzle/schema";
+export {
+  parseAnnotationPosition,
+  type AnnotationPosition,
+  type PdfInkPosition,
+  type PdfRectsPosition,
+  type PdfTextPosition,
+} from "./lib/zt-annot-pos";
 export {
   withAnnotationCitation,
   type AnnotationTemplateContext,
@@ -126,16 +196,23 @@ export {
   type TemplateParentItemData,
 } from "./lib/context/zt-template-item";
 export {
+  CITATION_VARIANTS,
   citekeysToCiteTemplateData,
+  DEFAULT_CITATION_VARIANT,
   DEFAULT_LOCATOR_LABEL_SHORT,
+  isCitationVariant,
   narrowBaseDataToCiteItemData,
   resolveCitedItem,
+  type CitationTemplateData,
+  type CitationVariant,
   type CiteRef,
   type ResolvedCiteRef,
+  type TemplateCiteItemData,
 } from "./lib/context/zt-template-cite";
 export { attachmentToTemplateData } from "./lib/context/zt-template-attach";
 export {
   annotationColorToName,
+  annotationColorsForName,
   type AnnotationColorName,
   highlightColorToName,
   textColorToName,
@@ -158,14 +235,26 @@ export {
 } from "./lib/zt-note-mark";
 export {
   buildFilenameContext,
+  zoteroNoteLink,
   type NoteTemplateContext,
   type TemplateNoteLink,
 } from "./lib/context/zt-template-note";
 export {
+  buildAnnotationParents,
+  buildAnnotationsTemplateData,
+  buildNoteContextFromSource,
+  fetchAnnotationSources,
   fetchAnnotationsTemplateData,
+  fetchAttachmentSources,
   fetchNoteContext,
+  fetchItemFacets,
+  fetchNoteSource,
+  type AnnotationParent,
   type AnnotationResolvers,
+  type AnnotationSources,
+  type ItemFacets,
   type NoteResolvers,
+  type NoteSource,
 } from "./lib/context/note-context";
 export {
   CONTRACT_ROOTS,

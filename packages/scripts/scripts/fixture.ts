@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-// Builds, re-scopes, and discards the Fixture.
+// Builds, re-scopes, stops, and discards the Fixture.
 
+import type { DesktopSlot } from "#desktop-slot";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import yargs from "yargs";
@@ -9,9 +10,25 @@ import type { Argv } from "yargs";
 import { hideBin } from "yargs/helpers";
 
 import {
+  DOCS_DEV_SERVER_ORIGIN,
+  localBridgeOrigin,
+} from "@zotlit/workbench/bridge";
+
+import {
+  acquireDesktopSlotOrExit,
+  EXIT_LEASE_ENDED,
+  formatDuration,
+  KILL_AFTER_MS,
+  LeaseUsageError,
+  MANUAL_LEASE_CAP_MS,
+  parseManualLease,
+} from "#desktop-slot";
+import { DEV_VAULT_CASE_ENV } from "#dev-vault";
+import {
   buildFixture,
   DEFAULT_SCOPE_CASE,
   DEFAULT_STRESS_ITEM_COUNT,
+  DEFAULT_VAULT_CASE,
   discardFixture,
   getFixtureLayout,
   getFixtureRoot,
@@ -19,17 +36,29 @@ import {
   PERSONAL_SELECTOR,
   SCOPE_CASES,
   selectScopeCase,
+  STRESS_GROUP_LIBRARY,
+  STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT,
   STRESS_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_TIERS,
   UNAVAILABLE_GROUP_IDS,
+  VAULT_CASES,
+  writePairedRunState,
 } from "#fixture";
+import { forkFixtureData, removeFixtureFork } from "#fixture/fork";
 import { renderGuide } from "#fixture/guide";
+import { startMockLocalBridge } from "#fixture/local-bridge-server";
 import { runPairedRun } from "#fixture/paired-run";
-import { createNodePairedRunPorts } from "#fixture/paired-run-node";
+import {
+  createNodePairedRunPorts,
+  describeLive,
+} from "#fixture/paired-run-node";
 import {
   harvestPristineTemplate,
   PRISTINE_STYLES_PATH,
   PRISTINE_TEMPLATE_PATH,
 } from "#fixture/pristine";
+import { regenerateFixtureSampleItems } from "#fixture/sample-items";
 import { getWorkspaceRoot } from "#package-roots";
 import {
   installBetterBibtex,
@@ -39,11 +68,26 @@ import {
 } from "#paired-zotero";
 
 const scopeCaseIds = SCOPE_CASES.map((c) => c.id).join(", ");
+const vaultCaseIds = VAULT_CASES.map((c) => c.id).join(", ");
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const layout = getFixtureLayout(getFixtureRoot(workspaceRoot));
 const companionDir = join(workspaceRoot, "apps", "zotero", "dist-dev", "addon");
 const pairedRunPorts = createNodePairedRunPorts({ workspaceRoot, layout });
+
+const localApiOption = {
+  describe:
+    "open Zotero's Local API in the Fixture profile, on a free Zotero HTTP port the profile carries",
+  type: "boolean",
+  default: false,
+} as const;
+
+const grantLocalApiWritesOption = {
+  describe:
+    "seed a remembered Local API write grant for the Development Vault; use --no-grant-local-api-writes to test authorization",
+  type: "boolean",
+  default: true,
+} as const;
 
 function pairedRunBuilder(y: Argv) {
   return y
@@ -52,11 +96,59 @@ function pairedRunBuilder(y: Argv) {
       type: "string",
       default: DEFAULT_SCOPE_CASE,
     })
+    .option("vault-case", {
+      describe: `Vault Case to build (${vaultCaseIds}); each case other than the default opens its own Development Vault (default: $${DEV_VAULT_CASE_ENV})`,
+      type: "string",
+      choices: VAULT_CASES.map(({ id }) => id),
+      default: process.env[DEV_VAULT_CASE_ENV],
+    })
     .option("purge", {
-      describe: "restore the exact generated Development Vault seed",
+      describe:
+        "restore the exact generated Development Vault seed, and clear the plugin's vault-scoped local storage and stored excerpt images",
       type: "boolean",
       default: false,
+    })
+    .option("local-api", localApiOption)
+    .option("grant-local-api-writes", grantLocalApiWritesOption)
+    .option("for", {
+      describe: `the Lease of the Desktop Slot this Paired Run holds, up to ${formatDuration(MANUAL_LEASE_CAP_MS)} (required), such as --for 30m; see pnpm desktop-slot --help`,
+      type: "string",
     });
+}
+
+/**
+ * Hold the Desktop Slot for a Paired Run until this process exits. A missing
+ * or oversized `--for` exits 2. When the Lease of a live session ends, the
+ * session stops its watchers and Paired Zotero as on SIGTERM, then exits 76.
+ */
+async function holdDesktopSlot(
+  mode: "open" | "dev",
+  lease: string | undefined,
+): Promise<DesktopSlot> {
+  let leaseMs: number;
+  try {
+    leaseMs = parseManualLease(lease);
+  } catch (error) {
+    if (!(error instanceof LeaseUsageError)) throw error;
+    console.error(`fixture: ${error.message}`);
+    process.exit(2);
+  }
+  return await acquireDesktopSlotOrExit({
+    cwd: workspaceRoot,
+    command: `pnpm fixture ${mode}`,
+    leaseMs,
+    manual: true,
+    onLeaseEnd: (owner) => {
+      console.error(
+        `Desktop Slot: the Lease of ${formatDuration(owner.lease)} ended at ${owner.leaseEndsAt}; stopping the Paired Run (exit ${EXIT_LEASE_ENDED}).`,
+      );
+      process.exitCode = EXIT_LEASE_ENDED;
+      // The slot's own handler is one listener; a running session adds another.
+      if (process.listenerCount("SIGTERM") < 2) process.exit(EXIT_LEASE_ENDED);
+      process.emit("SIGTERM", "SIGTERM");
+      setTimeout(() => process.exit(EXIT_LEASE_ENDED), KILL_AFTER_MS).unref();
+    },
+  });
 }
 
 /**
@@ -94,24 +186,62 @@ function printLibraries(): void {
 
 async function build({
   scopeCase,
+  vaultCase = DEFAULT_VAULT_CASE,
   stressItemCount,
+  stressLibraryItemCount,
+  stressGroupLibraryItemCount,
+  stressSparseLibraryID,
+  localApi = false,
 }: {
   scopeCase: string;
+  vaultCase?: string;
   stressItemCount?: number;
+  stressLibraryItemCount?: number;
+  stressGroupLibraryItemCount?: number;
+  stressSparseLibraryID?: number;
+  localApi?: boolean;
 }): Promise<void> {
   const pluginBundleDir = await findPluginBundle();
-  await buildFixture(layout, { scopeCase, stressItemCount, pluginBundleDir });
+  // The Local API needs one port both sides name, and the shipped 23119 belongs
+  // to whatever Zotero the machine already runs. The profile carries this one,
+  // so Paired Zotero serves on it and ZotLit reads it back from the same file.
+  const zoteroHttpPort = localApi
+    ? await pairedRunPorts.allocateZoteroHttpPort()
+    : undefined;
+  await buildFixture(layout, {
+    scopeCase,
+    vaultCase,
+    stressItemCount,
+    stressLibraryItemCount,
+    stressGroupLibraryItemCount,
+    stressSparseLibraryID,
+    pluginBundleDir,
+    zoteroHttpPort,
+    localApi,
+  });
   await installBetterBibtex(layout.profileDir);
   console.log(
-    stressItemCount === undefined
-      ? `Built the Fixture at ${layout.root}`
-      : `Built a Stress Build with ${stressItemCount.toLocaleString("en-US")} synthetic Items at ${layout.root}`,
+    stressLibraryItemCount !== undefined
+      ? `Built a Stress Build with ${stressLibraryItemCount.toLocaleString("en-US")} Items in My Library${
+          stressGroupLibraryItemCount === undefined
+            ? ""
+            : ` and ${stressGroupLibraryItemCount.toLocaleString("en-US")} Items in ${STRESS_GROUP_LIBRARY.name}`
+        } at ${layout.root}`
+      : stressItemCount === undefined
+        ? `Built the Fixture at ${layout.root}`
+        : `Built a Stress Build with ${stressItemCount.toLocaleString("en-US")} synthetic Items at ${layout.root}`,
   );
   printPaths();
   console.log("Libraries:");
   printLibraries();
   console.log(`Saved Library Scope: ${scopeCase}`);
+  console.log(`Vault Case: ${vaultCase}`);
   console.log("Installed pinned Better BibTeX in the Zotero profile.");
+  if (zoteroHttpPort !== undefined) {
+    console.log(
+      `Opened Zotero's Local API at http://127.0.0.1:${zoteroHttpPort}/api/`,
+    );
+  }
   console.log(
     pluginBundleDir
       ? "Installed ZotLit in the vault and enabled it."
@@ -125,13 +255,25 @@ const cli = yargs(hideBin(process.argv))
     ["build [scope-case]", "$0"],
     "rebuild the Fixture from the Fixture Spec",
     (y) =>
-      y.positional("scope-case", {
-        describe: `Scope Case to build (${scopeCaseIds})`,
-        type: "string",
-        default: DEFAULT_SCOPE_CASE,
-      }),
+      y
+        .positional("scope-case", {
+          describe: `Scope Case to build (${scopeCaseIds})`,
+          type: "string",
+          default: DEFAULT_SCOPE_CASE,
+        })
+        .option("vault-case", {
+          describe: `Vault Case to build (${vaultCaseIds})`,
+          type: "string",
+          choices: VAULT_CASES.map(({ id }) => id),
+          default: DEFAULT_VAULT_CASE,
+        })
+        .option("local-api", localApiOption),
     async (argv) => {
-      await build({ scopeCase: argv["scope-case"] });
+      await build({
+        scopeCase: argv["scope-case"],
+        vaultCase: argv["vault-case"],
+        localApi: argv["local-api"],
+      });
     },
   )
   .command(
@@ -139,11 +281,15 @@ const cli = yargs(hideBin(process.argv))
     "prepare and open a finite Paired Run",
     pairedRunBuilder,
     async (argv) => {
+      using _slot = await holdDesktopSlot("open", argv.for);
       await runPairedRun(
         {
           mode: "open",
           scopeCase: argv["scope-case"],
+          vaultCase: argv["vault-case"],
           purge: argv.purge,
+          localApi: argv["local-api"],
+          grantLocalApiWrites: argv["grant-local-api-writes"],
         },
         pairedRunPorts,
       );
@@ -154,11 +300,15 @@ const cli = yargs(hideBin(process.argv))
     "prepare and supervise a live Paired Run",
     pairedRunBuilder,
     async (argv) => {
+      using _slot = await holdDesktopSlot("dev", argv.for);
       await runPairedRun(
         {
           mode: "dev",
           scopeCase: argv["scope-case"],
+          vaultCase: argv["vault-case"],
           purge: argv.purge,
+          localApi: argv["local-api"],
+          grantLocalApiWrites: argv["grant-local-api-writes"],
         },
         pairedRunPorts,
       );
@@ -168,15 +318,35 @@ const cli = yargs(hideBin(process.argv))
     "stress [item-count]",
     "rebuild with an additive synthetic corpus",
     (y) =>
-      y.positional("item-count", {
-        describe: `number of synthetic Items to add; must be ${STRESS_ITEM_COUNT_CONSTRAINT}`,
-        type: "number",
-        default: DEFAULT_STRESS_ITEM_COUNT,
-      }),
+      y
+        .positional("item-count", {
+          describe: `number of synthetic Items to add across all Libraries; must be ${STRESS_ITEM_COUNT_CONSTRAINT} (default: ${DEFAULT_STRESS_ITEM_COUNT})`,
+          type: "number",
+        })
+        .option("library-items", {
+          describe: `fill My Library to exactly this many Items instead, for Item Query performance tiers (${STRESS_LIBRARY_TIERS.join(", ")}); must be ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}`,
+          type: "number",
+        })
+        .option("group-library-items", {
+          describe: `with --library-items, also fill the group Library ${STRESS_GROUP_LIBRARY.name} (${STRESS_GROUP_LIBRARY.groupID}) to exactly this many Items, for Item Query over two large Libraries; must be ${STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT}`,
+          type: "number",
+        })
+        .option("sparse-library-id", {
+          describe:
+            "Group Library with only the first and last ten Stress Items",
+          type: "number",
+        })
+        .conflicts("sparse-library-id", "library-items")
+        .conflicts("item-count", "library-items"),
     async (argv) => {
+      const stressLibraryItemCount = argv["library-items"];
       await build({
         scopeCase: DEFAULT_SCOPE_CASE,
-        stressItemCount: argv["item-count"],
+        ...(stressLibraryItemCount === undefined
+          ? { stressItemCount: argv["item-count"] ?? DEFAULT_STRESS_ITEM_COUNT }
+          : { stressLibraryItemCount }),
+        stressGroupLibraryItemCount: argv["group-library-items"],
+        stressSparseLibraryID: argv["sparse-library-id"],
       });
     },
   )
@@ -192,6 +362,36 @@ const cli = yargs(hideBin(process.argv))
     async (argv) => {
       await selectScopeCase(layout, argv["scope-case"]);
       console.log(`Saved Library Scope: ${argv["scope-case"]}`);
+    },
+  )
+  .command(
+    "fork [name]",
+    "copy the built Zotero data to a writable named fork and print its absolute path",
+    (y) =>
+      y
+        .positional("name", {
+          type: "string",
+          describe:
+            "fork name: 1–64 letters, digits, hyphens or underscores, starting with a letter or digit",
+        })
+        .option("remove", {
+          type: "string",
+          describe:
+            "remove this named fork after restoring the previous Device Override",
+        })
+        .conflicts("name", "remove")
+        .check((argv) => {
+          if (!argv.name && !argv.remove)
+            throw new Error("Give a fork name or --remove <name>.");
+          return true;
+        }),
+    async (argv) => {
+      if (argv.remove !== undefined) {
+        await removeFixtureFork(layout, argv.remove);
+        console.log(`Removed Fixture fork: ${argv.remove}`);
+      } else {
+        console.log(await forkFixtureData(layout, argv.name!));
+      }
     },
   )
   .command(
@@ -211,6 +411,10 @@ const cli = yargs(hideBin(process.argv))
         layout,
         companionDir,
       );
+      // This instance holds `zotero.sqlite` exactly as a Paired Run's does, so
+      // it is reported the same way — anything that would rebuild the Fixture
+      // has to see it. It carries no debugging port, and the report says so.
+      await writePairedRunState(layout, { pid });
       console.log(
         `Launched the Paired Zotero from ${applicationDir} (pid ${pid})`,
       );
@@ -223,7 +427,7 @@ const cli = yargs(hideBin(process.argv))
     () => {},
     async () => {
       const report = await harvestPristineTemplate(
-        join(workspaceRoot, "tmp", "fixture-harvest"),
+        join(workspaceRoot, ".scratch", "fixture-harvest"),
       );
       console.log(`Harvested from ${report.applicationDir}`);
       console.log(
@@ -240,10 +444,72 @@ const cli = yargs(hideBin(process.argv))
     },
   )
   .command(
-    "discard",
-    "delete the whole Fixture",
+    "samples",
+    "regenerate the web Workbench Sample Items",
     () => {},
     async () => {
+      const generated = await regenerateFixtureSampleItems(workspaceRoot);
+      console.log(
+        `Regenerated ${generated.length} Sample Items in packages/workbench/src/samples.`,
+      );
+    },
+  )
+  .command(
+    "bridge",
+    "build and serve the mock Local Bridge on loopback",
+    (y) =>
+      y
+        .option("port", {
+          describe: "loopback port",
+          type: "number",
+          default: 23_120,
+        })
+        .option("origin", {
+          describe: "approved Workbench Origin",
+          type: "string",
+          default: DOCS_DEV_SERVER_ORIGIN,
+        })
+        .option("conflict-next-save", {
+          describe: "make the next Profile save observe an external revision",
+          type: "boolean",
+          default: false,
+        }),
+    async (argv) => {
+      const pluginBundleDir = await findPluginBundle();
+      await buildFixture(layout, { pluginBundleDir });
+      const bridge = startMockLocalBridge({
+        layout,
+        allowedOrigin: argv.origin,
+        port: argv.port,
+        conflictNextSave: argv["conflict-next-save"],
+      });
+      console.log(
+        `Mock Local Bridge listening at ${localBridgeOrigin(argv.port)} for ${argv.origin}`,
+      );
+      console.log(`One-time code: ${bridge.initialOneTimeCode}`);
+    },
+  )
+  .command(
+    "stop",
+    "close the Paired Zotero that holds this Fixture, and wait until it releases the database",
+    () => {},
+    async () => {
+      const closed = await pairedRunPorts.stopLivePairedZotero();
+      console.log(
+        closed.length === 0
+          ? "No Paired Zotero holds this Fixture."
+          : `Closed the Paired Zotero: ${describeLive(closed)}`,
+      );
+    },
+  )
+  .command(
+    "discard",
+    "close the Paired Zotero that holds this Fixture, then delete the whole Fixture",
+    () => {},
+    async () => {
+      // Deleting the root under a live Zotero leaves it running on a profile
+      // that no longer exists, where no later stop can find it.
+      await pairedRunPorts.stopLivePairedZotero();
       await discardFixture(layout);
       console.log(`Deleted ${layout.root}`);
     },

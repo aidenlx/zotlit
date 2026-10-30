@@ -1,4 +1,6 @@
+import { Text } from "@codemirror/state";
 import { regex } from "arkregex";
+import { Effect } from "effect";
 import { EditorSuggest, Keymap } from "obsidian";
 import type {
   Editor,
@@ -8,13 +10,26 @@ import type {
   TFile,
 } from "obsidian";
 
+import type { CitationVariant } from "@zotlit/db";
+import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
+
+import { valueOr } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { CurrentAnswer } from "@/services/item-lookup/current-answer";
+import type { SearchSession } from "@/services/item-lookup/handle";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { InertTemplateError } from "@/services/template/errors";
+import {
+  isCitationCloser,
+  placeInsertion,
+} from "@/views/annot-view/async-insert";
 
+import { readDocumentCitedKeys } from "./document-citations";
 import type { CitationSuggestDeps } from "./register";
 
 const TRIGGER = regex("[\\[【]@([^\\]】]*)$");
@@ -25,8 +40,14 @@ const AT_TRIGGER = regex("(?:^|[\\s(\\[{（【「\"'])@([^\\s\\]】]*)$");
 
 export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   readonly #deps: CitationSuggestDeps;
-  /** Set in {@link onTrigger}: query ended with `/`, so render `cite2`. */
-  #secondary = false;
+  /** Set in {@link onTrigger}: the Citation Variant the open query asks for. */
+  #variant: CitationVariant = "main";
+  /** The searches of the open dropdown: its first search opens it, and {@link close} ends it. */
+  #session: SearchSession | null = null;
+  #lookupController?: AbortController;
+  #documentController?: AbortController;
+  #cited: Promise<readonly string[]> = Promise.resolve([]);
+  readonly #answer = new CurrentAnswer<SearchHit>(this.suggestEl);
 
   constructor(deps: CitationSuggestDeps) {
     super(deps.app);
@@ -35,8 +56,8 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_citation() },
-      { command: "/ ↵", purpose: m.instruction_insert_secondary_citation() },
-      { command: "⇧↵", purpose: m.instruction_insert_secondary_citation() },
+      { command: "/ ↵", purpose: m.instruction_insert_alternate_citation() },
+      { command: "⇧↵", purpose: m.instruction_insert_alternate_citation() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
     this.scope.register(["Shift"], "Enter", (evt) => {
@@ -50,17 +71,24 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     editor: Editor,
     _file: TFile | null,
   ): EditorSuggestTriggerInfo | null {
-    if (this.#deps.settings.current?.["citation.editor-suggester"] === false) {
+    if (
+      this.#deps.bridge.runSync(this.#deps.settings.current)[
+        "citation.editor-suggester"
+      ] === false
+    ) {
       return null;
     }
 
     const line = editor.getLine(cursor.line);
-    const atTrigger =
-      this.#deps.settings.current?.["citation.at-trigger"] ?? false;
-    const trigger = resolveCitationTrigger(line, cursor.ch, atTrigger);
+    const atTrigger = this.#deps.bridge.runSync(this.#deps.settings.current)[
+      "citation.at-trigger"
+    ];
+    const trigger = resolveCitationTrigger(line, cursor.ch, {
+      atTrigger,
+    });
     if (!trigger) return null;
 
-    this.#secondary = trigger.secondary;
+    this.#variant = trigger.variant;
 
     return {
       start: { line: cursor.line, ch: trigger.start },
@@ -69,66 +97,158 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     };
   }
 
-  override getSuggestions(
-    context: EditorSuggestContext,
-  ): SearchHit[] | Promise<SearchHit[]> {
-    return this.#deps.lookup.search(context.query, { limit: this.limit });
+  override getSuggestions(context: EditorSuggestContext): Promise<SearchHit[]> {
+    // Obsidian shows nothing for a `null` answer; `[]` would close the dropdown.
+    return this.#answer.track(this.#search(context)) as Promise<SearchHit[]>;
+  }
+
+  /** The hits for `context`, or `null` when a later keystroke superseded it. */
+  async #search(context: EditorSuggestContext): Promise<SearchHit[] | null> {
+    this.#lookupController?.abort();
+    const controller = new AbortController();
+    this.#lookupController = controller;
+    const source = `@${context.query}`;
+    const key = scanPandocCitations(source)[0]?.items[0];
+    if (key?.start === 0 && source.slice(key.end).trimStart().startsWith(",")) {
+      const answer = valueOr(
+        await this.#deps.bridge.runPromiseExit(
+          this.#deps.citationLookup.read({ citekeys: [key.citationKey] }).pipe(
+            recover(
+              (cause) =>
+                Effect.logDebug(
+                  "Locator lookup failed; closing citation suggestions",
+                ).pipe(
+                  Effect.annotateLogs({
+                    cause,
+                    citationKey: key.citationKey,
+                  }),
+                  withLogCategory("views", "citation-suggest"),
+                ),
+              Effect.succeed(null),
+            ),
+          ),
+          { signal: controller.signal },
+        ),
+        null,
+      );
+      if (controller.signal.aborted) return null;
+      if (answer === null) return [];
+      const found = answer.resolve(key.citationKey);
+      if (found.kind === "unique" || found.kind === "ambiguous") {
+        this.close();
+        return [];
+      }
+    }
+    if (!this.#session) {
+      this.#session = this.#deps.lookup.openSession();
+      this.#documentController = new AbortController();
+      this.#cited = readDocumentCitedKeys(
+        this.#deps,
+        context.file,
+        this.#documentController.signal,
+      );
+    }
+    const session = this.#session;
+    const cited = await this.#cited;
+    if (session !== this.#session) return [];
+    return session.search(context.query, { limit: this.limit, cited });
+  }
+
+  override close(): void {
+    this.#documentController?.abort();
+    this.#lookupController?.abort();
+    this.#session?.close();
+    this.#session = null;
+    this.#answer.close();
+    super.close();
   }
 
   override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
-    renderSearchHit(this.#deps.settings, hit, el);
+    renderSearchHit(this.#deps.settings, this.#deps.bridge, hit, el);
   }
 
   override selectSuggestion(
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): void {
+    this.#answer.choose(hit, evt, (chosen) => void this.#insert(chosen, evt));
+  }
+
+  async #insert(
+    hit: SearchHit,
+    evt: MouseEvent | KeyboardEvent,
+  ): Promise<void> {
     const context = this.context;
     if (!context) return;
 
-    const secondary = this.#secondary || Keymap.isModifier(evt, "Shift");
-    const outcome = resolveCitationInsert(this.#deps, hit, secondary);
+    const variant: CitationVariant =
+      this.#variant === "alt" || Keymap.isModifier(evt, "Shift")
+        ? "alt"
+        : "main";
+    const before = context.editor.getValue();
+    const outcome = await resolveCitationInsert(this.#deps, hit, variant);
+    if (!outcome || context.editor.getValue() !== before) return;
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);
       return;
     }
-    const line = context.editor.getLine(context.end.line);
-    const padded = padCitationInsert(outcome.text, line.charAt(context.end.ch));
-    context.editor.replaceRange(padded.text, context.start, context.end);
-    context.editor.setCursor(
-      context.editor.offsetToPos(
-        context.editor.posToOffset(context.start) + padded.cursor,
-      ),
-    );
+    commitCitationInsert(this.#deps, {
+      indexedKey: hit.item.indexedKey,
+      text: outcome.text,
+      insert: () =>
+        writeCitation(context.editor, outcome.text, {
+          from: context.start,
+          to: context.end,
+          replacesTrigger: true,
+        }),
+    });
   }
 }
 
-/** Editor-insert payload for a citation: replacement text plus cursor offset. */
-export interface PaddedCitationInsert {
-  /** Text replacing the trigger range (or selection). */
-  text: string;
-  /** Cursor position after the insert, as an offset from the replacement start. */
-  cursor: number;
+/**
+ * Write `citation` over `from`–`to` of `editor`, placed by the citation rule
+ * of {@link placeInsertion} against the note as it stands now, and leave the
+ * cursor where that rule puts it. `replacesTrigger` where the range is a
+ * trigger the researcher typed.
+ */
+export function writeCitation(
+  editor: Editor,
+  citation: string,
+  options: {
+    from: EditorPosition;
+    to: EditorPosition;
+    replacesTrigger?: boolean;
+  },
+): boolean {
+  const { from, to } = options;
+  const start = editor.posToOffset(from);
+  const { insert, cursor } = placeInsertion(citation, {
+    kind: "citation",
+    replacesTrigger: options.replacesTrigger,
+    doc: Text.of(editor.getValue().split("\n")),
+    range: { from: start, to: editor.posToOffset(to) },
+  });
+  editor.replaceRange(insert, from, to);
+  editor.setCursor(editor.offsetToPos(start + cursor));
+  return true;
 }
 
 /**
- * Pad an editor citation insert with its single trailing space: the document
- * always reads `citation` + one space at the cursor, reusing a space already
- * present at the insert position instead of doubling it. The space keeps the
- * inserted citation from re-matching a trigger — an alternate-format `@key`
- * at a word boundary would otherwise re-open the suggester.
- *
- * @param nextChar - the document character at the insert position (`""` at
- *   line end).
+ * Commit one resolved citation and record the Use only after the destination
+ * accepts nonempty text. The callback returns false when a stale destination
+ * writes nothing.
  */
-export function padCitationInsert(
-  citation: string,
-  nextChar: string,
-): PaddedCitationInsert {
-  return {
-    text: nextChar === " " ? citation : `${citation} `,
-    cursor: citation.length + 1,
-  };
+export function commitCitationInsert(
+  deps: Pick<CitationSuggestDeps, "useLedger" | "bridge">,
+  {
+    indexedKey,
+    text,
+    insert,
+  }: { indexedKey: string; text: string; insert: () => boolean },
+): boolean {
+  if (text.length === 0 || !insert()) return false;
+  deps.bridge.runSync(deps.useLedger.record(indexedKey, "cited"));
+  return true;
 }
 
 /** What selecting a suggestion does: insert `text`, or show `message`. */
@@ -143,55 +263,80 @@ export type CitationInsertOutcome =
  *
  * Returns the rendered citation to insert, or the notice message to show:
  * an item without a citekey, a citekey several Zotero Items answer to, a
- * resolution snapshot that has not answered yet, an inert cite template, or a
- * template not loaded yet. An Ambiguous Citation Key is refused rather than
+ * resolution snapshot that has not answered yet, an inert Citation Template,
+ * or a template not loaded yet. An Ambiguous Citation Key is refused rather than
  * inserted, because the inserted text carries the key alone and would lose the
  * identity the user picked here. A snapshot still resolving reports every key
  * as missing, so it is refused too rather than let an ambiguous key through
  * while the answer is pending. Errors other than {@link InertTemplateError}
- * propagate.
+ * propagate. Interruption returns null, so the editor reports no outcome.
  */
-export function resolveCitationInsert(
-  deps: Pick<CitationSuggestDeps, "noteFeature" | "citationIndex">,
-  hit: SearchHit,
-  secondary: boolean,
-): CitationInsertOutcome {
-  const citationKey =
-    "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
-  if (!citationKey) {
-    return {
-      kind: "notice",
-      message: m.notice_no_citekey({ key: hit.item.key }),
-    };
-  }
+export async function resolveCitationInsert(
+  deps: Pick<CitationSuggestDeps, "noteFeature" | "citationLookup" | "bridge">,
+  hit: Pick<SearchHit, "item">,
+  variant: CitationVariant,
+): Promise<CitationInsertOutcome | null> {
+  const exit = await deps.bridge.runPromiseExit(
+    Effect.gen(function* (): Effect.gen.Return<CitationInsertOutcome> {
+      const citationKey =
+        "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
+      if (!citationKey) {
+        return {
+          kind: "notice",
+          message: m.notice_no_citekey({ key: hit.item.key }),
+        };
+      }
 
-  // A pending snapshot has no verdict yet and would read an ambiguous key as
-  // missing. A held snapshot keeps its verdict while it revalidates or fails.
-  if (deps.citationIndex.resolution === null) {
-    return { kind: "notice", message: m.notice_citekey_not_ready() };
-  }
+      // A pending snapshot has no verdict yet and would read an ambiguous key as
+      // missing. A held snapshot keeps its verdict while it revalidates or fails.
+      if ((yield* deps.citationLookup.current).status === "pending") {
+        return { kind: "notice", message: m.notice_citekey_not_ready() };
+      }
 
-  if (deps.citationIndex.resolveCitekey(citationKey)?.kind === "ambiguous") {
-    return {
-      kind: "notice",
-      message: m.notice_citekey_ambiguous_insert({ citekey: citationKey }),
-    };
-  }
+      const lookup = yield* deps.citationLookup
+        .read({ citekeys: [citationKey] })
+        .pipe(
+          recover(
+            (cause) =>
+              Effect.logWarning(
+                "Citation lookup failed; insertion unavailable",
+              ).pipe(
+                Effect.annotateLogs({ cause, citationKey }),
+                withLogCategory("views", "citation-suggest"),
+              ),
+            Effect.succeed(null),
+          ),
+        );
+      if (!lookup)
+        return { kind: "notice", message: m.notice_citekey_not_ready() };
+      if (lookup.resolve(citationKey).kind === "ambiguous") {
+        return {
+          kind: "notice",
+          message: m.notice_citekey_ambiguous_insert({ citekey: citationKey }),
+        };
+      }
 
-  let rendered: string | null;
-  try {
-    rendered = deps.noteFeature.renderCitation(
-      [{ citationKey, item: hit.item }],
-      secondary,
-    );
-  } catch (e) {
-    if (!(e instanceof InertTemplateError)) throw e;
-    return { kind: "notice", message: e.message };
-  }
-  if (rendered === null) {
-    return { kind: "notice", message: m.notice_template_not_ready() };
-  }
-  return { kind: "insert", text: rendered };
+      return yield* Effect.try((): CitationInsertOutcome => {
+        const rendered = deps.noteFeature.renderCitation(
+          [{ citationKey, item: hit.item }],
+          variant,
+        );
+        return rendered === null
+          ? { kind: "notice", message: m.notice_template_not_ready() }
+          : { kind: "insert", text: rendered };
+      }).pipe(
+        Effect.catch(({ cause }) =>
+          cause instanceof InertTemplateError
+            ? Effect.succeed<CitationInsertOutcome>({
+                kind: "notice",
+                message: cause.message,
+              })
+            : Effect.die(cause),
+        ),
+      );
+    }),
+  );
+  return valueOr(exit, null);
 }
 
 /** Resolved inline trigger: ch offsets on the cursor line. */
@@ -202,8 +347,8 @@ export interface CitationTrigger {
   end: number;
   /** Search query (trailing `/` stripped; at-queries have `_` → space applied). */
   query: string;
-  /** Trailing `/` was present. */
-  secondary: boolean;
+  /** The Citation Variant the query asks for: `"alt"` when it ended with `/`. */
+  variant: CitationVariant;
 }
 
 /**
@@ -211,24 +356,37 @@ export interface CitationTrigger {
  * what query. Pure decision core for {@link CitationEditorSuggest.onTrigger}.
  * The Bracket Trigger (`[@`/`【@`, always on) is tried first; the At Trigger
  * (bare `@` at a word boundary) is only consulted when it doesn't match and
- * `atTrigger` is enabled.
+ * `atTrigger` is enabled. A comma after a known key starts locator editing;
+ * other queries keep their title-search punctuation and spaces.
  */
 export function resolveCitationTrigger(
   line: string,
   ch: number,
-  atTrigger: boolean,
+  {
+    atTrigger,
+    isKnownCitekey = () => false,
+  }: { atTrigger: boolean; isKnownCitekey?: (key: string) => boolean },
 ): CitationTrigger | null {
   const beforeCursor = line.slice(0, ch);
 
   const bracketMatch = TRIGGER.exec(beforeCursor);
   if (bracketMatch) {
     const raw = bracketMatch[1] ?? "";
-    const secondary = raw.endsWith("/");
+    const source = `@${raw}`;
+    const key = scanPandocCitations(source)[0]?.items[0];
+    if (
+      key?.start === 0 &&
+      source.slice(key.end).trimStart().startsWith(",") &&
+      isKnownCitekey(key.citationKey)
+    ) {
+      return null;
+    }
+    const alternate = raw.endsWith("/");
     return {
       start: bracketMatch.index,
       end: closingBracketAt(line, ch) ? ch + 1 : ch,
-      query: secondary ? raw.slice(0, -1) : raw,
-      secondary,
+      query: alternate ? raw.slice(0, -1) : raw,
+      variant: alternate ? "alt" : "main",
     };
   }
 
@@ -238,18 +396,17 @@ export function resolveCitationTrigger(
   if (!atMatch) return null;
 
   const raw = atMatch[1] ?? "";
-  const secondary = raw.endsWith("/");
-  const stripped = secondary ? raw.slice(0, -1) : raw;
+  const alternate = raw.endsWith("/");
+  const stripped = alternate ? raw.slice(0, -1) : raw;
 
   return {
     start: ch - raw.length - 1,
     end: ch,
     query: stripped.replaceAll("_", " "),
-    secondary,
+    variant: alternate ? "alt" : "main",
   };
 }
 
 function closingBracketAt(line: string, ch: number): boolean {
-  const next = line.charAt(ch);
-  return next === "]" || next === "】";
+  return isCitationCloser(line.charAt(ch));
 }

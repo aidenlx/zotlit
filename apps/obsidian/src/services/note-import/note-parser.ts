@@ -9,9 +9,7 @@ import {
   annotationOpenUri,
   attachmentToTemplateData,
   DEFAULT_LOCATOR_LABEL_SHORT,
-  getAttachmentByKey,
-  getItemsByKey,
-  getLibraryByGroupID,
+  formatIndexedKey,
   resolveCitedItem,
 } from "@zotlit/db";
 import type {
@@ -21,7 +19,6 @@ import type {
   ResolvedCiteRef,
   ZoteroRef,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, parseAttachmentPath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
@@ -34,9 +31,12 @@ import {
   encodeCalloutAttr,
 } from "@/lib/turndown";
 import { renderColorMark, renderHighlight } from "@/lib/turndown/color-mark";
-import type { ColorMarkKind } from "@/lib/turndown/color-mark";
 import type {
-  AttachmentImport,
+  ColorMarkKind,
+  HighlightOptions,
+} from "@/lib/turndown/color-mark";
+import type {
+  AttachmentImportBatch,
   SourceOrigin,
 } from "@/services/attachment-import/service";
 
@@ -53,12 +53,15 @@ import type { NoteAnnotation } from "./note-marks";
 const logger = getLogger(["note-import", "note-parser"]);
 
 /** Per-note dependencies wiring every DB/link-backed resolver in
- * {@link createNoteParser}. */
-export interface NoteParserDeps {
-  client: NodeDatabaseClient;
-  /** The note's library, scoping DB citekey and attachment lookups. */
-  libraryID: number;
-  useColoredHighlightSyntax: boolean;
+ * {@link createNoteParser}. The database rows arrive already read: the
+ * Turndown rules run synchronously. {@link noteReferences} names them. */
+export interface NoteParserDeps extends HighlightOptions {
+  /** The live Items the note cites, keyed by Indexed Key. */
+  citedItems: ReadonlyMap<string, Item>;
+  /** The note's group, or `null` in the personal library: a personal-library ref resolves here. */
+  groupID: number | null;
+  /** The note's embedded image attachments, keyed by attachment key. */
+  attachments: ReadonlyMap<string, Attachment>;
   /**
    * The note's embedded `data-citation-items` snapshot, read off the schema
    * container by {@link parseNote} and closed over by the
@@ -79,7 +82,7 @@ export interface NoteParserDeps {
    * Decides each resolved image against the canonical roots, copies an
    * approved one into the vault, and returns its embed link.
    */
-  attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+  attachmentImport: Pick<AttachmentImportBatch, "decide" | "resolveLink">;
 }
 
 /** Render cited items through the user's `cite` template. */
@@ -124,9 +127,13 @@ export function createNoteParser(
   Turndown: typeof TurndownService,
   deps: NoteParserDeps,
 ): TurndownService {
-  return createNoteTurndown(Turndown, {
+  const highlightOptions: HighlightOptions = {
     useColoredHighlightSyntax: deps.useColoredHighlightSyntax,
-    annotationExcerpt: resolveAnnotationExcerpt(deps.useColoredHighlightSyntax),
+    highlightMappings: deps.highlightMappings,
+  };
+  return createNoteTurndown(Turndown, {
+    ...highlightOptions,
+    annotationExcerpt: resolveAnnotationExcerpt(highlightOptions),
     citation: resolveCitation(deps),
     embeddedImage: resolveEmbeddedImage(deps),
   });
@@ -180,6 +187,70 @@ export function parseNote(
     citationSnapshots: parseEmbeddedItemSnapshots(schema.container),
   });
   return td.turndown(schema.container);
+}
+
+/** The database rows a supported note's conversion reads. */
+export interface NoteReferences {
+  /** Indexed Keys of the Items its citations name; see {@link citedIndexedKey}. */
+  citedIndexedKeys: string[];
+  /** Keys of the attachments its embedded images name. */
+  attachmentKeys: string[];
+}
+
+/**
+ * Name the rows the citation and embedded-image rules of {@link parseNote}
+ * read, so a caller can read them before the synchronous conversion. A note
+ * the Zotero rules do not convert names none.
+ */
+export function noteReferences(
+  html: string,
+  groupID: number | null,
+): NoteReferences {
+  const schema = parseNoteSchema(
+    new DOMParser().parseFromString(html, "text/html"),
+  );
+  if (!schema.supported) return { citedIndexedKeys: [], attachmentKeys: [] };
+  const citedIndexedKeys = [
+    ...schema.container.querySelectorAll("span.citation[data-citation]"),
+  ].flatMap((el) =>
+    (parseCitation(el)?.citationItems ?? []).flatMap(({ ref }) =>
+      ref ? [citedIndexedKey(ref, groupID)] : [],
+    ),
+  );
+  const attachmentKeys = [
+    ...schema.container.querySelectorAll("img[data-attachment-key]"),
+  ].flatMap((el) => el.getAttribute("data-attachment-key") || []);
+  return {
+    citedIndexedKeys: distinct(citedIndexedKeys),
+    attachmentKeys: distinct(attachmentKeys),
+  };
+}
+
+/**
+ * The Indexed Key a cited ref resolves to: the ref's group for a group-library
+ * ref, else the note's own library (`groupID`).
+ */
+export function citedIndexedKey(
+  ref: ZoteroRef,
+  groupID: number | null,
+): string {
+  return formatIndexedKey(
+    ref.key,
+    ref.libraryType === "group" && ref.groupID !== null ? ref.groupID : groupID,
+  );
+}
+
+/** Select the same live paragraphs as the final conversion, without executing templates. */
+export function noteAnnotationKeys(html: string): string[] {
+  const root = new DOMParser().parseFromString(html, "text/html");
+  const schema = parseNoteSchema(root);
+  return schema.supported
+    ? distinct(
+        [...findAnnotationParagraphs(schema.container)].map(
+          (p) => p.annotationKey,
+        ),
+      )
+    : [];
 }
 
 /**
@@ -243,12 +314,9 @@ function resolveCitation(
     const el = node as Element;
     const info = parseCitation(el);
     if (!info) return el.outerHTML;
-    const dbItems = fetchCitedDbItems(info.citationItems, deps);
     const items = info.citationItems.map((item) => {
       const dbItem = item.ref
-        ? dbItems.get(
-            dbItemMapKey(citedLibraryID(item.ref, deps), item.ref.key),
-          )
+        ? deps.citedItems.get(citedIndexedKey(item.ref, deps.groupID))
         : undefined;
       const citationKey = resolveCitekey(item, dbItem, deps.citationMap);
       return {
@@ -269,39 +337,6 @@ function resolveCitation(
     if (items.every((item) => item.citationKey === null)) return el.outerHTML;
     return deps.renderCite(items).trim();
   };
-}
-
-/**
- * Fetch every cited item's live DB row up front, grouped by the cited
- * library so a mark citing items across libraries (a cross-library
- * citation) issues one `getItemsByKey` call per library rather than one per
- * item. Items with no parseable ref (malformed URI) are skipped — they
- * resolve through the embedded-snapshot/sentinel path only.
- */
-function fetchCitedDbItems(
-  citationItems: readonly CitationItem[],
-  deps: Pick<NoteParserDeps, "client" | "libraryID">,
-): ReadonlyMap<string, Item> {
-  const keysByLibrary = new Map<number, string[]>();
-  for (const { ref } of citationItems) {
-    if (!ref) continue;
-    const libraryID = citedLibraryID(ref, deps);
-    const keys = keysByLibrary.get(libraryID);
-    if (keys) keys.push(ref.key);
-    else keysByLibrary.set(libraryID, [ref.key]);
-  }
-  const items = new Map<string, Item>();
-  for (const [libraryID, keys] of keysByLibrary) {
-    const rows = getItemsByKey(deps.client, libraryID, keys) ?? [];
-    for (const item of rows) {
-      items.set(dbItemMapKey(libraryID, item.key), item);
-    }
-  }
-  return items;
-}
-
-function dbItemMapKey(libraryID: number, key: string): string {
-  return `${libraryID}:${key}`;
 }
 
 /**
@@ -380,25 +415,6 @@ function findEmbeddedSnapshot(
 }
 
 /**
- * Resolve the library a cited ref's key must be looked up in: the note's own
- * library for a user-library ref, else the library backing the ref's group
- * (a cross-library citation, e.g. a personal-library note citing a group
- * item). Falls back to the note's library when the group can't be resolved
- * (not yet synced locally), matching the DB-miss → embedded → sentinel chain
- * that already handles an unresolvable citekey.
- */
-function citedLibraryID(
-  ref: ZoteroRef,
-  deps: Pick<NoteParserDeps, "client" | "libraryID">,
-): number {
-  if (ref.libraryType !== "group" || ref.groupID === null)
-    return deps.libraryID;
-  return (
-    getLibraryByGroupID(deps.client, ref.groupID)?.libraryID ?? deps.libraryID
-  );
-}
-
-/**
  * Resolve a highlight/underline excerpt span to its linked inline mark.
  * Supported highlights can use Colored Highlight Syntax; underlines and
  * fallback highlights use linked HTML. Only spans reach this replacement
@@ -406,7 +422,7 @@ function citedLibraryID(
  * keeps the converted text.
  */
 function resolveAnnotationExcerpt(
-  useColoredHighlightSyntax: boolean,
+  options: HighlightOptions,
 ): TurndownService.ReplacementFunction {
   return (content, node) => {
     const el = node as Element;
@@ -420,7 +436,7 @@ function resolveAnnotationExcerpt(
     const kind = el.classList.contains("underline") ? "underline" : "highlight";
     return renderAnnotationMark(info, content, {
       kind,
-      useColoredHighlightSyntax,
+      ...options,
     });
   };
 }
@@ -433,7 +449,7 @@ function resolveEmbeddedImage(
     const key = el.getAttribute("data-attachment-key");
     if (!key) return el.outerHTML;
 
-    const attachment = getAttachmentByKey(deps.client, key, deps.libraryID);
+    const attachment = deps.attachments.get(key);
     if (!attachment) {
       logger.warn("Embedded image attachment not found", { key });
       return el.outerHTML;
@@ -493,15 +509,15 @@ function attachmentPathOrigin(attachment: Attachment): SourceOrigin {
 function renderAnnotationMark(
   info: NoteAnnotation,
   text: string,
-  options: { kind: ColorMarkKind; useColoredHighlightSyntax: boolean },
+  options: { kind: ColorMarkKind } & HighlightOptions,
 ): string {
-  const { kind, useColoredHighlightSyntax } = options;
+  const { kind } = options;
   const color = info.color
     ? { raw: info.color, name: annotationColorToName(info.color) }
     : null;
   const mark =
     kind === "highlight"
-      ? renderHighlight(text, color, useColoredHighlightSyntax)
+      ? renderHighlight(text, color, options)
       : renderColorMark(kind, text, color);
   const href = annotationHref(info);
   return href ? `[${mark}](${href})` : mark;

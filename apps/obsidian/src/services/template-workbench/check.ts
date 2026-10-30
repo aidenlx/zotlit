@@ -1,0 +1,1003 @@
+// Saved-source checking and attempt retention. Output flags only disclose completed work.
+import { Clock, Effect, FileSystem, Result, Schema } from "effect";
+import type { PlatformError } from "effect";
+import { randomUUID } from "node:crypto";
+import { isAbsolute } from "node:path";
+import type { CliData, CliFlag } from "obsidian";
+
+import type { CitationVariant } from "@zotlit/db";
+import { renderDiagnostic } from "@zotlit/item-query";
+import {
+  captureRenderReport,
+  renderIdentity,
+  isCitationExampleId,
+} from "@zotlit/workbench/render";
+import type {
+  RenderDiagnostic,
+  PartialContext,
+} from "@zotlit/workbench/render";
+
+import {
+  catchRejection,
+  cliDefault,
+  cliIndexedKey,
+  cliLiterals,
+  cliMap,
+  cliMaybeEmpty,
+  cliNotApplicable,
+  cliOneOf,
+  cliParams,
+  cliRule,
+  cliText,
+  cliVariants,
+  decodeCliParams,
+  expectSourceParam,
+  amendRejection,
+} from "@/lib/cli-params";
+import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
+import { instantClock } from "@/lib/effect-clock";
+import { Profile } from "@/services/profile/service";
+import { PROFILE_OUTPUTS } from "@/views/note-preview/check-profile";
+import type { ProfileCheck } from "@/views/note-preview/check-profile";
+
+import { selectCheckBaseline } from "./check-baseline";
+import {
+  checkPlainDocument,
+  RESERVED_PARTIAL_NAME,
+} from "./check-plain-document";
+import {
+  checkProfileDocument,
+  INVALID_PROFILE_ID,
+  PROFILE_ID_MISMATCH,
+} from "./check-profile-document";
+import { readTemplateData } from "./data";
+import type { TemplateDataServices } from "./data";
+import { CONTRACT_VERSION, rejectionDiagnostic } from "./envelope";
+import { createInspectHandler, sourceRevision } from "./inspect";
+import type {
+  InspectDocument,
+  InspectServices,
+  SourceVersion,
+} from "./inspect";
+import {
+  choices,
+  CITATION_EXAMPLE_NAMES,
+  CITATION_VARIANT_NAMES,
+  PARTIAL_CONTEXT_NAMES,
+} from "./vocabulary";
+
+export const TEMPLATE_CHECK_COMMAND = "zotlit:template-check";
+/** How many finished attempts stay readable; the oldest is evicted beyond it. */
+const RETAINED_ATTEMPTS = 32;
+const ATTEMPT_LOOKUP_HELP =
+  "Keep the same vault prefix. Use only attempt, output, and evidence for a retained lookup; omit expect-source and all input selectors. Example: zotlit:template-check attempt=<id> evidence=full output=all. The retained result carries the original source identity.";
+export const checkFlags = {
+  root: {
+    value: choices(PARTIAL_CONTEXT_NAMES),
+    description: "Shared Partial caller root; required for partial rendering",
+  },
+  example: {
+    value: "<example-id>",
+    description: "Built-in Citation example instead of key",
+  },
+  variant: {
+    value: choices(CITATION_VARIANT_NAMES),
+    description: "Citation Variant; defaults to main",
+  },
+  mode: {
+    value: "<create|update>",
+    description: "Operation to check; defaults to create",
+  },
+  note: {
+    value: "<vault-path>",
+    description: "Update baseline: select one matching Literature Note",
+  },
+  existing: {
+    value: "<text>",
+    description: "Update baseline: supplied note text, checked in memory",
+  },
+  profile: {
+    value: "<id-or-label>",
+    description:
+      "Saved Profile or default; update follows the baseline stamp when omitted",
+  },
+  document: {
+    value: "<path-or-reference>",
+    description:
+      "Profile, citation, or partial:<name>; also identifies a plain draft",
+  },
+  draft: {
+    value: "<absolute-path>",
+    description:
+      "Read complete Profile source from a scratch file; profile asserts its identity",
+  },
+  key: {
+    value: "<indexed-key>",
+    description: "Real item to render; omit for structural validation only",
+  },
+  output: {
+    value: `<${PROFILE_OUTPUTS.join(",")},citation,partial|all>`,
+    description:
+      "Comma-separated complete outputs to disclose; default compact",
+  },
+  attempt: {
+    value: "<id>",
+    description: `Read a retained attempt without rerunning it. ${ATTEMPT_LOOKUP_HELP}`,
+  },
+  evidence: {
+    value: "full",
+    description: "Include original engine reports from this attempt",
+  },
+  "expect-source": {
+    value: "<source-id>",
+    description:
+      "Zotero source identity assertion for a new check; omit for retained attempt lookups",
+  },
+} satisfies Record<CheckParam, CliFlag>;
+export const CHECK_GUIDE = `TEMPLATE CHECK
+
+  obsidian ${TEMPLATE_CHECK_COMMAND} [profile=<id-or-label>] [key=<indexed-key>] [output=all]
+  obsidian ${TEMPLATE_CHECK_COMMAND} draft=/absolute/path/draft.md [profile=<id-or-label>] [key=<indexed-key>]
+  obsidian ${TEMPLATE_CHECK_COMMAND} attempt=<id> evidence=full [output=all]
+
+  Checks saved Profile source and dependencies, then all operation components.
+  draft reads a complete document from a scratch file, without installing or saving it.
+  With profile, the draft ID must match that Profile. Without profile, its manifest
+  supplies a standalone identity. Draft bindings inherit current Default settings.
+  Saved source is the default. Editor source is selected explicitly by template-inspect;
+  to check unsaved edits, write them to a scratch file and supply draft.
+  Create mode renders a complete new note and reads no existing note as a baseline.
+  When the item has a Literature Note, its first indexed note supplies zt.notePath,
+  zt.noteLink, and the source path that resolves links and attachments.
+  A second note of the same item is never read.
+  Use mode=update key=<indexed-key> to read the item's real Literature Note.
+  Multiple notes require note=<vault-path>. existing=<text> supplies a controlled
+  in-memory baseline. An item without a note uses a labeled synthetic baseline.
+  Update follows the baseline's Profile stamp; an explicit Profile or document
+  previews a proposed change. Baseline path, revision, stamp, and selected Profile
+  identify the inputs. Body and frontmatter outputs show the final update fold.
+  Static bodies remain unchanged. Failed fields or invalid blocks refuse the operation.
+  No check writes notes, changes Profiles, or imports attachments.
+  Omit key for structural validation; rendering is explicitly not checked.
+  Every response includes every component status. output changes disclosure only.
+  Citation Templates use document=citation with key or example and variant=${CITATION_VARIANT_NAMES.join("|")}.
+  Shared Partials use document=partial:<name> and root=${PARTIAL_CONTEXT_NAMES.join("|")}.
+  Note and Annotation callers select key. Citation callers select key or example.
+  Direct partial checks use the selected Profile's bindings, or Default. Partials
+  called by a Profile draft use that draft's bindings. Supply document with draft
+  to identify plain draft source, which stays uninstalled.
+  An empty rendered string is a successful output. Any component failure fails the check.
+  A refused document identity is not a failed check, and the answer says which one it is.
+  ${RESERVED_PARTIAL_NAME} is raised before the source is parsed and carries no checks; none ran.
+  ${INVALID_PROFILE_ID} and ${PROFILE_ID_MISMATCH} are raised from parsing and carry the checks map with the failed check.
+  Each run receives a new attempt ID. The last ${RETAINED_ATTEMPTS} attempts remain available until
+  plugin reload. Reading an expired attempt reports ATTEMPT_NOT_FOUND.
+
+RETAINED ATTEMPTS
+  ${ATTEMPT_LOOKUP_HELP}
+
+FLAGS
+${Object.entries(checkFlags)
+  .map(([name, flag]) => `  ${name}: ${flag.description}`)
+  .join("\n")}`;
+
+/** The inspection fields a check answer repeats, beside the source itself. */
+export interface InspectedAnswer {
+  ok?: boolean;
+  /** The inspection's own refusal, which a check branch forwards unchanged. */
+  diagnostic?: FaultDiagnostic;
+  document?: InspectDocument;
+  input?: { revision: string; path: string | null; origin: string };
+  freshness?: { state: string; versions: SourceVersion[] };
+  [key: string]: unknown;
+}
+
+export interface InspectedSource extends InspectedAnswer {
+  source?: string;
+}
+
+/**
+ * What one check phase hands to the answer assembly: the inspection fields the
+ * answer repeats, and the evidence a Check Attempt and a render report read. A
+ * phase extends it by value and passes the extension on, so the answer never
+ * reads state a distant branch wrote.
+ */
+export interface CheckContext {
+  readonly answer: Readonly<InspectedAnswer>;
+  /** Checked source text the render report fingerprints. */
+  readonly source: string;
+  /** Fingerprint of the data a render read; empty until data is loaded. */
+  readonly dataRevision: string;
+  /** Template language the report context names. */
+  readonly language?: string;
+  /** Document path or ID the report context names. */
+  readonly documentPath?: string;
+  /** Caller root the report context names. */
+  readonly root: string;
+  /** Whether the checked document is a Shared Partial. */
+  readonly partial: boolean;
+  /** Profile selector a partial render report names. */
+  readonly profileSelector?: string;
+  /** Indexed key the baseline block reports. */
+  readonly itemKey: string;
+  readonly baseline?: Extract<
+    Effect.Success<ReturnType<typeof selectCheckBaseline>>,
+    { ok: true }
+  >;
+  /** Profile the baseline block reports. */
+  readonly selectedProfile?: { id: string; label: string };
+}
+
+export interface CheckDeps {
+  pluginVersion: string;
+  hostVersion: string;
+}
+
+/** What a check reads: the inspection's services and the item data's. */
+export type CheckServices =
+  | InspectServices
+  | TemplateDataServices
+  | FileSystem.FileSystem;
+
+/**
+ * The message of what the draft read threw, as Node's own `readFile` gave it:
+ * the CLI shows it in `DRAFT_READ_FAILED`.
+ */
+const draftReadMessage = (error: PlatformError.PlatformError): string =>
+  error.cause instanceof Error
+    ? error.cause.message
+    : (error.reason.description ?? error.message);
+
+/** A command's answer to the caller's parameters, over the services it reads. */
+type CheckHandler<R> = (params: CliData) => Effect.Effect<string, unknown, R>;
+
+/** Attaches the attempt's render report to one diagnostic the branch raises. */
+type AttachReport = <
+  T extends RenderDiagnostic & {
+    annotation?: { key: string; revision?: string };
+  },
+>(
+  context: CheckContext,
+  diagnostic: T,
+) => T & { report: ReturnType<typeof captureRenderReport> };
+
+/**
+ * A refusal answer body. `hint` is required because the Workbench Guide tells a
+ * caller that a failed check answers with `diagnostic.hint`, so a branch that
+ * refuses without one loses the repair instruction the caller acts on.
+ */
+export interface CheckFault {
+  ok: false;
+  diagnostic: FaultDiagnostic;
+  [field: string]: unknown;
+}
+
+/** The fault a refusal reports. A promoted render diagnostic says the whole
+ *  thing through `code` and `params`, so only `hint` is unconditional. */
+export interface FaultDiagnostic {
+  code: string;
+  message?: string;
+  hint: string;
+  [field: string]: unknown;
+}
+
+/**
+ * One answer body: a refusal carrying its hint, or an answer that raises no
+ * top-level diagnostic at all — a passing check, or a failed check whose causes
+ * stay in the `checks` map. The second arm admits no `diagnostic`, so a branch
+ * that raises one reaches this type only through {@link CheckFault}, with its
+ * hint.
+ */
+export type CheckAnswerBody =
+  | CheckFault
+  | { diagnostic?: undefined; [field: string]: unknown };
+
+/**
+ * What one document branch returns: the answer context it built, and the answer
+ * body the entry module merges onto it. The entry module makes the single
+ * `finish` call, so no branch can assemble an answer twice.
+ */
+export interface CheckOutcome {
+  context: CheckContext;
+  result: CheckAnswerBody;
+}
+
+/**
+ * What the entry module hands one document branch: the parsed request, the
+ * acquired source with its inspection, and the render-report closure the entry
+ * module owns.
+ */
+export interface CheckBranch {
+  params: CheckRequest;
+  mode: "create" | "update";
+  draft: { source: string; path: string } | undefined;
+  /** Reruns the source inspection to detect a superseded source. */
+  inspect: CheckHandler<InspectServices>;
+  inspectRequest: CliData;
+  inspected: InspectedSource;
+  /** Checked source text, acquired before the branch runs. */
+  source: string;
+  context: CheckContext;
+  attachReport: AttachReport;
+}
+
+/**
+ * A {@link CheckBranch} carrying the inspected document the entry module's kind
+ * guard established, so the Profile branch reads it without asserting it.
+ */
+export interface ProfileCheckBranch extends CheckBranch {
+  inspectedDocument: InspectDocument;
+}
+
+/**
+ * A {@link CheckBranch} carrying the caller root the entry module's flag guards
+ * derived, so the plain branch selects data with the root those guards accepted.
+ */
+export interface PlainCheckBranch extends CheckBranch {
+  /** Caller root the request selected; undefined when the request named none. */
+  root: string | undefined;
+}
+
+const INVALID_CHECK_REQUEST =
+  "The request names an unknown flag, or a value this command does not accept.";
+const INVALID_CHECK_HINT =
+  "Use help zotlit:template-check for accepted selectors and disclosure flags, then run the check again.";
+
+const selector = Schema.optionalKey(cliText(INVALID_CHECK_REQUEST));
+
+const OUTPUT_NAMES: readonly string[] = [
+  "all",
+  ...PROFILE_OUTPUTS,
+  "citation",
+  "partial",
+];
+
+const ATTEMPT_LOOKUP_MESSAGE =
+  "An attempt lookup takes only attempt, output, and evidence.";
+
+/** What a check discloses, for a new check and a retained attempt alike. */
+const disclosure = {
+  output: Schema.optionalKey(
+    Schema.String.pipe(cliMap((names) => names.split(","))).check(
+      Schema.makeFilter(
+        (names: readonly string[]) =>
+          names.every((name) => OUTPUT_NAMES.includes(name)) ||
+          INVALID_CHECK_REQUEST,
+      ),
+    ),
+  ),
+  evidence: Schema.optionalKey(cliLiterals(["full"], INVALID_CHECK_REQUEST)),
+};
+
+const notInLookup = cliNotApplicable(ATTEMPT_LOOKUP_MESSAGE);
+
+/** The parameters an attempt lookup takes; {@link notInLookup} rejects the rest. */
+const LOOKUP_PARAMETERS = new Set(["attempt", ...Object.keys(disclosure)]);
+
+/**
+ * Whether `rejection` is {@link notInLookup}'s: a lookup whose decode refused a
+ * parameter it does not take. A token no check takes, or an empty value, is
+ * refused before the decode and carries no `issue`.
+ */
+function isNotInLookup(cliData: CliData, rejection: CliRejection): boolean {
+  return (
+    cliData.attempt !== undefined &&
+    rejection.issue !== undefined &&
+    !LOOKUP_PARAMETERS.has(rejection.parameter)
+  );
+}
+
+/** The Template a check renders and the data it reads, in either mode. */
+const renderSelection = {
+  root: Schema.optionalKey(
+    cliLiterals(PARTIAL_CONTEXT_NAMES, INVALID_CHECK_REQUEST),
+  ),
+  example: Schema.optionalKey(
+    cliLiterals(CITATION_EXAMPLE_NAMES, INVALID_CHECK_REQUEST),
+  ),
+  variant: Schema.optionalKey(
+    cliLiterals(CITATION_VARIANT_NAMES, INVALID_CHECK_REQUEST),
+  ),
+};
+
+/** The Profile, installed document, or draft a check reads its source from. */
+const sourceSelection = {
+  profile: selector,
+  document: selector,
+  draft: selector,
+};
+
+const indexedKey = cliText(INVALID_CHECK_REQUEST).check(
+  cliIndexedKey(INVALID_CHECK_REQUEST),
+);
+
+/** A check reads a Zotero object by key, or a built-in Citation set, not both. */
+const oneObject = cliOneOf<{ key?: string; example?: string }>(
+  ["key", "example"],
+  { many: INVALID_CHECK_REQUEST },
+);
+
+const notInCreate = cliNotApplicable(INVALID_CHECK_REQUEST);
+
+/**
+ * A retained attempt reads only its disclosure; a create check renders a new
+ * note; an update check reads its baseline from the item's note, from one
+ * note path, or from supplied text.
+ */
+const checkParams = cliVariants(
+  ({ attempt, mode, note, existing }) =>
+    attempt !== undefined
+      ? "lookup"
+      : mode === "update" || note !== undefined || existing !== undefined
+        ? "update"
+        : "create",
+  {
+    lookup: cliParams({
+      attempt: cliText(INVALID_CHECK_REQUEST),
+      root: notInLookup,
+      example: notInLookup,
+      variant: notInLookup,
+      mode: notInLookup,
+      note: notInLookup,
+      existing: notInLookup,
+      profile: notInLookup,
+      document: notInLookup,
+      draft: notInLookup,
+      key: notInLookup,
+      "expect-source": notInLookup,
+      ...disclosure,
+    }),
+    create: cliParams({
+      mode: cliDefault(
+        cliLiterals(["create"], INVALID_CHECK_REQUEST),
+        "create",
+      ),
+      note: notInCreate,
+      existing: notInCreate,
+      ...renderSelection,
+      ...sourceSelection,
+      key: Schema.optionalKey(indexedKey),
+      ...disclosure,
+      "expect-source": expectSourceParam,
+    }).check(oneObject),
+    update: cliParams(
+      {
+        mode: cliLiterals(["update"], INVALID_CHECK_REQUEST),
+        note: selector,
+        existing: cliMaybeEmpty(),
+        ...renderSelection,
+        ...sourceSelection,
+        key: indexedKey,
+        ...disclosure,
+        "expect-source": expectSourceParam,
+      },
+      { mode: INVALID_CHECK_REQUEST, key: INVALID_CHECK_REQUEST },
+    ).check(
+      oneObject,
+      // An update baseline comes from one note, or from supplied text.
+      cliRule(
+        "existing",
+        ({ note, existing }: { note?: string; existing?: string }) =>
+          note === undefined || existing === undefined,
+        INVALID_CHECK_REQUEST,
+      ),
+    ),
+  },
+);
+
+/**
+ * A refusal with the Diagnostic Report the other Workbench commands carry. A
+ * promoted render diagnostic keeps its render report under `report` and the
+ * editor's own vocabulary, so it stays as it is.
+ */
+function reported(diagnostic: FaultDiagnostic): FaultDiagnostic {
+  if ("report" in diagnostic || typeof diagnostic.message !== "string")
+    return diagnostic;
+  return {
+    ...diagnostic,
+    ...renderDiagnostic({
+      code: diagnostic.code,
+      message: diagnostic.message,
+      hint: diagnostic.hint,
+    }),
+  };
+}
+
+/** A decoded `template-check` request. */
+export type CheckRequest = CliOutput<typeof checkParams>;
+type CheckParam = CliParamName<typeof checkParams>;
+
+export function createCheckHandler(
+  deps: CheckDeps,
+): CheckHandler<CheckServices> {
+  const attempts = new Map<string, object>();
+  let sequence = 0;
+  return Effect.fn("TemplateWorkbenchCli.check")(
+    function* (cliData: CliData) {
+      const params = yield* decodeCliParams(cliData, checkParams, {
+        command: "template-check",
+      }).pipe(
+        Effect.mapError((rejection) =>
+          isNotInLookup(cliData, rejection)
+            ? amendRejection(rejection, {
+                hint: rejection.hint ?? ATTEMPT_LOOKUP_HELP,
+              })
+            : rejection,
+        ),
+      );
+      const output = params.output ?? [];
+      const answer = (result: object) => {
+        // Construct a separate disclosure tree so retained attempts keep all outputs.
+        const copy = JSON.parse(JSON.stringify(result)) as {
+          checks?: Record<string, ProfileCheck>;
+          diagnostic?: { evidence?: unknown; report?: unknown };
+        };
+        if (params.evidence !== "full") {
+          for (const check of Object.values(copy.checks ?? {})) {
+            for (const diagnostic of check.diagnostics) {
+              Reflect.deleteProperty(diagnostic, "evidence");
+              Reflect.deleteProperty(diagnostic, "report");
+            }
+            if (Array.isArray(check.output)) {
+              for (const annotation of check.output) {
+                if (annotation?.check?.diagnostics)
+                  for (const diagnostic of annotation.check.diagnostics) {
+                    delete diagnostic.evidence;
+                    delete diagnostic.report;
+                  }
+              }
+            }
+          }
+          if (copy.diagnostic) {
+            delete copy.diagnostic.evidence;
+            // An array is the Diagnostic Report, which every disclosure keeps.
+            if (!Array.isArray(copy.diagnostic.report))
+              delete copy.diagnostic.report;
+          }
+        }
+        const outputs = Object.fromEntries(
+          Object.entries(copy.checks ?? {})
+            .filter(([name]) => output.includes("all") || output.includes(name))
+            .map(([name, check]) => [name, check.output]),
+        );
+        for (const check of Object.values(copy.checks ?? {}))
+          delete check.output;
+        return JSON.stringify({
+          ...copy,
+          ...(Object.keys(outputs).length ? { outputs } : {}),
+        });
+      };
+      const fail = (code: string, message: string, hint: string) =>
+        answer({
+          contractVersion: CONTRACT_VERSION,
+          command: TEMPLATE_CHECK_COMMAND,
+          ok: false,
+          diagnostic: renderDiagnostic({ code, message, hint }),
+        });
+      if ("attempt" in params) {
+        const retained = attempts.get(params.attempt);
+        return retained
+          ? answer(retained)
+          : fail(
+              "ATTEMPT_NOT_FOUND",
+              "This attempt is unavailable.",
+              "Run a new check to obtain a new attempt ID.",
+            );
+      }
+      const { mode } = params;
+      const attempt = randomUUID();
+      const attemptSequence = ++sequence;
+      const capturedAt = instantClock(yield* Clock.Clock)().toString();
+      // Source acquisition extends this before either document branch takes over.
+      let sourceContext: CheckContext = {
+        answer: {},
+        source: "",
+        dataRevision: "",
+        root: "note",
+        partial: false,
+        itemKey: params.key as string,
+      };
+      const reportContext = (context: CheckContext) => ({
+        document: context.documentPath,
+        language: context.language,
+        root: context.root,
+        selection:
+          typeof params.key === "string"
+            ? params.key
+            : (params.example as string | undefined),
+        zotlitVersion: deps.pluginVersion,
+        hostVersion: deps.hostVersion,
+      });
+      const attachReport = <
+        T extends RenderDiagnostic & {
+          annotation?: { key: string; revision?: string };
+        },
+      >(
+        context: CheckContext,
+        diagnostic: T,
+      ) => ({
+        ...diagnostic,
+        report: captureRenderReport({
+          diagnostic,
+          identity: {
+            ...renderIdentity({
+              source: context.source,
+              snapshot: context.dataRevision
+                ? { revision: context.dataRevision }
+                : null,
+              mode,
+            }),
+            ...(context.root === "citation"
+              ? {
+                  citationVariant: (params.variant ??
+                    "main") as CitationVariant,
+                  ...(typeof params.example === "string" &&
+                  isCitationExampleId(params.example)
+                    ? { citationExample: params.example }
+                    : {}),
+                }
+              : {}),
+            ...(context.partial
+              ? {
+                  partialContext: context.root as PartialContext,
+                  partialProfile:
+                    context.profileSelector ?? params.profile ?? "default",
+                }
+              : {}),
+            ...(diagnostic.annotation
+              ? {
+                  annotationId: diagnostic.annotation.key,
+                  annotationRevision: diagnostic.annotation.revision,
+                }
+              : {}),
+          },
+          trigger: "explicit",
+          sequence: attemptSequence,
+          capturedAt,
+          context: {
+            ...reportContext(context),
+            ...(diagnostic.annotation
+              ? { root: "annotation", selection: diagnostic.annotation.key }
+              : {}),
+          },
+        }),
+      });
+      const finish = (context: CheckContext, result: CheckAnswerBody) => {
+        const merged: object = {
+          ...context.answer,
+          ...result,
+          ...(result.diagnostic
+            ? { diagnostic: reported(result.diagnostic) }
+            : {}),
+        };
+        const { checks } = merged as { checks?: Record<string, ProfileCheck> };
+        // The checks map a branch returns stays the branch's own record, so the
+        // attempt reports go into a copy rather than into that record.
+        const answered: object = checks
+          ? {
+              ...merged,
+              checks: Object.fromEntries(
+                Object.entries(checks).map(([name, check]) => [
+                  name,
+                  {
+                    ...check,
+                    diagnostics: check.diagnostics.map((diagnostic) => ({
+                      ...diagnostic,
+                      ...attachReport(context, diagnostic),
+                    })),
+                  },
+                ]),
+              ),
+            }
+          : merged;
+        const { baseline, selectedProfile } = context;
+        const retained = {
+          ...answered,
+          command: TEMPLATE_CHECK_COMMAND,
+          contractVersion: CONTRACT_VERSION,
+          attempt,
+          attemptContext: {
+            sequence: attemptSequence,
+            capturedAt,
+            mode,
+            sourceRevision: context.source
+              ? sourceRevision(context.source)
+              : null,
+            dataRevision: context.dataRevision || null,
+            ...reportContext(context),
+          },
+          ...(baseline
+            ? {
+                baseline: {
+                  kind: baseline.kind,
+                  indexedKey: context.itemKey,
+                  path: baseline.path,
+                  revision:
+                    baseline.source === null
+                      ? null
+                      : sourceRevision(baseline.source),
+                  profile: {
+                    id:
+                      baseline.stamp?.id ?? (baseline.stamp ? null : "default"),
+                    stamp: baseline.stamp?.stamp ?? null,
+                  },
+                },
+                selectedProfile,
+                proposedProfileChange:
+                  baseline.kind !== "synthetic" &&
+                  selectedProfile !== undefined &&
+                  selectedProfile.id !==
+                    (baseline.stamp?.id ?? (baseline.stamp ? null : "default")),
+                operation: {
+                  outcome: (answered as { ok?: boolean }).ok
+                    ? "previewed"
+                    : "refused",
+                },
+              }
+            : {}),
+          request: {
+            profile: params.profile,
+            document: params.document,
+            draft: params.draft,
+            key: params.key,
+            root: params.root,
+            variant: params.variant,
+            example: params.example,
+            mode,
+            note: params.note,
+          },
+        };
+        attempts.set(attempt, JSON.parse(JSON.stringify(retained)) as object);
+        if (attempts.size > RETAINED_ATTEMPTS)
+          attempts.delete(attempts.keys().next().value!);
+        return answer(retained);
+      };
+      let draft: { source: string; path: string } | undefined;
+      if (typeof params.draft === "string") {
+        const input = { origin: "draft", path: params.draft, revision: null };
+        sourceContext = { ...sourceContext, documentPath: params.draft };
+        const path = params.draft;
+        const fs = yield* FileSystem.FileSystem;
+        const read = yield* Effect.result(
+          isAbsolute(path)
+            ? fs
+                .readFileString(path)
+                .pipe(Effect.mapError((error) => draftReadMessage(error)))
+            : Effect.fail("Use an absolute scratch-file path for draft."),
+        );
+        if (Result.isFailure(read)) {
+          return finish(sourceContext, {
+            ok: false,
+            input,
+            diagnostic: {
+              code: "DRAFT_READ_FAILED",
+              message: read.failure,
+              hint: "Write a complete Profile document to a readable scratch file and supply its absolute path as draft.",
+            },
+          });
+        }
+        draft = { source: read.success, path };
+        sourceContext = { ...sourceContext, source: draft.source };
+      }
+      if (mode === "update") {
+        // Any failure to read the baseline refuses the check.
+        const refused = yield* Effect.gen(function* () {
+          const parent = yield* readTemplateData(
+            sourceContext.itemKey,
+            "filename",
+          );
+          if (
+            parent.kind !== "data" ||
+            !("indexedKey" in parent.data) ||
+            typeof parent.data.indexedKey !== "string"
+          )
+            return finish(sourceContext, {
+              ok: false,
+              diagnostic: {
+                code: "TARGET_NOT_FOUND",
+                message: "The selected Zotero item is unavailable.",
+                hint: "Select an existing item, attachment, annotation, or child-note key and run the check again.",
+              },
+            });
+          sourceContext = {
+            ...sourceContext,
+            itemKey: parent.data.indexedKey,
+          };
+          const selected = yield* selectCheckBaseline({
+            key: sourceContext.itemKey,
+            note: params.note as string | undefined,
+            existing: params.existing as string | undefined,
+          });
+          if (!selected.ok) return finish(sourceContext, selected);
+          sourceContext = { ...sourceContext, baseline: selected };
+          if (
+            params.profile === undefined &&
+            params.document === undefined &&
+            params.draft === undefined &&
+            selected.stamp &&
+            (!selected.stamp.id ||
+              !(yield* (yield* Profile).resolveProfile(selected.stamp.id)))
+          )
+            return finish(sourceContext, {
+              ok: false,
+              diagnostic: {
+                code: "UNKNOWN_PROFILE_STAMP",
+                message: "The baseline's Profile stamp does not resolve.",
+                hint: "Select an explicit Profile with profile=<id-or-label> to preview a change, or restore the stamped Profile.",
+                stamp: selected.stamp.stamp,
+              },
+            });
+          return undefined;
+        }).pipe(
+          Effect.catchTag("TemplateDataError", ({ cause }) =>
+            Effect.succeed(
+              finish(sourceContext, {
+                ok: false,
+                diagnostic: {
+                  code: "BASELINE_READ_FAILED",
+                  message:
+                    cause instanceof Error ? cause.message : String(cause),
+                  hint: "Restore access to the selected Zotero source and run the update check again.",
+                },
+              }),
+            ),
+          ),
+        );
+        if (refused !== undefined) return refused;
+      }
+      const inspect = createInspectHandler(draft);
+      const inspectRequest = {
+        ...(params.document !== undefined
+          ? { document: params.document }
+          : {
+              profile:
+                params.profile ??
+                (draft
+                  ? "default"
+                  : (sourceContext.baseline?.stamp?.id ?? "default")),
+            }),
+        ...(params["expect-source"] !== undefined
+          ? { "expect-source": params["expect-source"] }
+          : {}),
+        source: "full",
+      };
+      const inspected = JSON.parse(
+        yield* inspect(inspectRequest),
+      ) as InspectedSource;
+      const { source, ...inspectedAnswer } = inspected;
+      const inspectedContext: CheckContext = {
+        ...sourceContext,
+        answer:
+          draft && inspected.document?.kind === "profile"
+            ? {
+                ...inspectedAnswer,
+                input: {
+                  origin: "draft",
+                  path: draft.path,
+                  revision: sourceRevision(draft.source),
+                },
+                // Installed document diagnostics describe the saved version, not this draft.
+                problems: [],
+                document: {
+                  kind: "profile",
+                  id: "draft",
+                  label: "Draft",
+                  path: draft.path,
+                  problems: [],
+                },
+              }
+            : inspectedAnswer,
+        source: source ?? draft?.source ?? "",
+        documentPath:
+          draft?.path ?? inspected.document?.path ?? inspected.document?.id,
+      };
+      if (!inspected.ok) return finish(inspectedContext, {});
+      if (
+        inspected.document?.kind === "profile" &&
+        params.document !== undefined &&
+        params.profile !== undefined
+      )
+        return finish(inspectedContext, {
+          ok: false,
+          diagnostic: {
+            code: "INVALID_SELECTOR",
+            message:
+              "Select a Profile with profile or document, one at a time.",
+            hint: "Omit profile when selecting a Profile document.",
+          },
+        });
+      if (source !== undefined && inspected.document?.kind !== "profile") {
+        const document = inspected.document!;
+        const root =
+          document.kind === "citation"
+            ? "citation"
+            : (params.root as string | undefined);
+        const documentContext: CheckContext = {
+          ...inspectedContext,
+          root: root ?? "note",
+          partial: document.kind === "partial",
+        };
+        if (
+          mode !== "create" ||
+          (document.kind === "citation" && params.root !== undefined) ||
+          (root !== "citation" &&
+            (params.example !== undefined || params.variant !== undefined)) ||
+          (document.kind === "partial" &&
+            root === undefined &&
+            (params.key !== undefined || params.example !== undefined))
+        )
+          return finish(documentContext, {
+            ok: false,
+            diagnostic: {
+              code: "INVALID_SELECTOR",
+              message:
+                "The request selects a caller root or data this document does not take.",
+              hint: "Select a partial caller root with root=<name> and applicable data; check a plain document in create mode.",
+            },
+          });
+        const plain = yield* checkPlainDocument({
+          params,
+          mode,
+          draft,
+          inspect,
+          inspectRequest,
+          inspected,
+          source,
+          root,
+          context: documentContext,
+          attachReport,
+        });
+        return finish(plain.context, plain.result);
+      }
+      if (
+        params.root !== undefined ||
+        params.variant !== undefined ||
+        params.example !== undefined ||
+        (params.draft !== undefined && params.document !== undefined)
+      )
+        return finish(inspectedContext, {
+          ok: false,
+          diagnostic: {
+            code: "INVALID_SELECTOR",
+            message: "Profile checks select item data with key.",
+            hint: "Use key to select item data. Check the Citation Template with document=citation, and reserve root for template-data and Shared Partial checks.",
+          },
+        });
+      if (inspected.document?.kind !== "profile" || source === undefined)
+        return finish(inspectedContext, {
+          ok: false,
+          diagnostic: {
+            code: "INVALID_SELECTOR",
+            message: "The request does not select a saved Profile document.",
+            hint: "Select a Profile with profile=<id-or-label>, or a Profile document with document=<path-or-reference>.",
+          },
+        });
+      const inspectedDocument = inspected.document;
+      const profile = yield* checkProfileDocument({
+        params,
+        mode,
+        draft,
+        inspect,
+        inspectRequest,
+        inspected,
+        inspectedDocument,
+        source,
+        context: inspectedContext,
+        attachReport,
+      });
+      return finish(profile.context, profile.result);
+    },
+    catchRejection((rejection) =>
+      JSON.stringify({
+        contractVersion: CONTRACT_VERSION,
+        command: TEMPLATE_CHECK_COMMAND,
+        ok: false,
+        diagnostic: rejectionDiagnostic(
+          amendRejection(rejection, {
+            hint: rejection.hint ?? INVALID_CHECK_HINT,
+          }),
+        ),
+      }),
+    ),
+  );
+}

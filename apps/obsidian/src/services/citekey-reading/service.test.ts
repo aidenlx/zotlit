@@ -1,45 +1,118 @@
 // @vitest-environment happy-dom
+import { it } from "@effect/vitest";
+import { Effect, Exit, Fiber, Layer, Scope, Stream } from "effect";
 import { Keymap, MarkdownView } from "obsidian";
 import type {
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
   MarkdownRenderChild,
-  TFile,
+  WorkspaceLeaf,
 } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
-import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
-
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
+import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import * as m from "@/lib/i18n/generated/messages";
+import { layerVaultFrom } from "@/lib/obsidian-vault";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { themeHook } from "@/lib/theme-hooks";
+import { vaultError } from "@/lib/vault-errors";
+import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
+import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
+import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import { ParsedNote } from "@/services/citation-index/parsed-note";
 import type { Citation } from "@/services/citation-index/service";
+import { readReferenceSources } from "@/services/citation-index/sources";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { CitationPopover } from "@/services/citation-popover/service";
 import {
-  ALPHA,
   ALPHA_KEY,
   citation,
   literalOccurrences,
   rendered,
 } from "@/services/citation-text/__fixtures__";
+import { citationTextFixture } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
+import type { CitationTextEvent } from "@/services/citation-text/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
+import { renderFailure } from "@/services/pandoc/render-cache/__fixtures__";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
+import { settingsFeed } from "@/services/settings/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import {
+  citedWorkSeed,
+  inProcessReadsService,
+  memoryOpener,
+} from "@/services/zotero-reads/test-utils";
 
-import { CitekeyReading } from "./service";
+import { layerCitekeyReading } from "./service";
 
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
+/** The fakes Citekey Reading reads its tags from; a member a case leaves out fails when read. */
+interface ReadingFakes {
+  workspace: MemoryWorkspace;
+  vault?: MemoryVault;
+  citationText: Layer.Layer<CitationText>;
+  citationLookup?: Layer.PartialEffectful<CitationLookup["Service"]>;
+  citekeyEditor?: Layer.PartialEffectful<CitekeyEditor["Service"]>;
+  citationPopover?: Layer.PartialEffectful<CitationPopover["Service"]>;
+  settings: Layer.Layer<PluginSettings>;
+}
+
+/**
+ * Citekey Reading over `fakes`, built as the plugin layer builds it, and the
+ * post-processor it registers. `unload` closes the layer, which is the
+ * plugin's unload.
+ */
+const openReading = Effect.fnUntraced(function* ({
+  workspace,
+  vault = new MemoryVault(),
+  ...fakes
+}: ReadingFakes) {
+  let process: MarkdownPostProcessor | undefined;
+  const host = testPluginHost({
+    registerMarkdownPostProcessor: (postProcessor) => {
+      process = postProcessor;
+      return postProcessor;
+    },
+  });
+  const scope = yield* Scope.fork(yield* Scope.Scope);
+  yield* Layer.buildWithScope(
+    layerCitekeyReading.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          host.layer,
+          layerVaultFrom(vault),
+          layerWorkspaceFrom(workspace),
+          fakes.citationText,
+          Layer.mock(CitationLookup, fakes.citationLookup ?? {}),
+          Layer.mock(CitekeyEditor, fakes.citekeyEditor ?? {}),
+          Layer.mock(CitationPopover, fakes.citationPopover ?? {}),
+          fakes.settings,
+        ),
+      ),
+    ),
+    scope,
+  );
+  const postProcessor = process!;
   return {
-    ...actual,
-    // The stub client runs no queries; these three are the whole read path from
-    // an Indexed Key to the Item the citation names.
-    getZoteroIdentity: () => ({
-      userID: 1,
-      localUserKey: null,
-      username: null,
-    }),
-    resolveIndexedKeyLibrary: vi.fn(),
-    getItemsByKey: vi.fn(),
+    /** The registered post-processor, and what it returns. */
+    postProcessor,
+    /** The registered post-processor over one section. */
+    process: (el: HTMLElement, ctx: MarkdownPostProcessorContext): void => {
+      void postProcessor(el, ctx);
+    },
+    unload: Scope.close(scope, Exit.void),
   };
 });
 
@@ -50,70 +123,32 @@ function section(html: string): HTMLElement {
   return root;
 }
 
-/**
- * Places one rendered section in a Markdown view, which is what a popover hangs
- * in, and answers with the context that section is processed under.
- */
-function viewedCtx(
-  harness: Harness,
-  el: HTMLElement,
-): MarkdownPostProcessorContext {
-  harness.views.push(
-    Object.assign(Object.create(MarkdownView.prototype) as MarkdownView, {
-      containerEl: el,
-      previewMode: {
-        rerender: () => {
-          harness.rerendered();
-        },
-      },
-    }),
+/** A reading view showing `containerEl`; each render-again request calls `rerender`. */
+function readingView(
+  containerEl: HTMLElement,
+  rerender: (scroll: boolean) => void,
+): MarkdownView {
+  return Object.assign(
+    new MarkdownView(stubService<WorkspaceLeaf>("WorkspaceLeaf", {})),
+    { containerEl, previewMode: { rerender } },
   );
-  return harness.ctx;
 }
 
-interface Harness extends AsyncDisposable {
-  process: MarkdownPostProcessor;
-  /**
-   * The context Obsidian hands a post-processor for the body lines `lines`
-   * covers, or for a section it places nowhere — an embed, a popover.
-   */
-  sectionCtx: (
-    lines: { from: number; to: number } | null,
-  ) => MarkdownPostProcessorContext;
-  /** {@link sectionCtx} over the whole body, which is one section for most suites. */
-  ctx: MarkdownPostProcessorContext;
-  citationRequests: { citations: readonly string[] }[];
-  /** The Markdown views the workspace holds, which a hover result hangs in. */
-  views: MarkdownView[];
-  /** Every popover the rendered citations of this harness asked for. */
-  popoverRequests: CitationHoverRequest[];
-  /** Every note the rendered citations of this harness asked to open. */
-  opened: [citekey: string, pane: unknown][];
-  /** How often the reading views were asked to render again. */
-  rerenders: () => number;
-  /** Counts one render-again request from a view. */
-  rerendered: () => void;
-  /** Replaces what the render answers from here on. */
-  renderAs: (renderText: (source: string, index: number) => string) => void;
-  /** Reports one file changed, the way the metadata cache does after an edit. */
-  changeFile: (path: string) => void;
-  /** Replaces the Ambiguous keys and reports a citekey resolution snapshot rebuild. */
-  rebuildResolution: (ambiguous: readonly string[]) => void;
-  /** Tears every rendered section down, the way Obsidian does on a re-render. */
-  unloadSections: () => void;
-}
-
-async function makeHarness({
+const makeHarness = Effect.fnUntraced(function* ({
   body,
   cited = [citation("alpha", ALPHA_KEY)],
   formats = true,
   formatCitations,
   renderText = (source) => `«${source}»`,
   overrides = {},
+  frontmatter = {},
   ambiguousKeys = [],
   resolutionPending = false,
+  open = Effect.void,
 }: {
   body: string;
+  /** What an open runs after it records the call; it ends at once by default. */
+  open?: Effect.Effect<void>;
   cited?: Citation[];
   /** The citekeys the resolution snapshot answers with several candidates for. */
   ambiguousKeys?: readonly string[];
@@ -128,137 +163,169 @@ async function makeHarness({
   /** The text the render answers for each source, by its place in the request. */
   renderText?: (source: string, index: number) => string;
   overrides?: Partial<Settings>;
-}): Promise<Harness> {
-  await using stack = new AsyncDisposableStack();
+  frontmatter?: Record<string, unknown>;
+}) {
   const citationRequests: { citations: readonly string[] }[] = [];
-  const views: MarkdownView[] = [];
   const popoverRequests: CitationHoverRequest[] = [];
   const opened: [citekey: string, pane: unknown][] = [];
+  const switchRequests: string[] = [];
   const occurrences = literalOccurrences(body);
-  let process: MarkdownPostProcessor | undefined;
   let rerenders = 0;
   let render = renderText;
-  const metadataListeners = new Map<string, (file: { path: string }) => void>();
-  const indexListeners = new Map<string, () => void>();
+  let formatting = formats;
   const children: MarkdownRenderChild[] = [];
   let ambiguous = ambiguousKeys;
+  let resolutionReady = !resolutionPending;
+  const answer = (requested: readonly string[]): CitationLookupAnswer =>
+    lookupAnswerFor(
+      requested,
+      Object.fromEntries(
+        ambiguous.map((citekey) => [
+          citekey,
+          { kind: "ambiguous" as const, candidates: [] },
+        ]),
+      ),
+      JSON.stringify(ambiguous),
+    );
 
-  const citationText = stack.use(
-    new CitationText({
-      app: {
-        vault: {
-          cachedRead: () => Promise.resolve(body),
-          getFileByPath: (path: string) => ({ path }) as TFile,
-        },
-        metadataCache: {
-          on: (event: string, cb: (file: { path: string }) => void) => {
-            metadataListeners.set(event, cb);
-            return { e: { offref: () => undefined } };
-          },
-          getFileCache: () => ({}),
-        },
-      },
-      db: { state: "ready", client: {} },
-      citationIndex: {
-        getDocumentCitationSet: () =>
-          Promise.resolve({ occurrences, citations: cited }),
-        citekeyOf: () => null,
-        whenResolved: () => Promise.resolve(),
-        on: (event: string, cb: () => void) => {
-          indexListeners.set(event, cb);
-          return () => undefined;
-        },
-      },
-      noteIndex: {
-        on: () => () => undefined,
-        whenIndexed: () => Promise.resolve(),
-      },
-      bibliographyRender: {
-        vaultPresentation: { styleId: null, locale: null },
-        renderCitations: async (citations: readonly string[]) => {
-          citationRequests.push({ citations });
-          const value = formatCitations
-            ? await formatCitations(citations)
-            : formats
-              ? citations.map((source, index) =>
-                  rendered(render(source, index)),
-                )
-              : null;
-          if (value === null) {
-            return { kind: "unavailable", reason: "failed" };
-          }
-          return {
-            kind: "held",
-            key: citations.join("\0"),
-            record: {
-              value,
-              status: "fresh",
-              settled: Promise.resolve(value),
-            },
-          };
-        },
-        on: () => () => undefined,
-      },
-      settings: {
-        ready: Promise.resolve(),
-        subscribe: (cb: (next: Readonly<Settings>) => void) => {
-          cb(defaults);
-          return () => undefined;
-        },
-      },
-    } as never),
+  const citationLookup = new CitationLookupStub(({ citekeys = [] }) =>
+    resolutionReady ? answer(citekeys) : null,
   );
-  await citationText.ready;
-  if (!formatCitations) {
-    citationText.peek("note.md");
-    await vi.waitFor(() => expect(citationText.peek("note.md")).not.toBeNull());
+  const vault = new MemoryVault();
+  const metadata = new MemoryMetadataCache();
+  for (const path of ["note.md", "other.md"]) {
+    vault.add(path, body);
+    metadata.setCache(path, { frontmatter });
   }
+  const workspace = new MemoryWorkspace();
+  workspace.on("zotlit:switch-profile", (request) => {
+    switchRequests.push((request as { path: string }).path);
+  });
 
-  const service = stack.use(
-    new CitekeyReading({
-      app: {
-        vault: { getFileByPath: (path: string) => ({ path }) as TFile },
-        workspace: {
-          getLeavesOfType: () => views.map((view) => ({ view })),
-        },
-      },
-      plugin: {
-        registerMarkdownPostProcessor: (
-          postProcessor: MarkdownPostProcessor,
-        ) => {
-          process = postProcessor;
-          return postProcessor;
-        },
-      },
-      citationText,
-      citationIndex: {
-        resolution: resolutionPending ? null : "fresh",
-        resolveCitekey: (citekey: string) =>
-          resolutionPending
-            ? null
-            : ambiguous.includes(citekey)
-              ? { kind: "ambiguous", candidates: [] }
-              : { kind: "missing" },
-      },
-      citekeyEditor: {
-        openCitekey: (citekey: string, pane: unknown) => {
-          opened.push([citekey, pane]);
-          return Promise.resolve();
-        },
-      },
-      citationPopover: {
-        show: (request: CitationHoverRequest) => popoverRequests.push(request),
-      },
-      settings: settingsStub(overrides),
-    } as never),
+  const reads = yield* Effect.acquireDisposable(
+    Effect.sync(() =>
+      inProcessReadsService(
+        memoryOpener(() => citedWorkSeed([ALPHA_KEY])).open,
+      ),
+    ),
   );
-  await service.ready;
-  const resources = stack.move();
+  const queryClient = yield* Effect.acquireDisposable(
+    Effect.sync(() => queryClientsFixture()),
+  );
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+  const fixture = yield* Effect.acquireDisposable(
+    Effect.sync(() =>
+      citationTextFixture({
+        openDocuments: new OpenDocumentsStub(),
+        citationLookup,
+        profile: profileReader(defaults, {
+          getFileCache: () => ({ frontmatter }),
+        }),
+        host: { vault, metadataCache: metadata },
+        citationIndex: {
+          getParsedDocument: () =>
+            Effect.tryPromise({
+              try: async () => ({
+                facts: new ParsedNote(
+                  body,
+                  (
+                    await runPromise(
+                      inProcessParseClient.parse({
+                        path: "note.md",
+                        generation: 0,
+                        text: body,
+                      }),
+                    )
+                  ).record,
+                ),
+                set: {
+                  occurrences,
+                  citations: cited,
+                  errors: [],
+                  lookup: answer(occurrences.map((o) => o.raw)),
+                  ...(await reads.runtime.runPromise(
+                    ZoteroReads.use((db) => readReferenceSources(db, cited)),
+                  )),
+                  syntaxes: {
+                    citekey: "included" as const,
+                    wikilink: "excluded" as const,
+                    annotation: "included" as const,
+                  },
+                  omittedSyntaxes: [],
+                  coverage: "complete" as const,
+                },
+              }),
+              catch: vaultError("cachedRead", "note.md"),
+            }),
+          events: Stream.empty,
+        },
+        noteIndex: {
+          changes: Stream.empty,
+          whenIndexed: Effect.void,
+        },
+        bibliographyRender: {
+          state: Effect.succeed({
+            vaultPresentation: { styleId: null, locale: null },
+            missingStyle: null,
+          }),
+          readCitations: (citations: readonly string[]) =>
+            Effect.tryPromise({
+              try: async () => {
+                citationRequests.push({ citations });
+                return formatCitations
+                  ? await formatCitations(citations)
+                  : formatting
+                    ? citations.map((source, index) =>
+                        rendered(render(source, index)),
+                      )
+                    : null;
+              },
+              catch: renderFailure,
+            }),
+          readBibliography: () =>
+            Effect.tryPromise({
+              try: async () => ({
+                entries: [],
+                hasEntryMarkers: false,
+              }),
+              catch: renderFailure,
+            }),
+          events: Stream.empty,
+        },
+        queryClient,
+      }),
+    ),
+  );
+  const text = fixture.runtime.runSync(CitationText);
+  // A pending render settles only when the case lets it.
+  if (!formatCitations) yield* text.read("note.md").pipe(Effect.orDie);
+
+  const reading = yield* openReading({
+    workspace,
+    vault,
+    citationText: Layer.succeed(CitationText, text),
+    citationLookup: {
+      observe: (changed) => citationLookup.observe(changed),
+    },
+    citekeyEditor: {
+      openCitekey: (citekey, pane) =>
+        Effect.sync(() => {
+          opened.push([citekey, pane]);
+        }).pipe(Effect.andThen(open)),
+    },
+    citationPopover: {
+      show: (request) =>
+        Effect.sync(() => {
+          popoverRequests.push(request);
+        }),
+    },
+    settings: settingsFeed(overrides).layer,
+  });
 
   const sectionCtx = (
     lines: { from: number; to: number } | null,
   ): MarkdownPostProcessorContext =>
-    ({
+    stubService<MarkdownPostProcessorContext>("MarkdownPostProcessorContext", {
       sourcePath: "note.md",
       getSectionInfo: () =>
         lines && { text: body, lineStart: lines.from, lineEnd: lines.to },
@@ -266,598 +333,779 @@ async function makeHarness({
         children.push(child);
         child.load();
       },
-    }) as never;
+    });
+  const ctx = sectionCtx({ from: 0, to: body.split("\n").length - 1 });
+
+  /**
+   * Starts a wait for the next citation text event `matches` accepts, and
+   * answers the Effect that joins it: start it before the trigger and join it
+   * after. The layer subscribed to the events first, so it has handled every
+   * event up to that one when the join completes.
+   */
+  const nextEvent = (matches: (event: CitationTextEvent) => boolean) =>
+    Stream.runHead(Stream.filter(text.events, (event) => matches(event))).pipe(
+      Effect.forkScoped({ startImmediately: true }),
+      Effect.map((fiber) => Fiber.join(fiber)),
+    );
 
   return {
-    process: process!,
+    postProcessor: reading.postProcessor,
+    process: reading.process,
+    /**
+     * The context Obsidian hands a post-processor for the body lines `lines`
+     * covers, or for a section it places nowhere — an embed, a popover.
+     */
     sectionCtx,
-    ctx: sectionCtx({ from: 0, to: body.split("\n").length - 1 }),
-    citationRequests,
-    views,
-    popoverRequests,
-    opened,
-    rerenders: () => rerenders,
-    rerendered: () => {
-      rerenders += 1;
+    /** {@link sectionCtx} over the whole body, which is one section for most suites. */
+    ctx,
+    /**
+     * Places one rendered section in a reading view, which is what a popover
+     * hangs in, and answers with the context that section is processed under.
+     */
+    viewedCtx: (el: HTMLElement): MarkdownPostProcessorContext => {
+      workspace.openLeaf(
+        "markdown",
+        readingView(el, () => {
+          rerenders += 1;
+        }),
+      );
+      return ctx;
     },
-    renderAs: (renderText) => {
+    citationRequests,
+    /** Every popover the rendered citations of this harness asked for. */
+    popoverRequests,
+    /** Every note the rendered citations of this harness asked to open. */
+    opened,
+    /** How often the reading views were asked to render again. */
+    rerenders: () => rerenders,
+    /** Replaces what the render answers from here on. */
+    renderAs: (renderText: (source: string, index: number) => string) => {
       render = renderText;
     },
-    changeFile: (path) => metadataListeners.get("changed")?.({ path }),
-    rebuildResolution: (keys) => {
-      ambiguous = keys;
-      indexListeners.get("resolution-changed")?.();
+    /** From here on, the render formats nothing, the way it does with no engine. */
+    stopFormatting: () => {
+      formatting = false;
     },
+    /** Reports one file changed, the way the metadata cache does after an edit. */
+    changeFile: (path: string) => {
+      metadata.change(vault.getFileByPath(path)!, { frontmatter });
+    },
+    /** Replaces the Ambiguous keys and reports a citekey resolution snapshot rebuild. */
+    rebuildResolution: (keys: readonly string[]) => {
+      ambiguous = keys;
+      resolutionReady = true;
+      citationLookup.refresh();
+    },
+    /** Tears every rendered section down, the way Obsidian does on a re-render. */
     unloadSections: () => {
       for (const child of children.splice(0)) child.unload();
     },
-    [Symbol.asyncDispose]: () => resources.disposeAsync(),
+    activeLookups: () => citationLookup.activeObservations,
+    switchRequests,
+    /** Reads the text of `path` and waits until it stands. */
+    read: (path: string) => text.read(path).pipe(Effect.orDie),
+    /** Starts a wait for the next read of `path` to commit; see {@link nextEvent}. */
+    settles: (path: string) =>
+      nextEvent((event) => event.type === "settled" && event.path === path),
+    /** Starts a wait for the next change to `path`; see {@link nextEvent}. */
+    changes: (path: string) =>
+      nextEvent((event) => event.type === "changed" && event.path === path),
+    unload: reading.unload,
+  };
+});
+
+/** A render whose answer waits until the case settles it. */
+function pendingRender() {
+  let settle: ((value: readonly RenderedCitation[]) => void) | undefined;
+  const pending = new Promise<readonly RenderedCitation[]>((resolve) => {
+    settle = resolve;
+  });
+  return {
+    pending,
+    settle: (value: readonly RenderedCitation[]) => settle!(value),
   };
 }
 
-beforeEach(() => {
-  vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
-    libraryID: 1,
-    key: "ALPHA123",
-  });
-  vi.mocked(getItemsByKey).mockReturnValue([ALPHA as never]);
-});
-
 describe("CitekeyReading", () => {
-  it("rerenders open reading views when Pandoc navigation changes", async () => {
-    let notify: ((settings: Readonly<Settings>) => void) | undefined;
-    const rerender = vi.fn();
-    const view = Object.assign(
-      Object.create(MarkdownView.prototype) as MarkdownView,
-      { previewMode: { rerender } },
-    );
-    await using service = new CitekeyReading({
-      app: {
-        workspace: { getLeavesOfType: () => [{ view }] },
-      },
-      plugin: { registerMarkdownPostProcessor: () => undefined },
-      citationText: {
-        on: () => () => undefined,
-      },
-      citekeyEditor: {},
-      settings: {
-        ready: Promise.resolve(),
-        subscribe: (listener: (settings: Readonly<Settings>) => void) => {
-          notify = listener;
-          listener(defaults);
-          return () => undefined;
-        },
-      },
-    } as never);
-    await service.ready;
-    expect(rerender).not.toHaveBeenCalled();
+  it.effect("rerenders open reading views when Pandoc navigation changes", () =>
+    Effect.gen(function* () {
+      const settings = settingsFeed();
+      const rerender = vi.fn<(scroll: boolean) => void>();
+      const workspace = new MemoryWorkspace();
+      workspace.openLeaf(
+        "markdown",
+        readingView(document.createElement("div"), rerender),
+      );
+      yield* openReading({
+        workspace,
+        citationText: Layer.mock(CitationText, { events: Stream.empty }),
+        settings: settings.layer,
+      });
+      expect(rerender).not.toHaveBeenCalled();
 
-    notify?.({ ...defaults, "citation.open-as-links": true });
+      settings.update({ "citation.open-as-links": true });
 
-    expect(rerender).toHaveBeenCalledExactlyOnceWith(true);
-  });
+      expect(rerender).toHaveBeenCalledExactlyOnceWith(true);
+    }),
+  );
 
-  it("puts the engine's formatted citation in the source's place", async () => {
-    await using harnessed = await makeHarness({
-      body: "Blah [see @alpha, p. 3] blah.",
-    });
-    const { process, ctx } = harnessed;
-    const el = section("<p>Blah [see @alpha, p. 3] blah.</p>");
+  it.live(
+    "renders the reading views again on disposal, which drops its citations",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({ body: "Blah [@alpha]." });
+        const el = section("<p>Blah [@alpha].</p>");
+        h.process(el, h.viewedCtx(el));
+        expect(h.rerenders()).toBe(0);
 
-    await process(el, ctx);
+        yield* h.unload;
 
-    expect(el.textContent).toBe(`Blah «[see @${ALPHA_KEY}, p. 3]» blah.`);
-    expect(el.querySelector("span.zt-citation")).not.toBeNull();
-  });
+        expect(h.rerenders()).toBe(1);
+        const late = section("<p>Blah [@alpha].</p>");
+        h.process(late, h.ctx);
+        expect(late.textContent).toBe("Blah [@alpha].");
+      }),
+  );
+
+  it.live("puts the engine's formatted citation in the source's place", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        body: "Blah [see @alpha, p. 3] blah.",
+      });
+      const el = section("<p>Blah [see @alpha, p. 3] blah.</p>");
+
+      h.process(el, h.ctx);
+
+      expect(el.textContent).toBe(`Blah «[see @${ALPHA_KEY}, p. 3]» blah.`);
+      expect(el.querySelector("span.zt-citation")).not.toBeNull();
+    }),
+  );
+
+  it.live(
+    "names an unavailable Imported Note Profile on its raw citation",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({
+          body: "Cited @alpha.",
+          frontmatter: {
+            "zotero-note-key": "1/NOTE1234",
+            "zotlit-profile": "deleted-profile",
+          },
+        });
+        const el = section("<p>Cited @alpha.</p>");
+
+        h.process(el, h.ctx);
+
+        const citation = el.querySelector<HTMLElement>(
+          '[data-citation-presentation-error="profile"]',
+        );
+        expect(citation?.textContent).toBe("@alpha");
+        expect(citation?.getAttribute("aria-label")).toContain(
+          "deleted-profile",
+        );
+        expect(citation?.getAttribute("aria-label")).toBe(
+          m.notice_imported_note_profile_unknown({
+            stamp: "deleted-profile",
+            target: "note.md",
+          }),
+        );
+        const recovery = el.querySelector<HTMLButtonElement>(
+          "[data-profile-recovery]",
+        );
+        expect(recovery?.textContent).toBe(m.profile_switch_recovery());
+        recovery?.click();
+        expect(h.switchRequests).toEqual(["note.md"]);
+        expect(citation?.title).toBe("");
+      }),
+  );
 
   // Stands in for a position-dependent style, whose second occurrence of one
   // source reads as the subsequent form.
   const IBID = (source: string, index: number): string =>
     index === 0 ? `«${source}»` : "ibid";
 
-  it("shows each occurrence the text rendered for its own place in the document", async () => {
-    await using harnessed = await makeHarness({
-      body: "One [@alpha].\n\nTwo [@alpha].",
-      renderText: IBID,
-    });
-    const { process, sectionCtx } = harnessed;
-    const first = section("<p>One [@alpha].</p>");
-    const second = section("<p>Two [@alpha].</p>");
+  it.live(
+    "shows each occurrence the text rendered for its own place in the document",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({
+          body: "One [@alpha].\n\nTwo [@alpha].",
+          renderText: IBID,
+        });
+        const first = section("<p>One [@alpha].</p>");
+        const second = section("<p>Two [@alpha].</p>");
 
-    await process(first, sectionCtx({ from: 0, to: 0 }));
-    await process(second, sectionCtx({ from: 2, to: 2 }));
+        h.process(first, h.sectionCtx({ from: 0, to: 0 }));
+        h.process(second, h.sectionCtx({ from: 2, to: 2 }));
 
-    expect(first.textContent).toBe(`One «[@${ALPHA_KEY}]».`);
-    expect(second.textContent).toBe("Two ibid.");
-  });
-
-  it("shows first-occurrence text in a section Obsidian places nowhere", async () => {
-    await using harnessed = await makeHarness({
-      body: "One [@alpha].\n\nTwo [@alpha].",
-      renderText: IBID,
-    });
-    const { process, sectionCtx } = harnessed;
-    const el = section("<p>Two [@alpha].</p>");
-
-    await process(el, sectionCtx(null));
-
-    expect(el.textContent).toBe(`Two «[@${ALPHA_KEY}]».`);
-  });
-
-  it("keeps source when no engine formats the citation", async () => {
-    await using harnessed = await makeHarness({
-      body: "Blah [see @alpha, p. 3] blah.",
-      formats: false,
-    });
-    const { process, ctx } = harnessed;
-    const el = section("<p>Blah [see @alpha, p. 3] blah.</p>");
-
-    await process(el, ctx);
-
-    expect(el.textContent).toBe("Blah [see @alpha, p. 3] blah.");
-  });
-
-  it("keeps source while formatted citation presentation is off", async () => {
-    await using harnessed = await makeHarness({
-      body: "Blah [see @alpha, p. 3] blah.",
-      overrides: { "citation.show-formatted": false },
-    });
-    const { process, ctx } = harnessed;
-    const el = section("<p>Blah [see @alpha, p. 3] blah.</p>");
-
-    await process(el, ctx);
-
-    expect(el.textContent).toBe("Blah [see @alpha, p. 3] blah.");
-  });
-
-  it("keeps source visible while citation text is pending", async () => {
-    let settle: ((value: readonly RenderedCitation[]) => void) | undefined;
-    const pending = new Promise<readonly RenderedCitation[]>((resolve) => {
-      settle = resolve;
-    });
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha].",
-      formatCitations: () => pending,
-    });
-    const { process, ctx } = harnessed;
-    const el = section("<p>Blah [@alpha].</p>");
-
-    const completion = Promise.resolve(process(el, ctx));
-    let completed = false;
-    void completion.then(() => {
-      completed = true;
-    });
-    await Promise.resolve();
-
-    expect(completed).toBe(true);
-    expect(el.textContent).toBe("Blah [@alpha].");
-
-    settle?.([rendered("«[@alpha]»")]);
-    await pending;
-  });
-
-  it("marks source as neutral while citation-key resolution is pending", async () => {
-    const pending = new Promise<readonly RenderedCitation[]>(() => undefined);
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha].",
-      formatCitations: () => pending,
-      resolutionPending: true,
-    });
-    const el = section("<p>Blah [@alpha].</p>");
-
-    await harnessed.process(el, harnessed.ctx);
-
-    expect(el.textContent).toBe("Blah [@alpha].");
-    expect(el.querySelector(`.${themeHook.citationKeyPending}`)).not.toBeNull();
-    expect(el.querySelector(`.${themeHook.citationKeyUnresolved}`)).toBeNull();
-  });
-
-  it("leaves a citekey no Literature Note carries as written", async () => {
-    await using harnessed = await makeHarness({
-      body: "@ghost blah.",
-      cited: [citation("ghost", null)],
-    });
-    const { process, ctx } = harnessed;
-    const el = section("<p>@ghost blah.</p>");
-
-    await process(el, ctx);
-
-    expect(el.textContent).toBe("@ghost blah.");
-  });
-
-  it("exposes the literal theme hooks for each literal Citation resolution state", async () => {
-    const cases = [
-      {
-        body: "[@alpha]",
-        cited: [citation("alpha", ALPHA_KEY)],
-        classes: ["zt-citation", "zt-citation-key"],
-      },
-      {
-        body: "[@alpha; @ghost]",
-        cited: [citation("alpha", ALPHA_KEY), citation("ghost", null)],
-        classes: [
-          "zt-citation",
-          "zt-citation-key",
-          "zt-citation-key-partially-unresolved",
-        ],
-      },
-      {
-        body: "[@ghost]",
-        cited: [citation("ghost", null)],
-        classes: [
-          "zt-citation",
-          "zt-citation-key",
-          "zt-citation-key-unresolved",
-        ],
-      },
-      // An Ambiguous Citation Key reads as its own state, and a missing key
-      // outranks it wherever a cluster writes both.
-      {
-        body: "[@twin]",
-        cited: [citation("twin", null)],
-        ambiguousKeys: ["twin"],
-        classes: [
-          "zt-citation",
-          "zt-citation-key",
-          "zt-citation-key-ambiguous",
-        ],
-        absent: ["zt-citation-key-unresolved"],
-      },
-      {
-        body: "[@twin; @ghost]",
-        cited: [citation("twin", null), citation("ghost", null)],
-        ambiguousKeys: ["twin"],
-        classes: [
-          "zt-citation",
-          "zt-citation-key",
-          "zt-citation-key-unresolved",
-        ],
-        absent: ["zt-citation-key-ambiguous"],
-      },
-    ];
-    for (const { body, cited, classes, ambiguousKeys, absent } of cases) {
-      await using harnessed = await makeHarness({ body, cited, ambiguousKeys });
-      const { process, ctx } = harnessed;
-      const el = section(`<p>${body}</p>`);
-
-      await process(el, ctx);
-
-      const rendered = el.querySelector("span");
-      for (const className of classes) {
-        expect(rendered?.classList.contains(className)).toBe(true);
-      }
-      for (const className of absent ?? []) {
-        expect(rendered?.classList.contains(className)).toBe(false);
-      }
-    }
-  });
-
-  it("shows the rendered citation's popover while navigation is off", async () => {
-    // The Hover Action owns hover on its own, so a rendered citation answers
-    // with the popover while Citekey Navigation is off.
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha].",
-      overrides: { "citation.open-as-links": false },
-    });
-    const { process, ctx, views, popoverRequests } = harnessed;
-    const el = section("<p>Blah [@alpha].</p>");
-    views.push(
-      Object.assign(Object.create(MarkdownView.prototype) as MarkdownView, {
-        containerEl: el,
-        previewMode: { rerender: () => undefined },
+        expect(first.textContent).toBe(`One «[@${ALPHA_KEY}]».`);
+        expect(second.textContent).toBe("Two ibid.");
       }),
-    );
+  );
 
-    await process(el, ctx);
-    const citationEl = el.querySelector<HTMLElement>(".zt-citation")!;
-    citationEl.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+  it.live(
+    "shows first-occurrence text in a section Obsidian places nowhere",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({
+          body: "One [@alpha].\n\nTwo [@alpha].",
+          renderText: IBID,
+        });
+        const el = section("<p>Two [@alpha].</p>");
 
-    expect(popoverRequests).toHaveLength(1);
-    expect(popoverRequests[0]).toMatchObject({
-      targetEl: citationEl,
-      works: [{ citekey: "alpha" }],
-      sourcePath: "note.md",
-    });
-  });
+        h.process(el, h.sectionCtx(null));
 
-  it("leaves the rendered citation's plain click inert while navigation is off", async () => {
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha].",
-      overrides: {
-        "citation.open-as-links": false,
-        "citation.hover-action": "off",
-      },
-    });
-    const { process, popoverRequests, opened } = harnessed;
-    const el = section("<p>Blah [@alpha].</p>");
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+        expect(el.textContent).toBe(`Two «[@${ALPHA_KEY}]».`);
+      }),
+  );
 
-    await process(el, viewedCtx(harnessed, el));
-    const citationEl = el.querySelector<HTMLElement>(".zt-citation")!;
-    citationEl.dispatchEvent(event);
-
-    expect(opened).toEqual([]);
-    expect(popoverRequests).toEqual([]);
-    expect(event.defaultPrevented).toBe(false);
-    // The citation says as much: nothing to click, so it reads as static text.
-    expect(citationEl.dataset.ztClick).toBe("none");
-  });
-
-  it("states that a rendered citation opens while navigation is on", async () => {
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha].",
-      overrides: { "citation.open-as-links": true },
-    });
-    const { process } = harnessed;
-    const el = section("<p>Blah [@alpha].</p>");
-
-    await process(el, viewedCtx(harnessed, el));
-
-    expect(el.querySelector<HTMLElement>(".zt-citation")!.dataset.ztClick).toBe(
-      "open",
-    );
-  });
-
-  it("opens the work a Mod-click names while navigation is off", async () => {
-    vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
-    vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha].",
-      overrides: { "citation.open-as-links": false },
-    });
-    const { process, popoverRequests, opened } = harnessed;
-    const el = section("<p>Blah [@alpha].</p>");
-
-    await process(el, viewedCtx(harnessed, el));
-    el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, cancelable: true }),
-    );
-
-    expect(popoverRequests).toEqual([]);
-    expect(opened).toEqual([["alpha", "tab"]]);
-    vi.restoreAllMocks();
-  });
-
-  it("opens the work a plain click names while Citations open as links", async () => {
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha].",
-      overrides: { "citation.open-as-links": true },
-    });
-    const { process, popoverRequests, opened } = harnessed;
-    const el = section("<p>Blah [@alpha].</p>");
-
-    await process(el, viewedCtx(harnessed, el));
-    el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, cancelable: true }),
-    );
-
-    expect(popoverRequests).toEqual([]);
-    expect(opened).toEqual([["alpha", false]]);
-  });
-
-  it("keeps an unrendered citation opening as a link", async () => {
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha].",
-      overrides: {
-        "citation.show-formatted": false,
-        "citation.open-as-links": true,
-      },
-    });
-    const { process, popoverRequests, opened } = harnessed;
-    const el = section("<p>Blah [@alpha].</p>");
-
-    // Citations open as links here, so the rendering is off but the citation
-    // is still wrapped; turning navigation off as well retires the treatment.
-    await process(el, viewedCtx(harnessed, el));
-    el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, cancelable: true }),
-    );
-
-    expect(popoverRequests).toEqual([]);
-    expect(opened).toEqual([["alpha", false]]);
-  });
-
-  it("leaves the reading view alone while the treatment is off", async () => {
-    for (const overrides of [
-      {
-        "citation.show-formatted": false,
-        "citation.open-as-links": false,
-      },
-      { "citation.pandoc-citations": false },
-    ]) {
-      await using harnessed = await makeHarness({
-        body: "Blah [@alpha].",
-        overrides,
+  it.live("keeps source when no engine formats the citation", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        body: "Blah [see @alpha, p. 3] blah.",
+        formats: false,
       });
-      const { process, ctx } = harnessed;
+      const el = section("<p>Blah [see @alpha, p. 3] blah.</p>");
+
+      h.process(el, h.ctx);
+
+      expect(el.textContent).toBe("Blah [see @alpha, p. 3] blah.");
+    }),
+  );
+
+  it.live("keeps source while formatted citation presentation is off", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        body: "Blah [see @alpha, p. 3] blah.",
+        overrides: { "citation.show-formatted": false },
+      });
+      const el = section("<p>Blah [see @alpha, p. 3] blah.</p>");
+
+      h.process(el, h.ctx);
+
+      expect(el.textContent).toBe("Blah [see @alpha, p. 3] blah.");
+    }),
+  );
+
+  it.live("keeps source visible while citation text is pending", () =>
+    Effect.gen(function* () {
+      const render = pendingRender();
+      const h = yield* makeHarness({
+        body: "Blah [@alpha].",
+        formatCitations: () => render.pending,
+      });
+      const el = section("<p>Blah [@alpha].</p>");
+      const settled = yield* h.settles("note.md");
+
+      // The post-processor returns without waiting for the read it starts.
+      expect(h.postProcessor(el, h.ctx)).toBeUndefined();
+      expect(el.textContent).toBe("Blah [@alpha].");
+
+      render.settle([rendered("«[@alpha]»")]);
+      yield* settled;
+    }),
+  );
+
+  it.live(
+    "marks source as neutral while citation-key resolution is pending",
+    () =>
+      Effect.gen(function* () {
+        const pending = new Promise<readonly RenderedCitation[]>(
+          () => undefined,
+        );
+        const h = yield* makeHarness({
+          body: "Blah [@alpha].",
+          formatCitations: () => pending,
+          resolutionPending: true,
+        });
+        const el = section("<p>Blah [@alpha].</p>");
+
+        h.process(el, h.ctx);
+
+        expect(el.textContent).toBe("Blah [@alpha].");
+        expect(
+          el.querySelector(`.${themeHook.citationKeyPending}`),
+        ).not.toBeNull();
+        expect(
+          el.querySelector(`.${themeHook.citationKeyUnresolved}`),
+        ).toBeNull();
+      }),
+  );
+
+  it.live("leaves a citekey no Literature Note carries as written", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        body: "@ghost blah.",
+        cited: [citation("ghost", null)],
+      });
+      const el = section("<p>@ghost blah.</p>");
+
+      h.process(el, h.ctx);
+
+      expect(el.textContent).toBe("@ghost blah.");
+    }),
+  );
+
+  it.live(
+    "exposes the literal theme hooks for each literal Citation resolution state",
+    () =>
+      Effect.gen(function* () {
+        const cases = [
+          {
+            body: "[@alpha]",
+            cited: [citation("alpha", ALPHA_KEY)],
+            classes: ["zt-citation", "zt-citation-key"],
+          },
+          {
+            body: "[@alpha; @ghost]",
+            cited: [citation("alpha", ALPHA_KEY), citation("ghost", null)],
+            classes: [
+              "zt-citation",
+              "zt-citation-key",
+              "zt-citation-key-partially-unresolved",
+            ],
+          },
+          {
+            body: "[@ghost]",
+            cited: [citation("ghost", null)],
+            classes: [
+              "zt-citation",
+              "zt-citation-key",
+              "zt-citation-key-unresolved",
+            ],
+          },
+          // An Ambiguous Citation Key reads as its own state, and a missing key
+          // outranks it wherever a cluster writes both.
+          {
+            body: "[@twin]",
+            cited: [citation("twin", null)],
+            ambiguousKeys: ["twin"],
+            classes: [
+              "zt-citation",
+              "zt-citation-key",
+              "zt-citation-key-ambiguous",
+            ],
+            absent: ["zt-citation-key-unresolved"],
+          },
+          {
+            body: "[@twin; @ghost]",
+            cited: [citation("twin", null), citation("ghost", null)],
+            ambiguousKeys: ["twin"],
+            classes: [
+              "zt-citation",
+              "zt-citation-key",
+              "zt-citation-key-unresolved",
+            ],
+            absent: ["zt-citation-key-ambiguous"],
+          },
+        ];
+        for (const { body, cited, classes, ambiguousKeys, absent } of cases) {
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const h = yield* makeHarness({ body, cited, ambiguousKeys });
+              const el = section(`<p>${body}</p>`);
+
+              h.process(el, h.ctx);
+
+              const rendered = el.querySelector("span");
+              for (const className of classes) {
+                expect(rendered?.classList.contains(className)).toBe(true);
+              }
+              for (const className of absent ?? []) {
+                expect(rendered?.classList.contains(className)).toBe(false);
+              }
+            }),
+          );
+        }
+      }),
+  );
+
+  it.live("shows the rendered citation's popover while navigation is off", () =>
+    Effect.gen(function* () {
+      // The Hover Action owns hover on its own, so a rendered citation answers
+      // with the popover while Citekey Navigation is off.
+      const h = yield* makeHarness({
+        body: "Blah [@alpha].",
+        overrides: { "citation.open-as-links": false },
+      });
       const el = section("<p>Blah [@alpha].</p>");
 
-      await process(el, ctx);
+      h.process(el, h.viewedCtx(el));
+      const citationEl = el.querySelector<HTMLElement>(".zt-citation")!;
+      citationEl.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
 
-      expect(el.textContent).toBe("Blah [@alpha].");
-      expect(el.querySelector(".zt-citation-key")).toBeNull();
-    }
-  });
+      expect(h.popoverRequests).toHaveLength(1);
+      expect(h.popoverRequests[0]).toMatchObject({
+        targetEl: citationEl,
+        works: [{ citekey: "alpha" }],
+        sourcePath: "note.md",
+      });
+    }),
+  );
+
+  it.live(
+    "leaves the rendered citation's plain click inert while navigation is off",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({
+          body: "Blah [@alpha].",
+          overrides: {
+            "citation.open-as-links": false,
+            "citation.hover-action": "off",
+          },
+        });
+        const el = section("<p>Blah [@alpha].</p>");
+        const event = new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+        });
+
+        h.process(el, h.viewedCtx(el));
+        const citationEl = el.querySelector<HTMLElement>(".zt-citation")!;
+        citationEl.dispatchEvent(event);
+
+        expect(h.opened).toEqual([]);
+        expect(h.popoverRequests).toEqual([]);
+        expect(event.defaultPrevented).toBe(false);
+        // The citation says as much: nothing to click, so it reads as static text.
+        expect(citationEl.dataset.ztClick).toBe("none");
+      }),
+  );
+
+  it.live("states that a rendered citation opens while navigation is on", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        body: "Blah [@alpha].",
+        overrides: { "citation.open-as-links": true },
+      });
+      const el = section("<p>Blah [@alpha].</p>");
+
+      h.process(el, h.viewedCtx(el));
+
+      expect(
+        el.querySelector<HTMLElement>(".zt-citation")!.dataset.ztClick,
+      ).toBe("open");
+    }),
+  );
+
+  it.live("opens the work a Mod-click names while navigation is off", () =>
+    Effect.gen(function* () {
+      vi.spyOn(Keymap, "isModifier").mockReturnValue(true);
+      vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
+      yield* Effect.addFinalizer(() => Effect.sync(() => vi.restoreAllMocks()));
+      const h = yield* makeHarness({
+        body: "Blah [@alpha].",
+        overrides: { "citation.open-as-links": false },
+      });
+      const el = section("<p>Blah [@alpha].</p>");
+
+      h.process(el, h.viewedCtx(el));
+      el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+
+      expect(h.popoverRequests).toEqual([]);
+      expect(h.opened).toEqual([["alpha", "tab"]]);
+    }),
+  );
+
+  it.live("interrupts a pending open when the plugin unloads", () =>
+    Effect.gen(function* () {
+      let interrupted = false;
+      const h = yield* makeHarness({
+        body: "Blah [@alpha].",
+        overrides: { "citation.open-as-links": true },
+        open: Effect.never.pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              interrupted = true;
+            }),
+          ),
+        ),
+      });
+      const el = section("<p>Blah [@alpha].</p>");
+
+      h.process(el, h.viewedCtx(el));
+      el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      expect(h.opened).toEqual([["alpha", false]]);
+      yield* h.unload;
+
+      expect(interrupted).toBe(true);
+    }),
+  );
+
+  it.live(
+    "opens the work a plain click names while Citations open as links",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({
+          body: "Blah [@alpha].",
+          overrides: { "citation.open-as-links": true },
+        });
+        const el = section("<p>Blah [@alpha].</p>");
+
+        h.process(el, h.viewedCtx(el));
+        el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+
+        expect(h.popoverRequests).toEqual([]);
+        expect(h.opened).toEqual([["alpha", false]]);
+      }),
+  );
+
+  it.live("keeps an unrendered citation opening as a link", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        body: "Blah [@alpha].",
+        overrides: {
+          "citation.show-formatted": false,
+          "citation.open-as-links": true,
+        },
+      });
+      const el = section("<p>Blah [@alpha].</p>");
+
+      // Citations open as links here, so the rendering is off but the citation
+      // is still wrapped; turning navigation off as well retires the treatment.
+      h.process(el, h.viewedCtx(el));
+      el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+
+      expect(h.popoverRequests).toEqual([]);
+      expect(h.opened).toEqual([["alpha", false]]);
+    }),
+  );
+
+  it.live("leaves the reading view alone while the treatment is off", () =>
+    Effect.gen(function* () {
+      for (const overrides of [
+        {
+          "citation.show-formatted": false,
+          "citation.open-as-links": false,
+        },
+        { "citation.pandoc-citations": false },
+      ]) {
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const h = yield* makeHarness({
+              body: "Blah [@alpha].",
+              overrides,
+            });
+            const el = section("<p>Blah [@alpha].</p>");
+
+            h.process(el, h.ctx);
+
+            expect(el.textContent).toBe("Blah [@alpha].");
+            expect(el.querySelector(".zt-citation-key")).toBeNull();
+          }),
+        );
+      }
+    }),
+  );
 
   // Sidebar occurrence navigation flashes the block element the line sits in,
   // so the swap has to stay inside that element and leave it in place.
-  it("keeps the block element a reading-view flash targets", async () => {
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha] blah.",
-    });
-    const { process, ctx } = harnessed;
-    const el = section("<p>Blah [@alpha] blah.</p>");
-    const block = el.firstElementChild!;
+  it.live("keeps the block element a reading-view flash targets", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        body: "Blah [@alpha] blah.",
+      });
+      const el = section("<p>Blah [@alpha] blah.</p>");
+      const block = el.firstElementChild!;
 
-    await process(el, ctx);
+      h.process(el, h.ctx);
 
-    expect(el.children).toHaveLength(1);
-    expect(el.firstElementChild).toBe(block);
-    expect(block.querySelector("span.zt-citation")).not.toBeNull();
-  });
+      expect(el.children).toHaveLength(1);
+      expect(el.firstElementChild).toBe(block);
+      expect(block.querySelector("span.zt-citation")).not.toBeNull();
+    }),
+  );
 
-  it("formats a document once for every section that asks", async () => {
-    await using harnessed = await makeHarness({
-      body: "One [@alpha].\n\nTwo [@alpha].",
-    });
-    const { process, ctx, citationRequests } = harnessed;
+  it.live("formats a document once for every section that asks", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        body: "One [@alpha].\n\nTwo [@alpha].",
+      });
 
-    await process(section("<p>One [@alpha].</p>"), ctx);
-    await process(section("<p>Two [@alpha].</p>"), ctx);
+      h.process(section("<p>One [@alpha].</p>"), h.ctx);
+      h.process(section("<p>Two [@alpha].</p>"), h.ctx);
 
-    expect(citationRequests).toHaveLength(1);
-  });
+      expect(h.citationRequests).toHaveLength(1);
+    }),
+  );
 });
 
 describe("CitekeyReading refresh", () => {
-  /** Waits for the replacement read a change starts to commit. */
-  const settled = () => vi.waitFor(() => undefined, { timeout: 1000 });
+  it.live(
+    "refreshes a rendered citation in place when its document's text changes",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({ body: "Blah [@alpha]." });
+        const el = section("<p>Blah [@alpha].</p>");
+        h.process(el, h.viewedCtx(el));
+        const block = el.firstElementChild;
+        expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
 
-  it("refreshes a rendered citation in place when its document's text changes", async () => {
-    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
-    const el = section("<p>Blah [@alpha].</p>");
-    await harnessed.process(el, viewedCtx(harnessed, el));
-    const block = el.firstElementChild;
-    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+        h.renderAs((source) => `‹${source}›`);
+        const settled = yield* h.settles("note.md");
+        h.changeFile("note.md");
+        // The stale text stays while the replacement read runs.
+        expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+        yield* settled;
 
-    harnessed.renderAs((source) => `‹${source}›`);
-    harnessed.changeFile("note.md");
-    // The stale text stays while the replacement read runs.
-    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
-    await vi.waitFor(() =>
-      expect(el.textContent).toBe(`Blah ‹[@${ALPHA_KEY}]›.`),
-    );
+        expect(el.textContent).toBe(`Blah ‹[@${ALPHA_KEY}]›.`);
+        expect(el.firstElementChild).toBe(block);
+        expect(el.querySelectorAll(".zt-citation")).toHaveLength(1);
+        expect(h.rerenders()).toBe(0);
+      }),
+  );
 
-    expect(el.firstElementChild).toBe(block);
-    expect(el.querySelectorAll(".zt-citation")).toHaveLength(1);
-    expect(harnessed.rerenders()).toBe(0);
-  });
+  it.live("leaves another document's sections alone", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({ body: "Blah [@alpha]." });
+      // A document nothing has read stays quiet, so the other one is read first.
+      yield* h.read("other.md");
+      const el = section("<p>Blah [@alpha].</p>");
+      h.process(el, h.viewedCtx(el));
 
-  it("leaves another document's sections alone", async () => {
-    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
-    const el = section("<p>Blah [@alpha].</p>");
-    await harnessed.process(el, viewedCtx(harnessed, el));
+      h.renderAs((source) => `‹${source}›`);
+      const changed = yield* h.changes("other.md");
+      h.changeFile("other.md");
+      yield* changed;
 
-    harnessed.renderAs((source) => `‹${source}›`);
-    harnessed.changeFile("other.md");
-    await settled();
+      expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+      expect(h.rerenders()).toBe(0);
+    }),
+  );
 
-    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
-    expect(harnessed.rerenders()).toBe(0);
-  });
+  it.live("fills a section in that rendered while its text was pending", () =>
+    Effect.gen(function* () {
+      const render = pendingRender();
+      const h = yield* makeHarness({
+        body: "Blah [@alpha].",
+        formatCitations: () => render.pending,
+      });
+      const el = section("<p>Blah [@alpha].</p>");
+      const settled = yield* h.settles("note.md");
+      h.process(el, h.viewedCtx(el));
+      expect(el.textContent).toBe("Blah [@alpha].");
 
-  it("fills a section in that rendered while its text was pending", async () => {
-    let settle: ((value: readonly RenderedCitation[]) => void) | undefined;
-    const pending = new Promise<readonly RenderedCitation[]>((resolve) => {
-      settle = resolve;
-    });
-    await using harnessed = await makeHarness({
-      body: "Blah [@alpha].",
-      formatCitations: () => pending,
-    });
-    const el = section("<p>Blah [@alpha].</p>");
-    await harnessed.process(el, viewedCtx(harnessed, el));
-    expect(el.textContent).toBe("Blah [@alpha].");
+      render.settle([rendered("«[@alpha]»")]);
+      yield* settled;
 
-    settle?.([rendered("«[@alpha]»")]);
-    await vi.waitFor(() => expect(el.textContent).toBe("Blah «[@alpha]»."));
+      expect(el.textContent).toBe("Blah «[@alpha]».");
+      expect(el.querySelector(".zt-citation")).not.toBeNull();
+      expect(h.rerenders()).toBe(0);
+    }),
+  );
 
-    expect(el.querySelector(".zt-citation")).not.toBeNull();
-    expect(harnessed.rerenders()).toBe(0);
-  });
+  it.live(
+    "keeps the current text when the fresh text holds nothing for a citation",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({ body: "Blah [@alpha]." });
+        const el = section("<p>Blah [@alpha].</p>");
+        h.process(el, h.viewedCtx(el));
 
-  it("keeps the current text when the fresh text holds nothing for a citation", async () => {
-    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
-    const el = section("<p>Blah [@alpha].</p>");
-    await harnessed.process(el, viewedCtx(harnessed, el));
+        h.stopFormatting();
+        const settled = yield* h.settles("note.md");
+        h.changeFile("note.md");
+        yield* settled;
 
-    harnessed.renderAs(() => "");
-    harnessed.changeFile("note.md");
-    await settled();
+        expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+      }),
+  );
 
-    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
-  });
+  it.live(
+    "keeps key state with the held document until its fresh read arrives",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({
+          body: "[@twin]",
+          cited: [citation("twin", null)],
+        });
+        const el = section("<p>[@twin]</p>");
+        h.process(el, h.viewedCtx(el));
+        expect(
+          el.querySelector(`.${themeHook.citationKeyUnresolved}`),
+        ).not.toBeNull();
 
-  it("follows the citekey resolution snapshot in place when it rebuilds", async () => {
-    await using harnessed = await makeHarness({
-      body: "[@twin]",
-      cited: [citation("twin", null)],
-    });
-    const el = section("<p>[@twin]</p>");
-    await harnessed.process(el, viewedCtx(harnessed, el));
-    expect(
-      el.querySelector(`.${themeHook.citationKeyUnresolved}`),
-    ).not.toBeNull();
+        const settled = yield* h.settles("note.md");
+        h.rebuildResolution(["twin"]);
 
-    harnessed.rebuildResolution(["twin"]);
+        expect(
+          el.querySelector(`.${themeHook.citationKeyUnresolved}`),
+        ).not.toBeNull();
+        yield* settled;
+        expect(
+          el.querySelector(`.${themeHook.citationKeyAmbiguous}`),
+        ).not.toBeNull();
+        expect(
+          el.querySelector(`.${themeHook.citationKeyUnresolved}`),
+        ).toBeNull();
+        expect(h.rerenders()).toBe(0);
+      }),
+  );
 
-    expect(
-      el.querySelector(`.${themeHook.citationKeyAmbiguous}`),
-    ).not.toBeNull();
-    expect(el.querySelector(`.${themeHook.citationKeyUnresolved}`)).toBeNull();
-    expect(harnessed.rerenders()).toBe(0);
-  });
+  it.live("keeps a placed element across a refresh whose answer is equal", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({ body: "Blah [@alpha]." });
+      const el = section("<p>Blah [@alpha].</p>");
+      h.process(el, h.viewedCtx(el));
+      const element = el.querySelector<HTMLElement>(".zt-citation")!;
 
-  it("keeps a placed element across a refresh whose answer is equal", async () => {
-    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
-    const el = section("<p>Blah [@alpha].</p>");
-    await harnessed.process(el, viewedCtx(harnessed, el));
-    const element = el.querySelector<HTMLElement>(".zt-citation")!;
+      // Every text goes stale at once, and the rebuilt snapshot answers the same.
+      const rebuilt = yield* h.settles("note.md");
+      h.rebuildResolution([]);
+      yield* rebuilt;
+      const changed = yield* h.settles("note.md");
+      h.changeFile("note.md");
+      yield* changed;
 
-    // Every text goes stale at once, and the rebuilt snapshot answers the same.
-    harnessed.rebuildResolution([]);
-    await settled();
-    harnessed.changeFile("note.md");
-    await settled();
+      expect(el.querySelector(".zt-citation")).toBe(element);
+      expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+      element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      expect(h.popoverRequests).toHaveLength(1);
+    }),
+  );
 
-    expect(el.querySelector(".zt-citation")).toBe(element);
-    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
-    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-    expect(harnessed.popoverRequests).toHaveLength(1);
-  });
+  it.live("answers one hover with one popover after a refresh", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({ body: "Blah [@alpha]." });
+      const el = section("<p>Blah [@alpha].</p>");
+      h.process(el, h.viewedCtx(el));
 
-  it("answers one hover with one popover after a refresh", async () => {
-    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
-    const el = section("<p>Blah [@alpha].</p>");
-    await harnessed.process(el, viewedCtx(harnessed, el));
+      h.renderAs((source) => `‹${source}›`);
+      const settled = yield* h.settles("note.md");
+      h.changeFile("note.md");
+      yield* settled;
+      expect(el.textContent).toBe(`Blah ‹[@${ALPHA_KEY}]›.`);
+      el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+        new MouseEvent("mouseover", { bubbles: true }),
+      );
 
-    harnessed.renderAs((source) => `‹${source}›`);
-    harnessed.changeFile("note.md");
-    await vi.waitFor(() =>
-      expect(el.textContent).toBe(`Blah ‹[@${ALPHA_KEY}]›.`),
-    );
-    el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
-      new MouseEvent("mouseover", { bubbles: true }),
-    );
+      expect(h.popoverRequests).toHaveLength(1);
+    }),
+  );
 
-    expect(harnessed.popoverRequests).toHaveLength(1);
-  });
+  it.live("leaves a section Obsidian tore down alone", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({ body: "Blah [@alpha]." });
+      const el = section("<p>Blah [@alpha].</p>");
+      h.process(el, h.viewedCtx(el));
+      expect(h.activeLookups()).toBe(1);
+      h.unloadSections();
+      expect(h.activeLookups()).toBe(0);
 
-  it("leaves a section Obsidian tore down alone", async () => {
-    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
-    const el = section("<p>Blah [@alpha].</p>");
-    await harnessed.process(el, viewedCtx(harnessed, el));
-    harnessed.unloadSections();
+      h.renderAs((source) => `‹${source}›`);
+      const changed = yield* h.changes("note.md");
+      h.changeFile("note.md");
+      yield* changed;
 
-    harnessed.renderAs((source) => `‹${source}›`);
-    harnessed.changeFile("note.md");
-    await settled();
-
-    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
-  });
+      expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+    }),
+  );
 });
-
-/** Hands out one settings snapshot, the way the service reads its toggles. */
-function settingsStub(overrides: Partial<Settings>): {
-  ready: Promise<void>;
-  subscribe: (listener: (settings: Readonly<Settings>) => void) => () => void;
-} {
-  const current: Readonly<Settings> = { ...defaults, ...overrides };
-  return {
-    ready: Promise.resolve(),
-    subscribe: (listener) => {
-      listener(current);
-      return () => undefined;
-    },
-  };
-}

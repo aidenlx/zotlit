@@ -8,10 +8,18 @@ import {
 } from "@zotlit/templates/constants";
 import type { AutoTrim } from "@zotlit/templates/constants";
 
+import { highlightMappingsSchema } from "@/lib/highlight-mapping";
 import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
 } from "@/services/library-scope/scope";
+import {
+  annotationToolColorsSchema,
+  DEFAULT_INK_WIDTH,
+  DEFAULT_TEXT_FONT_SIZE,
+  inkWidthSchema,
+  textFontSizeSchema,
+} from "@/services/pdf-annotation-editor/tools";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
 /**
@@ -28,6 +36,18 @@ type SettingsValue =
   | readonly SettingsValue[]
   | { readonly [key: string]: SettingsValue };
 
+/** Any JSON value, unchecked past its being JSON: its owner reads it. */
+const jsonValueSchema: v.GenericSchema<SettingsValue> = v.lazy(() =>
+  v.union([
+    v.string(),
+    v.number(),
+    v.boolean(),
+    v.null(),
+    v.array(jsonValueSchema),
+    v.record(v.string(), jsonValueSchema),
+  ]),
+);
+
 const frontmatterFieldsSchema = v.pipe(
   v.array(frontmatterFieldSchema),
   v.checkItems(
@@ -37,6 +57,37 @@ const frontmatterFieldsSchema = v.pipe(
   ),
   v.readonly(),
 );
+
+const defaultLiteratureNoteProfileSchema = v.pipe(
+  v.object({
+    bindings: v.pipe(
+      v.object({
+        "note.literature-folder": v.string(),
+        "citation.references-style": v.nullable(v.string()),
+        "note.import-folder": v.string(),
+        "note.import-colored-highlights": v.boolean(),
+        "note.import-annotations-as-template": v.boolean(),
+      }),
+      v.readonly(),
+    ),
+  }),
+  v.readonly(),
+);
+
+export type DefaultLiteratureNoteProfile = v.InferOutput<
+  typeof defaultLiteratureNoteProfileSchema
+>;
+
+/** The built-in Profile is the total inheritance root for vault-local bindings. */
+export const DEFAULT_LITERATURE_NOTE_PROFILE = Object.freeze({
+  bindings: Object.freeze({
+    "note.literature-folder": "literatures",
+    "citation.references-style": null,
+    "note.import-folder": "zotero_notes",
+    "note.import-colored-highlights": false,
+    "note.import-annotations-as-template": false,
+  }),
+}) satisfies DefaultLiteratureNoteProfile;
 
 /** JSON-safe finite number that settings values may take. */
 export const settingsNumber = v.pipe(v.number(), v.finite());
@@ -48,6 +99,13 @@ export const settingsNumber = v.pipe(v.number(), v.finite());
  */
 const logLevel = v.nullable(v.picklist(getLogLevels()));
 export type LogLevel = v.InferOutput<typeof logLevel>;
+
+/** Every LogTape severity level, in LogTape's order. */
+export const LOG_LEVELS = getLogLevels();
+
+/** Whether `value` names a LogTape severity level. */
+export const isLogLevel = (value: string): value is NonNullable<LogLevel> =>
+  LOG_LEVELS.some((level) => level === value);
 
 export type { AutoTrim };
 
@@ -75,20 +133,32 @@ export const schema = v.object({
 
   "citation.editor-suggester": v.boolean(),
   "citation.at-trigger": v.boolean(),
+  /**
+   * The text that opens the Annotation Suggester; empty turns it off. A
+   * trigger that overlaps a citation trigger opens nothing.
+   */
+  "citation.annotation-trigger": v.string(),
   "citation.show-citekey-in-suggester": v.boolean(),
   /** Include Pandoc citation syntax in the shared document citation set. */
   "citation.pandoc-citations": v.boolean(),
   /** Treat Literature Note wikilinks as Citations in the index-backed UI. */
   "citation.wikilink-citations": v.boolean(),
+  /** Treat Zotero annotation links with no link text as Citations of the annotation's item. */
+  "citation.annotation-citations": v.boolean(),
+  /** Add Graph Citations — citation edges and Cited Work Nodes — to Obsidian's graph views. */
+  "citation.graph-citations": v.boolean(),
   /** Show recognized Citations with the selected CSL style. */
   "citation.show-formatted": v.boolean(),
+  /**
+   * Show an Annotation Citation in its place as its formatted text. Takes
+   * effect with `citation.annotation-citations` and `citation.show-formatted`.
+   */
+  "citation.render-annotation-citations": v.boolean(),
   /**
    * Navigate to the Literature Note when a Citation is clicked, on both Pandoc
    * Citations and Literature Note wikilinks rendered as Citations.
    */
   "citation.open-as-links": v.boolean(),
-  /** CSL style ID; `null` renders with the citation engine's embedded style. */
-  "citation.references-style": v.nullable(v.string()),
   /**
    * Citation Locale as a BCP 47 tag; `null` or empty leaves the selected CSL
    * style's own default locale in charge.
@@ -96,23 +166,34 @@ export const schema = v.object({
   "citation.locale": v.nullable(v.string()),
   /** What hovering a Citation shows, on every surface that carries one. */
   "citation.hover-action": hoverAction,
-  /** Whether the Citation Popover needs a held Mod, per editing mode. */
+  /** Whether the Citation Popover needs a held Mod, per surface. */
   "citation.hover-require-mod-source": v.boolean(),
   "citation.hover-require-mod-live-preview": v.boolean(),
   "citation.hover-require-mod-reading": v.boolean(),
+  "citation.hover-require-mod-graph": v.boolean(),
 
-  "note.literature-folder": v.string(),
+  "note.default-profile": defaultLiteratureNoteProfileSchema,
+  "note.template-conversion-pending": v.boolean(),
+  "note.template-conversion-result": v.nullable(
+    v.object({
+      /** `null` when the vault held no Literature Note slots to fold. */
+      document: v.nullable(v.pipe(v.string(), v.nonEmpty())),
+      trashed: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+      /** Legacy files a failed trash left behind; retried from the Welcome view.
+       *  Absent in results saved before cleanup retry existed. */
+      pendingCleanup: v.optional(v.array(v.string()), []),
+    }),
+  ),
   "note.frontmatter-fields": frontmatterFieldsSchema,
-  "note.import-folder": v.string(),
-  "note.import-colored-highlights": v.boolean(),
-  "note.import-annotations-as-template": v.boolean(),
+  "note.import-highlight-mappings": highlightMappingsSchema,
 
   "server.enabled": v.boolean(),
+  "server.live-update": v.boolean(),
+  "server.workbench": v.boolean(),
   "server.port": serverPort,
   "server.hostname": v.string(),
 
   "template.folder": v.string(),
-  "template.auto-pair-eta": v.boolean(),
   "template.auto-trim-leading": autoTrimSchema,
   "template.auto-trim-trailing": autoTrimSchema,
 
@@ -128,9 +209,65 @@ export const schema = v.object({
   "attachment.folder-path": v.nullable(v.string()),
   "attachment.import": v.boolean(),
 
+  "reader.focus-annot-view": v.boolean(),
+  /**
+   * Whether a clicked Attachment File Link opens in Obsidian's PDF view
+   * instead of the system handler — File Link Capture, ADR 0045.
+   */
+  "reader.open-file-links": v.boolean(),
+  /**
+   * Open a clicked Durable Annotation Link in Obsidian's reader, with the
+   * Annotation selected; off hands it to Zotero.
+   */
+  "reader.open-annotation-links": v.boolean(),
+  /**
+   * The colour each PDF reader annotation tool draws in. Sparse, so a tool
+   * never recoloured follows Zotero's own default.
+   */
+  "reader.annotation-colors": annotationToolColorsSchema,
+  /**
+   * The annotation colours used last in the PDF reader, most recent first. One
+   * list for every tool, so the popup offers the same swatches to each.
+   */
+  "reader.recent-colors": v.array(v.string()),
+  /** The pen width the PDF reader's ink tool draws at, in PDF points. */
+  "reader.ink-width": inkWidthSchema,
+  /** The font size the PDF reader's text tool types at, in PDF points. */
+  "reader.text-font-size": textFontSizeSchema,
+
+  /**
+   * What the Library View shows, as its Library View Document; `null` until
+   * the view saves one, and a new view opens on the default. Kept as a plain
+   * JSON object: the Library View Document module reads it field by field,
+   * so one field this build cannot read never resets the rest. ADR 0071.
+   */
+  "library.document": v.nullable(v.record(v.string(), jsonValueSchema)),
+
+  /**
+   * The researcher dismissed the Welcome View banner above the Library View;
+   * the open-welcome command shows it again. ADR 0077.
+   */
+  "welcome.dismissed": v.boolean(),
+  /**
+   * The researcher asked for the Welcome View banner ("Open welcome view",
+   * "Welcome & help", "Review conversion"), so it shows with its setup steps
+   * until they dismiss it, across reloads. ADR 0077.
+   */
+  "welcome.requested": v.boolean(),
+  /**
+   * "Show steps" on the banner's folded "Setup done" line is open, until the
+   * banner is dismissed. ADR 0077.
+   */
+  "welcome.steps-shown": v.boolean(),
+
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
   "release.migration-pending": v.boolean(),
+  /**
+   * The running version is an update the Welcome View banner announces until
+   * the researcher opens "What's new" or dismisses the banner. ADR 0077.
+   */
+  "release.update-pending": v.boolean(),
 }) satisfies v.GenericSchema<unknown, Record<string, SettingsValue>>;
 
 export type Settings = v.InferOutput<typeof schema>;
@@ -145,12 +282,16 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "log.to-file": false,
   "citation.editor-suggester": true,
   "citation.at-trigger": false,
+  // A bracket like the Citation Suggester's `[@`, and `>` for a quote.
+  "citation.annotation-trigger": "[>",
   "citation.show-citekey-in-suggester": false,
   "citation.pandoc-citations": true,
   "citation.wikilink-citations": false,
+  "citation.annotation-citations": false,
+  "citation.graph-citations": true,
   "citation.show-formatted": true,
+  "citation.render-annotation-citations": false,
   "citation.open-as-links": false,
-  "citation.references-style": null,
   "citation.locale": null,
   "citation.hover-action": "popover",
   // Source mode keeps the modifier so plain-text editing is never interrupted,
@@ -158,16 +299,18 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.hover-require-mod-source": true,
   "citation.hover-require-mod-live-preview": false,
   "citation.hover-require-mod-reading": false,
-  "note.literature-folder": "literatures",
+  "citation.hover-require-mod-graph": false,
+  "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
+  "note.template-conversion-pending": false,
+  "note.template-conversion-result": null,
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
-  "note.import-folder": "zotero_notes",
-  "note.import-colored-highlights": false,
-  "note.import-annotations-as-template": false,
+  "note.import-highlight-mappings": {},
   "server.enabled": false,
+  "server.live-update": true,
+  "server.workbench": true,
   "server.port": 9091,
   "server.hostname": "127.0.0.1",
   "template.folder": "templates",
-  "template.auto-pair-eta": false,
   "template.auto-trim-leading": DEFAULT_AUTO_TRIM.leading,
   "template.auto-trim-trailing": DEFAULT_AUTO_TRIM.trailing,
   "zotero.auto-refresh": true,
@@ -175,8 +318,20 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "zotero.library-scope": DEFAULT_LIBRARY_SCOPE,
   "attachment.folder-path": null,
   "attachment.import": true,
+  "reader.focus-annot-view": true,
+  "reader.open-file-links": true,
+  "reader.open-annotation-links": true,
+  "reader.annotation-colors": {},
+  "reader.recent-colors": [],
+  "reader.ink-width": DEFAULT_INK_WIDTH,
+  "reader.text-font-size": DEFAULT_TEXT_FONT_SIZE,
+  "library.document": null,
+  "welcome.dismissed": false,
+  "welcome.requested": false,
+  "welcome.steps-shown": false,
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,
   "release.migration-pending": false,
+  "release.update-pending": false,
 } satisfies Settings);

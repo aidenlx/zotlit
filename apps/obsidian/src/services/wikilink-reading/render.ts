@@ -128,16 +128,37 @@ export function renderCitationRuns(
   return rendered;
 }
 
+/**
+ * The link targets of a section's anchors that {@link sectionCitationRuns}
+ * asks a Citation of, in document order.
+ */
+export function sectionLinktexts(root: HTMLElement): string[] {
+  const linktexts: string[] = [];
+  for (const anchor of root.querySelectorAll<HTMLAnchorElement>(
+    INTERNAL_LINK,
+  )) {
+    const linktext = citationLinktext(anchor);
+    if (linktext !== null) linktexts.push(linktext);
+  }
+  return linktexts;
+}
+
 /** @returns the Citation `anchor` writes, or null when it writes none. */
 function citationRendered(
   anchor: HTMLAnchorElement,
   citationOf: WikilinkCitationOf,
 ): WikilinkCitation | null {
+  const linktext = citationLinktext(anchor);
+  return linktext === null ? null : citationOf(linktext);
+}
+
+/** @returns the link target `anchor` may write a Citation for, or null. */
+function citationLinktext(anchor: HTMLAnchorElement): string | null {
   const linktext = anchor.dataset["href"];
   if (linktext === undefined) return null;
   if (anchor.hasAttribute(ALIAS_MARKER)) return null;
   if (anchor.textContent !== breadcrumb(linktext)) return null;
-  return citationOf(linktext);
+  return linktext;
 }
 
 /**
@@ -171,7 +192,7 @@ function textBetween(
 
 /** Drops the separator nodes a run's anchors were joined by. */
 function removeBetween(from: ChildNode, to: ChildNode): void {
-  for (let node = from.nextSibling; node !== null && node !== to; ) {
+  for (let node = from.nextSibling; node !== null && node !== to;) {
     const next = node.nextSibling;
     node.remove();
     node = next;

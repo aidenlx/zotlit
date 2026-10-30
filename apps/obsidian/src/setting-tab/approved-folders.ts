@@ -5,6 +5,7 @@
 import type { SettingDefinitionItem, SettingDefinitionPage } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { AttachmentImport } from "@/services/attachment-import/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { appendDeviceOverrideNote, browseForDir } from "./device-override";
@@ -18,6 +19,7 @@ export function approvedFoldersPage(
 ): SettingDefinitionPage<SettingsKey> {
   return {
     type: "page",
+    id: "settings_attachment_approved",
     name: m.settings_attachment_approved_name(),
     desc: approvedFoldersDesc(),
     items: approvedFolderItems(ctx),
@@ -35,6 +37,7 @@ function approvedFoldersDesc(): DocumentFragment {
 /** Static guidance shown above the mutable approved-folder list. */
 function approvedFoldersPolicy(): SettingDefinitionItem<SettingsKey> {
   return {
+    id: "settings_attachment_approved_policy",
     name: m.settings_attachment_approved_policy_name(),
     desc: m.settings_attachment_approved_policy_desc(),
   };
@@ -47,10 +50,13 @@ function approvedFoldersPolicy(): SettingDefinitionItem<SettingsKey> {
 function approvedFolderItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
-  const folders = ctx.attachmentImport.approvedFolders;
+  const folders = ctx.tab.sync(
+    AttachmentImport.use((service) => service.approvedFolders),
+  );
   return [
     approvedFoldersPolicy(),
     {
+      id: "settings_attachment_approved_list",
       type: "list",
       emptyState: m.settings_attachment_approved_empty(),
       addItem: {
@@ -60,11 +66,17 @@ function approvedFolderItems(
       onDelete: (index) => {
         const folder = folders[index];
         if (folder === undefined) return;
-        void ctx.attachmentImport
-          .revokeFolder(folder)
-          .then(() => ctx.requestUpdate());
+        // The list follows the change through the tab's rebuild stream.
+        void ctx.tab.run(
+          AttachmentImport.use((service) => service.revokeFolder(folder)),
+          m.settings_failed_revoke_folder(),
+        );
       },
-      items: folders.map((folder) => ({ name: folder, searchable: false })),
+      items: folders.map((folder) => ({
+        id: `settings_attachment_approved_entry:${folder}`,
+        name: folder,
+        searchable: false,
+      })),
     },
   ];
 }
@@ -75,9 +87,10 @@ function pickApprovedFolder(ctx: SettingTabContext): void {
     title: m.settings_attachment_approved_dialog_title(),
     startPath: undefined,
     onPick: (folder) => {
-      void ctx.attachmentImport
-        .approveFolder(folder)
-        .then(() => ctx.requestUpdate());
+      void ctx.tab.run(
+        AttachmentImport.use((service) => service.approveFolder(folder)),
+        m.settings_failed_approve_folder(),
+      );
     },
   });
 }

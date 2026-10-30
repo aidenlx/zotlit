@@ -3,6 +3,9 @@
   "pages": [
     "settings",
     "commands",
+    "query-file-format",
+    "functions-and-methods",
+    "template-workbench-cli",
     "protocol-links",
     "theme-hooks",
     "templates"

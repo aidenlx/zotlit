@@ -9,8 +9,10 @@ import { createFixtureSchema } from "@/test-utils";
 
 import {
   getCitekeyByItemKey,
+  getCitekeyWindow,
   getCitekeysByLibrary,
   getItemIDByCitekey,
+  getLastItemID,
 } from "./citekey";
 
 let sqlite: DatabaseSync;
@@ -140,6 +142,94 @@ describe("getCitekeysByLibrary", () => {
     // Item 8 (USER3) has only a `title` field, not a citationKey.
     const rows = getCitekeysByLibrary(db, USER_LIBRARY_ID);
     expect(rows.some((row) => row.itemID === 8)).toBe(false);
+  });
+});
+
+describe("getCitekeyWindow", () => {
+  it("reads all Libraries in itemID order with bare keys", () => {
+    expect(getCitekeyWindow(db, { afterItemID: 5, throughItemID: 9 })).toEqual([
+      { itemID: 6, libraryID: 1, key: "USER2", citekey: "shared2024" },
+      { itemID: 7, libraryID: 2, key: "GRP1", citekey: "shared2024" },
+      { itemID: 9, libraryID: 2, key: "GRP2", citekey: "groupkey2025" },
+    ]);
+  });
+  it("excludes the lower bound and includes the upper bound", () => {
+    expect(
+      getCitekeyWindow(db, { afterItemID: 6, throughItemID: 7 }).map(
+        (row) => row.itemID,
+      ),
+    ).toEqual([7]);
+  });
+  it("excludes trashed Items", () => {
+    expect(getCitekeyWindow(db, { afterItemID: 1, throughItemID: 2 })).toEqual(
+      [],
+    );
+  });
+  it("excludes absent and empty native citation keys", () => {
+    sqlite.exec(
+      "insert into itemDataValues (valueID, value) values (106, ''); update itemData set valueID = 106 where itemID = 9",
+    );
+    expect(getCitekeyWindow(db, { afterItemID: 7, throughItemID: 9 })).toEqual(
+      [],
+    );
+  });
+  it("walks gaps through the last Item across every Library", () => {
+    const actual: [number, number][] = [];
+    for (
+      let afterItemID = 0;
+      afterItemID < getLastItemID(db);
+      afterItemID += 2
+    ) {
+      actual.push(
+        ...getCitekeyWindow(db, {
+          afterItemID,
+          throughItemID: afterItemID + 2,
+        }).map(({ libraryID, itemID }): [number, number] => [
+          libraryID,
+          itemID,
+        ]),
+      );
+    }
+    expect(actual).toEqual(
+      [1, 2].flatMap((id) =>
+        getCitekeysByLibrary(db, id).map(({ libraryID, itemID }) => [
+          libraryID,
+          itemID,
+        ]),
+      ),
+    );
+  });
+  it("range-scans the itemData primary key without an ORDER BY sort", () => {
+    sqlite.exec("create index itemData_fieldID on itemData(fieldID)");
+    const queries: { sql: string; params: unknown[] }[] = [];
+    db = drizzle({
+      client: sqlite,
+      relations,
+      logger: {
+        logQuery(sql, params) {
+          queries.push({ sql, params });
+        },
+      },
+    });
+    getCitekeyWindow(db, { afterItemID: 0, throughItemID: 9 });
+    const query = queries[0]!;
+    const details = sqlite
+      .prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+      .all(...(query.params as (string | number)[]))
+      .map((row) => row.detail)
+      .join("\n");
+    expect(details).toContain(
+      "sqlite_autoindex_itemData_1 (itemID>? AND itemID<?)",
+    );
+    expect(details).not.toContain("TEMP B-TREE");
+  });
+});
+
+describe("getLastItemID", () => {
+  it("finds the last Item and returns zero for an empty database", () => {
+    expect(getLastItemID(db)).toBe(9);
+    sqlite.exec("delete from items");
+    expect(getLastItemID(db)).toBe(0);
   });
 });
 

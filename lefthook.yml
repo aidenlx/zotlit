@@ -1,6 +1,11 @@
 pre-commit:
   piped: true
   commands:
+    # Runs first: lint builds the working tree, so files outside the commit
+    # would reach it. See packages/scripts/lib/commit-tree.ts.
+    tree:
+      priority: 1
+      run: mise exec -- node packages/scripts/scripts/commit-tree.ts
     format:
       run: mise exec -- oxfmt --no-error-on-unmatched-pattern {staged_files}
       stage_fixed: true
@@ -8,3 +13,26 @@ pre-commit:
       glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
       run: mise exec -- turbo run //#lint:repo -- --fix {staged_files} --no-error-on-unmatched-pattern
       stage_fixed: true
+    messages:
+      glob: "*.{json,js,jsx,ts,tsx,mjs,mts,mdx,xhtml,html}"
+      run: mise exec -- node packages/scripts/scripts/check-messages.ts
+    snapshots:
+      glob: "*.snap"
+      run: mise exec -- node packages/scripts/scripts/snapshot-size.ts {staged_files}
+
+# Commits and pushes carry no AI-agent attribution, and claude/*, codex/* and
+# cursor/* branches stay local. See packages/scripts/lib/ai-attribution.ts.
+commit-msg:
+  commands:
+    ai-attribution:
+      run: mise exec -- node packages/scripts/scripts/ai-attribution.ts message {1}
+
+# The quality gate: GitHub runs no pull-request checks, so this is where a
+# branch is checked before anyone sees it. See ADR 0076.
+pre-push:
+  commands:
+    ai-attribution:
+      use_stdin: true
+      run: mise exec -- node packages/scripts/scripts/ai-attribution.ts push {1}
+    verify:
+      run: mise exec -- node packages/scripts/scripts/verify.ts

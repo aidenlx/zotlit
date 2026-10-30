@@ -1,15 +1,14 @@
+import {
+  lineClassNodeProp,
+  syntaxTree,
+  tokenClassNodeProp,
+} from "@codemirror/language";
 // The CodeMirror side of the citekey editor treatment: citekey marks and
 // citation widgets over the visible ranges, the lookup that answers which
 // citekey covers a document position, the click that opens the marked key's
 // Literature Note, and the hover that shows its entry. Wherever a Citation does
 // not open as a link, a plain click on its widget stays the editor's own and
 // places the caret in the source the widget hides.
-
-import {
-  lineClassNodeProp,
-  syntaxTree,
-  tokenClassNodeProp,
-} from "@codemirror/language";
 import { RangeSetBuilder, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import {
@@ -20,12 +19,18 @@ import {
 } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, livePreviewState } from "obsidian";
+import type { Workspace } from "obsidian";
 
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
-import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
-import type { CitekeyResolution } from "@/services/citation-index/service";
+import { EditorLookup } from "@/services/citation-index/editor-lookup";
+import { heldResolution } from "@/services/citation-index/lookup";
+import type {
+  CitationLookupAnswer,
+  CitationLookupObservation,
+  CitekeyResolution,
+} from "@/services/citation-index/service";
 import {
   citationContent,
   citationElement,
@@ -47,6 +52,7 @@ import type {
 import {
   attachCitationNavigation,
   attachClosedCitationGestures,
+  citationClickIntent,
   citationHoverIntent,
   hoverGesture,
   markCitationClick,
@@ -62,6 +68,7 @@ import type {
   HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
+import type { Held } from "@/services/query-client/service";
 
 import {
   citationRanges,
@@ -92,16 +99,19 @@ export type ResolveCitekey = (citekey: string) => CitekeyResolution | null;
  * @returns the vault path of the one Literature Note `citekey` names, or null
  *   when zero or several name it.
  */
-export type ResolveHoverNote = (citekey: string) => string | null;
-
 export interface CitekeyEditorHandlers {
   open: OpenCitekey;
+  /** Raises the menus a rendered citation opens. */
+  workspace: Pick<Workspace, "trigger">;
   /** Show the Citation Popover of one hovered citation. */
   showPopover: (request: CitationHoverRequest) => void;
   /** What hover answers with, read once per hover. */
   hoverPreferences: () => HoverPreferences;
-  hoverNotePath: ResolveHoverNote;
-  resolveCitekey: ResolveCitekey;
+  hoverNotePath: (
+    citekey: string,
+    lookup?: CitationLookupAnswer | null,
+  ) => string | null;
+  observeLookup: (changed: () => void) => CitationLookupObservation;
   /** Whether literal Citations expose ZotLit navigation. */
   navigationEnabled: () => boolean;
   /** Whether Live Preview replaces complete Citations with formatted text. */
@@ -175,6 +185,8 @@ interface CitekeyDecorations {
   all: DecorationSet;
   /** The widgets alone, which cursor motion treats as atoms. */
   widgets: DecorationSet;
+  /** The complete visible request this pass read. */
+  citekeys: readonly string[];
 }
 
 /**
@@ -196,12 +208,25 @@ export function citekeyEditorExtension(
       decorations: DecorationSet = Decoration.none;
       /** The widget ranges, which {@link EditorView.atomicRanges} reads. */
       widgets: DecorationSet = Decoration.none;
+      #editClick: { from: number; x: number; y: number } | null = null;
+      readonly #lookup;
 
       constructor(view: EditorView) {
+        this.#lookup = new EditorLookup(handlers.observeLookup, () => {
+          view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
+        });
         this.#rebuild(view);
       }
 
+      destroy(): void {
+        this.#lookup[Symbol.dispose]();
+      }
+
+      readonly #resolve: ResolveCitekey = (citekey) =>
+        heldResolution(this.#lookup.current?.value ?? null, citekey);
+
       update(update: ViewUpdate): void {
+        if (update.docChanged) this.#editClick = null;
         const tree = syntaxTree(update.state);
         // The stream parse stops just past the viewport, so a tree shorter than
         // the viewport has no nodes over part of it. Obsidian also freezes its
@@ -233,6 +258,61 @@ export function citekeyEditorExtension(
         ) {
           this.#rebuild(update.view);
         }
+      }
+
+      startEditClick(event: MouseEvent, view: EditorView): void {
+        this.#editClick = null;
+        if (
+          handlers.navigationEnabled() ||
+          event.button !== 0 ||
+          event.shiftKey ||
+          event.altKey ||
+          citationClickIntent(
+            mouseGesture(event, "click", {
+              surface: "editor",
+              editorMode: editorModeOf(view),
+            }),
+          ) !== "edit"
+        ) {
+          return;
+        }
+        const element = citationElementAt(event);
+        if (element !== null) {
+          this.#editClick = {
+            from: view.posAtDOM(element),
+            x: event.clientX,
+            y: event.clientY,
+          };
+        }
+      }
+
+      finishEditClick(event: MouseEvent, view: EditorView): boolean {
+        const click = this.#editClick;
+        this.#editClick = null;
+        if (
+          click === null ||
+          handlers.navigationEnabled() ||
+          event.shiftKey ||
+          event.altKey ||
+          citationClickIntent(
+            mouseGesture(event, "click", {
+              surface: "editor",
+              editorMode: editorModeOf(view),
+            }),
+          ) !== "edit" ||
+          !view.state.selection.main.empty ||
+          Math.hypot(event.clientX - click.x, event.clientY - click.y) > 4
+        ) {
+          return false;
+        }
+        // Native mousedown owns drag and extended selection. Once an ordinary
+        // click finishes, move its edge caret into the source it just revealed.
+        view.dispatch({
+          selection: { anchor: click.from + 1 },
+          userEvent: "select.pointer",
+        });
+        view.focus();
+        return true;
       }
 
       /**
@@ -326,7 +406,10 @@ export function citekeyEditorExtension(
         if (intent.kind === "page-preview") {
           // A key naming zero or several notes previews nothing, so no popover
           // path can reach the create-then-open flow.
-          const notePath = handlers.hoverNotePath(intent.citekey);
+          const notePath = handlers.hoverNotePath(
+            intent.citekey,
+            this.#lookup.current?.value ?? null,
+          );
           if (notePath === null) {
             logger.trace("Citekey hover suppressed", {
               citekey,
@@ -357,7 +440,7 @@ export function citekeyEditorExtension(
           targetEl,
           sourcePath: info.file?.path ?? "",
           works: intent.citekeys.map((key) => {
-            const resolution = handlers.resolveCitekey(key);
+            const resolution = this.#resolve(key);
             return {
               citekey: key,
               // An Ambiguous Citation Key adopts no candidate's identity, so
@@ -390,13 +473,13 @@ export function citekeyEditorExtension(
       }
 
       #rebuild(view: EditorView): void {
-        const built = buildDecorations(
-          view,
-          handlers,
-          this.#editedDocument(view),
-        );
+        const built = buildDecorations(view, handlers, {
+          edited: this.#editedDocument(view),
+          resolveCitekey: this.#resolve,
+        });
         this.decorations = built.all;
         this.widgets = built.widgets;
+        this.#lookup.set({ citekeys: built.citekeys });
       }
     },
     {
@@ -410,10 +493,12 @@ export function citekeyEditorExtension(
       eventHandlers: {
         click(event, view) {
           if (event.button !== 0) return false;
+          if (this.finishEditClick(event, view)) return true;
           return this.openAt(event, view);
         },
         // Obsidian reads middle-click off `mousedown`; `click` never fires for it.
         mousedown(event, view) {
+          this.startEditClick(event, view);
           if (event.button !== 1) return false;
           return this.openAt(event, view);
         },
@@ -463,6 +548,7 @@ class CitationWidget extends WidgetType {
   readonly #themeClasses;
   readonly #footnote;
   readonly #navigable;
+  readonly #lookupRevision;
 
   constructor(options: {
     source: string;
@@ -477,6 +563,7 @@ class CitationWidget extends WidgetType {
     footnote: boolean;
     /** Whether the Citation opens on click, which Citekey Navigation owns. */
     navigable: boolean;
+    lookupRevision: string;
   }) {
     super();
     this.#source = options.source;
@@ -488,10 +575,12 @@ class CitationWidget extends WidgetType {
     this.#themeClasses = options.themeClasses;
     this.#footnote = options.footnote;
     this.#navigable = options.navigable;
+    this.#lookupRevision = options.lookupRevision;
   }
 
   eq(other: CitationWidget): boolean {
     return (
+      other.#lookupRevision === this.#lookupRevision &&
       other.#source === this.#source &&
       other.#content === this.#content &&
       other.#navigable === this.#navigable &&
@@ -559,6 +648,7 @@ class CitationWidget extends WidgetType {
       showPopover: this.#handlers.showPopover,
       hoverPreferences: this.#handlers.hoverPreferences,
       hoverNotePath: this.#handlers.hoverNotePath,
+      workspace: this.#handlers.workspace,
       hoverTarget: () => {
         const info = view.state.field(editorInfoField, false);
         return info
@@ -572,9 +662,27 @@ class CitationWidget extends WidgetType {
     };
   }
 
-  /** The widget owns every gesture on its own element. */
-  ignoreEvent(): boolean {
-    return true;
+  /**
+   * Native mousedown keeps selection and drag behavior; the completed plain
+   * click lets the editor place its caret inside the revealed Citation source.
+   */
+  ignoreEvent(event: Event): boolean {
+    if (
+      this.#navigable ||
+      (event.type !== "mousedown" && event.type !== "click")
+    ) {
+      return true;
+    }
+    const mouse = event as MouseEvent;
+    return (
+      mouse.button !== 0 ||
+      citationClickIntent(
+        mouseGesture(mouse, "click", {
+          surface: "editor",
+          editorMode: "live-preview",
+        }),
+      ) !== "edit"
+    );
   }
 }
 
@@ -590,7 +698,13 @@ interface PlacedDecoration {
 function buildDecorations(
   view: EditorView,
   handlers: CitekeyEditorHandlers,
-  edited: EditedDocument | null,
+  {
+    edited,
+    resolveCitekey,
+  }: {
+    edited: EditedDocument | null;
+    resolveCitekey: ResolveCitekey;
+  },
 ): CitekeyDecorations {
   const all = new RangeSetBuilder<Decoration>();
   const widgets = new RangeSetBuilder<Decoration>();
@@ -599,9 +713,10 @@ function buildDecorations(
   // A blurred editor conceals everything, the way Obsidian's own live preview
   // reads its selection.
   const selection = view.hasFocus ? state.selection.ranges : [];
+  const visibleCitekeys = new Set<string>();
   let lastLineFrom = -1;
   for (const range of view.visibleRanges) {
-    for (let pos = range.from; pos <= range.to; ) {
+    for (let pos = range.from; pos <= range.to;) {
       const line = state.doc.lineAt(pos);
       pos = line.to + 1;
       // A line straddling two visible ranges is offered twice; decorate it once.
@@ -615,6 +730,9 @@ function buildDecorations(
       const placed: PlacedDecoration[] = [];
       if (edited !== null) {
         for (const citation of citationRanges(line.text, isRuledOut)) {
+          for (const { citekey } of citation.keys) {
+            visibleCitekeys.add(citekey);
+          }
           const from = line.from + citation.start;
           const to = line.from + citation.end;
           if (overlapsSelection(selection, from, to)) continue;
@@ -638,7 +756,10 @@ function buildDecorations(
 
       const marks = stateCitekeyMarks(
         marksOutside(citekeyMarks(line.text, isRuledOut), replaced),
-        (citekey) => citekeyState(handlers.resolveCitekey(citekey)),
+        (citekey) => {
+          visibleCitekeys.add(citekey);
+          return citekeyState(resolveCitekey(citekey));
+        },
       );
       for (const mark of marks) {
         placed.push({
@@ -658,7 +779,11 @@ function buildDecorations(
       }
     }
   }
-  return { all: all.finish(), widgets: widgets.finish() };
+  return {
+    all: all.finish(),
+    widgets: widgets.finish(),
+    citekeys: [...visibleCitekeys],
+  };
 }
 
 /**
@@ -684,9 +809,7 @@ function citationWidget(options: {
   const at: CitationCoordinate = { kind: "offset", start };
   const content = citationContent(citation, citations, at);
   if (content === null) return null;
-  const stateOf = literalKeyStateOf(citations, (citekey) =>
-    citekeyState(handlers.resolveCitekey(citekey)),
-  );
+  const stateOf = literalKeyStateOf(citations);
   const themeClasses = citationStateHooks(
     citationState(citationKeyStates(citation, stateOf)),
   );
@@ -696,10 +819,15 @@ function citationWidget(options: {
     shown: { citation, at },
     works: citedWorks(citation, citations),
     sourcePath: path,
-    handlers,
+    handlers: {
+      ...handlers,
+      hoverNotePath: (citekey) =>
+        handlers.hoverNotePath(citekey, citations.lookup),
+    },
     themeClasses,
     footnote,
     navigable: handlers.navigationEnabled(),
+    lookupRevision: citations.lookup.revision,
   });
 }
 
@@ -711,11 +839,12 @@ function citationWidget(options: {
  *   on no mark or moves within the one it is already inside.
  */
 function citekeyElementAt(event: MouseEvent): HTMLElement | null {
-  const { target, relatedTarget } = event;
-  if (!(target instanceof HTMLElement)) return null;
+  const target = event.target as Node | null;
+  const relatedTarget = event.relatedTarget as Node | null;
+  if (!target?.instanceOf(HTMLElement)) return null;
   const targetEl = target.closest<HTMLElement>(`.${themeHook.citationKey}`);
   if (targetEl === null) return null;
-  if (relatedTarget instanceof Node && targetEl.contains(relatedTarget)) {
+  if (relatedTarget?.instanceOf(Node) && targetEl.contains(relatedTarget)) {
     return null;
   }
   return targetEl;
@@ -723,8 +852,8 @@ function citekeyElementAt(event: MouseEvent): HTMLElement | null {
 
 /** @returns the citation widget the event landed in, or null when it landed in none. */
 function citationElementAt(event: MouseEvent): HTMLElement | null {
-  const { target } = event;
-  if (!(target instanceof HTMLElement)) return null;
+  const target = event.target as Node | null;
+  if (!target?.instanceOf(HTMLElement)) return null;
   return target.closest<HTMLElement>(`.${themeHook.citation}`);
 }
 

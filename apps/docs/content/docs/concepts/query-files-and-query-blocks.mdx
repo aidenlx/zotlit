@@ -1,0 +1,154 @@
+---
+title: "Query files and query blocks"
+description: "How query files and query blocks show live views of your Zotero annotations, files, and papers in Obsidian."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+A query file shows a live, filtered view of your Zotero library in Obsidian. A query block shows the same kind of view inside one note.
+
+Use them to keep a set of annotations in front of you while you write. For example, collect every highlight tagged `figure` across your thesis sources, or list the papers in a Collection as a table.
+
+## Query files and query blocks [#hosts]
+
+A **query file** is a vault file with the extension `.zotquery`. It displays a live, interactive view of items, files, or annotations from your Zotero library. If you are familiar with Obsidian Bases (`.base`), a query file uses a similar structure and toolbar controls, but queries your Zotero library directly. You can open it in a tab, or embed it in any note:
+
+```md
+![[Figures.zotquery]]
+![[Figures.zotquery#Yellow highlights]]
+```
+
+The second line shows one named view of the file. Without a view name, the embed shows the first view, which is the default view.
+
+A **query block** is a code block with the language `zotquery` in a note. It holds the same text as a query file, so you can keep a one-off view in the note that uses it:
+
+````md
+```zotquery
+views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    filters: item == this.item
+```
+````
+
+A new query file opens on a Table of your papers, so it shows something useful before you have any highlights. Its second view shows your annotations.
+
+![A query file showing papers in a table with reading status and note columns, beside a note whose embedded query block groups annotations by paper](/img/concepts/query-file-and-block.webp)
+
+The sidebar <UiLabel name={m.annot_view_name()} /> is the same kind of view. It shows the annotations of the attachment that it follows.
+
+## Views, records, and layouts [#views]
+
+A query file or query block holds one or more **views**. Each view has a name and these parts:
+
+| Part                                      | What it decides                                                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| <UiLabel name={m.query_view_dataset()} /> | Which Zotero records each row shows: annotations, attachments (files and links), or items (papers).    |
+| Layout                                    | How the view draws the rows: Annotations, Table, List, or Cards.                                       |
+| Filters                                   | Which records the view shows, such as one color, one Tag, or the papers of one Collection.             |
+| Sort                                      | The order of the rows.                                                                                 |
+| Group                                     | One property that collects related rows under a heading, such as the paper that each annotation is on. |
+| Properties                                | The values that each row shows, in order.                                                              |
+
+Each layout shows some kinds of records:
+
+| Layout                                               | <UiLabel name={m.query_view_dataset()} /> | What you see                                                                                                                                                                           |
+| ---------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.query_view_layout_annotations()} /> | Annotations                               | Annotation cards, the same as in the sidebar. You can edit a comment or tags on a card.                                                                                                |
+| <UiLabel name={m.query_view_layout_table()} />       | Items                                     | One row per paper, as in Zotero's item list. A row expands into its files, annotations, and notes. Attachment titles and annotation text are clickable links that open the source PDF. |
+| <UiLabel name={m.query_view_layout_list()} />        | Annotations, attachments, or items        | One line per record with its properties.                                                                                                                                               |
+| <UiLabel name={m.query_view_layout_cards()} />       | Annotations, attachments, or items        | One card per record. The first property is the card's title.                                                                                                                           |
+
+Filters come in two kinds. The filters for **all views** apply to every view of the file that reads the same records as the first view. The filters for **this view** apply to one view only. Put a rule that every view shares, such as one Collection, in the filters for all views.
+
+## Changes save where the view lives [#saving]
+
+Every view has a toolbar. A change in the toolbar, such as a new sort, saves at once:
+
+- In a query file tab or embed, the change saves to the query file. Every tab and embed of that file then shows the change.
+- In a query block, the change rewrites the block text in the note. This also works when the block shows through a section embed or a hover popover: the change saves to the note that holds the block.
+- In the sidebar, the change stays with the sidebar.
+
+A note that you export to PDF or print shows the rows as they are at that time, without the toolbar. Where a view has no place to save, such as in a note preview, the view still shows its rows. Under the toolbar it shows <UiLabel name={m.query_view_read_only()} />
+
+## `this`: the paper of the note [#this]
+
+A filter can name the paper of the note that shows the view as `this.item`. This makes one query file useful in many Literature Notes: each note shows the annotations of its own paper.
+
+```text
+ Literature Note "Smith 2020"          Literature Note "Lee 2023"
+ zotero-key: SMITH20                   zotero-key: LEE23
+        │                                     │
+        ▼                                     ▼
+ ![[Paper annotations.zotquery]]       ![[Paper annotations.zotquery]]
+ filters: item == this.item            filters: item == this.item
+        │                                     │
+        ▼                                     ▼
+ annotations of Smith 2020             annotations of Lee 2023
+```
+
+What `this` refers to depends on where the view shows:
+
+| Where the view shows                 | `this.item`                                          | `this.attachment`                       |
+| ------------------------------------ | ---------------------------------------------------- | --------------------------------------- |
+| An embed in a note, or a query block | The item that the note's `zotero-key` property names | No value                                |
+| The sidebar annotation view          | The item that the sidebar follows                    | The attachment that the sidebar follows |
+| A query file in its own tab          | No value                                             | No value                                |
+
+When the paper is in a library outside your <UiLabel name={m.settings_library_scope_name()} /> setting, the view shows no rows and says <UiLabel name={m.query_view_warning_outside_library_scope()} /> Other query warnings show above the rows in the same way.
+
+A filter that reads `this` where it has no value cannot run. The view then shows <UiLabel name={m.query_view_failed()} /> with the reason. The view also displays a suggestion explaining where to open it, such as embedding the view in a Literature Note or opening a PDF in the sidebar.
+
+## Annotations in Literature Notes [#literature-notes]
+
+The default Literature Note template puts a query block under the note's **Annotations** heading, where earlier versions listed the annotations as text. The block shows the annotations of the note's own paper, and it stays current with Zotero.
+
+![A literature note with an embedded query block that groups the paper's annotations by color, with the Yellow group's four cards in two columns above the Red group](/img/concepts/query-block-in-note.webp)
+
+When ZotLit updates the note, it keeps the block text that the note holds, so a change you made in the block's toolbar stays. A Literature Note that you made with an earlier default template, and that still has its managed region, gets the block on its next update. A custom template stays as you wrote it.
+
+A paper in the Zotero trash shows no annotations in this block. [Default templates](/docs/reference/templates/defaults#content-template) shows the template and how to list the annotations as text instead.
+
+## Properties from your Literature Notes [#vault]
+
+An items view can show the properties of each paper's Literature Note beside its Zotero fields, such as a `reading-status` property that you keep on the note. The view calls them vault properties and names them `vault.<name>`.
+
+Your notes store the values, not Zotero. Obsidian's Properties panel and Bases read the same values. For a paper in a shared Zotero group library, your values stay in your vault and do not reach the other members. A paper without a Literature Note has no place to hold a value yet, so the first edit in the Table creates its note.
+
+ZotLit Query reads the Zotero database and never reads your notes, so ZotLit answers vault properties itself. A view applies `limit` inside ZotLit Query, so ZotLit plans a sort or a filter on a vault property before the query runs:
+
+- A sort reads up to 5,000 matching papers, sorts them, and then keeps `limit` of them.
+- A filter becomes a list of papers, chosen by the values in your notes, which ZotLit Query reads with the rest of the filter.
+
+In both cases `limit` counts the rows that you see. This is also why a vault condition must stand as its own entry under the top-level `and` of the filters. [ADR 0070](https://github.com/aidenlx/zotlit/blob/next/apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md) records the design.
+
+[Track reading status in the Query View](/docs/how-to/track-reading-status) shows the steps. [Vault properties](/docs/reference/query-file-format#vault) lists the rules.
+
+## Live updates and reading [#live]
+
+Views refresh when Zotero changes, and when you change the <UiLabel name={m.settings_library_scope_name()} /> setting. A view reads the Zotero database, so it keeps showing rows while Zotero is closed. Edits on annotation cards wait for Zotero.
+
+When a filter has an error, the view keeps the rows it showed last and shows <UiLabel name={m.query_view_filter_error()} /> The condition with the error shows the reason in the filter editor.
+
+## See also
+
+<Cards>
+  <Card
+    title="Use query files"
+    description="Create a query file, change its views, embed it, and save the sidebar as a query file."
+    href="/docs/how-to/use-query-files"
+  />
+  <Card
+    title="Query file format"
+    description="Every key of a query file or query block."
+    href="/docs/reference/query-file-format"
+  />
+  <Card
+    title="How ZotLit Query works"
+    description="The records, filters, and groups behind every view."
+    href="/docs/concepts/how-zotlit-query-works"
+  />
+</Cards>

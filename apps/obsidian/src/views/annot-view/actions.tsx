@@ -1,92 +1,564 @@
-import { Menu, Platform } from "obsidian";
-import type { App } from "obsidian";
+import { Menu } from "obsidian";
+import type { App, PaneType } from "obsidian";
 import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
-import { annotationOpenUri } from "@zotlit/db";
-import type { AnnotViewItem } from "@zotlit/db";
-import { resolveAnnotCachePath } from "@zotlit/db/path";
+import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
+import { observeExit } from "@zotlit/workbench/ui";
 
+import { buildColorMenu } from "@/lib/annotation-colors";
+import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
+import { showMenuAtButton } from "@/lib/menu";
+import type { MenuAlign } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
+import { requireElectron } from "@/lib/require";
 import * as toast from "@/lib/toast";
-import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { ViewRun } from "@/lib/view-runner";
+import type {
+  AnnotationRecord,
+  TextField,
+} from "@/services/annotation-repository/service";
+import { groupFailureMessages } from "@/services/annotation-repository/write";
+import type { TargetOpener } from "@/services/attachment-open/open-target";
+import type {
+  ExcerptDisplayDemand,
+  ExcerptImageDisplay,
+} from "@/services/excerpt-image/display";
+import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
-import type { NoteFeature } from "@/services/note-feature";
-import { InertTemplateError } from "@/services/template/errors";
+import { menuSections, raiseMenu } from "@/services/menu-events";
+import { viewTargetOpener } from "@/views/open-target";
 
+import {
+  annotationDraftCommand,
+  openExcerptDemandCommand,
+  annotationWriteCommand,
+  readCitation,
+  resultValue,
+  requireResult,
+} from "./atoms";
+import type { AnnotationWriteRequest, CitationRead } from "./atoms";
+import { chooseAttachment } from "./attachment-suggester";
+import { groupControl, pressControl } from "./card-controls";
+import type { CardBlock, CardControl, CardControls } from "./card-controls";
+import type { CardClick, CardPlace } from "./card-selection";
+import { blockedNotice, copyText, deleteConfirmation } from "./card-verbs";
 import type { CommentRenderer } from "./comment-render";
+import { copiedText } from "./copied-text";
+import type { ExcerptImageTarget } from "./excerpt-image-state";
+import { buildHeaderMenu } from "./menus";
+import { attachmentLine, headerMenu } from "./presentation";
+import type { AnnotState, FollowMode } from "./state";
+
+const logger = getLogger(["views", "annot-view"]);
+
+const SECTION = menuSections("zotlit:annotation-menu");
 
 export interface AnnotActions {
-  onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotViewItem): void;
-  onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotViewItem): void;
+  /**
+   * Open a card's overflow menu, from the control that carries it. On a card
+   * inside the Card Selection the menu acts on the whole selection; on one
+   * outside it, the card is selected alone first.
+   */
+  onMoreOptions(
+    evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+    annot: AnnotationRecord,
+  ): void;
+  /**
+   * Open the same menu as {@link AnnotActions.onMoreOptions} at the pointer,
+   * from a right-click on the card.
+   */
+  onCardMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
+  /** Open the header block's one grouped menu, from the block itself. */
+  onHeaderMenu(evt: MouseEvent<HTMLElement>): void;
+  /**
+   * Open the view's "More options" menu from the control row, where the view
+   * header that carries it is hidden.
+   */
+  onViewMenu(evt: MouseEvent<HTMLElement>): void;
+  /** Choose another Attachment of the Item on screen, in a suggester. */
+  onChooseAttachment(): void;
+  /** Open the Attachment on screen in Obsidian's own PDF view. */
+  onOpenPdf(): void;
+  /** Ask Zotero for write authorization, from the header menu. */
+  onAllowEditing(): void;
+  /**
+   * Say why the verb just pressed could not act, in an Obsidian notice. A
+   * blocked verb keeps its press and spends it here instead of on the write.
+   * The notice reads the capability at the press, so it offers the one gesture
+   * that could change it where there is one.
+   */
+  onBlockedPress(block: CardBlock): void;
+  /**
+   * Open Zotero's eight swatches from a card's palette control. On a card
+   * inside the Card Selection the swatch recolours the whole selection; on
+   * one outside it, the card is selected alone first.
+   *
+   * @returns the block its notice named, where a blocked capability kept the
+   *   swatches shut; `null` otherwise.
+   */
+  onColorMenu(
+    evt: MouseEvent<HTMLElement>,
+    annot: AnnotationRecord,
+  ): CardBlock | null;
+  onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void;
   onRefresh(): void;
-  /** Toggle reader-follow on/off; off reverts to following the active note. */
-  onToggleFollowReader(): void;
-  /** Pick a Zotero item to pin the view to (manual-link mode). */
-  onLinkItem(): void;
-  /** Exit linked mode, revert to following the active note. */
-  onUnlinkItem(): void;
-  getImgSrc(annot: AnnotViewItem): string;
-  getBacklink(annot: AnnotViewItem): string | undefined;
+  /** Follow the active tab or the Zotero reader, from a user gesture. */
+  onSetFollowMode(mode: Exclude<FollowMode, "pinned">): void;
+  /** Pin the Item on screen, releasing an Obsidian PDF view's lock. */
+  onPinCurrentItem(): void;
+  /** Search Zotero for an Item to pin. */
+  onPinItem(): void;
+  /** Return to the mode the pin interrupted. */
+  onUnpin(): void;
+  /** Turn Live updates on, so the Zotero reader can reach this view. */
+  onEnableLiveUpdates(): void;
+  /**
+   * Change the Card Selection from a click on this card: alone for a plain
+   * click, toggled for Cmd/Ctrl-click, a range for Shift-click. A bound
+   * Obsidian PDF view lands quietly on the Annotation Mark of a card the click
+   * adds.
+   *
+   * @param place where the clicked card stands in the list: a card under two
+   *   group headings stands at two places.
+   * @see apps/obsidian/docs/adr/0061-the-annotation-view-owns-its-card-selection.md
+   */
+  onSelectAnnotation(
+    annot: AnnotationRecord,
+    gesture: CardClick,
+    place: CardPlace,
+  ): void;
+  /**
+   * A click on the empty list: an open card editor closes, or, with none
+   * open, the Card Selection clears.
+   */
+  onClearSelection(): void;
+  /**
+   * Save and close the open card editor: a click in the view away from the
+   * field ends the edit, as Escape does.
+   */
+  onCloseEditors(): void;
+  /**
+   * Start one card's editing of a text field: a comment edit, or a Text Edit
+   * on the Quoted Text. A card not selected alone is first selected alone,
+   * and an open editor is first saved and closed.
+   *
+   * @returns whether a draft stands, which is when the editor opens.
+   */
+  onOpenField(annot: AnnotationRecord, field: TextField): boolean;
+  /** Take one change of a card's text field editor into the field's draft. */
+  onEditField(annot: AnnotationRecord, field: TextField, text: string): void;
+  /**
+   * Store what a card's text field editor holds, from the gesture that
+   * saved or closed it.
+   *
+   * @param save.automatic whether the editor asks by itself, as on blur or
+   *   close, rather than on the user's explicit save.
+   */
+  onSaveField(
+    annot: AnnotationRecord,
+    field: TextField,
+    save: { text: string; automatic?: boolean },
+  ): void;
+  /**
+   * Drop one text field's held draft Zotero never took, from the card's
+   * "Discard". Zotero's own value stands as it is, so the card behind the
+   * panel already shows what the discard leaves.
+   */
+  onDiscardDraft(annot: AnnotationRecord, field: TextField): void;
+  /**
+   * Start or rejoin one card's tag editing session. A card not selected alone
+   * is first selected alone, and an open comment editor is first saved and
+   * closed.
+   *
+   * @returns whether a session stands, which it does only while editing is
+   *   available or a draft is already held.
+   */
+  onOpenTags(annot: AnnotationRecord): boolean;
+  onEditTags(annot: AnnotationRecord, names: readonly string[]): void;
+  /**
+   * Save the card's tag session as its editor closes, or on Save tags.
+   *
+   * @param options.automatic whether the editor closing asks, which holds a
+   *   draft that needs Save tags rather than saving it.
+   */
+  onSaveTags(annot: AnnotationRecord, options?: { automatic?: boolean }): void;
+  /** Drop a held tag draft and keep the tags Zotero holds. */
+  onDiscardTags(annot: AnnotationRecord): void;
+  /** The tag names of the Annotation's Library, which the editor suggests. */
+  libraryTagNames(annot: AnnotationRecord): Promise<readonly string[]>;
+  /**
+   * Erase every Selected Card's Annotation, from Delete or Backspace on the
+   * view: after a confirmation, which names the count for two or more.
+   *
+   * @returns the block its notice named, where a blocked capability stopped
+   *   the delete; `null` otherwise.
+   */
+  onDeleteSelection(): CardBlock | null;
+  /**
+   * Recolour every Selected Card's Annotation, from the `1`–`8` keys on the
+   * view, as a swatch of the palette does.
+   *
+   * @returns the block its notice named, where a blocked capability stopped
+   *   the recolour; `null` otherwise.
+   */
+  onRecolorSelection(color: string): CardBlock | null;
+  /**
+   * Copy every Selected Card's text as `text/plain`, from Cmd/Ctrl+C on the
+   * view.
+   *
+   * @returns whether there was text to copy.
+   */
+  onCopySelection(): boolean;
+  /**
+   * Send a conflicted write again, against the value Zotero holds now — the
+   * card's "Apply again", and its "Delete anyway".
+   *
+   * @param field the text field whose draft stands in the conflict; left
+   *   out, the write the Annotation's standing conflict names.
+   */
+  onApplyAgain(annot: AnnotationRecord, field?: TextField): void;
+  /**
+   * Leave Zotero's copy as it stands, from the conflicted card's "Discard".
+   *
+   * @param field the text field whose draft stands in the conflict; left
+   *   out, the write the Annotation's standing conflict names.
+   */
+  onDiscardConflict(annot: AnnotationRecord, field?: TextField): void;
+  /**
+   * Open one card's demand on its Annotation's live Excerpt Image. The card
+   * states what it paints and releases the demand as it goes.
+   */
+  openExcerptImage(): ExcerptDisplayDemand;
+  /**
+   * The request one card's target resolves, or `null` where nothing can: no
+   * Annotation Source, another Zotero data directory, or a database that
+   * cannot answer.
+   */
+  excerptImageRequest(
+    target: ExcerptImageTarget,
+  ): Promise<ExcerptRequest | null>;
+  getBacklink(annot: AnnotationRecord): string | undefined;
+  /**
+   * Open the Annotation where it was made, from its page chip: Obsidian's
+   * reader where this device holds the PDF, Zotero otherwise.
+   */
+  onOpenPage(annot: AnnotationRecord, pane: PaneType | boolean): void;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
   renderComment: CommentRenderer;
 }
 
 export interface AnnotActionDeps {
   app: App;
-  getGroupID: () => number | null;
-  getDataDir: () => string;
+  /** Opens an Annotation at its page. */
+  opener: Pick<TargetOpener["Service"], "open">;
+  excerptImageRequest: AnnotActions["excerptImageRequest"];
+  registry: ViewRegistryHandle;
+  /** Forks a menu's Effect on the view's lifetime. */
+  run: ViewRun;
+  /** The clock a failure notice reads a cooldown's remaining seconds against. */
+  now?: () => Temporal.Instant;
+  /**
+   * Whether each of the card's verbs runs, and the reason it does not. The
+   * view supplies it: the capability and the Annotation's mutation state live
+   * in its store, and the native menu is built outside React.
+   */
+  controls: (annot: AnnotationRecord) => CardControls;
+  /** The Selected Cards, in list order. */
+  selectedCards: () => readonly AnnotationRecord[];
+  libraryTagNames: AnnotActions["libraryTagNames"];
+  /**
+   * What the view is showing right now. A native menu is built at the moment
+   * the gesture opens it, so its entries are read then rather than subscribed
+   * to — the same reason {@link AnnotActionDeps.controls} is a callback.
+   */
+  getState: () => AnnotState;
+  /** Show another Attachment of the Item on screen, from the picker. */
+  setSelectedAttachmentKey: (key: string) => void;
+  /** Add or drop one tag from the list filter, from a card's tag menu. */
+  toggleSelectedTag: (tag: string) => void;
   refresh: () => Promise<void>;
-  noteFeature: Pick<NoteFeature, "renderAnnotationCitation">;
   /** Templated drag-insert handler built by the view (owns the import handle). */
   onDragStart: AnnotActions["onDragStart"];
+  /**
+   * Put one Annotation into the active note, from the overflow menu — the same
+   * Markdown the drag drops, on the route a keyboard reaches.
+   */
+  offerAnnotationInsert: () => ((annot: AnnotationRecord) => void) | null;
   /** Comment renderer built by the view (owns the app, component, source path). */
   renderComment: CommentRenderer;
-  onToggleFollowReader: AnnotActions["onToggleFollowReader"];
-  onLinkItem: AnnotActions["onLinkItem"];
-  onUnlinkItem: AnnotActions["onUnlinkItem"];
+  /** Fill the view's "More options" menu, as the view header would. */
+  fillViewMenu: (menu: Menu) => void;
+  onSetFollowMode: AnnotActions["onSetFollowMode"];
+  onAllowEditing: AnnotActions["onAllowEditing"];
+  onOpenPdf: AnnotActions["onOpenPdf"];
+  onPinCurrentItem: AnnotActions["onPinCurrentItem"];
+  onPinItem: AnnotActions["onPinItem"];
+  onUnpin: AnnotActions["onUnpin"];
+  onEnableLiveUpdates: AnnotActions["onEnableLiveUpdates"];
+  onSelectAnnotation: AnnotActions["onSelectAnnotation"];
+  onClearSelection: AnnotActions["onClearSelection"];
+  /**
+   * Select this card alone, as a click does, unless it already is: an edit
+   * control's press does this before its editor opens, so an editor never
+   * opens on a card in a group.
+   */
+  selectAlone: (annot: AnnotationRecord) => void;
+  /**
+   * Save and close the open card editors: an editor opens only once the other
+   * has closed, as the Mark Popup opens one at a time.
+   */
+  closeEditors: () => void;
+  /**
+   * Make one card's field the editing target, as its own control does: the
+   * route a menu entry takes to an editor.
+   */
+  openEditor: (annot: AnnotationRecord, field: TextField) => void;
   onExploreAnnotation: (annotationKey: string) => void;
 }
 
-const IMG_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="140">' +
-    '<rect width="100%" height="100%" fill="rgba(128,128,128,0.18)"/>' +
-    '<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" ' +
-    'fill="gray" font-family="sans-serif" font-size="14">Image not cached</text>' +
-    "</svg>",
-)}`;
-
-function resourceUrl(absolutePath: string): string {
-  const encoded = encodeURI(absolutePath);
-  return `${Platform.resourcePathPrefix}${encoded.replace(/^\//, "")}?${Date.now()}`;
+/** Show what a citation read answered, and copy the citation. */
+function copyCitation(read: CitationRead): void {
+  if (read.kind === "inert-template") {
+    new BaseNotice(read.message);
+    return;
+  }
+  if (read.kind === "failed") {
+    new BaseNotice(m.annot_view_copy_failed());
+    return;
+  }
+  const { citation } = read;
+  if (citation.kind === "not-in-database") {
+    new BaseNotice(m.annot_view_annotation_not_in_database());
+    return;
+  }
+  if (citation.kind === "no-citation-key") {
+    new BaseNotice(m.annot_view_copy_citation_no_key());
+    return;
+  }
+  void toast.promise(writeClipboard(citation.text), {
+    success: m.annot_view_copied_citation(),
+    error: m.annot_view_copy_failed(),
+  });
 }
 
 export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
-  const getBacklink = (annot: AnnotViewItem): string | undefined => {
+  const now = deps.now ?? (() => Temporal.Now.instant());
+
+  const sendWrite = (request: AnnotationWriteRequest): void => {
+    deps.registry.set(annotationWriteCommand, {
+      ...request,
+      complete: (states) => {
+        for (const message of groupFailureMessages(states, now()))
+          new BaseNotice(message);
+      },
+    });
+  };
+
+  const setColors = (
+    annots: readonly AnnotationRecord[],
+    color: string,
+  ): void =>
+    sendWrite({ kind: "color", keys: annots.map(({ key }) => key), color });
+  /**
+   * One verb over these cards, which one card's control decides alone: refused
+   * while a write is in flight on any of them, and blocked for the same reason
+   * one card is.
+   */
+  const controlOf = (
+    verb: "color" | "delete",
+    annots: readonly AnnotationRecord[],
+  ): Pick<CardControl, "disabled" | "blocked"> =>
+    groupControl(annots.map((annot) => deps.controls(annot)[verb]));
+  /**
+   * A press of one verb over these cards: `act` runs unless a write in flight
+   * refuses the press, or a blocked capability spends it on the notice that
+   * says why.
+   *
+   * @returns the block the notice named, or `null` where none was raised.
+   */
+  const press = (
+    verb: "color" | "delete",
+    annots: readonly AnnotationRecord[],
+    act: () => void,
+  ): CardBlock | null => {
+    const control = controlOf(verb, annots);
+    if (control.disabled) return null;
+    if (control.blocked) {
+      onBlockedPress(control.blocked);
+      return control.blocked;
+    }
+    act();
+    return null;
+  };
+  /** The swatches over these cards: checked only where every card has it. */
+  const fillColorMenu = (
+    menu: Menu,
+    annots: readonly AnnotationRecord[],
+  ): void => {
+    buildColorMenu(menu, {
+      colors: annots.map(({ color }) => color),
+      onSelect: (hex) => setColors(annots, hex),
+    });
+    raiseMenu(menu, {
+      workspace: deps.app.workspace,
+      name: "zotlit:annotation-color-menu",
+      info: {
+        source: "annotation-view",
+        annotations: annots,
+      },
+    });
+  };
+  /**
+   * The copy entry, for one card or a group. It is dimmed where no card has
+   * text or a comment to copy.
+   */
+  const addCopyItem = (
+    menu: Menu,
+    annots: readonly AnnotationRecord[],
+  ): void => {
+    menu.addItem((item) => {
+      item
+        .setSection(SECTION.clipboard)
+        .setTitle(m.annot_view_menu_copy_text())
+        .setIcon("copy")
+        .setDisabled(copiedText(annots) === "")
+        .onClick(() => copyText(annots));
+    });
+  };
+  const onOpenField = (annot: AnnotationRecord, field: TextField): boolean => {
+    deps.selectAlone(annot);
+    deps.closeEditors();
+    deps.registry.set(annotationDraftCommand, {
+      kind: "edit-field",
+      key: annot.key,
+      field,
+    });
+    return resultValue(deps.registry.get(annotationDraftCommand)) === true;
+  };
+  const onEditField = (
+    annot: AnnotationRecord,
+    field: TextField,
+    text: string,
+  ): void => {
+    deps.registry.set(annotationDraftCommand, {
+      kind: "edit-field",
+      key: annot.key,
+      field,
+      text,
+    });
+  };
+  const onSaveField: AnnotActions["onSaveField"] = (
+    annot,
+    field,
+    { text, automatic = false },
+  ) =>
+    sendWrite({ kind: "submit-field", key: annot.key, field, text, automatic });
+  const onDiscardDraft = (annot: AnnotationRecord, field: TextField): void =>
+    deps.registry.set(annotationDraftCommand, {
+      kind: "discard-field",
+      key: annot.key,
+      field,
+    });
+  const onOpenTags = (annot: AnnotationRecord): boolean => {
+    deps.selectAlone(annot);
+    deps.closeEditors();
+    deps.registry.set(annotationDraftCommand, {
+      kind: "edit-tags",
+      key: annot.key,
+    });
+    return resultValue(deps.registry.get(annotationDraftCommand)) === true;
+  };
+  const onEditTags = (
+    annot: AnnotationRecord,
+    names: readonly string[],
+  ): void =>
+    deps.registry.set(annotationDraftCommand, {
+      kind: "edit-tags",
+      key: annot.key,
+      names,
+    });
+  const onSaveTags: AnnotActions["onSaveTags"] = (
+    annot,
+    { automatic = false } = {},
+  ) => sendWrite({ kind: "submit-tags", key: annot.key, automatic });
+  const onDiscardTags = (annot: AnnotationRecord): void =>
+    deps.registry.set(annotationDraftCommand, {
+      kind: "discard-tags",
+      key: annot.key,
+    });
+  const deleteCards = async (
+    annots: readonly AnnotationRecord[],
+  ): Promise<void> => {
+    if (await confirm(deleteConfirmation(annots.length), deps.app))
+      sendWrite({ kind: "delete", keys: annots.map(({ key }) => key) });
+  };
+  const onApplyAgain = (annot: AnnotationRecord, field?: TextField): void =>
+    sendWrite({ kind: "retry", key: annot.key, ...(field && { field }) });
+  const onDiscardConflict = (
+    annot: AnnotationRecord,
+    field?: TextField,
+  ): void =>
+    deps.registry.set(
+      annotationDraftCommand,
+      field
+        ? { kind: "discard-field", key: annot.key, field }
+        : { kind: "discard-conflict", key: annot.key },
+    );
+  // Every key on a record is an Indexed Key, so the library it names travels
+  // with it: the Zotero URI and the cache path both want the bare key beside
+  // the group the key already carries.
+  const getBacklink = (annot: AnnotationRecord): string | undefined => {
+    const annotation = parseIndexedKey(annot.key);
+    const attachment = parseIndexedKey(annot.parentKey);
+    if (!annotation || !attachment) return undefined;
     return annotationOpenUri({
-      attachmentKey: annot.parentKey,
-      annotationKey: annot.key,
+      attachmentKey: attachment.key,
+      annotationKey: annotation.key,
       pageLabel: annot.pageLabel,
-      groupID: deps.getGroupID(),
+      groupID: annotation.groupID,
     });
   };
 
-  const getImgSrc = (annot: AnnotViewItem): string => {
-    const cachePath = resolveAnnotCachePath(annot, {
-      dataDir: deps.getDataDir(),
-      groupID: deps.getGroupID(),
-    });
-    return cachePath ? resourceUrl(cachePath) : IMG_PLACEHOLDER;
-  };
+  const onBlockedPress = (block: CardBlock): void =>
+    blockedNotice(block, deps.onAllowEditing);
 
-  const buildMenu = (annot: AnnotViewItem): Menu => {
+  /**
+   * A menu opened from a control, anchored under the control itself — so it
+   * lands in the same place however the control was activated.
+   *
+   * @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
+   */
+  const showMenu = (
+    evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+    fill: (menu: Menu) => void,
+    align?: MenuAlign,
+  ): void => {
     const menu = new Menu();
+    fill(menu);
+    showMenuAtButton(menu, evt.currentTarget, align);
+  };
 
+  /**
+   * The Attachment picker the header menu opens. The choice it offers is the
+   * one `attachmentLine` decided, read at the moment the row was pressed.
+   */
+  const onChooseAttachment = (): void => {
+    const line = attachmentLine(deps.getState());
+    if (line.kind !== "picker") return;
+    chooseAttachment(deps.app, line.options, deps.setSelectedAttachmentKey);
+  };
+
+  const fillCardMenu = (menu: Menu, annot: AnnotationRecord): void => {
+    addEditTextItem(menu, annot);
     const backlink = getBacklink(annot);
     if (backlink) {
       menu.addItem((item) => {
         item
+          .setSection(SECTION.clipboard)
           .setTitle(m.annot_view_menu_copy_backlink())
           .setIcon("link")
           .onClick(() => {
@@ -98,84 +570,252 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       });
     }
 
-    if (annot.text != null) {
-      menu.addItem((item) => {
-        item
-          .setTitle(m.annot_view_menu_copy_text())
-          .setIcon("copy")
-          .onClick(() => {
-            void toast.promise(navigator.clipboard.writeText(annot.text!), {
-              success: m.annot_view_copied_text(),
-              error: m.annot_view_copy_failed(),
-            });
-          });
-      });
-    }
+    // One card offers the copy only where it has text or a comment to copy.
+    if (copiedText([annot]) !== "") addCopyItem(menu, [annot]);
 
-    addCopyIndexedKeyMenuItem(menu, {
-      indexedKey: indexedKeyForClipboard({
-        key: annot.key,
-        groupID: deps.getGroupID(),
-      }),
-      kind: "annotation",
-    });
+    addCopyIndexedKeyMenuItem(
+      menu,
+      { indexedKey: annot.key, kind: "annotation" },
+      { section: SECTION.clipboard },
+    );
 
     menu.addItem((item) => {
       item
+        .setSection(SECTION.clipboard)
         .setTitle(m.annot_view_menu_copy_citation())
         .setIcon("quote")
-        .onClick(() => {
-          let citation: string | null;
-          try {
-            citation = deps.noteFeature.renderAnnotationCitation(annot.itemID);
-          } catch (e) {
-            if (!(e instanceof InertTemplateError)) throw e;
-            new BaseNotice(e.message);
-            return;
-          }
-          if (citation === null) {
-            new BaseNotice(m.annot_view_copy_citation_no_key());
-            return;
-          }
-          void toast.promise(navigator.clipboard.writeText(citation), {
-            success: m.annot_view_copied_citation(),
-            error: m.annot_view_copy_failed(),
-          });
-        });
+        // Each menu runs its own read, so two copies from two menus both
+        // finish; the view's close stops a read with no notice.
+        .onClick(() =>
+          observeExit(deps.run(readCitation(annot.key)), {
+            onSuccess: copyCitation,
+          }),
+        );
     });
 
-    menu.addSeparator();
+    // The keyboard's route to what a drag does.
+    menu.addItem((item) => {
+      const insert = deps.offerAnnotationInsert();
+      item
+        .setSection(SECTION.insert)
+        .setTitle(m.annot_view_menu_insert())
+        .setIcon("file-input")
+        .setDisabled(!insert)
+        .onClick(() => insert?.(annot));
+    });
+
     menu.addItem((item) => {
       item
+        .setSection(SECTION.view)
         .setTitle(m.template_data_explorer_menu_explore())
         .setIcon("braces")
         .onClick(() => {
-          deps.onExploreAnnotation(annot.key);
+          const parsed = parseIndexedKey(annot.key);
+          if (parsed) deps.onExploreAnnotation(parsed.key);
         });
     });
 
-    return menu;
+    addDeleteItem(menu, [annot]);
+  };
+
+  /**
+   * The menu for two or more Selected Cards: the verbs that act on every one
+   * of them. The single-card entries — backlink, key, citation, insert,
+   * explore — name one Annotation and are left out. The colour entry opens
+   * a submenu rather than taking a press, so a write in flight and a block
+   * both dim it; copying never changes Zotero, so it is always there.
+   */
+  const fillGroupMenu = (
+    menu: Menu,
+    annots: readonly AnnotationRecord[],
+  ): void => {
+    const color = controlOf("color", annots);
+    menu.addItem((item) => {
+      item
+        .setSection(SECTION.action)
+        .setTitle(m.annot_view_card_color())
+        .setIcon("palette")
+        .setDisabled(color.disabled || color.blocked !== null);
+      fillColorMenu(item.setSubmenu(), annots);
+    });
+    addCopyItem(menu, annots);
+    addDeleteItem(menu, annots);
+  };
+
+  /**
+   * "Edit quoted text", on one highlight or underline card: the Quoted Text
+   * is corrected rarely, so its verb stands where "Edit…" is looked for rather
+   * than in the header (ADR 0066). Unlike the delete entry, a blocked capability
+   * leaves it enabled: it opens an editor, as the comment field does, and
+   * spends its press on the notice that says why, as the field's press does.
+   */
+  const addEditTextItem = (menu: Menu, annot: AnnotationRecord): void => {
+    const control = deps.controls(annot).text;
+    if (!control) return;
+    menu.addItem((item) => {
+      item
+        .setSection(SECTION.action)
+        .setTitle(m.annot_view_menu_edit_text())
+        .setIcon("text-cursor-input")
+        .setDisabled(control.disabled)
+        .onClick(() =>
+          pressControl(control, {
+            act: () => {
+              if (onOpenField(annot, "text")) deps.openEditor(annot, "text");
+            },
+            onBlocked: onBlockedPress,
+          }),
+        );
+    });
+  };
+
+  /**
+   * The delete entry, for one card or a group. Every entry here is a verb. A
+   * write in flight dims it. A blocked delete leaves it enabled, as "Edit
+   * quoted text" is: its press is spent on the notice that says why, the Lock
+   * Reason or the Editing Capability's own, as a card verb's press is.
+   */
+  const addDeleteItem = (
+    menu: Menu,
+    annots: readonly AnnotationRecord[],
+  ): void => {
+    const control = controlOf("delete", annots);
+    menu.addItem((item) => {
+      item
+        .setSection(SECTION.danger)
+        .setTitle(
+          annots.length === 1
+            ? m.annot_view_menu_delete()
+            : m.annot_view_menu_delete_group({ count: annots.length }),
+        )
+        .setIcon("trash-2")
+        .setWarning(true)
+        .setDisabled(control.disabled)
+        .onClick(() => press("delete", annots, () => void deleteCards(annots)));
+    });
+  };
+
+  /**
+   * The cards a verb pressed on this card acts on: the Card Selection where
+   * the card is one of several Selected Cards, and else the card alone. A card
+   * outside the Card Selection is selected alone first, so the verb acts on
+   * the card the user pressed.
+   */
+  const cardsFor = (annot: AnnotationRecord): readonly AnnotationRecord[] => {
+    const selected = deps.selectedCards();
+    if (selected.length > 1 && selected.some(({ key }) => key === annot.key))
+      return selected;
+    deps.selectAlone(annot);
+    return [annot];
+  };
+
+  /**
+   * The menu a card opens: the group's, or its own, then whatever the
+   * `zotlit:annotation-menu` listeners add for the same cards.
+   */
+  const fillMenuFor = (menu: Menu, annot: AnnotationRecord): void => {
+    const annots = cardsFor(annot);
+    if (annots.length > 1) fillGroupMenu(menu, annots);
+    else fillCardMenu(menu, annot);
+    raiseMenu(menu, {
+      workspace: deps.app.workspace,
+      name: "zotlit:annotation-menu",
+      info: {
+        source: "annotation-view",
+        annotations: annots,
+      },
+    });
   };
 
   return {
     getBacklink,
-    getImgSrc,
+    onOpenPage(annot, pane) {
+      viewTargetOpener(deps.registry, deps.opener).open(
+        {
+          kind: "annotation",
+          attachmentKey: annot.parentKey,
+          annotationKey: annot.key,
+          pageIndex:
+            "pageIndex" in annot.position ? annot.position.pageIndex : null,
+          pageLabel: annot.pageLabel,
+        },
+        pane,
+      );
+    },
+    openExcerptImage: () => {
+      deps.registry.set(openExcerptDemandCommand, undefined);
+      return requireResult(deps.registry.get(openExcerptDemandCommand));
+    },
+    excerptImageRequest: deps.excerptImageRequest,
+    onOpenTags,
+    onEditTags,
+    onSaveTags,
+    onDiscardTags,
+    libraryTagNames: deps.libraryTagNames,
+    onOpenField,
+    onCloseEditors: () => deps.closeEditors(),
+    onEditField,
+    onSaveField,
+    onDiscardDraft,
+    onApplyAgain,
+    onDiscardConflict,
+    onDeleteSelection() {
+      const annots = deps.selectedCards();
+      if (annots.length === 0) return null;
+      return press("delete", annots, () => void deleteCards(annots));
+    },
+    onRecolorSelection(color) {
+      const annots = deps.selectedCards();
+      if (annots.length === 0) return null;
+      return press("color", annots, () => setColors(annots, color));
+    },
+    onCopySelection: () => copyText(deps.selectedCards()),
     onMoreOptions(evt, annot) {
-      const menu = buildMenu(annot);
-      if ("nativeEvent" in evt) {
-        // `MouseEvent` is shadowed by the React import above; `globalThis.`
-        // here is a type qualifier for the DOM type, not a runtime access,
-        // so the `window`/`activeWindow` popout-compatibility guidance
-        // doesn't apply.
-        // eslint-disable-next-line obsidianmd/no-global-this
-        menu.showAtMouseEvent(evt.nativeEvent as globalThis.MouseEvent);
-      }
+      showMenu(evt, (menu) => fillMenuFor(menu, annot), "end");
+    },
+    onCardMenu(evt, annot) {
+      const menu = new Menu();
+      fillMenuFor(menu, annot);
+      menu.showAtMouseEvent(evt.nativeEvent);
+    },
+    onHeaderMenu(evt) {
+      showMenu(evt, (menu) =>
+        buildHeaderMenu(menu, {
+          groups: headerMenu(deps.getState(), now()),
+          actions: {
+            onSetFollowMode: deps.onSetFollowMode,
+            onPinCurrentItem: deps.onPinCurrentItem,
+            onPinItem: deps.onPinItem,
+            onUnpin: deps.onUnpin,
+            onChooseAttachment,
+            onOpenPdf: deps.onOpenPdf,
+            onAllowEditing: deps.onAllowEditing,
+          },
+        }),
+      );
+    },
+    onViewMenu(evt) {
+      showMenu(evt, deps.fillViewMenu, "end");
+    },
+    onChooseAttachment,
+    onOpenPdf: deps.onOpenPdf,
+    onAllowEditing: deps.onAllowEditing,
+    onBlockedPress,
+    onColorMenu(evt, annot) {
+      const annots = cardsFor(annot);
+      return press("color", annots, () =>
+        showMenu(evt, (menu) => fillColorMenu(menu, annots)),
+      );
     },
     onDragStart: deps.onDragStart,
     renderComment: deps.renderComment,
-    onToggleFollowReader: deps.onToggleFollowReader,
-    onLinkItem: deps.onLinkItem,
-    onUnlinkItem: deps.onUnlinkItem,
+    onSetFollowMode: deps.onSetFollowMode,
+    onPinCurrentItem: deps.onPinCurrentItem,
+    onPinItem: deps.onPinItem,
+    onUnpin: deps.onUnpin,
+    onEnableLiveUpdates: deps.onEnableLiveUpdates,
+    onSelectAnnotation: deps.onSelectAnnotation,
+    onClearSelection: deps.onClearSelection,
     onRefresh() {
       void toast.promise(deps.refresh(), {
         loading: m.annot_view_refreshing(),
@@ -186,16 +826,75 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   };
 }
 
-const NOOP_ACTIONS: AnnotActions = {
+/** What a card outside a configured view shows: nothing, and no demand to make. */
+const NOOP_DISPLAY: ExcerptImageDisplay = {
+  image: null,
+  current: false,
+  status: "absent",
+};
+
+const NOOP_DEMAND: ExcerptDisplayDemand = {
+  demand: () => {},
+  release: () => {},
+  subscribe: () => () => {},
+  snapshot: () => NOOP_DISPLAY,
+};
+
+export const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
+  onCardMenu: () => {},
+  onHeaderMenu: () => {},
+  onViewMenu: () => {},
+  onChooseAttachment: () => {},
+  onOpenPdf: () => {},
+  onAllowEditing: () => {},
+  onBlockedPress: () => {},
+  onColorMenu: () => null,
   onDragStart: () => {},
-  onToggleFollowReader: () => {},
-  onLinkItem: () => {},
-  onUnlinkItem: () => {},
+  onSetFollowMode: () => {},
+  onPinCurrentItem: () => {},
+  onPinItem: () => {},
+  onUnpin: () => {},
+  onEnableLiveUpdates: () => {},
+  onSelectAnnotation: () => {},
+  onClearSelection: () => {},
+  onDiscardDraft: () => {},
+  onOpenField: () => false,
+  onCloseEditors: () => {},
+  onEditField: () => {},
+  onSaveField: () => {},
+  onOpenTags: () => false,
+  onEditTags: () => {},
+  onSaveTags: () => {},
+  onDiscardTags: () => {},
+  libraryTagNames: async () => [],
+  onDeleteSelection: () => null,
+  onRecolorSelection: () => null,
+  onCopySelection: () => false,
+  onApplyAgain: () => {},
+  onDiscardConflict: () => {},
   onRefresh: () => {},
-  getImgSrc: () => IMG_PLACEHOLDER,
+  openExcerptImage: () => NOOP_DEMAND,
+  excerptImageRequest: async () => null,
   getBacklink: () => undefined,
+  onOpenPage: () => {},
   renderComment: () => () => {},
 };
 
 export const AnnotActionsContext = createContext<AnnotActions>(NOOP_ACTIONS);
+
+/**
+ * Put `text` on the clipboard after an awaited read. Obsidian lets
+ * `navigator.clipboard` write after an `await`; where a platform refuses that
+ * write, Electron's own clipboard takes the text.
+ */
+async function writeClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (error) {
+    logger.debug("The clipboard refused the write; Electron writes it", {
+      error,
+    });
+    requireElectron().clipboard.writeText(text);
+  }
+}

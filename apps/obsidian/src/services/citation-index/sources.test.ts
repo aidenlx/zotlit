@@ -1,39 +1,64 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
+import { afterEach, describe, expect } from "vitest";
 
-import { getAttachmentsByParents, getItemsByKey } from "@zotlit/db";
-import type { Attachment, Item } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
-import type { ItemFixtureOptions } from "@zotlit/item-lookup/fixtures";
+import type { Attachment } from "@zotlit/db";
+import { rowInstant } from "@zotlit/db/test-utils";
 
-import type { DatabaseService } from "@/services/database/service";
+import type { TestReads } from "@/services/zotero-reads/__fixtures__";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import {
+  inProcessReadsService,
+  memoryOpener,
+  recordCalls,
+  seedWorksSql,
+} from "@/services/zotero-reads/test-utils";
+import type { SeededWork } from "@/services/zotero-reads/test-utils";
 
 import type { Citation } from "./query";
-import { readReferenceSources, toOpenableAttachments } from "./sources";
-
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    // The stand-in client runs no queries, so the table reads are stubbed per
-    // test. Key parsing and the CSL mapping stay real: both are pure.
-    getZoteroIdentity: () => ({
-      userID: null,
-      localUserKey: null,
-      username: null,
-    }),
-    getItemsByKey: vi.fn(() => []),
-    getAttachmentsByParents: vi.fn(() => []),
-  };
-});
+import { readReferenceSources, toZoteroOpenableAttachments } from "./sources";
 
 const KEY = "ABCD2345";
 const OTHER_KEY = "EFGH6789";
 
-const ready: Pick<DatabaseService, "state" | "client"> = {
-  state: "ready",
-  client: {} as NodeDatabaseClient,
+/** The cited Item every case seeds, as Zotero holds it. */
+const CITED: SeededWork = {
+  itemID: 1,
+  key: KEY,
+  title: "Alpha kernels",
+  citationKey: "doe2024",
+  date: "2024-03-02",
+  creators: [["Jane", "Doe"]],
 };
+
+/** ZoteroReads on the in-process adapter over the seeded rows. */
+let ready: TestReads;
+/** The `ItemsByIndexedKeys` calls the readers made. */
+let itemReads: ReturnType<typeof recordCalls>["calls"];
+
+/** Open ZoteroReads over `sql`, recording the item reads. */
+async function readsOver(sql: string): Promise<TestReads> {
+  const recorded = recordCalls(["ItemsByIndexedKeys"]);
+  itemReads = recorded.calls;
+  ready = inProcessReadsService(memoryOpener(() => sql).open, {
+    wrap: recorded.wrap,
+  });
+  await ready.ready;
+  return ready;
+}
+
+function readSources(
+  db: Pick<TestReads, "current" | "snapshot">,
+  citations: Parameters<typeof readReferenceSources>[1],
+) {
+  return readReferenceSources(
+    {
+      current: db.current,
+      snapshot: db.snapshot,
+    },
+    citations,
+  );
+}
 
 function citation(
   indexedKey: string | null,
@@ -56,19 +81,6 @@ function citation(
   };
 }
 
-/** A live Zotero Item, as the item read hands one over. */
-function item(key: string, overrides: Partial<ItemFixtureOptions> = {}): Item {
-  return makeItem({
-    key,
-    title: "Alpha kernels",
-    citationKey: "doe2024",
-    date: "2024-03-02",
-    creators: [makeCreator("Jane", "Doe")],
-    primaryCreatorType: "author",
-    ...overrides,
-  });
-}
-
 function attachment(overrides: Partial<Attachment>): Attachment {
   return {
     itemID: 20,
@@ -80,133 +92,183 @@ function attachment(overrides: Partial<Attachment>): Attachment {
     path: null,
     contentType: null,
     linkMode: null,
-    dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
-    dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
+    dateAdded: rowInstant("2024-01-01T00:00:00Z"),
+    dateModified: rowInstant("2024-01-01T00:00:00Z"),
     ...overrides,
   };
 }
 
 describe("readReferenceSources", () => {
-  beforeEach(() => {
-    vi.mocked(getItemsByKey).mockReturnValue([]);
-    vi.mocked(getAttachmentsByParents).mockReturnValue([]);
-  });
+  afterEach(() => ready[Symbol.asyncDispose]());
 
-  it("joins the identity and summary of each cited Item", () => {
-    const cited = item(KEY);
-    vi.mocked(getItemsByKey).mockReturnValue([cited]);
+  it.effect("joins the identity and summary of each cited Item", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
-    const { sources } = readReferenceSources(ready, [
-      citation(KEY, "Notes/Doe 2024.md"),
-    ]);
+      const { sources } = yield* readSources(ready, [
+        citation(KEY, "Notes/Doe 2024.md"),
+      ]);
 
-    expect(sources.get(KEY)).toMatchObject({
-      itemKey: KEY,
-      itemID: cited.itemID,
-      groupID: null,
-      citekey: "doe2024",
-      summary: "Doe (2024): Alpha kernels",
-      linkpath: "Notes/Doe 2024.md",
-    });
-    expect(sources.get(KEY)?.csl.title).toBe("Alpha kernels");
-  });
+      expect(sources.get(KEY)).toMatchObject({
+        itemKey: KEY,
+        itemID: CITED.itemID,
+        groupID: null,
+        citekey: "doe2024",
+        summary: "Doe (2024): Alpha kernels",
+        citationSummary: "Doe (2024)",
+        linkpath: "Notes/Doe 2024.md",
+      });
+      expect(sources.get(KEY)?.csl.title).toBe("Alpha kernels");
+    }),
+  );
 
-  it("carries a null linkpath through for an Item with no Literature Note", () => {
-    vi.mocked(getItemsByKey).mockReturnValue([item(KEY)]);
+  it.effect(
+    "carries a null linkpath through for an Item with no Literature Note",
+    () =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
-    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
+        const { sources } = yield* readSources(ready, [citation(KEY, null)]);
 
-    expect(sources.get(KEY)?.linkpath).toBeNull();
-  });
-
-  it("reports no citation key when Zotero holds none for the Item", () => {
-    vi.mocked(getItemsByKey).mockReturnValue([
-      item(KEY, { citationKey: null }),
-    ]);
-
-    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
-
-    expect(sources.get(KEY)?.citekey).toBeNull();
-  });
-
-  it("leaves out a citekey that names no live Zotero Item", () => {
-    const { sources } = readReferenceSources(ready, [citation(null, null)]);
-
-    expect(sources.size).toBe(0);
-    expect(getItemsByKey).not.toHaveBeenCalled();
-  });
-
-  it("leaves out an Item the library no longer holds", () => {
-    vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) =>
-      keys[0] === KEY ? [item(KEY)] : [],
-    );
-
-    const { sources } = readReferenceSources(ready, [
-      citation(KEY, null),
-      citation(OTHER_KEY, null),
-    ]);
-
-    expect([...sources.keys()]).toStrictEqual([KEY]);
-  });
-
-  it("offers the Openable Attachments of the cited Item", () => {
-    const cited = item(KEY);
-    vi.mocked(getItemsByKey).mockReturnValue([cited]);
-    vi.mocked(getAttachmentsByParents).mockReturnValue([
-      attachment({
-        parentItemID: cited.itemID,
-        path: "storage:Doe_2024.pdf",
-        linkMode: 0,
+        expect(sources.get(KEY)?.linkpath).toBeNull();
       }),
-    ]);
+  );
 
-    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
+  it.effect("reports no citation key when Zotero holds none for the Item", () =>
+    Effect.gen(function* () {
+      const { citationKey: _, ...uncited } = CITED;
+      yield* Effect.promise(() => readsOver(seedWorksSql([uncited])));
 
-    expect(sources.get(KEY)?.attachments).toStrictEqual([
-      { key: "ATCH2345", groupID: null, label: "Doe_2024.pdf" },
-    ]);
-  });
+      const { sources } = yield* readSources(ready, [citation(KEY, null)]);
 
-  it("keeps the cited Items when the attachment table cannot be read", () => {
-    vi.mocked(getItemsByKey).mockReturnValue([item(KEY)]);
-    vi.mocked(getAttachmentsByParents).mockImplementation(() => {
-      throw new Error("attachments unavailable");
-    });
+      expect(sources.get(KEY)?.citekey).toBeNull();
+    }),
+  );
 
-    const { sources } = readReferenceSources(ready, [citation(KEY, null)]);
+  it.effect("leaves out a citekey that names no live Zotero Item", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
-    expect(sources.get(KEY)?.attachments).toStrictEqual([]);
-  });
+      const { sources } = yield* readSources(ready, [citation(null, null)]);
 
-  it("answers empty and unreadable when the item read fails", () => {
-    vi.mocked(getItemsByKey).mockImplementation(() => {
-      throw new Error("database locked");
-    });
+      expect(sources.size).toBe(0);
+      expect(itemReads.map((call) => call.payload["indexedKeys"])).toEqual([
+        [],
+      ]);
+    }),
+  );
 
-    const { sources, database } = readReferenceSources(ready, [
-      citation(KEY, null),
-    ]);
+  it.effect("leaves out an Item the library no longer holds", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
-    expect(sources.size).toBe(0);
-    expect(database).toBe("unreadable");
-  });
+      const { sources } = yield* readSources(ready, [
+        citation(KEY, null),
+        citation(OTHER_KEY, null),
+      ]);
 
-  it("reads nothing while the database is unavailable, and says so", () => {
-    const { sources, database } = readReferenceSources(
-      { state: "loading", client: {} as NodeDatabaseClient },
-      [citation(KEY, null)],
-    );
+      expect([...sources.keys()]).toStrictEqual([KEY]);
+    }),
+  );
 
-    expect(sources.size).toBe(0);
-    expect(database).toBe("unreadable");
-    expect(getItemsByKey).not.toHaveBeenCalled();
-  });
+  it.effect("offers the Zotero-Openable Attachments of the cited Item", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() =>
+        readsOver(
+          seedWorksSql(
+            [CITED],
+            [
+              {
+                itemID: 20,
+                key: "ATCH2345",
+                parentItemID: CITED.itemID,
+                path: "storage:Doe_2024.pdf",
+                linkMode: 0,
+              },
+            ],
+          ),
+        ),
+      );
+
+      const { sources } = yield* readSources(ready, [citation(KEY, null)]);
+
+      expect(sources.get(KEY)?.attachments).toStrictEqual([
+        { key: "ATCH2345", groupID: null, label: "Doe_2024.pdf" },
+      ]);
+    }),
+  );
+
+  it.effect(
+    "keeps the cited Items when the attachment table cannot be read",
+    () =>
+      Effect.gen(function* () {
+        ready = inProcessReadsService(
+          memoryOpener(() => seedWorksSql([CITED])).open,
+          {
+            wrap: (client) => ({
+              ...client,
+              AttachmentsOf: (() =>
+                Effect.fail(
+                  new DbUnavailable({ message: "Attachment read failed." }),
+                )) as typeof client.AttachmentsOf,
+            }),
+          },
+        );
+        yield* Effect.promise(() => ready.ready);
+
+        const { sources } = yield* readSources(ready, [citation(KEY, null)]);
+
+        expect(sources.get(KEY)).toMatchObject({
+          itemKey: KEY,
+          itemID: CITED.itemID,
+        });
+        expect(sources.get(KEY)?.attachments).toStrictEqual([]);
+      }),
+  );
+
+  it.effect("answers empty and unreadable when the item read fails", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() =>
+        readsOver(`${seedWorksSql([CITED])}\ndrop table items;`),
+      );
+
+      const { sources, database } = yield* readSources(ready, [
+        citation(KEY, null),
+      ]);
+
+      expect(sources.size).toBe(0);
+      expect(database).toBe("unreadable");
+    }),
+  );
+
+  it.effect(
+    "reads nothing while the database is unavailable, and says so",
+    () =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
+
+        const { sources, database } = yield* readSources(
+          {
+            current: Effect.map(ready.current, (current) => ({
+              ...current,
+              state: "degraded" as const,
+            })),
+            snapshot: ready.snapshot,
+          },
+          [citation(KEY, null)],
+        );
+
+        expect(sources.size).toBe(0);
+        expect(database).toBe("unreadable");
+        expect(itemReads).toEqual([]);
+      }),
+  );
 });
 
-describe("toOpenableAttachments", () => {
+describe("toZoteroOpenableAttachments", () => {
   it("names a stored attachment by its filename", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ path: "storage:Rivers_2020.pdf", linkMode: 0 }),
       ]),
     ).toStrictEqual([
@@ -216,7 +278,7 @@ describe("toOpenableAttachments", () => {
 
   it("names a snapshot and a linked file the same way, whatever the format", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ path: "storage:page.html", linkMode: 1 }),
         attachment({ path: "/Papers/thesis.epub", linkMode: 2 }),
         attachment({ path: "attachments:drafts/notes.docx", linkMode: 2 }),
@@ -226,7 +288,7 @@ describe("toOpenableAttachments", () => {
 
   it("names a linked file a Windows library recorded, read on any platform", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ path: "C:\\Papers\\Rivers 2020.pdf", linkMode: 2 }),
       ]).map((a) => a.label),
     ).toStrictEqual(["Rivers 2020.pdf"]);
@@ -234,7 +296,7 @@ describe("toOpenableAttachments", () => {
 
   it("leaves out an attachment that names no file", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         // A bare web link, which Zotero's reader cannot open.
         attachment({ path: "https://example.com/paper", linkMode: 3 }),
         // A stored row whose path lost its `storage:` prefix.
@@ -246,7 +308,7 @@ describe("toOpenableAttachments", () => {
 
   it("keeps the library order, so the menu reads as Zotero lists it", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ key: "ATCHZZZZ", path: "storage:zebra.pdf", linkMode: 0 }),
         attachment({ key: "ATCHAAAA", path: "storage:alpha.pdf", linkMode: 0 }),
       ]).map((a) => a.key),
@@ -255,7 +317,7 @@ describe("toOpenableAttachments", () => {
 
   it("carries the group library through, so the deep link addresses it", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ path: "storage:shared.pdf", linkMode: 0, groupID: 42 }),
       ]),
     ).toStrictEqual([{ key: "ATCH2345", groupID: 42, label: "shared.pdf" }]);

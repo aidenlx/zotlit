@@ -1,14 +1,16 @@
 // Reports the Zotero schema versions of the database being read.
 import type { NodeDatabaseClient } from "@/client/node";
+import type { SQLocalDatabaseClient } from "@/client/web";
+import { readDatabaseLayout } from "@/layout";
 
 import { defineQuery } from "./_shared";
 
 /**
  * Inclusive version ranges ZotLit is tested against, keyed by the
  * `version.schema` row that holds each one. This is the range of Zotero clients
- * exercised, not the range the Drizzle snapshot in `drizzle/schema.ts` models —
- * that snapshot still describes userdata 125, and no query reads a column the
- * later steps added.
+ * exercised. The typed schema exposes newer columns. A query selects one of
+ * them only when `readDatabaseLayout(db).has(table, column)` says the copy
+ * has it, so it also reads supported userdata 125 databases.
  *
  * - `userdata` counts Zotero's applied migration steps. Zotero 9.0.0 through
  *   9.0.6 sit at 125; Zotero 10.0.0 raises it to 129.
@@ -45,21 +47,31 @@ const versionQuery = defineQuery<void>()((db) =>
  * against, so a query may return wrong data or none. The caller decides what to
  * do with that; the read itself stays allowed, because a stale range would
  * otherwise block a working Zotero upgrade.
+ *
+ * The stamps come from the layout of the copy (`readDatabaseLayout`), which
+ * reads them once for each copy.
  */
 export function getSchemaVersions(
   db: NodeDatabaseClient,
 ): ZoteroSchemaVersions {
-  const rows = versionQuery.prepared(db).all();
-  const readVersion = (schema: string): number | null => {
-    const version = rows.find((row) => row.schema === schema)?.version;
-    return typeof version === "number" ? version : null;
-  };
-  const userdata = readVersion("userdata");
-  const compatibility = readVersion("compatibility");
+  const { userdata, compatibility } = readDatabaseLayout(db).versions;
   const supported =
     inRange(userdata, SUPPORTED_SCHEMA_VERSIONS.userdata) &&
     inRange(compatibility, SUPPORTED_SCHEMA_VERSIONS.compatibility);
   return { userdata, compatibility, supported };
+}
+
+/**
+ * Whether the local client revision columns of userdata 129 are available, by
+ * the `userdata` stamp. The async client has no layout read; a synchronous
+ * reader asks `readDatabaseLayout` for the columns.
+ */
+export async function hasClientRevisionsAsync(
+  db: SQLocalDatabaseClient,
+): Promise<boolean> {
+  const rows = await versionQuery.prepared(db).all();
+  const userdata = rows.find(({ schema }) => schema === "userdata")?.version;
+  return typeof userdata === "number" && userdata >= 129;
 }
 
 function inRange(

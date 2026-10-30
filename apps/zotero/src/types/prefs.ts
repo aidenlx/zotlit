@@ -5,4 +5,5 @@ export type PluginPrefKey =
   | "extensions.zotlit.log.console-level"
   | "extensions.zotlit.notify"
   | "extensions.zotlit.notify-url"
+  | "extensions.zotlit.pane-type"
   | "extensions.zotlit.wal-checkpoint";

@@ -12,20 +12,32 @@ import type {
   App,
   Command,
   Debouncer,
+  GraphOptionListener,
   EditorSuggestContext,
+  FrontMatterInfo,
   EventRef,
   Events,
   HoverParent,
   HoverPopover as ObsidianHoverPopover,
   IconName,
-  WorkspaceLeaf,
+  WorkspaceLeaf as ObsidianWorkspaceLeaf,
   Instruction,
+  MenuPositionDef,
   Modifier,
   PaneType,
+  Point,
+  PluginManifest,
   SearchMatchPart,
   SearchResult,
+  Setting as ObsidianSetting,
+  SettingDefinitionItem,
+  SettingGroup as ObsidianSettingGroup,
   UserEvent,
 } from "obsidian";
+import {
+  parse as parseYamlSource,
+  stringify as stringifyYamlSource,
+} from "yaml";
 
 /**
  * Stand-in for Obsidian's simple search: every whitespace-separated term of the
@@ -47,6 +59,34 @@ export function prepareSimpleSearch(
   };
 }
 
+/**
+ * Stand-in for Obsidian's fuzzy search: the query's characters must appear in
+ * the text in order, case-insensitively. A run of them in one piece scores
+ * above one spread out, and an earlier run above a later one.
+ */
+export function prepareFuzzySearch(
+  query: string,
+): (text: string) => SearchResult | null {
+  const needle = query.toLowerCase();
+  return (text) => {
+    const haystack = text.toLowerCase();
+    const at = haystack.indexOf(needle);
+    if (at !== -1)
+      return { score: -at / 100, matches: [[at, at + needle.length]] };
+    const matches: SearchMatchPart[] = [];
+    let from = 0;
+    for (const char of needle) {
+      const found = haystack.indexOf(char, from);
+      if (found === -1) return null;
+      const last = matches.at(-1);
+      if (last && last[1] === found) last[1] = found + 1;
+      else matches.push([found, found + 1]);
+      from = found + 1;
+    }
+    return { score: -matches.length, matches };
+  };
+}
+
 export function getIcon(name: IconName): SVGSVGElement | null {
   const svg = globalThis.document?.createElementNS(
     "http://www.w3.org/2000/svg",
@@ -55,6 +95,19 @@ export function getIcon(name: IconName): SVGSVGElement | null {
   if (!svg) return null;
   svg.setAttribute("class", `svg-icon lucide-${name}`);
   return svg;
+}
+
+export function addIcon(_iconId: string, _svgContent: string): void {}
+
+export function setIcon(el: HTMLElement, name: IconName): void {
+  const icon = getIcon(name);
+  el.replaceChildren(...(icon ? [icon] : []));
+  el.setAttribute("data-icon", name);
+}
+
+/** Stand-in for Obsidian's delegated tooltip attributes. */
+export function setTooltip(el: HTMLElement, tooltip: string): void {
+  el.setAttribute("aria-label", tooltip);
 }
 
 // Obsidian exposes `sleep` as a runtime global; toast durations await it.
@@ -66,6 +119,7 @@ globalThis.sleep ??= (ms: number) =>
  * `BaseNotice` touches in its constructor. */
 const noticeElStub = {
   addClasses: (_classes: string[]) => {},
+  toggle: (_show: boolean) => {},
   querySelector: (_selector: string): HTMLElement | null => null,
 } as unknown as HTMLElement;
 
@@ -105,6 +159,7 @@ export class MarkdownView {
 export class Component {
   #loaded = false;
   readonly #children: Component[] = [];
+  #callbacks: (() => unknown)[] = [];
 
   load(): void {
     if (this.#loaded) return;
@@ -118,6 +173,28 @@ export class Component {
     this.#loaded = false;
     for (const child of this.#children) child.unload();
     this.onunload();
+    const callbacks = this.#callbacks;
+    this.#callbacks = [];
+    for (const callback of callbacks) callback();
+  }
+
+  register(callback: () => unknown): void {
+    this.#callbacks.push(callback);
+  }
+
+  registerEvent(_ref: unknown): void {}
+
+  /** As Obsidian's: the listener goes when the component unloads. */
+  registerDomEvent(
+    ...[element, type, callback, options]: [
+      HTMLElement,
+      string,
+      EventListener,
+      (boolean | AddEventListenerOptions)?,
+    ]
+  ): void {
+    element.addEventListener(type, callback, options);
+    this.register(() => element.removeEventListener(type, callback, options));
   }
 
   addChild<T extends Component>(child: T): T {
@@ -130,11 +207,49 @@ export class Component {
   onunload(): void {}
 }
 
+/** Stand-in for `Plugin`: a component over the app and its manifest. */
+export class Plugin extends Component {
+  constructor(
+    readonly app: App,
+    readonly manifest: PluginManifest,
+  ) {
+    super();
+  }
+}
+
 /** Stand-in for `MarkdownRenderChild`: a component bound to one element. */
 export class MarkdownRenderChild extends Component {
   constructor(readonly containerEl: HTMLElement) {
     super();
   }
+}
+
+export enum PopoverState {
+  Showing,
+  Shown,
+  Hiding,
+  Hidden,
+}
+
+/**
+ * The popovers still waiting on their show timer. Obsidian's global click
+ * handler hides each of them on any click, focused or not, before it looks at
+ * the shown ones. Verified against Obsidian 1.14.2.
+ */
+const pendingPopovers = new Set<HoverPopover>();
+let clickHandlerArmed = false;
+
+/** Arms the global click handler once, with the first popover, as Obsidian does. */
+function armClickHandler(): void {
+  if (clickHandlerArmed) return;
+  clickHandlerArmed = true;
+  window.addEventListener(
+    "click",
+    () => {
+      for (const popover of pendingPopovers) popover.hide();
+    },
+    { capture: true },
+  );
 }
 
 /**
@@ -145,34 +260,111 @@ export class MarkdownRenderChild extends Component {
  *
  * The opening sequence follows the runtime one — the constructor arms the wait
  * timer, and the timer opens the popover — so a subclass meets the lifecycle it
- * inherits rather than a stub of it.
+ * inherits rather than a stub of it. Timers keep the runtime's windows too: each
+ * is armed on `activeWindow` and cancelled with the main window's
+ * `clearTimeout`, which is what misses while a popout owns focus.
  */
 export class HoverPopover {
   readonly hoverEl: HTMLElement;
-  readonly targetEl: HTMLElement | null;
+  targetEl: HTMLElement | null;
+  onTarget = true;
+  onHover = false;
+  isFocused = false;
+  /**
+   * The point `position()` anchors to in place of the target's boxes. A
+   * popover with neither a target nor a static position is placed from the
+   * last pointer move, which no test drives, so it stays where it was put.
+   */
+  staticPos: Point | null;
+  state = PopoverState.Showing;
   readonly waitTime: number;
   hidden = false;
   readonly #parent: HoverParent;
   readonly #unload: (() => void)[] = [];
-  readonly #timer: ReturnType<typeof setTimeout>;
+  #loaded = false;
+  timer: number;
 
+  // oxlint-disable-next-line max-params -- mirrors Obsidian's own constructor.
   constructor(
     parent: HoverParent,
     targetEl: HTMLElement | null,
     waitTime = 300,
+    staticPos: Point | null = null,
   ) {
     this.hoverEl = document.createElement("div");
     this.hoverEl.className = "popover hover-popover";
     this.targetEl = targetEl;
     this.waitTime = waitTime;
+    this.staticPos = staticPos;
     this.#parent = parent;
-    this.#timer = setTimeout(() => {
+    targetEl?.addEventListener("mouseover", this.onMouseIn);
+    targetEl?.addEventListener("mouseout", this.onMouseOut);
+    this.hoverEl.addEventListener("mouseover", (event) => {
+      if (this.hoverEl.contains(event.relatedTarget as Node | null)) return;
+      this.onHover = true;
+      this.transition();
+    });
+    this.hoverEl.addEventListener("mouseout", (event) => {
+      if (this.hoverEl.contains(event.relatedTarget as Node | null)) return;
+      this.onHover = false;
+      this.transition();
+    });
+    this.timer = activeWindow.setTimeout(() => {
       this.show();
     }, waitTime);
+    pendingPopovers.add(this);
+    armClickHandler();
+  }
+
+  onMouseIn = (event: MouseEvent): void => {
+    if (this.targetEl?.contains(event.relatedTarget as Node | null)) return;
+    this.onTarget = true;
+    this.transition();
+  };
+
+  onMouseOut = (event: MouseEvent): void => {
+    if (this.targetEl?.contains(event.relatedTarget as Node | null)) return;
+    this.onTarget = false;
+    this.transition();
+  };
+
+  #shouldShow(): boolean {
+    return (
+      this.onTarget ||
+      this.onHover ||
+      this.isFocused ||
+      this.hoverEl.contains(document.activeElement)
+    );
+  }
+
+  /** Pins the popover open with nothing hovering it, as Obsidian's own does. */
+  setIsFocused(focused: boolean): void {
+    this.isFocused = focused;
+  }
+
+  transition(): void {
+    if (this.#shouldShow()) {
+      if (this.state === PopoverState.Hiding) {
+        this.state = PopoverState.Shown;
+        clearTimeout(this.timer);
+      }
+    } else if (this.state === PopoverState.Showing) {
+      this.hide();
+    } else if (this.state === PopoverState.Shown) {
+      this.state = PopoverState.Hiding;
+      this.timer = activeWindow.setTimeout(() => {
+        if (this.#shouldShow()) this.transition();
+        else this.hide();
+      }, this.waitTime);
+    }
   }
 
   register(cb: () => void): void {
     this.#unload.push(cb);
+  }
+
+  load(): void {
+    this.#loaded = true;
   }
 
   registerEvent(ref: EventRef): void {
@@ -181,8 +373,15 @@ export class HoverPopover {
   }
 
   show(): void {
+    if (this.targetEl && !document.body.contains(this.targetEl)) {
+      this.hide();
+      return;
+    }
+    this.state = PopoverState.Shown;
+    pendingPopovers.delete(this);
     this.position();
     this.onShow();
+    this.load();
   }
 
   /** This popover as the parent holds it, which the vendored type names. */
@@ -191,6 +390,7 @@ export class HoverPopover {
   }
 
   onShow(): void {
+    this.#parent.hoverPopover?.hide();
     this.#parent.hoverPopover = this.#self;
   }
 
@@ -203,11 +403,20 @@ export class HoverPopover {
   watchResize(_el: HTMLElement): void {}
 
   hide(): void {
-    clearTimeout(this.#timer);
+    clearTimeout(this.timer);
+    pendingPopovers.delete(this);
+    this.state = PopoverState.Hidden;
+    this.targetEl?.removeEventListener("mouseover", this.onMouseIn);
+    this.targetEl?.removeEventListener("mouseout", this.onMouseOut);
+    this.onTarget = false;
+    this.onHover = false;
     this.hidden = true;
     this.hoverEl.remove();
     this.onHide();
-    for (const cb of this.#unload.splice(0)) cb();
+    if (this.#loaded) {
+      this.#loaded = false;
+      for (const cb of this.#unload.splice(0).reverse()) cb();
+    }
   }
 
   onHide(): void {
@@ -230,6 +439,13 @@ export class TFile extends TAbstractFile {
   extension = "";
 }
 
+/** Obsidian spells an external file's path as its absolute path behind `file:`. */
+export class TExternalFile extends TFile {
+  getRealPath(): string {
+    return this.path.substring("file:".length);
+  }
+}
+
 export class TFolder extends TAbstractFile {
   children: TAbstractFile[] = [];
 
@@ -238,12 +454,31 @@ export class TFolder extends TAbstractFile {
   }
 }
 
+/**
+ * Minimal WorkspaceLeaf shell. Only the prototype matters here: ZotLit patches
+ * `setViewState` and `setEphemeralState` on it to read an Annotation Anchor
+ * off an open.
+ */
+export class WorkspaceLeaf {
+  async setViewState(_viewState: unknown, _eState?: unknown): Promise<void> {}
+  setEphemeralState(_state: unknown): void {}
+}
+
 /** Minimal ItemView shell for tests of plugin-registered views. */
 export class ItemView {
   readonly contentEl: HTMLElement;
+  readonly titleEl: HTMLElement;
+  /** The leaf's App, as Obsidian's `View` keeps it. */
+  app: App;
 
-  constructor(readonly leaf: WorkspaceLeaf) {
+  constructor(readonly leaf: ObsidianWorkspaceLeaf) {
+    this.app = Reflect.get(leaf, "app") as App;
+    if (typeof Reflect.get(leaf, "updateHeader") !== "function")
+      leaf.updateHeader = () => {};
     const content = globalThis.document?.createElement("div");
+    this.titleEl =
+      globalThis.document?.createElement("div") ??
+      ({ textContent: "" } as HTMLElement);
     if (!content) {
       this.contentEl = {
         addClass: (..._classes: string[]) => {},
@@ -256,7 +491,31 @@ export class ItemView {
     this.contentEl = content;
   }
 
+  readonly actions: HTMLElement[] = [];
+
+  addAction(
+    _icon: string,
+    title: string,
+    callback: (evt: MouseEvent) => unknown,
+  ): HTMLElement {
+    const action = document.createElement("div");
+    action.setAttribute("aria-label", title);
+    action.addEventListener("click", callback);
+    this.actions.push(action);
+    return action;
+  }
+
   registerEvent(_event: EventRef): void {}
+  registerDomEvent(
+    ...[element, type, callback, options]: [
+      HTMLElement,
+      string,
+      EventListener,
+      (boolean | AddEventListenerOptions)?,
+    ]
+  ): void {
+    element.addEventListener(type, callback, options);
+  }
   register<T extends () => void>(disposer: T): T {
     return disposer;
   }
@@ -269,6 +528,8 @@ export class ItemView {
     return Promise.resolve();
   }
 
+  onResize(): void {}
+  onPaneMenu(_menu: Menu, _source: string): void {}
   getViewType(): string {
     return "";
   }
@@ -290,7 +551,65 @@ export class ItemView {
   }
 }
 
+/** File serialization seam; tests drive the editor's load and save callbacks. */
+export class TextFileView extends ItemView {
+  readonly app: App;
+  file: TFile | null = null;
+  data = "";
+  dirty = false;
+  lastSavedData: string | null = null;
+  scope: Scope | null = null;
+  requestSave = (): void => {};
+  constructor(leaf: ObsidianWorkspaceLeaf) {
+    super(leaf);
+    this.app = (leaf as unknown as { app: App }).app;
+  }
+  getViewData(): string {
+    return this.data;
+  }
+  setViewData(data: string, _clear: boolean): void {
+    this.data = data;
+  }
+  clear(): void {
+    this.data = "";
+  }
+  async save(): Promise<void> {
+    this.data = this.getViewData();
+  }
+  /** Native read/baseline ordering; real-app checks cover native three-way merging. */
+  async loadFileInternal(file: TFile, clear: boolean): Promise<void> {
+    const source = await this.app.vault.read(
+      file as unknown as import("obsidian").TFile,
+    );
+    const previous = this.lastSavedData;
+    this.lastSavedData = source;
+    if (!clear && previous === source) return;
+    this.data = source;
+    this.setViewData(source, clear);
+  }
+  onPaneMenu(_menu: Menu, _source: string): void {}
+  override async setState(state: unknown, result: unknown): Promise<void> {
+    if (
+      state &&
+      typeof state === "object" &&
+      "file" in state &&
+      state.file === null &&
+      this.file
+    ) {
+      await this.save();
+      this.file = null;
+    }
+    await super.setState(state, result);
+  }
+  override getState(): Record<string, unknown> {
+    return this.file ? { file: this.file.path } : {};
+  }
+}
+
 export class Vault {
+  getConfig(_key: string): boolean {
+    return false;
+  }
   static recurseChildren(
     root: TFolder,
     cb: (file: TAbstractFile) => any,
@@ -363,16 +682,58 @@ export function parseLinktext(linktext: string): {
   return { path: linktext.slice(0, hash), subpath: linktext.slice(hash) };
 }
 
-export function stringifyYaml(data: Record<string, unknown>): string {
-  return Object.entries(data)
-    .map(([key, value]) => `${key}: ${String(value)}\n`)
-    .join("");
+export function stringifyYaml(data: unknown): string {
+  return stringifyYamlSource(data);
+}
+
+export function parseYaml(source: string): unknown {
+  return parseYamlSource(source);
+}
+
+/**
+ * Obsidian 1.14.2's Properties block scan: an opening `---` line, then the
+ * first `---` that starts a line and ends one or the text. `to` is the start of
+ * that closing fence, so `frontmatter` keeps its last line break.
+ */
+export function getFrontMatterInfo(source: string): FrontMatterInfo {
+  const none = {
+    exists: false,
+    frontmatter: "",
+    from: 0,
+    to: 0,
+    contentStart: 0,
+  };
+  const from = /^---\r?\n/.exec(source)?.[0].length;
+  if (from === undefined) return none;
+  const close = /---(?:\r?\n|$)/g;
+  close.lastIndex = from;
+  let match = close.exec(source);
+  while (match && source.charAt(match.index - 1) !== "\n")
+    match = close.exec(source);
+  if (!match) return none;
+  return {
+    exists: true,
+    frontmatter: source.slice(from, match.index),
+    from,
+    to: match.index,
+    contentStart: close.lastIndex,
+  };
 }
 
 export abstract class EditorSuggest<T> {
+  readonly scope = new Scope();
   context: EditorSuggestContext | null = null;
   limit = 0;
   readonly app: App;
+  /** The popup's container; a bare element outside a DOM environment. */
+  suggestEl: HTMLElement =
+    typeof document === "undefined"
+      ? ({
+          addClass: () => {},
+          setAttribute: () => {},
+          removeAttribute: () => {},
+        } as unknown as HTMLElement)
+      : document.createElement("div");
 
   constructor(app: App) {
     this.app = app;
@@ -386,6 +747,188 @@ export abstract class EditorSuggest<T> {
   abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
 }
 
+let suggestChooserHidden = false;
+
+/**
+ * Leave `forceSetSelectedItem` off the private chooser of each input suggest
+ * made from now on, as an Obsidian build without it would; `false` restores it.
+ */
+export function hideSuggestChooser(hidden: boolean): void {
+  suggestChooserHidden = hidden;
+}
+
+/**
+ * Stand-in for Obsidian's input suggest, as Obsidian 1.14.4 drives it: the
+ * field's focus and input ask {@link getSuggestions} for the field's value
+ * while it holds focus; a list shows as `.suggestion-item`s in a
+ * `.suggestion-container` on the page, the first highlighted, and none
+ * shows for no suggestion; blur closes it. While it shows, its scope takes
+ * the keys first, at the window, before the field sees them: ArrowUp and
+ * ArrowDown move the highlight, Enter takes the highlighted item (and is
+ * taken with none), Escape closes it, and what a subclass registers runs
+ * after those. A press on an item takes it.
+ */
+export abstract class AbstractInputSuggest<T> {
+  limit = 100;
+  readonly app: App;
+  readonly scope = new Scope();
+  readonly suggestEl: HTMLDivElement;
+  /** Obsidian's private chooser over the list. */
+  readonly suggestions: {
+    values: T[];
+    selectedItem: number;
+    /** Absent while {@link hideSuggestChooser} hides it. */
+    forceSetSelectedItem?(at: number, event: unknown): void;
+    useSelectedItem(event: KeyboardEvent | MouseEvent): boolean;
+  };
+  /** Highlight the item at `at`, as the chooser does. */
+  readonly #highlight: (at: number) => void;
+  readonly #input: HTMLInputElement | HTMLDivElement;
+  #shown = false;
+
+  constructor(app: App, input: HTMLInputElement | HTMLDivElement) {
+    this.app = app;
+    this.#input = input;
+    this.suggestEl = document.createElement("div");
+    this.suggestEl.className = "suggestion-container";
+    const items = () => [
+      ...this.suggestEl.querySelectorAll<HTMLElement>(".suggestion-item"),
+    ];
+    const highlight = (at: number) => {
+      chooser.selectedItem = at;
+      items().forEach((el, i) => el.classList.toggle("is-selected", i === at));
+    };
+    this.#highlight = highlight;
+    const chooser: AbstractInputSuggest<T>["suggestions"] = {
+      values: [] as T[],
+      selectedItem: 0,
+      ...(!suggestChooserHidden && {
+        forceSetSelectedItem: (at: number, _event?: unknown) => highlight(at),
+      }),
+      useSelectedItem: (event: KeyboardEvent | MouseEvent) => {
+        const value = chooser.values[chooser.selectedItem];
+        if (value === undefined) return false;
+        this.selectSuggestion(value, event);
+        return true;
+      },
+    };
+    this.suggestions = chooser;
+    const move = (by: number) => () => {
+      const count = chooser.values.length;
+      if (count === 0) return false;
+      const at = chooser.selectedItem + by;
+      highlight(at < 0 ? count - 1 : at >= count ? 0 : at);
+      return false;
+    };
+    this.scope.register([], "ArrowUp", move(-1));
+    this.scope.register([], "ArrowDown", move(1));
+    this.scope.register([], "Enter", (event) => {
+      chooser.useSelectedItem(event);
+      return false;
+    });
+    this.scope.register([], "Escape", () => {
+      this.close();
+      return false;
+    });
+    this.suggestEl.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+    this.suggestEl.addEventListener("click", (event) => {
+      const item = (event.target as HTMLElement).closest(".suggestion-item");
+      const at = items().indexOf(item as HTMLElement);
+      if (at === -1) return;
+      highlight(at);
+      chooser.useSelectedItem(event);
+    });
+    input.addEventListener("input", () => this.#change());
+    input.addEventListener("focus", () => this.#change());
+    input.addEventListener("blur", () => this.close());
+  }
+
+  readonly #onKey = (event: KeyboardEvent) => {
+    const modifiers: string[] = [];
+    if (event.ctrlKey) modifiers.push("Ctrl");
+    if (event.metaKey) modifiers.push("Meta");
+    if (event.altKey) modifiers.push("Alt");
+    if (event.shiftKey) modifiers.push("Shift");
+    for (const handler of this.scope.handlers) {
+      if (handler.key !== null && handler.key !== event.key) continue;
+      if (
+        handler.modifiers !== null &&
+        (handler.modifiers.length !== modifiers.length ||
+          handler.modifiers.some((modifier) => !modifiers.includes(modifier)))
+      )
+        continue;
+      if (handler.func(event) === false) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+  };
+
+  #change(): void {
+    if (this.#input.ownerDocument.activeElement !== this.#input) return;
+    const values = this.getSuggestions(this.getValue());
+    if (Array.isArray(values)) this.showSuggestions(values);
+    else void values.then((list) => this.showSuggestions(list));
+  }
+
+  showSuggestions(values: T[]): void {
+    if (values.length === 0) {
+      this.close();
+      return;
+    }
+    const shown = this.limit > 0 ? values.slice(0, this.limit) : values;
+    this.suggestions.values = shown;
+    this.suggestEl.replaceChildren(
+      ...shown.map((value) => {
+        const el = document.createElement("div");
+        el.className = "suggestion-item";
+        this.renderSuggestion(value, el);
+        return el;
+      }),
+    );
+    this.#highlight(0);
+    this.open();
+  }
+
+  getValue(): string {
+    const input = this.#input;
+    return "value" in input ? input.value : (input.textContent ?? "");
+  }
+
+  setValue(value: string): void {
+    const input = this.#input;
+    if ("value" in input) input.value = value;
+    else input.textContent = value;
+  }
+
+  open(): void {
+    if (this.#shown) return;
+    this.#shown = true;
+    this.#input.ownerDocument.body.appendChild(this.suggestEl);
+    window.addEventListener("keydown", this.#onKey, true);
+  }
+
+  close(): void {
+    if (!this.#shown) return;
+    this.#shown = false;
+    this.suggestEl.remove();
+    window.removeEventListener("keydown", this.#onKey, true);
+  }
+
+  onSelect(
+    _callback: (value: T, event: MouseEvent | KeyboardEvent) => unknown,
+  ): this {
+    return this;
+  }
+
+  protected abstract getSuggestions(query: string): T[] | Promise<T[]>;
+  abstract renderSuggestion(value: T, el: HTMLElement): void;
+  abstract selectSuggestion(value: T, event: MouseEvent | KeyboardEvent): void;
+}
+
 /**
  * Records keymap registrations so a test can look one up by modifiers plus key
  * and invoke its handler, standing in for a real keypress.
@@ -397,6 +940,9 @@ export class Scope {
     func: (evt: KeyboardEvent) => boolean | void;
   }[] = [];
 
+  /** The Scope a key no registration here ended goes on to. */
+  constructor(readonly parent?: Scope) {}
+
   register(
     modifiers: Modifier[] | null,
     key: string | null,
@@ -406,10 +952,34 @@ export class Scope {
     this.handlers.push(handler);
     return handler;
   }
+
+  unregister(handler: unknown): void {
+    const index = this.handlers.indexOf(
+      handler as (typeof this.handlers)[number],
+    );
+    if (index !== -1) this.handlers.splice(index, 1);
+  }
+}
+
+export abstract class FuzzySuggestModal<T> {
+  constructor(readonly app: App) {}
+  setPlaceholder(_placeholder: string): void {}
+  open(): void {}
+  abstract getItems(): T[];
+  abstract getItemText(item: T): string;
+  abstract onChooseItem(item: T): void;
 }
 
 export abstract class SuggestModal<T> {
+  readonly containerEl = { addClass() {}, removeClass() {} };
+  readonly resultContainerEl = {
+    createDiv() {},
+    setAttribute(_name: string, _value: string) {},
+    removeAttribute(_name: string) {},
+  };
+  onOpen(): void {}
   limit = 0;
+  readonly contentEl = { addClass: (_className: string) => {} };
   emptyStateText = "";
   readonly app: App;
   readonly scope = new Scope();
@@ -419,8 +989,20 @@ export abstract class SuggestModal<T> {
   }
 
   setPlaceholder(_placeholder: string): void {}
+  setTitle(_title: string): this {
+    return this;
+  }
   setInstructions(_instructions: Instruction[]): void {}
+  open(): void {}
+  close(): void {
+    this.onClose();
+  }
+  onClose(): void {}
   selectActiveSuggestion(_evt: MouseEvent | KeyboardEvent): void {}
+  selectSuggestion(value: T, event: MouseEvent | KeyboardEvent): void {
+    this.close();
+    this.onChooseSuggestion(value, event);
+  }
 
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
   abstract renderSuggestion(value: T, el: HTMLElement): void;
@@ -457,8 +1039,16 @@ export function createMockPlugin(): {
 
 let platformIsWin: boolean | undefined;
 let platformIsMacOS: boolean | undefined;
+let platformIsDesktopApp: boolean | undefined;
 
 export const Platform = {
+  get isDesktopApp(): boolean {
+    if (platformIsDesktopApp === undefined)
+      throw new Error(
+        "Platform.isDesktopApp not configured — call setMockPlatform({ isDesktopApp }) in test setup",
+      );
+    return platformIsDesktopApp;
+  },
   get isWin(): boolean {
     if (platformIsWin === undefined) {
       throw new Error(
@@ -485,14 +1075,18 @@ export const Platform = {
 export function setMockPlatform(overrides: {
   isWin?: boolean;
   isMacOS?: boolean;
+  isDesktopApp?: boolean;
 }): void {
   if (overrides.isWin !== undefined) platformIsWin = overrides.isWin;
   if (overrides.isMacOS !== undefined) platformIsMacOS = overrides.isMacOS;
+  if (overrides.isDesktopApp !== undefined)
+    platformIsDesktopApp = overrides.isDesktopApp;
 }
 
 export function resetMockPlatform(): void {
   platformIsWin = undefined;
   platformIsMacOS = undefined;
+  platformIsDesktopApp = undefined;
 }
 
 export function getLanguage(): string {
@@ -508,20 +1102,39 @@ export function requireApiVersion(_version: string): boolean {
   return true;
 }
 
+/** The version an error report names its host by. */
+export const apiVersion = "1.0.0-test";
+
 /** Minimal stand-in for `MenuItem`; only the builder methods the plugin
  * chains off `Menu.addItem` plus a test-only `click()` to invoke the
  * registered handler. */
 export class MenuItem {
-  #title = "";
+  #title: string | DocumentFragment = "";
+  #icon: string | null = null;
   #section = "";
   #checked: boolean | null = null;
-  #onClick: ((evt: MouseEvent) => unknown) | null = null;
+  #disabled = false;
+  #isLabel = false;
+  #onClick: ((evt: MouseEvent | KeyboardEvent) => unknown) | null = null;
 
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
   submenu: Menu | null = null;
 
+  /** The title's text, whether it was set as a string or as a fragment. */
   get title(): string {
-    return this.#title;
+    return typeof this.#title === "string"
+      ? this.#title
+      : (this.#title.textContent ?? "");
+  }
+
+  /** The fragment a rich title was built from, or `null` for a plain one. */
+  get titleFragment(): DocumentFragment | null {
+    return typeof this.#title === "string" ? null : this.#title;
+  }
+
+  /** `null` for an item that carries no icon, as in Obsidian. */
+  get icon(): string | null {
+    return this.#icon;
   }
 
   /** `null` for an item that carries no check mark, as in Obsidian. */
@@ -534,12 +1147,37 @@ export class MenuItem {
     return this.#section;
   }
 
-  setTitle(title: string): this {
+  /** Whether the row is disabled, as in Obsidian. */
+  get disabled(): boolean {
+    return this.#disabled;
+  }
+
+  /** Whether the row is a non-clickable label, as in Obsidian. */
+  get isLabel(): boolean {
+    return this.#isLabel;
+  }
+
+  setTitle(title: string | DocumentFragment): this {
     this.#title = title;
     return this;
   }
 
-  setIcon(_icon: string | null): this {
+  setIcon(icon: string | null): this {
+    this.#icon = icon;
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.#disabled = disabled;
+    return this;
+  }
+
+  setWarning(_isWarning: boolean): this {
+    return this;
+  }
+
+  setIsLabel(isLabel: boolean): this {
+    this.#isLabel = isLabel;
     return this;
   }
 
@@ -558,14 +1196,17 @@ export class MenuItem {
     return this.submenu;
   }
 
-  onClick(cb: (evt: MouseEvent) => unknown): this {
+  onClick(cb: (evt: MouseEvent | KeyboardEvent) => unknown): this {
     this.#onClick = cb;
     return this;
   }
 
-  /** Test helper: invoke the registered `onClick` handler. */
-  click(): void {
-    this.#onClick?.({} as MouseEvent);
+  /** Test helper: invoke the registered `onClick` handler with the given
+   * event (a plain `{}` when the test does not care), or a no-op while
+   * disabled, as Obsidian ignores clicks on disabled items. */
+  click(evt: Partial<MouseEvent | KeyboardEvent> = {}): void {
+    if (this.#disabled) return;
+    this.#onClick?.(evt as MouseEvent);
   }
 }
 
@@ -580,16 +1221,41 @@ export class MenuItem {
  * Menu.addSeparator} deliberately keeps out. Assert
  * {@link MenuItem.section} instead of inferring grouping from position.
  */
-export class Menu {
+export class Menu extends Component {
   static instances: Menu[] = [];
 
   readonly items: MenuItem[] = [];
 
   /** Where `showAtPosition` was asked to open, or `null` while it was not. */
-  position: { x: number; y: number } | null = null;
+  position: MenuPositionDef | null = null;
+
+  /** The document `showAtPosition` was given, or `null` for none. */
+  positionDoc: Document | null = null;
+
+  /** The element `setParentElement` anchored this menu to, or `null`. */
+  parentEl: HTMLElement | null = null;
+
+  /** The event `showAtMouseEvent` opened at, or `null` for none. */
+  mouseEvent: MouseEvent | null = null;
+
+  /** Every section `addSections` registered, in the order given. */
+  readonly sections: string[] = [];
+
+  /** The menu's keys, whose Escape hides it without taking the key. */
+  readonly scope = new Scope();
 
   constructor() {
+    super();
     Menu.instances.push(this);
+    this.scope.register([], "Escape", () => {
+      this.hide();
+    });
+  }
+
+  addSections(sections: readonly string[]): this {
+    for (const section of sections)
+      if (!this.sections.includes(section)) this.sections.push(section);
+    return this;
   }
 
   addItem(cb: (item: MenuItem) => unknown): this {
@@ -608,12 +1274,61 @@ export class Menu {
     return this;
   }
 
-  showAtMouseEvent(_evt: MouseEvent): this {
+  /** What `hide` runs, as Obsidian runs it once the menu closes. */
+  #onHide: (() => void) | null = null;
+
+  onHide(callback: () => void): this {
+    this.#onHide = callback;
     return this;
   }
 
-  showAtPosition(position: { x: number; y: number }): this {
+  /**
+   * Close the menu as Obsidian does: it unloads, its children with it, and
+   * runs what `onHide` registered.
+   */
+  hide(): this {
+    this.unload();
+    this.#onHide?.();
+    return this;
+  }
+
+  /** As Obsidian's: the menu loads, its children after it, a timer after it shows. */
+  #show(): void {
+    setTimeout(() => this.load(), 0);
+  }
+
+  /**
+   * The keymap a test hands the menus it opens, which a loaded menu pushes
+   * its Scope on, as Obsidian's push theirs on its global keymap.
+   */
+  static keymap: {
+    pushScope(scope: Scope): void;
+    popScope(scope: Scope): void;
+  } | null = null;
+
+  override onload(): void {
+    Menu.keymap?.pushScope(this.scope);
+  }
+
+  override onunload(): void {
+    Menu.keymap?.popScope(this.scope);
+  }
+
+  showAtMouseEvent(evt: MouseEvent): this {
+    this.mouseEvent = evt;
+    this.#show();
+    return this;
+  }
+
+  setParentElement(el: HTMLElement): this {
+    this.parentEl = el;
+    return this;
+  }
+
+  showAtPosition(position: MenuPositionDef, doc?: Document): this {
     this.position = position;
+    this.positionDoc = doc ?? null;
+    this.#show();
     return this;
   }
 }
@@ -661,8 +1376,8 @@ export class Modal {
   static instances: Modal[] = [];
 
   containerEl: HTMLElement = noticeElStub;
-  modalEl: HTMLElement = noticeElStub;
-  contentEl: HTMLElement = containerElStub();
+  modalEl: HTMLElement = elementOrStub();
+  contentEl: HTMLElement = elementOrStub();
 
   title = "";
   isOpen = false;
@@ -697,6 +1412,14 @@ export class Modal {
   onClose(): void {}
 }
 
+/** A real element under a DOM environment, so a dialog can build its body and
+ * footer; the row-only stub elsewhere. */
+function elementOrStub(): HTMLElement {
+  return globalThis.document
+    ? document.createElement("div")
+    : containerElStub();
+}
+
 /** Minimal container a `Setting` row attaches itself to. */
 function containerElStub(): HTMLElement {
   return {
@@ -713,6 +1436,24 @@ export function settingsOf(containerEl: HTMLElement): Setting[] {
   return settingRows.get(containerEl) ?? [];
 }
 
+type Control =
+  | ButtonComponent
+  | DropdownComponent
+  | TextComponent
+  | ToggleComponent;
+const controls = new WeakMap<HTMLElement, Control[]>();
+function registerControl(containerEl: HTMLElement, control: Control): void {
+  const list = controls.get(containerEl) ?? [];
+  list.push(control);
+  controls.set(containerEl, list);
+}
+
+/** The controls built directly on one container, in the order built; a dialog
+ * that lays its own fields out (no `Setting` row) is read through this. */
+export function controlsOf(containerEl: HTMLElement): Control[] {
+  return controls.get(containerEl) ?? [];
+}
+
 /**
  * Stand-in for one `Setting` row. It records what it was named and holds the
  * components it was given, so a test reads a dialog the way a user does and
@@ -720,16 +1461,28 @@ export function settingsOf(containerEl: HTMLElement): Setting[] {
  * TextComponent.type}, and {@link ButtonComponent.click}.
  */
 export class Setting {
+  /** The row's own element. Removing it takes the row out of {@link settingsOf}, as it takes it off the screen. */
+  readonly settingEl: HTMLElement = Object.assign(containerElStub(), {
+    remove: () => this.#remove(),
+    detach: () => this.#remove(),
+  });
+  readonly controlEl = containerElStub();
   /** Every component added to this row, in the order it was added. */
   readonly components: (
     | ButtonComponent
     | DropdownComponent
     | ExtraButtonComponent
     | TextComponent
+    | ToggleComponent
   )[] = [];
 
   name = "";
   desc = "";
+  /** The hover text the row carries, as the user reads it. */
+  tooltip = "";
+  /** The classes the row was given, in the order it was given them. */
+  readonly classes: string[] = [];
+  errorMessage: string | null = null;
 
   constructor(readonly containerEl: HTMLElement) {
     const rows = settingRows.get(containerEl) ?? [];
@@ -737,13 +1490,40 @@ export class Setting {
     settingRows.set(containerEl, rows);
   }
 
+  #remove(): void {
+    const rows = settingRows.get(this.containerEl) ?? [];
+    settingRows.set(
+      this.containerEl,
+      rows.filter((row) => row !== this),
+    );
+  }
+
   setName(name: string): this {
     this.name = name;
     return this;
   }
 
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+
+  setClass(cls: string): this {
+    this.classes.push(cls);
+    return this;
+  }
+
   setDesc(desc: string): this {
     this.desc = desc;
+    return this;
+  }
+
+  setErrorMessage(message: string | null): this {
+    this.errorMessage = message;
+    return this;
+  }
+
+  setHeading(): this {
     return this;
   }
 
@@ -753,6 +1533,14 @@ export class Setting {
 
   addText(cb: (text: TextComponent) => unknown): this {
     return this.#add(new TextComponent(this.containerEl), cb);
+  }
+
+  addTextArea(cb: (text: TextAreaComponent) => unknown): this {
+    return this.#add(new TextAreaComponent(this.containerEl), cb);
+  }
+
+  addToggle(cb: (toggle: ToggleComponent) => unknown): this {
+    return this.#add(new ToggleComponent(this.containerEl), cb);
   }
 
   addButton(cb: (button: ButtonComponent) => unknown): this {
@@ -768,12 +1556,33 @@ export class Setting {
       | ButtonComponent
       | DropdownComponent
       | ExtraButtonComponent
-      | TextComponent,
+      | TextComponent
+      | ToggleComponent,
   >(component: T, cb: (component: T) => unknown): this {
     this.components.push(component);
     cb(component);
     return this;
   }
+}
+
+/**
+ * `row` rendered into a fresh {@link Setting}, as Obsidian renders a `render`
+ * row, so a test reads the controls the user gets. `cleanup` is what `render`
+ * returned.
+ */
+export function renderRow<K extends string>(
+  row: SettingDefinitionItem<K>,
+): Setting & { readonly cleanup: (() => void) | undefined } {
+  if (!("render" in row) || !row.render)
+    throw new Error("Expected a render row");
+  const setting = new Setting(document.createElement("div"));
+  const cleanup = row.render(
+    setting as unknown as ObsidianSetting,
+    {} as ObsidianSettingGroup,
+  );
+  return Object.assign(setting, {
+    cleanup: typeof cleanup === "function" ? cleanup : undefined,
+  });
 }
 
 export class DropdownComponent {
@@ -790,10 +1599,18 @@ export class DropdownComponent {
   #value = "";
   #changed: ((value: string) => unknown) | null = null;
 
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
 
   addOption(value: string, label: string): this {
     this.options.push({ value, label });
+    return this;
+  }
+
+  addOptions(options: Record<string, string>): this {
+    for (const [value, label] of Object.entries(options))
+      this.addOption(value, label);
     return this;
   }
 
@@ -823,12 +1640,23 @@ export class DropdownComponent {
 function inputElStub(): HTMLInputElement {
   const input = {
     value: "",
+    addClass: (..._classNames: string[]) => {},
     placeholder: "",
     validationMessage: "",
     setCustomValidity: (message: string) => {
       input.validationMessage = message;
     },
     reportValidity: () => !input.validationMessage,
+    // A dialog wires its own key handling and takes focus; a test drives the
+    // component through `type` instead, so both stand in as no-ops.
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    focus: () => {},
+    select: () => {},
+    attributes: {} as Record<string, string>,
+    setAttr: (name: string, value: string) => {
+      input.attributes[name] = value;
+    },
   };
   return input as unknown as HTMLInputElement;
 }
@@ -838,7 +1666,9 @@ export class TextComponent {
 
   #changed: ((value: string) => unknown) | null = null;
 
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
 
   getValue(): string {
     return this.inputEl.value;
@@ -854,6 +1684,11 @@ export class TextComponent {
     return this;
   }
 
+  setDisabled(disabled: boolean): this {
+    this.inputEl.disabled = disabled;
+    return this;
+  }
+
   onChange(cb: (value: string) => unknown): this {
     this.#changed = cb;
     return this;
@@ -866,6 +1701,56 @@ export class TextComponent {
   }
 }
 
+export class TextAreaComponent extends TextComponent {}
+
+export class ToggleComponent {
+  #value = false;
+  #changed: ((value: boolean) => unknown) | undefined;
+  readonly toggleEl: HTMLElement;
+  disabled = false;
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+    this.toggleEl = containerEl.createEl("label");
+  }
+  getValue(): boolean {
+    return this.#value;
+  }
+  setValue(value: boolean): this {
+    if (this.#value !== value) {
+      this.#value = value;
+      this.#changed?.(value);
+    }
+    return this;
+  }
+  setDisabled(disabled: boolean): this {
+    this.disabled = disabled;
+    return this;
+  }
+  /**
+   * Publishes the value under `key`, the way a graph controls-panel row
+   * persists: the listener reads the value, and writes it when called with
+   * one — which fires `onChange`, as `setValue` does.
+   */
+  registerOptionListener(
+    listeners: Record<string, GraphOptionListener>,
+    key: string,
+  ): this {
+    listeners[key] = (value?: unknown) => {
+      if (typeof value === "boolean") this.setValue(value);
+      return this.getValue();
+    };
+    return this;
+  }
+  onChange(callback: (value: boolean) => unknown): this {
+    this.#changed = callback;
+    return this;
+  }
+  /** Test helper: change the checked state, as the user does. */
+  toggle(value: boolean): void {
+    if (!this.disabled) this.setValue(value);
+  }
+}
+
 /**
  * The borderless icon action a row carries beside its control. It is read by
  * the tooltip it names, which is the label the user gets from it.
@@ -874,6 +1759,8 @@ export class ExtraButtonComponent {
   icon = "";
   /** The label the button carries, as the user reads it on hover. */
   tooltip = "";
+  /** Whether the row locked the button, as the user finds it. */
+  disabled = false;
 
   #clicked: ((evt: MouseEvent) => unknown) | null = null;
 
@@ -881,6 +1768,11 @@ export class ExtraButtonComponent {
 
   setIcon(icon: string): this {
     this.icon = icon;
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.disabled = disabled;
     return this;
   }
 
@@ -901,14 +1793,38 @@ export class ExtraButtonComponent {
 }
 
 export class ButtonComponent {
+  setDestructive(): this {
+    return this;
+  }
   buttonEl: HTMLElement = noticeElStub;
 
   /** The label the button carries, as the user reads it. */
   text = "";
+  icon = "";
+  /** The label an icon-only button carries, as the user reads it on hover. */
+  tooltip = "";
+
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+
+  // oxlint-disable-next-line no-thenable -- mirrors Obsidian's own component signature.
+  then(cb: (button: this) => unknown): this {
+    cb(this);
+    return this;
+  }
 
   #clicked: ((evt: MouseEvent) => unknown) | null = null;
 
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
 
   onClick(cb: (evt: MouseEvent) => unknown): this {
     this.#clicked = cb;
@@ -917,6 +1833,10 @@ export class ButtonComponent {
 
   setButtonText(text: string): this {
     this.text = text;
+    return this;
+  }
+
+  setDisabled(_disabled: boolean): this {
     return this;
   }
 
@@ -932,4 +1852,53 @@ export class ButtonComponent {
   click(): void {
     this.#clicked?.({} as MouseEvent);
   }
+}
+
+export class ConfirmationButton extends ButtonComponent {
+  setDisabled(_disabled: boolean): this {
+    return this;
+  }
+  setDestructive(): this {
+    return this;
+  }
+}
+
+export class ConfirmationModal {
+  readonly contentEl = globalThis.document
+    ? document.createElement("div")
+    : containerElStub();
+  #closed: (() => void) | undefined;
+  constructor(_app: App) {}
+  setTitle(_title: string): this {
+    return this;
+  }
+  setContent(content: string | DocumentFragment): this {
+    if (typeof content === "string") this.contentEl.textContent = content;
+    else this.contentEl.replaceChildren(content);
+    return this;
+  }
+  addCheckbox(_label: string, _changed: (value: boolean) => void): this {
+    return this;
+  }
+  addButton(cb: (button: ConfirmationButton) => unknown): this {
+    cb(new ConfirmationButton(noticeElStub));
+    return this;
+  }
+  addCancelButton(_label: string): this {
+    return this;
+  }
+  setCloseCallback(callback: () => void): this {
+    this.#closed = callback;
+    return this;
+  }
+  open(): void {}
+  close(): void {
+    this.#closed?.();
+  }
+}
+
+/** Host boundary for exercising a plugin's declarative control bridge. */
+export class PluginSettingTab {
+  constructor(_app: App, _plugin: unknown) {}
+  update(): void {}
 }

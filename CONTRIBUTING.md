@@ -39,12 +39,31 @@ counterpart line before merging a release PR.
 1. Check out `next` (for pre-releases and stable graduations) or `main` (for
    hotfixes only).
 2. Run `pnpm release` — the interactive script bumps the version, syncs
-   manifests, commits, pushes, and opens a PR. The PR target is inferred from
+   manifests, runs the release gate (`pnpm verify --release`, which includes
+   the End-to-end Run, so desktop Obsidian must be running), commits,
+   pushes, opens a PR, and offers to merge it. The PR target is inferred from
    the version picked: a non-prerelease version on `next` targets `main` (stable
    graduation); a prerelease targets `next`; on `main`, all releases target
    `main`.
-3. CI runs format check → lint → test on the PR. Merge when green.
-4. On merge, `release.yml` auto-creates the GitHub release and uploads assets.
+
+   To release without prompts, name each app and its version — a bump the
+   picker offers on that branch, or an explicit version:
+
+   ```sh
+   pnpm release --obsidian prerelease            # stop at the open PR
+   pnpm release --obsidian 2.2.0-beta.5 --merge  # also merge the PR
+   pnpm release --obsidian minor --zotero minor  # stable graduation from next
+   ```
+
+   Every confirmation is taken as yes; the PR merges only with `--merge`. A
+   branch with commits not yet on origin stops the run: push them first.
+3. Pull requests run no checks: the pre-push hook runs `pnpm verify`, and the
+   release gate already passed in step 2. See
+   [ADR 0076](docs/adr/0076-checks-run-before-push-and-ci-runs-only-to-release.md).
+4. On merge, `release.yml` runs the release gate on the merged tree, then
+   auto-creates the GitHub release and uploads assets. If its `verify` job
+   fails, nothing publishes: land the fix and re-run the workflow from the
+   Actions tab.
    The Obsidian job cuts **two** releases per version: `<version>` with the three
    files the community-plugin scanner accepts, and `res-<version>` with the
    version's Language Packs and template data JSON Schemas — so a translation fix

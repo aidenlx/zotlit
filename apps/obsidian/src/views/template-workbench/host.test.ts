@@ -1,0 +1,469 @@
+// @vitest-environment happy-dom
+import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { ConfirmationModal, Menu, Modal, SuggestModal } from "@mock/obsidian";
+import { Cause, Effect, Exit } from "effect";
+import type { Fiber } from "effect";
+import type { App } from "obsidian";
+import { act } from "preact/test-utils";
+import { createElement } from "react";
+import { describe, expect, it, vi } from "vitest";
+
+import { liquidTemplate } from "@zotlit/workbench/language";
+import {
+  AnnotationPointer,
+  NO_MATCH_DATA,
+  WorkbenchClipboardError,
+  WorkbenchHostError,
+} from "@zotlit/workbench/ui";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import * as m from "@/lib/i18n/generated/messages";
+
+import { createTemplateWorkbenchHost } from "./host";
+import type { NativeWorkbenchSuggesterRequest } from "./host";
+
+/** How `fiber` ended: its value, or its failure as a rejection. */
+function settled<A, E>(fiber: Fiber.Fiber<A, E>): Promise<A> {
+  return new Promise((resolve, reject) =>
+    fiber.addObserver((exit) =>
+      Exit.isSuccess(exit)
+        ? resolve(exit.value)
+        : reject(Cause.squash(exit.cause)),
+    ),
+  );
+}
+
+function setup() {
+  const memory = new Map<string, string | null>();
+  const app = stubService<App>("App", {
+    loadLocalStorage: (key: string) => memory.get(key),
+    saveLocalStorage: (key: string, value: string | null) =>
+      memory.set(key, value),
+  });
+  const host = createTemplateWorkbenchHost(app, {
+    run: Effect.runFork,
+    render: () =>
+      Effect.fail(
+        new WorkbenchHostError({
+          cause: new Error("This test renders nothing."),
+        }),
+      ),
+    matchData: NO_MATCH_DATA,
+    insertTarget: () => null,
+  });
+  return { host, memory };
+}
+
+describe("Template Workbench host", () => {
+  it("names the built-in citation style the same way as native citation settings", () => {
+    using host = setup().host;
+    expect(host.messages.workbench_name_value_no_style()).toBe(
+      m.settings_citation_references_style_default(),
+    );
+  });
+
+  it("opens an Obsidian menu at its control and executes the selected action", () => {
+    const { host } = setup();
+    const anchor = document.createElement("button");
+    vi.spyOn(anchor, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(20, 30, 100, 25),
+    );
+    const onSelect = vi.fn();
+    host.menu({
+      anchor,
+      items: [{ label: "Move up", icon: "move-up", onSelect }],
+    });
+    const menu = Menu.instances.at(-1)!;
+    expect(menu.position).toEqual({
+      x: 20,
+      y: 55,
+      width: 100,
+      overlap: true,
+      left: false,
+    });
+    expect(menu.items[0]!.title).toBe("Move up");
+    menu.items[0]!.click();
+    expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it("opens a right-click's menu at the pointer, not under the row", () => {
+    const { host } = setup();
+    const anchor = document.createElement("button");
+    const pointerEvent = new MouseEvent("contextmenu", {
+      clientX: 12,
+      clientY: 34,
+    });
+    host.menu({
+      anchor,
+      pointerEvent,
+      items: [{ label: "Move up", onSelect: () => {} }],
+    });
+    const menu = Menu.instances.at(-1)!;
+    expect(menu.mouseEvent).toBe(pointerEvent);
+    // The control path leaves these unset; the pointer path takes neither.
+    expect(menu.position).toBeNull();
+    expect(menu.parentEl).toBeNull();
+  });
+
+  it("binds dialogs to Modal and reports dismissal", () => {
+    const { host } = setup();
+    const onClose = vi.fn();
+    const handle = host.dialog({ title: "Details", content: null, onClose });
+    const modal = Modal.instances.at(-1)!;
+    expect(modal.title).toBe("Details");
+    expect(modal.isOpen).toBe(true);
+    handle.close();
+    modal.onClose();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("supplies pack messages to shared controls in a separately mounted dialog", async () => {
+    using host = setup().host;
+    const handle = host.dialog({
+      title: "Profile panes",
+      content: createElement(AnnotationPointer, { onInsert() {} }),
+    });
+    const modal = Modal.instances.at(-1)!;
+    try {
+      await act(async () => modal.onOpen());
+      expect(
+        [...modal.contentEl.querySelectorAll("button")].map(
+          (tab) => tab.textContent,
+        ),
+      ).toContain(m.workbench_annotation_insert());
+    } finally {
+      handle.close();
+      await act(async () => modal.onClose());
+    }
+  });
+
+  it("keeps the latest item search when an earlier query finishes last", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    const first = Promise.withResolvers<{ id: string; label: string }[]>();
+    const second = Promise.withResolvers<{ id: string; label: string }[]>();
+    const request: NativeWorkbenchSuggesterRequest = {
+      title: "Items",
+      groups: [],
+      searchItems: vi
+        .fn()
+        .mockReturnValueOnce(Effect.promise(() => first.promise))
+        .mockReturnValueOnce(Effect.promise(() => second.promise)),
+    };
+    void host.run(host.suggester(request));
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
+    const older = modal.getSuggestions("roug");
+    const newer = modal.getSuggestions("ioannidis");
+    second.resolve([]);
+    await newer;
+    first.resolve([{ id: "stale", label: "Rougier" }]);
+    await expect(older).resolves.toEqual([]);
+    modal.close();
+  });
+
+  // #1665: the chooser kept an earlier query's rows on screen until the typed
+  // query's answer arrived, and Enter or a click chose from them.
+  it("chooses the first item of the typed query's answer when Enter comes before it", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    const figures = { id: "DMRGRART", label: "Ten simple rules" };
+    const rules = { id: "RUGIER24", label: "Ten simple rules" };
+    const typed = Promise.withResolvers<(typeof rules)[]>();
+    const request: NativeWorkbenchSuggesterRequest = {
+      title: "Items",
+      groups: [],
+      searchItems: vi
+        .fn()
+        .mockReturnValueOnce(Effect.succeed([figures, rules]))
+        .mockReturnValueOnce(Effect.promise(() => typed.promise)),
+    };
+    const chosen = host.run(host.suggester(request));
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
+    const [earlier] = await modal.getSuggestions("ten");
+    void modal.getSuggestions("ten simple rules");
+
+    modal.selectSuggestion(earlier, { type: "click" } as MouseEvent);
+    modal.selectSuggestion(earlier, { type: "keydown" } as KeyboardEvent);
+    typed.resolve([rules, figures]);
+
+    await expect(settled(chosen)).resolves.toBe("RUGIER24");
+  });
+
+  it("waits on Enter before the first item answer, while the list has no row", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    const rules = { id: "RUGIER24", label: "Ten simple rules" };
+    const typed = Promise.withResolvers<(typeof rules)[]>();
+    const request: NativeWorkbenchSuggesterRequest = {
+      title: "Items",
+      groups: [],
+      searchItems: vi
+        .fn()
+        .mockReturnValueOnce(Effect.promise(() => typed.promise)),
+    };
+    const chosen = host.run(host.suggester(request));
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
+    void modal.getSuggestions("ten simple rules");
+
+    // Enter through the modal's own key scope, as Obsidian's keymap sends it.
+    const { handlers } = modal.scope as unknown as {
+      handlers: {
+        modifiers: string[] | null;
+        key: string | null;
+        func: (evt: KeyboardEvent) => unknown;
+      }[];
+    };
+    handlers
+      .find((h) => h.key === "Enter" && h.modifiers?.length === 0)!
+      .func({ type: "keydown", key: "Enter" } as KeyboardEvent);
+    typed.resolve([rules]);
+
+    await expect(settled(chosen)).resolves.toBe("RUGIER24");
+  });
+
+  it("settles SuggestModal cancellation and restores control focus", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    const anchor = document.createElement("button");
+    document.body.append(anchor);
+    const chosen = host.run(
+      host.suggester({
+        title: "Styles",
+        anchor,
+        groups: [
+          {
+            label: "Installed",
+            options: [{ id: "apa", label: "APA", hint: "Author-date" }],
+          },
+        ],
+      }),
+    );
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
+    expect(modal.getSuggestions("author")).toEqual([
+      { id: "apa", label: "APA", hint: "Author-date", group: "Installed" },
+    ]);
+    modal.close();
+    await expect(settled(chosen)).resolves.toBeNull();
+    expect(document.activeElement).toBe(anchor);
+    anchor.remove();
+  });
+
+  it("closes the chooser when its Effect is interrupted", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    using close = vi.spyOn(SuggestModal.prototype, "close");
+    const fiber = host.run(host.suggester({ title: "Styles", groups: [] }));
+    expect(open).toHaveBeenCalledOnce();
+
+    fiber.interruptUnsafe();
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("answers a confirm, and closes it when its Effect is interrupted", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(ConfirmationModal.prototype, "open");
+    using close = vi.spyOn(ConfirmationModal.prototype, "close");
+    const request = { title: "Replace?", body: "", confirm: "Replace" };
+    const dismissed = host.run(host.confirm(request));
+    (open.mock.contexts.at(-1) as ConfirmationModal).close();
+    await expect(settled(dismissed)).resolves.toBe(false);
+
+    host.run(host.confirm(request)).interruptUnsafe();
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("names a refused clipboard by its tag", async () => {
+    const { host } = setup();
+    using _write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockRejectedValue(new Error("Denied"));
+    await expect(
+      settled(host.run(host.copy!("report"))),
+    ).rejects.toBeInstanceOf(WorkbenchClipboardError);
+  });
+
+  it("draws a suggestion row the way Obsidian's own complex rows read", () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    void host.run(
+      host.suggester({
+        title: "Styles",
+        selected: "apa",
+        groups: [
+          {
+            label: "Installed",
+            options: [
+              { id: "apa", label: "APA", hint: "Author-date" },
+              { id: "ieee", label: "IEEE", icon: "choose-sample" },
+            ],
+          },
+        ],
+      }),
+    );
+    type Row = { id: string; label: string; hint?: string; group: string };
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<Row>;
+    const rows = (modal.getSuggestions("") as Row[]).map((option) => {
+      const el = document.createElement("div");
+      modal.renderSuggestion(option, el);
+      return el;
+    });
+    expect(
+      rows.map((el) => el.querySelector(".suggestion-title")!.textContent),
+    ).toEqual(["APA", "IEEE"]);
+    expect(
+      rows.map(
+        (el) => el.querySelector(".suggestion-note .hint")?.textContent ?? null,
+      ),
+    ).toEqual(["Author-date", null]);
+    // The group takes the Library's two slots: a badge closing the note line
+    // on a narrow row, a trailing flair on a wide one.
+    expect(
+      rows.map((el) => [
+        el.querySelector(".suggestion-note .zt-suggestion-flair-inline")!
+          .textContent,
+        el.querySelector(".zt-suggestion-flair")!.textContent,
+      ]),
+    ).toEqual([
+      ["Installed", "Installed"],
+      ["Installed", "Installed"],
+    ]);
+    expect(
+      rows.map((el) =>
+        [...el.querySelectorAll(".suggestion-aux .suggestion-flair")].map(
+          (flair) => flair.getAttribute("aria-label"),
+        ),
+      ),
+    ).toEqual([[m.modal_profile_current()], []]);
+    expect(rows.map((el) => el.getAttribute("aria-current"))).toEqual([
+      "true",
+      null,
+    ]);
+    // An action row leads with its icon, in Obsidian's own icon slot.
+    expect(
+      rows.map((el) =>
+        el.firstElementChild!.classList.contains("suggestion-icon"),
+      ),
+    ).toEqual([false, true]);
+  });
+
+  it("highlights the searched text in the title and the hint", () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    void host.run(
+      host.suggester({
+        title: "Styles",
+        groups: [
+          {
+            label: "Installed",
+            options: [{ id: "ieee", label: "IEEE", hint: "Engineering" }],
+          },
+        ],
+      }),
+    );
+    type Row = { id: string; label: string; hint?: string; group: string };
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<Row>;
+    const [row] = modal.getSuggestions("ee") as Row[];
+    const el = document.createElement("div");
+    modal.renderSuggestion(row!, el);
+    expect(
+      [...el.querySelectorAll(".suggestion-highlight")].map((match) => [
+        match.parentElement!.className,
+        match.textContent,
+      ]),
+    ).toEqual([
+      [
+        "suggestion-title zt:truncate zt:text-sm zt:leading-tight zt:font-medium",
+        "EE",
+      ],
+      ["hint", "ee"],
+    ]);
+    // Words may land in different fields, the way the filter read before.
+    expect(modal.getSuggestions("installed engineer")).toHaveLength(1);
+    expect(modal.getSuggestions("apa")).toHaveLength(0);
+  });
+
+  it("keeps preferences in Obsidian's vault-local storage", () => {
+    const { host, memory } = setup();
+    host.persistence.write("vault", "last", "ABCD2345");
+    expect(memory.get("zotlit.workbench.vault.last")).toBe("ABCD2345");
+    expect(host.persistence.read("vault", "last")).toBe("ABCD2345");
+    host.persistence.write("vault", "last", null);
+    expect(host.persistence.read("vault", "last")).toBeNull();
+  });
+});
+
+describe("Template Workbench typing popup", () => {
+  it("wears Obsidian's suggestion classes, with the description and type as cells", async () => {
+    const { host } = setup();
+    const input = document.createElement("div");
+    const migrations: ((win: Window) => void)[] = [];
+    const disposeMigration = vi.fn();
+    input.onWindowMigrated = (listener) => {
+      migrations.push(listener);
+      return disposeMigration;
+    };
+    input.style.overflow = "hidden";
+    document.body.append(input);
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: "{{ zt.",
+        extensions: [
+          liquidTemplate,
+          host.editorPopups!(
+            () => ({
+              root: "note",
+              partials: [],
+              fields: [{ path: "title", label: "Title" }],
+            }),
+            input,
+          ),
+        ],
+      }),
+      parent: input,
+    });
+    try {
+      view.dispatch({
+        changes: { from: 6, insert: "t" },
+        selection: { anchor: 7 },
+        userEvent: "input.type",
+      });
+      const popup = await vi.waitFor(() => {
+        const found = document.body.querySelector(".cm-tooltip-autocomplete");
+        if (!found) throw new Error("no popup yet");
+        return found;
+      });
+      expect(popup.classList.contains("suggestion-container")).toBe(true);
+      expect(document.body.contains(popup)).toBe(true);
+      expect(input.contains(popup)).toBe(false);
+      const rows = [...popup.querySelectorAll("li")];
+      const row = rows.find(
+        (row) =>
+          row.querySelector(".cm-completionLabel")!.textContent === "title",
+      )!;
+      expect(
+        row.querySelector(".zt-template-completion-type")!.textContent,
+      ).toBe("string | null");
+      expect(row.querySelector(".suggestion-note")!.textContent).toBe(
+        "Item title.",
+      );
+      const destination = document.implementation.createHTMLDocument();
+      destination.body.append(input);
+      view.setRoot(destination);
+      migrations[0]!({
+        document: destination,
+      } as Window);
+      expect(
+        destination.body.querySelector(".cm-tooltip-autocomplete"),
+      ).not.toBeNull();
+      expect(
+        document.body.querySelector(".cm-tooltip-autocomplete"),
+      ).toBeNull();
+    } finally {
+      view.destroy();
+      expect(disposeMigration).toHaveBeenCalledOnce();
+      input.remove();
+    }
+  });
+});

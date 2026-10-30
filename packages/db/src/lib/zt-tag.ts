@@ -1,8 +1,6 @@
-import { getLogger } from "@logtape/logtape";
+import { logLibrary } from "@zotlit/shared/logging";
 
 import { defineToString } from "./to-string";
-
-const logger = getLogger(["zotlit", "db", "tags"]);
 
 /**
  * `itemTags.type`: 0 (default) is a manual tag, 1 is an automatic tag.
@@ -29,11 +27,20 @@ export interface ItemTag {
   type: TagType;
 }
 
-export function tagTypeToName(type: TagType): TagTypeName | "unknown" {
-  const name = TAG_TYPE[type];
+/**
+ * The name of a tag type. It takes any number, because a Zotero reply can name
+ * a type that Zotero added after this mapping was written.
+ */
+export function tagTypeToName(type: number): TagTypeName | "unknown" {
+  const name = (TAG_TYPE as Partial<Record<number, TagTypeName>>)[type];
   if (name) return name;
 
-  logger.warn("Unknown tag type {type}", { type });
+  logLibrary({
+    level: "warn",
+    category: ["zotlit", "db", "tags"],
+    message: "Unknown tag type {type}",
+    properties: { type },
+  });
   return "unknown";
 }
 

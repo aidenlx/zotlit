@@ -1,0 +1,143 @@
+---
+title: "Profile Match"
+description: "Write the Profile Match that picks a template for a paper: its fields, operators, list methods, tree form, and mistakes."
+---
+
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This reference describes the Profile Match: the Filter Expression or tree a profile document carries in its `match` key.
+
+A Profile Match tests one Zotero item. ZotLit evaluates it when it creates a literature note. It uses the [Filter Expression](/docs/concepts/how-zotlit-query-works#steps) language of an items query filter. The <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View writes it into a profile document, and a shared profile carries it in its manifest.
+
+## Where a Profile Match lives [#where]
+
+A Profile Match is the `match` key of a [profile document](/docs/reference/templates/profile-document) manifest. The `match` key holds one expression or one tree.
+
+The built-in Default profile carries no `match`, and a profile without a `match` key is never selected automatically. You can still select that profile by hand. For the procedure, see [Use a different template for different notes](/docs/how-to/use-different-templates), which sets a Match on the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View.
+
+## Fields [#fields]
+
+A Profile Match can read any field of an item that an items query filter reads. The `zotlit:query-schema` [command](/docs/reference/commands#query-cli) lists them. These four fields are the common ones.
+
+| Field         | Values                          | Test          | Example                                |
+| ------------- | ------------------------------- | ------------- | -------------------------------------- |
+| `library`     | `personal` or `group:<groupID>` | `==` or `!=`  | `library == "group:118"`               |
+| `itemType`    | One item type name              | `==` or `!=`  | `itemType == "journalArticle"`         |
+| `tags`        | A list of Tag names             | A list method | `tags.contains("Read")`                |
+| `collections` | A list of Collection paths      | A list method | `collections.within("Project/Drafts")` |
+
+### Library values
+
+A `library` value is `"personal"` or `"group:<groupID>"`, where `<groupID>` is a positive integer. The value names a group Library by its group ID rather than by a local database ID, so it survives a rebuild of your Zotero database.
+
+A value in neither form, or a group that is not connected, matches no item.
+
+### Item type values
+
+Item type names come from the closed set ZotLit builds from Zotero's schema: the top-level item types, excluding the child types `attachment`, `note`, and `annotation`. [Fields by item type](/docs/reference/templates/data#common-fields) lists every name in the set. A name outside it matches no item.
+
+### Tag values
+
+Tag names are free text, and matching is exact and case-sensitive. Tags you add and tags Zotero adds automatically count alike.
+
+### Collection paths
+
+A Collection path starts with the root Collection and continues to the direct parent of the item, with the names joined by `/`. For example, `Project/Drafts/Review` names the `Review` Collection under `Drafts`, under `Project`.
+
+Paths have no escape syntax, so a Collection whose name contains `/` is ambiguous. ZotLit evaluates a path against the item's own Library, and it accepts a path that no Library contains: a positive membership test for an absent path is simply false.
+
+## Equality tests [#equality]
+
+The text fields `library` and `itemType` take an equality test.
+
+| Form               | Fields                | Holds when                                | Example                  |
+| ------------------ | --------------------- | ----------------------------------------- | ------------------------ |
+| `field == "value"` | `library`, `itemType` | The item's value is the quoted value.     | `itemType == "book"`     |
+| `field != "value"` | `library`, `itemType` | The item's value is not the quoted value. | `library != "group:118"` |
+
+A value may use double or single quotes, and either side may hold the field. An equality test between a list field and a text, such as `tags == "Read"`, matches no item.
+
+## List methods [#list-functions]
+
+The list fields `tags` and `collections` take a list method.
+
+| Method        | Fields                | Arguments   |
+| ------------- | --------------------- | ----------- |
+| `contains`    | `tags`, `collections` | Exactly one |
+| `containsAny` | `tags`, `collections` | Any number  |
+| `containsAll` | `tags`, `collections` | Any number  |
+| `isEmpty`     | `tags`, `collections` | None        |
+| `within`      | `collections`         | Exactly one |
+
+`containsAny` and `containsAll` also take one list of values, such as `tags.containsAny(["Read", "Cited"])`. [List methods](/docs/reference/functions-and-methods#list-methods) gives the signature and result of each method.
+
+On `collections`, `contains` tests direct filing: `collections.contains("Project/Drafts")` holds only when the item is filed directly in that exact path. `within` accepts any descendant. On `tags`, the value is one Tag name, not a path.
+
+ZotLit rejects a call with the wrong number of arguments, and a `within` path that is not text. A text field has methods of its own, so `itemType.contains("book")` tests for `book` inside the item type name.
+
+## Operators [#operators]
+
+| Operator | Meaning                                         |
+| -------- | ----------------------------------------------- |
+| `!`      | Negates one test or a parenthesized expression. |
+| `&&`     | Holds when both sides hold.                     |
+| `\|\|`   | Holds when at least one side holds.             |
+| `( )`    | Groups tests.                                   |
+
+`!` binds tightest, then `&&`, then `||`:
+
+```
+!tags.contains("Read")
+!(itemType == "book" || itemType == "thesis")
+itemType == "book" && tags.contains("Read")
+```
+
+`true` matches every item, and `false` matches no item.
+
+## Tree form [#tree]
+
+The `match` key holds either one expression string or one tree node. A tree node is a mapping with a single key, `and`, `or`, or `not`, whose value is a list of entries. Each entry is an expression string or another tree node.
+
+```yaml
+match: 'itemType == "book" && tags.contains("Read")'
+```
+
+```yaml
+match:
+  and:
+    - 'itemType == "book"'
+    - or:
+        - 'tags.contains("Read")'
+        - 'collections.within("Project/Drafts")'
+```
+
+`and` holds when every entry holds. `or` holds when at least one entry holds. `not` holds when no entry holds.
+
+An empty list is legal. An empty `and` or `not` matches every item. An empty `or` matches no item.
+
+An entry that is an empty expression string is a mistake, because a leaf has to test something.
+
+## Rejected forms [#rejected]
+
+| Form                                  | Why it is rejected                                                 |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| `hasTag("Read")`                      | Legacy name. Use `tags.contains("Read")`.                          |
+| `inCollection("Project")`             | Legacy name. Use `collections.contains` or `collections.within`.   |
+| `inCollectionDirectly("Project")`     | Legacy name. Use `collections.contains` or `collections.within`.   |
+| `tags.contains("Read", "Cited")`      | `contains` takes one argument. Use `containsAny` or `containsAll`. |
+| `collections.within(3)`               | A Collection path is text.                                         |
+| An empty expression, or broken syntax | The condition does not name a test.                                |
+
+The three legacy names also take a Library argument. The current language has no equal, because a Collection path is evaluated against the item's own Library.
+
+## Selection with a Profile Match [#selection]
+
+ZotLit treats a Profile Match it cannot evaluate as a non-match, not as a refusal. It reports the problem as a diagnostic, keeps the profile out of automatic selection, and continues with the other profiles. Causes include invalid syntax, an unknown function, and a call with the wrong arguments. A profile's row in [Settings](/docs/reference/settings#profile-match) shows the status of its Profile Match, and the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View shows the diagnostic.
+
+A profile with no `match` key never takes part in automatic selection. A profile whose `match` holds is used for the new note. When several profiles match, the profile picker opens with the matching candidates. [Settings](/docs/reference/settings#profile-match) describes the statuses, the condition summary, and the picker. A Match is edited in the profile document, on the <UiLabel name={m.workbench_tab_match()} /> tab of the Template Workbench View; [Use a different template for different notes](/docs/how-to/use-different-templates) gives the procedure.
+
+## See also [#see-also]
+
+- [Profile document](/docs/reference/templates/profile-document) for the manifest keys, the note source, the `{% managed %}` block, and the Annotation Section.
+- [Use a different template for different notes](/docs/how-to/use-different-templates) for creating and sharing a Profile Match.

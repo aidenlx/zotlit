@@ -1,5 +1,5 @@
-import { clsx } from "clsx";
-import type { ClassValue } from "clsx";
+import { clsx } from "cn";
+import type { ClassValue } from "cn";
 import type { TooltipOptions } from "obsidian";
 import type { KeyboardEvent, MouseEvent } from "react";
 
@@ -42,8 +42,16 @@ export function tooltipAttrs(
   return attrs;
 }
 
-/** Enter/Space activates a `role="button"` element the way a native `<button>` would. */
-function onActivateKey(e: KeyboardEvent, activate: () => void) {
+/**
+ * Enter/Space activates a `role="button"` element the way a native `<button>`
+ * would. {@link activatable} is the React half; a vanilla `keydown` listener
+ * calls this directly, which is why the event is read structurally rather than
+ * as one framework's shape.
+ */
+export function onActivateKey(
+  e: Pick<KeyboardEvent, "key" | "preventDefault">,
+  activate: () => void,
+) {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
     activate();
@@ -76,4 +84,27 @@ export function activatable(
       onActivateKey(e, activate);
     },
   };
+}
+
+/** The clicks a control has already answered, keyed by the event itself. */
+const claimedClicks = new WeakSet<Event>();
+
+/**
+ * Claim a click for the control it landed on, so an ancestor that acts on the
+ * same click stands down.
+ *
+ * Halting the click would stand the ancestor down too, but Obsidian dismisses
+ * an open `Menu` from a `click` listener on the window: a click that never
+ * reaches the window leaves the menu standing, and the trigger that opened it
+ * can never shut it.
+ *
+ * @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
+ */
+export function claimClick(e: { nativeEvent: Event }): void {
+  claimedClicks.add(e.nativeEvent);
+}
+
+/** Whether a control has already answered this click. */
+export function clickClaimed(e: { nativeEvent: Event }): boolean {
+  return claimedClicks.has(e.nativeEvent);
 }

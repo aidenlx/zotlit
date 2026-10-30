@@ -16,14 +16,17 @@
     "./client/node": "./dist/client/node.mjs",
     "./client/web": "./dist/client/web.mjs",
     "./contract/ir": "./dist/contract/ir.mjs",
+    "./item-query": "./dist/item-query.mjs",
     "./path": "./dist/path.mjs",
+    "./test-scenario": "./dist/test-scenario.mjs",
     "./test-utils": "./dist/test-utils.mjs",
     "./package.json": "./package.json",
     "./contract/ir.json": "./src/contract/generated/ir.json",
     "./contract/ir.runtime.json": "./src/contract/generated/ir.runtime.json",
+    "./contract/note.schema.json": "./src/contract/generated/note.schema.json",
     "./contract/annotation.schema.json": "./src/contract/generated/annotation.schema.json",
     "./contract/filename.schema.json": "./src/contract/generated/filename.schema.json",
-    "./contract/note.schema.json": "./src/contract/generated/note.schema.json"
+    "./contract/citation.schema.json": "./src/contract/generated/citation.schema.json"
   },
   "scripts": {
     "build": "tsdown",
@@ -42,6 +45,7 @@
     "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
     "drizzle-orm": "catalog:",
+    "effect": "catalog:",
     "valibot": "catalog:"
   },
   "devDependencies": {

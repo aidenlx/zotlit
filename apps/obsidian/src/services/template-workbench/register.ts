@@ -3,21 +3,22 @@
 // Command, flag, guide, and diagnostic text is all hardcoded English: an
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
+import { Context, Effect, Layer } from "effect";
+import type { CliData, CliFlag, CliFlags } from "obsidian";
 
-import type {
-  App,
-  CliFlag,
-  CliFlags,
-  FileSystemAdapter,
-  Plugin,
-} from "obsidian";
+import type { VersionedCliHost } from "@/lib/cli-command";
+import { ObsidianEnv } from "@/lib/obsidian-env";
+import { PluginHost } from "@/lib/plugin-host";
+import type { ProfileSelector } from "@/lib/profile-stamp";
+import { Profile } from "@/services/profile/service";
+import { Template } from "@/services/template/service";
 
-import type { DatabaseService } from "@/services/database/service";
-import type { NoteIndex } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-
+import {
+  createCheckHandler,
+  checkFlags,
+  TEMPLATE_CHECK_COMMAND,
+} from "./check";
+import type { CheckServices } from "./check";
 import {
   createTemplateWorkbenchHandlers,
   FRONTMATTER_EVAL_COMMAND,
@@ -26,47 +27,93 @@ import {
   FRONTMATTER_SET_COMMAND,
   FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
+  TEMPLATE_DOCUMENT_RENDER_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_RENDER_COMMAND,
   TEMPLATE_SCHEMA_COMMAND,
   TEMPLATE_SOURCE_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
-import { loadTemplateData } from "./data";
+import { readCitationData, readTemplateData, withSelectedNote } from "./data";
+import { diagnostic, envelope } from "./envelope";
+import type { WorkbenchCommand } from "./envelope";
 import { GUIDE_TOPIC_NAMES } from "./guide";
+import { readWorkbenchIdentity } from "./identity";
 import {
+  createInspectHandler,
+  selectInspectionNote,
+  inspectFlags,
+  TEMPLATE_INSPECT_COMMAND,
+} from "./inspect";
+import {
+  CITATION_EXAMPLE_NAMES,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  PARTIAL_CONTEXT_NAMES,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 } from "./request";
 import type {
-  DATA_PARAMS,
-  FRONTMATTER_EVAL_PARAMS,
-  FRONTMATTER_REMOVE_PARAMS,
-  FRONTMATTER_REORDER_PARAMS,
-  FRONTMATTER_SET_PARAMS,
-  GUIDE_PARAMS,
-  RENDER_PARAMS,
-  SOURCE_PARAMS,
+  DataParam,
+  DocumentRenderParam,
+  FrontmatterEvalParam,
+  FrontmatterRemoveParam,
+  FrontmatterReorderParam,
+  FrontmatterSetParam,
+  GuideParam,
+  RenderParam,
+  SourceParam,
 } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
+import { templateCall } from "./sync-template";
 import { choices } from "./vocabulary";
 
-interface TemplateWorkbenchRegistrationDeps {
-  app: App;
-  db: DatabaseService;
-  noteIndex: NoteIndex;
-  settings: SettingsService;
-  templates: TemplateService;
-  zoteroPref: ZoteroPrefService;
-}
+/** What the Workbench commands read: the Template, Profile, Note Index,
+ *  Zotero Pref and Zotero Reads services, and Obsidian's capabilities. */
+export type WorkbenchServices = CheckServices;
 
-/** The Indexed Key selector both item-backed commands take. */
+/** Registers the Workbench commands over the plugin's services. */
+export const layerTemplateWorkbenchCli: Layer.Layer<
+  never,
+  never,
+  PluginHost | WorkbenchServices
+> = Layer.effectDiscard(
+  Effect.gen(function* () {
+    registerTemplateWorkbench(
+      yield* PluginHost,
+      yield* Effect.context<WorkbenchServices>(),
+    );
+  }),
+);
+
+/** The Indexed Key selector a command with no other way to name an object takes. */
 function keyFlag(): CliFlag {
   return {
     value: "<indexed-key>",
     description: "Zotero key for an object",
     required: true,
+  };
+}
+
+/**
+ * The Indexed Key selector on a command an `example=` set can select instead.
+ * Neither of the two is required alone: the parser reports which of the two
+ * a call must name.
+ */
+function selectorKeyFlag(): CliFlag {
+  return {
+    value: "<indexed-key>",
+    description:
+      "Zotero key for an object; the citation root takes example instead",
+  };
+}
+
+/** The built-in Citation set the citation root reads in place of a key. */
+function exampleFlag(): CliFlag {
+  return {
+    value: choices(CITATION_EXAMPLE_NAMES),
+    description: "Built-in citation set to read instead of key",
   };
 }
 
@@ -88,23 +135,39 @@ function rootFlag(): CliFlag {
   };
 }
 
-/** `format`'s `value` is a bare `|`-separated list, not `choices()`'s
- *  bracketed form: Obsidian's `--json`/`--markdown` alias sugar only fires
- *  when the declared flag value looks like that bare list. */
+/** `format`'s `value` keeps `choices()`'s bracketed form: Obsidian turns a
+ *  `json` or `--json` token into `format=json` before the handler when the
+ *  value is a bare `|`-separated list, so `--json` would pass the decoder. */
 function formatFlag(values: readonly string[]): CliFlag {
   return {
-    value: values.join("|"),
+    value: choices(values),
     description: "Output format, default json",
   };
 }
 
 function dataFlags(): CliFlags {
   return {
-    key: keyFlag(),
+    key: selectorKeyFlag(),
+    note: {
+      value: "<vault-path>",
+      description:
+        "Literature Note selected as in template-inspect; alternative to key or example",
+    },
+    query: {
+      value: "<words>",
+      description:
+        "Optional focused discovery: definitions, values, and expressions",
+    },
+    path: {
+      value: "<zt.path>",
+      description: "Exact nested field, such as zt.creators[0].family",
+    },
+    full: { description: "Explicitly include the complete zt object" },
     root: rootFlag(),
+    example: exampleFlag(),
     format: formatFlag(["json"]),
     ...expectationFlags(),
-  } satisfies Record<(typeof DATA_PARAMS)[number], CliFlag>;
+  } satisfies Record<DataParam, CliFlag>;
 }
 
 function guideFlags(): CliFlags {
@@ -113,20 +176,49 @@ function guideFlags(): CliFlags {
       value: choices(GUIDE_TOPIC_NAMES),
       description: "Guide topic",
     },
-  } satisfies Record<(typeof GUIDE_PARAMS)[number], CliFlag>;
+  } satisfies Record<GuideParam, CliFlag>;
 }
 
 function renderFlags(): CliFlags {
   return {
-    key: keyFlag(),
+    key: selectorKeyFlag(),
     template: {
-      value: choices(TEMPLATE_SLOT_NAMES),
+      value: choices(RENDER_TEMPLATE_NAMES),
       description: "Template to render",
       required: true,
     },
+    root: {
+      value: choices(PARTIAL_CONTEXT_NAMES),
+      description:
+        "Caller a partial is rendered as, for template=partial:<name>, default note",
+    },
+    variant: {
+      value: choices(CITATION_VARIANT_NAMES),
+      description: "Citation Variant for template=citation, default main",
+    },
+    example: exampleFlag(),
     format: formatFlag(["markdown", "json"]),
     ...expectationFlags(),
-  } satisfies Record<(typeof RENDER_PARAMS)[number], CliFlag>;
+  } satisfies Record<RenderParam, CliFlag>;
+}
+
+function documentRenderFlags(): CliFlags {
+  return {
+    key: keyFlag(),
+    profile: {
+      value: "<default|profile-id>",
+      description: "Profile id whose document to render",
+    },
+    document: {
+      value: "<reference>",
+      description: "Installed document reference to render",
+    },
+    source: {
+      value: "<document-source>",
+      description: "Uninstalled document source to render in memory",
+    },
+    ...expectationFlags(),
+  } satisfies Record<DocumentRenderParam, CliFlag>;
 }
 
 function sourceFlags(): CliFlags {
@@ -136,7 +228,7 @@ function sourceFlags(): CliFlags {
       description: "Template to render",
       required: true,
     },
-  } satisfies Record<(typeof SOURCE_PARAMS)[number], CliFlag>;
+  } satisfies Record<SourceParam, CliFlag>;
 }
 
 function frontmatterEvalFlags(): CliFlags {
@@ -153,7 +245,7 @@ function frontmatterEvalFlags(): CliFlags {
     },
     format: formatFlag(["json"]),
     ...expectationFlags(),
-  } satisfies Record<(typeof FRONTMATTER_EVAL_PARAMS)[number], CliFlag>;
+  } satisfies Record<FrontmatterEvalParam, CliFlag>;
 }
 
 function frontmatterSetFlags(): CliFlags {
@@ -178,7 +270,7 @@ function frontmatterSetFlags(): CliFlags {
       description:
         "Merge strategy; defaults to replace on a new field, keeps the current strategy when omitted on an existing field",
     },
-  } satisfies Record<(typeof FRONTMATTER_SET_PARAMS)[number], CliFlag>;
+  } satisfies Record<FrontmatterSetParam, CliFlag>;
 }
 
 function frontmatterRemoveFlags(): CliFlags {
@@ -188,7 +280,7 @@ function frontmatterRemoveFlags(): CliFlags {
       description: "Managed Frontmatter field key to delete",
       required: true,
     },
-  } satisfies Record<(typeof FRONTMATTER_REMOVE_PARAMS)[number], CliFlag>;
+  } satisfies Record<FrontmatterRemoveParam, CliFlag>;
 }
 
 function frontmatterReorderFlags(): CliFlags {
@@ -199,114 +291,133 @@ function frontmatterReorderFlags(): CliFlags {
         "Complete, comma-separated permutation of the configured field keys, in write order",
       required: true,
     },
-  } satisfies Record<(typeof FRONTMATTER_REORDER_PARAMS)[number], CliFlag>;
+  } satisfies Record<FrontmatterReorderParam, CliFlag>;
 }
 
 export function registerTemplateWorkbench(
-  plugin: Plugin,
-  deps: TemplateWorkbenchRegistrationDeps,
+  host: VersionedCliHost,
+  context: Context.Context<WorkbenchServices>,
 ): void {
+  const provide = <A, E>(effect: Effect.Effect<A, E, WorkbenchServices>) =>
+    Effect.provideContext(effect, context);
+  const handle =
+    <E>(
+      handler: (params: CliData) => Effect.Effect<string, E, WorkbenchServices>,
+    ) =>
+    (params: CliData) =>
+      provide(handler(params));
+  const template = Context.get(context, Template);
+  const profile = Context.get(context, Profile);
+  host.registerCliCommand(TEMPLATE_INSPECT_COMMAND, {
+    description:
+      "Inspect a Template Document and verify saved source freshness",
+    flags: inspectFlags,
+    handler: handle(createInspectHandler()),
+  });
+  host.registerCliCommand(TEMPLATE_CHECK_COMMAND, {
+    description:
+      "Check every saved Profile create or update component with verified source freshness",
+    flags: checkFlags,
+    handler: handle(
+      createCheckHandler({
+        pluginVersion: host.manifest.version,
+        hostVersion: `Obsidian ${Context.get(context, ObsidianEnv).apiVersion}`,
+      }),
+    ),
+  });
   const handlers = createTemplateWorkbenchHandlers({
-    pluginVersion: plugin.manifest.version,
-    getIdentity: async () => {
-      await deps.zoteroPref.ready;
-      return {
-        vault: {
-          name: deps.app.vault.getName(),
-          // Desktop-only plugin: the adapter is always a FileSystemAdapter.
-          path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
-        },
-        source: {
-          id: deps.zoteroPref.sourceId,
-          databasePath: deps.zoteroPref.databasePath,
-        },
-      };
+    pluginVersion: host.manifest.version,
+    getIdentity: provide(readWorkbenchIdentity),
+    selectNote: (name) => provide(selectInspectionNote(name)),
+    loadData: (indexedKey, root, options) => {
+      const read = readTemplateData(indexedKey, root);
+      return provide(
+        options?.note === undefined
+          ? read
+          : read.pipe(
+              withSelectedNote({ key: indexedKey, path: options.note }),
+            ),
+      );
     },
-    loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
-    templates: deps.templates,
-    frontmatter: {
-      read: () => {
-        const status = deps.templates.getFrontmatterFieldStatus();
+    loadCitation: (selector, variant) =>
+      provide(readCitationData(selector, variant)),
+    templates: template,
+    literatureNotes: {
+      readProfiles: Effect.gen(function* () {
+        const resolve = (selector: ProfileSelector) =>
+          profile.resolveProfile(selector);
         return {
-          fields: status.fields,
-          inertKeys: status.inertKeys,
-          javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
+          defaultProfile: yield* resolve("default"),
+          profiles: yield* Effect.forEach(yield* profile.profiles, (entry) =>
+            Effect.map(resolve(entry.id), (resolved) => ({
+              ...entry,
+              bindings: resolved!.bindings,
+            })),
+          ),
+          diagnostics: yield* profile.diagnostics,
         };
-      },
-      evaluate: (fields, zt) =>
-        deps.templates.evaluateFrontmatterFields(fields, zt),
-      validateExpr: (expr, language) =>
-        deps.templates.validateFrontmatterExpr(expr, language),
-      write: (fields) => {
-        deps.settings.update({ "note.frontmatter-fields": [...fields] });
-      },
+      }),
+      getDocumentStatuses: Effect.suspend(
+        () => template.getLiteratureNoteTemplateStatuses,
+      ),
+      getDocument: (reference) =>
+        templateCall(template.getLiteratureNoteTemplate(reference)),
+      renderSource: (source, data) =>
+        templateCall(template.renderLiteratureNoteTemplateSource(source, data)),
     },
   });
 
-  plugin.registerCliHandler(
-    TEMPLATE_STATUS_COMMAND,
-    "Report ZotLit Template Workbench state",
-    null,
-    handlers[TEMPLATE_STATUS_COMMAND],
-  );
-  plugin.registerCliHandler(
-    TEMPLATE_DATA_COMMAND,
-    "Return serialized ZotLit Template data, payload under 'zt'",
-    dataFlags(),
-    handlers[TEMPLATE_DATA_COMMAND],
-  );
-  plugin.registerCliHandler(
-    TEMPLATE_SCHEMA_COMMAND,
-    "Return download URLs for every ZotLit Template data schema",
-    null,
-    handlers[TEMPLATE_SCHEMA_COMMAND],
-  );
-  plugin.registerCliHandler(
-    TEMPLATE_RENDER_COMMAND,
-    "Render an active ZotLit Template in memory, rendered bytes under 'markdown'",
-    renderFlags(),
-    handlers[TEMPLATE_RENDER_COMMAND],
-  );
-  plugin.registerCliHandler(
-    TEMPLATE_GUIDE_COMMAND,
-    "Print the ZotLit Template Workbench guide",
-    guideFlags(),
-    handlers[TEMPLATE_GUIDE_COMMAND],
-  );
-  plugin.registerCliHandler(
-    TEMPLATE_SOURCE_COMMAND,
-    "Return the active ZotLit Template body, under 'source'",
-    sourceFlags(),
-    handlers[TEMPLATE_SOURCE_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_STATUS_COMMAND,
-    "Report the configured ZotLit Managed Frontmatter fields",
-    null,
-    handlers[FRONTMATTER_STATUS_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_EVAL_COMMAND,
-    "Evaluate ZotLit Managed Frontmatter fields, or one ad-hoc expression, against an item",
-    frontmatterEvalFlags(),
-    handlers[FRONTMATTER_EVAL_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_SET_COMMAND,
-    "Add or update one ZotLit Managed Frontmatter field; omitted parameters on an existing field keep their current values",
-    frontmatterSetFlags(),
-    handlers[FRONTMATTER_SET_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_REMOVE_COMMAND,
-    "Delete one ZotLit Managed Frontmatter field",
-    frontmatterRemoveFlags(),
-    handlers[FRONTMATTER_REMOVE_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_REORDER_COMMAND,
-    "Arrange the configured ZotLit Managed Frontmatter fields into a new order",
-    frontmatterReorderFlags(),
-    handlers[FRONTMATTER_REORDER_COMMAND],
-  );
+  const registerRetired = (
+    command: WorkbenchCommand,
+    flags: CliFlags | null,
+  ) => {
+    host.registerCliCommand(command, {
+      description:
+        "Retired: use template-inspect, template-data, and template-check",
+      flags:
+        flags === null
+          ? null
+          : Object.fromEntries(
+              Object.entries(flags).map(([name, flag]) => [
+                name,
+                { ...flag, required: false, description: "Retired parameter" },
+              ]),
+            ),
+      handler: () =>
+        Effect.succeed(
+          envelope(command, {
+            ok: false,
+            diagnostic: diagnostic(
+              "COMMAND_RETIRED",
+              `${command} is retired from Template Document authoring.`,
+            ),
+          }),
+        ),
+    });
+  };
+
+  host.registerCliCommand(TEMPLATE_STATUS_COMMAND, {
+    description: "Report ZotLit Template Workbench state",
+    flags: null,
+    handler: handlers[TEMPLATE_STATUS_COMMAND],
+  });
+  host.registerCliCommand(TEMPLATE_DATA_COMMAND, {
+    description: "Return serialized ZotLit Template data, payload under 'zt'",
+    flags: dataFlags(),
+    handler: handlers[TEMPLATE_DATA_COMMAND],
+  });
+  registerRetired(TEMPLATE_SCHEMA_COMMAND, null);
+  registerRetired(TEMPLATE_RENDER_COMMAND, renderFlags());
+  registerRetired(TEMPLATE_DOCUMENT_RENDER_COMMAND, documentRenderFlags());
+  host.registerCliCommand(TEMPLATE_GUIDE_COMMAND, {
+    description: "Print the ZotLit Template Workbench guide",
+    flags: guideFlags(),
+    handler: handlers[TEMPLATE_GUIDE_COMMAND],
+  });
+  registerRetired(TEMPLATE_SOURCE_COMMAND, sourceFlags());
+  registerRetired(FRONTMATTER_STATUS_COMMAND, null);
+  registerRetired(FRONTMATTER_EVAL_COMMAND, frontmatterEvalFlags());
+  registerRetired(FRONTMATTER_SET_COMMAND, frontmatterSetFlags());
+  registerRetired(FRONTMATTER_REMOVE_COMMAND, frontmatterRemoveFlags());
+  registerRetired(FRONTMATTER_REORDER_COMMAND, frontmatterReorderFlags());
 }

@@ -1,0 +1,135 @@
+// The suite's calls to `packages/scripts/scripts/obsidian-vault.ts`, and the
+// vault folders they register.
+
+import { execFile } from "node:child_process";
+import { rm } from "node:fs/promises";
+import { join, sep } from "node:path";
+import { promisify } from "node:util";
+
+import { getWorktreeVaultName } from "@zotlit/scripts/dev-vault";
+
+import { cli } from "./obsidian-cli.ts";
+
+const execFileAsync = promisify(execFile);
+const OBSIDIAN_VERSION = "1.14.5 (installer 1.14.5)";
+
+function scriptPath(workspaceRoot: string): string {
+  return join(workspaceRoot, "packages/scripts/scripts/obsidian-vault.ts");
+}
+
+/** Whether the pinned desktop Obsidian answers with a live host vault. */
+export async function isObsidianReachable(
+  workspaceRoot: string,
+): Promise<boolean> {
+  let failure = "";
+  const result = await execFileAsync(
+    process.execPath,
+    [scriptPath(workspaceRoot), "status"],
+    { windowsHide: true },
+  ).catch((error: { stderr?: string }) => {
+    failure = error.stderr?.trim() ?? "";
+    return undefined;
+  });
+  if (!result?.stdout.trim().startsWith("ready ")) {
+    // A running app with `ZT_HOST_VAULT` naming a closed vault is a setup
+    // mistake, not a missing Obsidian: fail the run instead of skipping it.
+    // The phrase comes from packages/scripts/lib/obsidian-host-readiness.ts.
+    if (failure.includes("names a vault that is not open")) {
+      throw new Error(
+        `End-to-end Run cannot select its host vault.\n${failure}`,
+      );
+    }
+    if (process.env.ZOTLIT_E2E_REQUIRED === "1") {
+      throw new Error(
+        `End-to-end Run requires a running desktop Obsidian with the CLI enabled. Open a host vault and check with: node packages/scripts/scripts/obsidian-cli.ts version${failure ? `\n\n${failure}` : ""}`,
+      );
+    }
+    return false;
+  }
+  const version = (await cli(["version"])).trim();
+  if (version !== OBSIDIAN_VERSION) {
+    throw new Error(
+      `End-to-end Run requires Obsidian ${OBSIDIAN_VERSION}; running ${version}. Install the pinned installer and app versions before running the suite.`,
+    );
+  }
+  return true;
+}
+
+/** Runs one `obsidian-vault.ts` command. */
+export type VaultScript = (args: string[]) => Promise<{ stdout: string }>;
+
+/**
+ * An open vault outside every run's `.scratch/e2e-*` vaults, to host the
+ * suite's vault calls. `obsidian-vault.ts` otherwise hosts them in the focused
+ * window, which is often a vault a run just opened, in this worktree or
+ * another, and that run removes it when it ends.
+ */
+async function stableHost(): Promise<string | undefined> {
+  const output = await cli([
+    "eval",
+    "code=JSON.stringify(require('electron').ipcRenderer.sendSync('vault-list'))",
+  ]).catch(() => undefined);
+  const reply = output?.slice(output.lastIndexOf("=> ") + 3);
+  if (!reply) return undefined;
+  const vaults = JSON.parse(reply) as Record<
+    string,
+    { path: string; open?: boolean }
+  >;
+  return Object.entries(vaults).find(
+    ([, vault]) =>
+      vault.open === true && !vault.path.includes(`${sep}.scratch${sep}e2e-`),
+  )?.[0];
+}
+
+/**
+ * `obsidian-vault.ts`, pinned to the Fixture at `fixtureRoot` and to a host
+ * vault that outlives every End-to-end Run. It opens vault windows with
+ * `--inactive`, so they leave the OS focus alone (policies/os-focus.md).
+ */
+export function vaultScript(
+  workspaceRoot: string,
+  fixtureRoot: string,
+): VaultScript {
+  return async (args) => {
+    const host = await stableHost();
+    return execFileAsync(
+      process.execPath,
+      [
+        scriptPath(workspaceRoot),
+        ...args,
+        `--fixture-root=${fixtureRoot}`,
+        "--inactive",
+      ],
+      {
+        windowsHide: true,
+        // `OBSIDIAN_HOST_VAULT_ENV` in packages/scripts/lib/obsidian-host-readiness.ts.
+        env: host ? { ...process.env, ZT_HOST_VAULT: host } : process.env,
+      },
+    );
+  };
+}
+
+/**
+ * The folder of one suite vault. Obsidian refuses a vault whose folder name a
+ * registered vault already has, so the name carries the worktree, as a
+ * Development Vault's does.
+ */
+export function e2eVaultDir(workspaceRoot: string, name: string): string {
+  return join(
+    workspaceRoot,
+    ".scratch",
+    `e2e-${name}-${getWorktreeVaultName(workspaceRoot)}`,
+  );
+}
+
+/**
+ * Unregisters the vault at `path`, with its vault-scoped local storage and
+ * IndexedDB, and deletes its folder. A path that no vault holds passes.
+ */
+export async function clearVault(
+  run: VaultScript,
+  path: string,
+): Promise<void> {
+  await run(["remove", path]);
+  await rm(path, { recursive: true, force: true });
+}

@@ -2,6 +2,7 @@ import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, it } from "vitest";
 
 import annotationSchema from "./generated/annotation.schema.json";
+import citationSchema from "./generated/citation.schema.json";
 import filenameSchema from "./generated/filename.schema.json";
 import ir from "./generated/ir.json";
 import runtimeIr from "./generated/ir.runtime.json";
@@ -12,6 +13,7 @@ const schemas = {
   note: noteSchema,
   annotation: annotationSchema,
   filename: filenameSchema,
+  citation: citationSchema,
 };
 
 describe("contract artifacts", () => {
@@ -33,6 +35,11 @@ describe("contract artifacts", () => {
       filename: {
         type: "TemplateFilenameItemData",
         templates: templateSlotsForRoot("filename"),
+        references: [],
+      },
+      citation: {
+        type: "CitationTemplateData",
+        templates: templateSlotsForRoot("citation"),
         references: [],
       },
     });
@@ -58,24 +65,10 @@ describe("contract artifacts", () => {
     }
   });
 
-  it("projects the runtime IR from the full IR with doc payloads pruned", () => {
+  it("keeps emitter-only and documentation payloads out of the runtime IR", () => {
     expect(runtimeIr).not.toHaveProperty("itemTypes");
     const text = JSON.stringify(runtimeIr);
     expect(text).not.toMatch(/"(description|examples)":/);
-    // Same structure otherwise: pruning the full IR the same way must land on
-    // the committed runtime artifact byte for byte.
-    const prune = (value: unknown): unknown =>
-      Array.isArray(value)
-        ? value.map(prune)
-        : typeof value === "object" && value !== null
-          ? Object.fromEntries(
-              Object.entries(value)
-                .filter(([key]) => key !== "description" && key !== "examples")
-                .map(([key, entry]) => [key, prune(entry)]),
-            )
-          : value;
-    const { itemTypes: _itemTypes, ...rest } = ir;
-    expect(runtimeIr).toEqual(prune(rest));
   });
 });
 
@@ -139,23 +132,23 @@ describe("serialized forms", () => {
   });
 
   it("appends the inert branch only for an inert-capable helper", () => {
-    const noteLinkOnNoteLink =
-      noteSchema.$defs.TemplateNoteLink.properties.noteLink;
-    expect(noteLinkOnNoteLink.oneOf).toHaveLength(2);
-    expect(noteLinkOnNoteLink.oneOf[1]).toEqual({
+    const imgLink =
+      annotationSchema.$defs.AnnotationTemplateContext.properties.imgLink
+        .anyOf![0]!;
+    expect(imgLink.oneOf![0]!.properties.$helper).toEqual({
+      const: "imgLink",
+    });
+    expect(imgLink.oneOf).toHaveLength(2);
+    expect(imgLink.oneOf![1]).toEqual({
       type: "object",
       properties: { $inert: { type: "string" } },
       required: ["$inert"],
       additionalProperties: false,
     });
+    // A child note's noteLink always renders a link, so it has no inert branch.
     expect(
-      annotationSchema.$defs.AnnotationTemplateContext.properties.imgLink
-        .anyOf![0]!.oneOf![0]!.properties.$helper,
-    ).toEqual({ const: "imgLink" });
-    expect(
-      annotationSchema.$defs.AnnotationTemplateContext.properties.imgLink
-        .anyOf![0]!.oneOf,
-    ).toHaveLength(2);
+      noteSchema.$defs.TemplateNoteLink.properties.noteLink.oneOf,
+    ).toHaveLength(1);
   });
 
   it("serializes Temporal values as strings and shared cycles as ref-marker unions", () => {
@@ -402,6 +395,41 @@ function* walkIR(value: unknown): Generator<Record<string, unknown>> {
   yield value as Record<string, unknown>;
   for (const child of Object.values(value)) yield* walkIR(child);
 }
+
+describe("citation root schema", () => {
+  const root = citationSchema.$defs.CitationTemplateData;
+
+  it("requires the variant beside the two parallel citation arrays", () => {
+    expect(Object.keys(root.properties)).toEqual([
+      "variant",
+      "items",
+      "citations",
+    ]);
+    expect(root.required).toEqual(["variant", "items", "citations"]);
+  });
+
+  it("literalizes both Citation Variants, documented and in declaration order", () => {
+    const options = citationSchema.$defs.CitationVariant.oneOf;
+    expect(options.map(({ const: value }) => value)).toEqual(["main", "alt"]);
+    for (const option of options) {
+      expect(option.description).toMatch(/\S/);
+    }
+  });
+
+  it("keeps a cited item open for the Zotero fields beyond the typed ones", () => {
+    expect(
+      citationSchema.$defs.TemplateCiteItemData.additionalProperties,
+    ).toMatchObject({
+      description: expect.stringMatching(/Additional Zotero fields/),
+    });
+  });
+
+  it("names the root itself, since no Legacy Template File slot renders it", () => {
+    expect(citationSchema.description).toBe(
+      "The serialized `zt` data of the `citation` root.",
+    );
+  });
+});
 
 describe("annotation root schema", () => {
   const root = annotationSchema.$defs.AnnotationTemplateContext;

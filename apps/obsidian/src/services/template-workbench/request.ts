@@ -1,267 +1,595 @@
 // Selector parsing: the request each command accepts, and the identity it asserts.
 
+import { Schema } from "effect";
+import type { Effect } from "effect";
 import type { CliData } from "obsidian";
 
-import { parseIndexedKey, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
-import type { ContractRoot, TemplateSlot } from "@zotlit/db";
-import type {
-  FrontmatterLanguage,
-  FrontmatterMergeStrategy,
-} from "@zotlit/templates/constants";
+import { DEFAULT_CITATION_VARIANT, isIndexedKey } from "@zotlit/db";
+import type { CitationVariant, ContractRoot, TemplateSlot } from "@zotlit/db";
+import type { PartialContext } from "@zotlit/workbench/render";
+
+import {
+  cliDefault,
+  cliLiterals,
+  cliMap,
+  cliNotApplicable,
+  cliOneOf,
+  cliParams,
+  cliSwitch,
+  cliText,
+  cliValue,
+  cliVariants,
+  decodeCliParams,
+  expectSourceParam,
+  noCliParams,
+} from "@/lib/cli-params";
+import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
+import { isPartialNameShape } from "@/services/template/defaults";
 
 import { diagnostic } from "./envelope";
 import type { Diagnostic, WorkbenchIdentity } from "./envelope";
-import { GUIDE_TOPIC_NAMES, parseGuideTopic } from "./guide";
+import { GUIDE_TOPIC_NAMES } from "./guide";
 import type { GuideTopic } from "./guide";
-import { CONTRACT_ROOT_NAMES, parseContractRoot } from "./schema";
+import { CONTRACT_ROOT_NAMES } from "./schema";
 import {
   choices,
+  CITATION_EXAMPLE_NAMES,
+  CITATION_TEMPLATE,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  isPartialTemplate,
+  PARTIAL_CONTEXT_NAMES,
+  partialTemplateName,
   quotedList,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 } from "./vocabulary";
+import type { RenderTemplate } from "./vocabulary";
 
 export {
+  CITATION_EXAMPLE_NAMES,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  PARTIAL_CONTEXT_NAMES,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 };
 
-/** A parsed selector, or the one parameter that made it invalid. */
-export type ParsedRequest<T> =
-  | { kind: "valid"; value: T }
-  | { kind: "invalid"; parameter: string; message: string };
+const INDEXED_KEY_MESSAGE = "key must be an Indexed Key.";
+
+/** The Indexed Key an item-backed command selects with. */
+const indexedKey = indexedKeyOr(INDEXED_KEY_MESSAGE);
+
+/** An Indexed Key, or `message` for any other text. */
+function indexedKeyOr(message: string) {
+  return Schema.String.check(
+    Schema.makeFilter((key: string) => isIndexedKey(key) || message),
+  );
+}
 
 /**
- * Per-command accepted-parameter lists: the single source of truth `satisfies
- * Record<..., CliFlag>` in `register.ts` types each command's help metadata
- * against, so the declared flags and this allowlist cannot drift apart.
+ * The key message of a selector. A Citation takes one built-in example set
+ * instead, since a Citation the user has yet to insert has no Zotero object.
  */
-export const STATUS_PARAMS = [] as const;
-export const FRONTMATTER_STATUS_PARAMS = [] as const;
-export const FRONTMATTER_EVAL_PARAMS = [
-  "key",
-  "expr",
-  "language",
-  "format",
-  "expect-source",
-] as const;
-export const FRONTMATTER_SET_PARAMS = [
-  "field",
-  "expr",
-  "language",
-  "merge",
-] as const;
-export const FRONTMATTER_REMOVE_PARAMS = ["field"] as const;
-export const FRONTMATTER_REORDER_PARAMS = ["order"] as const;
-export const DATA_PARAMS = ["key", "root", "format", "expect-source"] as const;
-export const SCHEMA_PARAMS = [] as const;
-export const RENDER_PARAMS = [
-  "key",
-  "template",
-  "format",
-  "expect-source",
-] as const;
-export const GUIDE_PARAMS = ["topic"] as const;
-export const SOURCE_PARAMS = ["template"] as const;
-
-export interface DataRequest {
-  key: string;
-  root: ContractRoot;
-  format: "json";
+function keyMessage(citation: boolean): string {
+  return citation
+    ? `key must be an Indexed Key, or select a built-in Citation with example=${choices(CITATION_EXAMPLE_NAMES)}.`
+    : INDEXED_KEY_MESSAGE;
 }
 
-export interface RenderRequest {
-  key: string;
-  template: TemplateSlot;
-  format: "markdown" | "json";
+/** The example message of a selector that names an example it cannot take. */
+function exampleMessage(citation: boolean): string {
+  return citation
+    ? `Select the Citation with example=${choices(CITATION_EXAMPLE_NAMES)} or with key=<indexed-key>, not both.`
+    : "example selects a built-in Citation set; it applies to the citation root only. Every other root selects a Zotero object with key=<indexed-key>.";
 }
 
-export function parseDataRequest(params: CliData): ParsedRequest<DataRequest> {
-  const rejected = rejectAccepted(params, {
+/**
+ * The selector of a variant that reads a Citation by an Indexed Key. The
+ * caller who names only a built-in example set takes {@link citationByExample}.
+ */
+const citationByKey = {
+  example: cliNotApplicable(exampleMessage(true)),
+  key: indexedKeyOr(keyMessage(true)),
+};
+
+/** The selector of a variant that reads one built-in Citation example set. */
+const citationByExample = {
+  example: cliLiterals(
+    CITATION_EXAMPLE_NAMES,
+    `example must be ${quotedList(CITATION_EXAMPLE_NAMES)}.`,
+  ),
+};
+
+const NOTE_SELECTOR_MESSAGE =
+  "Select one non-empty note path, key, or Citation example.";
+
+const dataRoot = cliLiterals(CONTRACT_ROOT_NAMES, rootVocabulary());
+
+/** How `template-data` reads the root, after the object it reads. */
+const dataReading = {
+  query: Schema.optionalKey(
+    cliText("query must contain text. Use query=<field name> for discovery."),
+  ),
+  path: Schema.optionalKey(
+    cliText("path must contain text. Use query=<field name> for discovery."),
+  ),
+  full: cliSwitch("Use the full flag to request the complete zt object."),
+  format: cliDefault(cliLiterals(["json"], "format must be 'json'."), "json"),
+  "expect-source": expectSourceParam,
+};
+
+const oneReadMode = cliOneOf<{ query?: string; path?: string; full?: true }>(
+  ["query", "path", "full"],
+  { many: "Use one of query=<words>, path=<zt.path>, or full." },
+);
+
+/** The request every `template-data` variant decodes to. */
+function dataRequest<TSelected extends object>(
+  selected: TSelected,
+  reading: { root: ContractRoot } & Schema.Struct<typeof dataReading>["Type"],
+) {
+  const { root, format, query, path, full } = reading;
+  return {
+    ...selected,
+    root,
+    format,
+    ...(query === undefined ? {} : { query }),
+    ...(path === undefined ? {} : { path }),
+    ...(full === undefined ? {} : { full }),
+  };
+}
+
+const dataParams = cliVariants(
+  ({ note, root, key, example }) =>
+    note !== undefined
+      ? "note"
+      : root !== "citation"
+        ? "item"
+        : key !== undefined || example === undefined
+          ? "citation"
+          : "citationExample",
+  {
+    note: cliParams(
+      {
+        root: dataRoot,
+        note: cliText(NOTE_SELECTOR_MESSAGE),
+        key: cliNotApplicable(NOTE_SELECTOR_MESSAGE),
+        example: cliNotApplicable(NOTE_SELECTOR_MESSAGE),
+        ...dataReading,
+      },
+      { root: rootVocabulary() },
+    )
+      .check(oneReadMode)
+      .pipe(cliMap(({ note, ...reading }) => dataRequest({ note }, reading))),
+    citation: cliParams(
+      { root: dataRoot, ...citationByKey, ...dataReading },
+      { key: keyMessage(true) },
+    )
+      .check(oneReadMode)
+      .pipe(cliMap(({ key, ...reading }) => dataRequest({ key }, reading))),
+    citationExample: cliParams({
+      root: dataRoot,
+      ...citationByExample,
+      ...dataReading,
+    })
+      .check(oneReadMode)
+      .pipe(
+        cliMap(({ example, ...reading }) => dataRequest({ example }, reading)),
+      ),
+    item: cliParams(
+      {
+        root: dataRoot,
+        example: cliNotApplicable(exampleMessage(false)),
+        key: indexedKey,
+        ...dataReading,
+      },
+      { root: rootVocabulary(), key: INDEXED_KEY_MESSAGE },
+    )
+      .check(oneReadMode)
+      .pipe(cliMap(({ key, ...reading }) => dataRequest({ key }, reading))),
+  },
+);
+
+/** What `template-data` reads: a note, a Zotero object, or a Citation set. */
+export type DataRequest = CliOutput<typeof dataParams>;
+export type DataParam = CliParamName<typeof dataParams>;
+
+export function parseDataRequest(
+  params: CliData,
+): Effect.Effect<DataRequest, CliRejection> {
+  return decodeCliParams(params, dataParams, {
     command: "template-data",
-    accepted: DATA_PARAMS,
-    hints: { template: dataCommandTemplateHint() },
+    misplaced: { template: dataCommandTemplateHint() },
   });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-
-  const key = selectorKey(params);
-  if (key === null) return invalid("key", "key must be an Indexed Key.");
-
-  const root = parseContractRoot(params.root);
-  if (root === null) return invalid("root", rootVocabulary());
-
-  const format = params.format ?? "json";
-  if (format !== "json") {
-    return invalid("format", "format must be 'json'.");
-  }
-  return withExpectations(params, { key, root, format: "json" });
 }
+
+const renderTemplateMessage = `template must be ${quotedList(RENDER_TEMPLATE_NAMES)}.`;
+
+const notPartialRoot = cliNotApplicable(
+  "template-render infers the data root from template; root names the caller a partial is rendered as, on template=partial:<name> only.",
+);
+const notCitationVariant = cliNotApplicable(
+  `variant names a Citation Variant; it applies to template=${CITATION_TEMPLATE} only.`,
+);
+const notCitationExample = cliNotApplicable(exampleMessage(false));
+
+const partialTemplate = Schema.String.check(
+  Schema.makeFilter(
+    (input: string) =>
+      (isPartialTemplate(input) &&
+        isPartialNameShape(partialTemplateName(input))) ||
+      "A Shared Partial name is letters, digits, and hyphens: template=partial:<name>.",
+  ),
+).pipe(cliMap((input) => input as `partial:${string}`));
+
+const citationVariant = cliDefault(
+  cliLiterals(
+    CITATION_VARIANT_NAMES,
+    `variant must be ${quotedList(CITATION_VARIANT_NAMES)}.`,
+  ),
+  DEFAULT_CITATION_VARIANT,
+);
+
+const renderFormat = {
+  format: cliDefault(
+    cliLiterals(["markdown", "json"], "format must be 'markdown' or 'json'."),
+    "json",
+  ),
+  "expect-source": expectSourceParam,
+};
+
+/** The request every `template-render` variant decodes to. */
+function renderRequest<TSelected extends object>(
+  selected: TSelected,
+  reading: {
+    template: RenderTemplate;
+    format: "markdown" | "json";
+    root?: PartialContext;
+    variant?: CitationVariant;
+  },
+) {
+  const { template, format, root, variant } = reading;
+  return {
+    ...selected,
+    template,
+    // The caller a partial render reads its data as; absent for every other Template.
+    ...(root === undefined ? {} : { root }),
+    // The Citation Variant a citation render names; absent for every other Template.
+    ...(variant === undefined ? {} : { variant }),
+    format,
+  };
+}
+
+/**
+ * Whether a render reads a Citation decides its variant: the Citation
+ * Template, or a partial read as called from a Citation. Under every other
+ * caller a partial takes the caller's own object, and only a partial has a
+ * caller to choose.
+ */
+const renderParams = cliVariants(
+  ({ template, root, key, example }) =>
+    template === CITATION_TEMPLATE
+      ? key !== undefined || example === undefined
+        ? "citation"
+        : "citationExample"
+      : template === undefined || !isPartialTemplate(template)
+        ? "slot"
+        : root !== "citation"
+          ? "partial"
+          : key !== undefined || example === undefined
+            ? "partialCitation"
+            : "partialCitationExample",
+  {
+    slot: cliParams(
+      {
+        template: cliLiterals(TEMPLATE_SLOT_NAMES, renderTemplateMessage),
+        root: notPartialRoot,
+        example: notCitationExample,
+        variant: notCitationVariant,
+        key: indexedKey,
+        ...renderFormat,
+      },
+      { template: renderTemplateMessage, key: INDEXED_KEY_MESSAGE },
+    ).pipe(
+      cliMap(({ key, template, format }) =>
+        renderRequest({ key }, { template, format }),
+      ),
+    ),
+    citation: cliParams(
+      {
+        template: Schema.Literal(CITATION_TEMPLATE),
+        root: notPartialRoot,
+        ...citationByKey,
+        variant: citationVariant,
+        ...renderFormat,
+      },
+      { key: keyMessage(true) },
+    ).pipe(
+      cliMap(({ key, template, variant, format }) =>
+        renderRequest({ key }, { template, variant, format }),
+      ),
+    ),
+    citationExample: cliParams({
+      template: Schema.Literal(CITATION_TEMPLATE),
+      root: notPartialRoot,
+      ...citationByExample,
+      variant: citationVariant,
+      ...renderFormat,
+    }).pipe(
+      cliMap(({ example, template, variant, format }) =>
+        renderRequest({ example }, { template, variant, format }),
+      ),
+    ),
+    partial: cliParams(
+      {
+        template: partialTemplate,
+        root: cliDefault(
+          cliLiterals(
+            PARTIAL_CONTEXT_NAMES,
+            `root must be ${quotedList(PARTIAL_CONTEXT_NAMES)}.`,
+          ),
+          "note",
+        ),
+        example: notCitationExample,
+        variant: notCitationVariant,
+        key: indexedKey,
+        ...renderFormat,
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(
+      cliMap(({ key, template, root, format }) =>
+        renderRequest({ key }, { template, root, format }),
+      ),
+    ),
+    partialCitation: cliParams(
+      {
+        template: partialTemplate,
+        root: Schema.Literal("citation"),
+        ...citationByKey,
+        variant: citationVariant,
+        ...renderFormat,
+      },
+      { key: keyMessage(true) },
+    ).pipe(
+      cliMap(({ key, template, root, variant, format }) =>
+        renderRequest({ key }, { template, root, variant, format }),
+      ),
+    ),
+    partialCitationExample: cliParams({
+      template: partialTemplate,
+      root: Schema.Literal("citation"),
+      ...citationByExample,
+      variant: citationVariant,
+      ...renderFormat,
+    }).pipe(
+      cliMap(({ example, template, root, variant, format }) =>
+        renderRequest({ example }, { template, root, variant, format }),
+      ),
+    ),
+  },
+);
+
+/** The Template `template-render` renders, and the object it reads. */
+export type RenderRequest = CliOutput<typeof renderParams>;
+export type RenderParam = CliParamName<typeof renderParams>;
 
 export function parseRenderRequest(
   params: CliData,
-): ParsedRequest<RenderRequest> {
-  const rejected = rejectAccepted(params, {
-    command: "template-render",
-    accepted: RENDER_PARAMS,
-    hints: { root: "template-render infers the data root from template." },
-  });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-
-  const key = selectorKey(params);
-  if (key === null) return invalid("key", "key must be an Indexed Key.");
-
-  const template = parseTemplateSlot(params.template);
-  if (template === null) {
-    return invalid(
-      "template",
-      `template must be ${quotedList(TEMPLATE_SLOT_NAMES)}.`,
-    );
-  }
-
-  const format = params.format ?? "json";
-  if (format !== "markdown" && format !== "json") {
-    return invalid("format", "format must be 'markdown' or 'json'.");
-  }
-  return withExpectations(params, { key, template, format });
+): Effect.Effect<RenderRequest, CliRejection> {
+  return decodeCliParams(params, renderParams, { command: "template-render" });
 }
 
+const notOtherDocument = cliNotApplicable(
+  "Provide exactly one of profile, document, or source.",
+);
+
+const documentRenderParams = cliVariants(
+  ({ profile, document, source }) =>
+    profile === undefined && document !== undefined
+      ? "document"
+      : profile === undefined && source !== undefined
+        ? "source"
+        : "profile",
+  {
+    profile: cliParams(
+      {
+        profile: cliValue("profile"),
+        document: notOtherDocument,
+        source: notOtherDocument,
+        key: indexedKey,
+        "expect-source": expectSourceParam,
+      },
+      {
+        key: INDEXED_KEY_MESSAGE,
+        profile: "Provide exactly one of profile, document, or source.",
+      },
+    ).pipe(cliMap(({ key, profile }) => ({ key, profile }))),
+    document: cliParams(
+      {
+        document: cliValue("document"),
+        source: notOtherDocument,
+        key: indexedKey,
+        "expect-source": expectSourceParam,
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(cliMap(({ key, document }) => ({ key, document }))),
+    source: cliParams(
+      {
+        source: cliValue("source"),
+        key: indexedKey,
+        "expect-source": expectSourceParam,
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(cliMap(({ key, source }) => ({ key, source }))),
+  },
+);
+
+/** The Indexed Key, and the Profile, installed document, or source to render. */
+export type DocumentRenderRequest = CliOutput<typeof documentRenderParams>;
+export type DocumentRenderParam = CliParamName<typeof documentRenderParams>;
+
+/** Select one Profile, installed document, or in-memory source override. */
+export function parseDocumentRenderRequest(
+  params: CliData,
+): Effect.Effect<DocumentRenderRequest, CliRejection> {
+  return decodeCliParams(params, documentRenderParams, {
+    command: "template-document-render",
+  });
+}
+
+/** A command that reads no selector at all. */
+const noParams = noCliParams.pipe(cliMap(() => null));
+
 /** `template-schema` lists every published schema and reads no selector at all. */
-export function parseSchemaRequest(params: CliData): ParsedRequest<null> {
-  const rejected = rejectAccepted(params, {
+export function parseSchemaRequest(
+  params: CliData,
+): Effect.Effect<null, CliRejection> {
+  return decodeCliParams(params, noParams, {
     command: "template-schema",
-    accepted: SCHEMA_PARAMS,
-    hints: {
+    misplaced: {
       key: "template-schema does not accept an item selector.",
       root: SCHEMA_LISTS_EVERY_ROOT_MESSAGE,
       template: SCHEMA_LISTS_EVERY_ROOT_MESSAGE,
     },
   });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-  return { kind: "valid", value: null };
 }
+
+const templateSlotMessage = `template must be ${quotedList(TEMPLATE_SLOT_NAMES)}.`;
+
+const sourceParams = cliParams(
+  { template: cliLiterals(TEMPLATE_SLOT_NAMES, templateSlotMessage) },
+  { template: templateSlotMessage },
+).pipe(cliMap((input) => input.template));
+
+export type SourceParam = CliParamName<typeof sourceParams>;
 
 /** `template-source` selects a Template name and reads nothing item-backed. */
 export function parseSourceRequest(
   params: CliData,
-): ParsedRequest<TemplateSlot> {
-  const rejected = rejectAccepted(params, {
+): Effect.Effect<TemplateSlot, CliRejection> {
+  return decodeCliParams(params, sourceParams, {
     command: "template-source",
-    accepted: SOURCE_PARAMS,
-    hints: {
+    misplaced: {
       key: "template-source does not accept an item selector.",
       root: slotCommandRootHint(),
     },
   });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-
-  const template = parseTemplateSlot(params.template);
-  if (template === null) {
-    return invalid(
-      "template",
-      `template must be ${quotedList(TEMPLATE_SLOT_NAMES)}.`,
-    );
-  }
-  return { kind: "valid", value: template };
 }
+
+const guideParams = cliParams({
+  topic: Schema.optionalKey(
+    cliLiterals(
+      GUIDE_TOPIC_NAMES,
+      `topic must be ${quotedList(GUIDE_TOPIC_NAMES)}.`,
+    ),
+  ),
+}).pipe(cliMap((input) => input.topic ?? null));
+
+export type GuideParam = CliParamName<typeof guideParams>;
 
 /** `template-guide` prints the quickstart when `topic` is absent. */
 export function parseGuideRequest(
   params: CliData,
-): ParsedRequest<GuideTopic | null> {
-  const rejected = rejectAccepted(params, {
-    command: "template-guide",
-    accepted: GUIDE_PARAMS,
-  });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-
-  if (params.topic === undefined) return { kind: "valid", value: null };
-  const topic = parseGuideTopic(params.topic);
-  if (topic === null) {
-    return invalid("topic", `topic must be ${quotedList(GUIDE_TOPIC_NAMES)}.`);
-  }
-  return { kind: "valid", value: topic };
+): Effect.Effect<GuideTopic | null, CliRejection> {
+  return decodeCliParams(params, guideParams, { command: "template-guide" });
 }
 
 /** `template-status` reads no selector at all. */
-export function parseStatusRequest(params: CliData): ParsedRequest<null> {
-  const rejected = rejectAccepted(params, {
-    command: "template-status",
-    accepted: STATUS_PARAMS,
-  });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-  return { kind: "valid", value: null };
+export function parseStatusRequest(
+  params: CliData,
+): Effect.Effect<null, CliRejection> {
+  return decodeCliParams(params, noParams, { command: "template-status" });
 }
 
 /** `frontmatter-status` reads no selector at all. */
 export function parseFrontmatterStatusRequest(
   params: CliData,
-): ParsedRequest<null> {
-  const rejected = rejectAccepted(params, {
-    command: "frontmatter-status",
-    accepted: FRONTMATTER_STATUS_PARAMS,
-  });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-  return { kind: "valid", value: null };
+): Effect.Effect<null, CliRejection> {
+  return decodeCliParams(params, noParams, { command: "frontmatter-status" });
 }
+
+const language = cliLiterals(
+  FRONTMATTER_LANGUAGE_NAMES,
+  `language must be ${quotedList(FRONTMATTER_LANGUAGE_NAMES)}.`,
+);
+
+const evalTarget = {
+  key: indexedKey,
+  format: cliDefault(cliLiterals(["json"], "format must be 'json'."), "json"),
+  "expect-source": expectSourceParam,
+};
+
+const frontmatterEvalParams = cliVariants(
+  ({ expr }) => (expr === undefined ? "configured" : "adhoc"),
+  {
+    configured: cliParams(
+      {
+        language: cliNotApplicable("language requires expr."),
+        ...evalTarget,
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(cliMap(({ key, format }) => ({ key, format, adhoc: null }))),
+    adhoc: cliParams(
+      {
+        ...evalTarget,
+        expr: Schema.String,
+        language: cliDefault(language, "liquid"),
+      },
+      { key: INDEXED_KEY_MESSAGE },
+    ).pipe(
+      cliMap(({ key, format, expr, language }) => ({
+        key,
+        format,
+        adhoc: { expr, language },
+      })),
+    ),
+  },
+);
 
 /** `frontmatter-eval`'s parsed selector: the configured set (`adhoc: null`),
  *  or one ad-hoc expression to evaluate instead. */
-export interface FrontmatterEvalRequest {
-  key: string;
-  format: "json";
-  adhoc: { expr: string; language: FrontmatterLanguage } | null;
-}
+export type FrontmatterEvalRequest = CliOutput<typeof frontmatterEvalParams>;
+export type FrontmatterEvalParam = CliParamName<typeof frontmatterEvalParams>;
 
 /** `frontmatter-eval` selects an Item and, with `expr=`, one ad-hoc
  *  expression to evaluate in place of the configured field set. */
 export function parseFrontmatterEvalRequest(
   params: CliData,
-): ParsedRequest<FrontmatterEvalRequest> {
-  const rejected = rejectAccepted(params, {
+): Effect.Effect<FrontmatterEvalRequest, CliRejection> {
+  return decodeCliParams(params, frontmatterEvalParams, {
     command: "frontmatter-eval",
-    accepted: FRONTMATTER_EVAL_PARAMS,
-  });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-
-  const key = selectorKey(params);
-  if (key === null) return invalid("key", "key must be an Indexed Key.");
-
-  const format = params.format ?? "json";
-  if (format !== "json") {
-    return invalid("format", "format must be 'json'.");
-  }
-
-  if (params.expr === undefined) {
-    if (params.language !== undefined) {
-      return invalid("language", "language requires expr.");
-    }
-    return withExpectations(params, { key, format: "json", adhoc: null });
-  }
-
-  const language = parseFrontmatterLanguage(params.language);
-  if (language === null) {
-    return invalid(
-      "language",
-      `language must be ${quotedList(FRONTMATTER_LANGUAGE_NAMES)}.`,
-    );
-  }
-  return withExpectations(params, {
-    key,
-    format: "json",
-    adhoc: { expr: params.expr, language },
   });
 }
 
-function parseFrontmatterLanguage(
-  value: string | undefined,
-): FrontmatterLanguage | null {
-  const language = value ?? "liquid";
-  return (FRONTMATTER_LANGUAGE_NAMES as readonly string[]).includes(language)
-    ? (language as FrontmatterLanguage)
-    : null;
+/** The Managed Frontmatter field key a command names. */
+const fieldKey = trimmedText("field must not be empty.");
+
+/** Text with something beside whitespace, trimmed. */
+function trimmedText(message: string) {
+  return cliText(message).pipe(cliMap((text) => text.trim()));
 }
+
+const frontmatterSetParams = cliParams({
+  field: fieldKey,
+  expr: Schema.optionalKey(trimmedText("expr must not be empty.")),
+  language: Schema.optionalKey(language),
+  merge: Schema.optionalKey(
+    cliLiterals(
+      FRONTMATTER_MERGE_NAMES,
+      `merge must be ${quotedList(FRONTMATTER_MERGE_NAMES)}.`,
+    ),
+  ),
+}).pipe(
+  cliMap(({ field, expr, language, merge }) => ({
+    field,
+    ...(expr !== undefined ? { expr } : {}),
+    ...(language !== undefined ? { language } : {}),
+    ...(merge !== undefined ? { merge } : {}),
+  })),
+);
 
 /**
  * `frontmatter-set`'s parsed selector: the field key to upsert, plus whichever
@@ -270,138 +598,73 @@ function parseFrontmatterLanguage(
  * configuration (patch) or a default (new field), so parsing never fills one
  * in itself.
  */
-export interface FrontmatterSetRequest {
-  field: string;
-  expr?: string;
-  language?: FrontmatterLanguage;
-  merge?: FrontmatterMergeStrategy;
-}
+export type FrontmatterSetRequest = CliOutput<typeof frontmatterSetParams>;
+
+export type FrontmatterSetParam = CliParamName<typeof frontmatterSetParams>;
 
 /** `frontmatter-set` upserts one Managed Frontmatter field by key. */
 export function parseFrontmatterSetRequest(
   params: CliData,
-): ParsedRequest<FrontmatterSetRequest> {
-  const rejected = rejectAccepted(params, {
+): Effect.Effect<FrontmatterSetRequest, CliRejection> {
+  return decodeCliParams(params, frontmatterSetParams, {
     command: "frontmatter-set",
-    accepted: FRONTMATTER_SET_PARAMS,
   });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-
-  if (params.field === undefined) {
-    return invalid("field", "field is required.");
-  }
-  const field = params.field.trim();
-  if (field === "") return invalid("field", "field must not be empty.");
-
-  let expr: string | undefined;
-  if (params.expr !== undefined) {
-    expr = params.expr.trim();
-    if (expr === "") return invalid("expr", "expr must not be empty.");
-  }
-
-  let language: FrontmatterLanguage | undefined;
-  if (params.language !== undefined) {
-    const parsed = parseFrontmatterLanguageStrict(params.language);
-    if (parsed === null) {
-      return invalid(
-        "language",
-        `language must be ${quotedList(FRONTMATTER_LANGUAGE_NAMES)}.`,
-      );
-    }
-    language = parsed;
-  }
-
-  let merge: FrontmatterMergeStrategy | undefined;
-  if (params.merge !== undefined) {
-    if (
-      !(FRONTMATTER_MERGE_NAMES as readonly string[]).includes(params.merge)
-    ) {
-      return invalid(
-        "merge",
-        `merge must be ${quotedList(FRONTMATTER_MERGE_NAMES)}.`,
-      );
-    }
-    merge = params.merge as FrontmatterMergeStrategy;
-  }
-
-  return {
-    kind: "valid",
-    value: {
-      field,
-      ...(expr !== undefined ? { expr } : {}),
-      ...(language !== undefined ? { language } : {}),
-      ...(merge !== undefined ? { merge } : {}),
-    },
-  };
 }
 
-/** Unlike {@link parseFrontmatterLanguage}, an absent value stays absent
- *  instead of defaulting to `"liquid"` — `frontmatter-set` only defaults a
- *  new field's language, which the handler decides, not the parser. */
-function parseFrontmatterLanguageStrict(
-  value: string,
-): FrontmatterLanguage | null {
-  return (FRONTMATTER_LANGUAGE_NAMES as readonly string[]).includes(value)
-    ? (value as FrontmatterLanguage)
-    : null;
-}
+const frontmatterRemoveParams = cliParams({ field: fieldKey });
 
 /** `frontmatter-remove`'s parsed selector: the field key to delete. Whether
  *  it is actually configured is a handler concern (`FIELD_NOT_FOUND`), not a
  *  selector-level one. */
-export interface FrontmatterRemoveRequest {
-  field: string;
-}
+export type FrontmatterRemoveRequest = CliOutput<
+  typeof frontmatterRemoveParams
+>;
+
+export type FrontmatterRemoveParam = CliParamName<
+  typeof frontmatterRemoveParams
+>;
 
 /** `frontmatter-remove` deletes one Managed Frontmatter field by key. */
 export function parseFrontmatterRemoveRequest(
   params: CliData,
-): ParsedRequest<FrontmatterRemoveRequest> {
-  const rejected = rejectAccepted(params, {
+): Effect.Effect<FrontmatterRemoveRequest, CliRejection> {
+  return decodeCliParams(params, frontmatterRemoveParams, {
     command: "frontmatter-remove",
-    accepted: FRONTMATTER_REMOVE_PARAMS,
   });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-
-  if (params.field === undefined) {
-    return invalid("field", "field is required.");
-  }
-  const field = params.field.trim();
-  if (field === "") return invalid("field", "field must not be empty.");
-
-  return { kind: "valid", value: { field } };
 }
+
+const frontmatterReorderParams = cliParams({
+  order: Schema.String.pipe(
+    cliMap((order) => order.split(",").map((key) => key.trim())),
+  ).check(
+    Schema.makeFilter(
+      (order: readonly string[]) =>
+        order.every((key) => key !== "") ||
+        "order must be a comma-separated list of field keys, with no empty entries.",
+    ),
+  ),
+});
 
 /** `frontmatter-reorder`'s parsed selector: the candidate key order, split on
  *  commas and trimmed. Whether it is an exact permutation of the configured
  *  keys is a handler concern (it needs the current configuration), not a
  *  selector-level one. */
-export interface FrontmatterReorderRequest {
-  order: readonly string[];
-}
+export type FrontmatterReorderRequest = CliOutput<
+  typeof frontmatterReorderParams
+>;
+
+export type FrontmatterReorderParam = CliParamName<
+  typeof frontmatterReorderParams
+>;
 
 /** `frontmatter-reorder` arranges the configured Managed Frontmatter fields;
  *  `order` must list every configured key exactly once. */
 export function parseFrontmatterReorderRequest(
   params: CliData,
-): ParsedRequest<FrontmatterReorderRequest> {
-  const rejected = rejectAccepted(params, {
+): Effect.Effect<FrontmatterReorderRequest, CliRejection> {
+  return decodeCliParams(params, frontmatterReorderParams, {
     command: "frontmatter-reorder",
-    accepted: FRONTMATTER_REORDER_PARAMS,
   });
-  if (rejected) return invalid(rejected.parameter, rejected.message);
-
-  if (params.order === undefined) {
-    return invalid("order", "order is required.");
-  }
-  const order = params.order.split(",").map((key) => key.trim());
-  if (order.some((key) => key === "")) {
-    return invalid(
-      "order",
-      "order must be a comma-separated list of field keys, with no empty entries.",
-    );
-  }
-  return { kind: "valid", value: { order } };
 }
 
 /**
@@ -428,79 +691,9 @@ export function targetMismatch(
   return null;
 }
 
-/**
- * The Indexed Key every item-backed command selects with, or `null` when the
- * flag is absent, bare, or not an Indexed Key.
- */
-function selectorKey(params: CliData): string | null {
-  const key = params.key;
-  if (key === undefined || bareFlag(params, "key")) return null;
-  return parseIndexedKey(key) ? key : null;
-}
-
-/** Obsidian's CLI reports a flag passed without a value as the string `"true"`. */
-function bareFlag(params: CliData, parameter: string): boolean {
-  return params[parameter] === "true";
-}
-
-/** Reject a bare identity assertion, which would assert nothing. */
-function withExpectations<T>(params: CliData, value: T): ParsedRequest<T> {
-  if (bareFlag(params, "expect-source")) {
-    return invalid("expect-source", "expect-source requires a value.");
-  }
-  return { kind: "valid", value };
-}
-
-function parseTemplateSlot(value: string | undefined): TemplateSlot | null {
-  return value !== undefined && Object.hasOwn(TEMPLATE_SLOT_ROOTS, value)
-    ? (value as TemplateSlot)
-    : null;
-}
-
 function rootVocabulary(): string {
   return `root must be ${quotedList(CONTRACT_ROOT_NAMES)}.`;
 }
-
-/**
- * Obsidian passes every caller token straight through as `CliData`, filtering
- * nothing itself, so the Workbench must reject what it did not declare. A
- * `--*` token is left for Obsidian or its CLI binary and skipped; `vault`
- * typed after the command name reached us only because Obsidian's own vault
- * selection already ran (and ran on the wrong vault, since this call named
- * one); anything else is an unrecognized parameter for the command.
- */
-function rejectAccepted(
-  params: CliData,
-  options: {
-    command: string;
-    accepted: readonly string[];
-    hints?: Readonly<Record<string, string>>;
-  },
-): { parameter: string; message: string } | null {
-  const { command, accepted, hints = {} } = options;
-  for (const key of Object.keys(params)) {
-    if (key.startsWith("--") || accepted.includes(key)) continue;
-    if (key === "vault") {
-      return { parameter: "vault", message: VAULT_AFTER_COMMAND_MESSAGE };
-    }
-    const hint = hints[key];
-    return {
-      parameter: key,
-      message:
-        hint ??
-        `Unknown parameter '${key}' for ${command}. Accepted parameters: ${accepted.join(", ")}.`,
-    };
-  }
-  for (const key of accepted) {
-    if (params[key] === "") {
-      return { parameter: key, message: `${key} requires a value.` };
-    }
-  }
-  return null;
-}
-
-const VAULT_AFTER_COMMAND_MESSAGE =
-  "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.";
 
 /** `template-source` reads a `root=` swap meant for the data-root command. */
 function slotCommandRootHint(): string {
@@ -521,7 +714,3 @@ function dataCommandTemplateHint(): string {
 /** `template-schema` reads a selector left over from its earlier per-root form. */
 const SCHEMA_LISTS_EVERY_ROOT_MESSAGE =
   "template-schema takes no parameters; it answers with the schema of every data root, keyed by root under 'schemas'.";
-
-function invalid<T>(parameter: string, message: string): ParsedRequest<T> {
-  return { kind: "invalid", parameter, message };
-}

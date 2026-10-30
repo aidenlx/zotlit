@@ -1,0 +1,227 @@
+import { it } from "@effect/vitest";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Layer,
+  Logger,
+  ManagedRuntime,
+  PubSub,
+  Queue,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import { expect } from "vitest";
+
+import { LogCategory } from "@/lib/effect-log";
+import { filterTag, forkEach, subscribe } from "@/lib/effect-stream";
+
+type Tagged =
+  | { readonly _tag: "a"; readonly n: number }
+  | { readonly _tag: "b"; readonly n: number }
+  | { readonly _tag: "c"; readonly n: number };
+
+it.effect("filterTag keeps the events of several tags in their order", () =>
+  Effect.gen(function* () {
+    const events: Tagged[] = [
+      { _tag: "a", n: 1 },
+      { _tag: "c", n: 2 },
+      { _tag: "b", n: 3 },
+      { _tag: "a", n: 4 },
+    ];
+    const kept = yield* Stream.runCollect(
+      filterTag(Stream.fromIterable(events), "a", "b"),
+    );
+    expect([...kept].map(({ _tag, n }) => `${_tag}${n}`)).toEqual([
+      "a1",
+      "b3",
+      "a4",
+    ]);
+  }),
+);
+
+// #1705: a callback defect belongs to one delivery, not the subscription.
+it.effect(
+  "logs a throwing listener's cause and still delivers the next value",
+  () =>
+    Effect.gen(function* () {
+      const error = new Error("listener failed");
+      const logs: {
+        cause: Cause.Cause<unknown>;
+        category: readonly string[];
+      }[] = [];
+      const context = (yield* Effect.context<never>()).pipe(
+        Context.add(
+          Logger.CurrentLoggers,
+          new Set([
+            Logger.make(({ cause, fiber }) => {
+              logs.push({ cause, category: fiber.getRef(LogCategory) });
+            }),
+          ]),
+        ),
+      );
+      const runtime = yield* Effect.acquireRelease(
+        Effect.sync(() => ManagedRuntime.make(Layer.succeedContext(context))),
+        (runtime) => runtime.disposeEffect,
+      );
+      const finished = yield* Queue.unbounded<void>();
+      const received: number[] = [];
+      subscribe(
+        runtime,
+        Stream.make(1, 2).pipe(
+          Stream.ensuring(Queue.offer(finished, undefined)),
+        ),
+        (value) => {
+          received.push(value);
+          if (value === 1) throw error;
+        },
+      );
+      yield* Queue.take(finished);
+      expect(received).toEqual([1, 2]);
+      expect(logs).toHaveLength(1);
+      expect(Cause.squash(logs[0]!.cause)).toBe(error);
+      expect(logs[0]!.category).toEqual(["effect-stream"]);
+    }),
+);
+
+// #1705: interruptWhen starts an upstream fiber; latest-value replay loses earlier edits.
+it.effect(
+  "attaches before two immediate changes and stops on unsubscribe",
+  () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const runtime = yield* Effect.acquireRelease(
+        Effect.sync(() => ManagedRuntime.make(Layer.succeedContext(context))),
+        (runtime) => runtime.disposeEffect,
+      );
+      const state = yield* SubscriptionRef.make(0);
+      const received: number[] = [];
+      const delivered = yield* Queue.unbounded<void>();
+      const stop = subscribe(
+        runtime,
+        SubscriptionRef.changes(state).pipe(
+          Stream.interruptWhen(Effect.never),
+          Stream.filter((value) => value > 0),
+        ),
+        (value) => {
+          received.push(value);
+          if (value === 2) Queue.offerUnsafe(delivered, undefined);
+        },
+      );
+      runtime.runSync(SubscriptionRef.set(state, 1));
+      runtime.runSync(SubscriptionRef.set(state, 2));
+      yield* Queue.take(delivered);
+      expect(received).toEqual([1, 2]);
+      stop();
+      stop();
+      runtime.runSync(SubscriptionRef.set(state, 3));
+      yield* runtime.disposeEffect;
+      expect(received).toEqual([1, 2]);
+    }),
+);
+
+it.effect("subscribe after runtime disposal is a no-op", () =>
+  Effect.gen(function* () {
+    const context = yield* Effect.context<never>();
+    const runtime = yield* Effect.acquireRelease(
+      Effect.sync(() => ManagedRuntime.make(Layer.succeedContext(context))),
+      (runtime) => runtime.disposeEffect,
+    );
+    yield* runtime.disposeEffect;
+    let started = false;
+    let called = false;
+    // A closed runtime must not even start a subscription fiber.
+    const closedRuntime: Pick<typeof runtime, "scope" | "runFork"> = {
+      scope: runtime.scope,
+      runFork: (effect, options) => {
+        started = true;
+        return runtime.runFork(effect, options);
+      },
+    };
+    expect(() =>
+      subscribe(closedRuntime, Stream.succeed(1), () => {
+        called = true;
+      })(),
+    ).not.toThrow();
+    expect(started).toBe(false);
+    expect(called).toBe(false);
+  }),
+);
+
+it.effect("runtime interruption closes an active subscription", () =>
+  Effect.gen(function* () {
+    const context = yield* Effect.context<never>();
+    const runtime = yield* Effect.acquireRelease(
+      Effect.sync(() => ManagedRuntime.make(Layer.succeedContext(context))),
+      (runtime) => runtime.disposeEffect,
+    );
+    const bus = yield* PubSub.unbounded<number>();
+    const delivered = yield* Queue.unbounded<void>();
+    const finished = yield* Queue.unbounded<void>();
+    const received: number[] = [];
+    const stop = subscribe(
+      runtime,
+      Stream.fromPubSub(bus).pipe(
+        Stream.ensuring(Queue.offer(finished, undefined)),
+      ),
+      (value) => {
+        received.push(value);
+        Queue.offerUnsafe(delivered, undefined);
+      },
+    );
+    yield* PubSub.publish(bus, 1);
+    yield* Queue.take(delivered);
+    yield* runtime.disposeEffect;
+    yield* Queue.take(finished);
+    yield* PubSub.publish(bus, 2);
+    stop();
+    expect(received).toEqual([1]);
+  }),
+);
+
+// #1705: a layer's consumer attaches before acquisition returns, so changes
+// published right after it are all delivered.
+it.effect("forkEach attaches before returning and isolates failures", () =>
+  Effect.gen(function* () {
+    const logs: Cause.Cause<unknown>[] = [];
+    const bus = yield* PubSub.unbounded<number>();
+    const delivered = yield* Queue.unbounded<number>();
+    yield* forkEach(Stream.fromPubSub(bus), (value) => {
+      if (value === 1) throw new Error("consumer failed");
+      return Queue.offer(delivered, value);
+    }).pipe(
+      Effect.provideService(
+        Logger.CurrentLoggers,
+        new Set([Logger.make(({ cause }) => logs.push(cause))]),
+      ),
+    );
+    yield* PubSub.publish(bus, 1);
+    yield* PubSub.publish(bus, 2);
+    expect(yield* Queue.take(delivered)).toBe(2);
+    expect(logs.some((cause) => Cause.hasDies(cause))).toBe(true);
+  }),
+);
+
+it.effect("forkEach stops when its Scope closes", () =>
+  Effect.gen(function* () {
+    const bus = yield* PubSub.unbounded<number>();
+    const delivered = yield* Queue.unbounded<number>();
+    const finished = yield* Deferred.make<void>();
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        yield* forkEach(
+          Stream.fromPubSub(bus).pipe(
+            Stream.ensuring(Deferred.succeed(finished, undefined)),
+          ),
+          (value) => Queue.offer(delivered, value),
+        );
+        yield* PubSub.publish(bus, 1);
+        expect(yield* Queue.take(delivered)).toBe(1);
+      }),
+    );
+    yield* Deferred.await(finished);
+    yield* PubSub.publish(bus, 2);
+    expect(yield* Queue.size(delivered)).toBe(0);
+  }),
+);

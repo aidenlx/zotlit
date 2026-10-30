@@ -1,0 +1,343 @@
+/* The Annotation Marks ZotLit paints over Obsidian's PDF pages.
+
+   Every default here is written at zero specificity through `:where()`, so a
+   theme's own `.zt-pdf-annotation-highlight { … }` wins without `!important`. */
+
+/*
+ * The overlay covers the page box and takes no pointer input, so native text
+ * selection, the PDF's own links, and the reader toolbar keep working under it.
+ * A mark is selected by geometry, never by a listener on the mark itself.
+ */
+:where(.zt-pdf-annotation-overlay) {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/*
+ * The selected mark keeps its own colour; a separate outline, traced round
+ * the merged silhouette of its own rects, says which one the popup is
+ * acting on. `non-scaling-stroke` is set in render.ts, so this width stays a
+ * true hairline at every zoom step rather than fattening or thinning with
+ * the overlay's `viewBox` scale.
+ */
+:where(.zt-pdf-annotation-selection-outline) {
+  stroke: var(--text-accent);
+  stroke-width: 1px;
+}
+
+/*
+ * The Mark Handles of the selected mark, drawn while editing is live, and the
+ * body of a mark that moves by it. They take the pointer so the cursor can
+ * say what a press there does; which grip a press takes is still decided from
+ * geometry. `non-scaling-stroke` is set in render.ts.
+ */
+:where(.zt-pdf-annotation-overlay [data-zt-grip]) {
+  pointer-events: all;
+}
+
+:where(.zt-pdf-annotation-handle) {
+  fill: var(--background-primary);
+  stroke: var(--text-accent);
+  stroke-width: 1px;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="move"]) {
+  cursor: move;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="ew-resize"]) {
+  cursor: ew-resize;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="ns-resize"]) {
+  cursor: ns-resize;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="nwse-resize"]) {
+  cursor: nwse-resize;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="nesw-resize"]) {
+  cursor: nesw-resize;
+}
+
+/*
+ * A text range's end, once it moves, shows the text cursor over the whole
+ * reader, as Zotero's does: the pointer is captured by the reader, so the
+ * strip it left no longer decides the cursor.
+ */
+:where([data-zt-adjusting="text"], [data-zt-adjusting="text"] *) {
+  cursor: text;
+}
+
+/*
+ * While the ink tool is armed, a finger on a page draws rather than pans the
+ * reader. The reader carries `data-zt-inking` (`themeAttribute.pdfInking`)
+ * from arming to disarming rather than for the stroke alone, because the
+ * browser reads `touch-action` when a finger lands. It is set on the page
+ * container, the element PDF.js scrolls, whose pages take it from there; the
+ * toolbar and the sidebars keep their own touch scrolling.
+ */
+:where([data-zt-inking] .pdf-viewer-container) {
+  touch-action: none;
+}
+
+/*
+ * The armed tool's cursor over the pages, for what a press there does: the
+ * text cursor for the tools that commit a text selection and for the text
+ * tool, which opens a Text Draft at the press; the copy cursor for the note
+ * tool, which places a note there; and the crosshair for the image and ink
+ * tools, which draw. A Mark Handle keeps its own cursor
+ * but under the ink tool, which takes every press. The rules outrank the text
+ * layer's own cursors, `.textLayer span[role="img"]` included, so they are
+ * not under `:where()`.
+ */
+[data-zt-armed="highlight"] .pdf-viewer-container,
+[data-zt-armed="highlight"] .pdf-viewer-container :not([data-zt-cursor]),
+[data-zt-armed="underline"] .pdf-viewer-container,
+[data-zt-armed="underline"] .pdf-viewer-container :not([data-zt-cursor]),
+[data-zt-armed="text"] .pdf-viewer-container,
+[data-zt-armed="text"] .pdf-viewer-container :not([data-zt-cursor]) {
+  cursor: text;
+}
+
+[data-zt-armed="note"] .pdf-viewer-container,
+[data-zt-armed="note"] .pdf-viewer-container :not([data-zt-cursor]) {
+  cursor: copy;
+}
+
+[data-zt-armed="image"] .pdf-viewer-container,
+[data-zt-armed="image"] .pdf-viewer-container :not([data-zt-cursor]),
+[data-zt-armed="ink"] .pdf-viewer-container,
+[data-zt-armed="ink"] .pdf-viewer-container :not([data-zt-cursor]),
+[data-zt-armed="ink"] .pdf-viewer-container [data-zt-cursor] {
+  cursor: crosshair;
+}
+
+/*
+ * A stroke or an image capture holds the pointer on the reader, so the
+ * reader's own cursor shows while it is drawn; it keeps the crosshair until
+ * the release.
+ */
+[data-zt-drawing],
+[data-zt-drawing] * {
+  cursor: crosshair;
+}
+
+/*
+ * A note or text press holds the pointer on the reader until its release, so
+ * the reader keeps the armed tool's cursor while it is held.
+ */
+[data-zt-clicking][data-zt-armed="note"],
+[data-zt-clicking][data-zt-armed="note"] * {
+  cursor: copy;
+}
+
+[data-zt-clicking][data-zt-armed="text"],
+[data-zt-clicking][data-zt-armed="text"] * {
+  cursor: text;
+}
+
+/* Zotero's highlight reads as ink on paper in either theme. */
+:where(.theme-light .zt-pdf-annotation-highlight) {
+  opacity: 0.4;
+  mix-blend-mode: multiply;
+}
+
+:where(.theme-dark .zt-pdf-annotation-highlight) {
+  opacity: 0.3;
+  mix-blend-mode: plus-lighter;
+}
+
+/*
+ * Obsidian sizes a hover popover's one child to the width a Markdown embed
+ * wants (`.popover.hover-popover > *`). A row of verbs is as wide as its verbs,
+ * so this overrides that one rule at its own specificity — low enough that a
+ * theme's rule of the same shape still wins, since it is loaded later.
+ */
+.popover.zt-pdf-mark-popup > * {
+  width: fit-content;
+}
+
+/*
+ * The note glyph's stroke weight, set on the group so both the body and the
+ * crease inherit it — `non-scaling-stroke` is set in render.ts, so this width
+ * stays a true hairline at every zoom step.
+ */
+:where(.zt-pdf-annotation-note-icon) {
+  stroke-width: 1.4px;
+}
+
+/* The glyph's body reads as a tinted fill under its own stroke, rather than
+   a solid coloured blob. */
+:where(.zt-pdf-annotation-note-fill) {
+  fill-opacity: 0.22;
+}
+
+/*
+ * The Creation Toolbar sits in Obsidian's own right toolbar slot, so it takes
+ * that toolbar's rhythm rather than setting one of its own. An armed tool keeps
+ * its Annotation colour, which `clickable-icon.is-active` would otherwise
+ * repaint in the accent colour.
+ */
+:where(.zt-pdf-creation-toolbar) {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1);
+}
+
+:where(.zt-pdf-creation-toolbar .clickable-icon.is-active) {
+  background-color: var(--background-modifier-hover);
+}
+
+/*
+ * One tool is one split button: the toggle that arms it, and the chevron that
+ * opens its colours. The seat is what reads as the button — it owns the shape
+ * and the armed fill — and each half owns its own hover, so the pair fills as
+ * one control and answers the pointer in two places.
+ *
+ * Obsidian states `border-radius`, `padding` and `--icon-size` on
+ * `.clickable-icon` itself, outside any cascade layer, so a utility class
+ * cannot reach them and these longhands answer it here instead.
+ */
+:where(.zt-pdf-tool) {
+  border-radius: var(--clickable-icon-radius);
+}
+
+:where(.zt-pdf-tool.is-active) {
+  background-color: var(--background-modifier-active-hover);
+}
+
+/*
+ * The halves meet square and flush, and each keeps the seat's corners on its
+ * outer side. The seat clips nothing, so the focus ring Obsidian draws outside
+ * a focused half shows whole rather than as a sliver at the seam.
+ */
+:where(.zt-pdf-tool) > .clickable-icon:first-child {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+:where(.zt-pdf-tool) > .clickable-icon:last-child {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+
+/* The armed tool's own colour stays on its toggle, through the inline style. */
+:where(.zt-pdf-tool.is-active) > .clickable-icon {
+  color: var(--icon-color-active);
+}
+
+/*
+ * Obsidian holds an active `clickable-icon` at its active fill under the
+ * pointer, rather than lighting it further. The seat carries that fill here, so
+ * the half under the pointer stands aside and lets the seat show through — the
+ * armed tool answers the way every other active icon in the app does.
+ */
+:where(.zt-pdf-tool.is-active) > .clickable-icon:hover {
+  background-color: transparent;
+}
+
+/* Halved where the two meet, which is what makes the pair read as compact. */
+:where(.zt-pdf-tool) > .clickable-icon:first-child {
+  padding-inline-end: var(--size-2-1);
+}
+
+:where(.zt-pdf-tool) > .clickable-icon:last-child {
+  padding-inline-start: var(--size-2-1);
+  /* The chevron names a menu rather than a colour, so it reads one step down. */
+  --icon-size: var(--icon-xs);
+}
+
+/* The comment sheet takes the row's width, so opening it leaves the popup as
+   wide as its verbs; a narrow row still gives the editor room for a phrase.
+   The sheet adds nothing to the popup's own width, which the row sets. Its
+   footer spaces itself off the field only while it shows something, so the
+   popup keeps its height as the editor opens. */
+:where(.zt-pdf-comment-sheet) {
+  display: flex;
+  flex-direction: column;
+  inline-size: 0;
+  min-inline-size: max(100%, 12em);
+}
+
+/* The comment slot under the selected-mode row: the comment, the "Add a
+   comment…" line, a held draft or the sheet, with the comment pencil's
+   gutter. The slot alone decides its width, so the popup keeps its size as
+   the editor opens and closes; what stands in it fills it rather than
+   holding the sheet's own minimum.
+   A stylesheet rule, because it is a descendant selector over DOM another
+   owner renders: the vanilla builders in editor-sheet.ts draw the sheet and
+   the held-draft panel, and set their own width, which the slot takes back. */
+.zt-pdf-comment-slot {
+  inline-size: 0;
+  min-inline-size: max(100%, 14em);
+}
+
+.zt-pdf-comment-slot :is(.zt-pdf-comment-sheet, .zt-annot-draft) {
+  inline-size: auto;
+  min-inline-size: 0;
+}
+
+/* The native toolbar uses one fixed row. Let our tools and permission status
+   wrap within the reader when the pane cannot fit all toolbar groups. */
+.pdf-toolbar:has(> .pdf-toolbar-right > .zt-pdf-creation-toolbar) {
+  flex-wrap: wrap;
+  height: auto;
+}
+
+.pdf-toolbar-right:has(> .zt-pdf-creation-toolbar) {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/*
+ * The Text Draft is typed straight onto the page, as Zotero's text box is:
+ * none of the form-field look Obsidian gives every textarea reaches it, and
+ * its lines wrap only where a word no longer fits, as the saved mark's do.
+ * Obsidian's own textarea rules are unlayered and reach `:hover` and `:focus`,
+ * so these name the element and each of those states. text-draft.ts sets
+ * its box, turn, font and colour as the `--zt-text-draft-*` properties read
+ * here. The font is pinned as the measure assumes and the saved mark draws it;
+ * `line-height` is `LINE_HEIGHT` in free-text-layout.ts.
+ */
+textarea.zt-pdf-text-draft,
+textarea.zt-pdf-text-draft:hover,
+textarea.zt-pdf-text-draft:focus,
+textarea.zt-pdf-text-draft:focus-visible,
+textarea.zt-pdf-text-draft:active {
+  position: absolute;
+  z-index: 5;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  left: var(--zt-text-draft-left);
+  top: var(--zt-text-draft-top);
+  width: var(--zt-text-draft-width);
+  height: var(--zt-text-draft-height);
+  min-width: var(--zt-text-draft-font-size);
+  min-height: var(--zt-text-draft-font-size);
+  transform: rotate(var(--zt-text-draft-angle))
+    scale(var(--zt-text-draft-scale));
+  transform-origin: 0 0;
+  font-family: var(--zt-text-draft-font-family);
+  font-size: var(--zt-text-draft-font-size);
+  font-weight: normal;
+  font-style: normal;
+  letter-spacing: 0;
+  line-height: 1.2;
+  color: var(--zt-text-draft-color);
+}

@@ -1,26 +1,20 @@
 // The source-join of a document's Citations: each cited Item read from the Zotero database, in the identities and summary a reference list reports.
 
-import {
-  getAttachmentsByParents,
-  getItemsByKey,
-  getZoteroIdentity,
-  isChildItemFields,
-  itemToCsl,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
+import { Effect } from "effect";
+
+import { isChildItemFields, itemToCsl } from "@zotlit/db";
 import type { Attachment, CslItemData, Item } from "@zotlit/db";
 import { parseAttachmentPath } from "@zotlit/db/path";
 
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
-import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { Citation } from "./query";
 
-const logger = getLogger(["citation-index", "sources"]);
-
 /** One Attachment the Item offers to open in Zotero's reader. */
-export interface OpenableAttachment {
+export interface ZoteroOpenableAttachment {
   /** Bare Zotero key of the Attachment itself, for `zotero://open`. */
   key: string;
   /** Group library ID, or `null` for the personal library. */
@@ -34,6 +28,8 @@ export type DatabaseReadability = "ready" | "unreadable";
 
 /** The cited Items of one document, with the state that says what an Item the join left out means. */
 export interface ReferenceSourceJoin {
+  /** Items present in the source, including Notes and Attachments. */
+  presentKeys: ReadonlySet<string>;
   /** The readable sources by Indexed Key. */
   sources: Map<string, ReferenceSource>;
   /**
@@ -49,6 +45,8 @@ export interface ReferenceSource {
   csl: CslItemData;
   /** `Creators (Year): Title` from the shared item-summary rendering. */
   summary: string;
+  /** Short author/year label used beside in-text citations. */
+  citationSummary: string;
   /** Bare Zotero item key, for the `zotero://select` action. */
   itemKey: string;
   /** Zotero `itemID`, the parent the attachment read looks under. */
@@ -59,8 +57,8 @@ export interface ReferenceSource {
   citekey: string | null;
   /** Linkpath the Citation carries, or `null` when the Item has no Literature Note yet. */
   linkpath: string | null;
-  /** Openable Attachments of the Item, in library order; empty hides the action. */
-  attachments: readonly OpenableAttachment[];
+  /** Zotero-Openable Attachments of the Item, in library order; empty hides the action. */
+  attachments: readonly ZoteroOpenableAttachment[];
 }
 
 /**
@@ -71,10 +69,10 @@ export interface ReferenceSource {
  * linked-file forms. A bare web link carries no file, and a row whose path does
  * not parse names none either, so neither is offered.
  */
-export function toOpenableAttachments(
+export function toZoteroOpenableAttachments(
   attachments: readonly Attachment[],
-): OpenableAttachment[] {
-  const openable: OpenableAttachment[] = [];
+): ZoteroOpenableAttachment[] {
+  const openable: ZoteroOpenableAttachment[] = [];
   for (const { key, groupID, path, linkMode } of attachments) {
     const parsed = parseAttachmentPath(path, linkMode, key);
     switch (parsed.kind) {
@@ -120,73 +118,124 @@ function filename(path: string): string {
  * @returns the readable sources by Indexed Key, beside the `database` state a
  *   caller reports rather than the Items it names as missing.
  */
-export function readReferenceSources(
-  db: Pick<DatabaseService, "state" | "client">,
-  citations: readonly Citation[],
-): ReferenceSourceJoin {
-  const sources = new Map<string, ReferenceSource>();
-  if (db.state !== "ready") return { sources, database: "unreadable" };
-  if (citations.length === 0) return { sources, database: "ready" };
+export const readReferenceSources = Effect.fn("readReferenceSources")(
+  function* (
+    db: Pick<ZoteroReads["Service"], "current" | "snapshot">,
+    citations: readonly Pick<Citation, "indexedKey" | "linkpath">[],
+  ): Effect.fn.Return<ReferenceSourceJoin> {
+    const sources = new Map<string, ReferenceSource>();
+    const presentKeys = new Set<string>();
+    if ((yield* db.current).state === "degraded")
+      return { sources, presentKeys, database: "unreadable" };
+    if (citations.length === 0)
+      return { sources, presentKeys, database: "ready" };
 
-  try {
-    const user = getZoteroIdentity(db.client);
-    const cited: {
-      indexedKey: string;
-      linkpath: string | null;
-      item: Item;
-      summary: string;
-      citekey: string | null;
-    }[] = [];
-    for (const { indexedKey, linkpath } of citations) {
-      if (indexedKey === null) continue;
-      const selector = resolveIndexedKeyLibrary(db.client, indexedKey);
-      if (!selector) continue;
-      const item = getItemsByKey(db.client, selector.libraryID, [
-        selector.key,
-      ])[0];
-      if (!item) continue;
-      const { fields } = item;
-      if (isChildItemFields(fields)) continue;
-      cited.push({
-        indexedKey,
-        linkpath,
-        item,
-        summary: itemSummary(item, fields).formatted,
-        citekey: fields.citationKey ?? null,
-      });
-    }
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        // One Snapshot: the Attachment read names Items by the itemIDs the Item
+        // read answered with, so both must see one database.
+        const reads = yield* db.snapshot;
+        const indexedKeys = [
+          ...new Set(
+            citations.flatMap(({ indexedKey }) =>
+              indexedKey === null ? [] : [indexedKey],
+            ),
+          ),
+        ];
+        const [user, items] = yield* Effect.all(
+          [
+            reads.DatabaseIdentity({}),
+            reads.ItemsByIndexedKeys({ indexedKeys }),
+          ],
+          { concurrency: "unbounded" },
+        );
+        for (const key of items.keys()) presentKeys.add(key);
+        const otherItems = yield* Effect.forEach(
+          indexedKeys.filter((key) => !items.has(key)),
+          (indexedKey) =>
+            Effect.map(reads.ItemType({ indexedKey }), (item) =>
+              item ? indexedKey : null,
+            ),
+          { concurrency: "unbounded" },
+        );
+        for (const key of otherItems) if (key !== null) presentKeys.add(key);
+        const cited: {
+          indexedKey: string;
+          linkpath: string | null;
+          item: Item;
+          summary: string;
+          citationSummary: string;
+          citekey: string | null;
+        }[] = [];
+        for (const { indexedKey, linkpath } of citations) {
+          if (indexedKey === null) continue;
+          const item = items.get(indexedKey);
+          if (!item) continue;
+          const { fields } = item;
+          if (isChildItemFields(fields)) continue;
+          const summary = itemSummary(item, fields);
+          cited.push({
+            indexedKey,
+            linkpath,
+            item,
+            summary: summary.formatted,
+            citationSummary: summary.subtitle || summary.title,
+            citekey: fields.citationKey ?? null,
+          });
+        }
 
-    const attachments = new Map<number, OpenableAttachment[]>();
-    try {
-      const rows = getAttachmentsByParents(
-        db.client,
-        cited.map(({ item }) => item.itemID),
-      );
-      for (const [itemID, group] of Map.groupBy(
-        rows,
-        (row) => row.parentItemID,
-      )) {
-        attachments.set(itemID, toOpenableAttachments(group));
-      }
-    } catch (error) {
-      logger.warn("Cannot read the attachments of the cited items", { error });
-    }
+        const attachments = new Map<number, ZoteroOpenableAttachment[]>();
+        const rows = yield* reads
+          .AttachmentsOf({ itemIDs: cited.map(({ item }) => item.itemID) })
+          .pipe(
+            recover(
+              (cause) =>
+                Effect.logWarning(
+                  "Cannot read the attachments of the cited items",
+                  cause,
+                ),
+              Effect.succeed([]),
+            ),
+          );
+        for (const [itemID, group] of Map.groupBy(
+          rows,
+          (row) => row.parentItemID,
+        )) {
+          attachments.set(itemID, toZoteroOpenableAttachments(group));
+        }
 
-    for (const { indexedKey, linkpath, item, summary, citekey } of cited) {
-      sources.set(indexedKey, {
-        csl: itemToCsl(item, user),
-        summary,
-        itemKey: item.key,
-        itemID: item.itemID,
-        groupID: item.groupID,
-        citekey,
-        linkpath,
-        attachments: attachments.get(item.itemID) ?? [],
-      });
-    }
-  } catch (error) {
-    logger.warn("Cannot read the cited items", { error });
-    return { sources, database: "unreadable" };
-  }
-  return { sources, database: "ready" };
-}
+        for (const {
+          indexedKey,
+          linkpath,
+          item,
+          summary,
+          citationSummary,
+          citekey,
+        } of cited) {
+          sources.set(indexedKey, {
+            csl: itemToCsl(item, user),
+            summary,
+            citationSummary,
+            itemKey: item.key,
+            itemID: item.itemID,
+            groupID: item.groupID,
+            citekey,
+            linkpath,
+            attachments: attachments.get(item.itemID) ?? [],
+          });
+        }
+        return { sources, presentKeys, database: "ready" as const };
+      }),
+    ).pipe(
+      recover(
+        (cause) => Effect.logWarning("Cannot read the cited items", cause),
+        Effect.succeed({
+          sources,
+          presentKeys,
+          database: "unreadable" as const,
+        }),
+      ),
+      withLogCategory("citation-index"),
+    );
+  },
+);

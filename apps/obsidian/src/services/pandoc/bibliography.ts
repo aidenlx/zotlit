@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // Live bibliography data for the built-in export: Better BibTeX when its
 // endpoint answers, else Zotero's local HTTP API, else a guided error.
 //
@@ -8,10 +9,15 @@
 import { formatIndexedKey } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 
-import { getLogger } from "@/lib/log";
+import { withLogCategory } from "@/lib/effect-log-category";
+import {
+  parseJson,
+  exchangeWithZotero,
+  ZoteroHttp,
+  zoteroOrigin,
+} from "@/lib/zotero-http";
+import type { ZoteroRequest } from "@/lib/zotero-http";
 import { ZOTERO_HTTP_PORT_PREF } from "@/services/zotero-pref/prefs-file";
-
-const logger = getLogger(["pandoc", "bibliography"]);
 
 /** Pref that opens Zotero's local HTTP API; Zotero ships it off. */
 export const LOCAL_API_PREF = "httpServer.localAPI.enabled";
@@ -21,14 +27,6 @@ const JSON_RPC_PATH = "/better-bibtex/json-rpc";
 
 /** Better BibTeX's Better CSL JSON translator, which writes `id` from the citation key. */
 const BETTER_CSL_JSON = "f4b52ab0-f878-4556-85a0-c7aeedd09dfc";
-
-/**
- * Zotero refuses requests it reads as browser traffic — and Obsidian's
- * `requestUrl` carries a Chromium user agent — unless they carry this header.
- */
-const ALLOWED_REQUEST: Readonly<Record<string, string>> = {
-  "Zotero-Allowed-Request": "1",
-};
 
 /** Which source answered, or produced, a result. */
 export type BibliographySource = "better-bibtex" | "local-api";
@@ -43,29 +41,7 @@ export interface BibliographyItemRef {
   groupID: number | null;
 }
 
-export interface BibliographyHttpRequest {
-  url: string;
-  method: "GET" | "POST";
-  headers: Record<string, string>;
-  body?: string;
-}
-
-export interface BibliographyHttpResponse {
-  status: number;
-  text: string;
-}
-
-/**
- * One HTTP round trip. Resolves with whatever status Zotero answered, however
- * unhappy; rejects only when the connection itself failed, which is how a
- * closed Zotero announces itself.
- */
-export type BibliographyTransport = (
-  request: BibliographyHttpRequest,
-) => Promise<BibliographyHttpResponse>;
-
 export interface BibliographyPorts {
-  request: BibliographyTransport;
   /** HTTP port read from the active Zotero profile. */
   httpPort: number | null;
   /**
@@ -112,27 +88,32 @@ export type BibliographyResult =
  * All-or-nothing: one unresolved item fails the whole request, and no partial
  * bibliography is returned.
  */
-export async function fetchBibliography(
-  refs: readonly BibliographyItemRef[],
-  ports: BibliographyPorts,
-): Promise<BibliographyResult> {
-  if (refs.length === 0) return { source: null, items: new Map() };
-  if (ports.httpPort === null) {
-    return {
-      error: { code: "zotero-port-automatic", pref: ZOTERO_HTTP_PORT_PREF },
-    };
-  }
+export const fetchBibliography = Effect.fn("Bibliography.fetchBibliography")(
+  function* (
+    refs: readonly BibliographyItemRef[],
+    ports: BibliographyPorts,
+  ): Effect.fn.Return<BibliographyResult, never, ZoteroHttp> {
+    if (refs.length === 0) return { source: null, items: new Map() };
+    if (ports.httpPort === null) {
+      return {
+        error: { code: "zotero-port-automatic", pref: ZOTERO_HTTP_PORT_PREF },
+      };
+    }
 
-  const resolvedPorts = { ...ports, httpPort: ports.httpPort };
+    const resolvedPorts = { ...ports, httpPort: ports.httpPort };
 
-  const probe = await callJsonRpc(resolvedPorts, "api.ready", []);
-  if (probe.ok) return fromBetterBibtex(refs, resolvedPorts);
-  if (probe.reason === "unreachable") {
-    return { error: zoteroUnreachable(ports.httpPort) };
-  }
-  logger.debug("Better BibTeX did not answer; falling back to the local API");
-  return fromLocalApi(refs, resolvedPorts);
-}
+    const probe = yield* callJsonRpc(resolvedPorts, "api.ready", []);
+    if (probe.ok) return yield* fromBetterBibtex(refs, resolvedPorts);
+    if (probe.reason === "unreachable") {
+      return { error: zoteroUnreachable(ports.httpPort) };
+    }
+    yield* Effect.logDebug(
+      "Better BibTeX did not answer; falling back to the local API",
+    );
+    return yield* fromLocalApi(refs, resolvedPorts);
+  },
+  withLogCategory("pandoc", "bibliography"),
+);
 
 type ResolvedBibliographyPorts = BibliographyPorts & { httpPort: number };
 
@@ -142,100 +123,106 @@ type ResolvedBibliographyPorts = BibliographyPorts & { httpPort: number };
  * is indexed by library and citation key, which is the `id` Better CSL JSON
  * writes.
  */
-async function fromBetterBibtex(
-  refs: readonly BibliographyItemRef[],
-  ports: ResolvedBibliographyPorts,
-): Promise<BibliographyResult> {
-  const lookup = await callJsonRpc(ports, "item.citationkey", [
-    refs.map(rpcItemKey),
-  ]);
-  if (!lookup.ok) return { error: rpcFailure(lookup, ports.httpPort) };
-
-  const table = asRecord(lookup.result);
-  const cited: { ref: BibliographyItemRef; citationKey: string }[] = [];
-  const keyless: string[] = [];
-  for (const ref of refs) {
-    const citationKey = table[rpcItemKey(ref)];
-    if (typeof citationKey === "string" && citationKey) {
-      cited.push({ ref, citationKey });
-    } else {
-      keyless.push(indexedKeyOf(ref));
-    }
-  }
-  if (keyless.length > 0) {
-    return { error: { code: "citation-key-missing", indexedKeys: keyless } };
-  }
-
-  const entries = new Map<string, CslItemData>();
-  for (const [libraryID, group] of groupBy(cited, (c) => c.ref.libraryID)) {
-    const exported = await callJsonRpc(ports, "item.export", [
-      group.map((c) => c.citationKey),
-      BETTER_CSL_JSON,
-      libraryID,
+const fromBetterBibtex = Effect.fn("Bibliography.fromBetterBibtex")(
+  function* (
+    refs: readonly BibliographyItemRef[],
+    ports: ResolvedBibliographyPorts,
+  ): Effect.fn.Return<BibliographyResult, never, ZoteroHttp> {
+    const lookup = yield* callJsonRpc(ports, "item.citationkey", [
+      refs.map(rpcItemKey),
     ]);
-    if (!exported.ok) {
-      return { error: rpcFailure(exported, ports.httpPort) };
-    }
-    for (const item of asCslItems(exported.result)) {
-      entries.set(citationAddress(libraryID, item.id), item);
-    }
-  }
+    if (!lookup.ok) return { error: rpcFailure(lookup, ports.httpPort) };
 
-  return join(
-    "better-bibtex",
-    cited.map((c) => [
-      indexedKeyOf(c.ref),
-      entries.get(citationAddress(c.ref.libraryID, c.citationKey)),
-    ]),
-  );
-}
+    const table = asRecord(lookup.result);
+    const cited: { ref: BibliographyItemRef; citationKey: string }[] = [];
+    const keyless: string[] = [];
+    for (const ref of refs) {
+      const citationKey = table[rpcItemKey(ref)];
+      if (typeof citationKey === "string" && citationKey) {
+        cited.push({ ref, citationKey });
+      } else {
+        keyless.push(indexedKeyOf(ref));
+      }
+    }
+    if (keyless.length > 0) {
+      return { error: { code: "citation-key-missing", indexedKeys: keyless } };
+    }
+
+    const entries = new Map<string, CslItemData>();
+    for (const [libraryID, group] of groupBy(cited, (c) => c.ref.libraryID)) {
+      const exported = yield* callJsonRpc(ports, "item.export", [
+        group.map((c) => c.citationKey),
+        BETTER_CSL_JSON,
+        libraryID,
+      ]);
+      if (!exported.ok) {
+        return { error: rpcFailure(exported, ports.httpPort) };
+      }
+      for (const item of asCslItems(exported.result)) {
+        entries.set(citationAddress(libraryID, item.id), item);
+      }
+    }
+
+    return join(
+      "better-bibtex",
+      cited.map((c) => [
+        indexedKeyOf(c.ref),
+        entries.get(citationAddress(c.ref.libraryID, c.citationKey)),
+      ]),
+    );
+  },
+  withLogCategory("pandoc", "bibliography"),
+);
 
 /**
  * One multi-item read per library: `users/0` for the personal library, the
  * group route for a group library.
  */
-async function fromLocalApi(
-  refs: readonly BibliographyItemRef[],
-  ports: ResolvedBibliographyPorts,
-): Promise<BibliographyResult> {
-  if (!ports.localApiEnabled) return { error: localApiDisabled() };
+const fromLocalApi = Effect.fn("Bibliography.fromLocalApi")(
+  function* (
+    refs: readonly BibliographyItemRef[],
+    ports: ResolvedBibliographyPorts,
+  ): Effect.fn.Return<BibliographyResult, never, ZoteroHttp> {
+    if (!ports.localApiEnabled) return { error: localApiDisabled() };
 
-  const entries = new Map<string, CslItemData>();
-  for (const [groupID, group] of groupBy(refs, (ref) => ref.groupID)) {
-    const query = new URLSearchParams({
-      itemKey: group.map((ref) => ref.itemKey).join(","),
-      include: "csljson",
-    });
-    const library = groupID === null ? "users/0" : `groups/${groupID}`;
-    const response = await send(ports, {
-      url: `${zoteroOrigin(ports.httpPort)}/api/${library}/items?${query.toString()}`,
-      method: "GET",
-      headers: { ...ALLOWED_REQUEST },
-    });
-    if (!response) return { error: zoteroUnreachable(ports.httpPort) };
-    if (response.status === 403) return { error: localApiDisabled() };
-    if (response.status !== 200) {
-      return {
-        error: {
-          code: "source-failed",
-          source: "local-api",
-          detail: `${response.status} ${response.text.trim()}`,
-        },
-      };
+    const entries = new Map<string, CslItemData>();
+    for (const [groupID, group] of groupBy(refs, (ref) => ref.groupID)) {
+      const query = new URLSearchParams({
+        itemKey: group.map((ref) => ref.itemKey).join(","),
+        include: "csljson",
+      });
+      const library = groupID === null ? "users/0" : `groups/${groupID}`;
+      const response = yield* send({
+        port: ports.httpPort,
+        path: `/api/${library}/items?${query.toString()}`,
+        method: "GET",
+      });
+      if (!response) return { error: zoteroUnreachable(ports.httpPort) };
+      if (response.status === 403) return { error: localApiDisabled() };
+      if (response.status !== 200) {
+        return {
+          error: {
+            code: "source-failed",
+            source: "local-api",
+            detail: `${response.status} ${response.text.trim()}`,
+          },
+        };
+      }
+      for (const entry of asArray(parseJson(response.text))) {
+        const key = asRecord(entry)["key"];
+        if (typeof key !== "string") continue;
+        const [item] = asCslItems(asRecord(entry)["csljson"]);
+        if (item) entries.set(formatIndexedKey(key, groupID), item);
+      }
     }
-    for (const entry of asArray(parseJson(response.text))) {
-      const key = asRecord(entry)["key"];
-      if (typeof key !== "string") continue;
-      const [item] = asCslItems(asRecord(entry)["csljson"]);
-      if (item) entries.set(formatIndexedKey(key, groupID), item);
-    }
-  }
 
-  return join(
-    "local-api",
-    refs.map((ref) => [indexedKeyOf(ref), entries.get(indexedKeyOf(ref))]),
-  );
-}
+    return join(
+      "local-api",
+      refs.map((ref) => [indexedKeyOf(ref), entries.get(indexedKeyOf(ref))]),
+    );
+  },
+  withLogCategory("pandoc", "bibliography"),
+);
 
 /**
  * Re-index the source's answer by Indexed Key. An item the source returned
@@ -271,30 +258,34 @@ type RpcOutcome =
  * Better BibTeX answers 200 with a JSON-RPC error body for a call it refuses,
  * so the reply shape — not the status — tells the two apart.
  */
-async function callJsonRpc(
-  ports: ResolvedBibliographyPorts,
-  method: string,
-  params: readonly unknown[],
-): Promise<RpcOutcome> {
-  const response = await send(ports, {
-    url: `${zoteroOrigin(ports.httpPort)}${JSON_RPC_PATH}`,
-    method: "POST",
-    headers: { ...ALLOWED_REQUEST, "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
-  });
-  if (!response) return { ok: false, reason: "unreachable" };
-  if (response.status !== 200) return { ok: false, reason: "absent" };
+const callJsonRpc = Effect.fn("Bibliography.callJsonRpc")(
+  function* (
+    ports: ResolvedBibliographyPorts,
+    method: string,
+    params: readonly unknown[],
+  ): Effect.fn.Return<RpcOutcome, never, ZoteroHttp> {
+    const response = yield* send({
+      port: ports.httpPort,
+      path: JSON_RPC_PATH,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
+    });
+    if (!response) return { ok: false, reason: "unreachable" };
+    if (response.status !== 200) return { ok: false, reason: "absent" };
 
-  const body = asRecord(parseJson(response.text));
-  if ("result" in body) return { ok: true, result: body["result"] };
-  if (!("error" in body)) return { ok: false, reason: "absent" };
-  const message = asRecord(body["error"])["message"];
-  return {
-    ok: false,
-    reason: "error",
-    message: typeof message === "string" ? message : "Unknown error",
-  };
-}
+    const body = asRecord(parseJson(response.text));
+    if ("result" in body) return { ok: true, result: body["result"] };
+    if (!("error" in body)) return { ok: false, reason: "absent" };
+    const message = asRecord(body["error"])["message"];
+    return {
+      ok: false,
+      reason: "error",
+      message: typeof message === "string" ? message : "Unknown error",
+    };
+  },
+  withLogCategory("pandoc", "bibliography"),
+);
 
 function rpcFailure(
   outcome: Extract<RpcOutcome, { ok: false }>,
@@ -312,27 +303,25 @@ function rpcFailure(
 }
 
 /** `null` when the configured Zotero HTTP server cannot be reached. */
-async function send(
-  ports: BibliographyPorts,
-  request: BibliographyHttpRequest,
-): Promise<BibliographyHttpResponse | null> {
-  try {
-    return await ports.request(request);
-  } catch (error) {
-    logger.debug("Zotero's HTTP server did not answer", {
-      url: request.url,
-      error,
-    });
-    return null;
-  }
-}
+const send = Effect.fnUntraced(function* (request: ZoteroRequest) {
+  const http = yield* ZoteroHttp;
+  return yield* exchangeWithZotero(http, request).pipe(
+    Effect.catchTag("HttpClientError", (error) =>
+      Effect.as(
+        Effect.logDebug("Zotero's HTTP server did not answer").pipe(
+          Effect.annotateLogs({
+            url: `${zoteroOrigin(request.port)}${request.path}`,
+            error,
+          }),
+        ),
+        null,
+      ),
+    ),
+  );
+});
 
 function zoteroUnreachable(port: number): BibliographyFailure {
   return { code: "zotero-unreachable", port };
-}
-
-function zoteroOrigin(port: number): string {
-  return `http://127.0.0.1:${port}`;
 }
 
 function localApiDisabled(): BibliographyFailure {
@@ -380,14 +369,6 @@ function asCslItems(value: unknown): CslItemData[] {
 
 function isCslItem(value: unknown): value is CslItemData {
   return typeof asRecord(value)["id"] === "string";
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
 }
 
 function asArray(value: unknown): unknown[] {

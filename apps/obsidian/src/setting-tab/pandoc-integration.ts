@@ -1,11 +1,11 @@
+import { Effect } from "effect";
 // Tutorial, integration-pair save action, and local CLI Guide for native Pandoc settings.
-
 import type { Setting, SettingDefinitionGroup } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
+import { awaitConfirm } from "@/lib/confirm";
 import { DOCS_SITE_URL } from "@/lib/constants";
+import { withLogCategory } from "@/lib/effect-log-category";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { requireDialog } from "@/lib/require";
 import {
@@ -16,19 +16,19 @@ import {
 
 import type { SettingsKey, SettingTabContext } from "./context";
 
-const logger = getLogger(["setting-tab", "pandoc-integration"]);
-
 export function pandocIntegrationDefinition(
   ctx: SettingTabContext,
 ): SettingDefinitionGroup<SettingsKey> {
   return {
     type: "group",
+    id: "settings_citation_native_pandoc",
     heading: m.settings_citation_native_pandoc_heading(),
     items: [
       {
+        id: "settings_citation_pandoc_tutorial",
         name: m.settings_citation_pandoc_tutorial_name(),
         desc: m.settings_citation_pandoc_tutorial_desc(),
-        render: (setting) =>
+        render: (setting) => {
           setting.addButton((button) =>
             button
               .setButtonText(m.settings_citation_pandoc_tutorial_open())
@@ -37,16 +37,19 @@ export function pandocIntegrationDefinition(
                   `${DOCS_SITE_URL}/docs/tutorial/pandoc-citation-workflow`,
                 ),
               ),
-          ),
+          );
+        },
       },
       {
+        id: "settings_citation_pandoc_files",
         name: m.settings_citation_pandoc_files_name(),
         desc: m.settings_citation_pandoc_files_desc(),
         render: (setting) => renderSaveAction(setting, ctx),
       },
       {
+        id: "settings_citation_pandoc_guide",
         name: m.settings_citation_pandoc_guide_name(),
-        desc: guideDescription(ctx.plugin.manifest.version),
+        desc: guideDescription(ctx.manifest.version),
       },
     ],
   };
@@ -80,41 +83,56 @@ async function selectAndSave(ctx: SettingTabContext): Promise<void> {
     });
     if (selected.canceled || selected.filePaths.length === 0) return;
 
-    const result = await savePandocIntegrationFiles({
-      folder: selected.filePaths[0]!,
-      files: pandocIntegrationFiles(),
-      confirmReplacement: (filenames) =>
-        confirm(
-          {
-            title: m.settings_citation_pandoc_replace_title(),
-            content: m.settings_citation_pandoc_replace_body({
-              files: filenames.join(", "),
-            }),
-            action: m.settings_citation_pandoc_replace_action(),
-            destructive: true,
-          },
-          ctx.app,
-        ),
-    });
+    await ctx.tab.run(
+      Effect.gen(function* () {
+        const result = yield* savePandocIntegrationFiles({
+          folder: selected.filePaths[0]!,
+          files: pandocIntegrationFiles(),
+          confirmReplacement: (filenames) =>
+            awaitConfirm(
+              {
+                title: m.settings_citation_pandoc_replace_title(),
+                content: m.settings_citation_pandoc_replace_body({
+                  files: filenames.join(", "),
+                }),
+                action: m.settings_citation_pandoc_replace_action(),
+                destructive: true,
+              },
+              ctx.app,
+            ),
+        });
 
-    if (result.kind === "saved") {
-      new BaseNotice(
-        m.notice_pandoc_integration_saved({ folder: result.folder }),
-      );
-    } else if (result.kind === "failed") {
-      logger.error("Failed to save the Pandoc Integration Pair", {
-        folder: selected.filePaths[0]!,
-        error: result.error,
-        restored: result.restored,
-      });
-      new BaseNotice(
-        result.restored
-          ? m.notice_pandoc_integration_save_failed()
-          : m.notice_pandoc_integration_restore_failed(),
-      );
-    }
+        if (result.kind === "saved") {
+          new BaseNotice(
+            m.notice_pandoc_integration_saved({ folder: result.folder }),
+          );
+        } else if (result.kind === "failed") {
+          yield* Effect.logError(
+            "Failed to save the Pandoc Integration Pair",
+          ).pipe(
+            Effect.annotateLogs({
+              folder: selected.filePaths[0]!,
+              error: result.error,
+              restored: result.restored,
+            }),
+          );
+          new BaseNotice(
+            result.restored
+              ? m.notice_pandoc_integration_save_failed()
+              : m.notice_pandoc_integration_restore_failed(),
+          );
+        }
+      }).pipe(withLogCategory("setting-tab", "pandoc-integration")),
+    );
   } catch (error) {
-    logger.error("Failed to select a Pandoc integration folder", { error });
+    await ctx.tab.run(
+      Effect.logError("Failed to select a Pandoc integration folder").pipe(
+        Effect.annotateLogs({
+          error,
+        }),
+        withLogCategory("setting-tab", "pandoc-integration"),
+      ),
+    );
     new BaseNotice(m.notice_pandoc_integration_save_failed());
   }
 }

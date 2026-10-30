@@ -1,13 +1,17 @@
-import { Keymap, SuggestModal } from "obsidian";
-import type { Editor } from "obsidian";
+import { Keymap } from "obsidian";
+import type { Editor, TFile } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
-import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import { ItemSearchModal } from "@/services/item-lookup/search-modal";
 import type { SearchHit } from "@/services/item-lookup/service";
 
-import { padCitationInsert, resolveCitationInsert } from "./editor-suggest";
+import { readDocumentCitedKeys } from "./document-citations";
+import {
+  commitCitationInsert,
+  resolveCitationInsert,
+  writeCitation,
+} from "./editor-suggest";
 import type { CitationSuggestDeps } from "./register";
 
 /**
@@ -15,19 +19,22 @@ import type { CitationSuggestDeps } from "./register";
  * rendered citation at the editor cursor. The inline `[@` flow lives in
  * {@link CitationEditorSuggest}; both render through `renderCitation`.
  */
-export class InsertCitationModal extends SuggestModal<SearchHit> {
+export class InsertCitationModal extends ItemSearchModal {
   readonly #deps: CitationSuggestDeps;
   readonly #editor: Editor;
+  readonly #file: TFile | null;
+  #documentController?: AbortController;
+  #cited: Promise<readonly string[]> = Promise.resolve([]);
 
-  constructor(deps: CitationSuggestDeps, editor: Editor) {
-    super(deps.app);
+  constructor(deps: CitationSuggestDeps, editor: Editor, file: TFile | null) {
+    super(deps);
     this.#deps = deps;
     this.#editor = editor;
-    this.limit = DEFAULT_LIMIT;
+    this.#file = file;
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_citation() },
-      { command: "⇧↵", purpose: m.instruction_insert_secondary_citation() },
+      { command: "⇧↵", purpose: m.instruction_insert_alternate_citation() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
     // The suggestion popup registers `Enter` with no modifiers and matches
@@ -39,37 +46,49 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
     });
   }
 
-  override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {
-    return this.#deps.lookup.search(query, { limit: this.limit });
+  override onOpen(): void {
+    this.#documentController = new AbortController();
+    this.#cited = readDocumentCitedKeys(
+      this.#deps,
+      this.#file,
+      this.#documentController.signal,
+    );
+    super.onOpen();
   }
 
-  override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
-    renderSearchHit(this.#deps.settings, hit, el);
+  override onClose(): void {
+    this.#documentController?.abort();
+    super.onClose();
   }
 
-  override onChooseSuggestion(
+  override async getSuggestions(query: string): Promise<SearchHit[]> {
+    const controller = this.#documentController;
+    const cited = await this.#cited;
+    if (!controller || controller.signal.aborted) return [];
+    return super.getSuggestions(query, { cited });
+  }
+
+  override async onChooseSuggestion(
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
-  ): void {
-    const outcome = resolveCitationInsert(
+  ): Promise<void> {
+    const before = this.#editor.getValue();
+    const from = this.#editor.getCursor("from");
+    const to = this.#editor.getCursor("to");
+    const outcome = await resolveCitationInsert(
       this.#deps,
       hit,
-      Keymap.isModifier(evt, "Shift"),
+      Keymap.isModifier(evt, "Shift") ? "alt" : "main",
     );
+    if (!outcome || this.#editor.getValue() !== before) return;
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);
       return;
     }
-    const editor = this.#editor;
-    const from = editor.getCursor("from");
-    const to = editor.getCursor("to");
-    const padded = padCitationInsert(
-      outcome.text,
-      editor.getLine(to.line).charAt(to.ch),
-    );
-    editor.replaceRange(padded.text, from, to);
-    editor.setCursor(
-      editor.offsetToPos(editor.posToOffset(from) + padded.cursor),
-    );
+    commitCitationInsert(this.#deps, {
+      indexedKey: hit.item.indexedKey,
+      text: outcome.text,
+      insert: () => writeCitation(this.#editor, outcome.text, { from, to }),
+    });
   }
 }

@@ -1,0 +1,414 @@
+// The web's binding of the Workbench UI host adapter: Base UI for the menu,
+// the dialog and the confirmation; the searchable picker the
+// paper choice already uses for the suggester; the browser's own tooltip; the
+// status line for a notice; the page's own renderer; the Item Snapshot's names
+// for a match; and browser storage for a preference.
+
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { Effect } from "effect";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+
+import { testItemSeed } from "@zotlit/item-query";
+import type { RenderRequest } from "@zotlit/workbench/render";
+import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
+import type {
+  WorkbenchMatchResult,
+  WorkbenchConfirmRequest,
+  WorkbenchDialogRequest,
+  WorkbenchHost,
+  WorkbenchInsertTarget,
+  WorkbenchMenuRequest,
+  WorkbenchSuggesterRequest,
+} from "@zotlit/workbench/ui";
+
+import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
+
+import { webCompletion } from "./completion";
+import { webHover } from "./hover";
+import { Rendering } from "./rendering";
+import { ResultSheet } from "./result-sheet";
+import { usePageBridge } from "./runtime";
+import type { PageBridge } from "./runtime";
+import { WEB_THEME } from "./theme";
+import { copyThrough } from "./transfer";
+
+const STORAGE_PREFIX = "zotlit.workbench.preference";
+/** This site's own community page, which Ask the community opens. */
+const COMMUNITY_URL = "/community";
+
+/** A request kept open until the reader answers it. */
+interface Pending<Request, Answer> {
+  readonly request: Request;
+  readonly answer: (value: Answer) => void;
+}
+
+/** The names the snapshot's note root carries, as the Match tab needs them. */
+function matchData(
+  snapshot: RenderRequest["snapshot"],
+  bridge: Pick<PageBridge, "provide">,
+): WorkbenchHost["matchData"] {
+  const note = snapshot.roots.note;
+  const tags = Array.isArray(note.tags)
+    ? note.tags.flatMap((tag: unknown) =>
+        typeof tag === "object" &&
+        tag !== null &&
+        "name" in tag &&
+        typeof tag.name === "string"
+          ? [tag.name]
+          : [],
+      )
+    : [];
+  const collections = Array.isArray(note.collections)
+    ? note.collections.flatMap((collection: unknown) =>
+        typeof collection === "object" &&
+        collection !== null &&
+        "path" in collection &&
+        Array.isArray(collection.path) &&
+        collection.path.every((part: unknown) => typeof part === "string")
+          ? [collection.path]
+          : [],
+      )
+    : [];
+  const { library } = snapshot.item;
+  const { seed } = snapshot;
+  return {
+    tags: Effect.succeed(tags),
+    collections: Effect.succeed(collections),
+    libraries: Effect.succeed([
+      {
+        id:
+          library.type === "personal" ? "personal" : `group:${library.groupID}`,
+      },
+    ]),
+    customFields: Effect.succeed(seed?.customFieldNames ?? []),
+    // The sample is the one Item the page has; it is tested in memory.
+    matches: (_, filter) =>
+      seed
+        ? // The test reads the clock, so it waits for the `Temporal` polyfill.
+          bridge.provide(Rendering.use((rendering) => rendering.temporal)).pipe(
+            Effect.map((): WorkbenchMatchResult => {
+              const answer = testItemSeed(filter, seed);
+              if (answer.kind !== "problem") return answer;
+              const { message, location } = answer.diagnostic;
+              return {
+                kind: "problem",
+                message,
+                ...(location?.span ? { span: location.span } : {}),
+              };
+            }),
+          )
+        : Effect.succeed({ kind: "missing" }),
+  };
+}
+
+export function useWebHost({
+  snapshot,
+  notice,
+  insertTarget,
+}: {
+  snapshot: RenderRequest["snapshot"];
+  /** Puts a sentence on the status line. */
+  notice: (text: string) => void;
+  insertTarget: () => WorkbenchInsertTarget | null;
+}): { host: WorkbenchHost; overlays: ReactNode } {
+  const [menu, setMenu] = useState<WorkbenchMenuRequest | null>(null);
+  const [dialog, setDialog] = useState<WorkbenchDialogRequest | null>(null);
+  const [confirm, setConfirm] = useState<Pending<
+    WorkbenchConfirmRequest,
+    boolean
+  > | null>(null);
+  const [suggester, setSuggester] = useState<Pending<
+    WorkbenchSuggesterRequest,
+    string | null
+  > | null>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const bridge = usePageBridge();
+  // Handlers read the latest values through refs, so the host object itself
+  // stays the same across renders.
+  const data = useMemo(() => matchData(snapshot, bridge), [snapshot, bridge]);
+  const latest = useRef({ data, notice, insertTarget });
+  useLayoutEffect(() => {
+    latest.current = { data, notice, insertTarget };
+  }, [data, notice, insertTarget]);
+
+  // The runner is the page's: closing the page interrupts every host Effect
+  // it still runs, and an Effect started after it is interrupted at once.
+  const host = useMemo<WorkbenchHost>(
+    () => ({
+      messages: m,
+      run: bridge.run,
+      getLocale,
+      menu: setMenu,
+      dialog(request) {
+        setDialog(request);
+        return { close: () => setDialog(null) };
+      },
+      // An interrupt takes the overlay away, as dismissing it would.
+      confirm: (request) =>
+        Effect.callback<boolean>((resume) => {
+          setConfirm({
+            request,
+            answer: (value) => resume(Effect.succeed(value)),
+          });
+          return Effect.sync(() => setConfirm(null));
+        }),
+      suggester: (request) =>
+        Effect.callback<string | null>((resume) => {
+          setSuggester({
+            request,
+            answer: (value) => resume(Effect.succeed(value)),
+          });
+          return Effect.sync(() => setSuggester(null));
+        }),
+      tooltip: (text) => ({ title: text }),
+      notice: (text) => latest.current.notice(text),
+      copy: copyThrough(bridge),
+      communityUrl: COMMUNITY_URL,
+      render: (request) =>
+        bridge.provide(Rendering.use((rendering) => rendering.render(request))),
+      markdown: ResultSheet,
+      editorPopups: (read) => [webCompletion(read), webHover(read)],
+      matchData: {
+        tags: Effect.suspend(() => latest.current.data.tags),
+        collections: Effect.suspend(() => latest.current.data.collections),
+        libraries: Effect.suspend(() => latest.current.data.libraries),
+        matches: (indexedKey, filter) =>
+          Effect.suspend(() => latest.current.data.matches(indexedKey, filter)),
+        customFields: Effect.suspend(() => latest.current.data.customFields),
+      },
+      insertTarget: () => latest.current.insertTarget(),
+      persistence: {
+        read(scope, key) {
+          try {
+            if (
+              scope === "device" &&
+              key === "start-here-dismissed" &&
+              localStorage.getItem("zotlit.workbench.start-here.dismissed") !==
+                null
+            )
+              return "true";
+            return localStorage.getItem(`${STORAGE_PREFIX}.${scope}.${key}`);
+          } catch {
+            return null;
+          }
+        },
+        write(scope, key, value) {
+          try {
+            const name = `${STORAGE_PREFIX}.${scope}.${key}`;
+            if (value === null) localStorage.removeItem(name);
+            else localStorage.setItem(name, value);
+          } catch {
+            // A browser that blocks storage keeps the preference for the visit.
+          }
+        },
+      },
+    }),
+    [bridge],
+  );
+
+  function answerConfirm(value: boolean) {
+    confirm?.answer(value);
+    setConfirm(null);
+  }
+
+  function answerSuggester(value: string | null) {
+    suggester?.answer(value);
+    setSuggester(null);
+  }
+
+  const overlays = (
+    <>
+      <DropdownMenu
+        open={menu !== null}
+        onOpenChange={(open) => {
+          if (!open) setMenu(null);
+        }}
+      >
+        {menu && (
+          <DropdownMenuContent anchor={menu.anchor} align="end" size="xs">
+            {menu.items.map((item) => (
+              <DropdownMenuItem
+                key={item.label}
+                disabled={item.disabled}
+                onClick={item.onSelect}
+              >
+                {item.label}
+              </DropdownMenuItem>
+            ))}
+            {menu.submenus?.map((group) => (
+              <MenuPrimitive.SubmenuRoot key={group.label}>
+                <MenuPrimitive.SubmenuTrigger className="flex min-h-10 w-full items-center rounded-sm px-3 py-2 text-sm data-highlighted:bg-fd-muted">
+                  {group.label}
+                </MenuPrimitive.SubmenuTrigger>
+                <DropdownMenuContent size="xs">
+                  {group.items.map((item) => (
+                    <DropdownMenuItem
+                      key={item.label}
+                      disabled={item.disabled}
+                      onClick={item.onSelect}
+                    >
+                      {item.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </MenuPrimitive.SubmenuRoot>
+            ))}
+          </DropdownMenuContent>
+        )}
+      </DropdownMenu>
+      <Dialog
+        open={dialog !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          dialog?.onClose?.();
+          setDialog(null);
+        }}
+      >
+        {dialog && (
+          <DialogContent>
+            <DialogTitle className="font-sans text-base font-semibold">
+              {dialog.title}
+            </DialogTitle>
+            <WorkbenchMessagesProvider messages={m}>
+              {dialog.content}
+            </WorkbenchMessagesProvider>
+          </DialogContent>
+        )}
+      </Dialog>
+      <Dialog
+        open={confirm !== null}
+        onOpenChange={(open) => {
+          if (!open) answerConfirm(false);
+        }}
+      >
+        {confirm && (
+          <DialogContent>
+            <DialogTitle className="font-sans text-base font-semibold">
+              {confirm.request.title}
+            </DialogTitle>
+            <DialogDescription>{confirm.request.body}</DialogDescription>
+            <div className="flex flex-wrap gap-2">
+              <Button size="xs" onClick={() => answerConfirm(true)}>
+                {confirm.request.confirm}
+              </Button>
+              <DialogClose render={<Button variant="ghost" size="xs" />}>
+                {confirm.request.cancel ?? m.workbench_cancel()}
+              </DialogClose>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
+      <Dialog
+        open={suggester !== null}
+        onOpenChange={(open) => {
+          if (!open) answerSuggester(null);
+        }}
+      >
+        {suggester && (
+          <DialogContent
+            initialFocus={search}
+            finalFocus={
+              suggester.request.anchor
+                ? () => suggester.request.anchor
+                : undefined
+            }
+            className="max-w-xl gap-0 overflow-hidden p-0"
+          >
+            <DialogTitle className="sr-only">
+              {suggester.request.title}
+            </DialogTitle>
+            <Command
+              label={suggester.request.title}
+              defaultValue={suggester.request.selected}
+              loop
+            >
+              <CommandInput
+                ref={search}
+                aria-label={suggester.request.title}
+                placeholder={
+                  suggester.request.placeholder ?? suggester.request.title
+                }
+              />
+              <CommandList className="max-h-[min(28rem,60dvh)] overscroll-contain">
+                <CommandEmpty className="px-3 py-6 text-center text-sm text-fd-muted-foreground">
+                  {m.workbench_sample_empty()}
+                </CommandEmpty>
+                {suggester.request.groups.map((group) => (
+                  <CommandGroup
+                    key={group.label}
+                    heading={group.label}
+                    forceMount={group.options.length === 0}
+                  >
+                    {group.options.length === 0 && (
+                      <p className="px-2 py-2 text-sm text-fd-muted-foreground">
+                        {group.empty}
+                      </p>
+                    )}
+                    {group.options.map((option) => (
+                      <CommandItem
+                        key={option.id}
+                        value={option.id}
+                        keywords={[option.label, option.hint ?? ""]}
+                        aria-label={
+                          option.id === suggester.request.selected
+                            ? m.workbench_sample_selected({
+                                name: option.label,
+                              })
+                            : option.label
+                        }
+                        onSelect={() => answerSuggester(option.id)}
+                        data-checked={option.id === suggester.request.selected}
+                        className="min-h-11"
+                      >
+                        {option.icon && (
+                          <span className="shrink-0 text-fd-muted-foreground [&>svg]:size-4">
+                            {WEB_THEME.icon?.(option.icon)}
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium break-words">
+                            {option.label}
+                          </span>
+                          {option.hint && (
+                            <span className="mt-1 block text-xs break-words text-fd-muted-foreground">
+                              {option.hint}
+                            </span>
+                          )}
+                        </span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                ))}
+              </CommandList>
+            </Command>
+          </DialogContent>
+        )}
+      </Dialog>
+    </>
+  );
+
+  return { host, overlays };
+}

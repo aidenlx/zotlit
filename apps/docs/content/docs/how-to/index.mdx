@@ -1,6 +1,6 @@
 ---
 title: "How-to guides"
-description: "Step-by-step solutions for notes, citations, export, templates, and migration."
+description: "Step-by-step solutions for notes, citations, research queries, export, templates, and migration."
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -10,6 +10,11 @@ Each guide solves one task. Find the situation that matches yours.
 ## Core usage
 
 <Cards>
+  <Card
+    title="Browse your library in the Library View"
+    description="You want to find a paper by collection, recent activity, search, or reading state, and open, note, or cite it."
+    href="/docs/how-to/use-library-view"
+  />
   <Card
     title="Create and open literature notes"
     description="You have a Zotero item and want a literature note in your vault."
@@ -24,6 +29,11 @@ Each guide solves one task. Find the situation that matches yours.
     title="Review, copy, and troubleshoot references"
     description="You need to inspect occurrences, copy bibliography entries, or fix reference errors."
     href="/docs/how-to/review-copy-troubleshoot-references"
+  />
+  <Card
+    title="Explore citations in the graph view"
+    description="You want your citations drawn as edges in the graph, or a graph of your research alone."
+    href="/docs/how-to/explore-citations-in-graph"
   />
   <Card
     title="Export a note with citations"
@@ -46,9 +56,39 @@ Each guide solves one task. Find the situation that matches yours.
     href="/docs/how-to/import-zotero-notes"
   />
   <Card
+    title="Open an item's PDF in Obsidian"
+    description="You want to read a Zotero PDF in an Obsidian tab instead of switching to Zotero."
+    href="/docs/how-to/open-pdf-in-obsidian"
+  />
+  <Card
+    title="How to edit PDF annotations in Obsidian"
+    description="You want to create or change Zotero annotations while reading in Obsidian."
+    href="/docs/how-to/edit-pdf-annotations"
+  />
+  <Card
     title="Use the annotation view"
-    description="You want to browse highlights in a sidebar while reading in Zotero."
+    description="You want to browse an item's highlights in a sidebar while you read."
     href="/docs/how-to/use-annotation-view"
+  />
+  <Card
+    title="Use query files and query blocks"
+    description="You want a live, filtered set of annotations or papers in a tab or a note."
+    href="/docs/how-to/use-query-files"
+  />
+  <Card
+    title="Track reading status in the Query View"
+    description="You want to mark, sort, and filter papers by a status that you keep on their notes."
+    href="/docs/how-to/track-reading-status"
+  />
+  <Card
+    title="Query your Zotero library"
+    description="You want works, files, or reading marks as structured JSON."
+    href="/docs/how-to/query-zotero-library"
+  />
+  <Card
+    title="Keep Zotero and Obsidian in sync"
+    description="Your latest Zotero changes do not reach Obsidian yet, or you want ZotLit actions in Zotero's menus."
+    href="/docs/how-to/keep-zotero-and-obsidian-in-sync"
   />
   <Card
     title="Set up live updates"
@@ -66,7 +106,7 @@ Each guide solves one task. Find the situation that matches yours.
 
 <Cards>
   <Card
-    title="Install the ZotLit skill"
+    title="Install the ZotLit skills"
     description="You want an agent to edit and test templates in this vault."
     href="/docs/install-skill"
   />
@@ -74,6 +114,16 @@ Each guide solves one task. Find the situation that matches yours.
     title="Customize a template"
     description="The default output does not match what you want in your notes."
     href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="Use a different template for different notes"
+    description="Books, papers, or one collection need a look of their own."
+    href="/docs/how-to/use-different-templates"
+  />
+  <Card
+    title="Edit a profile as Markdown"
+    description="You would rather type the profile document than use the Workbench tabs."
+    href="/docs/how-to/edit-a-profile-as-markdown"
   />
   <Card
     title="Explore template data"
@@ -95,6 +145,11 @@ Each guide solves one task. Find the situation that matches yours.
 ## Migration
 
 <Cards>
+  <Card
+    title="Migrate from 2.1 templates"
+    description="You are on ZotLit 2.1 and want to know what the update changed for your templates."
+    href="/docs/how-to/migrate-from-2.1-templates"
+  />
   <Card
     title="Migrate from Pandoc Reference List"
     description="You want to move an existing citation workflow to ZotLit."
@@ -124,6 +179,11 @@ Each guide solves one task. Find the situation that matches yours.
     title="Suppress the Zotero security prompt"
     description="Zotero shows a confirmation dialog every time it opens an obsidian:// link."
     href="/docs/how-to/suppress-zotero-security-prompt"
+  />
+  <Card
+    title="Fix stale Zotero data"
+    description="Zotero changes do not appear after you update a literature note."
+    href="/docs/how-to/fix-stale-data"
   />
   <Card
     title="Collect debug logs"

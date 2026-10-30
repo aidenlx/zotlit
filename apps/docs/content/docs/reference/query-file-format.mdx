@@ -1,0 +1,307 @@
+---
+title: "Query file format"
+description: "Every key of a .zotquery query file and a zotquery query block, with their values and defaults."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This reference lists the keys of a query file (`.zotquery`) and a query block (` ```zotquery `). Both hold the same YAML text, in the shape of an Obsidian `.base` file.
+
+The toolbar writes these keys for you. Write them by hand when you type a query block, or when you copy a view from one file to another.
+
+## Example [#example]
+
+```yaml
+filters: collections.within("Thesis")
+views:
+  - type: table
+    name: Reading list
+    from: items
+    sort:
+      - property: title
+        direction: ASC
+    order:
+      - title
+      - firstAuthor
+      - date
+      - vault.literatureNote
+      - vault.reading-status
+    limit: 100
+  - type: annotations
+    name: Figures
+    from: annotations
+    filters: tags.contains("figure")
+    groupBy:
+      property: item.indexedKey
+      direction: ASC
+    limit: 100
+```
+
+## Top-level keys [#top-level]
+
+| Key          | Value                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `filters`    | The filters for all views. They apply to each view that has the same `from` as the first view. See [Filters](#filters). |
+| `formulas`   | The formulas of the file, by name. See [Formulas](#formulas).                                                           |
+| `properties` | The display name of each property, by property path. See [Display names](#properties).                                  |
+| `views`      | A list of views. Required. The first view is the default view, which an embed without `#View name` shows.               |
+
+ZotLit keeps every other key in the file when it saves.
+
+## View keys [#view]
+
+| Key          | Value                                                                                                                                                                                                                                                                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `type`       | The layout: `annotations`, `table`, `list`, or `cards`. Required.                                                                                                                                                                                                                                                                    |
+| `name`       | The view name. Required, and different from the other views of the file. When two views have the same name, the file shows a problem in place of its rows.                                                                                                                                                                           |
+| `from`       | The records of each row: `annotations`, `attachments`, or `items`. Required.                                                                                                                                                                                                                                                         |
+| `filters`    | The filters for this view. See [Filters](#filters).                                                                                                                                                                                                                                                                                  |
+| `sort`       | A list of `property` and `direction` pairs. The first pair sorts first. `direction` is `ASC` or `DESC`; the default is `ASC`. An items view can also sort by a [vault property](#vault-sort).                                                                                                                                        |
+| `groupBy`    | One `property` and `direction` pair. The rows collect under one heading for each value of the property.                                                                                                                                                                                                                              |
+| `groupOrder` | A list of group values for a Manual group order. Only the listed groups show, in this order. `null` is the group of rows with no value.                                                                                                                                                                                              |
+| `limit`      | A positive whole number: the most rows the view shows. Without `limit`, the view shows every match. After a sort or a filter on a [vault property](#vault), `limit` still counts the rows the view shows.                                                                                                                            |
+| `order`      | A list of property paths that each row shows, in order. Copy and CSV export use them as columns. Without `order`, the layout shows the default properties of the records. For an items table, it can also include `vault.literatureNote` to show the literature note column. An items view can also show a [vault property](#vault). |
+| `columnSize` | The width in pixels of each table column that you resized, by property path. A column without an entry takes its automatic width.                                                                                                                                                                                                    |
+
+`property` values are property paths of the view's records, as [ZotLit Query](/docs/reference/commands#query-cli) names them. For example, `title` is the paper title in an items view, and `item.title` is the paper title in an annotations view.
+
+`order` also takes `vault.literatureNote` (in an items table), `vault.<name>` for a [vault property](#vault) (in an items view), and `formula.<name>` for a [formula](#formulas). `sort` and `groupBy` do not take a formula yet: a view that sorts or groups by one shows an error in place of its rows. `groupBy` does not take a vault property either.
+
+### Layouts and records [#layouts]
+
+| `type`        | Allowed `from`                           |
+| ------------- | ---------------------------------------- |
+| `annotations` | `annotations`                            |
+| `table`       | `items`                                  |
+| `list`        | `annotations`, `attachments`, or `items` |
+| `cards`       | `annotations`, `attachments`, or `items` |
+
+A view whose `type` and `from` do not fit shows a message in place of its rows.
+
+### Layout options [#layout-options]
+
+| Layout        | Key                | Value                                                | Default  |
+| ------------- | ------------------ | ---------------------------------------------------- | -------- |
+| `annotations` | `cardWidth`        | The narrowest card width, in pixels, from 200 to 800 | `320`    |
+| `annotations` | `showComment`      | `true` or `false`                                    | `true`   |
+| `annotations` | `showTags`         | `true` or `false`                                    | `true`   |
+| `annotations` | `showPage`         | `true` or `false`                                    | `true`   |
+| `list`        | `markers`          | `bullet`, `number`, or `none`                        | `bullet` |
+| `list`        | `indentProperties` | `true` or `false`                                    | `false`  |
+| `list`        | `separator`        | The text between two properties on a line            | `, `     |
+| `cards`       | `cardSize`         | The narrowest card width, in pixels, from 50 to 800  | `200`    |
+
+## Filters [#filters]
+
+A filter is one [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), or a group of filters under `and`, `or`, or `not`:
+
+```yaml
+filters:
+  and:
+    - colorName == "yellow"
+    - or:
+        - tags.contains("method")
+        - tags.contains("result")
+```
+
+`and` matches the records that match every entry. `or` matches the records that match at least one. The filter editor opens a `not` group as one expression condition.
+
+A filter can name the Query Context as `this.item` and `this.attachment`:
+
+| `from`        | Filter for the records of the note's paper | Filter for the records of one attachment   |
+| ------------- | ------------------------------------------ | ------------------------------------------ |
+| `annotations` | `item == this.item`                        | `attachment == this.attachment`            |
+| `attachments` | `item == this.item`                        | `indexedKey == this.attachment.indexedKey` |
+| `items`       | `indexedKey == this.item.indexedKey`       |                                            |
+
+In an embed or a query block, `this.item` is the item that the note's `zotero-key` property names. In a query file's own tab, `this` has no value. See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+
+## Formulas [#formulas]
+
+`formulas` maps each formula name to a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps). A view shows the result as the property `formula.<name>`:
+
+```yaml
+formulas:
+  year: date.year
+  authors: creators.length
+views:
+  - type: table
+    name: Reading list
+    from: items
+    filters: formula.year >= 2020
+    order:
+      - title
+      - formula.year
+      - formula.authors
+```
+
+| Rule       | Value                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Name       | Letters, digits, and `_`, starting with a letter or `_`. Letter case counts.                                                          |
+| Expression | The same language as a filter. It reads the properties of the view's records, `this.item`, `this.attachment`, and the other formulas. |
+| Result     | `true` or `false`, a number, a text, a date, or a list.                                                                               |
+| Used in    | `order` and `filters` of any view, and other formulas.                                                                                |
+
+A view computes only the formulas that its `order` and `filters` use. A formula that uses itself through other formulas is a mistake.
+
+A formula that cannot run on the records of a view marks its property in that view only. For example, a formula `colour` with the expression `colorName` runs in an annotations view. An items view of the same file that shows `formula.colour` marks it, and its other properties stay on screen. A record on which a formula cannot compute its result shows an [Error Value](/docs/concepts/how-zotlit-query-works#error-values) in that cell.
+
+## Vault properties [#vault]
+
+A vault property, `vault.<name>`, is the value of the frontmatter key `<name>` on the paper's Literature Note. The text after `vault.` is the key as the note writes it, with its letter case and hyphens. For example, `vault.reading-status` reads the `reading-status` property of each paper's note.
+
+Vault properties work in views with `from: items`. [Properties from your Literature Notes](/docs/concepts/query-files-and-query-blocks#vault) explains how ZotLit reads them.
+
+| Key          | Takes a vault property                                                      |
+| ------------ | --------------------------------------------------------------------------- |
+| `order`      | Yes. The Table, List, and Cards layouts show it. The Table also edits it.   |
+| `sort`       | Yes. See [Sort](#vault-sort).                                               |
+| `filters`    | Yes, as a condition that every row must match. See [Filter](#vault-filter). |
+| `properties` | Yes. The key is `vault.<name>`, such as `vault.reading-status`.             |
+| `columnSize` | Yes.                                                                        |
+| `groupBy`    | No.                                                                         |
+
+Each cell shows one of three states:
+
+| The paper                                          | The cell                                                       |
+| -------------------------------------------------- | -------------------------------------------------------------- |
+| Has no Literature Note                             | <UiLabel name={m.query_view_vault_no_note()} />, in faint text |
+| Has a note without the key, or with an empty value | Empty                                                          |
+| Has a note with a value                            | The value                                                      |
+
+When a paper has more than one Literature Note, the view reads the note that changed last. In an embed or a query block inside a Literature Note, the row of that note's own paper reads that note. Copy and CSV export write the value of each vault property. The view refreshes a cell when the note's properties change.
+
+### Names that a vault property cannot take [#vault-reserved]
+
+The <UiLabel name={m.query_view_properties()} /> menu does not list these keys, and does not add them:
+
+| Key               | Owner    |
+| ----------------- | -------- |
+| `tags`            | Obsidian |
+| `aliases`         | Obsidian |
+| `cssclasses`      | Obsidian |
+| `zotero-key`      | ZotLit   |
+| `zotlit-profile`  | ZotLit   |
+| `zotero-note-key` | ZotLit   |
+| `zotero-lastmod`  | ZotLit   |
+| `zotlit-csl`      | ZotLit   |
+
+A key that you type by hand into `order`, such as `vault.tags`, still shows as a column.
+
+A key that the note's own [profile](/docs/concepts/profiles) writes with the `replace` [merge strategy](/docs/reference/templates/frontmatter#merge-strategies) is read-only in the Table, because the next note update overwrites it. The cell shows a lock icon when you point to it. Out of the box, the Default profile writes `title`, `related`, `collections`, and `citekey` this way. Keys with `keep` or `append` stay editable.
+
+### Values that an edit writes [#vault-values]
+
+The Table edits a vault property by the type that Obsidian's Properties panel gives it. When the property has no type there, the Table uses the type of the values in your notes, and otherwise text.
+
+| Type                   | Edit                                             | Value written                             |
+| ---------------------- | ------------------------------------------------ | ----------------------------------------- |
+| Text                   | A text field                                     | Text                                      |
+| List, tags, or aliases | Items in a row. `Enter` adds the text as an item | A list of text                            |
+| Number                 | A text field                                     | A number                                  |
+| Checkbox               | A click toggles it                               | `true` or `false`                         |
+| Date                   | A date field                                     | A date, as `YYYY-MM-DD`                   |
+| Date and time          | A date and time field                            | A date and time, as `YYYY-MM-DDTHH:mm:ss` |
+
+An edit writes only its own key. A cleared cell keeps the key with an empty value. Text that is not a number writes nothing to a number property.
+
+### Sort [#vault-sort]
+
+```yaml
+sort:
+  - property: vault.reading-status
+    direction: ASC
+  - property: date
+    direction: DESC
+```
+
+Empty values sort last in both directions. A sort can mix vault properties and Zotero properties.
+
+To sort by a vault property, the view reads at most 5,000 matching papers, sorts them, and then keeps `limit` rows, in each group of a grouped view. When more papers match, only those 5,000 are sorted, and the result count shows both numbers. After you change a value, the rows keep their place until the view runs again.
+
+### Filter [#vault-filter]
+
+A condition reads a vault property as `vault.<name>`, or as `vault["<name>"]` for a name with a hyphen or a space:
+
+```yaml
+filters:
+  and:
+    - collections.within("Thesis")
+    - vault["reading-status"] == "read"
+```
+
+A paper without a Literature Note counts as having no value. So `vault["reading-status"] != "read"` and `vault["reading-status"] == null` both match papers without a note.
+
+A vault condition must be its own entry, and every row must match it:
+
+- The whole filter is one vault condition.
+- Or the condition is a direct entry under the top-level `and` of `filters`, in the file or in the view.
+
+These conditions stop the view, and the condition's row in the filter editor shows the reason:
+
+| Condition                                                                                                     | Reason                                                |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| A vault condition inside an `or` or `not` group                                                               | <UiLabel name={m.query_view_vault_filter_nested()} /> |
+| A condition that reads a vault property and a Zotero property, such as `vault.rating > 3 && date.year > 2020` | <UiLabel name={m.query_view_vault_filter_mixed()} />  |
+
+Split a mixed condition into two entries under `and`. A condition that reads `this`, or names the property through an expression such as `vault[name]`, also shows the second reason.
+
+## Display names [#properties]
+
+`properties` gives a property its display name. Each key is the same text as an `order` entry: a property path, `vault.literatureNote`, `vault.<name>` for a [vault property](#vault), or `formula.<name>` for a formula.
+
+```yaml
+properties:
+  title:
+    displayName: Work
+  formula.year:
+    displayName: Year of source
+```
+
+The display name shows in every view of the file: the Table header, the Cards labels, the <UiLabel name={m.query_view_properties()} /> menu, and the header row of copy and CSV export. ZotLit keeps the other keys under each property. A key with the Obsidian Bases prefix `note.`, such as `note.date`, names no property.
+
+## A new query file [#new-file]
+
+A query file that you [create from the command palette or the file explorer](/docs/how-to/use-query-files#create) holds this text:
+
+```yaml
+views:
+  - type: table
+    name: Items
+    from: items
+    sort:
+      - property: dateModified
+        direction: DESC
+    limit: 100
+    order:
+      - title
+      - creators
+      - date.year
+      - vault.literatureNote
+  - type: annotations
+    name: Annotations
+    from: annotations
+    groupBy:
+      property: item.indexedKey
+      direction: ASC
+    limit: 100
+```
+
+ZotLit writes the view names in the app's language.
+
+## See also
+
+<Cards>
+  <Card
+    title="Query files and query blocks"
+    description="Views, layouts, where changes save, and what this.item means."
+    href="/docs/concepts/query-files-and-query-blocks"
+  />
+  <Card
+    title="Commands"
+    description="ZotLit Query parameters and the fields of each kind of record."
+    href="/docs/reference/commands#query-cli"
+  />
+</Cards>

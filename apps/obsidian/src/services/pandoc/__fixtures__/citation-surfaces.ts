@@ -1,38 +1,85 @@
-// One vault, read at once through every Citation Presentation surface: the
-// Document Citation Text, the References Sidebar, the Citation Popover, the
-// Copied Bibliography, and the built-in export.
-
+import { missingStyleChanges } from "@/services/pandoc/render-cache";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { Notifier } from "@/lib/notifier";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { delay } from "@std/async";
+import { Context, DateTime, Effect, FileSystem, Layer, Stream } from "effect";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type {
   App,
-  CachedMetadata,
   EventRef,
+  FileSystemAdapter,
   HoverParent,
   LinkCache,
+  MetadataCache,
   TFile,
+  Vault,
+  Workspace,
   WorkspaceLeaf,
 } from "obsidian";
 import { act } from "preact/test-utils";
 import { vi } from "vitest";
 
-
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
+import { buildRuntime } from "@/lib/effect-layer";
+// One vault, read at once through every Citation Presentation surface: the
+// Document Citation Text, the References Sidebar, the Citation Popover, the
+// Copied Bibliography, and the built-in export.
+import { subscribe } from "@/lib/effect-stream";
+import { spliceFrontMatter } from "@/lib/live-text";
+import { makeViewRegistry } from "@/lib/view-atoms";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import { CitationIndex } from "@/services/citation-index/service";
 import {
   createCitationIndexHarness,
+  GROUP_LIBRARY_ID,
+  groupLibrary,
+  harnessApp,
   KEY_A,
   KEY_B,
-  SettingsStub,
+  LibraryScopeStub,
+  personalLibrary,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
-import { createCitationPopover } from "@/services/citation-popover/service";
+import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { CitationParse } from "@/services/citation-parse/service";
+import { citationPopoverFixture } from "@/services/citation-popover/__fixtures__";
 import { firstText } from "@/services/citation-text/__fixtures__";
+import { citationTextFixture } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
+import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { createCitationEngine } from "@/services/pandoc/engine";
-import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
-import type { Settings } from "@/services/settings/schema";
+import type { CitationEngine } from "@/services/pandoc/engine";
+import { BibliographyRender } from "@/services/pandoc/render-cache";
+import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
+import { PandocEngine } from "@/services/pandoc/service";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import { Profile } from "@/services/profile/service";
+import {
+  applySettings,
+  buildSeededSettings,
+} from "@/services/settings/__fixtures__";
+import type { SettingsFixture } from "@/services/settings/__fixtures__";
+import { PluginSettings } from "@/services/settings/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+
+type ProfileFixture = Pick<Settings, "profiles" | "defaultDocument">;
+import { fakeFetchClient } from "@/lib/__fixtures__/fake-fetch";
+import { ZoteroHttp } from "@/lib/zotero-http";
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
+import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
 import type { CitationPresentationChoice } from "@/views/citation-presentation/presentation";
 import { runPandocExport } from "@/views/pandoc-export/register";
@@ -78,11 +125,6 @@ vi.mock("@/components/obsidian/icon-button", async () => {
   };
 });
 
-vi.mock("@zotlit/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@zotlit/db")>()),
-  ...(await import("./citation-surface-mocks")).zoteroDatabaseDoubles(),
-}));
-
 /** Instantiating the Haskell runtime dominates every timing here. */
 export const TIMEOUT = 60_000;
 
@@ -104,24 +146,28 @@ export const EXPORT_NOTE = "export.md";
 const LINKPATH = "Doe 2024";
 export const EXPORT_BODY = `Cited [[${LINKPATH}]].\n`;
 
+/**
+ * SQL for the Zotero database: My Library of account user 1, the library of
+ * group 7, and `works`.
+ */
+function zoteroRows(works: readonly CitedWork[]): string {
+  return `
+    ${seedWorksSql(works.map(({ work }) => work))}
+    insert into libraries (libraryID, type) values (${GROUP_LIBRARY_ID}, 'group');
+    insert into groups (groupID, libraryID, name) values (7, ${GROUP_LIBRARY_ID}, 'Group');
+    insert into settings (setting, key, value) values ('account', 'userID', 1);
+  `;
+}
+
 /** The work both notes cite first, as the database and Zotero itself answer it. */
 const CITED_WORK: CitedWork = {
-  libraryID: 1,
-  key: "DOE2024",
-  row: {
-    key: "DOE2024",
+  work: {
     itemID: 1,
-    groupID: null,
-    indexedKey: KEY_A,
-    creators: [{ creatorType: "author", lastName: "Zeta", firstName: "Ann" }],
-    primaryCreatorType: "author",
-    customFields: [],
-    fields: {
-      itemType: "book",
-      title: "A study of nothing",
-      date: "2020",
-      citationKey: CITATION_KEY,
-    },
+    key: KEY_A,
+    creators: [["Ann", "Zeta"]],
+    title: "A study of nothing",
+    date: "2020",
+    citationKey: CITATION_KEY,
   },
   csl: {
     id: "zeta2020",
@@ -134,22 +180,14 @@ const CITED_WORK: CitedWork = {
 
 /** The work the draft cites second, which every surface numbers after the first. */
 const SECOND_CITED_WORK: CitedWork = {
-  libraryID: 1,
-  key: "ROE2025",
-  row: {
-    key: "ROE2025",
+  work: {
     itemID: 2,
-    groupID: null,
-    indexedKey: KEY_B,
-    creators: [{ creatorType: "author", lastName: "Alpha", firstName: "Bo" }],
-    primaryCreatorType: "author",
-    customFields: [],
-    fields: {
-      itemType: "book",
-      title: "A second study of nothing",
-      date: "2021",
-      citationKey: SECOND_CITATION_KEY,
-    },
+    key: KEY_B.slice(0, KEY_B.indexOf("g")),
+    libraryID: GROUP_LIBRARY_ID,
+    creators: [["Bo", "Alpha"]],
+    title: "A second study of nothing",
+    date: "2021",
+    citationKey: SECOND_CITATION_KEY,
   },
   csl: {
     id: "alpha2021",
@@ -165,15 +203,34 @@ const WASM_PATH = join(
   "pandoc.wasm",
 );
 
+function pandocEngineHandle(engine: CitationEngine) {
+  return {
+    binary: stubService<ManagedBinaryApi<CitationEngine>>("PandocEngine", {
+      getStatus: Effect.succeed({
+        kind: "installed",
+        version: "test",
+        binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+      }),
+      changes: Stream.empty,
+      getEngine: Effect.succeed(engine),
+      decline: Effect.void,
+    }),
+    runSync: Effect.runSync,
+    runPromise: Effect.runPromise,
+  };
+}
+
 export interface CitationVaultOptions {
   /** Every style Zotero has installed here, by the file name it carries. */
   styles: Record<string, string>;
   /** The vault settings every surface renders under. */
-  settings: Partial<Settings>;
+  settings: Partial<Settings> & Partial<ResolvedLiteratureNoteProfileBindings>;
   /** The `zotlit-csl` property both notes carry; `undefined` writes none. */
   documentStyle?: unknown;
   /** The `lang` property both notes carry; `undefined` writes none. */
   documentLanguage?: unknown;
+  /** Other frontmatter properties both notes carry. */
+  documentProperties?: Record<string, unknown>;
   /**
    * Whether Zotero holds the works these notes cite; `false` leaves every
    * citation unresolved, so nothing reaches the bibliography.
@@ -249,6 +306,7 @@ export async function openCitationVault({
   settings: overrides,
   documentStyle,
   documentLanguage,
+  documentProperties = {},
   zoteroHoldsWork = true,
 }: CitationVaultOptions): Promise<CitationVault> {
   resetCitationSurfaceMocks();
@@ -267,17 +325,30 @@ export async function openCitationVault({
     await writeFile(join(dataDir, "styles", name), xml);
   }
 
-  const settings = new SettingsStub(overrides);
+  // The Profile registry this fixture reads lives beside the settings store,
+  // which holds no Profile list of its own.
+  const { profiles, defaultDocument, ...persisted } = overrides;
+  let profileFixture: ProfileFixture = { profiles, defaultDocument };
+  const profileChanged = testEvent<void>();
+  const settings = stack.use(await buildSeededSettings(persisted));
+  const profileSettings = (): Settings => ({
+    ...settings.bridge.runSync(settings.current),
+    ...profileFixture,
+  });
   const harness = stack.use(
     await createCitationIndexHarness(
       { [DRAFT]: DRAFT_BODY, [EXPORT_NOTE]: EXPORT_BODY },
-      { settingsService: settings },
+      {
+        settingsService: settings,
+        zoteroRows: zoteroRows([...citedWorks.values()]),
+        libraryScope: new LibraryScopeStub([personalLibrary(), groupLibrary()]),
+      },
     ),
   );
   // The wikilink Obsidian's own cache reports for the exported note.
   harness.metadataCache.fileCache.set(EXPORT_NOTE, {
     links: [link(LINKPATH)],
-  } as CachedMetadata);
+  });
   /** The presentation properties both notes carry right now. */
   const declared: { style: unknown; language: unknown } = {
     style: documentStyle,
@@ -285,15 +356,14 @@ export async function openCitationVault({
   };
   /** Those same properties as one record, the way a note carries them. */
   const properties = (): Record<string, unknown> => {
-    const record: Record<string, unknown> = {};
+    const record: Record<string, unknown> = { ...documentProperties };
     if (declared.style !== undefined) record["zotlit-csl"] = declared.style;
     if (declared.language !== undefined) record["lang"] = declared.language;
     return record;
   };
   const writeProperties = (): void => {
     const written = properties();
-    const frontmatter =
-      Object.keys(written).length > 0 ? written : undefined;
+    const frontmatter = Object.keys(written).length > 0 ? written : undefined;
     // Pandoc reads the Document Language out of the exported note's own source,
     // which is what makes it the exported document's language, so that one
     // property is written into the body the export reads as well. Every other
@@ -317,53 +387,121 @@ export async function openCitationVault({
     await createCitationEngine(new Blob([await readFile(WASM_PATH)])),
   );
   const cache = stack.use(
-    new BibliographyRenderCache({
-      db: harness.db,
-      pandocEngine: {
-        getStatus: () => ({ kind: "installed", version: "test" }),
-        subscribe: () => () => undefined,
-        getEngine: () => Promise.resolve(engine),
+    await bibliographyRenderFixture({
+      profile: {
+        changes: Stream.merge(
+          settings.changes.pipe(Stream.drop(1)),
+          profileChanged.stream,
+        ).pipe(Stream.map(() => ({ loaded: true, profiles: [], diagnostics: [], defaultDocumentPath: "", templateStatus: { state: "loaded" as const, compileErrors: new Map() } }))),
       },
-      zoteroPref: { dataDir, on: () => () => undefined },
+      db: harness.db,
+      pandocEngine: pandocEngineHandle(engine),
+      zoteroPref: { dataDir, moves: Stream.empty },
       settings,
+      queryClient: harness.queryClient,
     }),
   );
-  await cache.ready;
   let vaultStyleMissing: string | null = null;
   stack.defer(
-    cache.onStyleMissing((styleId) => {
+    subscribe(cache.runtime, missingStyleChanges(cache.changes), (styleId) => {
       vaultStyleMissing = styleId;
     }),
   );
 
   const citationText = stack.use(
-    new CitationText({
-      app: harness.app,
-      db: harness.db,
+    citationTextFixture({
+      openDocuments: new OpenDocumentsStub(),
+      profile: profileReader(profileSettings, harness.metadataCache),
+      host: harness.host,
       citationIndex: harness.index,
+      citationLookup: harness.lookup,
       noteIndex: harness.noteIndex,
       bibliographyRender: cache,
+      queryClient: harness.queryClient,
     }),
   );
-  await citationText.ready;
+
+  harness.workspace.open(harness.draft);
+  const profile = profileReader(profileSettings, harness.metadataCache);
+  const pandocEngine = pandocEngineHandle(engine);
+  const viewRuntime = buildRuntime(
+    Layer.mergeAll(
+      layerUnreadViewServices,
+      layerHost(harness.host),
+      Layer.succeed(CitationIndex, harness.runtime.runSync(CitationIndex)),
+      Layer.succeed(
+        CitationLookup,
+        harness.lookup.runtime.runSync(CitationLookup),
+      ),
+      Layer.succeed(CitationText, citationText.runtime.runSync(CitationText)),
+      Layer.succeed(
+        BibliographyRender,
+        cache.runtime.runSync(BibliographyRender),
+      ),
+      Layer.mock(PandocEngine, {
+        changes: Stream.concat(
+          Stream.fromEffect(pandocEngine.binary.getStatus),
+          pandocEngine.binary.changes,
+        ),
+        decline: pandocEngine.binary.decline,
+      }),
+      Layer.mock(Profile, {
+        loaded: Effect.sync(() => profile.loaded),
+        profileOf: (file) => Effect.sync(() => profile.profileOf(file)),
+        changes: Stream.merge(
+          settings.changes.pipe(
+            Stream.drop(1),
+            Stream.map(() => undefined),
+          ),
+          profileChanged.stream,
+        ).pipe(
+          Stream.map(() => ({
+            loaded: profile.loaded,
+            profiles: profile.profiles,
+            diagnostics: [],
+            defaultDocumentPath: "",
+            templateStatus: {
+              state: "loaded" as const,
+              compileErrors: new Map(),
+            },
+          })),
+        ),
+      }),
+      Layer.mock(ZoteroReads, {
+        reads: harness.db.reads,
+        events: harness.db.changed.pipe(
+          Stream.map(() => ({ _tag: "changed" as const })),
+        ),
+        changes: Stream.merge(Stream.make(undefined), harness.db.changed).pipe(
+          Stream.map(() => ({
+            state: harness.db.state,
+            error: null,
+            moved: false,
+            dbFileMissing: false,
+            activeReadMode: null,
+          })),
+        ),
+      }),
+    ),
+    stack,
+  );
+  const registry = stack.adopt(
+    makeViewRegistry(await viewRuntime.context(), { idleTTL: 0 }),
+    (registry) => registry.dispose(),
+  );
 
   const view = new TestReferencesView(
-    {} as WorkspaceLeaf,
+    // The view's leaf carries no App, as before the stub.
+    Object.assign(
+      stubService<WorkspaceLeaf>("WorkspaceLeaf", { updateHeader: () => {} }),
+      { app: undefined },
+    ),
     {
+      registry,
       app: sidebarApp(harness),
-      db: harness.db,
-      citationIndex: harness.index,
-      citationText,
-      citekeyEditor: { openCitekey: () => Promise.resolve() },
-      pandocEngine: {
-        getStatus: () => ({ kind: "installed", version: "test" }),
-        subscribe: () => () => undefined,
-        decline: () => undefined,
-      },
-      bibliographyRender: cache,
       openSettings: () => undefined,
       openStyleSettings: () => undefined,
-    } as unknown as ConstructorParameters<typeof TestReferencesView>[1],
+    },
   );
   document.body.append(view.contentEl);
   await act(() => view.open());
@@ -372,20 +510,21 @@ export async function openCitationVault({
     document.body.replaceChildren();
   });
 
-  const popover = createCitationPopover({
-    app: {
-      metadataCache: harness.metadataCache,
-      vault: {
-        getFileByPath: (path: string) =>
-          harness.metadataCache.files.get(path) ?? null,
+  const popover = stack.use(
+    citationPopoverFixture({
+      profile: profileReader(profileSettings, harness.metadataCache),
+      host: {
+        metadataCache: harness.metadataCache,
+        vault: MemoryVault.with({
+          getFileByPath: (path: string) =>
+            harness.metadataCache.files.get(path) ?? null,
+        }),
       },
-    } as unknown as App,
-    db: harness.db,
-    citationIndex: harness.index,
-    citationText,
-    bibliographyRender: cache,
-    libraryScope: harness.libraryScope,
-  });
+      db: harness.db,
+      services: { citationIndex: harness.index, citationLookup: harness.lookup, citationText, bibliographyRender: cache },
+      libraryScope: harness.libraryScope,
+    }),
+  );
 
   const copyAction = (): HTMLElement =>
     view.contentEl.querySelector<HTMLElement>(
@@ -398,21 +537,23 @@ export async function openCitationVault({
   const showPopover = (citekey: string = CITATION_KEY): OpenPopover => {
     const parent: HoverParent = { hoverPopover: null };
     const targetEl = document.body.appendChild(document.createElement("span"));
-    popover.show({
-      event: new MouseEvent("mouseover"),
-      hoverParent: parent,
-      sourcePath: DRAFT,
-      targetEl,
-      works: [
-        {
-          citekey,
-          indexedKey: citekey === CITATION_KEY ? KEY_A : KEY_B,
-        },
-      ],
-      // The occurrence the pointer is on, as a rendered surface names it.
-      shown: { citation: { source: `@${citekey}`, keys: [] } },
-      open: () => undefined,
-    });
+    popover.runtime.runSync(
+      popover.service.show({
+        event: new MouseEvent("mouseover"),
+        hoverParent: parent,
+        sourcePath: DRAFT,
+        targetEl,
+        works: [
+          {
+            citekey,
+            indexedKey: citekey === CITATION_KEY ? KEY_A : KEY_B,
+          },
+        ],
+        // The occurrence the pointer is on, as a rendered surface names it.
+        shown: { citation: { source: `@${citekey}`, keys: [] } },
+        open: () => undefined,
+      }),
+    );
     return {
       async text(after) {
         let shown = "";
@@ -429,14 +570,36 @@ export async function openCitationVault({
     };
   };
 
-  const exportDeps = exportAdapter({ dataDir, engine, harness, settings });
+  const exportDeps = exportAdapter({
+    dataDir,
+    engine,
+    harness,
+    settings,
+    profileSettings,
+    notifier: await buildRuntime(testNotifier().layer, stack).runPromise(Notifier),
+  });
+
+  /** Wait until References acknowledges the change by withdrawing copy. */
+  const changeSidebar = async (change: () => void): Promise<void> => {
+    const changed = Promise.withResolvers<void>();
+    using cleanup = new DisposableStack();
+    cleanup.defer(
+      registry.subscribe(view.model.state, (state) => {
+        if (state.copy.kind === "blocked") changed.resolve();
+      }),
+    );
+    await act(async () => {
+      change();
+      await changed.promise;
+    });
+  };
 
   const held = stack.move();
   return {
     async citationText(citekey = CITATION_KEY) {
-      let held = citationText.peek(harness.draft.path);
+      let held = citationText.bridge.runSync(citationText.peek(harness.draft.path));
       await settle(() => {
-        held = citationText.peek(harness.draft.path);
+        held = citationText.bridge.runSync(citationText.peek(harness.draft.path));
         return held !== null && held.status !== "revalidating";
       });
       const { formatted } = held!.value;
@@ -487,39 +650,42 @@ export async function openCitationVault({
       harness.metadataCache.fileCache.get(path)?.frontmatter?.["zotlit-csl"],
     noteBody: (path) => harness.vault.bodies.get(path),
     async setNoteStyle(style) {
-      declared.style = style;
-      writeProperties();
-      // The pane rescans on the metadata change; the surfaces follow it.
-      await act(async () => undefined);
+      await changeSidebar(() => {
+        declared.style = style;
+        writeProperties();
+      });
     },
     async setNoteLanguage(language) {
-      declared.language = language;
-      writeProperties();
-      await act(async () => undefined);
+      await changeSidebar(() => {
+        declared.language = language;
+        writeProperties();
+      });
     },
     async setPresentation(choice) {
-      // The action's own update, over the properties both notes carry, so the
-      // surfaces follow the one metadata change a confirmed dialog makes.
-      await applyCitationPresentation(
-        {
-          processFrontMatter: (_file, edit) => {
-            const written = properties();
-            edit(written);
-            declared.style = written["zotlit-csl"];
-            declared.language = written["lang"];
-            writeProperties();
-            return Promise.resolve();
-          },
-        },
-        harness.metadataCache.files.get(DRAFT)!,
-        choice,
-      );
-      await act(async () => undefined);
+      // The action's own update, over the draft as text: its Properties block
+      // over an empty body. Both notes then carry the properties it wrote, so
+      // the surfaces follow the one metadata change a confirmed dialog makes.
+      const host = createObsidianHost({
+        [DRAFT]: spliceFrontMatter("", properties()),
+      });
+      await applyCitationPresentation(host.app, host.file(DRAFT), choice);
+      const written =
+        host.metadataCache.getFileCache(host.file(DRAFT))?.frontmatter ?? {};
+      await changeSidebar(() => {
+        declared.style = written["zotlit-csl"];
+        declared.language = written["lang"];
+        writeProperties();
+      });
     },
     async setSettings(next) {
-      settings.update(next);
-      // The drop reaches every surface at once; the pane republishes with it.
-      await act(async () => undefined);
+      const { profiles, defaultDocument, ...persisted } = next;
+      await changeSidebar(() => {
+        applySettings(settings, settings.bridge, persisted);
+        if ("profiles" in next || "defaultDocument" in next) {
+          profileFixture = { ...profileFixture, profiles, defaultDocument };
+          profileChanged.emit();
+        }
+      });
     },
     [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
   };
@@ -529,15 +695,14 @@ export async function openCitationVault({
  * The workspace the sidebar follows: one active note, and no leaf ever moving
  * away from it.
  */
-function sidebarApp({ app, draft }: CitationIndexHarness): App {
-  return {
-    metadataCache: app.metadataCache,
-    vault: app.vault,
-    workspace: {
+function sidebarApp({ host, draft }: CitationIndexHarness): App {
+  return harnessApp(
+    host,
+    stubService<Workspace>("Workspace", {
       getActiveFile: () => draft,
-      on: () => ({}) as EventRef,
-    },
-  } as unknown as App;
+      on: () => stubService<EventRef>("EventRef", {}),
+    }),
+  );
 }
 
 /**
@@ -545,11 +710,11 @@ function sidebarApp({ app, draft }: CitationIndexHarness): App {
  * polls, until `settled` holds.
  */
 async function settle(settled: () => boolean): Promise<void> {
-  const deadline = Temporal.Now.instant().add({
+  const deadline = DateTime.add(DateTime.nowUnsafe(), {
     milliseconds: TIMEOUT / 2,
   });
   while (!settled()) {
-    if (Temporal.Instant.compare(Temporal.Now.instant(), deadline) > 0) {
+    if (DateTime.isGreaterThan(DateTime.nowUnsafe(), deadline)) {
       throw new Error("a surface never settled");
     }
     await act(async () => {
@@ -569,38 +734,60 @@ function exportAdapter({
   engine,
   harness,
   settings,
+  profileSettings,
+  notifier,
 }: {
+  notifier: Notifier["Service"];
   dataDir: string;
   engine: Awaited<ReturnType<typeof createCitationEngine>>;
   harness: CitationIndexHarness;
-  settings: SettingsStub;
+  settings: SettingsFixture;
+  profileSettings: () => Settings;
 }): PandocExportDeps {
   return {
-    app: {
-      metadataCache: harness.metadataCache,
-      vault: {
-        adapter: { getBasePath: () => dataDir },
-        cachedRead: (file: TFile) => harness.vault.cachedRead(file),
-      },
-    } as unknown as App,
-    db: {
-      acquireRead: () =>
-        Promise.resolve({
-          client: harness.db.client,
-          [Symbol.dispose]: () => undefined,
+    app: stubService<App>("App", {
+      metadataCache: harness.metadataCache as unknown as MetadataCache,
+      vault: stubService<Vault>("Vault", {
+        adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+          getBasePath: () => dataDir,
         }),
-    } as unknown as PandocExportDeps["db"],
-    pandocEngine: {
-      getStatus: () => ({ kind: "installed", version: "test" }),
-      getEngine: () => Promise.resolve(engine),
-    },
-    zoteroPref: {
-      ready: Promise.resolve(),
-      dataDir,
-      get: () => true,
-    } as unknown as PandocExportDeps["zoteroPref"],
-    settings,
+        cachedRead: (file: TFile) => harness.vault.cachedRead(file),
+      }),
+    }),
+    bridge: settings.bridge,
     openSettings: () => undefined,
+    context: Context.make(
+      ZoteroPref,
+      stubService<ZoteroPref["Service"]>("ZoteroPref", {
+        current: Effect.succeed(stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", { dataDir, httpPort: 23119 })),
+        get: () => Effect.succeed(true),
+      }),
+    ).pipe(
+      Context.add(ZoteroReads, stubService<ZoteroReads["Service"]>("ZoteroReads", { reads: harness.db.reads })),
+      Context.add(CitationLookup, harness.lookup.runtime.runSync(CitationLookup)),
+      Context.add(
+        Profile,
+        stubService<Profile["Service"]>("Profile", {
+          loaded: Effect.succeed(true),
+          profileOf: (file) => Effect.sync(() => profileReader(profileSettings, harness.metadataCache).profileOf(file)),
+        }),
+      ),
+      Context.add(CitationParse, inProcessParseClient),
+      Context.add(
+        FileSystem.FileSystem,
+        Effect.runSync(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))),
+      ),
+      Context.add(Notifier, notifier),
+      Context.add(PandocEngine, pandocEngineHandle(engine).binary),
+      Context.add(PluginSettings, settings),
+      // The bibliography fetch is mocked, so nothing reaches Zotero.
+      Context.add(
+        ZoteroHttp,
+        fakeFetchClient(() => {
+          throw new Error("No Zotero in this fixture");
+        }),
+      ),
+    ),
   };
 }
 

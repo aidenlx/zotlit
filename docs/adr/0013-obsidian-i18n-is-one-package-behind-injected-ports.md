@@ -1,4 +1,20 @@
+---
+status: amended (#1710)
+---
+
 # Obsidian i18n is one package behind injected ports
+
+> **Amended (#1710).** The Language Pack Lifecycle moved out of the package
+> into each host. The package keeps the compiler, schema, validation,
+> interpreter, CLI, Vite integration, and the lifecycle's vocabulary: locale
+> resolution (`resolveLocale`), the Situation union, and the Pack Source and
+> Locale Catalog types. ZotLit runs the lifecycle (consent, device cache,
+> download) as its `LanguagePack` Effect service, with storage, language, and
+> HTTP read from the plugin's own capabilities, so the lifecycle's ports and
+> ZotLit's port adapter are gone. A host's lifecycle is short and follows its
+> own runtime and UI; the security-sensitive part, pack validation, stays in
+> the package. The `StructuredLogger` port remains on the generated message
+> runtime (`setLogger`).
 
 The JSON Language Pack compiler, schema, validation, interpreter, headless
 Obsidian lifecycle, CLI, and Vite integration live together in
@@ -22,21 +38,19 @@ package-global locale state.
 
 ## Consequences
 
-- The browser-safe runtime and lifecycle are exported separately from
-  Node-only compiler and Vite entry points.
+- The browser-safe runtime and lifecycle vocabulary are exported separately
+  from Node-only compiler and Vite entry points.
 - Generated runtimes own active-pack state independently.
 - The workspace package remains private until publication is intentionally
   scheduled, while its API is designed as a third-party contract.
 - Logging goes through an injected `StructuredLogger` port with a no-op
   default rather than LogTape, so a consuming plugin is free to pick its own
-  logging stack. ZotLit adapts its LogTape logger at the lifecycle boundary.
+  logging stack. ZotLit gives the generated message runtime a logger that
+  writes through `Effect.log*` under the `i18n` category.
 - The compiler emits the Locale Catalog (base locale plus remote pack
   filenames); the consumer supplies the Pack Source (base URL and origin) and
-  Locale Aliases, and the lifecycle composes pack URLs. Release policy stays
-  with the consumer while facts the compiler already produces are never
-  restated by hand.
-- ZotLit's production port adapter carried zero translation logic — Obsidian
-  module functions and `this.app` bindings passed through verbatim. When a
-  second consumer appears, a package-owned `obsidianPorts(app)` helper in an
-  `/obsidian` subpath is the pre-approved shape; until then the package stays
-  free of any `obsidian` dependency.
+  Locale Aliases, and composes pack URLs. Release policy stays with the
+  consumer while facts the compiler already produces are never restated by
+  hand.
+- The package stays free of any `obsidian` dependency: each host reads
+  Obsidian's language and device storage itself.

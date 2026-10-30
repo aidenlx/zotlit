@@ -41,6 +41,7 @@ export {
 export {
   hoverGesture,
   mouseGesture,
+  pagePreviewRequiresMod,
   triggerCitekeyHover,
   type CitekeyHoverLink,
   type GestureSurface,

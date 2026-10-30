@@ -6,6 +6,7 @@ import type { App, TextComponent } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { citationLocaleError } from "@/setting-tab/citations";
+import type { StyleDropdownOptions } from "@/views/style-dropdown";
 import { addStyleDropdown } from "@/views/style-dropdown";
 
 import { STYLE_INHERITED, stylePickerOptions } from "./presentation";
@@ -14,7 +15,10 @@ import type {
   DeclaredPresentation,
 } from "./presentation";
 
-export interface CitationPresentationModalOptions {
+export interface CitationPresentationModalOptions extends Pick<
+  StyleDropdownOptions,
+  "fileSystem" | "bridge"
+> {
   /** Zotero data directory the installed styles are listed from. */
   dataDir: string;
   /** The vault Citation and References Style; `null` selects Default. */
@@ -30,20 +34,20 @@ export interface CitationPresentationModalOptions {
  * vault style it inherits, and the Document Language it declares — so a note
  * that carries neither property is configured the same way as one that does.
  *
- * @returns the choice, or `null` when the user dismissed the dialog.
+ * Calls `resolve` with the choice, or `null` when the user dismissed the dialog.
  */
 export function openCitationPresentationModal(
   app: App,
   {
     dataDir,
+    fileSystem,
+    bridge,
     vaultStyleId,
     vaultLocale,
     declared,
   }: CitationPresentationModalOptions,
-): Promise<CitationPresentationChoice | null> {
-  const { promise, resolve } =
-    Promise.withResolvers<CitationPresentationChoice | null>();
-
+  resolve: (choice: CitationPresentationChoice | null) => void,
+): Modal {
   let styleId = declared.styleId;
   let languageInput: TextComponent;
 
@@ -57,6 +61,8 @@ export function openCitationPresentationModal(
       .setDesc(m.citation_presentation_style_desc()),
     {
       dataDir,
+      fileSystem,
+      bridge,
       value: styleId ?? STYLE_INHERITED,
       options: (styles, selected) =>
         stylePickerOptions(styles, {
@@ -105,7 +111,7 @@ export function openCitationPresentationModal(
 
   modal.setCloseCallback(() => resolve(null));
   modal.open();
-  return promise;
+  return modal;
 
   /** A Document Language citeproc cannot read stops at the field it was typed in. */
   function submit(): void {

@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-import { isItemKey } from "@zotlit/db";
+import { isItemKey, parseIndexedKey } from "@zotlit/db";
 
 /**
  * Obsidian protocol namespace ZotLit owns. Each action is registered as
@@ -53,17 +53,39 @@ const updateScopeValue = v.optional(
   "full",
 );
 
+const literatureNoteProfileValue = v.optional(
+  v.pipe(v.string(), v.regex(/^[A-Za-z0-9]{12}$/u)),
+);
+
+/**
+ * Where the receiver opens what the action brings up, spelled as Obsidian's own
+ * URI links spell it: `tab` opens a new tab, `split` a new tab group, `window`
+ * a pop-out window (desktop only). Absent on the wire keeps the receiver's
+ * usual placement — for a note, the last active tab is replaced.
+ *
+ * @see https://help.obsidian.md/Extending+Obsidian/Obsidian+URI
+ */
+export type PaneType = "tab" | "split" | "window";
+
+const paneTypeValue = v.optional(
+  v.picklist(["tab", "split", "window"] satisfies PaneType[]),
+);
+
 /** Query payload for `zotlit/{open,update}` protocol handlers. */
 export const protocolQuerySchema = v.pipe(
   v.object({
     item: itemID,
     "source-id": sourceIdValue,
     scope: updateScopeValue,
+    profile: literatureNoteProfileValue,
+    paneType: paneTypeValue,
   }),
-  v.transform(({ item, "source-id": sourceId, scope }) => ({
+  v.transform(({ item, "source-id": sourceId, scope, profile, paneType }) => ({
     item,
     sourceId,
     scope,
+    ...(profile === undefined ? {} : { profileId: profile }),
+    ...(paneType === undefined ? {} : { paneType }),
   })),
 );
 
@@ -84,14 +106,23 @@ export function protocolSourceMatches(
 /**
  * Build an `obsidian://zotlit/<action>?item=<id>&source-id=<hash>` link for
  * `Zotero.launchURL`. A non-default {@link UpdateScope} adds `&scope=<scope>`.
+ * A selected literature-note Profile adds `&profile=<profileId>`. A named
+ * {@link PaneType} adds `&paneType=<pane>`.
  */
 export function buildProtocolUrl(
   action: ProtocolAction,
   item: number,
-  options: { sourceId: string; scope?: UpdateScope },
+  options: {
+    sourceId: string;
+    scope?: UpdateScope;
+    profileId?: string;
+    paneType?: PaneType;
+  },
 ): string {
   const params = protocolUrlParams({ item: String(item) }, options.sourceId);
   appendScope(params, options.scope);
+  appendProfile(params, options.profileId);
+  appendPaneType(params, options.paneType);
   return `obsidian://${protocolActionId(action)}?${params}`;
 }
 
@@ -116,6 +147,22 @@ function appendScope(
   if (scope && scope !== "full") params.set("scope", scope);
 }
 
+function appendProfile(
+  params: URLSearchParams,
+  profileId: string | undefined,
+): void {
+  if (profileId) params.set("profile", profileId);
+}
+
+/** Append `paneType` only when the builder names a pane, so a link that takes
+ *  the receiver's usual placement stays the short, stable form. */
+function appendPaneType(
+  params: URLSearchParams,
+  paneType: PaneType | undefined,
+): void {
+  if (paneType) params.set("paneType", paneType);
+}
+
 /**
  * Comma-separated decimal item ids carried by `update-many`. A trailing comma
  * is tolerated, ids are deduped, and an empty list is rejected.
@@ -134,11 +181,13 @@ export const protocolBatchQuerySchema = v.pipe(
     items: batchItems,
     "source-id": sourceIdValue,
     scope: updateScopeValue,
+    profile: literatureNoteProfileValue,
   }),
-  v.transform(({ items, "source-id": sourceId, scope }) => ({
+  v.transform(({ items, "source-id": sourceId, scope, profile }) => ({
     items,
     sourceId,
     scope,
+    ...(profile === undefined ? {} : { profileId: profile }),
   })),
 );
 
@@ -175,10 +224,18 @@ const dedupedItemIDs = v.pipe(
  * transports validate identically. The batch is gated by the
  * {@link SOURCE_ID_HEADER} header, as the URL is gated by its `source-id` query.
  */
-export const batchUpdateRequestSchema = v.object({
-  items: dedupedItemIDs,
-  scope: updateScopeValue,
-});
+export const batchUpdateRequestSchema = v.pipe(
+  v.object({
+    items: dedupedItemIDs,
+    scope: updateScopeValue,
+    profile: literatureNoteProfileValue,
+  }),
+  v.transform(({ items, scope, profile }) => ({
+    items,
+    scope,
+    ...(profile === undefined ? {} : { profileId: profile }),
+  })),
+);
 
 /** Producer-facing request body. Defaulted fields (`scope`) are optional to
  *  send; the server fills them on parse. */
@@ -320,13 +377,18 @@ export function buildImportManyProtocolUrl(
  */
 export function buildBatchProtocolUrl(
   items: readonly number[],
-  options: { sourceId: string; scope?: UpdateScope },
+  options: {
+    sourceId: string;
+    scope?: UpdateScope;
+    profileId?: string;
+  },
 ): string {
   const params = protocolUrlParams(
     { items: items.join(",") },
     options.sourceId,
   );
   appendScope(params, options.scope);
+  appendProfile(params, options.profileId);
   return `obsidian://${batchProtocolActionId}?${params}`;
 }
 
@@ -342,11 +404,13 @@ export const exploreProtocolQuerySchema = v.pipe(
     item: itemID,
     annotation: annotationKeyValue,
     "source-id": sourceIdValue,
+    paneType: paneTypeValue,
   }),
-  v.transform(({ item, annotation, "source-id": sourceId }) => ({
+  v.transform(({ item, annotation, "source-id": sourceId, paneType }) => ({
     item,
     annotation,
     sourceId,
+    ...(paneType === undefined ? {} : { paneType }),
   })),
 );
 
@@ -365,6 +429,43 @@ export function parseExploreProtocolQuery(
   data: Record<string, unknown>,
 ): ExploreProtocolQuery {
   return v.parse(exploreProtocolQuerySchema, data);
+}
+
+const PROTOCOL_SHOW_IN_LIBRARY_ACTION = "show-in-library";
+
+/**
+ * Open the Library View on one Item. The link names the Item by its Indexed
+ * Key, which every synced device shares, so a link written into a note keeps
+ * working on each of them; it carries no `source-id`. `libraryViewUri` in
+ * `@zotlit/db` builds it, for the `zt.librarylink` template variable.
+ */
+export const showInLibraryProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_SHOW_IN_LIBRARY_ACTION}` as const;
+
+export const showInLibraryProtocolQuerySchema = v.pipe(
+  v.object({
+    "item-key": v.pipe(
+      v.string(),
+      v.check((key) => parseIndexedKey(key) !== null),
+    ),
+  }),
+  v.transform(({ "item-key": indexedKey }) => ({ indexedKey })),
+);
+
+type ShowInLibraryProtocolQuery = v.InferOutput<
+  typeof showInLibraryProtocolQuerySchema
+>;
+
+/**
+ * Parse and validate the `ObsidianProtocolData` for a `zotlit/show-in-library`
+ * link.
+ *
+ * @throws {v.ValiError} when `item-key` is missing or not an Indexed Key
+ */
+export function parseShowInLibraryProtocolQuery(
+  data: Record<string, unknown>,
+): ShowInLibraryProtocolQuery {
+  return v.parse(showInLibraryProtocolQuerySchema, data);
 }
 
 const PROTOCOL_UPDATE_ALL_ACTION = "update-all";
@@ -491,15 +592,73 @@ function buildExactLibraryTargetUrl(
 /**
  * Build an `obsidian://zotlit/explore?item=<id>&source-id=<hash>` link for
  * `Zotero.launchURL`. An optional `annotation` key anchors the explorer at
- * that annotation.
+ * that annotation; a named {@link PaneType} adds `&paneType=<pane>`.
  */
 export function buildExploreProtocolUrl(
   item: number,
-  options: { sourceId: string; annotation?: string },
+  options: { sourceId: string; annotation?: string; paneType?: PaneType },
 ): string {
   const params = protocolUrlParams({ item: String(item) }, options.sourceId);
   if (options.annotation) params.set("annotation", options.annotation);
+  appendPaneType(params, options.paneType);
   return `obsidian://${exploreProtocolActionId}?${params}`;
+}
+
+const PROTOCOL_OPEN_ATTACHMENT_ACTION = "open-attachment";
+
+/**
+ * Full Obsidian action string for `registerObsidianProtocolHandler`. Kept out
+ * of {@link protocolActions} because it carries a different handler: the
+ * receiver opens a PDF attachment in Obsidian's own reader, branching on
+ * whether `item` names a regular item or an attachment.
+ */
+export const openAttachmentProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_OPEN_ATTACHMENT_ACTION}` as const;
+
+export const openAttachmentProtocolQuerySchema = v.pipe(
+  v.object({
+    item: itemID,
+    "source-id": sourceIdValue,
+    paneType: paneTypeValue,
+  }),
+  v.transform(({ item, "source-id": sourceId, paneType }) => ({
+    item,
+    sourceId,
+    ...(paneType === undefined ? {} : { paneType }),
+  })),
+);
+
+export type OpenAttachmentProtocolQuery = v.InferOutput<
+  typeof openAttachmentProtocolQuerySchema
+>;
+
+/**
+ * Parse and validate the `ObsidianProtocolData` for a `zotlit/open-attachment`
+ * link.
+ *
+ * @param data decoded query record from Obsidian
+ * @returns the typed query
+ * @throws {v.ValiError} when `item` or `source-id` is missing or malformed
+ */
+export function parseOpenAttachmentProtocolQuery(
+  data: Record<string, unknown>,
+): OpenAttachmentProtocolQuery {
+  return v.parse(openAttachmentProtocolQuerySchema, data);
+}
+
+/**
+ * Build an `obsidian://zotlit/open-attachment?item=<id>&source-id=<hash>` link
+ * for `Zotero.launchURL`. `item` may name either a regular item or an
+ * attachment; the receiver branches on which it finds. A named
+ * {@link PaneType} adds `&paneType=<pane>`.
+ */
+export function buildOpenAttachmentProtocolUrl(
+  item: number,
+  options: { sourceId: string; paneType?: PaneType },
+): string {
+  const params = protocolUrlParams({ item: String(item) }, options.sourceId);
+  appendPaneType(params, options.paneType);
+  return `obsidian://${openAttachmentProtocolActionId}?${params}`;
 }
 
 /**
@@ -513,4 +672,18 @@ export function parseProtocolQuery(
   data: Record<string, unknown>,
 ): ProtocolQuery {
   return v.parse(protocolQuerySchema, data);
+}
+
+/** Clipboard-only Profile handoff; document source stays outside the URI. */
+export const importProfileProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/import-profile` as const;
+export const importProfileProtocolQuerySchema = v.object({
+  clipboard: v.literal("true"),
+  paneType: paneTypeValue,
+});
+export function buildImportProfileProtocolUrl(): string {
+  return `obsidian://${importProfileProtocolActionId}?clipboard=true`;
+}
+export function parseImportProfileProtocolQuery(data: Record<string, unknown>) {
+  return v.parse(importProfileProtocolQuerySchema, data);
 }

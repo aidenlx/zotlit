@@ -25,6 +25,13 @@ export function formatIndexedKey(
  * The separator is deliberately handled as a split rather than part of the
  * item-key pattern: the item key validator remains the single source of truth
  * for the former part, while the latter part is validated as a group id.
+ *
+ * Skipping this check costs wrong data rather than no data on the Zotero Local
+ * API: a key outside Zotero's alphabet makes the children route drop its parent
+ * constraint and answer `200` with another attachment's annotations, while a
+ * valid key Zotero holds nothing under answers an empty list.
+ *
+ * @see docs/pdf-annotation-probes.md — "Two wire facts about the children route"
  */
 export function parseIndexedKey(indexedKey: string): ParsedIndexedKey | null {
   const parts = indexedKey.split("g");
@@ -48,6 +55,7 @@ export function isIndexedKey(value: string): boolean {
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { getLibraryByGroupID } from "@/queries/libraries";
+import type { Library } from "@/queries/libraries";
 
 import { USER_LIBRARY_ID } from "./constants";
 
@@ -61,6 +69,23 @@ export function resolveIndexedKeyLibrary(
   const { key, groupID } = parsed;
   if (groupID == null) return { key, libraryID: USER_LIBRARY_ID };
   const library = getLibraryByGroupID(client, groupID);
+  if (!library) return null;
+  return { key, libraryID: library.libraryID };
+}
+
+/**
+ * {@link resolveIndexedKeyLibrary} against libraries already read, for a caller
+ * that holds the library list rather than a client.
+ */
+export function resolveIndexedKeyLibraryIn(
+  libraries: readonly Pick<Library, "libraryID" | "groupID">[],
+  indexedKey: string,
+): { key: string; libraryID: number } | null {
+  const parsed = parseIndexedKey(indexedKey);
+  if (!parsed) return null;
+  const { key, groupID } = parsed;
+  if (groupID == null) return { key, libraryID: USER_LIBRARY_ID };
+  const library = libraries.find((library) => library.groupID === groupID);
   if (!library) return null;
   return { key, libraryID: library.libraryID };
 }

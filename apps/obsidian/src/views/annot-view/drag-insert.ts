@@ -1,95 +1,279 @@
-import type { Workspace } from "obsidian";
+// Asynchronous annotation insertion for the menu action and ZotLit-owned drops.
+import { nanoid } from "nanoid";
+import { MarkdownView } from "obsidian";
+import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
 import type { DragEvent } from "react";
 
-import type { AnnotViewItem } from "@zotlit/db";
+import { observeExit } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
-import type { AttachmentImport } from "@/services/attachment-import/service";
-import type { NoteFeature } from "@/services/note-feature";
+import { profileRecoveryNotice } from "@/lib/profile-recovery";
+import { latestSlot } from "@/lib/view-runner";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type {
+  AnnotationInsertOutcome,
+  AnnotationSnapshot,
+} from "@/services/note-feature/insert-action";
+export type { AnnotationInsertOutcome } from "@/services/note-feature/insert-action";
 
-const logger = getLogger(["views", "annot-view"]);
+import { captureInsertion } from "./async-insert";
+import { startInsert } from "./insert-run";
+import type { InsertFiber, InsertRunner } from "./insert-run";
 
-/** Custom drag MIME type tagging a drag that originated from the annot view. */
-const SOURCE_TAG = "zotlit-annot-drag";
+const SOURCE_TAG = "application/x-zotlit-annotation";
 
-export interface DragInsertDeps {
-  workspace: Workspace;
-  noteFeature: Pick<NoteFeature, "renderAnnotation">;
-  /** Pre-prepared attachment-import handle for the active note. */
-  getImportHandle: () => AttachmentImport | null;
-  /**
-   * Called once a drag settles (dropped or abandoned) so the view can swap in a
-   * fresh handle — discarding an abandoned drag's pending image (v1's `cancel`).
-   */
-  onSettled: () => void;
+/** What an insert needs; `R` is the services its Effects run with. */
+export interface InsertDeps<R> extends InsertRunner<R> {
+  app: App;
+  snapshot: (annotation: AnnotationRecord) => AnnotationSnapshot;
+  notify: (message: string | DocumentFragment) => void;
+}
+
+/** The function that shows the notice of an outcome. */
+const reporter =
+  (deps: Pick<InsertDeps<never>, "app" | "notify">) =>
+  (outcome: AnnotationInsertOutcome): void => {
+    const message = insertOutcomeMessage(deps.app, outcome);
+    if (message !== null) deps.notify(message);
+  };
+
+/**
+ * The one insert a handler has in flight: starting a newer one interrupts it.
+ * The outcome of an insert that finishes is shown; an interrupted one shows
+ * nothing.
+ */
+function insertSlot<R>(
+  deps: InsertDeps<R>,
+  report: (outcome: AnnotationInsertOutcome) => void,
+) {
+  const latest = latestSlot(deps.run);
+  const runner: InsertDeps<R> = { ...deps, run: latest.run };
+  return {
+    cancel: latest.interrupt,
+    /** Starts the insert `start` makes on the slot's runner. */
+    hold(start: (runner: InsertDeps<R>) => InsertFiber): InsertFiber {
+      const fiber = start(runner);
+      observeExit(fiber, { onSuccess: report });
+      return fiber;
+    },
+  };
 }
 
 /**
- * Build the annot-view `onDragStart` handler. On drag start it renders the
- * dragged annotation through the `annotation` template into the `text/plain`
- * payload (Obsidian inserts it natively on drop) and, when the drop lands in an
- * editor, flushes the annotation's image excerpt into the vault — mirroring v1's
- * templated drag-insert.
- *
- * When the render cannot run, the drag is cancelled and a notice says so; the
- * card disables its handle ahead of time via the store's `dragTarget`, so
- * this branch is the last line, not the usual path.
+ * The notice for an insert's outcome, or `null` for none: an Excerpt Image
+ * summary where an image is not refreshed, a Profile error by its own
+ * message, and a failure as the generic message.
  */
-export function createDragInsertHandler(deps: DragInsertDeps) {
-  return (evt: DragEvent<HTMLElement>, annot: AnnotViewItem): void => {
-    const handle = deps.getImportHandle();
+export function insertOutcomeMessage(
+  app: App,
+  outcome: AnnotationInsertOutcome,
+): string | DocumentFragment | null {
+  switch (outcome.kind) {
+    case "unavailable":
+      return m.annotation_suggest_unavailable();
+    case "no-note":
+      return m.annot_view_insert_no_note();
+    case "source-unavailable":
+      return m.annot_view_drag_unavailable();
+    case "fallback":
+      return outcome.landed ? m.annot_view_drag_unavailable() : null;
+    case "inserted": {
+      const { summary } = outcome;
+      return summary.zotero || summary.unchecked || summary.unavailable
+        ? m.excerpt_image_summary({
+            ...summary,
+            notRefreshed: summary.notRefreshed ?? 0,
+          })
+        : null;
+    }
+    case "profile-error": {
+      const { diagnostic, message } = outcome.error;
+      return diagnostic.code === "unknown-literature-note-profile"
+        ? profileRecoveryNotice(app, diagnostic)
+        : message;
+    }
+    case "failed":
+      return m.annot_view_insert_failed();
+    case "cancelled":
+      return null;
+  }
+}
 
-    const rendered = handle
-      ? deps.noteFeature.renderAnnotation(annot.itemID, {
-          attachmentImport: handle,
-        })
-      : null;
+/**
+ * Sidebar focus leaves the most recently used note and its cursor in place. A
+ * note in Reading view shows no editor, so nothing is inserted into it.
+ */
+export function getInsertionEditor(app: App): MarkdownFileInfo | null {
+  const active = app.workspace.activeEditor;
+  if (active instanceof MarkdownView && active.getMode() !== "source")
+    return null;
+  if (active) return active;
+  const view = app.workspace.getMostRecentLeaf()?.view;
+  return view instanceof MarkdownView && view.getMode() === "source"
+    ? view
+    : null;
+}
 
-    evt.dataTransfer.dropEffect = "copy";
+export function createInsertHandler<R>(deps: InsertDeps<R>) {
+  const report = reporter(deps);
+  const slot = insertSlot(deps, report);
+  const { cancel } = slot;
+  /** The insert in flight, or `null` where it ended at once with its notice. */
+  const insertInto = (
+    annotation: AnnotationRecord,
+    info: MarkdownFileInfo | null,
+  ): InsertFiber | null => {
+    cancel();
+    const editor = info?.editor;
+    const file = info?.file;
+    if (!info || !file || !editor) {
+      report({ kind: "no-note" });
+      return null;
+    }
+    const snapshot = deps.snapshot(annotation);
+    if (!snapshot.source || snapshot.sourceScope === null) {
+      report({ kind: "source-unavailable" });
+      return null;
+    }
+    return slot.hold((runner) =>
+      startInsert(runner, {
+        annotation,
+        snapshot,
+        notePath: file.path,
+        capture: () =>
+          captureInsertion({
+            editor,
+            info,
+            isCurrent: () => {
+              const current = getInsertionEditor(deps.app);
+              return current?.editor === editor && current.file === info.file;
+            },
+            workspace: deps.app.workspace,
+          }),
+      }),
+    );
+  };
+  const offer = () => {
+    const info = getInsertionEditor(deps.app);
+    const file = info?.file;
+    const editor = info?.editor;
+    if (!info || !file || !editor) return null;
+    return (annotation: AnnotationRecord) => {
+      const current = getInsertionEditor(deps.app);
+      if (
+        current?.file !== file ||
+        current.editor !== editor ||
+        info.file !== file ||
+        info.editor !== editor
+      )
+        return null;
+      return insertInto(annotation, info);
+    };
+  };
+  const insert = (annotation: AnnotationRecord) =>
+    insertInto(annotation, getInsertionEditor(deps.app));
+  return Object.assign(insert, { cancel, offer });
+}
 
-    if (rendered == null || handle == null) {
-      logger.warn("Drag-insert cancelled", {
-        annotationID: annot.itemID,
-        reason: handle == null ? "no-import-handle" : "render-unavailable",
-      });
-      evt.preventDefault();
-      new BaseNotice(m.annot_view_drag_unavailable());
+interface ActiveDrag {
+  cancel(): void;
+}
+
+export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
+  const report = reporter(deps);
+  const slot = insertSlot(deps, report);
+  let active: ActiveDrag | null = null;
+  const cancel = () => {
+    active?.cancel();
+    slot.cancel();
+  };
+  const drag = (
+    event: DragEvent<HTMLElement>,
+    annotation: AnnotationRecord,
+  ): void => {
+    cancel();
+    const snapshot = deps.snapshot(annotation);
+    if (!snapshot.source || snapshot.sourceScope === null) {
+      event.preventDefault();
+      report({ kind: "source-unavailable" });
       return;
     }
 
-    const timestamp = String(evt.timeStamp);
-    evt.dataTransfer.setData("text/plain", rendered);
-    evt.dataTransfer.setData(SOURCE_TAG, timestamp);
+    const request = nanoid();
+    event.dataTransfer.dropEffect = "copy";
+    event.dataTransfer.setData("text/plain", annotation.text ?? annotation.key);
+    event.dataTransfer.setData(SOURCE_TAG, request);
 
-    const { workspace } = deps;
-    const win = (evt.target as HTMLElement).win;
-
+    const { workspace } = deps.app;
+    const win = event.currentTarget.win;
+    let settled = false;
     const cleanup = () => {
+      if (settled) return;
+      settled = true;
       workspace.offref(dropRef);
       win.removeEventListener("dragend", onDragEnd);
-      deps.onSettled();
+      if (active === operation) active = null;
     };
-    // Side-effect listener only (flushes the pending attachment import); the
-    // actual insertion is Obsidian's native `text/plain` drop handling above,
-    // so calling `preventDefault()` here would break it.
+    const operation: ActiveDrag = { cancel: cleanup };
+    const onDragEnd = () => cleanup();
     // eslint-disable-next-line obsidianmd/editor-drop-paste
-    const dropRef = workspace.on("editor-drop", (dropEvt) => {
-      if (dropEvt.dataTransfer?.getData(SOURCE_TAG) === timestamp) {
-        void handle.flush().catch((error) => {
-          logger.warn("Failed to import dragged annotation image", { error });
-        });
+    const dropRef = workspace.on("editor-drop", (dropEvent, editor, info) => {
+      if (dropEvent.dataTransfer?.getData(SOURCE_TAG) !== request) return;
+      dropEvent.preventDefault();
+      dropEvent.dataTransfer.dropEffect = "copy";
+      cleanup();
+      const file = info.file;
+      if (!file) {
+        report({ kind: "no-note" });
+        return;
       }
-      cleanup();
+      slot.hold((runner) =>
+        insertDrop(runner, {
+          annotation,
+          snapshot,
+          dropEvent,
+          editor,
+          info,
+          file,
+        }),
+      );
     });
-    // Reached only when no editor drop ran (the drop path detaches this
-    // listener), so the excerpt this render queued must not ride along with
-    // the next drop's flush.
-    const onDragEnd = (): void => {
-      handle.discard();
-      cleanup();
-    };
+    active = operation;
     win.addEventListener("dragend", onDragEnd, { once: true });
   };
+  return Object.assign(drag, { cancel });
+}
+
+function insertDrop<R>(
+  deps: InsertDeps<R>,
+  options: {
+    annotation: AnnotationRecord;
+    snapshot: AnnotationSnapshot;
+    // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+    dropEvent: globalThis.DragEvent;
+    editor: Editor;
+    info: MarkdownFileInfo;
+    file: TFile;
+  },
+): InsertFiber {
+  const { editor, info, file } = options;
+  // The nearest position, as CodeMirror's own drop handler asks for: the
+  // exact form is null over an empty active line.
+  const position = editor.cm.posAtCoords(
+    { x: options.dropEvent.clientX, y: options.dropEvent.clientY },
+    false,
+  );
+  return startInsert(deps, {
+    annotation: options.annotation,
+    snapshot: options.snapshot,
+    notePath: file.path,
+    capture: () =>
+      captureInsertion({
+        editor,
+        info,
+        range: { from: position, to: position },
+        isCurrent: () => info.file === file && info.editor === editor,
+        workspace: deps.app.workspace,
+      }),
+  });
 }

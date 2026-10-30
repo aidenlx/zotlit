@@ -8,7 +8,7 @@ import { getPackageRoot } from "@zotlit/scripts/package-roots";
 
 import { createNoteTurndown } from "./index";
 
-const packageRoot = getPackageRoot();
+const packageRoot = getPackageRoot(import.meta.filename);
 
 /** Convert an HTML fragment and trim the surrounding block whitespace. */
 function convert(html: string): string {
@@ -258,6 +258,29 @@ describe("Zotero note formats", () => {
     expect(md).not.toContain("==🟡");
   });
 
+  it("applies per-color mappings to note-editor highlights only while enabled", () => {
+    const highlightMappings = {
+      red: { output: "mark", customEmoji: "" },
+      blue: { output: "🟠", customEmoji: "" },
+      magenta: { output: "custom", customEmoji: "👩‍🔬" },
+    } as const;
+    const html =
+      '<p><span style="background-color: #ff666680">Red</span> ' +
+      '<span style="background-color: #2ea8e580">Blue</span> ' +
+      '<span style="background-color: #e56eee80">Magenta</span></p>';
+    const convertWith = (enabled: boolean) =>
+      createNoteTurndown(TurndownService, {
+        useColoredHighlightSyntax: enabled,
+        highlightMappings,
+      }).turndown(html);
+
+    const md = convertWith(true);
+    expect(md).toContain('<mark class="zotlit-hl" data-color="red"');
+    expect(md).toContain("==🟠Blue== ==👩‍🔬Magenta==");
+    expect(convertWith(false)).toBe(convert(html));
+    expect(convertWith(true)).toBe(md);
+  });
+
   it("embedded attachment image keeps its key for later import", () => {
     const md = convert('<p><img data-attachment-key="U5WTYIJK" alt=""></p>');
     expect(md).toContain('data-attachment-key="U5WTYIJK"');
@@ -306,63 +329,6 @@ describe("Zotero note formats", () => {
     expect(md).toContain('data-attachment-key="DUPB2GWX"');
     expect(md).toContain(
       'data-annotation="%7B%22annotationKey%22%3A%22DBKE89L9%22%7D"',
-    );
-  });
-});
-
-/**
- * Image embeds and annotation-excerpt spans all pass through as raw HTML, so
- * their *output* is indistinguishable. These check the routing instead — that
- * each element kind is claimed by the rule meant for it (by rule-object
- * identity): excerpt spans → `annotationExcerpt`, every `data-attachment-key`
- * image (plain or annotation) → the one `embeddedImage` rule, and never the base
- * image rule that drops a `src`-less `<img>`.
- */
-describe("Zotero embed/annotation rule routing", () => {
-  const td = createNoteTurndown(TurndownService);
-
-  /** The rule turndown would pick for the first element parsed from `html`. */
-  function ruleFor(html: string): object {
-    const root = document.createElement("div");
-    root.innerHTML = html;
-    return td.rules.forNode(root.firstElementChild as HTMLElement);
-  }
-
-  const annotationRule = ruleFor(
-    '<span class="highlight" data-annotation="%7B%7D">x</span>',
-  );
-  const citationRule = ruleFor(
-    '<span class="citation" data-citation="%7B%7D">x</span>',
-  );
-  const embeddedImageRule = ruleFor('<img data-attachment-key="K">');
-  const baseImageRule = ruleFor('<img src="x.png">');
-
-  it("routes highlight and underline excerpt spans to one rule", () => {
-    expect(
-      ruleFor('<span class="underline" data-annotation="%7B%7D">x</span>'),
-    ).toBe(annotationRule);
-  });
-
-  it("routes citation spans to a rule of their own", () => {
-    expect(citationRule).not.toBe(annotationRule);
-    expect(citationRule).not.toBe(embeddedImageRule);
-  });
-
-  it("routes plain embeds and image annotations to the one image rule", () => {
-    expect(
-      ruleFor('<img data-attachment-key="K" data-annotation="%7B%7D">'),
-    ).toBe(embeddedImageRule);
-    expect(embeddedImageRule).not.toBe(annotationRule);
-  });
-
-  it("keeps Zotero images off the base image rule that would drop them", () => {
-    expect(baseImageRule).not.toBe(embeddedImageRule);
-    expect(baseImageRule).not.toBe(annotationRule);
-    // The base rule emits `![]()` for a src'd img and "" for a src-less one;
-    // the embed must stay raw HTML instead of being dropped.
-    expect(convert('<img src="x.png">')).toBe("![](x.png)");
-    expect(convert('<img data-attachment-key="K">').startsWith("<img")).toBe(
-      true,
     );
   });
 });

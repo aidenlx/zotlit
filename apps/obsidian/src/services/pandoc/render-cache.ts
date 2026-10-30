@@ -1,18 +1,31 @@
 // The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
-
-import { createHash } from "node:crypto";
+import { hashKey } from "@tanstack/query-core";
+import type { QueryFunction } from "@tanstack/query-core";
+import {
+  Cause,
+  Context,
+  Effect,
+  FileSystem,
+  Fiber,
+  Layer,
+  Option,
+  PubSub,
+  Schema,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 
 import type { CslItemData } from "@zotlit/db";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { HeldReads } from "@/lib/held-reads";
-import type { Held } from "@/lib/held-reads";
-import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
-import { Service } from "@/services/service-base";
-import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { scopedBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
+import { Profile } from "@/services/profile/service";
+import { QueryClients } from "@/services/query-client/service";
+import type { Held } from "@/services/query-client/service";
+import { PluginSettings } from "@/services/settings/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import {
   effectivePresentation,
@@ -20,44 +33,44 @@ import {
 } from "./document-presentation";
 import type { EffectivePresentation } from "./document-presentation";
 import type { BibliographyEntry, RenderedCitation } from "./engine";
-import type { PandocEngineService } from "./service";
+import { PandocEngine } from "./service";
 import { InstalledStyleCache, styleHasEntryMarkers } from "./styles";
 import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 
-const logger = getLogger(["pandoc", "render-cache"]);
+const BIBLIOGRAPHY_RENDER = "bibliography-render";
 
 /**
- * Renders held at once. A cited set the user moved away from is worth keeping
- * for the move back, and each render is a handful of formatted entries, so the
- * bound is generous; it exists so a session that visits many documents cannot
- * grow the cache without end.
+ * The style cache or the citation engine rejected. `message` is the
+ * original's, which the held read and its notice show; `cause` holds it.
  */
-const HELD_RENDERS = 32;
+export class BibliographyRenderError extends Schema.TaggedError<
+  BibliographyRenderError,
+  { readonly brand: unique symbol }
+>()("BibliographyRenderError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
-interface BibliographyRenderEvents {
-  /** A held render value changed. */
-  changed: (key: string) => void;
-  /** A render committed, including an equal or failed read. */
-  settled: (key: string) => void;
-  /**
-   * Every held render went stale. A consumer that keeps rendered text on screen
-   * asks for its own render again.
-   */
-  invalidated: () => void;
-  /** The first formatting attempt whose selected style is unavailable. */
-  "style-missing": (styleId: string) => void;
+const renderError = (cause: unknown) =>
+  new BibliographyRenderError({
+    message: Error.isError(cause) ? cause.message : String(cause),
+    cause,
+  });
+const CITATION_RENDER = "citation-render";
+
+export type BibliographyRenderEvent =
+  | { readonly _tag: "changed"; readonly key: string }
+  | {
+      readonly _tag: "settled";
+      readonly key: string;
+      readonly held: Held<unknown> | null;
+    }
+  | { readonly _tag: "invalidated" };
+export interface BibliographyRenderState {
+  readonly vaultPresentation: EffectivePresentation;
+  /** The first unavailable selected style found in this plugin lifecycle. */
+  readonly missingStyle: string | null;
 }
-
-export interface BibliographyRenderCacheOptions {
-  db: Pick<DatabaseService, "on">;
-  pandocEngine: Pick<
-    PandocEngineService,
-    "getStatus" | "subscribe" | "getEngine"
-  >;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "on">;
-  settings: Pick<SettingsService, "ready" | "subscribe">;
-}
-
 /**
  * The Citation Presentation one render asks for. An omitted member inherits the
  * vault selection, which is what a caller that renders the vault default asks
@@ -99,294 +112,342 @@ export type CitationRenderOutcome = HeldRenderOutcome<
 /** A Resolved CSL Style a render can actually run with. */
 type RenderStyle = Exclude<ResolvedCslStyle, { kind: "failed" }>;
 
-/**
- * Formats whole bibliographies in the Citation and References Style, and hands the same
- * render to every consumer that cites the same works in the same order.
- *
- * A bibliography entry is not a pure function of its Item — Entry Markers and
- * disambiguation depend on the whole cited set — so the whole list is the unit
- * that is cached, keyed by the Citation Presentation it was rendered under and
- * the ordered cited set. What makes a render stale makes every render stale: a
- * Zotero database change, a vault Citation Presentation change, and an engine
- * that came or went each mark all held renders stale and announce it through
- * {@link BibliographyRenderEvents.invalidated}.
- *
- * Nothing is written to disk: a render is derived from the library and the
- * style, both of which the plugin can read again.
- */
-export class BibliographyRenderCache extends Service<void> {
-  readonly #db;
-  readonly #engine;
-  readonly #zoteroPref;
-  readonly #settings;
-  readonly #emitter = createNanoEvents<BibliographyRenderEvents>();
-  readonly #styles = new InstalledStyleCache();
-  /** Bibliography renders by {@link renderKey}. */
-  readonly #renders = new HeldReads<BibliographyRenderResult>({
-    limit: HELD_RENDERS,
-  });
-  /** In-text citation renders, held the same way and dropped by the same signals. */
-  readonly #citations = new HeldReads<readonly RenderedCitation[]>({
-    limit: HELD_RENDERS,
-  });
-  /** `undefined` until the first settings snapshot names the vault selections. */
-  #vault: EffectivePresentation | undefined;
-  /** The first unavailable selected style found in this plugin lifecycle. */
-  #missingStyle: string | null = null;
-
-  ready: Promise<void>;
-
-  constructor(options: BibliographyRenderCacheOptions) {
-    super();
-    this.#db = options.db;
-    this.#engine = options.pandocEngine;
-    this.#zoteroPref = options.zoteroPref;
-    this.#settings = options.settings;
-    this.ready = this.#load();
+export class BibliographyRender extends Context.Service<
+  BibliographyRender,
+  {
+    readonly state: Effect.Effect<BibliographyRenderState>;
+    readonly changes: Stream.Stream<BibliographyRenderState>;
+    readonly events: Stream.Stream<BibliographyRenderEvent>;
+    render(
+      items: readonly CslItemData[],
+      presentation?: RenderPresentation,
+    ): Effect.Effect<BibliographyRenderOutcome, unknown>;
+    renderCitations(
+      citations: readonly string[],
+      items: readonly CslItemData[],
+      presentation?: RenderPresentation,
+    ): Effect.Effect<CitationRenderOutcome, unknown>;
+    readBibliography(
+      items: readonly CslItemData[],
+      options?: ReadOptions,
+    ): Effect.Effect<BibliographyRenderResult | null, unknown>;
+    readCitations(
+      citations: readonly string[],
+      items: readonly CslItemData[],
+      options?: ReadOptions,
+    ): Effect.Effect<readonly RenderedCitation[] | null, unknown>;
   }
+>()("zotlit/pandoc/BibliographyRender") {}
 
-  /**
-   * The whole bibliography of `items`, formatted in the Citation and References Style.
-   *
-   * Entries come back in the style's own bibliography order, as typed AST. The
-   * rendered value is deeply immutable and shared: every consumer of one render
-   * gets the identical value, so a consumer holds it as long as it likes and
-   * compares renders by reference.
-   *
-   * @param items the cited works as CSL-JSON, in the order they are cited.
-   * @param presentation the style and Citation Locale to render under; the
-   *   vault selection where it names none.
-   * @returns the formatted bibliography, or the unavailable or failed state
-   *   that tells the sidebar to show its plain list.
-   */
-  async render(
-    items: readonly CslItemData[],
-    presentation?: RenderPresentation,
-  ): Promise<BibliographyRenderOutcome> {
-    await this.ready.catch(() => undefined);
-    if (this.#engine.getStatus().kind !== "installed") {
-      return { kind: "unavailable", reason: "engine-absent" };
-    }
+export interface ReadOptions {
+  presentation?: RenderPresentation;
+}
 
-    const request = this.#styleRequest(presentation);
-    const style = await this.#resolveStyle(request);
-    if (style.kind === "failed") {
-      return { kind: "unavailable", reason: "style-missing" };
-    }
-    // A document that cites nothing still renders under the style it names, so
-    // an unusable one is answered above rather than passed over here.
-    const key = renderKey({ request, style, items });
-    const record = await this.#renders.read(key, () =>
-      items.length === 0
-        ? Promise.resolve({ entries: [], hasEntryMarkers: false })
-        : this.#runBibliography(items, style),
+/** Each bibliography render invalidation. */
+export function renderInvalidated(
+  render: Pick<BibliographyRender["Service"], "events">,
+): Stream.Stream<void> {
+  return render.events.pipe(
+    Stream.filter((event) => event._tag === "invalidated"),
+    Stream.map(() => undefined),
+  );
+}
+
+/** The style IDs a render finds unavailable, each once until it clears. */
+export function missingStyleChanges(
+  changes: Stream.Stream<BibliographyRenderState>,
+): Stream.Stream<string> {
+  return changes.pipe(
+    Stream.map((state) => state.missingStyle),
+    Stream.changes,
+    Stream.filter((style): style is string => style !== null),
+  );
+}
+
+export const layerBibliographyRender = Layer.effect(
+  BibliographyRender,
+  Effect.gen(function* () {
+    const reads = yield* ZoteroReads;
+    const engine = yield* PandocEngine;
+    const pref = yield* ZoteroPref;
+    const settings = yield* PluginSettings;
+    const profile = yield* Profile;
+    const queries = yield* QueryClients;
+    const scope = yield* Scope.Scope;
+    const { runPromise } = yield* scopedBridge;
+    const styles = new InstalledStyleCache();
+    const fileSystem = yield* FileSystem.FileSystem;
+    let closed = false;
+    const state = yield* SubscriptionRef.make<BibliographyRenderState>({
+      vaultPresentation: vaultPresentation(yield* settings.current),
+      missingStyle: null,
+    });
+    const events = yield* Effect.acquireRelease(
+      PubSub.unbounded<BibliographyRenderEvent>(),
+      (pubsub) => PubSub.shutdown(pubsub),
     );
-    return record === null
-      ? { kind: "unavailable", reason: "failed" }
-      : { kind: "held", key, record };
-  }
-
-  /**
-   * One document's in-text citations, formatted in the Citation and References Style,
-   * each paired with the works it names.
-   *
-   * A style that numbers counts citations across the whole document, so the
-   * unit rendered — and the unit cached — is every citation the document
-   * writes, in document order. The rendered value is shared under the same
-   * contract as {@link render}.
-   *
-   * @param citations each citation as the source writes it, in document order.
-   * @param items the works those citations name, each `id` the key the source
-   *   names that work by.
-   * @param presentation the style and Citation Locale to render under; the
-   *   vault selection where it names none.
-   * @returns one held formatted-citation result, or the unavailable reason.
-   */
-  async renderCitations(
-    citations: readonly string[],
-    items: readonly CslItemData[],
-    presentation?: RenderPresentation,
-  ): Promise<CitationRenderOutcome> {
-    await this.ready.catch(() => undefined);
-    if (this.#engine.getStatus().kind !== "installed") {
-      return { kind: "unavailable", reason: "engine-absent" };
-    }
-
-    const request = this.#styleRequest(presentation);
-    const style = await this.#resolveStyle(request);
-    if (style.kind === "failed") {
-      return { kind: "unavailable", reason: "style-missing" };
-    }
-
-    const key = renderKey({ request, style, items, citations });
-    const record = await this.#citations.read(key, () =>
-      citations.length === 0
-        ? Promise.resolve([])
-        : this.#runCitations(citations, items, style),
+    const recover = <A, E>(effect: Effect.Effect<A, E>) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("Could not update bibliography renders", cause),
+        ),
+      );
+    const invalidate = Effect.fn("BibliographyRender.invalidate")(function* () {
+      if (closed) return;
+      yield* Effect.logDebug("Bibliography renders went stale");
+      for (const prefix of [BIBLIOGRAPHY_RENDER, CITATION_RENDER])
+        yield* queries.invalidate([prefix]);
+      yield* PubSub.publish(events, { _tag: "invalidated" });
+    });
+    const listen = <A>(
+      stream: Stream.Stream<A>,
+      handle: (value: A) => Effect.Effect<unknown>,
+    ) =>
+      Stream.runForEach(stream, (value) => recover(handle(value))).pipe(
+        Effect.forkScoped({ startImmediately: true }),
+      );
+    // Each state subscription skips its acquisition snapshot, just as on("changed") did.
+    const initialProfile = yield* profile.state;
+    yield* listen(
+      Stream.dropWhile(profile.changes, (next) => next === initialProfile),
+      () => invalidate(),
     );
-    return record === null
-      ? { kind: "unavailable", reason: "failed" }
-      : { kind: "held", key, record };
-  }
-
-  /**
-   * The vault Citation Presentation each document inherits the halves it leaves
-   * unsaid from — Style default for both until the first settings snapshot
-   * names the selections. A surface composing one document's whole presentation
-   * reads it from here, so it renders under what this cache renders under.
-   */
-  get vaultPresentation(): EffectivePresentation {
-    return this.#vault ?? { styleId: null, locale: null };
-  }
-
-  on<K extends keyof BibliographyRenderEvents>(
-    event: K,
-    cb: BibliographyRenderEvents[K],
-  ): () => void {
-    return this.#emitter.on(event, cb);
-  }
-
-  /** Subscribe to the first unavailable selected style, including one already found. */
-  onStyleMissing(cb: BibliographyRenderEvents["style-missing"]): () => void {
-    const unsubscribe = this.#emitter.on("style-missing", cb);
-    if (this.#missingStyle !== null) cb(this.#missingStyle);
-    return unsubscribe;
-  }
-
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
-
-    stack.defer(this.#db.on("changed", () => this.#invalidate()));
-    stack.defer(this.#engine.subscribe(() => this.#invalidate()));
-    stack.defer(
-      this.#zoteroPref.on("resolved-changed", () => this.#invalidate()),
+    yield* listen(reads.events, (event) =>
+      event._tag === "changed" ? invalidate() : Effect.void,
     );
-    // Fires synchronously with the loaded settings, which is where the vault
-    // selections are first read; only a later one is a change.
-    stack.defer(
-      this.#settings.subscribe((settings) => {
-        if (settings) this.#applySettings(settings);
+    const initialEngine = yield* engine.getStatus;
+    yield* listen(
+      Stream.dropWhile(engine.changes, (next) => next === initialEngine),
+      () => invalidate(),
+    );
+    let previousPref = yield* pref.current;
+    yield* listen(
+      pref.changes,
+      Effect.fn("BibliographyRender.preferencesChanged")(function* (next) {
+        const changed =
+          next.prefs !== previousPref.prefs ||
+          next.dataDirOverride !== previousPref.dataDirOverride;
+        previousPref = next;
+        if (changed) yield* invalidate();
       }),
     );
-    stack.defer(
-      this.#renders.on("changed", (key) => this.#emitter.emit("changed", key)),
+    yield* listen(
+      settings.changes,
+      Effect.fn("BibliographyRender.applySettings")(function* (saved) {
+        const next = vaultPresentation(saved);
+        const before = yield* SubscriptionRef.get(state);
+        if (
+          before.vaultPresentation.styleId === next.styleId &&
+          before.vaultPresentation.locale === next.locale
+        )
+          return;
+        yield* SubscriptionRef.set(state, {
+          ...before,
+          vaultPresentation: next,
+        });
+        yield* Effect.logInfo("Citation presentation settings changed").pipe(
+          Effect.annotateLogs({ styleId: next.styleId, locale: next.locale }),
+        );
+        yield* invalidate();
+      }),
     );
-    stack.defer(
-      this.#renders.on("settled", (key) => this.#emitter.emit("settled", key)),
+    yield* listen(
+      queries.changes,
+      Effect.fn("BibliographyRender.settled")(function* (change) {
+        if (
+          change.key[0] !== BIBLIOGRAPHY_RENDER &&
+          change.key[0] !== CITATION_RENDER
+        )
+          return;
+        const key = renderKeyOf(change.key);
+        if (change.changed)
+          yield* PubSub.publish(events, { _tag: "changed", key });
+        yield* PubSub.publish(events, {
+          _tag: "settled",
+          key,
+          held: change.held,
+        });
+      }),
     );
-    stack.defer(
-      this.#citations.on("changed", (key) =>
-        this.#emitter.emit("changed", key),
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        closed = true;
+        yield* PubSub.shutdown(state.pubsub);
+      }),
+    );
+    yield* Effect.logInfo("Vault citation presentation selected").pipe(
+      Effect.annotateLogs({
+        ...(yield* SubscriptionRef.get(state)).vaultPresentation,
+      }),
+    );
+
+    const prepare = Effect.fn("BibliographyRender.prepare")(
+      function* (presentation: RenderPresentation | undefined) {
+        if ((yield* engine.getStatus).kind !== "installed")
+          return { reason: "engine-absent" } as const;
+        const selected = (yield* SubscriptionRef.get(state)).vaultPresentation;
+        const request = effectivePresentation(presentation ?? {}, selected);
+        const dataDir = (yield* pref.current).dataDir;
+        const style = yield* styles
+          .resolve(dataDir, request)
+          .pipe(Effect.provideService(FileSystem.FileSystem, fileSystem));
+        if (style.kind !== "failed") return { request, style };
+        yield* Effect.logDebug(
+          "Cannot resolve the requested citation style",
+        ).pipe(
+          Effect.annotateLogs({
+            styleId: style.styleId,
+            parentId: style.parentId,
+            reason: style.reason,
+          }),
+        );
+        yield* SubscriptionRef.updateSome(state, (before) =>
+          !closed &&
+          style.styleId === before.vaultPresentation.styleId &&
+          before.missingStyle === null
+            ? Option.some({ ...before, missingStyle: style.styleId })
+            : Option.none(),
+        );
+        return { reason: "style-missing" } as const;
+      },
+      withLogCategory("pandoc", "render-cache"),
+    );
+    const runBibliography = Effect.fn("BibliographyRender.runBibliography")(
+      function* (items: readonly CslItemData[], style: RenderStyle) {
+        if (items.length === 0) return { entries: [], hasEntryMarkers: false };
+        const presentation = enginePresentation(style);
+        const active = yield* engine.getEngine;
+        if (!active) return { entries: [], hasEntryMarkers: false };
+        const entries = yield* Effect.tryPromise({
+          try: () => active.renderBibliography({ items, ...presentation }),
+          catch: renderError,
+        });
+        const hasEntryMarkers =
+          styleHasEntryMarkers(presentation.styleXml) ||
+          entries.some((entry) => entry.marker !== undefined);
+        yield* Effect.logDebug("Bibliography rendered").pipe(
+          Effect.annotateLogs({ count: entries.length, hasEntryMarkers }),
+        );
+        return { entries, hasEntryMarkers };
+      },
+      Effect.tapError((error) =>
+        Effect.logWarning("Cannot format the bibliography").pipe(
+          Effect.annotateLogs({ error }),
+        ),
       ),
     );
-    stack.defer(
-      this.#citations.on("settled", (key) =>
-        this.#emitter.emit("settled", key),
+    const runCitations = Effect.fn("BibliographyRender.runCitations")(
+      function* (
+        citations: readonly string[],
+        items: readonly CslItemData[],
+        style: RenderStyle,
+      ) {
+        if (citations.length === 0) return [];
+        const active = yield* engine.getEngine;
+        if (!active) return [];
+        const rendered = yield* Effect.tryPromise({
+          try: () =>
+            active.renderCitations({
+              citations,
+              items,
+              ...enginePresentation(style),
+            }),
+          catch: renderError,
+        });
+        yield* Effect.logDebug("Citations rendered").pipe(
+          Effect.annotateLogs({ count: rendered.length }),
+        );
+        return rendered;
+      },
+      Effect.tapError((error) =>
+        Effect.logWarning("Cannot format the citations").pipe(
+          Effect.annotateLogs({ error }),
+        ),
       ),
     );
-    stack.use(this.#renders);
-    stack.use(this.#citations);
-
-    this.commit(stack.move());
-  }
-
-  #applySettings(settings: Readonly<Settings>): void {
-    const next = vaultPresentation(settings);
-    const held = this.#vault;
-    if (held && held.styleId === next.styleId && held.locale === next.locale) {
-      return;
-    }
-    this.#vault = next;
-    logger.info(
-      held
-        ? "Vault citation presentation changed"
-        : "Vault citation presentation selected",
-      { styleId: next.styleId, locale: next.locale },
-    );
-    if (held) this.#invalidate();
-  }
-
-  #invalidate(): void {
-    logger.debug("Bibliography renders went stale");
-    this.#renders.invalidate();
-    this.#citations.invalidate();
-    this.#emitter.emit("invalidated");
-  }
-
-  async #runBibliography(
-    items: readonly CslItemData[],
-    style: RenderStyle,
-  ): Promise<BibliographyRenderResult | null> {
-    try {
-      const presentation = enginePresentation(style);
-      const engine = await this.#engine.getEngine();
-      const entries = await engine.renderBibliography({
-        items,
-        ...presentation,
+    // Start the shared refresh before peeking. A stale value answers immediately;
+    // the layer owns the refresh even when this caller stops waiting.
+    const askThenPeek = Effect.fn("BibliographyRender.askThenPeek")(function* <
+      T,
+    >(key: readonly string[], render: QueryFunction<T>) {
+      if (closed) return null;
+      const asking = yield* Effect.forkIn(queries.ask(key, render), scope, {
+        startImmediately: true,
       });
-      const hasEntryMarkers =
-        styleHasEntryMarkers(presentation.styleXml) ||
-        entries.some((entry) => entry.marker !== undefined);
-      logger.debug("Bibliography rendered", {
-        count: entries.length,
-        hasEntryMarkers,
-      });
-      return { entries, hasEntryMarkers };
-    } catch (error) {
-      logger.warn("Cannot format the bibliography", { error });
-      return null;
-    }
-  }
-
-  async #runCitations(
-    citations: readonly string[],
-    items: readonly CslItemData[],
-    style: RenderStyle,
-  ): Promise<readonly RenderedCitation[] | null> {
-    try {
-      const engine = await this.#engine.getEngine();
-      const rendered = await engine.renderCitations({
+      const held = yield* queries.peek<T>(key);
+      if (held !== null) return held;
+      yield* Fiber.join(asking);
+      return yield* queries.peek<T>(key);
+    });
+    return BibliographyRender.of({
+      state: SubscriptionRef.get(state),
+      changes: SubscriptionRef.changes(state),
+      events: Stream.fromPubSub(events),
+      render: Effect.fn("BibliographyRender.render")(
+        function* (items, presentation) {
+          const prepared = yield* prepare(presentation);
+          if (prepared.reason !== undefined)
+            return { kind: "unavailable", reason: prepared.reason };
+          const key = renderKey({ ...prepared, items });
+          const record = yield* askThenPeek(
+            [BIBLIOGRAPHY_RENDER, key],
+            ({ signal }) =>
+              runPromise(runBibliography(items, prepared.style), { signal }),
+          );
+          return record === null
+            ? { kind: "unavailable", reason: "failed" }
+            : { kind: "held", key, record };
+        },
+      ),
+      renderCitations: Effect.fn("BibliographyRender.renderCitations")(
+        function* (citations, items, presentation) {
+          const prepared = yield* prepare(presentation);
+          if (prepared.reason !== undefined)
+            return { kind: "unavailable", reason: prepared.reason };
+          const key = renderKey({ ...prepared, items, citations });
+          const record = yield* askThenPeek(
+            [CITATION_RENDER, key],
+            ({ signal }) =>
+              runPromise(runCitations(citations, items, prepared.style), {
+                signal,
+              }),
+          );
+          return record === null
+            ? { kind: "unavailable", reason: "failed" }
+            : { kind: "held", key, record };
+        },
+      ),
+      readBibliography: Effect.fn("BibliographyRender.readBibliography")(
+        function* (items, { presentation } = {}) {
+          const prepared = yield* prepare(presentation);
+          if (prepared.reason !== undefined) return null;
+          return yield* queries.readFresh(
+            [BIBLIOGRAPHY_RENDER, renderKey({ ...prepared, items })],
+            ({ signal }) =>
+              runPromise(runBibliography(items, prepared.style), { signal }),
+          );
+        },
+      ),
+      readCitations: Effect.fn("BibliographyRender.readCitations")(function* (
         citations,
         items,
-        ...enginePresentation(style),
-      });
-      logger.debug("Citations rendered", { count: rendered.length });
-      return rendered;
-    } catch (error) {
-      logger.warn("Cannot format the citations", { error });
-      return null;
-    }
-  }
-
-  /** The vault selections where `presentation` names none of its own. */
-  #styleRequest(presentation: RenderPresentation | undefined): CslStyleRequest {
-    return effectivePresentation(presentation ?? {}, this.vaultPresentation);
-  }
-
-  /**
-   * A style the vault selected and Zotero cannot supply is a vault-level
-   * repair, which is the one the warning and the lifecycle notice guide to. A
-   * request that names its own style speaks for the document that named it, so
-   * it fails without claiming the vault selection is at fault.
-   */
-  async #resolveStyle(request: CslStyleRequest): Promise<ResolvedCslStyle> {
-    const style = await this.#styles.resolve(this.#zoteroPref.dataDir, request);
-    if (style.kind !== "failed") return style;
-
-    logger.debug("Cannot resolve the requested citation style", {
-      styleId: style.styleId,
-      parentId: style.parentId,
-      reason: style.reason,
+        { presentation } = {},
+      ) {
+        const prepared = yield* prepare(presentation);
+        if (prepared.reason !== undefined) return null;
+        return yield* queries.readFresh(
+          [CITATION_RENDER, renderKey({ ...prepared, items, citations })],
+          ({ signal }) =>
+            runPromise(runCitations(citations, items, prepared.style), {
+              signal,
+            }),
+        );
+      }),
     });
-    const selected = this.#vault?.styleId ?? null;
-    if (style.styleId === selected && this.#missingStyle === null) {
-      this.#missingStyle = style.styleId;
-      this.#emitter.emit("style-missing", style.styleId);
-    }
-    return style;
-  }
-}
+  }).pipe(withLogCategory("pandoc", "render-cache")),
+);
 
 /**
  * What the engine formats one Resolved CSL Style with: an installed style hands
@@ -403,19 +464,9 @@ function enginePresentation(style: RenderStyle): {
 }
 
 /**
- * The identity of one render: the style and Citation Locale that format it, the
- * independent parent the style resolved through, the very CSL content it is
- * formatted by, the works it covers in the order they are cited, and — for an
- * in-text render — the citations it formats.
- *
- * The parent belongs to that identity because a dependent style that starts
- * naming another parent renders another way under the same style ID, and the
- * content belongs to it because a style edited in Zotero renders another way
- * under the same style ID and the same parent.
- *
- * A CSL id names one Item — a Zotero item URI, an Indexed Key, or a citation
- * key — and none of the three can carry the separator, so the empty line
- * between the two lists keeps them apart.
+ * Full style and item content separate a cancelled render's captured inputs
+ * from updated data under the same IDs. Query Core's stable JSON serialization
+ * ignores object property order while preserving item and citation order.
  */
 function renderKey({
   request,
@@ -428,24 +479,17 @@ function renderKey({
   items: readonly CslItemData[];
   citations?: readonly string[];
 }): string {
-  return [
+  return hashKey([
     request.styleId ?? "",
     style.kind === "installed" ? (style.parentId ?? "") : "",
     request.locale ?? "",
-    contentIdentity(style),
-    ...items.map((item) => item.id),
-    ...(citations.length > 0 ? ["", ...citations] : []),
-  ].join("\n");
+    style.kind === "installed" ? style.xml : "",
+    items,
+    citations,
+  ]);
 }
 
-/**
- * What the resolved style formats with, as a value that changes with it: the
- * digest of the CSL content the engine is handed. The embedded default style
- * ships with the engine and carries no content of its own here, so it stands
- * on the request alone.
- */
-function contentIdentity(style: RenderStyle): string {
-  return style.kind === "installed"
-    ? createHash("sha256").update(style.xml).digest("base64")
-    : "";
+/** The {@link renderKey} a held render's query key carries. */
+function renderKeyOf(key: readonly unknown[]): string {
+  return String(key[1]);
 }

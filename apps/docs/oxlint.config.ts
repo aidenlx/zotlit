@@ -1,6 +1,11 @@
 import { defineConfig } from "oxlint";
 
-import baseConfig from "@zotlit/config/oxlint";
+import { testBaselineOverrides } from "@zotlit/config/oxlint";
+import baseConfig, {
+  datePattern,
+  itemQuerySchemaPaths,
+  parentImportPattern,
+} from "@zotlit/config/oxlint";
 
 export default defineConfig({
   extends: [baseConfig],
@@ -29,14 +34,51 @@ export default defineConfig({
     "nextjs/no-title-in-document-head": "off",
     "nextjs/no-typos": "off",
     "nextjs/no-unwanted-polyfillio": "off",
+    // The site renders on the server and hydrates one React root, so its ids
+    // come from useId, the one id that matches across the two renders. The
+    // base rule without its useId ban:
+    "no-restricted-imports": [
+      "error",
+      {
+        patterns: [parentImportPattern, datePattern],
+        paths: itemQuerySchemaPaths,
+      },
+    ],
   },
+  jsPlugins: [
+    new URL("../../packages/config/oxlint-plugin-design.ts", import.meta.url)
+      .pathname,
+  ],
   overrides: [
+    {
+      files: ["src/lib/workbench/*.tsx"],
+      excludeFiles: ["**/*.test.tsx"],
+      rules: { "zotlit-design/workbench-chrome": "error" },
+    },
+    ...testBaselineOverrides("apps/docs"),
+    {
+      // workerd ships no Temporal: the publication-date schema, its date
+      // helpers, the Date the feed library takes, and the git date that
+      // fumadocs hands in (AGENTS.md → Dates).
+      files: [
+        "src/lib/shared.ts",
+        "src/routes/changelog/rss\\[.\\]xml.ts",
+        "src/components/docs-last-updated.tsx",
+        "src/lib/sitemap.ts",
+      ],
+      rules: {
+        "effecttsgo/global-date": "off",
+        "effecttsgo/global-date-in-effect": "off",
+        "no-restricted-globals": "off",
+        "typescript/no-restricted-types": "off",
+      },
+    },
     {
       // Codegen scripts read `src/` directly; the `@/` alias resolves for the
       // bundler, not for `node scripts/*.ts`.
       files: ["scripts/**"],
       rules: {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": ["error", { patterns: [datePattern] }],
       },
     },
   ],

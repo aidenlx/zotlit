@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { Deferred } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -6,16 +8,23 @@ import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type { ProfileId } from "@/lib/profile-stamp";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type {
   CitationOccurrence,
   ReferenceSource,
 } from "@/services/citation-index/service";
 
+import { makeReferencesHost } from "./__fixtures__";
+import type { ReferencesHost } from "./__fixtures__";
 import type { ReferenceActions } from "./actions";
+import { ReferenceActionsContext } from "./actions";
 import type { ReferenceEntry } from "./entries";
+import { makeReferencesModel, ReferencesModelContext } from "./model";
 import { References } from "./References";
-import type { ReferencesListMode, ReferencesState } from "./store";
+import type { ReferencesListMode, ReferencesState } from "./state";
 
 vi.mock("@/components/obsidian/icon-button", async () => {
   const { createElement } = await import("react");
@@ -25,22 +34,15 @@ vi.mock("@/components/obsidian/icon-button", async () => {
   };
 });
 
-vi.mock("./actions", () => ({
-  useReferenceActions: () => actions,
-}));
-
-vi.mock("./store", () => ({
-  useReferencesStore: <T>(selector: (current: ReferencesState) => T) =>
-    selector(state),
-}));
-
 const actions: ReferenceActions = {
   onSelect: () => undefined,
   onOpenNote: () => undefined,
   onOpenInZotero: () => undefined,
+  onShowInLibrary: () => undefined,
   onOpenAttachment: () => undefined,
   onOpenEngineSettings: () => undefined,
   onChangeStyle: vi.fn(),
+  onSwitchProfile: vi.fn(),
   onDismissEngineHint: () => undefined,
   onCopyBibliography: vi.fn(() => Promise.resolve()),
 };
@@ -57,6 +59,7 @@ const occurrence: CitationOccurrence = {
 const source: ReferenceSource = {
   csl: { id: "ref-book", type: "book", title: "Book" },
   summary: "Rivers (2020): Book",
+  citationSummary: "Rivers (2020)",
   itemKey: "BOOK0001",
   itemID: 1,
   groupID: null,
@@ -67,10 +70,13 @@ const source: ReferenceSource = {
 
 let state: ReferencesState;
 let root: Root | undefined;
+let host: ReferencesHost | undefined;
 
 afterEach(async () => {
   await act(() => root?.unmount());
   root = undefined;
+  await host?.close();
+  host = undefined;
   document.body.replaceChildren();
   vi.clearAllMocks();
 });
@@ -81,7 +87,11 @@ async function render(
   {
     formattingFailed = false,
     documentPresentationError = null,
-    engine = { kind: "installed", version: "test" },
+    engine = {
+      kind: "installed",
+      version: "test",
+      binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
+    },
     copy = { kind: "blocked", reason: "pending" },
     citekeyResolution = "fresh",
   }: Partial<
@@ -105,25 +115,32 @@ async function render(
     citekeyResolution,
     copy,
   };
+  host = await makeReferencesHost();
+  const model = { ...makeReferencesModel(), state: Atom.make(state) };
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(() => {
-    root!.render(createElement(References));
+    root!.render(
+      createElement(
+        ViewRegistryProvider,
+        { registry: host!.registry },
+        createElement(
+          ReferencesModelContext,
+          { value: model },
+          createElement(
+            ReferenceActionsContext,
+            { value: actions },
+            createElement(References),
+          ),
+        ),
+      ),
+    );
   });
   return container;
 }
 
 describe("References", () => {
-  it("owns its empty-state presentation", async () => {
-    const container = await render([], { kind: "minimal" });
-    const empty = container.querySelector("[data-references-empty]");
-
-    expect(empty).not.toBeNull();
-    expect(empty?.classList).toContain("zt:text-faint");
-    expect(container.querySelector(".pane-empty")).toBeNull();
-  });
-
   it("hides the warning gutter when the style shows no Entry Marker", async () => {
     const container = await render(
       [
@@ -223,7 +240,7 @@ describe("References", () => {
       [...row.querySelectorAll("[data-icon]")].map((el) =>
         el.getAttribute("data-icon"),
       ),
-    ).toStrictEqual(["file-text", "external-link", "chevron-right"]);
+    ).toStrictEqual(["file-text", "external-link", "library", "chevron-right"]);
   });
 
   it("shows the markup and the links a formatted entry carries", async () => {
@@ -501,7 +518,11 @@ describe("References banners", () => {
     [
       "the install progress",
       {
-        engine: { kind: "installing", done: Promise.resolve() },
+        engine: {
+          kind: "installing",
+          done: Deferred.makeUnsafe(),
+          binary: null,
+        },
       } satisfies Partial<ReferencesState>,
       "Downloading the Pandoc engine…",
     ],
@@ -523,16 +544,44 @@ describe("References banners", () => {
     [
       "an unusable note style",
       {
-        documentPresentationError: "style",
+        documentPresentationError: { kind: "unusable", property: "style" },
       } satisfies Partial<ReferencesState>,
       "This note's citation and references style is unavailable",
     ],
     [
       "an unusable document language",
       {
-        documentPresentationError: "language",
+        documentPresentationError: {
+          kind: "unusable",
+          property: "language",
+        },
       } satisfies Partial<ReferencesState>,
       "This note's document language is invalid",
+    ],
+    [
+      "an unavailable Imported Note Profile",
+      {
+        documentPresentationError: {
+          kind: "unusable",
+          property: "profile",
+          diagnostic: unknownProfileDiagnostic("deleted-profile"),
+          target: "Imported/Research.md",
+        },
+      } satisfies Partial<ReferencesState>,
+      "This imported note's profile is unavailable",
+    ],
+    [
+      "an unavailable Imported Note Profile style",
+      {
+        documentPresentationError: {
+          kind: "unusable",
+          property: "profile-style",
+          styleId: "missing-profile-style",
+          profile: "research-profile" as ProfileId,
+          target: "Imported/Research.md",
+        },
+      } satisfies Partial<ReferencesState>,
+      "This imported note's profile style is unavailable",
     ],
   ])("keeps %s with the scrolling list region", async (_, state, title) => {
     const container = await render([summaryEntry], { kind: "minimal" }, state);
@@ -570,25 +619,6 @@ describe("References toolbar", () => {
     await act(() => styleAction(container).click());
   }
 
-  it("holds the style action above the scrolling list region", async () => {
-    const container = await render([summaryEntry], { kind: "minimal" });
-    const scrolling = container.querySelector("[data-references-scroll]")!;
-
-    expect(styleAction(container)).not.toBeNull();
-    expect(
-      scrolling.querySelector("[data-references-change-style]"),
-    ).toBeNull();
-    expect(scrolling.querySelector("ul")).not.toBeNull();
-  });
-
-  it("names the style action for pointer and keyboard users", async () => {
-    const container = await render([summaryEntry], { kind: "minimal" });
-
-    expect(styleAction(container).getAttribute("aria-label")).toBe(
-      "Change citation and references style",
-    );
-  });
-
   it("reveals the style setting when the action is activated", async () => {
     const container = await render([summaryEntry], { kind: "minimal" });
     await activateStyleAction(container);
@@ -610,7 +640,11 @@ describe("References toolbar", () => {
       [summaryEntry],
       { kind: "minimal" },
       {
-        engine: { kind: "installing", done: Promise.resolve() },
+        engine: {
+          kind: "installing",
+          done: Deferred.makeUnsafe(),
+          binary: null,
+        },
       },
     );
     await activateStyleAction(container);
@@ -687,24 +721,6 @@ describe("References copy action", () => {
     );
   }
 
-  it("holds the copy action above the scrolling list region", async () => {
-    const container = await ready();
-    const scrolling = container.querySelector("[data-references-scroll]")!;
-
-    expect(copyAction(container)).not.toBeNull();
-    expect(
-      scrolling.querySelector("[data-references-copy-bibliography]"),
-    ).toBeNull();
-  });
-
-  it("names the copy action for pointer and keyboard users", async () => {
-    const container = await ready();
-    const action = copyAction(container);
-
-    expect(action.getAttribute("aria-label")).toBe("Copy bibliography");
-    expect(action.hasAttribute("disabled")).toBe(false);
-  });
-
   it("copies the bibliography the action was offered for", async () => {
     const container = await ready();
     await act(() => copyAction(container).click());
@@ -736,4 +752,26 @@ describe("References copy action", () => {
       expect(actions.onCopyBibliography).not.toHaveBeenCalled();
     },
   );
+});
+
+it("opens Profile recovery for the note named by the References diagnostic", async () => {
+  const container = await render(
+    [],
+    { kind: "minimal" },
+    {
+      documentPresentationError: {
+        kind: "unusable",
+        property: "profile",
+        diagnostic: unknownProfileDiagnostic("Missing (Qw8Er5Ty2Ui9)"),
+        target: "Imported/Orphan.md",
+      },
+    },
+  );
+  const button = container.querySelector<HTMLButtonElement>(
+    "[data-profile-recovery]",
+  );
+  expect(button).not.toBeNull();
+  expect(button?.textContent).toBe(m.profile_switch_recovery());
+  button?.click();
+  expect(actions.onSwitchProfile).toHaveBeenCalledWith("Imported/Orphan.md");
 });

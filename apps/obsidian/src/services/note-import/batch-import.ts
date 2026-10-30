@@ -1,27 +1,29 @@
-import { distinct } from "@std/collections";
 // Batch import runner for Zotero notes into standalone Markdown mirrors.
-import type { MetadataCache, TFile } from "obsidian";
+import { distinct } from "@std/collections";
+import { Cause, Effect, Stream } from "effect";
+import type { TFile } from "obsidian";
 
-import {
-  getChildNotesByParentIDs,
-  getItemDisplayRefByID,
-  getItemsByKey,
-  getNoteByItemID,
-  getNoteByKey,
-  getNoteRefsByItemIDs,
-  getTrashedNoteItemIDs,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
-import type { ChildNote, GroupIDMemo, TagMemo } from "@zotlit/db";
+import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import type { ChildNote, Note } from "@zotlit/db";
 import type { ImportMode } from "@zotlit/protocol";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { classifyChunked, runBatchWrite } from "@/services/batch-run";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import type { ProfileSelector } from "@/lib/profile-stamp";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
+import { batchProfileSummary } from "@/services/batch-profile-summary";
+import type { BatchProfileCount } from "@/services/batch-profile-summary";
+import {
+  classifyStream,
+  executeBatchRun,
+  modalRunner,
+} from "@/services/batch-run";
 import type {
   BatchClassifyControls,
   BatchRunControls,
-  BatchRunResult,
+  RunOutcome,
 } from "@/services/batch-run";
 import {
   batchGroupKey,
@@ -31,43 +33,75 @@ import {
   withUnavailableLibraries,
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
-import type { DatabaseService } from "@/services/database/service";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import type { LibraryScope } from "@/services/library-scope/service";
+import type {
+  CreationProfileSelection,
+  ProfilePreview,
+} from "@/services/note-feature";
+import {
+  collectExcerptReports,
+  NoteFeature,
+} from "@/services/note-feature/service";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
-import type { NoteIndex } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
+import { NoteIndex } from "@/services/note-index/service";
+import { Profile } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
+import type { ZoteroPref } from "@/services/zotero-pref/service";
+import { readDisplayRef } from "@/services/zotero-reads/display-ref";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { FlatManifest, HierarchyManifest } from "@/views/batch-modal";
-import type { FlatTask, HierarchyParent } from "@/views/batch-modal";
+import type {
+  FlatTask,
+  HierarchyParent,
+  BatchProfileChoice,
+} from "@/views/batch-modal";
 
 import { importRunSummary } from "./batch-import-notices";
-import type { NoteImporter, WriteOutcome } from "./service";
+import { NoteImporter } from "./service";
+import type { PreparedExplicitImport, WriteOutcome } from "./service";
 import type { NoteImportView } from "./view";
 
-const logger = getLogger("batch-import");
+const logged = withLogCategory("batch-import");
 
 /** Bounds concurrent per-note loads + writes during a modal run, so Cancel can
- * abort the queued remainder between items. */
+ * stop the queued remainder between items. */
 const IMPORT_CONCURRENCY = 16;
 
-export interface NoteImportDeps {
+/**
+ * The services a batch import reads through their tags, the Profile dialogs
+ * its Profile choice opens included.
+ */
+export type BatchImportServices =
+  | LibraryScope
+  | MetadataCache
+  | NoteFeature
+  | NoteImporter
+  | NoteIndex
+  | PluginSettings
+  | Profile
+  | ProfileDialogServices
+  | ZoteroPref
+  | ZoteroReads;
+
+/**
+ * The legacy values a batch import calls: the UI port for the classify,
+ * confirm and Profile modals, and the bridge the modal's callbacks enter
+ * Effect through.
+ */
+export interface BatchImportPorts {
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
-  view: NoteImportView;
-  db: Pick<DatabaseService, "state" | "client" | "acquireRead">;
-  settings: Pick<SettingsService, "loaded">;
-  /** Which Libraries an unqualified library-wide import covers. */
-  libraryScope: Pick<LibraryScopeService, "resolveWith">;
-  noteImport: Pick<NoteImporter, "importNote">;
-  noteIndex: Pick<NoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
-  metadataCache: Pick<MetadataCache, "getFileCache">;
-  /** Only template readiness is gated here; rendering lives in `noteImport`. */
-  template: Pick<TemplateService, "ready">;
+  readonly view: NoteImportView;
+  /** Runs the modal's callbacks; unload interrupts a run still going. */
+  readonly bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
 }
 
 /**
- * The note-import command surface: the interactive batch/single/child import
- * routing bound to one dependency set. Built once (see {@link createBatchImport})
- * so consumers hold this seam instead of the full dependency context.
+ * The note-import command surface for callers outside Effect: the
+ * interactive batch/single/child import routing. `plugin-runtime.ts` binds it over the
+ * plugin's services (`batch-import-handle.ts`).
  */
 export interface BatchImport {
   /** @see {@link runBatchImport} */
@@ -75,10 +109,6 @@ export interface BatchImport {
     mode: ImportMode,
     itemIDs: readonly number[],
   ): Promise<BatchImportResult>;
-  /** @see {@link runBatchImportAll} */
-  runBatchImportAll(target?: BatchTarget): Promise<BatchImportResult>;
-  /** @see {@link runChildImportByKey} */
-  runChildImportByKey(indexedKey: string): Promise<BatchImportResult | null>;
   /** @see {@link reimportNoteByKey} */
   reimportNoteByKey(
     noteKey: string,
@@ -86,20 +116,15 @@ export interface BatchImport {
   ): Promise<ReimportResult>;
 }
 
-export function createBatchImport(deps: NoteImportDeps): BatchImport {
-  return {
-    runBatchImport: (mode, itemIDs) => runBatchImport(deps, { mode, itemIDs }),
-    runBatchImportAll: (target) => runBatchImportAll(deps, target),
-    runChildImportByKey: (indexedKey) => runChildImportByKey(deps, indexedKey),
-    reimportNoteByKey: (noteKey, targetFile) =>
-      reimportNoteByKey(deps, noteKey, targetFile),
-  };
-}
-
-type ImportAction =
+type ImportAction = {
+  profilePlan?: PreparedExplicitImport;
+  unknownStamp?: string;
+  task?: FlatTask;
+} & (
   | { note: ChildNote; label: string; kind: "create" }
   | { note: ChildNote; label: string; kind: "overwrite"; file: TFile }
-  | { note: ChildNote; label: string; kind: "up-to-date"; file: TFile };
+  | { note: ChildNote; label: string; kind: "up-to-date"; file: TFile }
+);
 
 interface NotFoundEntry {
   itemID: number;
@@ -124,6 +149,11 @@ export type BatchImportResult =
   | { outcome: "single"; write: WriteOutcome; title: string }
   | { outcome: "cancelled" };
 
+/** Whether the database answers reads now. */
+const databaseReady = Effect.gen(function* () {
+  return (yield* (yield* ZoteroReads).current).state === "ready";
+});
+
 /**
  * Explicitly import notes by `itemIDs`, routing on mode + count (mirrors
  * {@link runBatchUpdate}):
@@ -143,35 +173,37 @@ export type BatchImportResult =
  * @param request.unavailableLibraries selected Libraries this database holds no
  *   Library for; stated in the confirmation introduction.
  */
-async function runBatchImport(
-  deps: NoteImportDeps,
+export const runBatchImport = Effect.fn("runBatchImport")(function* (
+  ports: BatchImportPorts,
   request: {
     mode: ImportMode;
     itemIDs: readonly number[];
     unavailableLibraries?: number;
   },
-): Promise<BatchImportResult> {
+) {
   const { mode, itemIDs, unavailableLibraries = 0 } = request;
-  if (deps.db.state !== "ready") {
-    logger.warn("Batch import: database not ready", { count: itemIDs.length });
-    return { outcome: "db-unavailable" };
+  if (!(yield* databaseReady)) {
+    yield* Effect.logWarning("Batch import: database not ready").pipe(
+      Effect.annotateLogs({ count: itemIDs.length }),
+      logged,
+    );
+    return result({ outcome: "db-unavailable" });
   }
-  if (itemIDs.length === 0) {
-    return { outcome: "empty-selection" };
-  }
+  if (itemIDs.length === 0) return result({ outcome: "empty-selection" });
 
-  await deps.noteIndex.whenIndexed();
+  yield* (yield* NoteIndex).whenIndexed;
 
   if (mode === "child") {
-    openChildImportModal(deps, itemIDs);
-    return { outcome: "batch-modal" };
+    yield* openChildImportModal(ports, itemIDs);
+    return result({ outcome: "batch-modal" });
   }
-  if (itemIDs.length === 1) {
-    return importSingleNote(deps, itemIDs[0]!);
-  }
-  openNoteImportModal(deps, itemIDs, unavailableLibraries);
-  return { outcome: "batch-modal" };
-}
+  if (itemIDs.length === 1) return yield* importSingleNote(ports, itemIDs[0]!);
+  yield* openNoteImportModal(ports, itemIDs, unavailableLibraries);
+  return result({ outcome: "batch-modal" });
+});
+
+/** `value` as a {@link BatchImportResult}, so each branch returns one type. */
+const result = (value: BatchImportResult): BatchImportResult => value;
 
 /**
  * Import every Zotero note a target covers. An exact `target` names one Library,
@@ -189,32 +221,35 @@ async function runBatchImport(
  *   Library and every collection nested under it. A key that Library doesn't
  *   hold returns `collection-not-found`.
  */
-async function runBatchImportAll(
-  deps: NoteImportDeps,
+export const runBatchImportAll = Effect.fn("runBatchImportAll")(function* (
+  ports: BatchImportPorts,
   target: BatchTarget = {},
-): Promise<BatchImportResult> {
-  if (deps.db.state !== "ready") {
-    logger.warn("Batch import all: database not ready");
-    return { outcome: "db-unavailable" };
+) {
+  if (!(yield* databaseReady)) {
+    yield* Effect.logWarning("Batch import all: database not ready").pipe(
+      logged,
+    );
+    return result({ outcome: "db-unavailable" });
   }
 
-  const plan = await planBatchScope(deps, "notes", target);
-  if (plan.outcome !== "resolved") {
-    return { outcome: plan.outcome };
-  }
+  const plan = yield* planBatchScope("notes", target);
+  if (plan.outcome !== "resolved") return result({ outcome: plan.outcome });
 
-  logger.info("Batch import all resolved", {
-    groupID: target.groupID,
-    collectionKey: target.collectionKey,
-    unavailableLibraries: plan.unavailableLibraries,
-    notes: plan.itemIDs.length,
-  });
-  return runBatchImport(deps, {
+  yield* Effect.logInfo("Batch import all resolved").pipe(
+    Effect.annotateLogs({
+      groupID: target.groupID,
+      collectionKey: target.collectionKey,
+      unavailableLibraries: plan.unavailableLibraries,
+      notes: plan.itemIDs.length,
+    }),
+    logged,
+  );
+  return yield* runBatchImport(ports, {
     mode: "note",
     itemIDs: plan.itemIDs,
     unavailableLibraries: plan.unavailableLibraries,
   });
-}
+});
 
 /** Light row label for a note ref: its title, else a key fallback. */
 function noteLabel(note: ChildNote): string {
@@ -222,184 +257,448 @@ function noteLabel(note: ChildNote): string {
 }
 
 /** Existing file with matching `zotero-lastmod` → up-to-date; missing field → overwrite. */
-function toAction(
-  deps: Pick<NoteImportDeps, "noteIndex" | "metadataCache">,
-  note: ChildNote,
-): ImportAction {
+const toAction = Effect.fnUntraced(function* (note: ChildNote) {
   const label = noteLabel(note);
-  const existing = deps.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
-  if (!existing) return { note, label, kind: "create" };
+  const existing = (yield* (yield* NoteIndex).getImportedNoteByNoteKey(
+    note.indexedKey,
+  ))[0];
+  if (!existing) {
+    const action: ImportAction = { note, label, kind: "create" };
+    return action;
+  }
 
   const stored = lastmodFromFrontmatter(
-    deps.metadataCache.getFileCache(existing),
+    yield* (yield* MetadataCache).fileCache(existing),
   );
   const storedSec = stored && Math.trunc(stored.epochMilliseconds / 1000);
   const liveSec = Math.trunc(note.dateModified.epochMilliseconds / 1000);
-  if (storedSec === liveSec) {
-    return { note, label, kind: "up-to-date", file: existing };
-  }
-  return { note, label, kind: "overwrite", file: existing };
-}
+  const action: ImportAction =
+    storedSec === liveSec
+      ? { note, label, kind: "up-to-date", file: existing }
+      : { note, label, kind: "overwrite", file: existing };
+  return action;
+});
 
 function actionToTask(action: ImportAction): FlatTask {
-  return {
+  const task = {
     id: action.note.itemID,
     label: action.label,
-    kind: batchGroupKey(action.note.libraryID, action.kind),
+    kind: batchGroupKey(
+      action.note.libraryID,
+      action.kind === "create" && action.profilePlan?.source === "orphan"
+        ? "orphan"
+        : action.kind,
+    ),
+    ...(action.unknownStamp !== undefined
+      ? { profile: action.unknownStamp }
+      : {}),
+    ...(action.profilePlan
+      ? {
+          profile:
+            action.profilePlan.profile.label ??
+            m.settings_profile_default_name(),
+          ...(action.kind === "create"
+            ? { path: action.profilePlan.path }
+            : {}),
+        }
+      : {}),
   };
+  action.task = task;
+  return task;
 }
 
 function needsImport(action: ImportAction): boolean {
   return action.kind !== "up-to-date";
 }
 
+function importRow(action: ImportAction): { label: string; profile?: string } {
+  return {
+    label: action.label,
+    ...(action.unknownStamp !== undefined
+      ? { profile: action.unknownStamp }
+      : {}),
+    ...(action.profilePlan
+      ? {
+          profile:
+            action.profilePlan.profile.label ??
+            m.settings_profile_default_name(),
+        }
+      : {}),
+  };
+}
+
+interface ImportProfileChoice extends BatchProfileChoice {
+  readonly selector: ProfileSelector;
+}
+
+/**
+ * Preview each action's Profile and path, and the orphan Profile choice the
+ * confirmation offers. The choice is the modal's edge: its getters and
+ * `choose` run on the services this Effect runs with.
+ */
+const prepareImportProfiles = Effect.fnUntraced(function* (
+  ports: BatchImportPorts,
+  actions: readonly ImportAction[],
+) {
+  const importer = yield* NoteImporter;
+  const profiles = yield* Profile;
+  const zoteroReads = yield* ZoteroReads;
+  const context = yield* Effect.context<BatchImportServices>();
+  const { settle } = yield* modalRunner<BatchImportServices>(ports.bridge);
+  let selection: CreationProfileSelection =
+    yield* (yield* NoteFeature).resolveCreationProfile();
+  const cache = new Map<ProfileSelector, Map<number, PreparedExplicitImport>>();
+  const initial = new Map<number, PreparedExplicitImport>();
+  yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* zoteroReads.snapshot;
+      for (const action of actions) {
+        const unavailable = (error: unknown) =>
+          Effect.logDebug(
+            "Import preview unavailable; write will report the note diagnostic",
+          ).pipe(
+            Effect.annotateLogs({ noteKey: action.note.indexedKey, error }),
+            logged,
+          );
+        yield* importer
+          .prepareExplicitImport(action.note, {
+            reads,
+            orphanProfile: selection.selector,
+          })
+          .pipe(
+            Effect.map((plan) => {
+              action.profilePlan = plan;
+              initial.set(action.note.itemID, plan);
+            }),
+            Effect.catchTag("NoteImportProfileError", (error) => {
+              action.unknownStamp = error.diagnostic.stamp;
+              return unavailable(error);
+            }),
+            Effect.catchCauseIf(
+              (cause) => !Cause.hasInterruptsOnly(cause),
+              (cause) => unavailable(Cause.squash(cause)),
+            ),
+          );
+      }
+    }),
+  );
+  cache.set(selection.selector, initial);
+  const orphans = actions.filter(
+    (action) =>
+      action.kind === "create" && action.profilePlan?.source === "orphan",
+  );
+  const first = orphans[0];
+  if (!first) return undefined;
+
+  let indexedKey: string | undefined;
+  if (first.note.parentItemID !== null) {
+    const parentItemID = first.note.parentItemID;
+    indexedKey = (yield* Effect.scoped(
+      Effect.gen(function* () {
+        const reads = yield* zoteroReads.snapshot;
+        return yield* readDisplayRef(reads, parentItemID);
+      }),
+    ))?.indexedKey;
+  }
+  const plansFor = Effect.fnUntraced(function* (selector: ProfileSelector) {
+    const cached = cache.get(selector);
+    if (cached) return cached;
+    const plans = new Map<number, PreparedExplicitImport>();
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const reads = yield* zoteroReads.snapshot;
+        for (const action of orphans) {
+          plans.set(
+            action.note.itemID,
+            yield* importer.prepareExplicitImport(action.note, {
+              reads,
+              orphanProfile: selector,
+            }),
+          );
+        }
+      }),
+    );
+    cache.set(selector, plans);
+    return plans;
+  });
+  const choose = Effect.fnUntraced(function* () {
+    const previews: ProfilePreview[] = [];
+    const selectors: ProfileSelector[] = [
+      DEFAULT_PROFILE,
+      ...(yield* profiles.profiles).map(({ id }) => id),
+    ];
+    for (const selector of selectors) {
+      const plan = (yield* plansFor(selector)).get(first.note.itemID)!;
+      previews.push({
+        selector,
+        label: plan.profile.label,
+        folder: plan.profile.bindings["note.import-folder"],
+        citationStyle: plan.profile.bindings["citation.references-style"],
+        document: plan.profile.document,
+        path: plan.path,
+      });
+    }
+    const chosen = yield* ports.view.chooseProfile({
+      selection,
+      previews,
+      indexedKey,
+    });
+    if (chosen === undefined) return;
+    const plans = yield* plansFor(chosen);
+    for (const action of orphans) {
+      action.profilePlan = plans.get(action.note.itemID)!;
+      if (action.task)
+        Object.assign(action.task, {
+          path: action.profilePlan.path,
+          profile:
+            action.profilePlan.profile.label ??
+            m.settings_profile_default_name(),
+        });
+    }
+    selection = { selector: chosen, source: "asked", shouldAsk: true };
+    yield* Effect.logDebug("Changed batch orphan Profile").pipe(
+      Effect.annotateLogs({ selector: chosen, notes: orphans.length }),
+      logged,
+    );
+  });
+  const choice: ImportProfileChoice = {
+    get selector() {
+      return selection.selector;
+    },
+    get label() {
+      return (
+        ports.bridge.runSync(
+          Effect.provideContext(
+            profiles.resolveProfile(selection.selector),
+            context,
+          ),
+        )?.label ?? m.settings_profile_default_name()
+      );
+    },
+    get source() {
+      return selection.source;
+    },
+    choose: () => settle(choose()),
+  };
+  return choice;
+});
+
 // ---------------------------------------------------------------------------
 // Modal: note mode (≥2)
 // ---------------------------------------------------------------------------
 
-function openNoteImportModal(
-  deps: NoteImportDeps,
+const openNoteImportModal = Effect.fnUntraced(function* (
+  ports: BatchImportPorts,
   itemIDs: readonly number[],
   unavailableLibraries: number,
-): void {
+) {
+  const { run } = yield* modalRunner<BatchImportServices>(ports.bridge);
+  const profiles = yield* Profile;
   const ids = distinct(itemIDs);
   let runnableActions: ImportAction[] = [];
   let notFoundCount = 0;
-  deps.view.openBatchModal({
-    text: {
-      title: m.batch_import_title(),
-      loadingLabel: m.batch_import_loading_label(),
-      loadFailed: m.batch_import_load_failed(),
-      runFailed: m.batch_import_run_failed(),
-      progressLabel: m.batch_import_loading(),
-      confirmIntro: ({ actionable, notFound }) =>
-        withUnavailableLibraries(
-          actionable === 0
-            ? m.batch_import_confirm_none({ count: notFound })
-            : m.batch_import_confirm_intro({ count: actionable }),
-          unavailableLibraries,
-        ),
-      confirmButton: m.batch_import_confirm_button(),
-      runSummary: importRunSummary(() => notFoundCount),
-    },
-    total: ids.length,
-    onClassify: async (controls) => {
-      const classified = await classifyNoteImport(deps, ids, controls);
-      runnableActions = classified.actions.filter(needsImport);
-      const upToDate = classified.actions.filter((a) => !needsImport(a));
-      notFoundCount = classified.notFound.length;
-      return new FlatManifest({
-        tasks: runnableActions.map(actionToTask),
-        notFound: classified.notFound,
-        groups: batchGroups(classified.libraries, [
-          { kind: "create", header: m.batch_import_group_import },
-          { kind: "overwrite", header: m.batch_import_group_overwrite },
-        ]),
-        upToDate: upToDate.map((a) => ({ label: a.label })),
-        upToDateHeader: m.batch_import_group_up_to_date,
-        notFoundHeader: m.batch_update_group_not_found,
-        skippedHeader: m.batch_update_group_skipped,
-        abortedHeader: m.batch_update_group_aborted,
-      });
-    },
-    onRun: (controls) => executeImportRun(deps, runnableActions, controls),
+  let profileChoice: ImportProfileChoice | undefined;
+  let profilesEnabled = false;
+  const profileCounts = new Map<ProfileSelector, BatchProfileCount>();
+  const classify = Effect.fnUntraced(function* (
+    controls: BatchClassifyControls,
+  ) {
+    const classified = yield* classifyNoteImport(ids, controls);
+    profilesEnabled = (yield* profiles.profiles).length > 0;
+    if (profilesEnabled)
+      profileChoice = yield* prepareImportProfiles(ports, classified.actions);
+    runnableActions = classified.actions.filter(needsImport);
+    const upToDate = classified.actions.filter((a) => !needsImport(a));
+    notFoundCount = classified.notFound.length;
+    return new FlatManifest({
+      tasks: runnableActions.map(actionToTask),
+      notFound: classified.notFound,
+      groups: batchGroups(classified.libraries, [
+        { kind: "create", header: m.batch_import_group_import },
+        ...(profileChoice
+          ? [
+              {
+                kind: "orphan",
+                header: m.batch_import_group_orphan,
+                profileChoice,
+              },
+            ]
+          : []),
+        { kind: "overwrite", header: m.batch_import_group_overwrite },
+      ]),
+      upToDate: upToDate.map(importRow),
+      upToDateHeader: m.batch_import_group_up_to_date,
+      notFoundHeader: m.batch_update_group_not_found,
+      skippedHeader: m.batch_update_group_skipped,
+      abortedHeader: m.batch_update_group_aborted,
+    });
   });
-}
+  yield* Effect.sync(() =>
+    ports.view.openBatchModal({
+      text: {
+        title: m.batch_import_title(),
+        loadingLabel: m.batch_import_loading_label(),
+        loadFailed: m.batch_import_load_failed(),
+        runFailed: m.batch_import_run_failed(),
+        progressLabel: m.batch_import_loading(),
+        confirmIntro: ({ actionable, notFound }) =>
+          withUnavailableLibraries(
+            actionable === 0
+              ? m.batch_import_confirm_none({ count: notFound })
+              : m.batch_import_confirm_intro({ count: actionable }),
+            unavailableLibraries,
+          ),
+        confirmButton: m.batch_import_confirm_button(),
+        runSummary: (result, state) =>
+          profilesEnabled
+            ? batchProfileSummary(result, {
+                ...state,
+                profiles: [...profileCounts.values()],
+                notFound: notFoundCount,
+              })
+            : importRunSummary(() => notFoundCount)(result, state),
+      },
+      total: ids.length,
+      // The modal's cancel interrupts the classification.
+      onClassify: (controls) => run(classify(controls), controls.signal),
+      onRun: (controls) =>
+        run(
+          executeImportRun(ports, runnableActions, {
+            controls,
+            profileCounts: profilesEnabled ? profileCounts : undefined,
+          }),
+        ),
+    }),
+  );
+});
 
 /**
- * Resolve note `itemIDs` into create/overwrite actions, chunked so the
- * synchronous per-id queries yield between slices (the one UI-freeze risk).
- * Ids that don't resolve to a note land in `notFound`.
- *
- * @throws when {@link BatchClassifyControls.signal} aborts.
+ * Resolve note `itemIDs` into create/overwrite actions from the `NoteRefs`
+ * stream, matched against the Note Index here. Each streamed slice advances
+ * the loading bar; an interrupt stops the stream. Ids that don't resolve to a
+ * note land in `notFound`.
  */
-async function classifyNoteImport(
-  deps: NoteImportDeps,
+const classifyNoteImport = Effect.fnUntraced(function* (
   itemIDs: readonly number[],
-  controls: BatchClassifyControls,
-): Promise<{
-  actions: ImportAction[];
-  notFound: NotFoundEntry[];
-  libraries: BatchLibrary[];
-}> {
-  using lease = await deps.db.acquireRead();
-  const client = lease.client;
-  const memo: GroupIDMemo = new Map();
-  const actions: ImportAction[] = [];
-  const notFound: NotFoundEntry[] = [];
-  await classifyChunked(itemIDs, controls, (slice) => {
-    const refs = getNoteRefsByItemIDs(client, slice, { memo });
-    const resolved = new Set(refs.map((ref) => ref.itemID));
-    for (const ref of refs) actions.push(toAction(deps, ref));
-    const unresolved = slice.filter((id) => !resolved.has(id));
-    const trashed = getTrashedNoteItemIDs(client, unresolved);
-    for (const id of unresolved) {
-      notFound.push({
-        itemID: id,
-        label: trashed.has(id)
-          ? m.batch_import_item_trashed({ id })
-          : m.batch_import_item_not_note({ id }),
+  controls: Pick<BatchClassifyControls, "onProgress">,
+) {
+  // One Snapshot for the refs and the Libraries they are grouped by.
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* (yield* ZoteroReads).snapshot;
+      const notes: ChildNote[] = [];
+      const notFound: NotFoundEntry[] = [];
+      yield* classifyStream(
+        { itemIDs, read: (ids) => reads.NoteRefs({ itemIDs: ids }) },
+        controls,
+        (slice) => {
+          for (const { note } of slice) if (note) notes.push(note);
+          for (const { itemID: id, note, trashed } of slice) {
+            if (note) continue;
+            notFound.push({
+              itemID: id,
+              label: trashed
+                ? m.batch_import_item_trashed({ id })
+                : m.batch_import_item_not_note({ id }),
+            });
+          }
+        },
+      );
+      const actions = yield* Effect.forEach(notes, (note) => toAction(note));
+      const libraries = batchLibraries(
+        yield* reads.Libraries({}),
+        new Set(
+          actions.filter(needsImport).map((action) => action.note.libraryID),
+        ),
+      );
+      yield* logClassified("note", actions, {
+        total: itemIDs.length,
+        notFound: notFound.length,
       });
-    }
-  });
-  const libraries = batchLibraries(
-    client,
-    new Set(actions.filter(needsImport).map((action) => action.note.libraryID)),
+      return { actions, notFound, libraries } satisfies {
+        actions: ImportAction[];
+        notFound: NotFoundEntry[];
+        libraries: BatchLibrary[];
+      };
+    }),
   );
-  logClassified("note", actions, {
-    total: itemIDs.length,
-    notFound: notFound.length,
-  });
-  return { actions, notFound, libraries };
-}
+});
 
 // ---------------------------------------------------------------------------
 // Modal: child mode (always)
 // ---------------------------------------------------------------------------
 
-function openChildImportModal(
-  deps: NoteImportDeps,
+const openChildImportModal = Effect.fnUntraced(function* (
+  ports: BatchImportPorts,
   parentItemIDs: readonly number[],
-): void {
+) {
+  const { run } = yield* modalRunner<BatchImportServices>(ports.bridge);
+  const profiles = yield* Profile;
   const ids = distinct(parentItemIDs);
   let runnableActions: ImportAction[] = [];
-  deps.view.openBatchModal({
-    text: {
-      title: m.batch_import_child_title(),
-      loadingLabel: m.batch_import_loading_label(),
-      loadFailed: m.batch_import_load_failed(),
-      runFailed: m.batch_import_run_failed(),
-      progressLabel: m.batch_import_loading(),
-      confirmIntro: ({ actionable }) =>
-        actionable === 0
-          ? m.batch_import_child_confirm_none()
-          : m.batch_import_child_confirm_intro({ count: actionable }),
-      confirmButton: m.batch_import_confirm_button(),
-      runSummary: importRunSummary(() => 0),
-    },
-    total: ids.length,
-    onClassify: async (controls) => {
-      const parents = await classifyChildImport(deps, ids, controls);
-      const allActions = parents.flatMap((parent) => parent.actions);
-      runnableActions = allActions.filter(needsImport);
-      const upToDateChildren = allActions.filter((a) => !needsImport(a));
-      return new HierarchyManifest({
-        parents: parents.map(
-          (parent): HierarchyParent => ({
-            label: parent.label,
-            children: parent.actions.filter(needsImport).map(actionToTask),
+  let profileChoice: ImportProfileChoice | undefined;
+  let profilesEnabled = false;
+  const profileCounts = new Map<ProfileSelector, BatchProfileCount>();
+  const classify = Effect.fnUntraced(function* (
+    controls: BatchClassifyControls,
+  ) {
+    const parents = yield* classifyChildImport(ids, controls);
+    const allActions = parents.flatMap((parent) => parent.actions);
+    profilesEnabled = (yield* profiles.profiles).length > 0;
+    if (profilesEnabled)
+      profileChoice = yield* prepareImportProfiles(ports, allActions);
+    runnableActions = allActions.filter(needsImport);
+    const upToDateChildren = allActions.filter((a) => !needsImport(a));
+    return new HierarchyManifest({
+      parents: parents.map((parent): HierarchyParent => ({
+        label: parent.label,
+        profileChoice: parent.actions.some(
+          (action) => action.profilePlan?.source === "orphan",
+        )
+          ? profileChoice
+          : undefined,
+        children: parent.actions.filter(needsImport).map(actionToTask),
+      })),
+      upToDate: upToDateChildren.map(importRow),
+      upToDateHeader: m.batch_import_group_up_to_date,
+      doneHeader: m.batch_import_child_group_done,
+      skippedHeader: m.batch_update_group_skipped,
+      abortedHeader: m.batch_update_group_aborted,
+    });
+  });
+  yield* Effect.sync(() =>
+    ports.view.openBatchModal({
+      text: {
+        title: m.batch_import_child_title(),
+        loadingLabel: m.batch_import_loading_label(),
+        loadFailed: m.batch_import_load_failed(),
+        runFailed: m.batch_import_run_failed(),
+        progressLabel: m.batch_import_loading(),
+        confirmIntro: ({ actionable }) =>
+          actionable === 0
+            ? m.batch_import_child_confirm_none()
+            : m.batch_import_child_confirm_intro({ count: actionable }),
+        confirmButton: m.batch_import_confirm_button(),
+        runSummary: (result, state) =>
+          profilesEnabled
+            ? batchProfileSummary(result, {
+                ...state,
+                profiles: [...profileCounts.values()],
+              })
+            : importRunSummary(() => 0)(result, state),
+      },
+      total: ids.length,
+      onClassify: (controls) => run(classify(controls), controls.signal),
+      onRun: (controls) =>
+        run(
+          executeImportRun(ports, runnableActions, {
+            controls,
+            profileCounts: profilesEnabled ? profileCounts : undefined,
           }),
         ),
-        upToDate: upToDateChildren.map((a) => ({ label: a.label })),
-        upToDateHeader: m.batch_import_group_up_to_date,
-        doneHeader: m.batch_import_child_group_done,
-        skippedHeader: m.batch_update_group_skipped,
-        abortedHeader: m.batch_update_group_aborted,
-      });
-    },
-    onRun: (controls) => executeImportRun(deps, runnableActions, controls),
-  });
-}
+    }),
+  );
+});
 
 interface ChildGroup {
   label: string;
@@ -407,94 +706,117 @@ interface ChildGroup {
 }
 
 /**
- * Expand each lit item into its child notes, chunked over parents. Parents with
- * no child notes are dropped; the modal's empty confirm state then reports
- * "no child notes to import".
- *
- * @throws when {@link BatchClassifyControls.signal} aborts.
+ * Expand each lit item into its child notes from the `ChildNoteRefs` stream.
+ * Each streamed slice advances the loading bar; an interrupt stops the stream.
+ * Parents with no child notes are dropped; the modal's empty confirm state
+ * then reports "no child notes to import".
  */
-async function classifyChildImport(
-  deps: NoteImportDeps,
+const classifyChildImport = Effect.fnUntraced(function* (
   parentItemIDs: readonly number[],
-  controls: BatchClassifyControls,
-): Promise<ChildGroup[]> {
-  using lease = await deps.db.acquireRead();
-  const client = lease.client;
-  const memo: GroupIDMemo = new Map();
-  const parents: ChildGroup[] = [];
-  await classifyChunked(parentItemIDs, controls, (slice) => {
-    for (const parentID of slice) {
-      const children = getChildNotesByParentIDs(client, [parentID], { memo });
-      if (children.length === 0) continue;
-      const display = getItemDisplayRefByID(client, parentID, { memo });
-      const label =
-        display?.title?.trim() || m.batch_update_untitled({ id: parentID });
-      parents.push({
-        label,
-        actions: children.map((child) => toAction(deps, child)),
+  controls: Pick<BatchClassifyControls, "onProgress">,
+) {
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* (yield* ZoteroReads).snapshot;
+      const groups: { label: string; notes: readonly ChildNote[] }[] = [];
+      yield* classifyStream(
+        {
+          itemIDs: parentItemIDs,
+          read: (ids) => reads.ChildNoteRefs({ itemIDs: ids }),
+        },
+        controls,
+        (slice) => {
+          for (const { itemID: parentID, ref, notes } of slice) {
+            if (notes.length === 0) continue;
+            const label =
+              ref?.title?.trim() || m.batch_update_untitled({ id: parentID });
+            groups.push({ label, notes });
+          }
+        },
+      );
+      const parents: ChildGroup[] = yield* Effect.forEach(groups, (group) =>
+        Effect.map(
+          Effect.forEach(group.notes, (child) => toAction(child)),
+          (actions) => ({ label: group.label, actions }),
+        ),
+      );
+      const childActions = parents.flatMap((parent) => parent.actions);
+      yield* logClassified("child", childActions, {
+        total: parentItemIDs.length,
+        notFound: 0,
       });
-    }
-  });
-  const childActions = parents.flatMap((parent) => parent.actions);
-  logClassified("child", childActions, {
-    total: parentItemIDs.length,
-    notFound: 0,
-  });
-  return parents;
-}
+      return parents;
+    }),
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Single note (mode=note, 1 id)
 // ---------------------------------------------------------------------------
 
-async function importSingleNote(
-  deps: NoteImportDeps,
+const importSingleNote = Effect.fnUntraced(function* (
+  ports: BatchImportPorts,
   itemID: number,
-): Promise<BatchImportResult> {
-  let ref: ChildNote | undefined;
-  {
-    using lease = await deps.db.acquireRead();
-    ref = getNoteRefsByItemIDs(lease.client, [itemID])[0];
-  }
-  if (!ref) return { outcome: "not-found", count: 1 };
+) {
+  const ref = yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* (yield* ZoteroReads).snapshot;
+      const slices = yield* Stream.runCollect(
+        reads.NoteRefs({ itemIDs: [itemID] }),
+      );
+      return slices.flat()[0]?.note;
+    }),
+  );
+  if (!ref) return result({ outcome: "not-found", count: 1 });
 
   const title = noteLabel(ref);
-  const existing = deps.noteIndex.getImportedNoteByNoteKey(ref.indexedKey)[0];
+  const existing = (yield* (yield* NoteIndex).getImportedNoteByNoteKey(
+    ref.indexedKey,
+  ))[0];
   if (existing) {
-    const yes = await deps.view.confirm({
+    const yes = yield* ports.view.confirm({
       title: m.modal_import_overwrite_title(),
       content: m.modal_import_overwrite_desc({ title }),
       action: m.modal_import_overwrite_confirm(),
       destructive: true,
     });
-    if (!yes) return { outcome: "cancelled" };
+    if (!yes) return result({ outcome: "cancelled" });
   }
 
-  const write = await importOne(deps, ref, existing);
-  return { outcome: "single", write, title };
-}
+  const write = yield* importOne(ports, ref, existing);
+  return result({ outcome: "single", write, title });
+});
 
-/** Load a note's full body under a fresh lease and write its mirror. */
-async function importOne(
-  deps: NoteImportDeps,
+/** Load a note's full body under a fresh Snapshot and write its mirror. */
+const importOne = Effect.fnUntraced(function* (
+  ports: BatchImportPorts,
   ref: ChildNote,
   targetFile: TFile | undefined,
-): Promise<WriteOutcome> {
-  const [settings] = await Promise.all([
-    deps.settings.loaded,
-    deps.template.ready,
-  ]);
-  using lease = await deps.db.acquireRead();
-  const memo: GroupIDMemo = new Map();
-  const note = getNoteByItemID(lease.client, ref.itemID, { memo });
-  if (!note) return "skipped";
-  return deps.noteImport.importNote(note, {
-    client: lease.client,
-    settings,
-    groupIdMemo: memo,
-    ...(targetFile ? { targetFile } : {}),
-  });
-}
+) {
+  const settings = yield* (yield* PluginSettings).current;
+  const importer = yield* NoteImporter;
+  // One Snapshot for the read and the write it feeds.
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* (yield* ZoteroReads).snapshot;
+      const [note] = yield* reads.NoteBodies({
+        libraryID: ref.libraryID,
+        keys: [ref.key],
+      });
+      if (!note) {
+        const skipped: WriteOutcome = "skipped";
+        return skipped;
+      }
+      const excerpts = yield* collectExcerptReports;
+      return yield* importer.importNote(note, {
+        reads,
+        settings,
+        reportExcerpts: excerpts.add,
+        ...(targetFile ? { targetFile } : {}),
+      });
+    }),
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Shared run executor (modal onRun)
@@ -504,100 +826,152 @@ async function importOne(
  * Execute classified import actions, reporting per-item settle events for the
  * modal's progress bar. Each task loads its own full note (deferred from
  * classification) then writes; a note deleted between classify and its write
- * settles as skipped. Cancel aborts the queued remainder while in-flight writes
+ * settles as skipped. Cancel stops the queued remainder while in-flight writes
  * finish.
  */
-async function executeImportRun(
-  deps: NoteImportDeps,
+const executeImportRun = Effect.fnUntraced(function* (
+  ports: BatchImportPorts,
   actions: readonly ImportAction[],
-  controls: BatchRunControls,
-): Promise<BatchRunResult> {
-  const [settings] = await Promise.all([
-    deps.settings.loaded,
-    deps.template.ready,
-  ]);
-  const memo: GroupIDMemo = new Map();
-  const tagMemo: TagMemo = new Map();
-  const attachmentFolderCache = new Map<string, string>();
-
-  const result = await runBatchWrite({
-    db: deps.db,
-    tasks: actions.map((a) => ({ ...a, id: a.note.itemID })),
+  {
     controls,
-    concurrency: IMPORT_CONCURRENCY,
-    run: async (task, client) => {
-      const note = getNoteByItemID(client, task.note.itemID, { memo });
-      if (!note) {
-        logger.warn("Imported note vanished before import; skipped", {
-          noteKey: task.note.indexedKey,
-        });
-        return "skipped";
-      }
-      const outcome = await deps.noteImport.importNote(note, {
-        client,
-        settings,
-        groupIdMemo: memo,
-        tagMemo,
-        attachmentFolderCache,
-        ...(task.kind === "overwrite" ? { targetFile: task.file } : {}),
+    profileCounts,
+  }: {
+    controls: BatchRunControls;
+    profileCounts?: Map<ProfileSelector, BatchProfileCount>;
+  },
+) {
+  const settings = yield* (yield* PluginSettings).current;
+  const importer = yield* NoteImporter;
+  const zoteroReads = yield* ZoteroReads;
+  const attachmentFolderCache = new Map<string, string>();
+  const failures: { noteKey: string; error: unknown }[] = [];
+  const result = yield* Effect.scoped(
+    Effect.gen(function* () {
+      const excerpts = yield* collectExcerptReports;
+      // One run is one initiating batch: every note it writes reuses one
+      // retention, released as soon as the run's last admitted consumer
+      // settles.
+      const outcomes = yield* Effect.acquireDisposable(
+        Effect.sync(() => new ExcerptOutcomeScope()),
+      );
+      // The run's note loads and writes read one Snapshot, held until the run
+      // settles.
+      const reads = yield* zoteroReads.snapshot;
+      const tasks = actions.map((a) => ({ ...a, id: a.note.itemID }));
+      return yield* executeBatchRun({
+        tasks,
+        controls,
+        concurrency: IMPORT_CONCURRENCY,
+        run: (task) =>
+          Effect.gen(function* () {
+            const [note] = yield* reads.NoteBodies({
+              libraryID: task.note.libraryID,
+              keys: [task.note.key],
+            });
+            if (!note) {
+              yield* Effect.logWarning(
+                "Imported note vanished before import; skipped",
+              ).pipe(
+                Effect.annotateLogs({ noteKey: task.note.indexedKey }),
+                logged,
+              );
+              const skipped: RunOutcome = "skipped";
+              return skipped;
+            }
+            const options = {
+              reads,
+              settings,
+              attachmentFolderCache,
+              reportExcerpts: excerpts.add,
+              outcomes,
+              ...(task.kind === "overwrite" ? { targetFile: task.file } : {}),
+            };
+            const outcome = task.profilePlan
+              ? yield* task.profilePlan.import(note, options)
+              : yield* importer.importNote(note, options);
+            if (profileCounts && task.profilePlan && outcome !== "skipped") {
+              const { profile } = task.profilePlan;
+              const count = profileCounts.get(profile.selector) ?? {
+                label: profile.label ?? m.settings_profile_default_name(),
+                created: 0,
+                updated: 0,
+              };
+              count[outcome === "created" ? "created" : "updated"]++;
+              profileCounts.set(profile.selector, count);
+            }
+            const settled: RunOutcome =
+              outcome === "overwritten" ? "updated" : outcome;
+            return settled;
+          }),
+        onTaskFailed: (task, error) => {
+          failures.push({ noteKey: task.note.indexedKey, error });
+        },
       });
-      if (outcome === "overwritten") return "updated";
-      return outcome;
-    },
-    onTaskFailed: (task, error) => {
-      logger.warn("Batch import item failed", {
-        noteKey: task.note.indexedKey,
-        error,
-      });
-    },
-  });
+    }),
+  );
+  for (const failure of failures)
+    yield* Effect.logWarning("Batch import item failed").pipe(
+      Effect.annotateLogs(failure),
+      logged,
+    );
 
-  logger.info("Batch import finished", {
-    ...result,
-    total: actions.length,
-  });
+  yield* Effect.logInfo("Batch import finished").pipe(
+    Effect.annotateLogs({ ...result, total: actions.length }),
+    logged,
+  );
   return result;
-}
+});
 
-function logClassified(
+const logClassified = (
   mode: ImportMode,
   actions: readonly ImportAction[],
   counts: { total: number; notFound: number },
-): void {
-  logger.info("Batch import classified", () => {
-    const grouped = Object.groupBy(actions, (a) => a.kind);
-    return {
-      mode,
-      total: counts.total,
-      create: (grouped.create ?? []).length,
-      overwrite: (grouped.overwrite ?? []).length,
-      "up-to-date": (grouped["up-to-date"] ?? []).length,
-      notFound: counts.notFound,
-    };
-  });
-}
+) =>
+  Effect.logInfo("Batch import classified").pipe(
+    Effect.annotateLogs(
+      (() => {
+        const grouped = Object.groupBy(actions, (a) => a.kind);
+        return {
+          mode,
+          total: counts.total,
+          create: (grouped.create ?? []).length,
+          overwrite: (grouped.overwrite ?? []).length,
+          "up-to-date": (grouped["up-to-date"] ?? []).length,
+          notFound: counts.notFound,
+        };
+      })(),
+    ),
+    logged,
+  );
 
 /**
  * Resolve an `indexedKey` (from frontmatter) to a parent item's `itemID`, then
  * run a `"child"` batch import. Returns a database-unavailable outcome when
  * the database is closed, or `null` when the key doesn't resolve to a live item.
  */
-async function runChildImportByKey(
-  deps: NoteImportDeps,
+export const runChildImportByKey = Effect.fn("runChildImportByKey")(function* (
+  ports: BatchImportPorts,
   indexedKey: string,
-): Promise<BatchImportResult | null> {
-  if (deps.db.state !== "ready") {
-    logger.warn("Child-note import: database not ready", { indexedKey });
-    return { outcome: "db-unavailable" };
+) {
+  if (!(yield* databaseReady)) {
+    yield* Effect.logWarning("Child-note import: database not ready").pipe(
+      Effect.annotateLogs({ indexedKey }),
+      logged,
+    );
+    return result({ outcome: "db-unavailable" });
   }
-  const resolved = resolveIndexedKeyLibrary(deps.db.client, indexedKey);
-  const itemID = resolved
-    ? getItemsByKey(deps.db.client, resolved.libraryID, [resolved.key])[0]
-        ?.itemID
-    : undefined;
+  const itemID = yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* (yield* ZoteroReads).snapshot;
+      const items = yield* reads.ItemsByIndexedKeys({
+        indexedKeys: [indexedKey],
+      });
+      return items.get(indexedKey)?.itemID;
+    }),
+  );
   if (itemID == null) return null;
-  return runBatchImport(deps, { mode: "child", itemIDs: [itemID] });
-}
+  return yield* runBatchImport(ports, { mode: "child", itemIDs: [itemID] });
+});
 
 export type ReimportResult =
   | { outcome: "db-unavailable" }
@@ -608,35 +982,63 @@ export type ReimportResult =
  * Re-import a single note identified by its `indexedKey`. Resolves the note
  * from the database, then writes/overwrites the imported mirror file.
  */
-async function reimportNoteByKey(
-  deps: NoteImportDeps,
+export const reimportNoteByKey = Effect.fn("reimportNoteByKey")(function* (
+  ports: BatchImportPorts,
   noteKey: string,
   targetFile: TFile,
-): Promise<ReimportResult> {
-  if (deps.db.state !== "ready") {
-    logger.warn("Imported note reimport: database not ready", { noteKey });
-    return { outcome: "db-unavailable" };
+) {
+  if (!(yield* databaseReady)) {
+    yield* Effect.logWarning("Imported note reimport: database not ready").pipe(
+      Effect.annotateLogs({ noteKey }),
+      logged,
+    );
+    const unavailable: ReimportResult = { outcome: "db-unavailable" };
+    return unavailable;
   }
 
-  await Promise.all([deps.noteIndex.whenIndexed(), deps.template.ready]);
+  yield* (yield* NoteIndex).whenIndexed;
 
-  using lease = await deps.db.acquireRead();
-  const groupIdMemo: GroupIDMemo = new Map();
-  const resolved = resolveIndexedKeyLibrary(lease.client, noteKey);
-  const note = resolved
-    ? getNoteByKey(lease.client, resolved.key, {
-        libraryID: resolved.libraryID,
-        memo: groupIdMemo,
-      })
-    : null;
-  if (!note) return { outcome: "not-found" };
+  const importer = yield* NoteImporter;
+  // One Snapshot for the read and the write it feeds.
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* (yield* ZoteroReads).snapshot;
+      const note = yield* readNoteByIndexedKey(reads, noteKey);
+      if (!note) {
+        const notFound: ReimportResult = { outcome: "not-found" };
+        return notFound;
+      }
 
-  const settings = await deps.settings.loaded;
-  const writeOutcome = await deps.noteImport.importNote(note, {
-    client: lease.client,
-    settings,
-    groupIdMemo,
-    targetFile,
-  });
-  return { outcome: writeOutcome };
-}
+      const settings = yield* (yield* PluginSettings).current;
+      const excerpts = yield* collectExcerptReports;
+      const writeOutcome = yield* importer.importNote(note, {
+        reads,
+        settings,
+        targetFile,
+        reportExcerpts: excerpts.add,
+      });
+      const written: ReimportResult = { outcome: writeOutcome };
+      return written;
+    }),
+  );
+});
+
+/** The live note an Indexed Key names, with its body; `undefined` when none does. */
+const readNoteByIndexedKey = Effect.fnUntraced(function* (
+  reads: ZoteroReadsApi,
+  indexedKey: string,
+) {
+  const parsed = parseIndexedKey(indexedKey);
+  if (!parsed) return undefined;
+  const { key, groupID } = parsed;
+  const libraryID =
+    groupID == null
+      ? USER_LIBRARY_ID
+      : (yield* reads.Libraries({})).find(
+          (library) => library.groupID === groupID,
+        )?.libraryID;
+  if (libraryID === undefined) return undefined;
+  const [note] = yield* reads.NoteBodies({ libraryID, keys: [key] });
+  const found: Note | undefined = note;
+  return found;
+});

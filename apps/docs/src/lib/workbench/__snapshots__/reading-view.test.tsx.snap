@@ -1,0 +1,405 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`parseNote over the default Profile > renders the note for book 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Thinking, fast and slow",
+        },
+      ],
+      "properties": {},
+      "tagName": "h1",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Zotero",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "zotero://select/library/items/NW2CPDTC",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Annotations",
+        },
+      ],
+      "properties": {},
+      "tagName": "h2",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
+",
+            },
+          ],
+          "properties": {
+            "className": [
+              "language-zotquery",
+            ],
+          },
+          "tagName": "code",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "pre",
+      "type": "element",
+    },
+  ],
+  "type": "root",
+}
+`;
+
+exports[`parseNote over the default Profile > renders the note for conferencePaper 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Designing reproducible research interfaces",
+        },
+      ],
+      "properties": {},
+      "tagName": "h1",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Zotero",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "zotero://select/library/items/CNPF226A",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Annotations",
+        },
+      ],
+      "properties": {},
+      "tagName": "h2",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
+",
+            },
+          ],
+          "properties": {
+            "className": [
+              "language-zotquery",
+            ],
+          },
+          "tagName": "code",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "pre",
+      "type": "element",
+    },
+  ],
+  "type": "root",
+}
+`;
+
+exports[`parseNote over the default Profile > renders the note for journalArticle 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Why Most Published Research Findings Are False",
+        },
+      ],
+      "properties": {},
+      "tagName": "h1",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Zotero",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "zotero://select/library/items/IANNP5A2",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Annotations",
+        },
+      ],
+      "properties": {},
+      "tagName": "h2",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
+",
+            },
+          ],
+          "properties": {
+            "className": [
+              "language-zotquery",
+            ],
+          },
+          "tagName": "code",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "pre",
+      "type": "element",
+    },
+  ],
+  "type": "root",
+}
+`;
+
+exports[`parseNote over the default Profile > renders the note for thesis 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities",
+        },
+      ],
+      "properties": {},
+      "tagName": "h1",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Zotero",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "zotero://select/library/items/I49R3FTL",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Annotations",
+        },
+      ],
+      "properties": {},
+      "tagName": "h2",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "views:
+  - type: annotations
+    name: Annotations
+    from: annotations
+    filters: item == this.item
+    sort:
+      - property: attachment.dateAdded
+        direction: ASC
+      - property: sortIndex
+        direction: ASC
+",
+            },
+          ],
+          "properties": {
+            "className": [
+              "language-zotquery",
+            ],
+          },
+          "tagName": "code",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "pre",
+      "type": "element",
+    },
+  ],
+  "type": "root",
+}
+`;

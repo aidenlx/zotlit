@@ -1,6 +1,7 @@
 import { defineToString } from "@/lib/to-string";
 import { annotationTypeToName } from "@/lib/zt-annot";
 import type { Annotation, ResolvedAnnotationTypeName } from "@/lib/zt-annot";
+import type { AnnotationFileLinkAnchor } from "@/lib/zt-annot-anchor";
 import { annotationColorToName } from "@/lib/zt-color";
 import type { AnnotationColorName } from "@/lib/zt-color";
 import { toTemplateTag } from "@/lib/zt-tag";
@@ -103,15 +104,31 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
   /** {@link commentHtml} converted to Markdown; `null` when there is no comment. Computed at the app layer. */
   comment: string | null;
   /**
-   * Markdown link to the parent attachment file, deep-linked to this
-   * annotation's {@link page} (`#page=N`); `null` when the file is unresolvable.
-   * Call it to render — pass `alias`/`subpath` to override the display text or
-   * the `#`-fragment. Computed at the app layer.
+   * Deprecated: use {@link backlink}. The link holds the file path on the
+   * computer that rendered it, so it opens nothing on another computer or
+   * after the Zotero storage folder moves. It stays available for the current
+   * release line.
+   *
+   * Markdown link to the parent attachment file, anchored to this annotation's
+   * {@link page} and to the annotation itself
+   * (`#page=N&zt-annotation=<indexedKey>`), so ZotLit's reader lands on its
+   * Annotation Mark and every other reader lands on the page; `null` when the
+   * file is unresolvable. Call it to render — pass `alias`/`subpath` to
+   * override the display text or the `#`-fragment. Computed at the app layer.
    *
    * @ztFilter file_link
    */
   fileLink: FallibleTemplateLink;
-  /** Zotero deep link to this annotation. Computed at the app layer. */
+  /**
+   * The durable link to this annotation: Zotero's own open link, naming the
+   * attachment and the annotation by their Zotero keys, with the printed page
+   * label (`zotero://open/library/items/<attachmentKey>?annotation=<key>&page=<pageLabel>`;
+   * `groups/<groupID>` in place of `library` for a group library). It is a bare
+   * URL: wrap it in a Markdown link, as the default annotation template does
+   * with the page label. Clicked in Obsidian, it opens the PDF in Obsidian's reader on the
+   * annotation when this computer holds the file, and in Zotero otherwise.
+   * Computed at the app layer.
+   */
   backlink: string;
 
   /**
@@ -136,8 +153,9 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
 export interface AnnotationTemplateContext extends TemplateAnnotation {
   /**
    * Page-pinned citation of {@link TemplateAnnotation.parentItem}, rendered
-   * through the `cite` template with this annotation's {@link pageLabel} as
-   * locator; `null` when there is no parent item or it carries no citation key.
+   * through the citation template (`zotlit-citation.md`) with this
+   * annotation's {@link pageLabel} as locator and the `main` variant; `null`
+   * when there is no parent item or it carries no citation key.
    * Computed at the app layer.
    */
   citation: string | null;
@@ -148,7 +166,7 @@ export interface AnnotationTemplateContext extends TemplateAnnotation {
  * data, promoting it to the annotation root.
  *
  * @param renderCitation - Called lazily, only when a template reads
- *   `zt.citation`, so the `cite` render is skipped otherwise.
+ *   `zt.citation`, so the citation render is skipped otherwise.
  * @returns `data` itself, redeclared as the annotation root.
  */
 export function withAnnotationCitation(
@@ -207,11 +225,12 @@ export interface AnnotationTemplateDataInput {
    */
   annotationImageLink: (annotation: Annotation) => TemplateLink | null;
   /**
-   * Build an attachment's file-link helper. Pass a 1-based `page` to default the
-   * helper's subpath to `#page=N` (annotation-level links anchor to their page);
-   * the helper returns `null` when the file is unresolvable.
+   * Build an attachment's file-link helper. Pass the Annotation's page and
+   * Indexed Key to default the helper's subpath to `#page=N&zt-annotation=KEY`
+   * — the page Obsidian jumps to, and the Annotation Anchor ZotLit lands a Mark
+   * on; the helper returns `null` when the file is unresolvable.
    */
-  fileLink: (page?: number | null) => FallibleTemplateLink;
+  fileLink: (anchor?: AnnotationFileLinkAnchor) => FallibleTemplateLink;
 }
 
 export function annotationToTemplateData({
@@ -249,7 +268,14 @@ export function annotationToTemplateData({
         }
         return comment ?? null;
       },
-      fileLink: fileLink(baseData.page),
+      // An Annotation with no page is in an Attachment no reader places a
+      // Mark in — an EPUB, a snapshot — so its link keeps the plain shape it
+      // has always had, with no Anchor and no fragment.
+      fileLink: fileLink(
+        baseData.page === null
+          ? undefined
+          : { page: baseData.page, annotation: baseData.indexedKey },
+      ),
       get parentItem() {
         return getParentItem();
       },

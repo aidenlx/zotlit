@@ -1,0 +1,274 @@
+{
+  "contractVersion": 3,
+  "item": {
+    "key": "NW2CPDTC",
+    "indexedKey": "NW2CPDTC",
+    "itemType": "book",
+    "title": "Thinking, fast and slow",
+    "library": {
+      "type": "personal"
+    }
+  },
+  "provenance": {
+    "kind": "sample",
+    "id": "book",
+    "source": "maintainer-library"
+  },
+  "roots": {
+    "note": {
+      "title": "Thinking, fast and slow",
+      "date": {
+        "kind": "year",
+        "value": null,
+        "year": 2011,
+        "month": null,
+        "day": null,
+        "raw": "2011-00-00 2011"
+      },
+      "citationKey": "Kahneman2011",
+      "publisher": "Penguin Books",
+      "key": "NW2CPDTC",
+      "groupID": null,
+      "libraryID": 1,
+      "indexedKey": "NW2CPDTC",
+      "itemType": "book",
+      "dateAdded": "2025-05-22T03:30:30Z",
+      "dateModified": "2025-05-22T03:30:30Z",
+      "creators": [
+        {
+          "family": "Kahneman",
+          "given": "D",
+          "literal": null,
+          "role": "author",
+          "fullName": "D Kahneman"
+        }
+      ],
+      "primaryCreatorType": "author",
+      "tags": [],
+      "abstract": null,
+      "containerTitle": null,
+      "citekey": "Kahneman2011",
+      "shortTitle": null,
+      "DOI": null,
+      "url": null,
+      "ISBN": null,
+      "ISSN": null,
+      "volume": null,
+      "issue": null,
+      "pages": null,
+      "place": null,
+      "edition": null,
+      "language": null,
+      "extra": null,
+      "noteLink": {
+        "$helper": "noteLink",
+        "signature": "(alias?: string, subpath?: string) => string | null",
+        "value": null
+      },
+      "annotations": [],
+      "attachments": [],
+      "collections": [],
+      "notePath": null,
+      "backlink": "zotero://select/library/items/NW2CPDTC",
+      "weblink": null,
+      "librarylink": "obsidian://zotlit/show-in-library?item-key=NW2CPDTC",
+      "authors": [
+        {
+          "family": "Kahneman",
+          "given": "D",
+          "literal": null,
+          "role": "author",
+          "fullName": "D Kahneman"
+        }
+      ],
+      "authorsShort": "Kahneman",
+      "relatedItems": [],
+      "notes": []
+    },
+    "filename": {
+      "title": "Thinking, fast and slow",
+      "date": {
+        "kind": "year",
+        "value": null,
+        "year": 2011,
+        "month": null,
+        "day": null,
+        "raw": "2011-00-00 2011"
+      },
+      "citationKey": "Kahneman2011",
+      "publisher": "Penguin Books",
+      "key": "NW2CPDTC",
+      "groupID": null,
+      "libraryID": 1,
+      "indexedKey": "NW2CPDTC",
+      "itemType": "book",
+      "dateAdded": "2025-05-22T03:30:30Z",
+      "dateModified": "2025-05-22T03:30:30Z",
+      "creators": [
+        {
+          "family": "Kahneman",
+          "given": "D",
+          "literal": null,
+          "role": "author",
+          "fullName": "D Kahneman"
+        }
+      ],
+      "primaryCreatorType": "author",
+      "tags": [],
+      "abstract": null,
+      "containerTitle": null,
+      "citekey": "Kahneman2011",
+      "shortTitle": null,
+      "DOI": null,
+      "url": null,
+      "ISBN": null,
+      "ISSN": null,
+      "volume": null,
+      "issue": null,
+      "pages": null,
+      "place": null,
+      "edition": null,
+      "language": null,
+      "extra": null,
+      "authors": [
+        {
+          "family": "Kahneman",
+          "given": "D",
+          "literal": null,
+          "role": "author",
+          "fullName": "D Kahneman"
+        }
+      ],
+      "authorsShort": "Kahneman",
+      "notePath": "",
+      "noteLink": {
+        "$helper": "noteLink",
+        "signature": "(alias?: string, subpath?: string) => string | null",
+        "value": ""
+      },
+      "collections": []
+    },
+    "annotations": []
+  },
+  "descriptors": {
+    "note": {
+      "stringCoercions": [
+        {
+          "path": [],
+          "value": "Thinking, fast and slow"
+        },
+        {
+          "path": [
+            "date"
+          ],
+          "value": "2011"
+        },
+        {
+          "path": [
+            "creators",
+            0
+          ],
+          "value": "D Kahneman"
+        },
+        {
+          "path": [
+            "authors",
+            0
+          ],
+          "value": "D Kahneman"
+        }
+      ],
+      "temporalValues": [
+        {
+          "path": [
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
+        }
+      ],
+      "graphReferences": []
+    },
+    "filename": {
+      "stringCoercions": [
+        {
+          "path": [
+            "date"
+          ],
+          "value": "2011"
+        },
+        {
+          "path": [
+            "creators",
+            0
+          ],
+          "value": "D Kahneman"
+        },
+        {
+          "path": [
+            "authors",
+            0
+          ],
+          "value": "D Kahneman"
+        }
+      ],
+      "temporalValues": [
+        {
+          "path": [
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
+        }
+      ],
+      "graphReferences": []
+    },
+    "annotations": []
+  },
+  "unavailable": [
+    {
+      "path": "zt.weblink",
+      "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
+    }
+  ],
+  "seed": {
+    "scan": {
+      "itemID": 61,
+      "key": "NW2CPDTC",
+      "itemType": "book",
+      "dateAdded": 1747884630000,
+      "dateModified": 1747884630000
+    },
+    "groupID": null,
+    "fields": {
+      "title": "Thinking, fast and slow",
+      "date": "2011-00-00 2011",
+      "citationKey": "Kahneman2011",
+      "publisher": "Penguin Books"
+    },
+    "custom": {},
+    "customFieldNames": [],
+    "creators": [
+      {
+        "firstName": "D",
+        "lastName": "Kahneman",
+        "fieldMode": 0,
+        "creatorType": "author",
+        "primary": true
+      }
+    ],
+    "tags": [],
+    "collections": []
+  },
+  "revision": "828588b80d0582fc741e2fd4f37dcb8efa5c21a0ae2759f0013804f05e116dd6"
+}

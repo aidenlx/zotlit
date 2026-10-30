@@ -6,7 +6,23 @@ import {
   itemSelectUri,
   itemUri,
   itemWebUrl,
+  libraryViewUri,
+  parseAnnotationOpenUri,
 } from "./zt-uri";
+
+describe("libraryViewUri", () => {
+  it("names a personal-library item by its bare key", () => {
+    expect(libraryViewUri("ABC12345", null)).toBe(
+      "obsidian://zotlit/show-in-library?item-key=ABC12345",
+    );
+  });
+
+  it("names a group-library item by its Indexed Key", () => {
+    expect(libraryViewUri("ABC12345", 42)).toBe(
+      "obsidian://zotlit/show-in-library?item-key=ABC12345g42",
+    );
+  });
+});
 
 describe("itemSelectUri", () => {
   it("uses the library path for personal items", () => {
@@ -68,6 +84,78 @@ describe("annotationOpenUri", () => {
       groupID: null,
     });
     expect(new URL(uri).searchParams.get("page")).toBe(pageLabel);
+  });
+});
+
+describe("parseAnnotationOpenUri", () => {
+  it("reads the attachment, annotation, and page label of a personal-library link", () => {
+    expect(
+      parseAnnotationOpenUri(
+        "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2",
+      ),
+    ).toEqual({
+      attachmentKey: "RGRPDF24",
+      annotationKey: "FDRFQ7C2",
+      pageLabel: "2",
+      groupID: null,
+    });
+  });
+
+  it("reads the group of a group-library link, with no page label", () => {
+    expect(
+      parseAnnotationOpenUri(
+        "zotero://open/groups/4200309/items/RGRPDF24?annotation=FDRFQ7C2",
+      ),
+    ).toEqual({
+      attachmentKey: "RGRPDF24",
+      annotationKey: "FDRFQ7C2",
+      pageLabel: null,
+      groupID: 4200309,
+    });
+  });
+
+  it("reads back what annotationOpenUri writes", () => {
+    const link = {
+      attachmentKey: "RGRPDF24",
+      annotationKey: "FDRFQ7C2",
+      pageLabel: "S. 12",
+      groupID: 7,
+    };
+    expect(parseAnnotationOpenUri(annotationOpenUri(link))).toEqual(link);
+  });
+
+  it.each([
+    [
+      "an attachment link with no annotation",
+      "zotero://open/library/items/RGRPDF24",
+    ],
+    [
+      "a select link",
+      "zotero://select/library/items/RGRPDF24?annotation=FDRFQ7C2",
+    ],
+    [
+      "a malformed annotation key",
+      "zotero://open/library/items/RGRPDF24?annotation=nope",
+    ],
+    [
+      "a malformed attachment key",
+      "zotero://open/library/items/rgrpdf24?annotation=FDRFQ7C2",
+    ],
+    [
+      "a group with no id",
+      "zotero://open/groups//items/RGRPDF24?annotation=FDRFQ7C2",
+    ],
+    [
+      "extra path segments",
+      "zotero://open/library/items/RGRPDF24/extra?annotation=FDRFQ7C2",
+    ],
+    [
+      "another scheme",
+      "https://open/library/items/RGRPDF24?annotation=FDRFQ7C2",
+    ],
+    ["no URL at all", "not a url"],
+  ])("reads nothing from %s", (_, url) => {
+    expect(parseAnnotationOpenUri(url)).toBeNull();
   });
 });
 
@@ -135,7 +223,6 @@ describe("itemUri", () => {
       itemUri("ABC12345", 42, {
         userID: null,
         localUserKey: null,
-        username: null,
       }),
     ).toBe("http://zotero.org/groups/42/items/ABC12345");
   });
@@ -145,7 +232,6 @@ describe("itemUri", () => {
       itemUri("ABC12345", null, {
         userID: null,
         localUserKey: null,
-        username: null,
       }),
     ).toBeNull();
   });

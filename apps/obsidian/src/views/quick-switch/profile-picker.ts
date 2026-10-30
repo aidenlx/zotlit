@@ -1,0 +1,283 @@
+import { Scope, SuggestModal } from "obsidian";
+import type { App } from "obsidian";
+
+import { citationStyleLabel } from "@/lib/citation-style";
+import { holdScopeWhileFocused } from "@/lib/focus-scope";
+import type { FocusScope } from "@/lib/focus-scope";
+import * as m from "@/lib/i18n/generated/messages";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
+import type {
+  CreationProfileSelection,
+  ProfilePreview,
+} from "@/services/note-feature";
+import type { InstalledCslStyle } from "@/services/pandoc/styles";
+
+export interface LiteratureNoteProfileChoice {
+  id: ProfileSelector;
+  label: string;
+  detail?: string;
+  path?: string;
+  unavailable?: string;
+  preselected?: boolean;
+  current?: boolean;
+  candidate?: "item" | "batch";
+  source?: CreationProfileSelection["source"];
+  /** Why the match selected this Profile. */
+  reason?: string;
+  /** Why automatic selection stopped, shown above the preselected choice. */
+  problem?: string;
+}
+
+/**
+ * A Profile dialog the user asked the picker for in place of a choice: New
+ * profile, or Import from its secondary action. The caller opens it.
+ */
+export interface ProfileDialogPick {
+  readonly action: "new" | "import";
+}
+
+/** What the picker answers: a Profile, or a Profile dialog to open. */
+export type ProfilePick = LiteratureNoteProfileChoice | ProfileDialogPick;
+
+type ProfilePickerRow =
+  | LiteratureNoteProfileChoice
+  | { action: "new"; label: string };
+
+interface ProfilePickerOptions {
+  preselected?: ProfileSelector;
+  candidates?: readonly ProfileSelector[];
+  matchContext?: "item" | "batch";
+  current?: ProfileSelector;
+  source?: CreationProfileSelection["source"];
+  reason?: string;
+  problem?: string;
+  previews?: readonly ProfilePreview[];
+  styles?: readonly InstalledCslStyle[];
+}
+
+const PROFILE_BADGE_CLASS =
+  "zt:rounded-sm zt:bg-muted zt:px-1.5 zt:py-0.5 zt:text-xs zt:leading-tight zt:whitespace-nowrap zt:text-muted-foreground";
+
+/** Secondary line under a Profile label; the color comes from the caller. */
+const PROFILE_NOTE_CLASS = "zt:text-xs zt:leading-tight";
+
+/**
+ * Open the picker over `options.previews`, for a caller that waits on it with
+ * `awaitModal`. `resolve` gets the choice or the Profile dialog to open, or
+ * `undefined` when it closes.
+ */
+export function openLiteratureNoteProfile(
+  app: App,
+  options: ProfilePickerOptions & { previews: readonly ProfilePreview[] },
+  resolve: (pick: ProfilePick | undefined) => void,
+): { close(): void } {
+  const modal = new LiteratureNoteProfileModal(app, {
+    ...options,
+    resolve,
+    preselected: options.preselected ?? DEFAULT_PROFILE,
+  });
+  modal.open();
+  return modal;
+}
+
+class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
+  readonly #choices: LiteratureNoteProfileChoice[];
+  readonly #resolve: (pick: ProfilePick | undefined) => void;
+  #settled = false;
+  /** The Scope the Import button drawn last holds while it has focus. */
+  #importKeys: FocusScope | null = null;
+
+  constructor(
+    app: App,
+    options: ProfilePickerOptions & {
+      previews: readonly ProfilePreview[];
+      resolve: (pick: ProfilePick | undefined) => void;
+      preselected: ProfileSelector;
+    },
+  ) {
+    super(app);
+    this.#choices = options.previews.map((preview) =>
+      profilePreviewChoice(preview, { styles: options.styles }),
+    );
+    for (const choice of this.#choices) {
+      choice.candidate = options.candidates?.includes(choice.id)
+        ? (options.matchContext ?? "item")
+        : undefined;
+      choice.preselected = options.candidates?.length
+        ? choice.candidate !== undefined
+        : choice.id === options.preselected;
+      choice.current = choice.id === options.current;
+      choice.source = choice.preselected ? options.source : undefined;
+      choice.reason = choice.preselected ? options.reason : undefined;
+      choice.problem = choice.preselected ? options.problem : undefined;
+    }
+    this.#choices.sort((a, b) => Number(b.preselected) - Number(a.preselected));
+    // A SuggestModal empties `modalEl`, so `contentEl` never reaches the
+    // screen; the status line sits between the input and the results.
+    if (
+      options.problem &&
+      !this.#choices.some(({ preselected }) => preselected)
+    )
+      this.resultContainerEl.before(
+        this.modalEl.createDiv({
+          text: options.problem,
+          cls: "zt:px-6 zt:py-2 zt:text-sm zt:text-(--text-warning)",
+          attr: { role: "status" },
+        }),
+      );
+    this.#resolve = options.resolve;
+    this.setPlaceholder(
+      options.candidates?.length
+        ? m.modal_profile_overlap_placeholder()
+        : m.modal_profile_choose_placeholder(),
+    );
+    this.setInstructions([
+      { command: "↑↓", purpose: m.instruction_navigate() },
+      { command: "↵", purpose: m.instruction_select() },
+      { command: "esc", purpose: m.instruction_dismiss() },
+    ]);
+  }
+
+  override getSuggestions(query: string): ProfilePickerRow[] {
+    const normalized = query.trim().toLocaleLowerCase();
+    const profiles = normalized
+      ? this.#choices.filter(({ label }) =>
+          label.toLocaleLowerCase().includes(normalized),
+        )
+      : this.#choices;
+    return [...profiles, { action: "new", label: m.modal_profile_new() }];
+  }
+
+  override renderSuggestion(choice: ProfilePickerRow, el: HTMLElement): void {
+    if ("action" in choice) {
+      el.addClass("mod-complex");
+      el.createDiv({
+        text: choice.label,
+        cls: "suggestion-content zt:min-w-0",
+      });
+      const button = el.createDiv("suggestion-aux").createEl("button", {
+        text: m.profile_import_from_text_file(),
+      });
+      button.addEventListener("keydown", (event) => {
+        if (event.key === " ") event.stopPropagation();
+      });
+      this.#holdButtonKeys(button);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.#settled = true;
+        this.close();
+        this.#resolve({ action: "import" });
+      });
+    } else renderProfileChoice(choice, el);
+  }
+
+  override onChooseSuggestion(choice: ProfilePickerRow): void {
+    this.#settled = true;
+    if ("action" in choice) this.#resolve({ action: "new" });
+    else this.#resolve(choice.unavailable ? undefined : choice);
+  }
+
+  /**
+   * Enter presses `button` while it holds focus. The modal's Scope hears a
+   * key before the button does and takes Enter for the highlighted row, so
+   * the button takes Enter on a Scope of its own, on top of the modal's
+   * while focus stands on it; Escape and the arrows still reach the modal.
+   */
+  #holdButtonKeys(button: HTMLButtonElement): void {
+    const scope = new Scope(this.scope);
+    scope.register([], "Enter", () => {
+      button.click();
+      return false;
+    });
+    // The list draws its rows again on every keystroke; the button it drew
+    // before is gone, and may have heard no blur.
+    this.#importKeys?.[Symbol.dispose]();
+    this.#importKeys = holdScopeWhileFocused(button, scope, {
+      keymap: this.app.keymap,
+    });
+  }
+
+  override onClose(): void {
+    this.#importKeys?.[Symbol.dispose]();
+    this.#importKeys = null;
+    // Obsidian closes the modal before delivering the selected suggestion.
+    queueMicrotask(() => {
+      if (!this.#settled) this.#resolve(undefined);
+    });
+  }
+}
+
+/** The same effective Profile details feed picker and embedded target rows. */
+export function profilePreviewChoice(
+  preview: ProfilePreview,
+  options: { styles?: readonly InstalledCslStyle[] } = {},
+): LiteratureNoteProfileChoice {
+  return {
+    id: preview.selector,
+    label: preview.label ?? m.settings_profile_default_name(),
+    detail: m.settings_profile_display({
+      folder: preview.folder || m.modal_profile_root_folder(),
+      style: citationStyleLabel(preview.citationStyle, options.styles),
+      document: preview.document ?? m.settings_profile_document_builtin(),
+    }),
+    path: preview.path,
+    unavailable: preview.unavailable,
+  };
+}
+
+export function renderProfileChoice(
+  choice: LiteratureNoteProfileChoice,
+  el: HTMLElement,
+): void {
+  el.classList.add("zt:flex", "zt:flex-col", "zt:gap-0.5");
+  const label = el.createDiv({
+    text: choice.label,
+    cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1",
+  });
+  if (choice.preselected)
+    label.createSpan({
+      text: choice.candidate
+        ? choice.candidate === "batch"
+          ? m.modal_profile_match_batch_candidate()
+          : m.modal_profile_match_candidate()
+        : choice.current
+          ? m.modal_profile_current()
+          : m.modal_profile_preselected(),
+      cls: PROFILE_BADGE_CLASS,
+    });
+  if (choice.source === "headless")
+    label.createSpan({
+      text: m.modal_profile_source_link(),
+      cls: PROFILE_BADGE_CLASS,
+    });
+  if (choice.source === "match" && choice.reason)
+    label.createSpan({
+      text: choice.reason,
+      cls: PROFILE_BADGE_CLASS,
+    });
+  if (choice.problem)
+    el.createDiv({
+      text: choice.problem,
+      cls: `${PROFILE_NOTE_CLASS} zt:text-(--text-warning)`,
+    });
+  if (choice.detail)
+    el.createDiv({
+      text: choice.detail,
+      cls: `${PROFILE_NOTE_CLASS} zt:text-muted-foreground`,
+    });
+  if (choice.path)
+    el.createDiv({
+      text: choice.path,
+      cls: `${PROFILE_NOTE_CLASS} zt:font-mono zt:whitespace-pre-line zt:text-muted-foreground`,
+    });
+  if (choice.unavailable) {
+    el.setAttribute("aria-disabled", "true");
+    el.addClass("mod-downranked");
+    el.createDiv({
+      text: choice.unavailable,
+      cls: `${PROFILE_NOTE_CLASS} zt:text-destructive`,
+    });
+  }
+}

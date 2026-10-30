@@ -8,3 +8,8 @@
 [submodule "packages/zotero-types/zotero-schema"]
 	path = packages/zotero-types/zotero-schema
 	url = https://github.com/zotero/zotero-schema.git
+[submodule "video"]
+	path = video
+	url = https://github.com/aidenlx/zotlit-video.git
+	branch = main
+	update = none

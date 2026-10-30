@@ -1,23 +1,15 @@
 export {
-  buildIndex,
-  cleanQuery,
-  createIndexBuilder,
-  DEFAULT_SCORING,
-  searchIndex,
-  type BuildIndexOptions,
-  type ScoringConfig,
-  type SearchField,
+  ItemIndex,
+  ItemSource,
+  layerItemIndex,
+  SourceUnavailable,
+  type IndexSettings,
+  type PinnedItemSource,
   type SearchHit,
-  type SearchIndex,
-  type SearchIndexBuilder,
-  type SearchIndexOptions,
-  type SearchMatches,
-} from "./engine";
-export { formatCreator } from "./format-creator";
+} from "./item-index";
+export { SegmenterUnavailable } from "./segmenter";
 export {
-  normalize,
-  normalizeWithIndexMap,
-  tokenize,
-  type ChsSegmenter,
-  type TokenizerOptions,
-} from "./tokenizer";
+  sameSegmenterBinary,
+  SegmenterBinaryReader,
+  type SegmenterBinary,
+} from "./segmenter-switch";

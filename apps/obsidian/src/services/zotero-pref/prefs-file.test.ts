@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_ZOTERO_HTTP_PORT,
+  isAddonActive,
   parsePrefsJs,
   parseZoteroProfiles,
   resolveZoteroHttpPort,
@@ -185,5 +186,29 @@ describe("parsePrefsJs", () => {
     );
     expect(prefs.size).toBe(1);
     expect(prefs.get("ok")).toBe("value");
+  });
+});
+
+describe("isAddonActive", () => {
+  const ID = "zotlit@aidenlx.site";
+  const list = (...addons: object[]) =>
+    JSON.stringify({ schemaVersion: 37, addons });
+
+  it("finds an add-on the profile lists as active", () => {
+    expect(
+      isAddonActive(list({ id: "other@x" }, { id: ID, active: true }), ID),
+    ).toBe(true);
+  });
+
+  it("reads a disabled or absent add-on as not active", () => {
+    expect(isAddonActive(list({ id: ID, active: false }), ID)).toBe(false);
+    expect(isAddonActive(list({ id: "other@x", active: true }), ID)).toBe(
+      false,
+    );
+  });
+
+  it("reads a malformed list as not active", () => {
+    expect(isAddonActive("{", ID)).toBe(false);
+    expect(isAddonActive(JSON.stringify({ addons: null }), ID)).toBe(false);
   });
 });

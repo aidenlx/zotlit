@@ -1,60 +1,676 @@
+// @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DateTime, Effect } from "effect";
+import type { App } from "obsidian";
+import type { MouseEvent } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AnnotViewItem } from "@zotlit/db";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import * as confirmation from "@/lib/confirm";
+import { toInstant } from "@/lib/effect-clock";
+import * as m from "@/lib/i18n/generated/messages";
+import { makeViewRunner } from "@/lib/view-runner";
+import type {
+  AnnotationRepository,
+  AnnotationRecord,
+  TagDraft,
+  TextFieldDraft,
+} from "@/services/annotation-repository/service";
+import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
+import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
+import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
 
+import { makeAnnotHost } from "./__fixtures__/host";
 import { createAnnotActions } from "./actions";
+import type { AnnotActionDeps as ActionDeps } from "./actions";
+type AnnotActionDeps = ActionDeps & {
+  annotations: AnnotationRepository["Service"];
+  notes?: Partial<AnnotationNoteActions["Service"]>;
+};
+import { hasQuotedText } from "./card-controls";
+import type { CardControl, CardControls } from "./card-controls";
+import type { AnnotState } from "./store";
 
-const annotation: AnnotViewItem = {
-  itemID: 1,
-  key: "ANNO2345",
-  type: 1,
-  text: "Selected text",
-  comment: null,
+const FIRST = annotation("PUPR5FG5", "highlight", { pageIndex: 0, rects: [] });
+const SECOND = annotation("K3JRFLFQ", "underline", { pageIndex: 0, rects: [] });
+const OUTSIDE = annotation("HRK7BG32", "text", { pageIndex: 0, rects: [] });
+/** Two cards with text, of two colours, and one with only a comment. */
+const QUOTED = {
+  ...FIRST,
   color: "#ffd400",
-  pageLabel: "4",
-  parentKey: "ATCH2345",
-  tags: [],
+  text: "Scientific visualization is classically defined",
+};
+const COMMENTED = {
+  ...SECOND,
+  color: "#ff6666",
+  comment: "Compare with <i>Rougier</i>",
 };
 
-let writeText: ReturnType<typeof vi.fn>;
+const LIVE: CardControl = { disabled: false, blocked: null, tooltip: "" };
+const NOT_RUNNING = {
+  reason: "Zotero is not running.",
+  action: null,
+  source: "capability",
+} as const;
+const BLOCKED: CardControl = { ...LIVE, blocked: NOT_RUNNING };
+const LOCKED: CardControl = {
+  ...LIVE,
+  blocked: {
+    reason: m.annot_view_lock_external(),
+    action: null,
+    source: "lock",
+  },
+};
 
-beforeEach(() => {
+let hosts = new AsyncDisposableStack();
+afterEach(async () => {
+  await hosts.disposeAsync();
+  hosts = new AsyncDisposableStack();
+});
+/** The actions over a test host; disposing `view` closes the view's runner. */
+function testActions(deps: AnnotActionDeps, view = hosts) {
+  const host = hosts.use(
+    makeAnnotHost({
+      annotations: deps.annotations,
+      ...("notes" in deps && { notes: deps.notes }),
+    }),
+  );
+  const { run } = view.use(makeViewRunner(host.registry));
+  return createAnnotActions({ ...deps, registry: host.registry, run });
+}
+
+function inertActionDeps(): Partial<AnnotActionDeps> {
+  return {
+    now: () => toInstant(DateTime.nowUnsafe()),
+    opener: stubService<AnnotActionDeps["opener"]>("TargetOpener", {}),
+    excerptImageRequest: async () => null,
+    controls: () => stubService<CardControls>("CardControls", {}),
+    selectedCards: () => [],
+    libraryTagNames: async () => [],
+    getState: () => stubService<AnnotState>("AnnotState", {}),
+    setSelectedAttachmentKey: () => {},
+    toggleSelectedTag: () => {},
+    refresh: async () => {},
+    onDragStart: () => {},
+    renderComment: () => () => {},
+    fillViewMenu: () => {},
+    onSetFollowMode: () => {},
+    onAllowEditing: () => {},
+    onOpenPdf: () => {},
+    onPinCurrentItem: () => {},
+    onPinItem: () => {},
+    onUnpin: () => {},
+    onEnableLiveUpdates: () => {},
+    onSelectAnnotation: () => {},
+    onClearSelection: () => {},
+    selectAlone: () => {},
+    closeEditors: () => {},
+    openEditor: () => {},
+    onExploreAnnotation: () => {},
+    offerAnnotationInsert: () => null,
+  };
+}
+
+/**
+ * The actions over a Card Selection, with every other dependency inert. The
+ * view's own seams are the fakes: what it holds selected, and the select a
+ * menu on a card outside the selection runs.
+ */
+function setup(
+  selected: readonly AnnotationRecord[],
+  control: CardControl = LIVE,
+  overrides: Partial<AnnotActionDeps> = {},
+) {
+  const selectAlone = vi.fn();
+  const openEditor = vi.fn();
+  const annotations = stubService<AnnotActionDeps["annotations"]>(
+    "AnnotationRepository",
+    {
+      editTextField: vi.fn(() =>
+        Effect.succeed(stubService<TextFieldDraft>("TextFieldDraft", {})),
+      ),
+      deleteAnnotation: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
+      deleteAnnotations: vi.fn((keys: readonly string[]) =>
+        Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
+      ),
+      patchColor: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
+      patchColors: vi.fn((keys: readonly string[]) =>
+        Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
+      ),
+    },
+  );
+  const controls: CardControls = {
+    color: control,
+    comment: control,
+    tags: control,
+    delete: control,
+    text: control,
+  };
+  const deps = stubService<AnnotActionDeps>("AnnotActionDeps", {
+    ...inertActionDeps(),
+    app: stubService<App>("App", {
+      workspace: stubService<App["workspace"]>("Workspace", {
+        activeEditor: null,
+        getMostRecentLeaf: () => null,
+        trigger: () => {},
+      }),
+    }),
+    annotations,
+    // Only a highlight or underline has a Quoted Text, as `cardControls` rules.
+    controls: (annot: AnnotationRecord) => ({
+      ...controls,
+      text: hasQuotedText(annot.type) ? control : null,
+    }),
+    selectedCards: () => selected,
+    selectAlone,
+    closeEditors: () => {},
+    openEditor,
+    onExploreAnnotation: () => {},
+    offerAnnotationInsert: () => null,
+    ...overrides,
+  });
+  return {
+    actions: testActions(deps),
+    selectAlone,
+    openEditor,
+    annotations,
+  };
+}
+
+/** The menu a right-click on this card opens. */
+function openMenu(
+  actions: ReturnType<typeof setup>["actions"],
+  card: AnnotationRecord,
+): Menu {
   Menu.instances.length = 0;
-  writeText = vi.fn().mockResolvedValue(undefined);
-  vi.stubGlobal("navigator", {
-    clipboard: { writeText },
+  actions.onCardMenu(
+    { nativeEvent: new window.MouseEvent("contextmenu") } as MouseEvent<
+      HTMLElement,
+      globalThis.MouseEvent
+    >,
+    card,
+  );
+  return Menu.instances[0]!;
+}
+
+/** The titles of the menu a right-click on this card opens. */
+function rightClick(
+  actions: ReturnType<typeof setup>["actions"],
+  card: AnnotationRecord,
+): string[] {
+  return openMenu(actions, card).items.map((item) => item.title);
+}
+
+/** One entry of a menu, by its title. */
+function entry(menu: Menu, title: string) {
+  return menu.items.find((item) => item.title === title)!;
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("the menu a card opens", () => {
+  it("offers the group verbs and no single-card entry on a card inside a group", () => {
+    const { actions, selectAlone } = setup([FIRST, SECOND]);
+
+    expect(rightClick(actions, SECOND)).toEqual([
+      m.annot_view_card_color(),
+      m.annot_view_menu_copy_text(),
+      m.annot_view_menu_delete_group({ count: 2 }),
+    ]);
+    expect(selectAlone).not.toHaveBeenCalled();
+  });
+
+  it("selects a card outside the selection alone, and offers its own menu", () => {
+    const { actions, selectAlone } = setup([FIRST, SECOND]);
+
+    const titles = rightClick(actions, OUTSIDE);
+
+    expect(selectAlone).toHaveBeenCalledExactlyOnceWith(OUTSIDE);
+    expect(titles).toContain(m.annot_view_menu_copy_citation());
+    expect(titles.at(-1)).toBe(m.annot_view_menu_delete());
+  });
+
+  it("groups one card's entries by section, with the delete last", () => {
+    const { actions } = setup([]);
+
+    const menu = openMenu(actions, QUOTED);
+
+    expect(menu.sections).toStrictEqual([
+      "action",
+      "clipboard",
+      "insert",
+      "view",
+      "",
+      "danger",
+    ]);
+    const sectionOf = (title: string) => entry(menu, title).section;
+    expect(sectionOf(m.annot_view_menu_edit_text())).toBe("action");
+    expect(sectionOf(m.annot_view_menu_copy_citation())).toBe("clipboard");
+    expect(sectionOf(m.annot_view_menu_insert())).toBe("insert");
+    expect(sectionOf(m.template_data_explorer_menu_explore())).toBe("view");
+    expect(sectionOf(m.annot_view_menu_delete())).toBe("danger");
+  });
+
+  it("raises the menu for listeners with the cards it acts on, after its own entries", () => {
+    const trigger = vi.fn((_name: string, menu: Menu) => {
+      // A listener sees ZotLit's entries already in place.
+      expect(menu.items.length).toBeGreaterThan(0);
+    });
+    const { actions } = setup([FIRST, SECOND], LIVE, {
+      app: stubService<App>("App", {
+        workspace: stubService<App["workspace"]>("Workspace", { trigger }),
+      }),
+    });
+
+    const menu = openMenu(actions, SECOND);
+
+    // The group's colour submenu is a colour menu of its own, raised as one.
+    const colors = entry(menu, m.annot_view_card_color()).submenu;
+    expect(trigger.mock.calls).toStrictEqual([
+      [
+        "zotlit:annotation-color-menu",
+        colors,
+        { source: "annotation-view", annotations: [FIRST, SECOND] },
+      ],
+      [
+        "zotlit:annotation-menu",
+        menu,
+        { source: "annotation-view", annotations: [FIRST, SECOND] },
+      ],
+    ]);
+  });
+
+  it("keeps the press of a locked delete entry, and asks nothing and deletes nothing", () => {
+    using ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
+    const { actions, annotations } = setup([], LOCKED);
+
+    const item = entry(openMenu(actions, QUOTED), m.annot_view_menu_delete());
+    expect(item.disabled).toBe(false);
+    item.click();
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(annotations.deleteAnnotations).not.toHaveBeenCalled();
+    expect(annotations.deleteAnnotation).not.toHaveBeenCalled();
   });
 });
 
-describe("Annotation View menu", () => {
-  it("offers the selected annotation's key", () => {
-    const actions = createAnnotActions({
-      app: {} as never,
-      getGroupID: () => 42,
-      getDataDir: () => "",
-      refresh: vi.fn(),
-      noteFeature: { renderAnnotationCitation: () => null },
-      onDragStart: vi.fn(),
-      renderComment: () => () => {},
-      onToggleFollowReader: vi.fn(),
-      onLinkItem: vi.fn(),
-      onUnlinkItem: vi.fn(),
-      onExploreAnnotation: vi.fn(),
-    });
+describe("Edit quoted text", () => {
+  it("leads the menu of one highlight or underline card, and opens its Quoted Text editor", () => {
+    const { actions, openEditor, annotations } = setup([]);
 
-    actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
+    const menu = openMenu(actions, QUOTED);
+    expect(menu.items[0]?.title).toBe(m.annot_view_menu_edit_text());
+    entry(menu, m.annot_view_menu_edit_text()).click();
 
-    const menu = Menu.instances[0]!;
-    const copyKey = menu.items.find(
-      (item) => item.title === "Copy annotation key",
+    expect(annotations.editTextField).toHaveBeenCalledWith("text", QUOTED.key);
+    expect(openEditor).toHaveBeenCalledExactlyOnceWith(QUOTED, "text");
+  });
+
+  it("is left out where the Annotation has no Quoted Text", () => {
+    const { actions } = setup([]);
+
+    expect(rightClick(actions, OUTSIDE)).not.toContain(
+      m.annot_view_menu_edit_text(),
     );
-    expect(copyKey).toBeDefined();
-    // This menu uses no sections. A sectioned item would be hoisted out of the
-    // copy cluster by Obsidian's menu sort.
-    expect(menu.items.every((item) => item.section === "")).toBe(true);
+  });
 
-    copyKey!.click();
-    expect(writeText).toHaveBeenCalledWith("ANNO2345g42");
+  it("stays enabled while editing is blocked, and its press opens no editor", () => {
+    const { actions, openEditor } = setup([], BLOCKED);
+
+    const item = entry(
+      openMenu(actions, QUOTED),
+      m.annot_view_menu_edit_text(),
+    );
+    expect(item.disabled).toBe(false);
+    item.click();
+
+    expect(openEditor).not.toHaveBeenCalled();
+  });
+});
+
+describe("Delete on the Card Selection", () => {
+  it("asks once with the count, then deletes the group", async () => {
+    using ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
+    const { actions, annotations } = setup([FIRST, SECOND]);
+
+    actions.onDeleteSelection();
+
+    await vi.waitFor(() =>
+      expect(annotations.deleteAnnotations).toHaveBeenCalledExactlyOnceWith([
+        FIRST.key,
+        SECOND.key,
+      ]),
+    );
+    expect(ask.mock.calls[0]?.[0].title).toBe(
+      m.annot_view_delete_group_confirm_title({ count: 2 }),
+    );
+  });
+
+  it("says why in a notice and asks nothing under a blocked capability", () => {
+    using ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
+    const { actions, annotations } = setup([FIRST, SECOND], BLOCKED);
+
+    expect(actions.onDeleteSelection()).toEqual(NOT_RUNNING);
+    expect(ask).not.toHaveBeenCalled();
+    expect(annotations.deleteAnnotations).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while a write is in flight on a card of the group", () => {
+    using ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
+    const { actions } = setup([FIRST, SECOND], { ...LIVE, disabled: true });
+
+    expect(actions.onDeleteSelection()).toBeNull();
+    expect(ask).not.toHaveBeenCalled();
+  });
+});
+
+describe("the colour of a group", () => {
+  it("checks no swatch for a mixed group, and recolours every card from one", () => {
+    const { actions, annotations } = setup([QUOTED, COMMENTED]);
+
+    const colors = entry(
+      openMenu(actions, COMMENTED),
+      m.annot_view_card_color(),
+    ).submenu!;
+
+    expect(colors.items.filter((item) => item.checked)).toEqual([]);
+    colors.items[2]!.click();
+    expect(annotations.patchColors).toHaveBeenCalledExactlyOnceWith(
+      [QUOTED.key, COMMENTED.key],
+      "#5fb236",
+    );
+    expect(annotations.patchColor).not.toHaveBeenCalled();
+  });
+
+  it("checks the swatch every card of the group has", () => {
+    const { actions } = setup([QUOTED, { ...COMMENTED, color: "#FFD400" }]);
+
+    const colors = entry(
+      openMenu(actions, QUOTED),
+      m.annot_view_card_color(),
+    ).submenu!;
+
+    expect(colors.items.map((item) => item.checked)).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it("is dimmed, and the palette says why, under a blocked capability", () => {
+    const { actions } = setup([QUOTED, COMMENTED], BLOCKED);
+
+    expect(
+      entry(openMenu(actions, QUOTED), m.annot_view_card_color()).disabled,
+    ).toBe(true);
+    Menu.instances.length = 0;
+    expect(
+      actions.onColorMenu(
+        {
+          currentTarget: document.createElement("button"),
+        } as unknown as MouseEvent<HTMLElement>,
+        QUOTED,
+      ),
+    ).toEqual(NOT_RUNNING);
+    expect(Menu.instances).toEqual([]);
+  });
+});
+
+describe("a colour key on the Card Selection", () => {
+  it("recolours every Selected Card as one group write", () => {
+    const { actions, annotations } = setup([QUOTED, COMMENTED]);
+
+    expect(actions.onRecolorSelection("#5fb236")).toBeNull();
+
+    expect(annotations.patchColors).toHaveBeenCalledExactlyOnceWith(
+      [QUOTED.key, COMMENTED.key],
+      "#5fb236",
+    );
+  });
+
+  it("says why and writes nothing under a blocked capability", () => {
+    const { actions, annotations } = setup([QUOTED, COMMENTED], BLOCKED);
+
+    expect(actions.onRecolorSelection("#5fb236")).toEqual(NOT_RUNNING);
+    expect(annotations.patchColors).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while a write is in flight, or with no card selected", () => {
+    const busy = setup([QUOTED], { ...LIVE, disabled: true });
+    const empty = setup([]);
+
+    expect(busy.actions.onRecolorSelection("#5fb236")).toBeNull();
+    expect(empty.actions.onRecolorSelection("#5fb236")).toBeNull();
+    for (const { annotations } of [busy, empty]) {
+      expect(annotations.patchColor).not.toHaveBeenCalled();
+      expect(annotations.patchColors).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe("copying the text of cards", () => {
+  it("copies each card's text, or its comment, in list order", () => {
+    using write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+    const { actions } = setup([QUOTED, OUTSIDE, COMMENTED]);
+
+    entry(openMenu(actions, QUOTED), m.annot_view_menu_copy_text()).click();
+
+    expect(write).toHaveBeenCalledExactlyOnceWith(
+      `${QUOTED.text}\n\nCompare with Rougier`,
+    );
+  });
+
+  it("dims the group's copy where no card has text or a comment", () => {
+    const { actions } = setup([FIRST, SECOND]);
+
+    expect(
+      entry(openMenu(actions, FIRST), m.annot_view_menu_copy_text()).disabled,
+    ).toBe(true);
+    expect(actions.onCopySelection()).toBe(false);
+  });
+
+  it("offers the copy on one card that carries only a comment", () => {
+    const { actions } = setup([]);
+
+    expect(rightClick(actions, COMMENTED)).toContain(
+      m.annot_view_menu_copy_text(),
+    );
+    expect(rightClick(actions, FIRST)).not.toContain(
+      m.annot_view_menu_copy_text(),
+    );
+  });
+});
+
+describe("copying a card's citation", () => {
+  /** The actions, whose citation read for each key waits on the test. */
+  function citing() {
+    const answers = new Map<
+      string,
+      ReturnType<typeof Promise.withResolvers<AnnotationCitation>>
+    >();
+    const reads = new Map<string, AbortSignal>();
+    const view = new AsyncDisposableStack();
+    const deps = stubService<AnnotActionDeps>("AnnotActionDeps", {
+      ...inertActionDeps(),
+      annotations: stubService<AnnotActionDeps["annotations"]>(
+        "AnnotationRepository",
+        {},
+      ),
+      app: stubService<App>("App", {
+        workspace: stubService<App["workspace"]>("Workspace", {
+          trigger: () => {},
+        }),
+      }),
+      controls: () => ({
+        color: LIVE,
+        comment: LIVE,
+        tags: LIVE,
+        delete: LIVE,
+        text: LIVE,
+      }),
+      notes: {
+        citation: (key: string) =>
+          Effect.promise((signal) => {
+            const answer = Promise.withResolvers<AnnotationCitation>();
+            answers.set(key, answer);
+            reads.set(key, signal);
+            return answer.promise;
+          }),
+      },
+    });
+    const actions = testActions(deps, view);
+    const copy = (card: AnnotationRecord) =>
+      entry(openMenu(actions, card), m.annot_view_menu_copy_citation()).click();
+    return { answers, reads, copy, close: () => view.disposeAsync() };
+  }
+
+  it("finishes two copies started from two menus", async () => {
+    using write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+    const f = citing();
+
+    f.copy(QUOTED);
+    f.copy(COMMENTED);
+    await vi.waitFor(() => expect(f.answers.size).toBe(2));
+    f.answers.get(COMMENTED.key)!.resolve({ kind: "citation", text: "[@b]" });
+    f.answers.get(QUOTED.key)!.resolve({ kind: "citation", text: "[@a]" });
+
+    await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+    expect(write.mock.calls).toEqual([["[@b]"], ["[@a]"]]);
+    await f.close();
+  });
+
+  it("copies nothing once the view closes during the read", async () => {
+    using write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+    const f = citing();
+
+    f.copy(QUOTED);
+    await vi.waitFor(() => expect(f.answers.size).toBe(1));
+    await f.close();
+
+    expect(f.reads.get(QUOTED.key)!.aborted).toBe(true);
+    f.answers.get(QUOTED.key)!.resolve({ kind: "citation", text: "[@a]" });
+    expect(write).not.toHaveBeenCalled();
+  });
+});
+
+describe("opening a card editor", () => {
+  /**
+   * The actions with the view's seams that an editor's open runs through, in
+   * the order they run. `draft` is what the repository's open answers.
+   */
+  function opening(draft: object | null) {
+    const calls: string[] = [];
+    const deps = stubService<AnnotActionDeps>("AnnotActionDeps", {
+      ...inertActionDeps(),
+      selectAlone: () => calls.push("select alone"),
+      closeEditors: () => calls.push("close editors"),
+      annotations: stubService<AnnotActionDeps["annotations"]>(
+        "AnnotationRepository",
+        {
+          editTextField: (field: string) => {
+            calls.push(`open ${field}`);
+            return Effect.succeed(
+              draft === null
+                ? null
+                : stubService<TextFieldDraft>("TextFieldDraft", {}),
+            );
+          },
+          editTags: () => {
+            calls.push("open tags");
+            return Effect.succeed(
+              draft === null ? null : stubService<TagDraft>("TagDraft", {}),
+            );
+          },
+        },
+      ),
+    });
+    return { actions: testActions(deps), calls };
+  }
+
+  it("saves and closes the open editor before the other opens", () => {
+    const { actions, calls } = opening({});
+    actions.onOpenTags(FIRST);
+    actions.onOpenField(FIRST, "comment");
+    expect(calls).toEqual([
+      "select alone",
+      "close editors",
+      "open tags",
+      "select alone",
+      "close editors",
+      "open comment",
+    ]);
+  });
+
+  it("opens the comment editor only where a draft starts", () => {
+    expect(opening({}).actions.onOpenField(FIRST, "comment")).toBe(true);
+    expect(opening(null).actions.onOpenField(FIRST, "text")).toBe(false);
+  });
+});
+
+describe("the verbs that end a text field's draft", () => {
+  /**
+   * The actions over one card, recording which repository verb each press
+   * reaches.
+   */
+  function verbs() {
+    const calls: string[] = [];
+    const call =
+      (name: string) =>
+      (...args: string[]) => {
+        // A field's verb names its field first; a write's verb takes the key.
+        calls.push(args.length > 1 ? `${name} ${args[0]} draft` : name);
+        return Effect.succeed({ kind: "idle" as const });
+      };
+    const deps = stubService<AnnotActionDeps>("AnnotActionDeps", {
+      ...inertActionDeps(),
+      annotations: stubService<AnnotActionDeps["annotations"]>(
+        "AnnotationRepository",
+        {
+          retryTextDraft: call("retry"),
+          retryWrite: call("retry write"),
+          discardTextDraft: call("discard"),
+          discardConflict: call("discard conflict"),
+        },
+      ),
+    });
+    return { actions: testActions(deps), calls };
+  }
+
+  it("end the named field's draft, and leave the other field's", () => {
+    const { actions, calls } = verbs();
+    actions.onApplyAgain(FIRST, "text");
+    actions.onDiscardConflict(FIRST, "text");
+    actions.onDiscardDraft(FIRST, "text");
+    actions.onApplyAgain(FIRST, "comment");
+    actions.onDiscardConflict(FIRST, "comment");
+    actions.onDiscardDraft(FIRST, "comment");
+    expect(calls).toEqual([
+      "retry text draft",
+      "discard text draft",
+      "discard text draft",
+      "retry comment draft",
+      "discard comment draft",
+      "discard comment draft",
+    ]);
+  });
+
+  it("end a conflict with no draft behind it through the write itself", () => {
+    const { actions, calls } = verbs();
+    actions.onApplyAgain(FIRST);
+    actions.onDiscardConflict(FIRST);
+    expect(calls).toEqual(["retry write", "discard conflict"]);
   });
 });

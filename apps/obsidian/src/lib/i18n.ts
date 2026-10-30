@@ -1,52 +1,31 @@
-// ZotLit release policy and port wiring for the reusable Language Pack lifecycle.
+// The Language Pack's edge outside Effect: its start in `onload`, ahead of
+// the service graph.
 
-import { createLanguagePackLifecycle } from "@zotlit/obsidian-i18n";
-import type {
-  LanguagePackLifecyclePorts,
-  PackSource,
-} from "@zotlit/obsidian-i18n";
+import { Effect, Layer } from "effect";
+import type { App } from "obsidian";
 
-import { RELEASE_ORIGIN, resourceReleaseUrl } from "./constants.js";
-import { catalog } from "./i18n/generated/catalog.js";
-import { runtime } from "./i18n/generated/runtime.js";
-import { getLogger } from "./log.js";
-
-const logger = getLogger("i18n");
+import { runtimeServices } from "@/lib/effect-services";
+import { ObsidianApp } from "@/lib/obsidian-app";
+import { layerDeviceStorage } from "@/lib/obsidian-device-storage";
+import { layerObsidianEnv } from "@/lib/obsidian-env";
+import { startLanguagePack } from "@/services/language-pack/service";
+import type { LanguagePackStartup } from "@/services/language-pack/service";
 
 /**
- * ZotLit's release policy: Language Packs are assets of the Resource Release
- * pinned to the running plugin version, so a build downloads the pack compiled
- * from its own message set.
+ * Apply the Language Pack before any copy shows: `onload`'s own notices (an
+ * old installer, a service that failed to start) read `m.*` before the
+ * service graph builds. Runs with the plugin's run services, as the graph does.
  *
- * @see docs/adr/0019-runtime-assets-ship-on-a-parallel-resource-release.md
+ * @throws the storage failure that stops startup.
  */
-const packSource = (pluginVersion: string): PackSource =>
-  typeof __LANGUAGE_PACK_DEV_SERVER__ === "string"
-    ? {
-        baseUrl: __LANGUAGE_PACK_DEV_SERVER__,
-        origin: new URL(__LANGUAGE_PACK_DEV_SERVER__).host,
-      }
-    : {
-        baseUrl: resourceReleaseUrl(pluginVersion),
-        origin: RELEASE_ORIGIN,
-      };
-
-export type LanguagePackLifecycle = ReturnType<typeof initI18n>;
-
-type InitI18nOptions = {
-  pluginVersion: string;
-  ports: LanguagePackLifecyclePorts;
-};
-
-export function initI18n({ pluginVersion, ports }: InitI18nOptions) {
-  return createLanguagePackLifecycle({
-    runtime,
-    pluginVersion,
-    namespace: "zotlit",
-    catalog,
-    source: packSource(pluginVersion),
-    aliases: { zh: "zh-CN" },
-    ports,
-    logger,
-  });
+export function startI18n(
+  app: App,
+  pluginVersion: string,
+): LanguagePackStartup {
+  return Effect.runSyncWith(runtimeServices)(
+    startLanguagePack(pluginVersion).pipe(
+      Effect.provide(Layer.merge(layerObsidianEnv, layerDeviceStorage)),
+      Effect.provideService(ObsidianApp, app),
+    ),
+  );
 }

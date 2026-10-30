@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
@@ -8,15 +9,42 @@ import type {
 } from "@zotlit/item-lookup/fixtures";
 import type { ItemFields } from "@zotlit/zotero-types";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { SettingsService } from "@/services/settings/service";
+import { defaults } from "@/services/settings/schema";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { renderSuggestion } from "./render-hit";
 import type { SearchHit } from "./service";
 
-const settings = { current: {} } as unknown as SettingsService;
+const settings = {
+  current: Effect.succeed(defaults),
+} satisfies Pick<PluginSettings["Service"], "current">;
+const bridge = { runSync: Effect.runSync };
 
 describe("renderSuggestion library label", () => {
+  it.each([null, group(100, "Shared A")])(
+    "shows cited and Library flairs together for %j",
+    (library) => {
+      const el = document.createElement("div");
+      renderSuggestion(settings, bridge, { ...hit(library), cited: true }, el);
+      const expected = [
+        m.citation_suggester_cited_in_note(),
+        ...(library ? ["Shared A"] : []),
+      ];
+      expect(
+        [...el.querySelectorAll(".zt-suggestion-flair-inline")].map(
+          (flair) => flair.textContent,
+        ),
+      ).toEqual(expected);
+      expect(
+        [...el.querySelectorAll(".zt-suggestion-flair-text")].map(
+          (flair) => flair.textContent,
+        ),
+      ).toEqual(expected);
+    },
+  );
+
   it("names the library a result came from", () => {
     expect(libraryText(group(100, "Shared A"))).toBe("Shared A");
   });
@@ -36,19 +64,22 @@ describe("renderSuggestion library label", () => {
   });
 });
 
-/** The aux-slot library label's text, or `null` when no label was rendered. */
+/** The trailing library label's text, or `null` when no label was rendered. */
 function libraryText(library: AvailableLibrary | null): string | null {
   const el = document.createElement("div");
-  renderSuggestion(settings, hit(library), el);
-  return el.querySelector(".suggestion-aux .library")?.textContent ?? null;
+  renderSuggestion(settings, bridge, hit(library), el);
+  return (
+    el.querySelector(".zt-suggestion-flair .zt-suggestion-flair-text")
+      ?.textContent ?? null
+  );
 }
 
 function hit(library: AvailableLibrary | null): SearchHit {
   return {
     item: makeItem({ key: "AAAAAAAA", title: "Alpha" }),
-    score: 1,
     matches: [],
     library,
+    cited: false,
   };
 }
 
@@ -145,7 +176,8 @@ function metaParts<TType extends ItemFields["itemType"]>(
   const el = document.createElement("div");
   renderSuggestion(
     settings,
-    { item: makeItem(options), score: 1, matches: [], library: null },
+    bridge,
+    { item: makeItem(options), matches: [], library: null, cited: false },
     el,
   );
   const metaEl = el.querySelector(".meta");

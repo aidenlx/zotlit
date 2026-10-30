@@ -10,6 +10,8 @@ import {
   migrateV6ToV7,
   migrateV7ToV8,
   migrateV8ToV9,
+  migrateV9ToV10,
+  migrateV10ToV11,
 } from "./migrate";
 
 describe("migrateLegacyV0", () => {
@@ -56,7 +58,6 @@ describe("migrateLegacyV0", () => {
       "server.port": 9099,
       "server.hostname": "localhost",
       "template.folder": "Templates",
-      "template.auto-pair-eta": true,
       "template.auto-trim-leading": "nl",
       "template.auto-trim-trailing": "slurp",
       "zotero.auto-refresh": false,
@@ -635,5 +636,137 @@ describe("migrateV8ToV9", () => {
   it("returns an empty object for non-plain inputs", () => {
     expect(migrateV8ToV9(null)).toEqual({});
     expect(migrateV8ToV9(42)).toEqual({});
+  });
+});
+
+describe("migrateV9ToV10", () => {
+  it("moves the five global note bindings into the default Profile", () => {
+    expect(
+      migrateV9ToV10({
+        __VERSION__: 9,
+        "citation.references-style": "apa",
+        "note.literature-folder": "Law",
+        "note.import-folder": "Law/Imported",
+        "note.import-colored-highlights": true,
+        "note.import-annotations-as-template": true,
+        "note.default-profile": { document: "law.md" },
+        "server.enabled": true,
+      }),
+    ).toEqual({
+      __VERSION__: 9,
+      "note.default-profile": {
+        bindings: {
+          "citation.references-style": "apa",
+          "note.literature-folder": "Law",
+          "note.import-folder": "Law/Imported",
+          "note.import-colored-highlights": true,
+          "note.import-annotations-as-template": true,
+        },
+      },
+      "server.enabled": true,
+    });
+  });
+
+  it("materializes the old defaults when global overrides are absent", () => {
+    expect(migrateV9ToV10({ __VERSION__: 9 })).toEqual({
+      __VERSION__: 9,
+      "note.default-profile": {
+        bindings: {
+          "citation.references-style": null,
+          "note.literature-folder": "literatures",
+          "note.import-folder": "zotero_notes",
+          "note.import-colored-highlights": false,
+          "note.import-annotations-as-template": false,
+        },
+      },
+    });
+  });
+
+  it("preserves valid bindings when one retired global is malformed", () => {
+    expect(
+      migrateV9ToV10({
+        __VERSION__: 9,
+        "citation.references-style": "apa",
+        "note.literature-folder": "Law",
+        "note.import-folder": 42,
+        "note.import-colored-highlights": true,
+        "note.import-annotations-as-template": true,
+      }),
+    ).toEqual({
+      __VERSION__: 9,
+      "note.default-profile": {
+        bindings: {
+          "citation.references-style": "apa",
+          "note.literature-folder": "Law",
+          "note.import-folder": "zotero_notes",
+          "note.import-colored-highlights": true,
+          "note.import-annotations-as-template": true,
+        },
+      },
+    });
+  });
+
+  it("preserves migrated bindings when the old Profile document is malformed", () => {
+    expect(
+      migrateV9ToV10({
+        __VERSION__: 9,
+        "citation.references-style": "apa",
+        "note.literature-folder": "Law",
+        "note.import-folder": "Law/Imported",
+        "note.import-colored-highlights": true,
+        "note.import-annotations-as-template": true,
+        "note.default-profile": { document: "" },
+      }),
+    ).toEqual({
+      __VERSION__: 9,
+      "note.default-profile": {
+        bindings: {
+          "citation.references-style": "apa",
+          "note.literature-folder": "Law",
+          "note.import-folder": "Law/Imported",
+          "note.import-colored-highlights": true,
+          "note.import-annotations-as-template": true,
+        },
+      },
+    });
+  });
+
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV9ToV10(null)).toEqual({});
+    expect(migrateV9ToV10(42)).toEqual({});
+  });
+});
+
+describe("migrateV10ToV11", () => {
+  it("moves the annotation opening choice to the Reader settings and keeps the citation source", () => {
+    expect(
+      migrateV10ToV11({
+        __VERSION__: 10,
+        "citation.annotation-links": false,
+        "citation.annotation-citations": true,
+        "citation.open-annotation-links": false,
+        "server.enabled": true,
+      }),
+    ).toEqual({
+      __VERSION__: 10,
+      "citation.annotation-citations": true,
+      "reader.open-annotation-links": false,
+      "server.enabled": true,
+    });
+  });
+
+  it("uses the enabled Reader default when the old value is absent", () => {
+    expect(
+      migrateV10ToV11({
+        __VERSION__: 10,
+        "citation.annotation-links": false,
+        "citation.annotation-citations": false,
+      }),
+    ).toEqual({ __VERSION__: 10, "citation.annotation-citations": false });
+  });
+
+  it("returns an empty object for non-plain inputs", () => {
+    expect(migrateV10ToV11(null)).toEqual({});
+    expect(migrateV10ToV11(42)).toEqual({});
   });
 });

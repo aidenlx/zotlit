@@ -5,9 +5,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
-import { createFixtureSchema } from "@/test-utils";
+import {
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
 
-import { getAttachmentByKey, getAttachmentsByParents } from "./attachments";
+import {
+  getAttachmentPage,
+  getAttachmentByKey,
+  getAttachmentsByKey,
+  getAttachmentsByParents,
+} from "./attachments";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -80,6 +89,28 @@ describe("getAttachmentsByParents", () => {
       "ATTA2",
     ]);
   });
+
+  it("returns parents in request order, repeating a repeated parent and leaving misses out", () => {
+    expect(
+      getAttachmentsByParents(db, [200, 999, 100, 200]).map((a) => a.key),
+    ).toEqual(["ATTB1", "ATTA1", "ATTA2", "ATTB1"]);
+  });
+
+  it("runs the same cached statements for one parent as for many", () => {
+    const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
+    const cost = (parentItemIDs: number[]) => {
+      const before = statements();
+      getAttachmentsByParents(db, parentItemIDs);
+      return statements() - before;
+    };
+    cost([200]);
+    // Every parent is in the user library, so each read resolves one group.
+    expect(cost([100, 200, 400, 999, 100])).toBe(cost([200]));
+    const compiled = compiles();
+    cost([100, 200, 400, 999, 100]);
+    expect(compiles()).toBe(compiled);
+  });
 });
 
 describe("getAttachmentByKey", () => {
@@ -95,6 +126,115 @@ describe("getAttachmentByKey", () => {
     expect(getAttachmentByKey(db, "MISSING", USER_LIBRARY_ID)).toBeNull();
     expect(getAttachmentByKey(db, "TRASHED", USER_LIBRARY_ID)).toBeNull();
     expect(getAttachmentByKey(db, "ATTOTHER", USER_LIBRARY_ID)).toBeNull();
+  });
+});
+
+describe("getAttachmentsByKey", () => {
+  it("returns keys in request order, repeating a repeated key and leaving misses, deleted, and other-library attachments out", () => {
+    expect(
+      getAttachmentsByKey(db, USER_LIBRARY_ID, [
+        "ATTB1",
+        "MISSING",
+        "ATTA1",
+        "TRASHED",
+        "ATTOTHER",
+        "ATTB1",
+      ]).map((a) => a.key),
+    ).toEqual(["ATTB1", "ATTA1", "ATTB1"]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    expect(getAttachmentsByKey(db, USER_LIBRARY_ID, [])).toEqual([]);
+  });
+
+  it("runs the same cached statements for one key as for many", () => {
+    const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
+    const cost = (keys: string[]) => {
+      const before = statements();
+      getAttachmentsByKey(db, USER_LIBRARY_ID, keys);
+      return statements() - before;
+    };
+    cost(["ATTA1"]);
+    expect(cost(["ATTA1", "ATTA2", "ATTB1", "URLATTCH", "MISSING"])).toBe(
+      cost(["ATTA1"]),
+    );
+    const compiled = compiles();
+    cost(["ATTA1", "ATTA2", "ATTB1", "URLATTCH", "MISSING"]);
+    expect(compiles()).toBe(compiled);
+  });
+});
+
+describe("getAttachmentPage", () => {
+  it("pairs every live attachment with its parent Item's Indexed Key, and a standalone one with null", () => {
+    sqlite.exec(`
+      insert into libraries (libraryID, type) values (2, 'group');
+      insert into groups (groupID, libraryID, name)
+        values (4200309, 2, 'Shared Reading');
+
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+        values (500, 2, '2024-01-11 00:00:00', '2024-01-11 00:00:00', 1, 'STANDALN');
+
+      insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+        values (500, null, 0, 'application/pdf', 'storage:loose.pdf');
+    `);
+
+    expect(
+      getAttachmentPage(db, { afterItemID: 0, limit: 100 }).map(
+        (attachment) => [
+          attachment.indexedKey,
+          attachment.parentIndexedKey,
+          attachment.path,
+        ],
+      ),
+    ).toEqual([
+      ["ATTA1", "PARA", "storage:paper.pdf"],
+      ["ATTA2", "PARA", "/abs/path/book.epub"],
+      ["ATTB1", "PARB", null],
+      ["ATTOTHERg4200309", "PAROTHERg4200309", "storage:other-lib.pdf"],
+      ["URLATTCH", "PARURL", "https://example.com/article"],
+      ["STANDALN", null, "storage:loose.pdf"],
+    ]);
+  });
+
+  it("reads the live attachments after a cursor in item order, a page at a time", () => {
+    sqlite.exec(`
+      insert into libraries (libraryID, type) values (2, 'group');
+      insert into groups (groupID, libraryID, name)
+        values (4200309, 2, 'Shared Reading');
+    `);
+    const first = getAttachmentPage(db, { afterItemID: 0, limit: 2 });
+    const second = getAttachmentPage(db, {
+      afterItemID: first.at(-1)!.itemID,
+      limit: 2,
+    });
+    const rest = getAttachmentPage(db, {
+      afterItemID: second.at(-1)!.itemID,
+      limit: 2,
+    });
+
+    expect(
+      [first, second, rest].map((page) =>
+        page.map((attachment) => [
+          attachment.itemID,
+          attachment.indexedKey,
+          attachment.parentIndexedKey,
+        ]),
+      ),
+    ).toEqual([
+      [
+        [101, "ATTA1", "PARA"],
+        [102, "ATTA2", "PARA"],
+      ],
+      [
+        [201, "ATTB1", "PARB"],
+        [301, "ATTOTHERg4200309", "PAROTHERg4200309"],
+      ],
+      [[401, "URLATTCH", "PARURL"]],
+    ]);
+    expect(
+      getAttachmentPage(db, { afterItemID: rest.at(-1)!.itemID, limit: 2 }),
+    ).toEqual([]);
   });
 });
 

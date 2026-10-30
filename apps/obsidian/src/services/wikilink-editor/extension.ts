@@ -1,3 +1,4 @@
+import { syntaxTree } from "@codemirror/language";
 // The CodeMirror side of the Wikilink Editor Treatment: one replace decoration
 // per Literature Note wikilink in the visible ranges, carrying the Citation
 // Display Text and everything Obsidian's own rendering would have supplied, so
@@ -5,19 +6,24 @@
 // running Obsidian's handlers — plus the two delegated listeners that hand the
 // hover of a rendered Citation to the Citation Popover and its plain click to
 // the caret.
-
-import { syntaxTree, tokenClassNodeProp } from "@codemirror/language";
 import { RangeSetBuilder, StateEffect } from "@codemirror/state";
-import type { EditorState, Extension } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
 import { Decoration, ViewPlugin, WidgetType } from "@codemirror/view";
 import type { DecorationSet, EditorView, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, livePreviewState } from "obsidian";
 
-import { livePreviewOf } from "@/lib/editor-decoration";
-import type { DocRange } from "@/lib/editor-decoration";
-import type { Held } from "@/lib/held-reads";
+import {
+  livePreviewOf,
+  tokenNodes,
+  visibleLineRanges,
+} from "@/lib/editor-decoration";
 import { themeHook } from "@/lib/theme-hooks";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
+import { EditorLookup } from "@/services/citation-index/editor-lookup";
+import type {
+  CitationLookupAnswer,
+  CitationLookupObservation,
+} from "@/services/citation-index/service";
 import {
   citationContent,
   presentedCitationEqual,
@@ -42,11 +48,11 @@ import type {
   HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
+import type { Held } from "@/services/query-client/service";
 
 import { wikilinkDecorations } from "./decorate";
 import type { WikilinkDecoration } from "./decorate";
 import { scanWikilinks } from "./scan";
-import type { TokenNode } from "./scan";
 import "./style.css";
 
 /**
@@ -66,7 +72,9 @@ export interface WikilinkEditorHandlers {
   literatureNote: (
     linkpath: string,
     sourcePath: string,
+    lookup: CitationLookupAnswer | null,
   ) => LiteratureNoteTarget | null;
+  observeLookup: (changed: () => void) => CitationLookupObservation;
   /** Read once per decoration build to apply the source-membership choice. */
   enabled: () => boolean;
   /**
@@ -148,6 +156,7 @@ export function wikilinkEditorExtension(
       /** The tree the current set was built from, which gates the rebuild. */
       #tree;
       readonly #view;
+      readonly #lookup;
       /**
        * The capture-phase listeners that answer a Citation's hover and its
        * plain click, each installed for as long as its own setting asks for it.
@@ -164,12 +173,16 @@ export function wikilinkEditorExtension(
 
       constructor(view: EditorView) {
         this.#view = view;
+        this.#lookup = new EditorLookup(handlers.observeLookup, () => {
+          view.dispatch({ effects: wikilinkDecorationsChanged.of(undefined) });
+        });
         this.#tree = syntaxTree(view.state);
-        this.decorations = buildDecorations(view, handlers);
+        this.#rebuild(view);
         this.#watchGestures();
       }
 
       destroy(): void {
+        this.#lookup[Symbol.dispose]();
         // Deleting the entry a Map iteration is on leaves the rest in place.
         for (const type of this.#listeners.keys()) {
           this.#remove(type);
@@ -249,8 +262,18 @@ export function wikilinkEditorExtension(
           )
         ) {
           this.#tree = tree;
-          this.decorations = buildDecorations(update.view, handlers);
+          this.#rebuild(update.view);
         }
+      }
+
+      #rebuild(view: EditorView): void {
+        const built = buildDecorations(
+          view,
+          handlers,
+          this.#lookup.current?.value ?? null,
+        );
+        this.decorations = built.decorations;
+        this.#lookup.set({ indexedKeys: built.indexedKeys });
       }
     },
     { decorations: (plugin) => plugin.decorations },
@@ -316,8 +339,8 @@ function renderedCitationAt(
   view: EditorView,
   handlers: WikilinkEditorHandlers,
 ): { element: HTMLElement; hover: CitationHover } | null {
-  const { target } = event;
-  if (!(target instanceof HTMLElement)) return null;
+  const target = event.target as Node | null;
+  if (!target?.instanceOf(HTMLElement)) return null;
   const element = target.closest<HTMLElement>(
     `.${themeHook.literatureNoteLink}`,
   );
@@ -461,13 +484,23 @@ class CitationDisplayWidget extends WidgetType {
 function buildDecorations(
   view: EditorView,
   handlers: WikilinkEditorHandlers,
-): DecorationSet {
+  lookup: CitationLookupAnswer | null,
+): { decorations: DecorationSet; indexedKeys: readonly string[] } {
   const { state } = view;
   const file = state.field(editorInfoField, false)?.file ?? null;
   const sourcePath = file?.path ?? "";
+  const indexedKeys = new Set<string>();
+  const citations = file === null ? null : handlers.citationText(file.path);
   const context = {
-    literatureNote: (linkpath: string) =>
-      handlers.literatureNote(linkpath, sourcePath),
+    literatureNote: (linkpath: string) => {
+      const note = handlers.literatureNote(
+        linkpath,
+        sourcePath,
+        citations?.value.lookup ?? lookup,
+      );
+      if (note) indexedKeys.add(note.indexedKey);
+      return note;
+    },
     enabled: handlers.enabled(),
     selection: view.hasFocus ? state.selection.ranges : [],
     textBetween: (from: number, to: number) => state.doc.sliceString(from, to),
@@ -482,14 +515,14 @@ function buildDecorations(
   const decorations: WikilinkDecoration[] = livePreviewOf(state)
     ? wikilinkDecorations(spans, context)
     : [];
-  if (decorations.length === 0) return Decoration.none;
+  if (decorations.length === 0) {
+    return { decorations: Decoration.none, indexedKeys: [...indexedKeys] };
+  }
 
   // Asked for only once a Citation is on screen, so a document that writes none
   // is never read. A document whose citations are not held yet keeps native
   // link presentation, and the read announces itself when it settles, which
   // brings the formatted text in without a document change.
-  const citations = file === null ? null : handlers.citationText(file.path);
-
   // A Citation opens as the link it is wherever the plugin leaves its click
   // alone; where it does not, the click reaches the source instead.
   const click: CitationClickAffordance = handlers.clickIntercepted()
@@ -509,7 +542,7 @@ function buildDecorations(
   for (const { from, to, decoration } of replacements) {
     builder.add(from, to, decoration);
   }
-  return builder.finish();
+  return { decorations: builder.finish(), indexedKeys: [...indexedKeys] };
 }
 
 function replacement(
@@ -539,48 +572,4 @@ function citedWorks({ citation }: WikilinkDecoration): HoveredWork[] {
     citekey,
     indexedKey: citation.works[at],
   }));
-}
-
-/**
- * The visible ranges widened to whole lines and merged, so a link straddling a
- * range edge is scanned once and in full. Wikilinks never cross a line, so
- * whole lines are enough, and the merge keeps the ranges disjoint and ordered —
- * which is what {@link RangeSetBuilder} requires of the additions built from
- * them.
- */
-function visibleLineRanges(view: EditorView): DocRange[] {
-  const { doc } = view.state;
-  const ranges: DocRange[] = [];
-  for (const range of view.visibleRanges) {
-    const from = doc.lineAt(range.from).from;
-    const to = doc.lineAt(range.to).to;
-    const last = ranges.at(-1);
-    if (last !== undefined && from <= last.to) last.to = Math.max(last.to, to);
-    else ranges.push({ from, to });
-  }
-  return ranges;
-}
-
-/**
- * The token nodes of one region, in document order. Line-class nodes are left
- * out: they span a whole line and would break the node adjacency the scan reads
- * conceal groups from.
- */
-function tokenNodes(state: EditorState, range: DocRange): TokenNode[] {
-  const nodes: TokenNode[] = [];
-  syntaxTree(state).iterate({
-    from: range.from,
-    to: range.to,
-    enter(node) {
-      const classes = node.type.prop(tokenClassNodeProp);
-      if (classes === undefined) return;
-      nodes.push({
-        from: node.from,
-        to: node.to,
-        classes: classes.split(" "),
-        text: state.doc.sliceString(node.from, node.to),
-      });
-    },
-  });
-  return nodes;
 }

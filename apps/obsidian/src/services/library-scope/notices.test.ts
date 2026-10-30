@@ -1,102 +1,130 @@
-import { describe, expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Exit, Scope, Stream } from "effect";
+import { describe, expect, it as plainIt, vi } from "vitest";
 
-import {
-  libraryScopeInvalidNotice,
-  subscribeLibraryScopeInvalid,
-} from "./notices";
-import type { LibraryScopeService } from "./service";
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+
+import { libraryScopeInvalidNotice, watchLibraryScopeInvalid } from "./notices";
+import { DEFAULT_LIBRARY_SCOPE } from "./scope";
+import type { LibraryScopeState } from "./service";
 
 describe("libraryScopeInvalidNotice", () => {
-  it("carries the approved copy and opens settings through its action", () => {
-    const openSettings = vi.fn();
-    const notice = libraryScopeInvalidNotice(openSettings);
+  plainIt(
+    "carries the approved copy and opens settings through its action",
+    () => {
+      const openSettings = vi.fn();
+      const notice = libraryScopeInvalidNotice(openSettings);
 
-    expect(notice).toMatchObject({
-      title: "Library scope is invalid",
-      explanation:
-        "ZotLit is using My Library until you select a library scope.",
-      action: "Open settings",
-    });
+      expect(notice).toMatchObject({
+        title: "Library scope is invalid",
+        explanation:
+          "ZotLit is using My Library until you select a library scope.",
+        action: "Open settings",
+      });
 
-    notice.openSettings();
-    expect(openSettings).toHaveBeenCalledOnce();
-  });
-});
-
-describe("subscribeLibraryScopeInvalid", () => {
-  it("warns once for a value that was already broken at subscription", () => {
-    const scope = fakeScope(true);
-    const { showNotice } = subscribe(scope);
-
-    scope.emitChanged();
-    scope.emitChanged();
-
-    expect(showNotice).toHaveBeenCalledOnce();
-  });
-
-  it("stays quiet while the saved value is valid", () => {
-    const scope = fakeScope(false);
-    const { showNotice } = subscribe(scope);
-
-    scope.emitChanged();
-
-    expect(showNotice).not.toHaveBeenCalled();
-  });
-
-  it("clears the notice on repair and arms the next break", () => {
-    const scope = fakeScope(false);
-    const { showNotice, hide } = subscribe(scope);
-
-    scope.setInvalid(true);
-    expect(showNotice).toHaveBeenCalledOnce();
-
-    scope.setInvalid(false);
-    expect(hide).toHaveBeenCalledOnce();
-
-    scope.setInvalid(true);
-    expect(showNotice).toHaveBeenCalledTimes(2);
-  });
-
-  it("drops its subscription and its open notice at the plugin's end", () => {
-    const scope = fakeScope(true);
-    const { dispose, hide } = subscribe(scope);
-
-    dispose();
-
-    expect(hide).toHaveBeenCalledOnce();
-    expect(scope.hasListener()).toBe(false);
-  });
-});
-
-function subscribe(scope: ReturnType<typeof fakeScope>) {
-  const hide = vi.fn();
-  const showNotice = vi.fn(() => ({ hide }));
-  const dispose = subscribeLibraryScopeInvalid(
-    scope as unknown as Pick<LibraryScopeService, "invalid" | "on">,
-    showNotice,
+      notice.openSettings();
+      expect(openSettings).toHaveBeenCalledOnce();
+    },
   );
-  return { dispose, showNotice, hide };
+});
+
+describe("watchLibraryScopeInvalid", () => {
+  it.effect("warns once for a value that was already broken at the start", () =>
+    Effect.gen(function* () {
+      const scope = fakeScope(true);
+      const { notices } = yield* watch(scope);
+
+      scope.set(true);
+      scope.set(true);
+
+      expect(notices).toHaveLength(1);
+    }),
+  );
+
+  it.effect("stays quiet while the saved value is valid", () =>
+    Effect.gen(function* () {
+      const scope = fakeScope(false);
+      const { notices } = yield* watch(scope);
+
+      scope.set(false);
+
+      expect(notices).toEqual([]);
+    }),
+  );
+
+  it.effect("clears the notice on repair and arms the next break", () =>
+    Effect.gen(function* () {
+      const scope = fakeScope(false);
+      const { notices } = yield* watch(scope);
+
+      scope.set(true);
+      expect(notices).toHaveLength(1);
+
+      scope.set(false);
+      expect(notices[0]?.hidden).toBe(true);
+
+      scope.set(true);
+      expect(notices).toHaveLength(2);
+      expect(notices[1]?.hidden).toBe(false);
+    }),
+  );
+
+  it.effect(
+    "drops its subscription and its open notice when the Scope closes",
+    () =>
+      Effect.gen(function* () {
+        const scope = fakeScope(true);
+        const watched = yield* Scope.make();
+        const notifier = testNotifier();
+        yield* watchLibraryScopeInvalid(
+          scope.service,
+          invalidNotice(notifier),
+        ).pipe(Scope.provide(watched));
+
+        yield* Scope.close(watched, Exit.void);
+
+        expect(notifier.notices).toMatchObject([{ hidden: true }]);
+        expect(scope.hasListener()).toBe(false);
+      }),
+  );
+});
+
+function invalidNotice(notifier: ReturnType<typeof testNotifier>) {
+  return notifier.service.show("Library scope is invalid", { duration: 0 });
 }
 
+function watch(scope: ReturnType<typeof fakeScope>) {
+  return Effect.gen(function* () {
+    const notifier = testNotifier();
+    yield* watchLibraryScopeInvalid(scope.service, invalidNotice(notifier));
+    return { notices: notifier.notices };
+  });
+}
+
+/** A Library Scope whose saved value a test breaks and repairs. */
 function fakeScope(invalid: boolean) {
-  let listener: (() => void) | null = null;
+  const event = testEvent<LibraryScopeState>();
+  const stateOf = (broken: boolean): LibraryScopeState => ({
+    current: null,
+    all: null,
+    invalid: broken,
+    effective: DEFAULT_LIBRARY_SCOPE,
+    libraryRows: null,
+  });
+  let latest = stateOf(invalid);
   return {
-    invalid,
-    on(_event: "changed", cb: () => void) {
-      listener = cb;
-      return () => {
-        listener = null;
-      };
+    service: {
+      invalid: Effect.sync(() => latest.invalid),
+      // The state a subscriber starts from, then each one the test sets.
+      changes: Stream.unwrap(
+        Effect.sync(() => event.stream.pipe(Stream.prepend([latest]))),
+      ),
     },
-    emitChanged() {
-      listener?.();
+    set(broken: boolean) {
+      latest = stateOf(broken);
+      event.emit(latest);
     },
-    setInvalid(next: boolean) {
-      this.invalid = next;
-      listener?.();
-    },
-    hasListener() {
-      return listener !== null;
-    },
+    hasListener: () => event.subscribers > 0,
   };
 }

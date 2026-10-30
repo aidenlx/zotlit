@@ -1,15 +1,16 @@
 ---
 title: "Commands"
-description: "Every ZotLit command-palette command, its entry points, and when it is available."
-introduced: "2.0.0"
-updated: "2.1.0"
+description: "Every ZotLit command, its entry points, and its Obsidian CLI parameters."
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
-This reference lists every ZotLit command, its entry points, and its availability.
+This reference lists every ZotLit command, its entry points, availability, and Obsidian CLI parameters.
 
 <Callout type="info">
   ZotLit is a desktop-only plugin. These commands are not available on Obsidian
@@ -18,7 +19,7 @@ This reference lists every ZotLit command, its entry points, and its availabilit
 
 ## Database
 
-<Command>ZotLit: Refresh Zotero database</Command>
+<Command name={m.command_refresh_db_name()} />
 
 Reloads the Zotero database from disk. Use this after making changes in Zotero when automatic watching is disabled.
 
@@ -28,33 +29,58 @@ Reloads the Zotero database from disk. Use this after making changes in Zotero w
 
 ## Library-wide update
 
-<Command>ZotLit: Create or update all literature notes</Command>
+<Command name={m.command_update_all_notes_name()} />
 
 Creates or updates a literature note for every item in every library of your [library scope](/docs/reference/settings#library-scope). Opens the same batch confirmation modal as a multi-item update from Zotero.
 
-| Entry point     | Details                                                                              |
-| --------------- | ------------------------------------------------------------------------------------ |
-| Command palette | Always available                                                                     |
-| Zotero          | Right-click a library or collection > **ZotLit > Create or Update Literature Notes** |
+| Entry point     | Details                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                              |
+| Zotero          | Right-click a library or collection > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> |
 
 The Zotero entry scopes the batch to the row you right-click: a library covers every item in it, a collection covers that collection and its subcollections. That target is exact, so it runs whether or not the row is in your library scope.
 
 ## Library-wide note import
 
-<Command>ZotLit: Import all child and standalone notes</Command>
+<Command name={m.command_import_all_notes_name()} />
 
 Imports all child notes attached to regular items and all standalone notes in every library of your [library scope](/docs/reference/settings#library-scope). Opens the same batch confirmation modal as a multi-note import from Zotero.
 
-| Entry point     | Details                                                                              |
-| --------------- | ------------------------------------------------------------------------------------ |
-| Command palette | Always available                                                                     |
-| Zotero          | Right-click a library or collection > **ZotLit > Import Child and Standalone Notes** |
+| Entry point     | Details                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                                    |
+| Zotero          | Right-click a library or collection > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} /> |
 
 The Zotero entry scopes the import to the row you right-click, subcollections included. That target is exact, so it runs whether or not the row is in your library scope.
 
-## Literature note quick switcher
+## Library View [#library-view]
 
-<Command>ZotLit: Open literature note quick switcher</Command>
+<Command name={m.command_open_library_view_name()} />
+
+Opens the Library View, a tab titled <UiLabel name={m.library_view_name()} /> that lists your Zotero library, and puts the cursor in its search box. If the tab is already open, the command brings it forward. See [Browse your library in the Library View](/docs/how-to/use-library-view).
+
+| Entry point     | Details                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| Command palette | Always available                                                                                             |
+| Ribbon          | The ZotLit icon                                                                                              |
+| Quick switcher  | `Alt+Enter` (`Option+Enter` on macOS) on a result opens the view on that item. See [below](#quick-switcher). |
+| Automatic       | Opens once on a new install and once after a v1-to-v2 upgrade, with the setup banner above it                |
+
+A selected row in the view answers the quick switcher's chords below, and its right-click menu lists every action on the item. See [Open, write, and cite from a row](/docs/how-to/use-library-view#rows).
+
+<Command name={m.command_show_in_library_name()} />
+
+Reveals the active literature note's item in the Library View. Opens the Library View if closed, clears any active search text and filters so the paper is not hidden, and flashes the paper's row to highlight it.
+
+| Entry point     | Details                                                                               |
+| --------------- | ------------------------------------------------------------------------------------- |
+| Command palette | Active on a literature note                                                           |
+| File menu       | Active on a literature note (<UiLabel name={m.library_view_show_in_library()} />)     |
+| Tab menu        | Active on a literature note tab (<UiLabel name={m.library_view_show_in_library()} />) |
+
+## Literature note quick switcher [#quick-switcher]
+
+<Command name={m.command_open_lit_note_name()} />
 
 Opens a modal to search every library in your [library scope](/docs/reference/settings#library-scope) and jump to (or create) the corresponding literature note.
 
@@ -62,55 +88,77 @@ Opens a modal to search every library in your [library scope](/docs/reference/se
 | --------------- | ---------------- |
 | Command palette | Always available |
 
+A result takes five chords, listed along the bottom of the modal:
+
+| Chord                                           | Result                                                           |
+| ----------------------------------------------- | ---------------------------------------------------------------- |
+| `Enter`                                         | Opens the literature note, creating it first when none exists.   |
+| `Ctrl+Enter` (`Cmd+Enter` on macOS)             | The same, in a new pane.                                         |
+| `Shift+Enter`                                   | Opens the item's PDF in Obsidian's PDF reader, without the note. |
+| `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) | The same, in a new pane.                                         |
+| `Alt+Enter` (`Option+Enter` on macOS)           | Shows the item in the [Library View](#library-view).             |
+
+`Alt+Enter` opens the Library View on the item's first collection, or on its library when the item is in no collection, and selects its row. It clears the view's search and turns off its reading-state filters, so nothing hides the row. When the item falls beyond the view's limit of 1,000 papers, nothing is selected and a notice says so.
+
+The two PDF chords run <UiLabel name={m.command_open_pdf_name()} /> on the selected result, listed under [Literature note actions](#literature-note-actions).
+
 ## Citations
 
-<Command>ZotLit: Insert Markdown citation</Command>
+<Command name={m.command_insert_citation_name()} />
 
 Opens a modal to search every library in your [library scope](/docs/reference/settings#library-scope) and insert a Markdown citation at the cursor.
 
-Insertion remains available independently of **Pandoc citations**, **Wikilink citations**, **Show formatted citations**, and **Open citations as links**.
+Insertion remains available independently of <UiLabel name={m.settings_citation_pandoc_citations_name()} />, <UiLabel name={m.settings_citation_wikilink_citations_name()} />, <UiLabel name={m.settings_citation_show_formatted_name()} />, and <UiLabel name={m.settings_citation_open_as_links_name()} />.
 
-| Entry point      | Details                                                                                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Command palette  | Active when an editor is open                                                                                                                            |
-| Editor suggester | Triggered by typing `[@` in the editor, or `@` at a word boundary when **`@` trigger** is on. Both settings are under **Settings > ZotLit > Citations**. |
+| Entry point      | Details                                                                                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette  | Active when an editor is open                                                                                                                                              |
+| Editor suggester | Triggered by typing `[@` in the editor, or `@` at a word boundary when **`@` trigger** is on. Both settings are under <SettingsPath page={m.settings_page_citations()} />. |
 
 ### Citation navigation
 
 The following commands open the recognized Pandoc citation under the cursor. They have no default hotkeys.
 
-| Entry point     | Details                                                                                                                |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Command palette | Active while **Pandoc citations** and **Open citations as links** are on, with the cursor on a recognized citation key |
-| Hotkey          | None by default; assign one under **Settings > Hotkeys**                                                               |
+| Entry point     | Details                                                                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Command palette | Active while <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> are on, with the cursor on a recognized citation key |
+| Hotkey          | None by default; assign one under **Settings > Hotkeys**                                                                                                                                         |
 
-<Command>ZotLit: Open citation key under cursor</Command>
+<Command name={m.command_open_citekey_name()} />
 
 Opens or creates the Literature Note in the current tab.
 
-<Command>ZotLit: Open citation key under cursor in new tab</Command>
+<Command name={m.command_open_citekey_new_tab_name()} />
 
 Opens or creates the Literature Note in a new tab.
 
-<Command>ZotLit: Open citation key under cursor to the right</Command>
+<Command name={m.command_open_citekey_right_name()} />
 
 Opens or creates the Literature Note in a split to the right.
 
-<Command>ZotLit: Open citation key under cursor in new window</Command>
+<Command name={m.command_open_citekey_window_name()} />
 
 Opens or creates the Literature Note in a new window.
 
 ### References and export
 
-<Command>ZotLit: Open references</Command>
+<Command name={m.command_open_references_view_name()} />
 
-Opens the References Sidebar for the active note.
+Opens the <UiLabel name={m.references_view_name()} /> Sidebar for the active note.
 
 | Entry point     | Details          |
 | --------------- | ---------------- |
 | Command palette | Always available |
 
-<Command>ZotLit: Set citation presentation</Command>
+<Command name={m.command_show_cited_by_name()} />
+
+Opens the <UiLabel name={m.cited_by_view_name()} /> Sidebar, which lists the notes in your vault that cite the active literature note. Each result is grouped by source file and links to the citation inside it. The sidebar follows the active note, so it asks for a literature note before it shows results.
+
+| Entry point     | Details          |
+| --------------- | ---------------- |
+| Command palette | Always available |
+
+<Command name={m.command_set_citation_presentation_name()} />
 
 Opens a modal that sets the citation and references style and the document language of the active Markdown note. Confirming writes the `zotlit-csl` and `lang` properties of that note together. Choosing the vault style or the language reset removes the matching property.
 
@@ -119,9 +167,9 @@ Opens a modal that sets the citation and references style and the document langu
 | Command palette | Active on a Markdown note            |
 | More options    | The note's **More options** menu (⋮) |
 
-<Command>ZotLit: Export note with citations</Command>
+<Command name={m.command_pandoc_export_name()} />
 
-Opens the built-in export modal for the active Markdown note. The command requires the Pandoc engine when you run it.
+Opens the built-in export modal for the active Markdown note. The command requires the <UiLabel name={m.settings_citation_engine_name()} /> when you run it.
 
 The export uses its own citation membership. Citation source, presentation, and navigation settings do not change exported content.
 
@@ -129,11 +177,43 @@ The export uses its own citation membership. Citation source, presentation, and 
 | --------------- | ------------------------- |
 | Command palette | Active on a Markdown note |
 
+### Citation text
+
+<Command name={m.command_customize_citation_text_name()} />
+
+Opens the citation text in the Template Workbench View. When the vault holds no citation document, the command creates `zotlit-citation.md` from the built-in citation text first.
+
+| Entry point             | Details                                                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette         | Always available                                                                                                                                                                   |
+| Settings                | The <UiLabel name={m.settings_citation_text_open()} /> button on the <UiLabel name={m.settings_citation_text_name()} /> row at <SettingsPath page={m.settings_page_citations()} /> |
+| Template Workbench View | The pane menu's <UiLabel name={m.template_workbench_open_citation()} /> item                                                                                                       |
+
+## Graph view
+
+<Command name={m.command_open_citation_graph_name()} />
+
+Opens Obsidian's graph view with the Citation Graph preset applied, where Obsidian's own **Open graph view** opens it: the tab you are in, or the new tab, split, or window a modifier-held invocation asks for. See [Explore citations in the graph view](/docs/how-to/explore-citations-in-graph) for what the preset sets.
+
+| Entry point     | Details          |
+| --------------- | ---------------- |
+| Command palette | Always available |
+
+<Command name={m.command_open_local_citation_graph_name()} />
+
+Opens a local Citation Graph for the active note in a vertical split, grouped to the pane it was opened from so the graph follows that pane's file.
+
+| Entry point     | Details          |
+| --------------- | ---------------- |
+| Command palette | Active on a note |
+
+Neither command has a default hotkey. Where a Citation Graph cannot be opened, the command shows a notice naming the one thing to put right: the Graph view core plugin, the <UiLabel name={m.settings_citation_graph_name()} /> setting, or Citation Graph availability.
+
 ## Literature note actions
 
-The following commands operate on a literature note: the file currently open in the editor must be a ZotLit literature note. They also appear in the **file menu** (right-click the tab or use the file menu icon) under the **zotlit** section.
+The following commands operate on a literature note: the file currently open in the editor must be a ZotLit literature note. They also appear in the **file menu** (right-click the tab or use the file menu icon) under the **zotlit** section. The Template Workbench view and the Note preview view raise the same **zotlit** section in their pane menus, and the Note preview view adds two more: **zotlit-preview**, for the choices that shape the preview, and **zotlit-display**, for the display toggles.
 
-<Command>ZotLit: Update literature note</Command>
+<Command name={m.command_update_note_name()} />
 
 Re-renders the full literature note (frontmatter and managed body region) from the current Zotero data.
 
@@ -142,7 +222,7 @@ Re-renders the full literature note (frontmatter and managed body region) from t
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
-<Command>ZotLit: Update literature note metadata</Command>
+<Command name={m.command_update_note_metadata_name()} />
 
 Re-renders only the frontmatter of the literature note from the current Zotero data. Body content is unchanged.
 
@@ -151,7 +231,7 @@ Re-renders only the frontmatter of the literature note from the current Zotero d
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
-<Command>ZotLit: Overwrite literature note</Command>
+<Command name={m.command_overwrite_note_name()} />
 
 Destructively replaces the entire literature note with a fresh render. A confirmation modal appears before proceeding.
 
@@ -160,7 +240,7 @@ Destructively replaces the entire literature note with a fresh render. A confirm
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
-<Command>ZotLit: Import child notes from Zotero</Command>
+<Command name={m.command_import_child_notes_name()} />
 
 Imports the Zotero notes attached to the current item into the vault.
 
@@ -169,18 +249,51 @@ Imports the Zotero notes attached to the current item into the vault.
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
-<Command>ZotLit: Copy item key</Command>
+<Command name={m.command_copy_item_key_name()} />
 
 Copies the note's Zotero key to the clipboard.
 
-| Entry point     | Details                                     |
-| --------------- | ------------------------------------------- |
-| Command palette | Active on a literature note                 |
-| File menu       | Label: **Copy item key**. Single file only. |
+| Entry point     | Details                                                                     |
+| --------------- | --------------------------------------------------------------------------- |
+| Command palette | Active on a file with a Zotero key                                          |
+| File menu       | Label: <UiLabel name={m.command_copy_item_key_name()} />. Single file only. |
+
+<Command name={m.command_customize_note_template_name()} />
+
+Opens the profile document that the note resolves against in the Template Workbench View. A note with no profile stamp resolves against the Default profile. A profile the vault cannot resolve shows a notice instead. See [Profiles](/docs/concepts/profiles) for what a profile decides.
+
+| Entry point     | Details                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| Command palette | Active on a literature note                                                                       |
+| File menu       | Label: <UiLabel name={m.command_customize_note_template_name()} />. Appears on a literature note. |
+
+<Command name={m.command_switch_literature_note_profile_name()} />
+
+Opens the profile picker for the note, then asks for consent before writing anything. The switch re-renders the note with the chosen profile. The dialog also offers to move the note into that profile's folder. The checkbox names the folder the note moves into, for example <UiLabel name={m.modal_profile_switch_move({ folder: "books/2024/" })} />. The move keeps the subfolders the note has under its current profile's folder: `literatures/2024/Smith2020.md` moves to `books/2024/Smith2020.md`. A note outside its profile's folder, or a note whose profile ZotLit does not recognize, moves by its file name alone.
+
+| Entry point     | Details                     |
+| --------------- | --------------------------- |
+| Command palette | Active on a literature note |
+
+<Command name={m.command_open_pdf_name()} />
+
+Opens the item's PDF attachment in Obsidian's own PDF reader, whether the file sits inside your vault or in Zotero's storage folder. One PDF opens straight away; several open a picker whose search box reads <UiLabel name={m.modal_select_pdf_placeholder()} />.
+
+Only PDF attachments are offered. An item with none shows <UiLabel name={m.notice_no_pdf_attachment()} /> A PDF whose file is no longer on disk shows <UiLabel name={m.notice_pdf_file_missing()} /> Neither case falls back to Zotero's own reader. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+
+| Entry point     | Details                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Active on a literature note                                                                                                             |
+| File menu       | yes                                                                                                                                     |
+| Quick switcher  | `Shift+Enter` on a result. See [Literature note quick switcher](#quick-switcher).                                                       |
+| Zotero          | Right-click a PDF attachment, or an item that has one > <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> in the top-level menu |
+| Zotero reader   | Right-click inside the PDF you are reading > <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />                                 |
+| Annotation view | Pane menu > <UiLabel name={m.command_open_pdf_name()} />. Absent when an Obsidian PDF view already shows the attachment.                |
+| File link       | Click a link to a PDF in your Zotero library, when <UiLabel name={m.settings_reader_open_file_links_name()} /> is on                    |
 
 ## Imported note actions
 
-<Command>ZotLit: Update imported note from Zotero</Command>
+<Command name={m.command_reimport_note_name()} />
 
 Re-imports a Zotero note that was previously imported. A confirmation modal appears before overwriting.
 
@@ -191,85 +304,383 @@ Re-imports a Zotero note that was previously imported. A confirmation modal appe
 
 ## Annotations
 
-<Command>ZotLit: Open Zotero annotations</Command>
+<Command name={m.command_open_annot_view_name()} />
 
-Opens the annotation view in the right sidebar, showing annotations from the Zotero reader.
+Opens the annotation view in the right sidebar, or brings it forward when it is already open. The view keeps the follow mode you last chose. A new view starts in <UiLabel name={m.annot_view_mode_active_tab()} />.
 
-| Entry point     | Details                                  |
-| --------------- | ---------------------------------------- |
-| Command palette | Always available                         |
-| Ribbon          | yes (tooltip: "Open Zotero annotations") |
+| Entry point     | Details                                                              |
+| --------------- | -------------------------------------------------------------------- |
+| Command palette | Always available                                                     |
+| Ribbon          | yes (tooltip: "<UiLabel name={m.command_open_annot_view_name()} />") |
+
+<Command name={m.command_annot_view_follow_active_tab_name()} />
+
+<Command name={m.command_annot_view_follow_zotero_reader_name()} />
+
+<Command name={m.command_annot_view_pin_current_item_name()} />
+
+<Command name={m.command_annot_view_pin_item_name()} />
+
+<Command name={m.command_annot_view_unpin_name()} />
+
+These five change what the annotation view follows. Each acts on the open annotation view, and the command palette offers it only where it applies — so the mode the view already follows, and a pin with no item to take, are absent rather than inert. See [Use the annotation view](/docs/how-to/use-annotation-view).
+
+| Entry point     | Details                                                     |
+| --------------- | ----------------------------------------------------------- |
+| Command palette | Active with an annotation view open, where the mode applies |
+| Pane menu       | The same three switches, plus the item picker               |
+
+<Command name={m.command_undo_annotation_change_name()} />
+
+<Command name={m.command_redo_annotation_change_name()} />
+
+Undo takes back the last annotation change ZotLit saved to Zotero for the PDF you have open. Redo applies an undone change again. The command palette offers each one only where there is a step to take that way. See [Undo and redo a change](/docs/how-to/edit-pdf-annotations#undo-and-redo-a-change).
+
+| Entry point     | Details                                                                                              |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| Command palette | Active in a PDF view of a Zotero attachment, or in the annotation view, when there is a step to take |
+| More options    | The PDF view's **More options** menu (⋮). Both entries appear, dimmed when there is no step to take. |
+| Hotkey          | None by default; assign one under **Settings > Hotkeys**                                             |
+
+## Query files [#query-files]
+
+<Command name={m.command_new_query_file_name()} />
+
+Creates a query file named `Untitled.zotquery` and opens it in a tab. The file has two views. The default view, Items, is a Table of the papers in your whole library, newest first by date modified, with a limit of 100 rows. The second view, Annotations, shows the annotations of your whole library, grouped by paper, with a limit of 100 rows. See [Use query files and query blocks](/docs/how-to/use-query-files).
+
+| Entry point     | Details                                                                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Command palette | Always available. The file goes in the folder for new notes.                                                                                                                               |
+| File explorer   | Right-click a folder, or a file in it > <UiLabel name={m.query_file_new()} />. The file goes in that folder. Hold `Ctrl` (Windows and Linux) or `Command` (macOS) to open it in a new tab. |
+
+<UiLabel name={m.annot_view_save_as_query_file()} /> in the annotation view's
+**More options** menu also creates a query file. See [Save the annotation
+sidebar as a query file](/docs/how-to/use-query-files#save-sidebar). The Library
+View's view menu has the same entry. See [Save the view as a query
+file](/docs/how-to/use-library-view#save-as-query-file).
 
 ## Template data explorer
 
-<Command>ZotLit: Open template data explorer</Command>
+<Command name={m.command_open_template_data_explorer_name()} />
 
 Opens the template data explorer, showing the full data object available to templates for the current item.
 
-| Entry point     | Details                                                                    |
-| --------------- | -------------------------------------------------------------------------- |
-| Command palette | Always available                                                           |
-| File menu       | Label: **Explore template data**. Appears on files that carry an item key. |
+| Entry point     | Details                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                            |
+| File menu       | Label: <UiLabel name={m.template_data_explorer_menu_explore()} />. Appears on files that carry an item key. |
+
+## Templates and profiles
+
+These commands open profile documents in the Template Workbench and import a profile that someone shared with you. Two of them are palette entries labelled <UiLabel name={m.template_workbench_open_layout()} />. One opens the profile document you are editing; the other brings the Workbench forward from inside the view.
+
+<Command name={m.template_workbench_open_layout()} />
+
+Opens the active profile document in the Template Workbench View.
+
+| Entry point     | Details                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------- |
+| Command palette | Active on a profile document                                                                 |
+| File menu       | Label: <UiLabel name={m.template_workbench_open_layout()} />. Appears on a profile document. |
+
+<Command name={m.template_workbench_open()} />
+
+Opens the Template Workbench View in the current leaf for the active document. A profile document, a partial, or the citation text opens directly. A literature note opens the profile document it resolves against.
+
+| Entry point     | Details                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------- |
+| Command palette | Active on a profile document, a partial, the citation text, or a literature note        |
+| File menu       | Label: <UiLabel name={m.template_workbench_open()} />. Same files as the palette entry. |
+
+<Command name={m.template_workbench_open_layout()} />
+
+Brings the Workbench forward for the document being edited. When its pane shares a container with unrelated panes, the editor moves into a window of its own instead.
+
+| Entry point     | Details                                                                                   |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| Command palette | Active in the Template Workbench View                                                     |
+| Pane menu       | The <UiLabel name={m.template_workbench_open_layout()} /> item of the Workbench pane menu |
+
+<Command name={m.profile_preview_open()} />
+
+Opens the <UiLabel name={m.profile_preview_name()} /> pane beside the Workbench, which shows how the current data renders.
+
+| Entry point     | Details                               |
+| --------------- | ------------------------------------- |
+| Command palette | Active in the Template Workbench View |
+
+<Command name={m.command_import_profile_name()} />
+
+Imports a profile that someone shared with you, from the clipboard or from a file. The import sheet previews the partials, citation style, and Profile Match it carries before anything is written.
+
+| Entry point     | Details                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                            |
+| Settings        | The import button on the profile list of <SettingsPath page={m.settings_page_profiles()} /> |
+
+### Template Workbench pane menu
+
+The Workbench view's pane menu is where most template work starts. These entries sit in the **zotlit** section:
+
+| Menu item                                               | What it does                                                                                                                                                                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <UiLabel name={m.template_workbench_open_layout()} />   | Brings the Workbench forward, or moves the editor into its own window.                                                                                                                                             |
+| <UiLabel name={m.workbench_choose_item()} />            | Picks the Zotero item the preview and the data explorer read.                                                                                                                                                      |
+| <UiLabel name={m.workbench_choose_annotation()} />      | Picks the annotation to render. Not offered for the citation text.                                                                                                                                                 |
+| <UiLabel name={m.template_workbench_partials()} />      | Opens another partial, creates one with <UiLabel name={m.workbench_partial_new()} />, or unpacks the partials a shared profile still carries with <UiLabel name={m.workbench_problem_bundled_partial_unpack()} />. |
+| <UiLabel name={m.template_workbench_open_citation()} /> | Opens the citation text, `zotlit-citation.md`.                                                                                                                                                                     |
+
+Four entries join the pane menu outside the **zotlit** section. <UiLabel name={m.template_workbench_change_language()} /> switches the document between <UiLabel name={m.workbench_name_language_liquid()} /> and <UiLabel name={m.workbench_name_language_eta()} />, and is not offered for a profile document. <UiLabel name={m.template_data_explorer_menu_export_json()} /> saves the current template data as a JSON file; with the annotation root selected, the same entry reads <UiLabel name={m.template_data_explorer_export_selected_paper()} /> when it can export the whole paper instead. <UiLabel name={m.template_workbench_open_markdown()} /> opens the document as Markdown. <UiLabel name={m.settings_profile_document_restore()} /> moves the Default profile's custom document to the trash, so the built-in profile applies again, and is offered on that document only.
 
 ## Onboarding & release
 
-<Command>ZotLit: Open welcome view</Command>
+<Command name={m.command_open_welcome_name()} />
 
-Opens the ZotLit Welcome View for guided setup and v1-to-v2 migration.
+Opens the [Library View](#library-view) and shows the setup banner above it, even after you dismissed it or setup is complete. The banner holds the setup steps, after a v1-to-v2 upgrade the link to the migration guide, and after ZotLit updates the link to the release notes.
 
-| Entry point     | Details                                             |
-| --------------- | --------------------------------------------------- |
-| Command palette | Always available                                    |
-| Automatic       | Opens on first launch, and after a v1-to-v2 upgrade |
+| Entry point     | Details                                                                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                          |
+| Automatic       | The banner shows over the Library View on a new install, after a v1-to-v2 upgrade, and after ZotLit updates, until you dismiss it or what it says is done |
 
-<Command>ZotLit: Open release notes</Command>
+<Command name={m.command_open_release_note_name()} />
 
 Opens the release notes for the installed ZotLit version.
 
-| Entry point     | Details                                                            |
-| --------------- | ------------------------------------------------------------------ |
-| Command palette | Always available                                                   |
-| Settings        | The **What's new** button (View release notes) in the settings tab |
-| Update notice   | The action button on the "update available" notice                 |
+| Entry point     | Details                                                                                                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                                              |
+| Settings        | The <UiLabel name={m.settings_resources_whats_new_button()} /> button in the <UiLabel name={m.settings_resources_whats_new_name({ version: "…" })} /> row of the settings tab |
+| Welcome banner  | The <UiLabel name={m.welcome_update_action()} /> button on the banner shown above the Library View after ZotLit updates                                                       |
 
 ## Entry-point summary
 
-| Command                                      | Palette | Ribbon | File menu |         Editor         |
-| -------------------------------------------- | :-----: | :----: | :-------: | :--------------------: |
-| Refresh Zotero database                      |   yes   |   no   |    no     |           no           |
-| Create or update all literature notes        |   yes   |   no   |    no     |           no           |
-| Import all child and standalone notes        |   yes   |   no   |    no     |           no           |
-| Open literature note quick switcher          |   yes   |   no   |    no     |           no           |
-| Insert Markdown citation                     |   yes   |   no   |    no     |  `[@` / `@` suggester  |
-| Open citation key under cursor               |   yes   |   no   |    no     | Cursor on citation key |
-| Open citation key under cursor in new tab    |   yes   |   no   |    no     | Cursor on citation key |
-| Open citation key under cursor to the right  |   yes   |   no   |    no     | Cursor on citation key |
-| Open citation key under cursor in new window |   yes   |   no   |    no     | Cursor on citation key |
-| Open references                              |   yes   |   no   |    no     |           no           |
-| Set citation presentation                    |   yes   |   no   |    yes    |  Active Markdown note  |
-| Export note with citations                   |   yes   |   no   |    no     |  Active Markdown note  |
-| Update literature note                       |   yes   |   no   |    yes    |           no           |
-| Update literature note metadata              |   yes   |   no   |    yes    |           no           |
-| Overwrite literature note                    |   yes   |   no   |    yes    |           no           |
-| Import child notes from Zotero               |   yes   |   no   |    yes    |           no           |
-| Copy item key                                |   yes   |   no   |    yes    |           no           |
-| Update imported note from Zotero             |   yes   |   no   |    yes    |           no           |
-| Open Zotero annotations                      |   yes   |  yes   |    no     |           no           |
-| Open template data explorer                  |   yes   |   no   |    yes    |           no           |
-| Open welcome view                            |   yes   |   no   |    no     |           no           |
-| Open release notes                           |   yes   |   no   |    no     |           no           |
+| Command                                                             | Palette | Ribbon |  File menu   | Available when                                      |
+| ------------------------------------------------------------------- | :-----: | :----: | :----------: | --------------------------------------------------- |
+| <UiLabel name={m.command_refresh_db_name()} />                      |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_update_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_import_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_library_view_name()} />               |   yes   |  yes   |      no      | Always                                              |
+| <UiLabel name={m.command_show_in_library_name()} />                 |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_open_lit_note_name()} />                   |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_insert_citation_name()} />                 |   yes   |   no   |      no      | An editor is open                                   |
+| <UiLabel name={m.command_open_citekey_name()} />                    |   yes   |   no   |      no      | Cursor on a recognized citation key                 |
+| <UiLabel name={m.command_open_citekey_new_tab_name()} />            |   yes   |   no   |      no      | Cursor on a recognized citation key                 |
+| <UiLabel name={m.command_open_citekey_right_name()} />              |   yes   |   no   |      no      | Cursor on a recognized citation key                 |
+| <UiLabel name={m.command_open_citekey_window_name()} />             |   yes   |   no   |      no      | Cursor on a recognized citation key                 |
+| <UiLabel name={m.command_open_references_view_name()} />            |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_show_cited_by_name()} />                   |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_set_citation_presentation_name()} />       |   yes   |   no   | More options | Active Markdown note                                |
+| <UiLabel name={m.command_pandoc_export_name()} />                   |   yes   |   no   |      no      | Active Markdown note                                |
+| <UiLabel name={m.command_customize_citation_text_name()} />         |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_citation_graph_name()} />             |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_local_citation_graph_name()} />       |   yes   |   no   |      no      | Active on a note                                    |
+| <UiLabel name={m.command_update_note_name()} />                     |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_update_note_metadata_name()} />            |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_overwrite_note_name()} />                  |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_import_child_notes_name()} />              |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_copy_item_key_name()} />                   |   yes   |   no   |     yes      | Active on a file with a Zotero key                  |
+| <UiLabel name={m.command_customize_note_template_name()} />         |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_switch_literature_note_profile_name()} />  |   yes   |   no   |      no      | Active on a literature note                         |
+| <UiLabel name={m.command_open_pdf_name()} />                        |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_reimport_note_name()} />                   |   yes   |   no   |     yes      | Active on an imported note                          |
+| <UiLabel name={m.command_open_annot_view_name()} />                 |   yes   |  yes   |      no      | Always                                              |
+| <UiLabel name={m.command_annot_view_follow_active_tab_name()} />    |   yes   |   no   |      no      | Annotation view open, in another mode               |
+| <UiLabel name={m.command_annot_view_follow_zotero_reader_name()} /> |   yes   |   no   |      no      | Annotation view open, in another mode               |
+| <UiLabel name={m.command_annot_view_pin_current_item_name()} />     |   yes   |   no   |      no      | Annotation view open on an item, not already pinned |
+| <UiLabel name={m.command_annot_view_pin_item_name()} />             |   yes   |   no   |      no      | Annotation view open                                |
+| <UiLabel name={m.command_annot_view_unpin_name()} />                |   yes   |   no   |      no      | Annotation view open and pinned                     |
+| <UiLabel name={m.command_new_query_file_name()} />                  |   yes   |   no   |   explorer   | Always                                              |
+| <UiLabel name={m.command_open_template_data_explorer_name()} />     |   yes   |   no   |     yes      | Always                                              |
+| <UiLabel name={m.template_workbench_open_layout()} />               |   yes   |   no   |     yes      | Active on a profile document                        |
+| <UiLabel name={m.template_workbench_open()} />                      |   yes   |   no   |     yes      | Active on a template document or a literature note  |
+| <UiLabel name={m.template_workbench_open_layout()} />               |   yes   |   no   |      no      | Active in the Template Workbench View               |
+| <UiLabel name={m.profile_preview_open()} />                         |   yes   |   no   |      no      | Active in the Template Workbench View               |
+| <UiLabel name={m.command_import_profile_name()} />                  |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_welcome_name()} />                    |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_release_note_name()} />               |   yes   |   no   |      no      | Always                                              |
+
+The two <UiLabel name={m.template_workbench_open_layout()} /> rows are separate commands. The first opens the profile document you are editing; the second brings the Workbench forward from inside the view.
+
+## Query CLI [#query-cli]
+
+The Query CLI reads works, files, and reading marks for agents and scripts. One `zotlit:query` command selects a Query Dataset with `from`. [How ZotLit Query works](/docs/concepts/how-zotlit-query-works) explains the datasets, filters, and groups.
+
+| Command                   | Parameters                                                                                                                  | Result                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `zotlit:query`            | `from`, `filter`, `fields`, `formulas`, `sort`, `group`, `limit`, `library`, `output`, `id`, `this-item`, `this-attachment` | One Query Row per matching Item, Attachment, or Annotation                |
+| `zotlit:query-schema`     | `from`                                                                                                                      | The schema URL, source custom fields, dataset fields, and defaults        |
+| `zotlit:query-values`     | `kind`, `library`, `match`, `limit`                                                                                         | The exact Collection paths or Tag names of each Library                   |
+| `zotlit:query-guide`      | `topic`                                                                                                                     | Instructions for one topic, or the full guide when `topic` is omitted     |
+| `zotlit:annotation-image` | `key`                                                                                                                       | The local PNG path, format, and provenance for an image or ink Annotation |
+| `zotlit:query-cancel`     | `id`                                                                                                                        | Whether ZotLit found the named query and requested its cancel             |
+
+`zotlit:query` uses these parameters:
+
+| Parameter         | Value                                                                                                                                                                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`            | `items`, `attachments`, or `annotations`. The default is `items`.                                                                                                                                                       |
+| `filter`          | A Filter Expression over the selected dataset and its related records.                                                                                                                                                  |
+| `fields`          | A comma list of Projection Paths or a JSON array. `fields=[]` returns identity-only rows.                                                                                                                               |
+| `formulas`        | A JSON object from Formula names to Filter Expressions. Read a Formula as `formula.<name>` in `fields`, `filter`, or another Formula. See [Compute a value with a formula](/docs/how-to/query-zotero-library#formulas). |
+| `sort`            | A comma list or a JSON array of `{ "field", "direction" }` objects. Use `-field` for descending order and `field` or `+field` for ascending order.                                                                      |
+| `group`           | One scalar Projection Path, or a path with one `[]` such as `tags[].name`. The result contains one group for each value.                                                                                                |
+| `limit`           | A positive integer or `all`. The default is 100. In a grouped query, the limit applies inside each group.                                                                                                               |
+| `library`         | `personal`, `group:<groupID>`, a comma list, a JSON array, or `all`. The default comes from the Library Scope setting.                                                                                                  |
+| `output`          | A new absolute file path for the complete JSON result.                                                                                                                                                                  |
+| `id`              | A query ID used by `zotlit:query-cancel`.                                                                                                                                                                               |
+| `this-item`       | An Item Indexed Key. A filter reads that Item as `this.item`. See [Query Context](#query-context).                                                                                                                      |
+| `this-attachment` | An Attachment Indexed Key. A filter reads that Attachment as `this.attachment`. See [Query Context](#query-context).                                                                                                    |
+
+ZotLit splits `fields` and `sort` at commas outside quotes and brackets.
+
+### Query datasets
+
+Choose the dataset that represents one result row:
+
+| `from` value  | One row represents | Dataset contents                                                                   | Related records                       |
+| ------------- | ------------------ | ---------------------------------------------------------------------------------- | ------------------------------------- |
+| `items`       | A work             | Top-level Items outside the trash                                                  | `attachments`, `annotations`, `notes` |
+| `attachments` | A file or URL      | Non-trashed Attachments of top-level, non-trashed Items                            | `item`, `annotations`                 |
+| `annotations` | A reading mark     | Non-trashed Annotations on non-trashed Attachments of top-level, non-trashed Items | `item`, `attachment`                  |
+
+Standalone Attachments are outside these datasets. Relation Lists contain records from the same dataset universes. Use list methods in filters and an explicit `[]` in Projection Paths.
+
+`notes` lists the Child Notes of an Item that are outside the trash, in note key order. A note record has `indexedKey`, `key`, `title`, `dateAdded`, `dateModified`, `library`, and its parent `item`. No dataset reads notes as rows. This query finds papers with a Child Note and lists the note titles:
+
+```bash
+obsidian zotlit:query filter='!notes.isEmpty()' fields='title,notes[].title'
+```
+
+For example, this query finds papers with no PDF that ZotLit can open on this computer:
+
+```bash
+obsidian zotlit:query filter='attachments.filter(value.contentType == "application/pdf" && value.exists).isEmpty()' fields=title,citationKey
+```
+
+Start from Attachments when each file must be one row. This query finds missing linked files:
+
+```bash
+obsidian zotlit:query from=attachments filter='linkMode == "linked_file" && !exists' fields=item.title,path
+```
+
+Select a record by Indexed Key in the filter. Use `indexedKey` for a row, `item.indexedKey` for its parent Item, or `attachment.indexedKey` for an Annotation's parent Attachment. A key outside the Target Libraries gives a Query Warning. The Target Libraries stay unchanged.
+
+### Query Context [#query-context]
+
+`this-item` and `this-attachment` set the Query Context of a query: the Item and the Attachment that a filter reads as `this.item` and `this.attachment`. Query files and query blocks set the same context from the note that shows them. See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+
+| Dataset       | Records of the bound Item            | Records of the bound Attachment            |
+| ------------- | ------------------------------------ | ------------------------------------------ |
+| `items`       | `indexedKey == this.item.indexedKey` |                                            |
+| `attachments` | `item == this.item`                  | `indexedKey == this.attachment.indexedKey` |
+| `annotations` | `item == this.item`                  | `attachment == this.attachment`            |
+
+```bash
+obsidian zotlit:query from=annotations filter='item == this.item' this-item=ABCD2345 limit=all
+```
+
+A filter that reads `this.item` or `this.attachment` without its parameter fails with the `unbound-context` diagnostic.
+
+### Projection and grouping
+
+A path such as `attachments[].path` returns one value for each Attachment. It keeps source order and keeps `null` in its original position. A complete related record has a fixed summary:
+
+| Record     | Summary fields                                                     |
+| ---------- | ------------------------------------------------------------------ |
+| Item       | `indexedKey`, `title`, `citationKey`                               |
+| Attachment | `indexedKey`, `title`, `contentType`, `linkMode`, `path`, `exists` |
+| Annotation | `indexedKey`, `type`, `text`, `comment`, `pageLabel`, `pageIndex`  |
+| Note       | `indexedKey`, `title`                                              |
+
+`group` accepts one scalar path. This command counts Attachments by `fileType`, which is `pdf`, `epub`, `web`, or `other`:
+
+```bash
+obsidian zotlit:query from=attachments group=fileType
+```
+
+Each group contains `value`, `count`, and `rows`. `count` is the number of matches before the per-group limit. `totalCount` counts all matched records, and `returnedCount` counts the row entries returned across all groups.
+
+A path with one `[]` groups by each element of a list. This command counts papers per tag:
+
+```bash
+obsidian zotlit:query group='tags[].name' fields='[]' limit=1
+```
+
+A paper joins one group for each of its tags, and a paper without tags is in the `null` group. Groups can overlap, so their counts can add up to more than `totalCount`. Use `collections[]` for papers per Collection and `attachments[].fileType` for papers per file type.
+
+This command returns the three most recent marks for each paper:
+
+```bash
+obsidian zotlit:query from=annotations group=item.indexedKey sort=-dateModified limit=3 fields=text,item.title
+```
+
+### Collection and Tag values [#query-values]
+
+`zotlit:query-values` lists the names that a filter matches exactly. Run it before you filter by a Collection or Tag.
+
+| Parameter | Value                                                                                      |
+| --------- | ------------------------------------------------------------------------------------------ |
+| `kind`    | `collections` or `tags`. Required.                                                         |
+| `library` | `personal`, `group:<groupID>`, or `all`. The default comes from the Library Scope setting. |
+| `match`   | Keeps the names that contain this text, ignoring letter case.                              |
+| `limit`   | A positive integer or `all`, applied to each Library. The default is 100.                  |
+
+Collection values are full paths joined by `/`, including empty Collections. Tag values are `{ name, type }`, where `type` is `manual`, `auto`, or `unknown`. Each Library reports its `library` selector, `name`, `values`, `totalCount`, `returnedCount`, and `truncated`.
+
+```bash
+obsidian zotlit:query-values kind=collections match=thesis
+```
+
+A Collection path in `collections.contains` or `collections.within` that no Target Library holds gives an `unknown-collection` Query Warning. Its `suggestions` lists the nearest paths, and a `library` value when another Library holds the path.
+
+### Schema, guide, and results
+
+The single `query.schema.json` catalog has `datasets.items`, `datasets.attachments`, and `datasets.annotations`. It also has the shared functions, methods, properties, and types. `zotlit:query-schema` returns the catalog URL, source custom fields, and defaults by dataset. Add `from=items`, `from=attachments`, or `from=annotations` to narrow the live response.
+
+`zotlit:query-guide` accepts `datasets`, `filter`, `fields`, `sort`, `group`, `results`, `schema`, `values`, or `cancel` as its topic. Omit `topic` to print the full guide.
+
+Query results use CLI Contract version 3. The JSON envelope has `command: "zotlit:query"`; `request.from` names the dataset, and `request.library` names its Libraries. The top-level `libraries` field describes the Libraries that ZotLit read.
+
+Read `warnings` before you report an empty result. On failure, read `diagnostic.report` and follow its final recovery action.
+
+Every Attachment Row contains the Attachment and parent Item Indexed Keys. Every Annotation Row also contains its parent Attachment Indexed Key. Annotation default values include `pageLabel`, `pageIndex`, `hasExcerptImage`, Attachment details, Item title, and Citation Key. Request `position` in `fields` when source geometry is required. Read `attachment.path` to open the source document when `attachment.exists` is true.
+
+When `hasExcerptImage` is true, pass the Annotation Indexed Key as `key` to `zotlit:annotation-image`. The command returns a file path instead of image bytes.
+
+The `zotlit-query` agent skill reads `zotlit:query-guide` and `zotlit:query-schema` before it composes a query. See [Ask an AI agent](/docs/how-to/query-zotero-library#agent).
 
 ## Template Workbench CLI
 
-The Template Workbench registers additional commands through the Obsidian CLI for agent use. These commands are not in the command palette. They cover template inspection, rendering, and managed frontmatter configuration. See [Template Workbench](/docs/concepts/template-workbench) for an overview, and run `obsidian zotlit:template-guide` for the command reference.
+The Template Workbench registers its own commands with the Obsidian CLI, for agents and scripts rather than for the command palette. Five answer live:
+
+- `zotlit:template-inspect` inspects one template document and verifies that its saved source is current.
+- `zotlit:template-check` checks every saved component of every profile.
+- `zotlit:template-status` reports the state of the Workbench for the vault.
+- `zotlit:template-data` returns the template data for one root.
+- `zotlit:template-guide` prints the Workbench guide.
+
+The earlier schema, rendering, source, and managed-frontmatter commands are retired. Each stays registered and answers a `COMMAND_RETIRED` diagnostic.
+
+See [Template Workbench CLI](/docs/reference/template-workbench-cli) for every command, live and retired, with its flags and diagnostics, and [Template Workbench](/docs/concepts/template-workbench) for the concept.
 
 ## See also
 
 <Cards>
   <Card
-    title="Template Workbench"
-    description="How the skill, CLI, and safety boundaries fit together."
-    href="/docs/concepts/template-workbench"
+    title="Query your Zotero library"
+    description="Find works, inspect files, and summarize reading marks from the Obsidian CLI."
+    href="/docs/how-to/query-zotero-library"
+  />
+  <Card
+    title="How ZotLit Query works"
+    description="Query Datasets, Relation Lists, grouping, and exact Collection and Tag names."
+    href="/docs/concepts/how-zotlit-query-works"
+  />
+  <Card
+    title="Install the ZotLit skills"
+    description="Install the agent workflow that uses the Template Workbench."
+    href="/docs/install-skill"
   />
   <Card
     title="Settings"

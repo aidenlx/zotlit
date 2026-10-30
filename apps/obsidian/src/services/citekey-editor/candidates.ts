@@ -1,16 +1,26 @@
 // UI seam for an Ambiguous Citation Key: the picker that opens one candidate exactly.
 
+import { Effect, Layer } from "effect";
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
+import { scopedBridge } from "@/lib/effect-bridge";
+import { filterTag, forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
+import { PluginHost } from "@/lib/plugin-host";
 import { candidateRow } from "@/services/citation-index/ambiguity";
 import type {
   AmbiguousCandidate,
   CandidateRow,
 } from "@/services/citation-index/ambiguity";
+import {
+  FLAIR_ROW_CLASS,
+  appendInlineFlair,
+  appendTrailingFlair,
+} from "@/services/item-lookup/render-hit";
 
-import type { AmbiguousCitekey, CitekeyEditor } from "./service";
+import { CitekeyEditor } from "./service";
+import type { AmbiguousCitekey } from "./service";
 
 /** Whether a candidate row answers a typed filter, over the text it shows. */
 export function candidateMatches(row: CandidateRow, query: string): boolean {
@@ -54,14 +64,19 @@ class AmbiguousCitekeyModal extends SuggestModal<AmbiguousCandidate> {
     el: HTMLElement,
   ): void {
     const row = candidateRow(candidate);
-    const contentEl = el.createDiv("suggestion-content");
+    el.classList.add("zt-citations", "mod-complex", FLAIR_ROW_CLASS);
+    const contentEl = el.createDiv({ cls: "suggestion-content zt:min-w-0" });
     contentEl.createDiv({ cls: "suggestion-title", text: row.summary });
-    // The Library name and the key are two facts, so the row keeps them apart.
-    const noteEl = contentEl.createDiv(
-      "suggestion-note zt:flex zt:gap-2 zt:min-w-0",
-    );
-    if (row.library) noteEl.createSpan({ text: row.library });
-    noteEl.createSpan({ text: row.key });
+    contentEl.createDiv({ cls: "suggestion-note zt:font-mono", text: row.key });
+    // The Library is a second fact, so it takes the trailing slot an item row
+    // gives it, or a badge under the key on a narrow row.
+    if (row.library) {
+      appendInlineFlair(
+        contentEl.createDiv({ cls: "suggestion-note" }),
+        row.library,
+      );
+      appendTrailingFlair(el, row.library);
+    }
   }
 
   override onChooseSuggestion(candidate: AmbiguousCandidate): void {
@@ -73,13 +88,19 @@ class AmbiguousCitekeyModal extends SuggestModal<AmbiguousCandidate> {
  * Asks which Item an Ambiguous Citation Key should open, then opens that one
  * by its exact Indexed Key.
  */
-export function registerCitekeyCandidatePicker(
-  app: App,
-  service: CitekeyEditor,
-): () => void {
-  return service.on("citekey-ambiguous", (ambiguous) => {
-    new AmbiguousCitekeyModal(app, ambiguous, (candidate) => {
-      void service.openCandidate(candidate, ambiguous.pane);
-    }).open();
-  });
-}
+export const layerCitekeyCandidatePicker = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    const editor = yield* CitekeyEditor;
+    const bridge = yield* scopedBridge;
+    yield* forkEach(
+      filterTag(editor.events, "citekey-ambiguous"),
+      ({ ambiguous }) => {
+        new AmbiguousCitekeyModal(host.app, ambiguous, (candidate) => {
+          // Unload interrupts a pending open.
+          bridge.runAndForget(editor.openCandidate(candidate, ambiguous.pane));
+        }).open();
+      },
+    );
+  }),
+);

@@ -1,0 +1,326 @@
+// Native selection shares examples, search, and labels across independent views.
+import "./selection.css";
+import type { ItemView, WorkspaceLeaf } from "obsidian";
+import { useState } from "react";
+
+import { isPageNumber } from "@zotlit/db";
+import type { CitationVariant } from "@zotlit/db";
+import { useUniqueId } from "@zotlit/ui";
+import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
+import type {
+  AnnotationExample,
+  CitationExampleId,
+  PartialChoice,
+} from "@zotlit/workbench/render";
+import {
+  annotationOption,
+  useForkedEffect,
+  useWorkbenchHost,
+} from "@zotlit/workbench/ui";
+import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
+
+import { Icon } from "@/components/obsidian/icon";
+import { selectionControl } from "@/components/obsidian/selection-control";
+import * as m from "@/lib/i18n/generated/messages";
+import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
+
+import type { RecentItems } from "./item-choice";
+import {
+  getSampleItem,
+  getSampleItemType,
+  SAMPLE_ITEM_CHOICES,
+} from "./selection-data";
+import {
+  selectionGroup,
+  selectionGroupHeading,
+  selectionHint,
+  selectionList,
+  selectionOptionContent,
+  selectionOptionLabel,
+  selectionSearch,
+  selectionSearchContent,
+} from "./theme";
+
+type AnnotationChoice = Pick<AnnotationExample, "id" | "root">;
+
+export type WorkbenchSelection =
+  | { kind: "item"; item: WorkbenchItemChoice }
+  | { kind: "annotation"; annotationId: string }
+  /** The Citation set and Variant a Citation Template preview renders under. */
+  | {
+      kind: "citation";
+      variant: CitationVariant;
+      example: CitationExampleId | null;
+    }
+  /** The caller and the Profile a Shared Partial preview renders under. */
+  | ({ kind: "partial" } & PartialChoice);
+export type WorkbenchSelectionEvent = WorkbenchSelection & {
+  leaf: WorkspaceLeaf;
+  editor: WorkspaceLeaf | null;
+};
+
+const selectionOption = selectionControl({ kind: "option" });
+
+/** Native association scopes user choices; receivers never echo a selection. */
+export function subscribeWorkbenchSelection(
+  view: ItemView,
+  options: {
+    editor: () => WorkspaceLeaf | null;
+    apply: (selection: WorkbenchSelection) => void;
+  },
+): () => void {
+  const ref = view.app.workspace.on("zotlit:workbench-selection", (event) => {
+    if (event.leaf === view.leaf || view.leaf.pinned) return;
+    const follows = view.leaf.group
+      ? view.leaf.group === event.leaf.group
+      : event.editor !== null &&
+        (view.leaf === event.editor || options.editor() === event.editor);
+    if (follows) options.apply(event);
+  });
+  return () => view.app.workspace.offref(ref);
+}
+
+export function publishWorkbenchSelection(
+  view: ItemView,
+  selection: WorkbenchSelection,
+  editor: WorkspaceLeaf | null,
+): void {
+  view.app.workspace.trigger("zotlit:workbench-selection", {
+    ...selection,
+    leaf: view.leaf,
+    editor,
+  });
+}
+
+export function sampleTypeLabel(id: string): string {
+  switch (getSampleItemType(id)) {
+    case "journalArticle":
+      return m.workbench_sample_type_journal_article();
+    case "conferencePaper":
+      return m.workbench_sample_type_conference_paper();
+    case "book":
+      return m.workbench_sample_type_book();
+    case "thesis":
+      return m.workbench_sample_type_thesis();
+    default:
+      return m.workbench_example_item();
+  }
+}
+
+/** The selected data's own name, which a pane shows wherever its header cannot. */
+export function selectionName(input: {
+  item: WorkbenchItemChoice | null;
+  annotation?: AnnotationChoice | null;
+  annotationMode: boolean;
+}): string | null {
+  let name: string | null = null;
+  const annotation = input.annotation;
+  if (input.annotationMode && annotation) {
+    const root = annotation.root;
+    const type = m.workbench_annotation_type({
+      type: typeof root.type === "string" ? root.type : "unknown",
+    });
+    if (SAMPLE_ANNOTATIONS.some(({ id }) => id === annotation.id))
+      name = m.workbench_example_title({ name: type });
+    else {
+      const text =
+        typeof root.text === "string" && root.text
+          ? root.text
+          : typeof root.comment === "string"
+            ? root.comment
+            : "";
+      name = [
+        type,
+        typeof root.pageLabel !== "string" || !root.pageLabel
+          ? null
+          : isPageNumber(root.pageLabel)
+            ? m.workbench_annotation_page({ page: root.pageLabel })
+            : root.pageLabel,
+        text.length > 48 ? `${text.slice(0, 48)}…` : text,
+      ]
+        .filter(Boolean)
+        .join(m.workbench_selection_separator());
+    }
+  } else if (!input.annotationMode && input.item) {
+    const sample = getSampleItem(input.item.id);
+    name = sample
+      ? m.workbench_example_title({
+          name: sample.item.title ?? sampleTypeLabel(input.item.id),
+        })
+      : input.item.title;
+  }
+  return name;
+}
+
+export function selectionViewTitle(input: {
+  item: WorkbenchItemChoice | null;
+  annotation?: AnnotationChoice | null;
+  annotationMode: boolean;
+  view: "preview" | "fields";
+}): string {
+  const name = selectionName(input);
+  return name
+    ? m.workbench_selection_title({
+        name,
+        view:
+          input.view === "preview"
+            ? m.workbench_view_preview()
+            : m.workbench_view_fields(),
+      })
+    : input.view === "preview"
+      ? m.profile_preview_name()
+      : m.template_data_explorer_view_name();
+}
+
+export function updateSelectionTitle(view: ItemView): void {
+  const text = view.getDisplayText();
+  if (view.titleEl.textContent === text) return;
+  view.titleEl.textContent = text;
+  view.leaf.updateHeader();
+}
+
+/** A named set of choices; the heading labels the group for assistive technology. */
+function SelectionGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  const headingId = useUniqueId();
+  return (
+    <div role="group" aria-labelledby={headingId} className={selectionGroup}>
+      <p id={headingId} className={selectionGroupHeading}>
+        {label}
+      </p>
+      <div className={selectionList}>{children}</div>
+    </div>
+  );
+}
+
+/** The one control that leaves the examples behind for the user's own library. */
+function SelectionSearch({
+  label,
+  onSearch,
+}: {
+  label: string;
+  onSearch: () => void;
+}) {
+  return (
+    <button className={selectionSearch} onClick={onSearch}>
+      <span className={selectionSearchContent}>
+        <Icon name="search" />
+        <span className="zt:min-w-0 zt:truncate">{label}</span>
+      </span>
+    </button>
+  );
+}
+
+/** A choice in a boxed list; its content owns the box the row hands over. */
+function SelectionOption({
+  onSelect,
+  children,
+}: {
+  onSelect: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button className={selectionOption} onClick={onSelect}>
+      <span className={selectionOptionContent}>{children}</span>
+    </button>
+  );
+}
+
+export function ItemSelectionList({
+  recentItems,
+  onSelect,
+  onSearch,
+}: {
+  /** The read of the recent Items, with the services it needs provided. */
+  recentItems: RecentItems;
+  onSelect: (item: WorkbenchItemChoice) => void;
+  onSearch: () => void;
+}) {
+  const [recent, setRecent] = useState<readonly WorkbenchItemChoice[]>([]);
+  // The host's runner interrupts the read when the list unmounts.
+  useForkedEffect(useWorkbenchHost().run, () => recentItems, {
+    deps: [recentItems],
+    onSuccess: setRecent,
+  });
+  return (
+    <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
+      <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">
+        <p className={selectionHint}>{m.workbench_choose_preview_data()}</p>
+        <SelectionSearch
+          label={m.workbench_search_zotero()}
+          onSearch={onSearch}
+        />
+      </div>
+      <SelectionGroup label={m.workbench_sample_examples()}>
+        {SAMPLE_ITEM_CHOICES.map((item) => (
+          <SelectionOption key={item.id} onSelect={() => onSelect(item)}>
+            <span className={selectionOptionLabel}>
+              {sampleTypeLabel(item.id)}
+            </span>
+            {item.title && <span className={selectionHint}>{item.title}</span>}
+          </SelectionOption>
+        ))}
+      </SelectionGroup>
+      {recent.length > 0 && (
+        <SelectionGroup label={m.workbench_recently_updated()}>
+          {recent.map((item) => (
+            <SelectionOption key={item.id} onSelect={() => onSelect(item)}>
+              <span className={selectionOptionLabel}>{item.title}</span>
+            </SelectionOption>
+          ))}
+        </SelectionGroup>
+      )}
+    </div>
+  );
+}
+
+export function AnnotationSelectionList({
+  current,
+  onSelect,
+  onSearch,
+}: {
+  current: readonly AnnotationChoice[];
+  onSelect: (id: string) => void;
+  onSearch: () => void;
+}) {
+  return (
+    <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
+      <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">
+        <p className={selectionHint}>
+          {m.workbench_fields_choose_annotation()}
+        </p>
+        <SelectionSearch
+          label={m.workbench_choose_annotation()}
+          onSearch={onSearch}
+        />
+      </div>
+      {[
+        {
+          label: m.workbench_annotation_from_item(),
+          values: current.slice(0, 3),
+        },
+        { label: m.workbench_sample_examples(), values: SAMPLE_ANNOTATIONS },
+      ]
+        .filter(({ values }) => values.length > 0)
+        .map(({ label, values }) => (
+          <SelectionGroup key={label} label={label}>
+            {values.map((example) => (
+              <SelectionOption
+                key={example.id}
+                onSelect={() => onSelect(example.id)}
+              >
+                <span className={selectionOptionLabel}>
+                  {annotationOption(workbenchM, example).label}
+                </span>
+              </SelectionOption>
+            ))}
+          </SelectionGroup>
+        ))}
+    </div>
+  );
+}

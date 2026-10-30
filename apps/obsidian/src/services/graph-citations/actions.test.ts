@@ -1,0 +1,280 @@
+// @vitest-environment happy-dom
+import { createMockPlugin, Keymap } from "@mock/obsidian";
+import { Effect } from "effect";
+import { TFile } from "obsidian";
+import type {
+  App,
+  Command,
+  GraphOptions,
+  PaneType,
+  SplitDirection,
+  ViewState,
+  Workspace,
+  WorkspaceLeaf,
+} from "obsidian";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+
+import {
+  addGraphCitationsActions,
+  citationGraphReadiness,
+  openLocalCitationGraph,
+} from "./actions";
+import type { GraphCitationsActionDeps } from "./actions";
+import { installDisplayRows } from "./display";
+import { applyCitationGraphPreset } from "./preset";
+import { FakeColorGroupSection, FakeControlSection } from "./test-double";
+
+/** Every command id, in registration order. */
+const ALL_COMMAND_IDS = ["open-citation-graph", "open-local-citation-graph"];
+
+/** What the commands run Graph Citations' Effects through. */
+const bridge = openTestBridge();
+afterAll(() => bridge[Symbol.asyncDispose]());
+
+/** A note the local command can graph. */
+const DRAFT = new TFile();
+DRAFT.path = "Draft.md";
+
+/** What one opened leaf recorded: how it was asked for, and what it was told to show. */
+interface OpenedLeaf {
+  /** The `getLeaf` arguments the leaf came from. */
+  asked: unknown[];
+  state?: ViewState;
+}
+
+interface FixtureOptions {
+  graphEnabled?: boolean;
+  activeFile?: TFile | null;
+  /** The vault-wide "Show citations in graph view" setting. */
+  featureEnabled?: boolean;
+}
+
+function setup(options: FixtureOptions = {}) {
+  const opened: OpenedLeaf[] = [];
+  /** What each leaf showed by the time the preset reached it. */
+  const preset: { leaf: WorkspaceLeaf; showing?: string }[] = [];
+  const leafStates = new WeakMap<WorkspaceLeaf, OpenedLeaf>();
+  const mostRecent = stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+  const workspace = stubService<Workspace>("Workspace", {
+    getActiveFile: () => options.activeFile ?? null,
+    getMostRecentLeaf: () => mostRecent,
+    getLeaf: (
+      newLeaf?: PaneType | boolean,
+      direction?: SplitDirection,
+    ): WorkspaceLeaf => {
+      const asked = [newLeaf, direction].filter(
+        (argument) => argument !== undefined,
+      );
+      const record: OpenedLeaf = { asked };
+      opened.push(record);
+      const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+        setViewState: (state: ViewState) => {
+          record.state = state;
+          return Promise.resolve();
+        },
+      });
+      leafStates.set(leaf, record);
+      return leaf;
+    },
+  });
+  const app = stubService<App>("App", {
+    workspace,
+    lastEvent: new KeyboardEvent("keydown"),
+    internalPlugins: {
+      getEnabledPluginById: (id: string) =>
+        id === "graph" && (options.graphEnabled ?? true) ? {} : null,
+    },
+  });
+  const plugin = createMockPlugin();
+  const presetApplied = Promise.withResolvers<void>();
+  const deps: GraphCitationsActionDeps = {
+    app,
+    graphCitations: {
+      enabled: Effect.succeed(options.featureEnabled ?? true),
+      applyPreset: vi.fn((leaf: WorkspaceLeaf) =>
+        Effect.sync(() => {
+          preset.push({ leaf, showing: leafStates.get(leaf)?.state?.type });
+          presetApplied.resolve();
+        }),
+      ),
+    },
+    bridge,
+  };
+  addGraphCitationsActions(plugin, deps);
+  const command = (id: string): Command => plugin.commands.get(id)!;
+  return {
+    app,
+    deps,
+    plugin,
+    opened,
+    preset,
+    commandSettled: presetApplied.resolve,
+    mostRecent,
+    command,
+    /** Performs one command, then lets what it started settle. */
+    async run(id: string): Promise<void> {
+      const { callback, checkCallback } = command(id);
+      if (callback) await callback();
+      else {
+        const ran = checkCallback!(false);
+        if (ran) await presetApplied.promise;
+      }
+    },
+  };
+}
+
+describe("addGraphCitationsActions", () => {
+  it("opens the global graph where the native command opens it, then presets it", async () => {
+    const isModEvent = vi.spyOn(Keymap, "isModEvent").mockReturnValue("tab");
+    const fixture = setup();
+
+    await fixture.run("open-citation-graph");
+
+    expect(isModEvent).toHaveBeenCalledWith(fixture.app.lastEvent);
+    expect(fixture.opened).toEqual([
+      { asked: ["tab"], state: { type: "graph", active: true, state: {} } },
+    ]);
+    // The preset reaches the leaf it opened, and only once that leaf shows a graph.
+    expect(fixture.preset).toEqual([
+      { leaf: expect.anything(), showing: "graph" },
+    ]);
+    isModEvent.mockRestore();
+  });
+
+  it("opens the local graph as a vertical split grouped to the pane it came from", async () => {
+    const fixture = setup({ activeFile: DRAFT });
+
+    await fixture.run("open-local-citation-graph");
+
+    expect(fixture.opened).toEqual([
+      {
+        asked: ["split", "vertical"],
+        state: {
+          type: "localgraph",
+          active: true,
+          group: fixture.mostRecent,
+          state: { file: "Draft.md" },
+        },
+      },
+    ]);
+    expect(fixture.preset).toEqual([
+      { leaf: expect.anything(), showing: "localgraph" },
+    ]);
+  });
+
+  it.each(ALL_COMMAND_IDS)(
+    "%s enables author and title labels through set-options",
+    async (id) => {
+      const fixture = setup({ activeFile: DRAFT });
+      const displayOptions = new FakeControlSection();
+      const colorGroupOptions = new FakeColorGroupSection();
+      const options: GraphOptions = {
+        centerStrength: 0.42,
+        textFadeMultiplier: -0.5,
+      };
+      const engine = {
+        options,
+        displayOptions,
+        colorGroupOptions,
+        render: vi.fn(),
+        onOptionsChange: vi.fn(),
+        setOptions: vi.fn((options: GraphOptions) => {
+          displayOptions.setOptions(options);
+          if (Array.isArray(options.colorGroups))
+            colorGroupOptions.setColorQueries(options.colorGroups);
+        }),
+      };
+      using _rows = installDisplayRows(engine, { saved: null });
+      expect(engine.options["zotlit-author-title-labels"]).toBe(false);
+      fixture.deps.graphCitations.applyPreset = (leaf) =>
+        Effect.sync(() => {
+          Object.assign(leaf, {
+            view: {
+              getViewType: () =>
+                id === "open-citation-graph" ? "graph" : "localgraph",
+              dataEngine: engine,
+              engine,
+            },
+          });
+          applyCitationGraphPreset(leaf, {
+            wikilinkCitations: false,
+            color: { a: 1, rgb: 0xe8622c },
+          });
+          fixture.commandSettled();
+        });
+
+      await fixture.run(id);
+
+      expect(engine.options["zotlit-author-title-labels"]).toBe(true);
+      expect(engine.setOptions).toHaveBeenCalledWith(
+        expect.objectContaining({
+          "zotlit-author-title-labels": true,
+        }),
+      );
+      expect(engine.options.centerStrength).toBe(0.42);
+      expect(engine.options.textFadeMultiplier).toBe(-0.5);
+      const firstOptions = structuredClone(engine.options);
+      const firstRenders = engine.render.mock.calls.length;
+
+      await fixture.run(id);
+
+      expect(engine.options).toEqual(firstOptions);
+      expect(engine.render).toHaveBeenCalledTimes(firstRenders);
+    },
+  );
+
+  it("leaves the local command out of the palette while no note is active", async () => {
+    const fixture = setup({ activeFile: null });
+    expect(
+      fixture.command("open-local-citation-graph").checkCallback!(true),
+    ).toBe(false);
+
+    await fixture.run("open-local-citation-graph");
+
+    expect(fixture.opened).toEqual([]);
+  });
+
+  it("opens nothing while the Graph core plugin is disabled", async () => {
+    const fixture = setup({ graphEnabled: false, activeFile: DRAFT });
+
+    await fixture.run("open-citation-graph");
+    await openLocalCitationGraph(fixture.deps, DRAFT);
+
+    expect(fixture.opened).toEqual([]);
+    expect(fixture.preset).toEqual([]);
+  });
+
+  it("opens nothing while the vault-wide setting is off", async () => {
+    const fixture = setup({ featureEnabled: false, activeFile: DRAFT });
+
+    await fixture.run("open-citation-graph");
+    await openLocalCitationGraph(fixture.deps, DRAFT);
+
+    // A preset graph with no citations drawn is a graph with the reader's own
+    // options taken away for nothing, so neither command opens a leaf at all.
+    expect(fixture.opened).toEqual([]);
+    expect(fixture.preset).toEqual([]);
+  });
+
+  it("still offers the local command while the vault-wide setting is off", () => {
+    const fixture = setup({ featureEnabled: false, activeFile: DRAFT });
+    expect(
+      fixture.command("open-local-citation-graph").checkCallback!(true),
+    ).toBe(true);
+  });
+});
+
+describe("citationGraphReadiness", () => {
+  it("tells the two ways it cannot be opened apart", () => {
+    expect(citationGraphReadiness(setup({ graphEnabled: false }).deps)).toBe(
+      "core-plugin-disabled",
+    );
+    expect(citationGraphReadiness(setup({ featureEnabled: false }).deps)).toBe(
+      "feature-off",
+    );
+    expect(citationGraphReadiness(setup().deps)).toBe("ready");
+  });
+});

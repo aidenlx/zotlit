@@ -2,6 +2,19 @@ import { itemBaseFields, resolveVenue } from "@zotlit/db";
 import type { BaseItem, Creator, IndexedItem, Item } from "@zotlit/db";
 import type { ItemFields, JournalArticleFields } from "@zotlit/zotero-types";
 
+import type { MemoryItemRow } from "./memory-item-source";
+
+export {
+  makeMemoryItemSource,
+  type MemoryItemRow,
+  type MemoryItemSource,
+  type MemoryItemSourceReads,
+} from "./memory-item-source";
+export {
+  makeMemorySegmenterBinaryReader,
+  type MemorySegmenterBinaryReader,
+} from "./memory-segmenter-binary-reader";
+
 /** The fields Zotero records for one item type, minus its discriminant. */
 type FieldsOf<TType extends ItemFields["itemType"]> = Omit<
   Extract<ItemFields, { itemType: TType }>,
@@ -22,6 +35,7 @@ export interface ItemFixtureOptions {
   date?: string | null;
   /** ISO 8601 instant (e.g. `2024-01-01T00:00:00Z`); defaults to epoch. */
   dateModified?: string;
+  lastActivity?: number | null;
   creators?: Creator[];
   primaryCreatorType?: string | null;
   language?: string | null;
@@ -60,6 +74,7 @@ export function makeIndexedItem(options: ItemFixtureOptions): IndexedItem {
     dateModified: Temporal.Instant.from(
       options.dateModified ?? "1970-01-01T00:00:00Z",
     ),
+    lastActivity: options.lastActivity ?? null,
     itemType: options.itemType ?? "book",
     primaryCreator: creators[0] ?? null,
     creators,
@@ -71,6 +86,11 @@ export function makeIndexedItem(options: ItemFixtureOptions): IndexedItem {
     citationKey: options.citationKey ?? null,
     date: options.date ?? null,
   };
+}
+
+/** One memory source row: the indexed row and the Item, from the same options. */
+export function makeMemoryItemRow(options: ItemFixtureOptions): MemoryItemRow {
+  return { indexed: makeIndexedItem(options), item: makeItem(options) };
 }
 
 export function makeItem(options: ItemFixtureOptions): Item;

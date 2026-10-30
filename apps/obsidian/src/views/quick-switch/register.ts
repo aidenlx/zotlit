@@ -1,19 +1,27 @@
 import type { App, Plugin } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
-import type { ItemLookup } from "@/services/item-lookup/service";
-import type { NoteFeature } from "@/services/note-feature";
-import type { NoteIndex } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
+import type { LiteratureNoteAttachmentsHandle } from "@/services/attachment-open/handle";
+import type { TargetOpener } from "@/services/attachment-open/open-target";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
+import type { PluginSettings } from "@/services/settings/service";
 
 import { QuickSwitchModal } from "./modal";
+import type { NoteResultDeps } from "./result-actions";
 
-export interface QuickSwitchDeps {
+export interface QuickSwitchDeps extends NoteResultDeps {
   app: App;
-  lookup: ItemLookup;
-  noteIndex: NoteIndex;
-  noteFeature: Pick<NoteFeature, "createNote">;
-  settings: SettingsService;
+  /** Resolves the Attachments of the PDF a result asks for. */
+  attachments: LiteratureNoteAttachmentsHandle;
+  lookup: ItemLookupHandle;
+  settings: Pick<PluginSettings["Service"], "current">;
+  /** Also runs each PDF open a result fires; unload interrupts it. */
+  bridge: Pick<EffectBridge, "runSync" | "runAndForget">;
+  /** Opens the PDF a result asks for. */
+  opener: Pick<TargetOpener["Service"], "open">;
+  /** Open the Library View with the Item selected. */
+  showInLibrary: (indexedKey: string) => Promise<void>;
 }
 
 export function registerQuickSwitch(

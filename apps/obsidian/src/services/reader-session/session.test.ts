@@ -1,0 +1,254 @@
+import { Effect, SubscriptionRef } from "effect";
+import { describe, expect, it } from "vitest";
+
+import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
+import type {
+  LocalServer,
+  ReaderTarget,
+} from "@/services/local-server/service";
+
+import { ReaderSessionHost } from "./session";
+import type { ReaderSessionTarget } from "./session";
+import { ZoteroReaderSession } from "./zotero";
+import type { ZoteroReaderSessionDeps } from "./zotero";
+
+const PAPER: ReaderSessionTarget = {
+  attachmentKey: "ATCH2345",
+  itemKey: "ITEM2345",
+};
+const STANDALONE: ReaderSessionTarget = {
+  attachmentKey: "LSTAND23",
+  itemKey: null,
+};
+
+/** Records what each side of the session saw, so a test asserts events. */
+function watch(session: ReaderSessionHost) {
+  const targets: (ReaderSessionTarget | null)[] = [];
+  const selections: readonly string[][] = [];
+  session.on("target-changed", (target) => targets.push(target));
+  session.on("selection-changed", (selected) =>
+    (selections as string[][]).push([...selected]),
+  );
+  return { targets, selections };
+}
+
+function host(select?: (keys: readonly string[]) => void) {
+  const navigated: string[] = [];
+  const asked: readonly string[][] = [];
+  const session = new ReaderSessionHost({
+    source: "obsidian-pdf",
+    navigate: (key) => navigated.push(key),
+    select: (keys) => {
+      (asked as string[][]).push([...keys]);
+      select?.(keys);
+    },
+  });
+  return { session, navigated, asked };
+}
+
+describe("ReaderSessionHost", () => {
+  it("announces a target only when it moves", () => {
+    const { session } = host();
+    const seen = watch(session);
+
+    session.setTarget(PAPER);
+    session.setTarget({ ...PAPER });
+    session.setTarget(STANDALONE);
+    session.setTarget(null);
+
+    expect(seen.targets).toEqual([PAPER, STANDALONE, null]);
+    expect(session.target).toBe(null);
+  });
+
+  it("drops the selection when the Attachment changes", () => {
+    const { session } = host();
+    session.setTarget(PAPER);
+    session.reportSelection(["ANNO2345"]);
+    const seen = watch(session);
+
+    session.setTarget(STANDALONE);
+
+    expect(seen.selections).toEqual([[]]);
+    expect(seen.targets).toEqual([STANDALONE]);
+    expect(session.selected).toEqual([]);
+  });
+
+  it("announces a selection only when the keys move", () => {
+    const { session } = host();
+    const seen = watch(session);
+
+    session.reportSelection(["A2345678", "B2345678"]);
+    session.reportSelection(["A2345678", "B2345678"]);
+    session.reportSelection(["B2345678", "A2345678"]);
+
+    expect(seen.selections).toEqual([
+      ["A2345678", "B2345678"],
+      ["B2345678", "A2345678"],
+    ]);
+  });
+
+  it("holds the selection a reader answers with, and no other", () => {
+    // A reader that cannot be told what to select reports nothing back.
+    const deaf = host();
+    deaf.session.setSelectedAnnotations(["ANNO2345"]);
+    expect(deaf.session.selected).toEqual([]);
+
+    const echo: ReaderSessionHost = new ReaderSessionHost({
+      source: "obsidian-pdf",
+      navigate: () => undefined,
+      select: (keys) => echo.reportSelection(keys),
+    });
+    echo.setSelectedAnnotations(["ANNO2345"]);
+    expect(echo.selected).toEqual(["ANNO2345"]);
+  });
+
+  it("announces nothing after disposal", () => {
+    const { session } = host();
+    const seen = watch(session);
+    session[Symbol.dispose]();
+    session.setTarget(PAPER);
+    expect(seen.targets).toEqual([]);
+  });
+});
+
+/** The companion's push, in the numeric ids the wire carries. */
+const PUSHED: ReaderTarget = { itemID: 1, attachmentID: 2, selected: [7] };
+
+type LiveUpdatePort = ZoteroReaderSessionDeps["liveUpdate"];
+
+function liveUpdate(initial: ReaderTarget | null) {
+  const pushed = Effect.runSync(SubscriptionRef.make(initial));
+  const bridge = effectBridge(testRuntime());
+  let subscribers = 0;
+  const stub: LiveUpdatePort = stubService<LocalServer["Service"]>(
+    "LocalServer",
+    {
+      readerTarget: SubscriptionRef.get(pushed),
+      readerTargetChanges: SubscriptionRef.changes(pushed),
+    },
+  );
+  const trackedBridge: ZoteroReaderSessionDeps["bridge"] = {
+    runSync: bridge.runSync,
+    subscribe: (stream, callback) => {
+      subscribers += 1;
+      const off = bridge.subscribe(stream, callback);
+      return () => {
+        subscribers -= 1;
+        off();
+      };
+    },
+  };
+  return {
+    stub,
+    push(next: ReaderTarget) {
+      Effect.runSync(SubscriptionRef.set(pushed, next));
+    },
+    get subscribers() {
+      return subscribers;
+    },
+    bridge: trackedBridge,
+  };
+}
+
+describe("ZoteroReaderSession", () => {
+  /** The resolution the database gives a push. */
+  const named = (target: ReaderTarget) =>
+    target.attachmentID === 2
+      ? { target: PAPER, selected: ["ANNO2345"] }
+      : target.attachmentID === 3
+        ? { target: STANDALONE, selected: [] }
+        : null;
+
+  function build(
+    initial: ReaderTarget | null = null,
+    resolve: ZoteroReaderSessionDeps["resolve"] = (target) =>
+      Promise.resolve(named(target)),
+  ) {
+    const live = liveUpdate(initial);
+    const navigated: string[] = [];
+    const session = new ZoteroReaderSession({
+      liveUpdate: live.stub,
+      bridge: live.bridge,
+      navigate: (key) => navigated.push(key),
+      resolve,
+    });
+    return { live, session, navigated };
+  }
+
+  it("names the Zotero source and seeds from the push the listener holds", async () => {
+    const { session } = build(PUSHED);
+    expect(session.source).toBe("zotero");
+    await expect.poll(() => session.target).toEqual(PAPER);
+    expect(session.selected).toEqual(["ANNO2345"]);
+  });
+
+  it("translates each push into Indexed Keys", async () => {
+    const { live, session } = build();
+    expect(session.target).toBe(null);
+
+    live.push(PUSHED);
+    await expect.poll(() => session.target).toEqual(PAPER);
+    expect(session.selected).toEqual(["ANNO2345"]);
+
+    // A push the database cannot name leaves the session holding nothing.
+    live.push({ itemID: 9, attachmentID: 9, selected: [] });
+    await expect.poll(() => session.target).toBe(null);
+    expect(session.selected).toEqual([]);
+  });
+
+  it("keeps its target while a new push resolves, and drops a superseded answer", async () => {
+    const pending = new Map<number, PromiseWithResolvers<void>>();
+    const aborted: number[] = [];
+    const { live, session } = build(PUSHED, async (target, signal) => {
+      signal.addEventListener("abort", () => aborted.push(target.attachmentID));
+      if (target.attachmentID !== 2) {
+        const gate = Promise.withResolvers<void>();
+        pending.set(target.attachmentID, gate);
+        await gate.promise;
+      }
+      return named(target);
+    });
+    await expect.poll(() => session.target).toEqual(PAPER);
+
+    live.push({ itemID: 3, attachmentID: 3, selected: [] });
+    live.push({ itemID: 9, attachmentID: 9, selected: [] });
+    expect(session.target).toEqual(PAPER);
+    expect(aborted).toEqual([2, 3]);
+
+    pending.get(9)!.resolve();
+    await expect.poll(() => session.target).toBe(null);
+    pending.get(3)!.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(session.target).toBe(null);
+  });
+
+  it("takes no selection from a consumer, because Zotero owns its reader", async () => {
+    const { session } = build(PUSHED);
+    await expect.poll(() => session.selected).toEqual(["ANNO2345"]);
+    session.setSelectedAnnotations([]);
+    expect(session.selected).toEqual(["ANNO2345"]);
+  });
+
+  it("re-reads the held push on refresh", async () => {
+    const { live, session } = build();
+    live.push(PUSHED);
+    await expect.poll(() => session.target).toEqual(PAPER);
+    session.setTarget(null);
+    session.refresh();
+    await expect.poll(() => session.target).toEqual(PAPER);
+  });
+
+  it("stops tracking the listener and aborts its read when disposed", () => {
+    const signals: AbortSignal[] = [];
+    const { live, session } = build(PUSHED, (_target, signal) => {
+      signals.push(signal);
+      return new Promise(() => {});
+    });
+    session[Symbol.dispose]();
+    expect(live.subscribers).toBe(0);
+    expect(signals.map((signal) => signal.aborted)).toEqual([true]);
+  });
+});

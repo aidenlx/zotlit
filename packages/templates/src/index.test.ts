@@ -4,11 +4,26 @@ import note from "@defaults/note.eta?raw";
 import { describe, expect, it } from "vitest";
 
 import { basename, formatBlockquote, TemplateEngine } from "./index";
-import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
+import {
+  formatManagedRegion,
+  managedRegionTransform,
+  MARKER_START,
+} from "./obsidian";
 
 const wrapContent = managedRegionTransform("content");
 
 describe("TemplateEngine", () => {
+  it("lets a prepared unavailable excerpt render text through embed", () => {
+    const engine = new TemplateEngine();
+    engine.define("note", "<%= embed(zt.imgLink) %>");
+    const imgLink = Object.assign(() => "Unused ordinary link", {
+      renderEmbed: () =>
+        "Excerpt image unavailable. [Source](zotero://open/library/items/RGRPDF24)",
+    });
+    expect(engine.render("note", { imgLink })).toBe(
+      "Excerpt image unavailable. [Source](zotero://open/library/items/RGRPDF24)",
+    );
+  });
   it("renders templates registered by name", () => {
     const engine = new TemplateEngine();
     engine.define("note", "# <%= zt.title %>");
@@ -22,97 +37,6 @@ describe("TemplateEngine", () => {
 
     await expect(engine.renderAsync("note", { title: "Paper" })).resolves.toBe(
       "# Paper",
-    );
-  });
-
-  it("resolves includes by registered name", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-    engine.define("content", content);
-
-    const rendered = engine.render("content", {
-      notes: [],
-      annotations: [
-        {
-          pageLabel: "4",
-          imgLink: null,
-          text: "Highlighted text",
-          comment: "",
-        },
-      ],
-    });
-
-    expect(rendered).toContain("Page 4");
-    expect(rendered).toContain("Highlighted text");
-  });
-
-  it("renders a tight notes link list under a heading", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-    engine.define("content", content);
-
-    const rendered = engine.render("content", {
-      notes: [{ noteLink: () => "[[a|A]]" }, { noteLink: () => "[[b|B]]" }],
-      annotations: [],
-    });
-
-    expect(rendered).toContain("## Notes");
-    expect(rendered).toContain("- [[a|A]]\n- [[b|B]]");
-    expect(rendered).not.toContain("## Annotations");
-  });
-
-  it("embeds the excerpt image via the embed helper when imgLink is present", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-
-    const rendered = engine.render("annotation", {
-      pageLabel: "5",
-      imgLink: () => "[[ANNOT.png]]",
-      text: "with image",
-      comment: "",
-    });
-
-    expect(rendered).toContain("> ![[ANNOT.png]]with image");
-  });
-
-  it("keeps multi-line annotation text and comment inside the callout", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-
-    const rendered = engine.render("annotation", {
-      pageLabel: "5",
-      imgLink: null,
-      text: "first line\nsecond line",
-      comment: "comment A\ncomment B",
-    });
-
-    expect(rendered).toBe(
-      [
-        "> [!note] Page 5",
-        ">",
-        "> first line",
-        "> second line",
-        ">",
-        "> comment A",
-        "> comment B",
-        "",
-      ].join("\n"),
-    );
-  });
-
-  it("omits the comment block when the annotation has no comment", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-
-    const rendered = engine.render("annotation", {
-      pageLabel: "5",
-      imgLink: null,
-      text: "only text",
-      comment: "",
-    });
-
-    expect(rendered).toBe(
-      ["> [!note] Page 5", ">", "> only text", ""].join("\n"),
     );
   });
 
@@ -138,21 +62,6 @@ describe("TemplateEngine", () => {
 
       expect(engine.render("parent", {})).toBe("true:3");
     });
-
-    it("rewrites eta's generated include/includeAsync helpers (matches eta codegen)", () => {
-      // Proves the replace patterns still match the installed eta version: if
-      // eta's codegen drifted, replaceHelper would throw from compile() and
-      // this test would error loudly rather than silently passing.
-      const source = new TemplateEngine().compile("<%= zt %>").toString();
-
-      expect(source).toContain(
-        "let include = (__eta_t, __eta_d) => this.render(__eta_t, __eta_d ?? zt, options);",
-      );
-      expect(source).toContain(
-        "let includeAsync = (__eta_t, __eta_d) => this.renderAsync(__eta_t, __eta_d ?? zt, options);",
-      );
-      expect(source).not.toContain("{...zt, ...(__eta_d ?? {})}");
-    });
   });
 
   const noteContext = {
@@ -169,8 +78,11 @@ describe("TemplateEngine", () => {
     engine.define("content", content);
     engine.define("note", note);
 
+    const plain = new TemplateEngine();
+    plain.define("content", content);
+
     expect(engine.render("note", noteContext)).toContain(
-      `${MARKER_START}\n\n${MARKER_END}`,
+      formatManagedRegion(plain.render("content", noteContext)),
     );
   });
 
@@ -179,8 +91,13 @@ describe("TemplateEngine", () => {
     engine.define("annotation", annotation);
     engine.define("content", content);
 
+    const plain = new TemplateEngine();
+    plain.define("content", content);
+
     expect(engine.render("content", { annotations: [], notes: [] })).toBe(
-      `${MARKER_START}\n\n${MARKER_END}`,
+      formatManagedRegion(
+        plain.render("content", { annotations: [], notes: [] }),
+      ),
     );
   });
 

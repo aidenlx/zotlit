@@ -1,6 +1,8 @@
 import type * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
+import { libraryViewUri } from "@zotlit/db";
+
 import { noteStatusResponseSchema } from "./note-status";
 import { notifyEventSchema } from "./notify";
 import { SOURCE_ID_HEADER } from "./source-id";
@@ -11,6 +13,8 @@ import {
   buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
+  buildImportProfileProtocolUrl,
+  importProfileProtocolQuerySchema,
   buildProtocolUrl,
   buildUpdateAllProtocolUrl,
   exploreProtocolQuerySchema,
@@ -21,6 +25,9 @@ import {
   protocolActions,
   protocolBatchQuerySchema,
   protocolQuerySchema,
+  parseShowInLibraryProtocolQuery,
+  showInLibraryProtocolActionId,
+  showInLibraryProtocolQuerySchema,
   updateAllProtocolQuerySchema,
 } from "./url";
 import { PROTOCOL_VERSION } from "./version";
@@ -83,6 +90,13 @@ function exploreUrlWireSurface(): unknown {
   };
 }
 
+function showInLibraryUrlWireSurface(): unknown {
+  return {
+    example: libraryViewUri("ABCD2345", 7),
+    params: pipedObjectKeys(showInLibraryProtocolQuerySchema),
+  };
+}
+
 function importNoteUrlWireSurface(): unknown {
   return {
     example: buildImportProtocolUrl(42, {
@@ -107,6 +121,13 @@ function updateAllUrlWireSurface(): unknown {
   return {
     example: buildUpdateAllProtocolUrl(SOURCE, 7, COLLECTION),
     params: pipedObjectKeys(updateAllProtocolQuerySchema),
+  };
+}
+
+function importProfileUrlWireSurface(): unknown {
+  return {
+    example: buildImportProfileProtocolUrl(),
+    params: Object.keys(importProfileProtocolQuerySchema.entries),
   };
 }
 
@@ -151,14 +172,17 @@ describe("wire format", () => {
       notify: notifyWireSurface(),
       url: protocolUrlWireSurface(),
       exploreUrl: exploreUrlWireSurface(),
+      showInLibraryUrl: showInLibraryUrlWireSurface(),
       updateAllUrl: updateAllUrlWireSurface(),
       importAllNotesUrl: importAllNotesUrlWireSurface(),
       importNoteUrl: importNoteUrlWireSurface(),
       importNotesUrl: importNotesUrlWireSurface(),
+      importProfileUrl: importProfileUrlWireSurface(),
       literatureNotes: literatureNotesWireSurface(),
       noteStatus: noteStatusWireSurface(),
       zoteroNotes: zoteroNotesWireSurface(),
       updateManyUrl: updateManyUrlWireSurface(),
+      // oxlint-disable-next-line vitest/no-large-snapshots -- the whole wire surface is the contract; a change bumps PROTOCOL_VERSION.
     }).toMatchInlineSnapshot(`
       {
         "exploreUrl": {
@@ -166,6 +190,7 @@ describe("wire format", () => {
           "params": [
             "annotation",
             "item",
+            "paneType",
             "source-id",
           ],
         },
@@ -193,9 +218,17 @@ describe("wire format", () => {
             "source-id",
           ],
         },
+        "importProfileUrl": {
+          "example": "obsidian://zotlit/import-profile?clipboard=true",
+          "params": [
+            "clipboard",
+            "paneType",
+          ],
+        },
         "literatureNotes": {
           "body": [
             "items",
+            "profile",
             "scope",
           ],
           "method": "PUT",
@@ -239,7 +272,21 @@ describe("wire format", () => {
               "selected",
             ],
           },
+          {
+            "event": "reader/inactive",
+            "fields": [
+              "dataPath",
+              "event",
+              "profilePath",
+            ],
+          },
         ],
+        "showInLibraryUrl": {
+          "example": "obsidian://zotlit/show-in-library?item-key=ABCD2345g7",
+          "params": [
+            "item-key",
+          ],
+        },
         "updateAllUrl": {
           "example": "obsidian://zotlit/update-all?source-id=a1b2c3d4&library=7&collection=ABCD2345",
           "params": [
@@ -252,6 +299,7 @@ describe("wire format", () => {
           "example": "obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=a1b2c3d4",
           "params": [
             "items",
+            "profile",
             "scope",
             "source-id",
           ],
@@ -267,11 +315,13 @@ describe("wire format", () => {
           ],
           "params": [
             "item",
+            "paneType",
+            "profile",
             "scope",
             "source-id",
           ],
         },
-        "version": 6,
+        "version": 9,
         "zoteroNotes": {
           "body": [
             "items",
@@ -282,5 +332,22 @@ describe("wire format", () => {
         },
       }
     `);
+  });
+});
+
+describe("show-in-library link", () => {
+  it("decodes the link the template variable writes", () => {
+    const url = new URL(libraryViewUri("ABCD2345", 7));
+    expect(`${url.host}${url.pathname}`).toBe(showInLibraryProtocolActionId);
+    expect(
+      parseShowInLibraryProtocolQuery(Object.fromEntries(url.searchParams)),
+    ).toEqual({ indexedKey: "ABCD2345g7" });
+  });
+
+  it("refuses a value that is not an Indexed Key", () => {
+    expect(() =>
+      parseShowInLibraryProtocolQuery({ "item-key": "not a key" }),
+    ).toThrow();
+    expect(() => parseShowInLibraryProtocolQuery({})).toThrow();
   });
 });

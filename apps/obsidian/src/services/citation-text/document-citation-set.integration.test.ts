@@ -1,51 +1,51 @@
 // Runs in the happy-dom-native-response vitest project (vitest.config.ts).
+import { it } from "@effect/vitest";
+import { Effect, Stream } from "effect";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { CachedMetadata, TFile } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect } from "vitest";
 
-import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
-
+import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { subscribe } from "@/lib/effect-stream";
 import { themeHook } from "@/lib/theme-hooks";
+import {
+  annotationRows,
+  annotationUri,
+} from "@/services/citation-index/__fixtures__/annotations";
+import { citationOutcome } from "@/services/citation-index/outcome";
 import type {
   Citation,
   ReferenceSource,
 } from "@/services/citation-index/service";
 import {
   createCitationIndexHarness,
+  GROUP_LIBRARY_ID,
   KEY_A,
   KEY_B,
   link,
   makeFile,
   MY_LIBRARY_ID,
 } from "@/services/citation-index/test-harness";
-import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
+import type {
+  CitationIndexHarness,
+  CitationIndexHarnessOptions,
+} from "@/services/citation-index/test-harness";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
-import { inlineText } from "@/services/pandoc/inline-content";
+import { inlineText, noteContent } from "@/services/pandoc/inline-content";
+import { renderFailure } from "@/services/pandoc/render-cache/__fixtures__";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
 
-import { ALPHA, firstText } from "./__fixtures__";
+import { firstText } from "./__fixtures__";
+import { citationTextFixture } from "./__fixtures__";
+import type { CitationTextFixture as CitationText } from "./__fixtures__";
 import { citationElement, citationKey } from "./present";
 import type { DocumentCitations, FormattedOccurrence } from "./present";
-import { CitationText } from "./service";
-
-vi.mock("@zotlit/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@zotlit/db")>();
-  return {
-    ...actual,
-    getZoteroIdentity: () => ({
-      userID: 1,
-      localUserKey: null,
-      username: null,
-    }),
-    resolveIndexedKeyLibrary: vi.fn(),
-    getItemsByKey: vi.fn(),
-  };
-});
 
 const WASM_PATH = join(
   dirname(createRequire(import.meta.url).resolve("pandoc-wasm")),
@@ -106,6 +106,23 @@ const NOTE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
   </bibliography>
 </style>`;
 
+const IBID_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="note" version="1.0">
+  <info>
+    <title>Annotation locator integration</title>
+    <id>http://example.com/annotation-locator-integration</id>
+    <updated>2020-01-01T00:00:00+00:00</updated>
+  </info>
+  <citation><layout><choose>
+    <if position="ibid-with-locator">
+      <text value="ibid., "/><text variable="locator"/>
+    </if>
+    <else-if position="ibid"><text value="ibid."/></else-if>
+    <else><names variable="author"><name/></names><text variable="locator" prefix=", "/></else>
+  </choose></layout></citation>
+  <bibliography><layout><names variable="author"><name/></names></layout></bibliography>
+</style>`;
+
 const BODY =
   "@doe2024 then [[Roe 2025#cite:locator=4]] then [[Doe 2024]] then @doe2024.";
 
@@ -114,376 +131,656 @@ const KEY_C = "CCCC2345";
 const KEY_D = "DDDD2345";
 const KEY_E = "EEEE2345";
 
-/** A personal-library Item, whose bare key is its Indexed Key. */
-function item(
-  indexedKey: string,
-  itemID: number,
-  family: string,
-): typeof ALPHA {
-  return {
-    ...ALPHA,
-    key: indexedKey,
-    itemID,
-    indexedKey,
-    creators: [{ creatorType: "author", lastName: family, firstName: "Bea" }],
-    fields: { ...ALPHA.fields, title: `${family} study`, date: "2021" },
-  };
-}
+/**
+ * The Items the database holds: KEY_A is "A study of nothing" (2020) by Ann
+ * Zeta; KEY_B (group 7) and the keyless Items each a "<Family> study" (2021)
+ * by Bea <Family>.
+ */
+const ITEM_ROWS = `
+  insert into libraries (libraryID, type, version, clientVersion)
+    values (1, 'user', 1, 1), (4, 'group', 1, 1);
+  insert into groups (groupID, libraryID, name) values (7, 4, 'Lab');
+  insert into settings (setting, key, value) values ('account', 'userID', 1);
+  insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
+  insert into fieldsCombined (fieldID, fieldName, custom)
+    values (10, 'title', 0), (12, 'date', 0);
+  insert into creatorTypes (creatorTypeID, creatorType) values (1, 'author');
+  insert into itemTypeCreatorTypes (itemTypeID, creatorTypeID, primaryField)
+    values (1, 1, 1);
+  insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+    values
+      (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_A}'),
+      (2, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 4, 'ZZZ99999'),
+      (3, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_C}'),
+      (4, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_D}'),
+      (5, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, '${KEY_E}');
+  insert into itemDataValues (valueID, value)
+    values (1, 'A study of nothing'), (2, '2020'), (3, '2021'),
+           (4, 'Roe study'), (5, 'Cox study'), (6, 'Dey study'),
+           (7, 'Ess study');
+  insert into itemData (itemID, fieldID, valueID)
+    values (1, 10, 1), (1, 12, 2), (2, 10, 4), (2, 12, 3), (3, 10, 5),
+           (3, 12, 3), (4, 10, 6), (4, 12, 3), (5, 10, 7), (5, 12, 3);
+  insert into creators (creatorID, firstName, lastName, fieldMode)
+    values (1, 'Ann', 'Zeta', 0), (2, 'Bea', 'Roe', 0), (3, 'Bea', 'Cox', 0),
+           (4, 'Bea', 'Dey', 0), (5, 'Bea', 'Ess', 0);
+  insert into itemCreators (itemID, creatorID, creatorTypeID, orderIndex)
+    values (1, 1, 1, 0), (2, 2, 1, 0), (3, 3, 1, 0), (4, 4, 1, 0),
+           (5, 5, 1, 0);
+`;
 
-/** Every Item the stubbed database answers with, by Indexed Key. */
-const ITEMS: Record<string, typeof ALPHA> = {
-  [KEY_A]: ALPHA,
-  [KEY_B]: item(KEY_B, 2, "Roe"),
-  [KEY_C]: item(KEY_C, 3, "Cox"),
-  [KEY_D]: item(KEY_D, 4, "Dey"),
-  [KEY_E]: item(KEY_E, 5, "Ess"),
-};
-
-beforeEach(() => {
-  vi.mocked(resolveIndexedKeyLibrary).mockImplementation(
-    (_client, indexedKey) => {
-      const found = ITEMS[indexedKey];
-      return found ? { libraryID: 1, key: found.key } : null;
-    },
-  );
-  vi.mocked(getItemsByKey).mockImplementation((_client, _libraryID, keys) => {
-    const found = Object.values(ITEMS).find(({ key }) => key === keys[0]);
-    return found ? [found as never] : [];
+function makeHarness(
+  documents: Record<string, string>,
+  options: CitationIndexHarnessOptions = {},
+) {
+  const citekeys = options.citekeys ?? [
+    { itemID: 1, citekey: "doe2024" },
+    { itemID: 2, citekey: "roe2025" },
+  ];
+  const keys = citekeys
+    .map(
+      ({ itemID, citekey }, index) => `
+    insert into itemDataValues (valueID, value) values (${100 + index}, '${citekey.replaceAll("'", "''")}');
+    insert into itemData (itemID, fieldID, valueID) values (${itemID}, 11, ${100 + index});
+  `,
+    )
+    .join("\n");
+  return createCitationIndexHarness(documents, {
+    ...options,
+    zoteroRows:
+      options.zoteroRows ??
+      `${ITEM_ROWS}
+      insert into fieldsCombined (fieldID, fieldName, custom) values (11, 'citationKey', 0);
+      ${keys}`,
   });
-});
+}
 
 async function readText(
   service: CitationText,
   file: TFile,
 ): Promise<DocumentCitations> {
-  let held = service.peek(file.path);
+  let held = service.bridge.runSync(service.peek(file.path));
   if (held === null) {
     await new Promise<void>((resolve) => {
-      const unsubscribe = service.on("settled", (path) => {
-        if (path !== file.path) return;
-        unsubscribe();
-        resolve();
-      });
+      const unsubscribe = subscribe(
+        service.runtime,
+        service.events.pipe(Stream.filter((event) => event.type === "settled")),
+        ({ path }) => {
+          if (path !== file.path) return;
+          unsubscribe();
+          resolve();
+        },
+      );
     });
-    held = service.peek(file.path);
+    held = service.bridge.runSync(service.peek(file.path));
   }
   if (held === null) throw new Error("citation text missing");
   await held.settled;
-  return service.peek(file.path)?.value ?? held.value;
+  return service.bridge.runSync(service.peek(file.path))?.value ?? held.value;
 }
 
 /**
  * A Literature Note for an Item Zotero holds no citation key for, so the
  * derived citekey falls back to the note's own filename.
  */
-function addKeylessNote(
+async function addKeylessNote(
   harness: CitationIndexHarness,
   path: string,
   indexedKey: string,
-): TFile {
+): Promise<TFile> {
   const note = makeFile(path, "");
   harness.metadataCache.files.set(path, note);
   harness.vault.bodies.set(path, "");
-  harness.metadataCache.fileCache.set(path, {
-    frontmatter: { [FIELD_ZOTERO_KEY]: indexedKey },
-  } as CachedMetadata);
-  harness.noteIndex.notes.set(indexedKey, note);
+  harness.metadataCache.setFrontmatter(note, {
+    [FIELD_ZOTERO_KEY]: indexedKey,
+  });
+  await harness.noteIndex.bridge.runPromise(harness.noteIndex.whenSettled);
   return note;
 }
 
 describe("Document Citation Set integration", { timeout: 60_000 }, () => {
-  it("keeps numeric in-text and sidebar assignments aligned across source changes", async () => {
-    await using harness = await createCitationIndexHarness(
-      { "draft.md": BODY },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    const { draft, index, metadataCache, settings } = harness;
-    const fragmentOffset = BODY.indexOf("[[Roe");
-    const fragmentlessOffset = BODY.indexOf("[[Doe");
-    metadataCache.fileCache.set("draft.md", {
-      links: [
-        link("Roe 2025#cite:locator=4", fragmentOffset),
-        link("Doe 2024", fragmentlessOffset),
-      ],
-    } as CachedMetadata);
-    await using engine = await openEngine();
-    await using text = openText(harness, engine, NUMERIC_STYLE);
-    await text.ready;
+  it.effect(
+    "#1693 counts an earlier Annotation Citation in the shared numeric context",
+    () =>
+      Effect.promise(async () => {
+        await using harness = await makeHarness(
+          { "draft.md": `[](${annotationUri}) then @roe2025.` },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
+        );
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, NUMERIC_STYLE);
 
-    const includedSet = await index.getDocumentCitationSet(draft);
-    const includedText = await readText(text, draft);
-    const includedEntries = await sidebarEntries(engine, includedSet.citations);
+        const set = await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
+        const rendered = await readText(text, harness.draft);
+        expect(
+          set.citations.map(({ indexedKey, refNumber }) => [
+            indexedKey,
+            refNumber,
+          ]),
+        ).toEqual([
+          [KEY_A, 1],
+          [KEY_B, 2],
+        ]);
+        expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+        expect(markers(await sidebarEntries(engine, set.citations))).toEqual([
+          "[1]",
+          "[2]",
+        ]);
 
-    expect(includedSet.occurrences.map(({ kind }) => kind)).toEqual([
-      "citekey",
-      "wikilink",
-      "wikilink",
-      "citekey",
-    ]);
-    expect(includedSet.citations[0]?.occurrences).toHaveLength(3);
-    expect(firstText(includedText.formatted.get("@doe2024"))).toBe("[1]");
-    expect(
-      firstText(
-        includedText.formatted.get(
-          citationKey({ source: "[@roe2025, p. 4]", works: [KEY_B] }),
-        ),
-      ),
-    ).toBe("[2]");
-    expect(
-      firstText(
-        includedText.formatted.get(
-          citationKey({ source: "[@doe2024]", works: [KEY_A] }),
-        ),
-      ),
-    ).toBe("[1]");
-    expect(markers(includedEntries)).toEqual(["[1]", "[2]"]);
+        harness.settingsBridge.runSync(
+          harness.settings.update({ "citation.annotation-citations": false }),
+        );
+        expect(
+          firstText(
+            (await readText(text, harness.draft)).formatted.get("@roe2025"),
+          ),
+        ).toBe("[1]");
+        harness.settingsBridge.runSync(
+          harness.settings.update({ "citation.annotation-citations": true }),
+        );
+        expect(
+          firstText(
+            (await readText(text, harness.draft)).formatted.get("@roe2025"),
+          ),
+        ).toBe("[2]");
+      }),
+  );
 
-    settings.update({ "citation.wikilink-citations": false });
-    const excludedSet = await index.getDocumentCitationSet(draft);
-    const excludedText = await readText(text, draft);
-    const excludedEntries = await sidebarEntries(engine, excludedSet.citations);
+  it.effect(
+    "#1678 holds an Annotation Citation's text under its link source",
+    () =>
+      Effect.promise(async () => {
+        const source = `[](${annotationUri})`;
+        await using harness = await makeHarness(
+          { "draft.md": `@roe2025 then ${source}.` },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
+        );
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, NUMERIC_STYLE);
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
 
-    expect(excludedSet.occurrences.map(({ kind }) => kind)).toEqual([
-      "citekey",
-      "citekey",
-    ]);
-    expect(excludedSet.citations[0]?.occurrences).toHaveLength(2);
-    expect(firstText(excludedText.formatted.get("@doe2024"))).toBe("[1]");
-    expect(
-      excludedText.formatted.has(
-        citationKey({ source: "[@roe2025, p. 4]", works: [KEY_B] }),
-      ),
-    ).toBe(false);
-    expect(
-      excludedText.formatted.has(
-        citationKey({ source: "[@doe2024]", works: [KEY_A] }),
-      ),
-    ).toBe(false);
-    expect(markers(excludedEntries)).toEqual(["[1]"]);
-  });
+        const occurrences = (await readText(text, harness.draft)).formatted.get(
+          source,
+        );
+        expect(firstText(occurrences)).toBe("[2]");
+        expect(occurrences?.[0]?.start).toBe("@roe2025 then ".length);
+        expect(occurrences?.[0]?.text.citations.map(({ id }) => id)).toEqual([
+          KEY_A,
+        ]);
+      }),
+  );
+
+  it.effect(
+    "#1693 preserves the Annotation Citation locator for a following ibid",
+    () =>
+      Effect.promise(async () => {
+        await using harness = await makeHarness(
+          { "draft.md": `[](${annotationUri}) then [@doe2024, p. 42]` },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
+        );
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, IBID_STYLE);
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
+
+        const rendered = await readText(text, harness.draft);
+        const second = rendered.formatted.get("[@doe2024, p. 42]")?.[0];
+        expect(second).toBeDefined();
+        expect(inlineText(noteContent(second!.text.content))).toBe("Ibid.");
+      }),
+  );
+
+  it.effect(
+    "#1693 keeps a trimmed wikilink in inline and References numbering",
+    () =>
+      Effect.promise(async () => {
+        await using harness = await makeHarness(
+          { "draft.md": "[[ Doe 2024 ]] then @roe2025" },
+          { settings: { "citation.wikilink-citations": true } },
+        );
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, NUMERIC_STYLE);
+
+        const set = await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
+        const rendered = await readText(text, harness.draft);
+        expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+        expect(markers(await sidebarEntries(engine, set.citations))).toEqual([
+          "[1]",
+          "[2]",
+        ]);
+      }),
+  );
+
+  it.effect(
+    "#1693 renders indexed wikilinks without metadata-cache links",
+    () =>
+      Effect.promise(async () => {
+        await using harness = await makeHarness(
+          { "draft.md": "[[Doe 2024]] then @roe2025." },
+          { settings: { "citation.wikilink-citations": true } },
+        );
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, NUMERIC_STYLE);
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
+        const rendered = await readText(text, harness.draft);
+        expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+        expect(
+          firstText(
+            rendered.formatted.get(
+              citationKey({ source: "[@doe2024]", works: [KEY_A] }),
+            ),
+          ),
+        ).toBe("[1]");
+      }),
+  );
+
+  it.effect(
+    "keeps numeric in-text and sidebar assignments aligned across source changes",
+    () =>
+      Effect.promise(async () => {
+        await using harness = await makeHarness(
+          { "draft.md": BODY },
+          { settings: { "citation.wikilink-citations": true } },
+        );
+        const { draft, index, metadataCache, settings } = harness;
+        const fragmentOffset = BODY.indexOf("[[Roe");
+        const fragmentlessOffset = BODY.indexOf("[[Doe");
+        metadataCache.fileCache.set("draft.md", {
+          links: [
+            link("Roe 2025#cite:locator=4", fragmentOffset),
+            link("Doe 2024", fragmentlessOffset),
+          ],
+        } satisfies CachedMetadata);
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, NUMERIC_STYLE);
+
+        const includedSet = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
+        const includedText = await readText(text, draft);
+        const includedEntries = await sidebarEntries(
+          engine,
+          includedSet.citations,
+        );
+
+        expect(includedSet.occurrences.map(({ kind }) => kind)).toEqual([
+          "citekey",
+          "wikilink",
+          "wikilink",
+          "citekey",
+        ]);
+        expect(includedSet.citations[0]?.occurrences).toHaveLength(3);
+        expect(firstText(includedText.formatted.get("@doe2024"))).toBe("[1]");
+        expect(
+          firstText(
+            includedText.formatted.get(
+              citationKey({ source: "[@roe2025, {p. 4}]", works: [KEY_B] }),
+            ),
+          ),
+        ).toBe("[2]");
+        expect(
+          firstText(
+            includedText.formatted.get(
+              citationKey({ source: "[@doe2024]", works: [KEY_A] }),
+            ),
+          ),
+        ).toBe("[1]");
+        expect(markers(includedEntries)).toEqual(["[1]", "[2]"]);
+
+        settings.bridge!.runSync(
+          settings.update({ "citation.wikilink-citations": false }),
+        );
+        const excludedSet = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
+        const excludedText = await readText(text, draft);
+        const excludedEntries = await sidebarEntries(
+          engine,
+          excludedSet.citations,
+        );
+
+        expect(excludedSet.occurrences.map(({ kind }) => kind)).toEqual([
+          "citekey",
+          "citekey",
+        ]);
+        expect(excludedSet.citations[0]?.occurrences).toHaveLength(2);
+        expect(firstText(excludedText.formatted.get("@doe2024"))).toBe("[1]");
+        expect(
+          excludedText.formatted.has(
+            citationKey({ source: "[@roe2025, {p. 4}]", works: [KEY_B] }),
+          ),
+        ).toBe(false);
+        expect(
+          excludedText.formatted.has(
+            citationKey({ source: "[@doe2024]", works: [KEY_A] }),
+          ),
+        ).toBe(false);
+        expect(markers(excludedEntries)).toEqual(["[1]"]);
+      }),
+  );
 
   // The acceptance scenario of the whole rework: a note-class style shows its
   // citations as Entry Serials inline and its full entries in the sidebar,
   // with the digits inline and in the gutter reading the same.
-  it("shows a note-class style's citations as the serials its sidebar gutter repeats", async () => {
-    const body = "Both [@doe2024; @roe2025], then @roe2025 alone.";
-    await using harness = await createCitationIndexHarness({
-      "draft.md": body,
-    });
-    const { draft, index } = harness;
-    await using engine = await openEngine();
-    await using text = openText(harness, engine, NOTE_STYLE);
-    await text.ready;
+  it.effect(
+    "shows a note-class style's citations as the serials its sidebar gutter repeats",
+    () =>
+      Effect.promise(async () => {
+        const body = "Both [@doe2024; @roe2025], then @roe2025 alone.";
+        await using harness = await makeHarness({
+          "draft.md": body,
+        });
+        const { draft, index } = harness;
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, NOTE_STYLE);
 
-    const set = await index.getDocumentCitationSet(draft);
-    const rendered = await readText(text, draft);
-    const entries = await sidebarEntries(engine, set.citations, NOTE_STYLE);
+        const set = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
+        const rendered = await readText(text, draft);
+        const entries = await sidebarEntries(engine, set.citations, NOTE_STYLE);
 
-    expect(rendered.entrySerials).toBe(true);
-    expect(serialRuns(rendered.formatted.get("[@doe2024; @roe2025]"))).toEqual([
-      "1,2",
-    ]);
-    expect(serialRuns(rendered.formatted.get("@roe2025"))).toEqual(["2"]);
-    // The sidebar shows the same works in the same order, each entry formatted
-    // in full, and its gutter carries the very digits the citations show.
-    expect(
-      entries.map((entry) =>
-        entry.kind === "rendered" ? entry.serial : undefined,
-      ),
-    ).toEqual([1, 2]);
-    expect(
-      entries.map((entry) =>
-        entry.kind === "rendered" ? inlineText(entry.content) : undefined,
-      ),
-    ).toEqual(["Doe. Doe study.", "Roe. Roe study."]);
-  });
+        expect(rendered.entrySerials).toBe(true);
+        expect(
+          serialRuns(rendered.formatted.get("[@doe2024; @roe2025]")),
+        ).toEqual(["1,2"]);
+        expect(serialRuns(rendered.formatted.get("@roe2025"))).toEqual(["2"]);
+        // The sidebar shows the same works in the same order, each entry formatted
+        // in full, and its gutter carries the very digits the citations show.
+        expect(
+          entries.map((entry) =>
+            entry.kind === "rendered" ? entry.serial : undefined,
+          ),
+        ).toEqual([1, 2]);
+        expect(
+          entries.map((entry) =>
+            entry.kind === "rendered" ? inlineText(entry.content) : undefined,
+          ),
+        ).toEqual(["Doe. Doe study.", "Roe. Roe study."]);
+      }),
+  );
 
-  it("keeps resolved items from a partial cluster in numeric context", async () => {
-    const body = "Partial [@doe2024; @ghost], then complete @roe2025.";
-    await using harness = await createCitationIndexHarness({
-      "draft.md": body,
-    });
-    const { draft, index } = harness;
-    await using engine = await openEngine();
-    await using text = openText(harness, engine, NUMERIC_STYLE);
-    await text.ready;
+  it.effect(
+    "#1683 omits masked comments from the CitationText render input",
+    () =>
+      Effect.promise(async () => {
+        const body = "[@a and %% @hidden %%]";
+        const inputs: string[] = [];
+        await using harness = await makeHarness(
+          { "draft.md": body },
+          {
+            citekeys: [
+              {
+                itemID: 1,
+                libraryID: 1,
+                key: "ABCD2345",
+                indexedKey: KEY_A,
+                citekey: "a",
+              },
+            ],
+          },
+        );
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, {
+          xml: AUTHOR_STYLE,
+          observeInput: (citations) => inputs.push(...citations),
+        });
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
+        const rendered = await readText(text, harness.draft);
+        const output = firstText(rendered.formatted.get(body));
+        expect(output).toContain("Zeta");
+        expect(output).not.toContain("hidden");
+        expect(output).not.toContain("%%");
+        expect(inputs).toHaveLength(1);
+        expect(inputs[0]).not.toContain("hidden");
+        expect(inputs[0]).not.toContain("%%");
+      }),
+  );
 
-    const set = await index.getDocumentCitationSet(draft);
-    const rendered = await readText(text, draft);
-    const entries = await sidebarEntries(engine, set.citations);
+  it.effect(
+    "#1683 keeps resolved Items of a partial Author-in-text Citation in numeric context",
+    () =>
+      Effect.promise(async () => {
+        const body = "@doe2024 [p. 3; @ghost], then @roe2025.";
+        await using harness = await makeHarness({
+          "draft.md": body,
+        });
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, NUMERIC_STYLE);
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
+        const rendered = await readText(text, harness.draft);
+        expect(rendered.formatted.has("@doe2024 [p. 3; @ghost]")).toBe(false);
+        expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+      }),
+  );
 
-    expect(rendered.formatted.has("[@doe2024; @ghost]")).toBe(false);
-    expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
-    expect(markers(entries)).toEqual(["[1]", "[2]", undefined]);
-  });
+  it.effect(
+    "keeps resolved items from a partial cluster in numeric context",
+    () =>
+      Effect.promise(async () => {
+        const body = "Partial [@doe2024; @ghost], then complete @roe2025.";
+        await using harness = await makeHarness({
+          "draft.md": body,
+        });
+        const { draft, index } = harness;
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, NUMERIC_STYLE);
+
+        const set = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
+        const rendered = await readText(text, draft);
+        const entries = await sidebarEntries(engine, set.citations);
+
+        expect(rendered.formatted.has("[@doe2024; @ghost]")).toBe(false);
+        expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
+        expect(markers(entries)).toEqual(["[1]", "[2]", undefined]);
+      }),
+  );
 
   // Two keyless Items whose Literature Notes share a filename derive one
   // citekey, so a render keyed by that spelling shows one Item for both.
-  it("renders each work of a filename collision from its own Item", async () => {
-    const body = "First [[folder1/Draft]] then [[folder2/Draft]].";
-    await using harness = await createCitationIndexHarness(
-      { "draft.md": body },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    addKeylessNote(harness, "folder1/Draft.md", KEY_C);
-    addKeylessNote(harness, "folder2/Draft.md", KEY_D);
-    harness.metadataCache.fileCache.set("draft.md", {
-      links: [
-        link("folder1/Draft", body.indexOf("[[folder1")),
-        link("folder2/Draft", body.indexOf("[[folder2")),
-      ],
-    } as CachedMetadata);
-    await using engine = await openEngine();
-    await using text = openText(harness, engine, AUTHOR_STYLE);
-    await text.ready;
+  it.effect("renders each work of a filename collision from its own Item", () =>
+    Effect.promise(async () => {
+      const body = "First [[folder1/Draft]] then [[folder2/Draft]].";
+      await using harness = await makeHarness(
+        { "draft.md": body },
+        { settings: { "citation.wikilink-citations": true } },
+      );
+      await addKeylessNote(harness, "folder1/Draft.md", KEY_C);
+      await addKeylessNote(harness, "folder2/Draft.md", KEY_D);
+      harness.metadataCache.fileCache.set("draft.md", {
+        links: [
+          link("folder1/Draft", body.indexOf("[[folder1")),
+          link("folder2/Draft", body.indexOf("[[folder2")),
+        ],
+      } satisfies CachedMetadata);
+      await using engine = await openEngine();
+      await using text = openText(harness, engine, AUTHOR_STYLE);
 
-    const { formatted } = await readText(text, harness.draft);
+      const { formatted } = await readText(text, harness.draft);
 
-    expect(
-      firstText(
-        formatted.get(citationKey({ source: "[@Draft]", works: [KEY_C] })),
-      ),
-    ).toBe("Cox");
-    expect(
-      firstText(
-        formatted.get(citationKey({ source: "[@Draft]", works: [KEY_D] })),
-      ),
-    ).toBe("Dey");
-  });
+      expect(
+        firstText(
+          formatted.get(citationKey({ source: "[@Draft]", works: [KEY_C] })),
+        ),
+      ).toBe("Cox");
+      expect(
+        firstText(
+          formatted.get(citationKey({ source: "[@Draft]", works: [KEY_D] })),
+        ),
+      ).toBe("Dey");
+    }),
+  );
 
   // One keyless Item with two Literature Notes is spelled two ways, and a
   // numbering style counts one physical source once however it is spelled.
-  it("numbers one work cited under two spellings once", async () => {
-    const body = "First [[Papers/Ess]] then [[Archive/Ess2]].";
-    await using harness = await createCitationIndexHarness(
-      { "draft.md": body },
-      { settings: { "citation.wikilink-citations": true } },
-    );
-    addKeylessNote(harness, "Papers/Ess.md", KEY_E);
-    addKeylessNote(harness, "Archive/Ess2.md", KEY_E);
-    harness.metadataCache.fileCache.set("draft.md", {
-      links: [
-        link("Papers/Ess", body.indexOf("[[Papers")),
-        link("Archive/Ess2", body.indexOf("[[Archive")),
-      ],
-    } as CachedMetadata);
-    await using engine = await openEngine();
-    await using text = openText(harness, engine, NUMERIC_STYLE);
-    await text.ready;
+  it.effect("numbers one work cited under two spellings once", () =>
+    Effect.promise(async () => {
+      const body = "First [[Papers/Ess]] then [[Archive/Ess2]].";
+      await using harness = await makeHarness(
+        { "draft.md": body },
+        { settings: { "citation.wikilink-citations": true } },
+      );
+      await addKeylessNote(harness, "Papers/Ess.md", KEY_E);
+      await addKeylessNote(harness, "Archive/Ess2.md", KEY_E);
+      harness.metadataCache.fileCache.set("draft.md", {
+        links: [
+          link("Papers/Ess", body.indexOf("[[Papers")),
+          link("Archive/Ess2", body.indexOf("[[Archive")),
+        ],
+      } satisfies CachedMetadata);
+      await using engine = await openEngine();
+      await using text = openText(harness, engine, NUMERIC_STYLE);
 
-    const { formatted } = await readText(text, harness.draft);
+      const { formatted } = await readText(text, harness.draft);
 
-    expect(
-      firstText(
-        formatted.get(citationKey({ source: "[@Ess]", works: [KEY_E] })),
-      ),
-    ).toBe("[1]");
-    expect(
-      firstText(
-        formatted.get(citationKey({ source: "[@Ess2]", works: [KEY_E] })),
-      ),
-    ).toBe("[1]");
-  });
+      expect(
+        firstText(
+          formatted.get(citationKey({ source: "[@Ess]", works: [KEY_E] })),
+        ),
+      ).toBe("[1]");
+      expect(
+        firstText(
+          formatted.get(citationKey({ source: "[@Ess2]", works: [KEY_E] })),
+        ),
+      ).toBe("[1]");
+    }),
+  );
 
   // Zotero holds no uniqueness rule for a citation key, so one key can name
   // two Items. The literal spelling then keeps its own identity and adopts
   // neither candidate, while the wikilink names one Item exactly and renders.
-  it("keeps an ambiguous literal key out of CSL while its wikilink still renders", async () => {
-    const body = "@doe2024 then [[Roe 2025]].";
-    await using harness = await createCitationIndexHarness(
-      { "draft.md": body },
-      {
-        settings: { "citation.wikilink-citations": true },
-        citekeys: [
+  it.effect(
+    "keeps an ambiguous literal key out of CSL while its wikilink still renders",
+    () =>
+      Effect.promise(async () => {
+        const body = "@doe2024 then [[Roe 2025]].";
+        await using harness = await makeHarness(
+          { "draft.md": body },
           {
-            itemID: 1,
-            libraryID: MY_LIBRARY_ID,
-            key: "DOE2024",
-            indexedKey: KEY_A,
-            citekey: "doe2024",
+            settings: { "citation.wikilink-citations": true },
+            citekeys: [
+              {
+                itemID: 1,
+                libraryID: MY_LIBRARY_ID,
+                key: "DOE2024",
+                indexedKey: KEY_A,
+                citekey: "doe2024",
+              },
+              {
+                itemID: 2,
+                libraryID: GROUP_LIBRARY_ID,
+                key: "ZZZ99999",
+                indexedKey: KEY_B,
+                citekey: "doe2024",
+              },
+            ],
           },
+        );
+        harness.metadataCache.fileCache.set("draft.md", {
+          links: [link("Roe 2025", body.indexOf("[["))],
+        } satisfies CachedMetadata);
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, AUTHOR_STYLE);
+
+        // The first scan of a document announces itself, which drops a citation
+        // text read that raced it; the surfaces answer that by asking again.
+        const set = await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
+        const { formatted } = await readText(text, harness.draft);
+
+        expect(set.citations).toMatchObject([
           {
-            itemID: 2,
-            libraryID: MY_LIBRARY_ID,
-            key: "ROE2025",
-            indexedKey: KEY_B,
-            citekey: "doe2024",
+            indexedKey: null,
+            occurrences: [{ kind: "citekey", raw: "doe2024" }],
           },
-        ],
-      },
-    );
-    harness.metadataCache.fileCache.set("draft.md", {
-      links: [link("Roe 2025", body.indexOf("[["))],
-    } as CachedMetadata);
-    await using engine = await openEngine();
-    await using text = openText(harness, engine, AUTHOR_STYLE);
-    await text.ready;
-
-    // The first scan of a document announces itself, which drops a citation
-    // text read that raced it; the surfaces answer that by asking again.
-    const set = await harness.index.getDocumentCitationSet(harness.draft);
-    const { formatted } = await readText(text, harness.draft);
-
-    expect(set.citations).toMatchObject([
-      { indexedKey: null, occurrences: [{ kind: "citekey", raw: "doe2024" }] },
-      { indexedKey: KEY_B, occurrences: [{ kind: "wikilink" }] },
-    ]);
-    expect(formatted.get("@doe2024")).toBeUndefined();
-    expect(
-      firstText(
-        formatted.get(citationKey({ source: "[@doe2024]", works: [KEY_B] })),
-      ),
-    ).toBe("Roe");
-  });
+          { indexedKey: KEY_B, occurrences: [{ kind: "wikilink" }] },
+        ]);
+        expect(formatted.get("@doe2024")).toBeUndefined();
+        expect(
+          firstText(
+            formatted.get(
+              citationKey({ source: "[@doe2024]", works: [KEY_B] }),
+            ),
+          ),
+        ).toBe("Roe");
+      }),
+  );
 });
 
 /** One CitationText over a harness, formatting through the real engine. */
 function openText(
-  { app, db, index, noteIndex }: CitationIndexHarness,
+  { host, index, lookup, noteIndex, queryClient }: CitationIndexHarness,
   engine: CitationEngine,
-  styleXml: string,
+  style:
+    | string
+    | { xml: string; observeInput: (citations: readonly string[]) => void },
 ): CitationText {
-  return new CitationText({
-    app,
-    db,
+  const { xml: styleXml, observeInput } =
+    typeof style === "string" ? { xml: style, observeInput: undefined } : style;
+  return citationTextFixture({
+    openDocuments: new OpenDocumentsStub(),
+    profile: profileReader(),
+    host,
     citationIndex: index,
+    citationLookup: lookup,
     noteIndex,
     bibliographyRender: {
-      vaultPresentation: { styleId: null, locale: null },
-      renderCitations: async (citations, items) => {
-        const value = await engine.renderCitations({
-          citations,
-          items,
-          styleXml,
-        });
-        return {
-          kind: "held",
-          key: "integration-citations",
-          record: {
-            value,
-            status: "fresh",
-            settled: Promise.resolve(value),
+      state: Effect.succeed({
+        vaultPresentation: { styleId: null, locale: null },
+        missingStyle: null,
+      }),
+      readCitations: (citations, items) =>
+        Effect.tryPromise({
+          try: async () => {
+            observeInput?.(citations);
+            return engine.renderCitations({ citations, items, styleXml });
           },
-        };
-      },
-      render: async (items) => {
-        const entries = await engine.renderBibliography({ items, styleXml });
-        const value = {
-          entries,
-          hasEntryMarkers: entries.some(({ marker }) => marker !== undefined),
-        };
-        return {
-          kind: "held",
-          key: "integration-render",
-          record: {
-            value,
-            status: "fresh",
-            settled: Promise.resolve(value),
+          catch: renderFailure,
+        }),
+      readBibliography: (items) =>
+        Effect.tryPromise({
+          try: async () => {
+            const entries = await engine.renderBibliography({
+              items,
+              styleXml,
+            });
+            return {
+              entries,
+              hasEntryMarkers: entries.some(
+                ({ marker }) => marker !== undefined,
+              ),
+            };
           },
-        };
-      },
-      on: () => () => undefined,
+          catch: renderFailure,
+        }),
+      events: Stream.empty,
     },
+    queryClient,
   });
 }
 
@@ -505,17 +802,27 @@ async function sidebarEntries(
     items,
     styleXml,
   });
-  return buildReferenceEntries(citations, sources, {
-    bibliography: {
-      complete: true,
-      entries: new Map(
-        bibliography.map(({ id, marker, content }) => [
-          id,
-          { marker, content },
-        ]),
-      ),
+  return buildReferenceEntries(
+    citations.map((c) => ({
+      ...c,
+      outcome: citationOutcome(c, {
+        sources,
+        presentKeys: new Set(sources.keys()),
+        database: "ready",
+      }),
+    })),
+    {
+      bibliography: {
+        complete: true,
+        entries: new Map(
+          bibliography.map(({ id, marker, content }) => [
+            id,
+            { marker, content },
+          ]),
+        ),
+      },
     },
-  });
+  );
 }
 
 function referenceSources(): ReadonlyMap<string, ReferenceSource> {
@@ -532,6 +839,7 @@ function referenceSources(): ReadonlyMap<string, ReferenceSource> {
       issued: { "date-parts": [[2020 + itemID]] },
     },
     summary: `${family} (${2020 + itemID})`,
+    citationSummary: `${family} (${2020 + itemID})`,
     itemKey: id,
     itemID,
     groupID: null,
@@ -541,7 +849,7 @@ function referenceSources(): ReadonlyMap<string, ReferenceSource> {
   });
   return new Map([
     [KEY_A, source("doe2024", 1, "Doe")],
-    [KEY_B, source("roe2025", 2, "Roe")],
+    [KEY_B, { ...source("roe2025", 2, "Roe"), groupID: 7 }],
   ]);
 }
 

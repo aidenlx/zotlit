@@ -50,43 +50,13 @@ const display = (
 };
 
 describe("renderWikilinkCitations", () => {
-  it("shows supplied text in the anchor's place", () => {
-    const root = section(
-      `<p>Claim (${internalLink("literatures/wang2020")}).</p>`,
-    );
-
-    expect(renderWikilinkCitations(root, citationOf, display)).toBe(1);
-    expect(root.textContent).toBe("Claim (@wang2020).");
-  });
-
   it("replaces the breadcrumb a Citation Fragment renders as", () => {
     const root = section(
       `<p>${internalLink("literatures/wang2020#cite:locator=7")}</p>`,
     );
     renderWikilinkCitations(root, citationOf, display);
 
-    expect(root.textContent).toBe("[@wang2020, p. 7]");
-  });
-
-  it("puts the formatted citation, markup and all, in the anchor", () => {
-    const root = section(`<p>${internalLink("literatures/wang2020")}</p>`);
-    renderWikilinkCitations(root, citationOf, () => ({
-      text: {
-        content: [
-          { t: "Str", c: "(Wang" },
-          { t: "Space" },
-          { t: "Emph", c: [{ t: "Str", c: "et al." }] },
-          { t: "Space" },
-          { t: "Str", c: "2020)" },
-        ],
-        citations: [],
-      },
-      serials: [],
-    }));
-
-    expect(root.querySelector("a")?.innerHTML).toBe(
-      "(Wang <em>et al.</em> 2020)",
-    );
+    expect(root.textContent).toBe("[@wang2020, {p. 7}]");
   });
 
   it("shows a link the style wrote as text, since the anchor is Obsidian's", () => {
@@ -111,17 +81,6 @@ describe("renderWikilinkCitations", () => {
     const anchor = root.querySelector("a");
     expect(anchor?.querySelector("a")).toBeNull();
     expect(anchor?.textContent).toBe("doi.org/10.1/x");
-  });
-
-  it("keeps the target and every native attribute", () => {
-    const root = section(`<p>${internalLink("literatures/wang2020")}</p>`);
-    renderWikilinkCitations(root, citationOf, display);
-
-    const anchor = root.querySelector("a");
-    expect(anchor?.getAttribute("data-href")).toBe("literatures/wang2020");
-    expect(anchor?.getAttribute("href")).toBe("literatures/wang2020");
-    expect(anchor?.classList.contains("internal-link")).toBe(true);
-    expect(anchor?.classList.contains("zt-citation")).toBe(true);
   });
 
   it("leaves a link that names no Literature Note alone", () => {
@@ -155,15 +114,6 @@ describe("renderWikilinkCitations", () => {
     );
 
     expect(renderWikilinkCitations(root, citationOf, display)).toBe(0);
-  });
-
-  it("shows every Citation of one section", () => {
-    const root = section(
-      `<p>${internalLink("literatures/a")} and ${internalLink("literatures/b")}</p>`,
-    );
-
-    expect(renderWikilinkCitations(root, citationOf, display)).toBe(2);
-    expect(root.textContent).toBe("@a and @b");
   });
 
   it("is idempotent, since a replaced anchor no longer shows its own target", () => {

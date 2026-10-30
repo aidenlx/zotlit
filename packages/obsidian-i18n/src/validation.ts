@@ -6,6 +6,7 @@ import type { LanguagePack } from "./language-pack.js";
 export { isSupportedLanguagePackFormatter } from "./language-pack.js";
 
 /** Pack schema this plugin build reads; packs declaring anything else are rejected. */
+// Persisted version: packages/scripts/lib/format-versions.ts.
 export const LANGUAGE_PACK_SCHEMA_VERSION = 1;
 
 /**
@@ -29,7 +30,8 @@ export class LanguagePackSchemaVersionError extends Error {
 
 export const LANGUAGE_PACK_LIMITS = {
   bytes: 256 * 1024,
-  messages: 1_000,
+  // Sanity bound on entry count; the byte cap above is the size guard.
+  messages: 4_000,
   textLength: 10_000,
   depth: 16,
 } as const;

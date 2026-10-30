@@ -1,5 +1,6 @@
 // Pure branch decision for the once-per-launch release check.
 
+import eq from "semver/functions/eq";
 import gt from "semver/functions/gt";
 import gte from "semver/functions/gte";
 import lt from "semver/functions/lt";
@@ -15,7 +16,7 @@ export type ReleaseBranch =
   | "companion-notice"
   | "welcome-upgraded"
   | "welcome-fresh"
-  | "update-notice"
+  | "update"
   | "none";
 
 export interface ReleaseCheckInput {
@@ -58,6 +59,14 @@ export interface ReleaseDecision {
    * place; the service performs the write.
    */
   setTemplateFolder?: string;
+  /**
+   * Set `release.update-pending` when present: `true` when this launch is an
+   * update the banner announces, `false` when the running version is not one
+   * (a downgrade, an update with notices off or announced by the Companion
+   * notice, or a prior version unknown). A relaunch on the same version leaves
+   * an update not yet seen pending.
+   */
+  setUpdatePending?: boolean;
 }
 
 /**
@@ -115,7 +124,12 @@ export function decideRelease(input: ReleaseCheckInput): ReleaseDecision {
   // silently. The prior version is unknown, so an upgrade can't be told from a
   // reinstall — never notify.
   if (recordedVersion === null || valid(recordedVersion) === null) {
-    return { branch: "none", recordVersion, setMigrationPending };
+    return {
+      branch: "none",
+      recordVersion,
+      setMigrationPending,
+      setUpdatePending: false,
+    };
   }
 
   if (
@@ -126,14 +140,26 @@ export function decideRelease(input: ReleaseCheckInput): ReleaseDecision {
       branch: "companion-notice",
       recordVersion,
       setMigrationPending,
+      setUpdatePending: false,
     };
   }
 
   // A strict semver increase over the recorded version is the only update
   // trigger; equal versions, downgrades, and reinstalls stay silent.
   if (gt(currentVersion, recordedVersion) && noticesEnabled) {
-    return { branch: "update-notice", recordVersion, setMigrationPending };
+    return {
+      branch: "update",
+      recordVersion,
+      setMigrationPending,
+      setUpdatePending: true,
+    };
   }
 
-  return { branch: "none", recordVersion, setMigrationPending };
+  return {
+    branch: "none",
+    recordVersion,
+    setMigrationPending,
+    // The same version keeps an update not yet seen; any other is no update.
+    setUpdatePending: eq(currentVersion, recordedVersion) ? undefined : false,
+  };
 }

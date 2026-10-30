@@ -1,7 +1,21 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "globalDependencies": ["mise.toml"],
-  "globalEnv": ["ZOTLIT_TOOLCHAIN"],
+  "cacheMaxAge": "7d",
+  "cacheMaxSize": "10GB",
+  "globalPassThroughEnv": [
+    "AI_AGENT",
+    "CLAUDE_CODE",
+    "CLAUDECODE",
+    "CODEX_SANDBOX",
+    "CODEX_THREAD_ID",
+    "ZOTLIT_DESKTOP_DIR",
+    "ZOTLIT_DESKTOP_LEASE",
+    "ZOTLIT_DESKTOP_SLOT",
+    "ZOTLIT_DESKTOP_SLOTS",
+    "ZOTLIT_DESKTOP_WAIT",
+    "ZOTLIT_MEMORY_GATE",
+    "ZOTLIT_MEMORY_GATE_ADMITTED"
+  ],
   "tasks": {
     "transit": {
       "dependsOn": ["^transit"]
@@ -9,7 +23,8 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
-      "outputLogs": "errors-only"
+      "outputLogs": "errors-only",
+      "env": ["DOCS_SITE_URL"]
     },
     "build:dev": {
       "dependsOn": ["^build"],
@@ -26,8 +41,32 @@
     "typecheck:test": {
       "dependsOn": ["^build", "transit"]
     },
-    "test": {
+    "typecheck:node": {
       "dependsOn": ["^build", "transit"]
+    },
+    "test": {
+      "dependsOn": ["^build", "transit"],
+      "env": ["GITHUB_ACTIONS"]
+    },
+    "@zotlit/obsidian#generate:language-packs": {
+      "cache": false,
+      "outputLogs": "errors-only"
+    },
+    "@zotlit/obsidian#typecheck": {
+      "dependsOn": ["^build", "transit", "generate:language-packs"]
+    },
+    "@zotlit/obsidian#typecheck:test": {
+      "dependsOn": ["^build", "transit", "generate:language-packs"]
+    },
+    "@zotlit/obsidian#typecheck:node": {
+      "dependsOn": ["^build", "transit", "generate:language-packs"]
+    },
+    "@zotlit/e2e#typecheck": {
+      "dependsOn": [
+        "^build",
+        "transit",
+        "@zotlit/obsidian#generate:language-packs"
+      ]
     },
     "fixture": {
       "dependsOn": [
@@ -36,7 +75,7 @@
         "@zotlit/zotero#build:dev"
       ],
       "cache": false,
-      "passThroughEnv": ["ZT_HOST_VAULT", "ZOTERO_APP"]
+      "passThroughEnv": ["ZT_HOST_VAULT", "ZOTERO_APP", "ZT_VAULT_CASE"]
     },
     "e2e": {
       "dependsOn": [
@@ -46,31 +85,37 @@
       ],
       "cache": false
     },
+    "lint:deps": {
+      "dependsOn": ["^build"]
+    },
     "//#lint:repo:deps": {
       "dependsOn": [
-        "@zotlit/db#build",
-        "@zotlit/item-lookup#build",
+        "^lint:deps",
         "@zotlit/obsidian#generate:language-packs",
-        "@zotlit/protocol#build",
-        "@zotlit/shared#build",
-        "@zotlit/templates#build",
-        "@zotlit/zotero-types#build",
-        "@zotlit/docs#codegen",
+        "@zotlit/docs#generate:messages",
         "@zotlit/docs#cf-typegen:check"
       ]
     },
     "//#lint:repo": {
       "dependsOn": ["//#lint:repo:deps"]
     },
+    "//#lint:format-versions": {
+      "cache": false
+    },
+    "//#lint:test-gates": {
+      "cache": false
+    },
+    "//#lint:messages": {
+      "cache": false
+    },
+    "//#lint:unused": {
+      "dependsOn": ["//#lint:repo:deps"],
+      "cache": false
+    },
     "//#review:plugin:deps": {
       "dependsOn": [
-        "@zotlit/db#build",
-        "@zotlit/item-lookup#build",
-        "@zotlit/obsidian#generate:language-packs",
-        "@zotlit/protocol#build",
-        "@zotlit/shared#build",
-        "@zotlit/templates#build",
-        "@zotlit/zotero-types#build"
+        "@zotlit/obsidian#lint:deps",
+        "@zotlit/obsidian#generate:language-packs"
       ]
     },
     "//#review:plugin": {

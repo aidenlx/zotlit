@@ -1,6 +1,7 @@
 // The rendered Cited By Sidebar list.
-import { prepareSimpleSearch } from "obsidian";
-import { useEffect, useRef, useState } from "react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Keymap, prepareSimpleSearch } from "obsidian";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -9,24 +10,45 @@ import { SearchInput } from "@/components/obsidian/search-input";
 import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
+import { activeCitedByAtom } from "@/services/citation-index/atoms";
 import type {
   CitationOccurrence,
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
+import { activeNoteAtom } from "@/services/note-index/atoms";
+import { showInLibraryCommand } from "@/views/library/atoms";
 
-import { useCitedByActions } from "./actions";
+import {
+  activePreviewsAtom,
+  activeSourceFactsAtom,
+  openOccurrenceCommand,
+  openSourceCommand,
+  previewAtom,
+} from "./atoms";
+import { showSortMenu } from "./menus";
+import {
+  collapseAll,
+  expandAll,
+  expandExcerpt,
+  toggleGroup,
+  toggleSearch,
+  useCitedByModel,
+} from "./model";
 import {
   contextParts,
+  EMPTY_CITED_BY_SNAPSHOT,
   excerptKey,
   noteName,
   occurrenceID,
-  useCitedByStore,
+  previewContexts,
+  sortCitedByGroups,
 } from "./store";
 import type {
   CitedByPreview,
   ExpandDirection,
   OccurrenceContext,
+  ReadyPreview,
   SourceRange,
 } from "./store";
 
@@ -37,28 +59,21 @@ export const SEARCH_DEBOUNCE = 300;
 const ELLIPSIS = "…";
 
 export function CitedBy() {
-  const state = useCitedByStore((current) => current);
-  const actions = useCitedByActions();
-  const {
-    indexedKey,
-    snapshot,
-    search,
-    searchVisible,
-    moreContext,
-    sort,
-    previews,
-    expansions,
-    activePath,
-  } = state;
-  useEffect(() => {
-    actions.loadPreviews(snapshot.groups);
-    return () => actions.loadPreviews([]);
-  }, [actions, snapshot]);
+  const model = useCitedByModel();
+  const { key: indexedKey, path: activePath } = useAtomValue(activeNoteAtom);
+  const snapshot = useAtomValue(activeCitedByAtom) ?? EMPTY_CITED_BY_SNAPSHOT;
+  const { search, searchVisible, moreContext, sort } = useAtomValue(
+    model.layout,
+  );
+  const { expansions } = useAtomValue(model.note);
+  const previews = useAtomValue(activePreviewsAtom);
+  const facts = useAtomValue(activeSourceFactsAtom);
   const { groups, coverage, resolution } = snapshot;
   const statuses = citedByStatuses(coverage, resolution);
-  const visibleGroups = actions.sortGroups(
+  const visibleGroups = sortCitedByGroups(
     filterGroups(groups, { search, previews, moreContext, expansions }),
     sort,
+    (path) => facts[path] ?? null,
   );
   const duplicateNames = duplicateNoteNames(groups);
   const occurrenceCount = visibleGroups.reduce(
@@ -167,10 +182,22 @@ function Toolbar({
   occurrenceCount: number;
   paths: readonly string[];
 }) {
-  const actions = useCitedByActions();
-  const collapsed = useCitedByStore((state) => state.collapsed);
-  const searchVisible = useCitedByStore((state) => state.searchVisible);
-  const moreContext = useCitedByStore((state) => state.moreContext);
+  const model = useCitedByModel();
+  const setLayout = useAtomSet(model.layout);
+  const setNote = useAtomSet(model.note);
+  const sort = useAtomValue(model.layout, (layout) => layout.sort);
+  const target = useAtomValue(activeNoteAtom, (note) => note.key);
+  const hasTarget = target !== null;
+  const showInLibrary = useAtomSet(showInLibraryCommand);
+  const collapsed = useAtomValue(model.note, (note) => note.collapsed);
+  const searchVisible = useAtomValue(
+    model.layout,
+    (layout) => layout.searchVisible,
+  );
+  const moreContext = useAtomValue(
+    model.layout,
+    (layout) => layout.moreContext,
+  );
   const allCollapsed =
     paths.length > 0 && paths.every((path) => collapsed.includes(path));
 
@@ -187,7 +214,7 @@ function Toolbar({
           data-cited-by-collapse-results
           {...tooltipAttrs(m.cited_by_collapse_results())}
           onClick={() =>
-            allCollapsed ? actions.expandAll(paths) : actions.collapseAll(paths)
+            setNote(allCollapsed ? expandAll(paths) : collapseAll(paths))
           }
         />
         <IconButton
@@ -195,38 +222,62 @@ function Toolbar({
           active={moreContext}
           data-cited-by-show-more-context
           {...tooltipAttrs(m.cited_by_show_more_context())}
-          onClick={actions.toggleMoreContext}
+          onClick={() =>
+            setLayout((layout) => ({
+              ...layout,
+              moreContext: !layout.moreContext,
+            }))
+          }
         />
         <IconButton
           icon="sort-asc"
           data-cited-by-sort
           {...tooltipAttrs(m.cited_by_change_sort_order())}
-          onClick={actions.showSortMenu}
+          onClick={(event) =>
+            showSortMenu(event.currentTarget, {
+              current: sort,
+              select: (mode) =>
+                setLayout((layout) => ({ ...layout, sort: mode })),
+            })
+          }
         />
         <IconButton
           icon="search"
           active={searchVisible}
           data-cited-by-show-search
           {...tooltipAttrs(m.cited_by_show_search_filter())}
-          onClick={actions.toggleSearch}
+          onClick={() => setLayout(toggleSearch)}
         />
+        {target !== null && (
+          <IconButton
+            icon="library"
+            data-cited-by-show-in-library
+            {...tooltipAttrs(m.library_view_show_in_library())}
+            onClick={() => showInLibrary(target)}
+          />
+        )}
       </SidebarToolbar.Actions>
-      <span
-        className="zt:w-full zt:min-w-0 zt:truncate zt:pt-1 zt:text-end zt:text-xs zt:text-faint zt:tabular-nums zt:@3xs:w-auto zt:@3xs:ps-1 zt:@3xs:pt-0"
-        data-cited-by-stats
-      >
-        {m.cited_by_note_count({ count: paths.length })}
-        {" · "}
-        {m.cited_by_occurrence_count({ count: occurrenceCount })}
-      </span>
+      {hasTarget && (
+        <span
+          className="zt:w-full zt:min-w-0 zt:truncate zt:pt-1 zt:text-end zt:text-xs zt:text-faint zt:tabular-nums zt:@3xs:w-auto zt:@3xs:ps-1 zt:@3xs:pt-0"
+          data-cited-by-stats
+        >
+          {m.cited_by_note_count({ count: paths.length })}
+          {" · "}
+          {m.cited_by_occurrence_count({ count: occurrenceCount })}
+        </span>
+      )}
     </SidebarToolbar>
   );
 }
 
 /** The hidden-by-default query field: focused on open, debounced on input. */
 function SearchFilter() {
-  const actions = useCitedByActions();
-  const search = useCitedByStore((state) => state.search);
+  const setLayout = useAtomSet(useCitedByModel().layout);
+  const search = useAtomValue(
+    useCitedByModel().layout,
+    (layout) => layout.search,
+  );
   const [text, setText] = useState(search);
   const field = useRef<HTMLDivElement>(null);
 
@@ -236,11 +287,11 @@ function SearchFilter() {
   useEffect(() => {
     if (text === search) return;
     const timer = window.setTimeout(
-      () => actions.setSearch(text),
+      () => setLayout((layout) => ({ ...layout, search: text })),
       SEARCH_DEBOUNCE,
     );
     return () => window.clearTimeout(timer);
-  }, [actions, search, text]);
+  }, [search, setLayout, text]);
 
   return (
     <div className="zt:mx-3 zt:mt-1 zt:mb-2" data-cited-by-search ref={field}>
@@ -329,11 +380,19 @@ function CitedBySource({
   group: CitedByGroup;
   label: string;
 }) {
-  const actions = useCitedByActions();
-  const collapsed = useCitedByStore((state) =>
-    state.collapsed.includes(group.path),
+  const setNote = useAtomSet(useCitedByModel().note);
+  const openSource = useAtomSet(openSourceCommand);
+  const collapsed = useAtomValue(useCitedByModel().note, (note) =>
+    note.collapsed.includes(group.path),
   );
-  const preview = useCitedByStore((state) => state.previews[group.path]);
+  const preview = useAtomValue(previewAtom(group.path));
+  const contexts = useMemo(
+    () =>
+      preview.status === "ready"
+        ? previewContexts(preview, group.occurrences)
+        : {},
+    [preview, group.occurrences],
+  );
 
   return (
     <li className="zt:break-words" data-cited-by-result>
@@ -357,7 +416,7 @@ function CitedBySource({
               ? m.cited_by_expand_source()
               : m.cited_by_collapse_source(),
           )}
-          onClick={() => actions.toggleGroup(group.path)}
+          onClick={() => setNote(toggleGroup(group.path))}
           onKeyDown={activateWithKeyboard}
         />
         <div
@@ -391,7 +450,12 @@ function CitedBySource({
           role="button"
           tabIndex={0}
           {...tooltipAttrs(m.cited_by_open_source())}
-          onClick={(event) => actions.openSource(group.path, event)}
+          onClick={(event) =>
+            openSource({
+              path: group.path,
+              newLeaf: Keymap.isModEvent(event.nativeEvent),
+            })
+          }
           onKeyDown={activateWithKeyboard}
         >
           <Icon name="arrow-up-right" size={14} />
@@ -402,15 +466,15 @@ function CitedBySource({
           className="zt:mt-1 zt:mb-2 zt:overflow-hidden zt:rounded-(--radius-s) zt:bg-(--search-result-background) zt:text-xs zt:leading-(--line-height-tight) zt:text-(--text-muted) zt:shadow-[0_0_0_var(--border-width)_var(--background-modifier-border)] zt:empty:hidden"
           data-cited-by-cards
         >
-          {preview?.status === "unavailable" && (
+          {preview.status === "unavailable" && (
             <li className="zt:flex zt:gap-2 zt:px-3 zt:py-2 zt:text-(--text-error)">
               <span aria-hidden>⚠</span>
               <span>{m.cited_by_preview_unavailable()}</span>
             </li>
           )}
-          {preview?.status === "ready" &&
+          {preview.status === "ready" &&
             group.occurrences.map((occurrence) => {
-              const context = preview.contexts[occurrenceID(occurrence)];
+              const context = contexts[occurrenceID(occurrence)];
               if (!context) return null;
               return (
                 <OccurrenceCard
@@ -418,7 +482,7 @@ function CitedBySource({
                   group={group}
                   key={occurrenceID(occurrence)}
                   occurrence={occurrence}
-                  source={preview.source}
+                  preview={preview}
                 />
               );
             })}
@@ -437,21 +501,26 @@ function OccurrenceCard({
   context,
   group,
   occurrence,
-  source,
+  preview,
 }: {
   context: OccurrenceContext;
   group: CitedByGroup;
   occurrence: CitationOccurrence;
-  source: string;
+  preview: ReadyPreview;
 }) {
-  const actions = useCitedByActions();
-  const moreContext = useCitedByStore((state) => state.moreContext);
-  const expansion = useCitedByStore(
-    (state) => state.expansions[excerptKey(group.path, occurrence)],
+  const openOccurrence = useAtomSet(openOccurrenceCommand);
+  const model = useCitedByModel();
+  const moreContext = useAtomValue(
+    model.layout,
+    (layout) => layout.moreContext,
+  );
+  const expansion = useAtomValue(
+    model.note,
+    (note) => note.expansions[excerptKey(group.path, occurrence)],
   );
   const excerpt =
     context.status === "ready"
-      ? contextParts(source, context, { moreContext, expansion })
+      ? contextParts(preview.source, context, { moreContext, expansion })
       : null;
 
   return (
@@ -466,7 +535,13 @@ function OccurrenceCard({
       role="button"
       tabIndex={0}
       data-occurrence={occurrenceID(occurrence)}
-      onClick={(event) => actions.openOccurrence(group, occurrence, event)}
+      onClick={(event) =>
+        openOccurrence({
+          group,
+          occurrence,
+          newLeaf: Keymap.isModEvent(event.nativeEvent),
+        })
+      }
       onKeyDown={activateWithKeyboard}
     >
       {excerpt ? (
@@ -476,6 +551,7 @@ function OccurrenceCard({
               direction="before"
               group={group}
               occurrence={occurrence}
+              preview={preview}
             />
           )}
           {excerpt.ellipsisBefore && ELLIPSIS}
@@ -490,6 +566,7 @@ function OccurrenceCard({
               direction="after"
               group={group}
               occurrence={occurrence}
+              preview={preview}
             />
           )}
         </>
@@ -514,12 +591,19 @@ function ExpandContext({
   direction,
   group,
   occurrence,
+  preview,
 }: {
   direction: ExpandDirection;
   group: CitedByGroup;
   occurrence: CitationOccurrence;
+  preview: ReadyPreview;
 }) {
-  const actions = useCitedByActions();
+  const model = useCitedByModel();
+  const setNote = useAtomSet(model.note);
+  const moreContext = useAtomValue(
+    model.layout,
+    (layout) => layout.moreContext,
+  );
   const before = direction === "before";
 
   return (
@@ -542,7 +626,9 @@ function ExpandContext({
       )}
       onClick={(event) => {
         event.stopPropagation();
-        actions.expandExcerpt({ group, occurrence, direction });
+        setNote(
+          expandExcerpt({ preview, moreContext, group, occurrence, direction }),
+        );
       }}
       onKeyDown={activateNestedWithKeyboard}
     >
@@ -590,8 +676,9 @@ function filterGroups(
     }
     const preview = options.previews[group.path];
     if (preview?.status !== "ready") continue;
+    const contexts = previewContexts(preview, group.occurrences);
     const occurrences = group.occurrences.filter((occurrence) => {
-      const context = preview.contexts[occurrenceID(occurrence)];
+      const context = contexts[occurrenceID(occurrence)];
       if (context?.status !== "ready") return false;
       const { before, token, after } = contextParts(preview.source, context, {
         moreContext: options.moreContext,

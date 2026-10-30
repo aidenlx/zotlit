@@ -1,53 +1,307 @@
-import type { Plugin } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import { FileSystem, PlatformError } from "effect";
+import "@mock/dom-parser";
+import { Effect } from "effect";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { TFile } from "obsidian";
+import type { App, FileSystemAdapter, MetadataCache, Vault } from "obsidian";
+import { describe, expect, vi } from "vitest";
 
-import { PANDOC_FILES_COMMAND, PANDOC_GUIDE_COMMAND } from "./integration";
-import { CSL_COMMAND, registerPandocResolve } from "./register";
+import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ProfileReader } from "@/services/profile/service";
+import { defaults } from "@/services/settings/schema";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
-describe("Pandoc CLI registration", () => {
-  it("publishes parameter-free integration commands with command help", () => {
-    const registerCliHandler = vi.fn();
-    const plugin = {
-      manifest: { version: "2.0.1-test" },
-      registerCliHandler,
-    } as unknown as Plugin;
+import { runFileEffect } from "./__fixtures__/file-effects";
+import type { CslResponse } from "./csl";
+import {
+  CSL_COMMAND,
+  registerPandocResolve,
+  RESOLVE_COMMAND,
+} from "./register";
+import type { PandocResolveDeps } from "./register";
+import type { ResolveResponse } from "./resolve";
 
-    registerPandocResolve(plugin, {} as never);
+const APA = "http://www.zotero.org/styles/apa";
 
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      PANDOC_FILES_COMMAND,
-      "Return the version-matched ZotLit Pandoc integration pair",
-      null,
-      expect.any(Function),
-    );
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      PANDOC_GUIDE_COMMAND,
-      "Print the ZotLit Pandoc CLI guide",
-      null,
-      expect.any(Function),
-    );
+/** The Profile service, answering from a fixture reader. */
+const effectProfile = (reader: ProfileReader) => ({
+  ...stubService<PandocResolveDeps["profile"]>("Profile", {
+    loaded: Effect.sync(() => reader.loaded),
+    profileOf: (file?: Parameters<ProfileReader["profileOf"]>[0]) =>
+      Effect.sync(() => reader.profileOf(file)),
+  }),
+});
+const UNINSTALLED = "http://www.zotero.org/styles/uninstalled";
+const NOTE_PATH = "/vault/draft.md";
+
+/** One vault whose `zotlit:csl` handler answers for one note, over real style files. */
+async function cslVault({
+  note,
+  vaultStyle,
+  refuseWrites = false,
+}: {
+  note: Record<string, unknown>;
+  vaultStyle: string | null;
+  refuseWrites?: boolean;
+}) {
+  await using stack = new AsyncDisposableStack();
+  const root = stack.adopt(
+    await mkdtemp(join(tmpdir(), "zotlit-csl-handler-")),
+    (dir) => rm(dir, { recursive: true, force: true }),
+  );
+  const dataDir = join(root, "zotero");
+  await mkdir(join(dataDir, "styles"), { recursive: true });
+  await writeFile(
+    join(dataDir, "styles", "apa.csl"),
+    [
+      '<?xml version="1.0" encoding="utf-8"?>',
+      '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">',
+      `  <info><title>APA Style 7th edition</title><id>${APA}</id></info>`,
+      '  <bibliography><layout><text value="apa"/></layout></bibliography>',
+      "</style>",
+    ].join("\n"),
+  );
+  // The materialized style lands under the temporary root, not the device store.
+  vi.stubEnv("TMPDIR", root);
+  stack.defer(() => {
+    vi.unstubAllEnvs();
   });
 
-  it("publishes zotlit:csl with a required style flag", () => {
-    const registerCliHandler = vi.fn();
-    const plugin = {
-      manifest: { version: "2.0.1-test" },
-      registerCliHandler,
-    } as unknown as Plugin;
-
-    registerPandocResolve(plugin, {} as never);
-
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      CSL_COMMAND,
-      expect.any(String),
-      {
-        style: {
-          value: "<csl-id>",
-          description: "CSL ID of the Zotero-installed style",
-          required: true,
-        },
+  const file = new TFile();
+  file.path = "draft.md";
+  const metadataCache = stubService<MetadataCache>("MetadataCache", {
+    getFileCache: () => ({ frontmatter: note }),
+  });
+  const settings = {
+    ...defaults,
+    "note.default-profile": {
+      ...defaults["note.default-profile"],
+      bindings: {
+        ...defaults["note.default-profile"].bindings,
+        "citation.references-style": vaultStyle,
       },
-      expect.any(Function),
-    );
-  });
+    },
+  };
+  const { host, command } = fakeCliHost();
+  const fs = await runFileEffect(FileSystem.FileSystem);
+  const deps: PandocResolveDeps = {
+    fileSystem: refuseWrites
+      ? FileSystem.make({
+          ...fs,
+          writeFile: () =>
+            Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "writeFile",
+              }),
+            ),
+        })
+      : fs,
+    app: stubService<App>("App", {
+      vault: stubService<Vault>("Vault", {
+        adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
+          getBasePath: () => "/vault",
+        }),
+        getFileByPath: (path: string) => (path === file.path ? file : null),
+      }),
+      metadataCache,
+    }),
+    basePath: "/vault",
+    reads: stubService<PandocResolveDeps["reads"]>("ZoteroReads", {}),
+    zoteroPref: stubService<PandocResolveDeps["zoteroPref"]>("ZoteroPref", {
+      current: Effect.succeed(
+        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", { dataDir }),
+      ),
+    }),
+    settings: stubService<PandocResolveDeps["settings"]>("PluginSettings", {
+      current: Effect.succeed(settings),
+    }),
+    profile: effectProfile(profileReader(settings, metadataCache)),
+  };
+  registerPandocResolve({ ...host, manifest: { version: "2.0.1-test" } }, deps);
+  const handlerOf = (name: string) => command(name).handler;
+
+  const held = stack.move();
+  return {
+    csl: (params: Record<string, string>) =>
+      handlerOf(CSL_COMMAND)(params).pipe(
+        Effect.map((output) => JSON.parse(output) as CslResponse),
+      ),
+    resolve: (params: Record<string, string>) =>
+      handlerOf(RESOLVE_COMMAND)(params).pipe(
+        Effect.map((output) => JSON.parse(output) as ResolveResponse),
+      ),
+    [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
+  };
+}
+
+/** {@link cslVault}, removed when the test's scope closes. */
+const scopedCslVault = (options: Parameters<typeof cslVault>[0]) =>
+  Effect.acquireDisposable(Effect.tryPromise(() => cslVault(options)));
+
+describe("zotlit:csl for one note", () => {
+  it.effect(
+    "reports a typed materialization failure through the CLI handler (#1793)",
+    () =>
+      Effect.gen(function* () {
+        const vault = yield* scopedCslVault({
+          note: {},
+          vaultStyle: APA,
+          refuseWrites: true,
+        });
+        expect(yield* vault.csl({ style: APA })).toMatchObject({
+          command: CSL_COMMAND,
+          errors: [{ code: "csl-write-failed", styleId: APA }],
+        });
+      }),
+  );
+  it.effect(
+    "answers the vault style for a note that selects none of its own",
+    () =>
+      Effect.gen(function* () {
+        const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
+
+        const response = yield* vault.csl({ file: NOTE_PATH });
+
+        expect(response).toMatchObject({
+          styleId: APA,
+          title: "APA Style 7th edition",
+          source: { kind: "vault" },
+        });
+        const written = yield* Effect.promise(() =>
+          readFile((response as { path: string }).path, "utf8"),
+        );
+        expect(written).toContain(`<id>${APA}</id>`);
+      }),
+  );
+
+  it.effect("answers the note's own style where it names one", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({
+        note: { "zotlit-csl": APA },
+        vaultStyle: null,
+      });
+
+      expect(yield* vault.csl({ file: NOTE_PATH })).toMatchObject({
+        styleId: APA,
+        source: { kind: "note" },
+      });
+    }),
+  );
+
+  it.effect("answers no style file where the vault selects Default", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: null });
+
+      const response = yield* vault.csl({ file: NOTE_PATH });
+
+      expect(response).toMatchObject({
+        styleId: null,
+        source: { kind: "vault" },
+      });
+      expect(response).not.toHaveProperty("path");
+    }),
+  );
+
+  it.effect(
+    "stops on a vault style Zotero lacks, naming the settings to repair",
+    () =>
+      Effect.gen(function* () {
+        const vault = yield* scopedCslVault({
+          note: {},
+          vaultStyle: UNINSTALLED,
+        });
+
+        expect(yield* vault.csl({ file: NOTE_PATH })).toMatchObject({
+          errors: [
+            {
+              code: "style-missing",
+              styleId: UNINSTALLED,
+              message: expect.stringContaining("ZotLit settings"),
+            },
+          ],
+        });
+      }),
+  );
+
+  it.effect("reports a path that names no vault note", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
+
+      expect(yield* vault.csl({ file: "/elsewhere/draft.md" })).toMatchObject({
+        errors: [{ code: "file-not-found" }],
+      });
+    }),
+  );
+
+  it.effect("refuses a request that names both a style and a note", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
+
+      expect(yield* vault.csl({ style: APA, file: NOTE_PATH })).toMatchObject({
+        errors: [{ code: "flags-invalid" }],
+      });
+    }),
+  );
+
+  it.effect.each<[Record<string, string>, string]>([
+    [{ file: NOTE_PATH, colour: "red" }, "Unknown parameter 'colour'"],
+    [{ "--file": NOTE_PATH }, "Run the command with file=<value>, without --."],
+    [{ file: "true" }, "file requires a value."],
+  ])("refuses the parameters %j", ([params, message]) =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
+
+      expect(yield* vault.csl(params)).toMatchObject({
+        errors: [
+          { code: "flags-invalid", message: expect.stringContaining(message) },
+        ],
+      });
+    }),
+  );
+});
+
+describe("zotlit:resolve parameters", () => {
+  it.effect("refuses a bare file and gives the recovery for a -- token", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
+
+      expect(yield* vault.resolve({ file: "true" })).toMatchObject({
+        errors: [{ code: "flags-invalid", message: "file requires a value." }],
+      });
+      expect(yield* vault.resolve({ "--verbose": "true" })).toMatchObject({
+        errors: [
+          {
+            code: "flags-invalid",
+            message: expect.stringContaining(
+              "Use a supported parameter as name=value, without --",
+            ),
+          },
+        ],
+      });
+    }),
+  );
+
+  it.effect("refuses a parameter it does not take", () =>
+    Effect.gen(function* () {
+      const vault = yield* scopedCslVault({ note: {}, vaultStyle: APA });
+
+      expect(
+        yield* vault.resolve({ file: NOTE_PATH, style: APA }),
+      ).toMatchObject({
+        errors: [
+          {
+            code: "flags-invalid",
+            message: expect.stringContaining("Unknown parameter 'style'"),
+          },
+        ],
+      });
+    }),
+  );
 });

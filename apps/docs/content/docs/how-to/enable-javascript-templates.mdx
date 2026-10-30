@@ -1,15 +1,36 @@
 ---
 title: "Enable JavaScript templates"
-description: "Turn on the JavaScript Templates gate so Eta templates and JavaScript frontmatter fields run on this device."
-introduced: "2.0.0"
-updated: "2.0.0"
+description: "Turn on the JavaScript Templates gate so Eta template documents and `js` frontmatter entries run on this device."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
-JavaScript Templates is a per-device gate that lets Eta templates (`.eta.md` files) and JavaScript-language frontmatter fields execute. It is disabled by default.
+<UiLabel name={m.settings_template_js_enable_name()} /> is a per-device gate
+that lets JavaScript run inside your templates. It is disabled by default.
+
+In ZotLit 2.1 the language lived in the file name: `zotlit-note.eta.md` was an
+Eta template and `zotlit-note.liquid.md` was a Liquid one. A 2.2 template
+document declares its language in its own manifest instead, with the key
+`language: eta`.
+
+A managed frontmatter entry declares its language with its value member: `expr`
+(Liquid), `value` (JSON-e), or `js` (JavaScript). See
+[Profile document](/docs/reference/templates/profile-document) for the manifest
+keys and the three entry members.
+
+## What the gate covers
+
+- **Eta template documents.** A profile document, a citation text, or a partial whose manifest sets `language: eta`.
+- **`js` frontmatter entries.** A managed frontmatter entry whose value member is `js`.
+
+The `expr` and `value` members stay active whether the gate is on or off. While
+the gate is off, an Eta document is never compiled and a `js` entry never
+evaluates.
 
 <Callout type="info" title="Understand the implications first">
   Eta templates run JavaScript with the same access as ZotLit itself: they can
@@ -22,19 +43,19 @@ JavaScript Templates is a per-device gate that lets Eta templates (`.eta.md` fil
 
 <Steps>
   <Step>
-    ### Open template settings
+    ### Open the template engine settings
 
-    In Obsidian, open **Settings > ZotLit > Templates**. Locate the **JavaScript templates** group.
+    In Obsidian, open <SettingsPath page={m.settings_page_advanced()} />. Locate the <UiLabel name={m.settings_advanced_template_engine_heading()} /> group and its <UiLabel name={m.settings_template_js_enable_name()} /> row.
 
   </Step>
   <Step>
     ### Click Turn on
 
-    Click the **Turn on** button. A confirmation modal titled **Enable JavaScript templates?** appears with the following warning:
+    Click the <UiLabel name={m.settings_template_js_turn_on()} /> button. A confirmation modal titled <UiLabel name={m.settings_template_js_confirm_title()} /> appears with the following warning:
 
-    > Eta templates run JavaScript with the same access as ZotLit itself: they can read and modify your vault, connect to the internet, and on desktop, access your system. Only enable this if you trust every template file in your vault.
+    > <UiLabel name={m.settings_template_js_confirm_body()} />
 
-    Click **Enable** to confirm.
+    Click <UiLabel name={m.settings_template_js_confirm_action()} /> to confirm.
 
   </Step>
 </Steps>
@@ -43,11 +64,11 @@ The gate takes effect immediately. ZotLit recompiles the template folder in plac
 
 ## Turn off
 
-In the same **JavaScript templates** group, click **Turn off**. The gate disables immediately with no confirmation modal. All `.eta.md` templates become inert and JavaScript frontmatter fields stop evaluating until the gate is re-enabled.
+In the same <UiLabel name={m.settings_template_js_enable_name()} /> group, click <UiLabel name={m.settings_template_js_turn_off()} />. The gate disables immediately with no confirmation modal. Every template document that declares `language: eta` becomes inert, and every managed frontmatter entry declared with `js` stops evaluating until you turn the gate back on.
 
 ## Per-device scope
 
-The setting is stored locally on the device, outside the synced plugin data. Enabling it on one device does not enable it on another. Each device where you want Eta templates to run requires its own opt-in.
+The setting is stored locally on the device, outside the synced plugin data. Enabling it on one device does not enable it on another. Each device where you want Eta documents and `js` entries to run requires its own opt-in.
 
 ## See also
 
@@ -58,13 +79,18 @@ The setting is stored locally on the device, outside the synced plugin data. Ena
     href="/docs/concepts/javascript-templates"
   />
   <Card
+    title="Profile document"
+    description="The manifest keys, the note source, and the Annotation Section."
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
     title="Customize a template"
-    description="Create an editable template file and switch its language to Eta."
+    description="Edit a template document and switch its language to Eta."
     href="/docs/how-to/customize-a-template"
   />
   <Card
     title="How templates work"
-    description="Template types, languages, and the defaults-plus-eject model."
+    description="The three template document kinds, their filenames, and the two languages."
     href="/docs/concepts/how-templates-work"
   />
 </Cards>

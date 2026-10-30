@@ -3,16 +3,21 @@ import {
   listGroup,
   ROW_ICON,
   ROW_ICON_CLASS,
-  row,
+  RowStatusBoard,
   section,
-  SECTION_OPEN_MAX,
-  setRowIcon,
+  profileChoiceControl,
+  profileListGroup,
 } from "./dom";
-import type { BatchCounts, BatchManifest } from "./types";
+import type { BatchRow } from "./dom";
+import type {
+  BatchCounts,
+  BatchManifest,
+  BatchListControls,
+  BatchProfileChoice,
+} from "./types";
 
-export interface FlatTask {
+export interface FlatTask extends BatchRow {
   id: number;
-  label: string;
   /** Group key; one of the {@link FlatManifestOptions.groups} kinds. */
   kind: string;
 }
@@ -21,6 +26,7 @@ export interface FlatTask {
 export interface FlatGroupDef {
   kind: string;
   header: (args: { count: number }) => string;
+  profileChoice?: BatchProfileChoice;
 }
 
 export interface FlatManifestOptions {
@@ -28,9 +34,13 @@ export interface FlatManifestOptions {
   notFound: readonly { label: string }[];
   /** Ordered group definitions; tasks are bucketed by `kind`. */
   groups: readonly FlatGroupDef[];
+  /** Choices for the whole batch, above its per-Library groups. */
+  profileChoices?: readonly BatchProfileChoice[];
   /** Items classified as up-to-date; shown as a static informational group. */
-  upToDate?: readonly { label: string }[];
+  upToDate?: readonly BatchRow[];
   upToDateHeader?: (args: { count: number }) => string;
+  kept?: readonly BatchRow[];
+  keptHeader?: (args: { count: number }) => string;
   notFoundHeader: (args: { count: number }) => string;
   /** Header for items that ran but had nothing to write (e.g. vanished note). */
   skippedHeader?: (args: { count: number }) => string;
@@ -40,13 +50,12 @@ export interface FlatManifestOptions {
 
 /**
  * Flat checklist: ordered groups of tasks (each a leading status icon + label)
- * plus a static not-found group. Rows register their icon under {@link #rowIcons}
- * so a run can flip them in place; the summary regroups by terminal status.
+ * plus a static not-found group. Rows mount on {@link #rows}, so a run can
+ * flip them in place; the summary regroups by terminal status.
  */
 export class FlatManifest implements BatchManifest {
   readonly #options: FlatManifestOptions;
-  /** Per-row status icon element, keyed by task id, for in-place updates. */
-  readonly #rowIcons = new Map<number, HTMLElement>();
+  readonly #rows = new RowStatusBoard();
 
   constructor(options: FlatManifestOptions) {
     this.#options = options;
@@ -59,24 +68,27 @@ export class FlatManifest implements BatchManifest {
     };
   }
 
-  renderList(parent: HTMLElement): void {
-    this.#rowIcons.clear();
+  renderList(parent: HTMLElement, controls?: BatchListControls): void {
+    this.#rows.unmount();
+    if (this.#options.profileChoices?.length) {
+      const choices = parent.createDiv({
+        cls: "zt:mb-6 zt:flex zt:flex-col zt:gap-4",
+      });
+      for (const choice of this.#options.profileChoices)
+        profileChoiceControl(choices, choice, controls);
+    }
     const byKind = Object.groupBy(this.#options.tasks, (task) => task.kind);
     for (const group of this.#options.groups) {
       const tasks = byKind[group.kind] ?? [];
       if (tasks.length === 0) continue;
-      const ul = section(
-        parent,
-        group.header({ count: tasks.length }),
-        tasks.length <= SECTION_OPEN_MAX,
-      );
-      for (const task of tasks) {
-        const icon = row(ul, task.label);
-        setRowIcon(icon, "pending");
-        this.#rowIcons.set(task.id, icon);
-      }
+      const summary = section(parent, group.header({ count: tasks.length }), {
+        items: tasks,
+        renderRow: (ul, task) => this.#rows.mount(ul, task),
+      });
+      if (group.profileChoice)
+        profileChoiceControl(summary, group.profileChoice, controls);
     }
-    this.#renderUpToDate(parent);
+    this.#renderStatic(parent);
     listGroup(parent, {
       header: this.#options.notFoundHeader({
         count: this.#options.notFound.length,
@@ -87,7 +99,15 @@ export class FlatManifest implements BatchManifest {
     });
   }
 
-  #renderUpToDate(parent: HTMLElement): void {
+  #renderStatic(parent: HTMLElement): void {
+    if (this.#options.kept?.length && this.#options.keptHeader) {
+      listGroup(parent, {
+        header: this.#options.keptHeader({ count: this.#options.kept.length }),
+        items: this.#options.kept,
+        icon: "minus",
+        colorCls: "zt:text-(--text-muted)",
+      });
+    }
     const items = this.#options.upToDate;
     if (!items?.length || !this.#options.upToDateHeader) return;
     listGroup(parent, {
@@ -99,28 +119,28 @@ export class FlatManifest implements BatchManifest {
   }
 
   setRowStatus(id: number, status: "done" | "skipped" | "failed"): void {
-    const icon = this.#rowIcons.get(id);
-    if (icon) setRowIcon(icon, status);
+    this.#rows.set(id, status);
   }
 
   renderSummary(
     parent: HTMLElement,
     finalStatus: ReadonlyMap<number, "done" | "skipped" | "failed">,
   ): void {
-    this.#rowIcons.clear();
+    this.#rows.unmount();
     const done = this.#options.tasks.filter(
       (task) => finalStatus.get(task.id) === "done",
     );
     const byKind = Object.groupBy(done, (task) => task.kind);
     for (const group of this.#options.groups) {
-      listGroup(parent, {
+      profileListGroup(parent, {
+        profileHeader: group.header,
         header: group.header({ count: (byKind[group.kind] ?? []).length }),
         items: byKind[group.kind] ?? [],
         icon: ROW_ICON.done,
         colorCls: ROW_ICON_CLASS.done,
       });
     }
-    this.#renderUpToDate(parent);
+    this.#renderStatic(parent);
     listGroup(parent, {
       header: this.#options.notFoundHeader({
         count: this.#options.notFound.length,

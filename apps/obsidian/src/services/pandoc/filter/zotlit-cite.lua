@@ -5,8 +5,9 @@
 -- process, the sandbox region reads a pre-written resolve map. The build keeps
 -- exactly one of them; there is no runtime fallback between the two.
 --
--- The cli variant also resolves a document's `zotlit-csl` property to the CSL
--- file citeproc opens, through `zotlit:csl`.
+-- The cli variant also resolves the style a document renders with in Obsidian
+-- to the CSL file citeproc opens, through `zotlit:csl`, and names that style on
+-- stderr.
 
 PANDOC_VERSION:must_be_at_least(
   "3.1.1",
@@ -15,6 +16,11 @@ PANDOC_VERSION:must_be_at_least(
 
 --- Collected before anything aborts, so one run reports every problem.
 local errors = {}
+
+--@variant sandbox
+local selected_literals
+local literal_marker
+--@end
 
 local function add_error(code, message, context)
   errors[#errors + 1] = { code = code, message = message, context = context }
@@ -102,11 +108,10 @@ local function read_resolve_payload()
   )
 end
 
---- The absolute CSL file `zotlit:csl` materializes for one installed style ID.
-local function csl_path(style)
-  local context = string.format("zotlit-csl: %s", style)
+--- One `zotlit:csl` answer that names a style, or stops the run.
+local function csl_payload(arguments, context)
   local payload = decode_payload(
-    call_obsidian("csl-call-failed", { "zotlit:csl", "style=" .. style }),
+    call_obsidian("csl-call-failed", arguments),
     "csl-response-invalid",
     "zotlit:csl response"
   )
@@ -120,6 +125,11 @@ local function csl_path(style)
     end
     report_errors()
   end
+  return payload
+end
+
+--- The absolute CSL file a `zotlit:csl` answer carries.
+local function payload_path(payload, context)
   if type(payload.path) ~= "string" then
     add_error(
       "csl-response-invalid",
@@ -131,23 +141,62 @@ local function csl_path(style)
   return payload.path
 end
 
---- Replaces a sole `zotlit-csl` with the CSL path citeproc opens. A standard
---- `csl` stays Pandoc's own, and `lang` is left as the document declares it.
+--- Tells the reader which style the run cites with, and where it came from.
+local function announce(style, origin)
+  io.stderr:write(string.format("ZotLit: citations use %s (%s).\n", style, origin))
+end
+
+--- Where a `file` answer found its style, in the words the run reports.
+local function origin_of(source)
+  local kind = type(source) == "table" and source.kind or nil
+  if kind == "note" then
+    return "from this note"
+  elseif kind == "profile" then
+    return string.format("from the %s profile", source.label or "default")
+  end
+  return "from your vault settings"
+end
+
+--- Sets the CSL file citeproc opens to the style the note renders with in
+--- Obsidian: its sole `zotlit-csl`, or else the style ZotLit selects for it. A
+--- standard `csl` or `citation-style` stays Pandoc's own, and `lang` is left as
+--- the document declares it.
 local function resolve_style(meta)
   local requested = meta["zotlit-csl"]
-  if requested == nil then
+  if requested ~= nil then
+    if meta.csl ~= nil then
+      add_error(
+        "csl-ambiguous",
+        'The document declares its Citation and References Style twice: "csl" names a style file Pandoc opens, "zotlit-csl" names the Zotero-installed style ID ZotLit resolves. Keep one of them.'
+      )
+      report_errors()
+    end
+    local style = pandoc.utils.stringify(requested)
+    local context = string.format("zotlit-csl: %s", style)
+    local payload = csl_payload({ "zotlit:csl", "style=" .. style }, context)
+    meta.csl = pandoc.MetaString(payload_path(payload, context))
+    meta["zotlit-csl"] = nil
+    announce(payload.title or style, "from this note")
     return meta
   end
-  if meta.csl ~= nil then
-    add_error(
-      "csl-ambiguous",
-      'The document declares its Citation and References Style twice: "csl" names a style file Pandoc opens, "zotlit-csl" names the Zotero-installed style ID ZotLit resolves. Keep one of them.'
+
+  local standard = meta.csl or meta["citation-style"]
+  if standard ~= nil then
+    announce(
+      string.format("the style file %s", pandoc.utils.stringify(standard)),
+      "from the csl field or the --csl option"
     )
-    report_errors()
+    return meta
   end
-  local style = pandoc.utils.stringify(requested)
-  meta.csl = pandoc.MetaString(csl_path(style))
-  meta["zotlit-csl"] = nil
+
+  local context = "the style ZotLit selects for this note"
+  local payload = csl_payload({ "zotlit:csl", "file=" .. input_path() }, context)
+  if type(payload.styleId) ~= "string" then
+    announce("the Pandoc default style, Chicago author-date", origin_of(payload.source))
+    return meta
+  end
+  meta.csl = pandoc.MetaString(payload_path(payload, context))
+  announce(payload.title or payload.styleId, origin_of(payload.source))
   return meta
 end
 --@end
@@ -182,7 +231,9 @@ local function resolve_style(meta)
 end
 --@end
 
---- The `linkpath -> citation key` map, keyed by decoded bare linkpath.
+--- The `linkpath -> cited key` map, keyed by decoded bare linkpath. The cli
+--- variant is given citation keys; the sandbox host names each Item by an id of
+--- its own, which it resolves after Pandoc has read the document.
 --- @return table<string, string>
 local function load_citations()
   local payload = decode_payload(
@@ -200,6 +251,10 @@ local function load_citations()
     end
     report_errors()
   end
+--@variant sandbox
+  selected_literals = payload.selectedLiterals
+  literal_marker = payload.literalMarker
+--@end
   return payload.citations or {}
 end
 
@@ -436,7 +491,7 @@ local function classify_target(target)
     add_error("citation-fragment-invalid", reason, context)
     return nil
   end
-  return { key = key, details = details, context = context }
+  return { key = key, details = details, context = context, intent = true }
 end
 
 --- Classifies one Link against the resolution map. Cached by target, because a
@@ -497,10 +552,169 @@ local function process_inlines(inlines)
   return result
 end
 
+--- The works a Citation names inside another Citation's prefix or suffix, by the
+--- id the bibliography knows them by. citeproc renders a nested Cite in place of
+--- the one that holds it, so a nested Citation exports as its text, and its work
+--- reaches the bibliography through `nocite` (ADR-0081).
+local nested_ids = {}
+
+--- A nested literal Citation as its source spells it, from the ids it names:
+--- the sandbox reads each key behind an injected id of its own.
+local function literal_text(cite)
+  local keys = {}
+  for position, citation in ipairs(cite.citations) do
+    local key = citation.id
+--@variant sandbox
+    key = selected_literals and selected_literals[key] or key
+--@end
+    local sign = citation.mode == "SuppressAuthor" and "-@" or "@"
+    keys[position] = sign .. key
+  end
+  return table.concat(keys, "; ")
+end
+
+local NESTED = {
+  Link = function(link)
+    local item = classify(link)
+    if not item then
+      return nil
+    end
+    if item.intent then
+      add_error(
+        "nested-citation-intent",
+        'The "#cite:" fragment declares a Citation inside another Citation\'s prefix or suffix, where a Citation exports as its text. Move the link outside the brackets, or drop the fragment.',
+        item.context
+      )
+    end
+    nested_ids[#nested_ids + 1] = item.key
+    return link.content
+  end,
+  Cite = function(cite)
+    for _, citation in ipairs(cite.citations) do
+      nested_ids[#nested_ids + 1] = citation.id
+    end
+    return to_inlines(literal_text(cite))
+  end,
+}
+
+--- Turns every Citation inside one Cite's prefixes and suffixes into text.
+local function flatten_nested(cite)
+  local citations = pandoc.List({})
+  for _, citation in ipairs(cite.citations) do
+    citation.prefix = citation.prefix:walk(NESTED)
+    citation.suffix = citation.suffix:walk(NESTED)
+    citations:insert(citation)
+  end
+  cite.citations = citations
+  return cite
+end
+
+--- Adds the nested Citations' works to `nocite`, after any the document names.
+local function add_nocite(meta)
+  if #nested_ids == 0 then
+    return meta
+  end
+  local citations = {}
+  for position, id in ipairs(nested_ids) do
+    citations[position] = pandoc.Citation(id, "NormalCitation")
+  end
+  local cite = pandoc.Cite({ pandoc.Str("") }, citations)
+  local existing = meta.nocite
+  if existing == nil then
+    meta.nocite = pandoc.MetaInlines({ cite })
+  elseif pandoc.utils.type(existing) == "Inlines" then
+    existing:extend({ pandoc.Space(), cite })
+    meta.nocite = existing
+  else
+    meta.nocite = pandoc.MetaList({ existing, pandoc.MetaInlines({ cite }) })
+  end
+  return meta
+end
+
+--- An Obsidian callout type, `[!note]`, with the fold sign a foldable one adds.
+local CALLOUT_MARKER = "^%[![^%]]+%][+-]?$"
+
+--- Drops the Space runs that open and close `inlines`.
+local function trim(inlines)
+  while inlines[1] and inlines[1].t == "Space" do
+    inlines:remove(1)
+  end
+  while inlines[#inlines] and inlines[#inlines].t == "Space" do
+    inlines:remove(#inlines)
+  end
+  return inlines
+end
+
+--- Writes an Obsidian callout as the block quote any other reader sees: the
+--- `[!type]` marker goes, and a custom title stays as a bold first line. A
+--- block quote that opens with no callout marker is left as it is.
+local function convert_callout(quote)
+  local first = quote.content[1]
+  if not (first and (first.t == "Para" or first.t == "Plain")) then
+    return nil
+  end
+  local marker = first.content[1]
+  if not (marker and marker.t == "Str" and marker.text:match(CALLOUT_MARKER)) then
+    return nil
+  end
+  -- The title runs to the end of the marker's line; the rest of the paragraph
+  -- is the callout's first body text.
+  local title, body = pandoc.Inlines({}), pandoc.Inlines({})
+  local target = title
+  for index = 2, #first.content do
+    local inline = first.content[index]
+    if target == title and (inline.t == "SoftBreak" or inline.t == "LineBreak") then
+      target = body
+    else
+      target:insert(inline)
+    end
+  end
+  local blocks = pandoc.Blocks({})
+  if #trim(title) > 0 then
+    blocks:insert(pandoc.Para({ pandoc.Strong(title) }))
+  end
+  if #trim(body) > 0 then
+    blocks:insert(pandoc.Para(body))
+  end
+  for index = 2, #quote.content do
+    blocks:insert(quote.content[index])
+  end
+  return pandoc.BlockQuote(blocks)
+end
+
 function Pandoc(doc)
   doc.meta = resolve_style(doc.meta)
   citations = load_citations()
-  local converted = doc:walk({ Inlines = process_inlines })
+--@variant sandbox
+  if selected_literals then
+    -- The sandbox keeps its Markdown in stdin. Let the same reader assign IDs
+    -- without the citation markers, including collisions with explicit IDs.
+    local input = assert(io.open("stdin", "r"))
+    local unmarked = input:read("a"):gsub(literal_marker .. "%d+", "")
+    input:close()
+    local identifiers = {}
+    local original = pandoc.read(unmarked, "markdown", PANDOC_READER_OPTIONS)
+    pandoc.Pandoc(original.blocks):walk({ Header = function(header)
+      identifiers[#identifiers + 1] = header.identifier
+    end })
+    local heading = 0
+    local body = pandoc.Pandoc(doc.blocks):walk({ Cite = function(cite)
+      for _, citation in ipairs(cite.citations) do
+        if not selected_literals[citation.id] then
+          return cite.content
+        end
+      end
+    end, Header = function(header)
+      heading = heading + 1
+      header.identifier = identifiers[heading]
+      return header
+    end })
+    doc.blocks = body.blocks
+  end
+--@end
+  doc.blocks = pandoc.Pandoc(doc.blocks):walk({ Cite = flatten_nested }).blocks
+  doc.meta = add_nocite(doc.meta)
+  local converted = doc:walk({ Inlines = process_inlines, BlockQuote = convert_callout })
   if #errors > 0 then
     report_errors()
   end

@@ -1,10 +1,11 @@
 // Liquid engine core: fixed engine config plus the ZotLit tag/filter vocabulary.
 
-import { evalToken, filters, Liquid, Tag, tags } from "liquidjs";
+import { evalToken, filters, Liquid, Tag, tags, toValue } from "liquidjs";
 import type {
   Context,
   Emitter,
   FS,
+  PartialScope,
   TagToken,
   Template,
   TopLevelToken,
@@ -14,21 +15,12 @@ import type {
 import { formatBlockquote } from "./blockquote";
 import { coerceOutput } from "./coerce";
 import { filenameSuffix } from "./filename-suffix";
+import { isItemDateLike, toLiquidDate } from "./liquid-date";
 import { normalizeObsidianTag } from "./obsidian-tag";
+import { formatTemplatePandocCitation } from "./pandoc-citation-adapter";
+import { formatTemplateTexCitation } from "./tex-citation-adapter";
 
-/**
- * Minimal structural view of a Zotero multipart date, duck-typed so this
- * package doesn't depend on `@zotlit/db`.
- *
- * @see `packages/db/src/lib/zt-date.ts` `ItemDate` for the full shape
- */
-interface ItemDateLike {
-  kind: "date" | "yearMonth" | "year" | "text";
-  year: number | null;
-  month: number | null;
-  day: number | null;
-  toString(): string;
-}
+export { ParseError, TokenizationError } from "liquidjs";
 
 export const LIQUID_BUILTIN_FILTER_NAMES: readonly string[] = Object.freeze(
   Object.keys(filters).sort(),
@@ -37,6 +29,8 @@ export const LIQUID_BUILTIN_FILTER_NAMES: readonly string[] = Object.freeze(
 export const LIQUID_BUILTIN_TAG_NAMES: readonly string[] = Object.freeze(
   Object.keys(tags).sort(),
 );
+
+const FLATTEN_FILTER_NAME = "flatten";
 
 export const ZOTLIT_FILTER_NAMES: readonly string[] = Object.freeze([
   "embed",
@@ -48,23 +42,19 @@ export const ZOTLIT_FILTER_NAMES: readonly string[] = Object.freeze([
   "arr_prefix",
   "arr_suffix",
   "arr_replace",
+  FLATTEN_FILTER_NAME,
   "obsidian_tag",
+  "pandoc_cite",
+  "tex_cite",
 ]);
 
-const ITEM_DATE_KINDS: ReadonlySet<unknown> = new Set([
-  "date",
-  "yearMonth",
-  "year",
-  "text",
-] satisfies ItemDateLike["kind"][]);
-
-function isItemDateLike(value: unknown): value is ItemDateLike {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    ITEM_DATE_KINDS.has((value as { kind?: unknown }).kind)
-  );
-}
+/** Tags this engine registers beyond LiquidJS builtins; `bq` is the only block tag. */
+export const ZOTLIT_TAG_NAMES: readonly string[] = Object.freeze([
+  "bq",
+  "endbq",
+  "render_annotation",
+  "suffix",
+]);
 
 /**
  * Registers a link-override filter for a camelCase link-helper method (e.g.
@@ -187,6 +177,56 @@ class SuffixTag extends Tag {
   }
 }
 
+class RenderAnnotationTag extends Tag {
+  readonly #annotation: ValueToken;
+
+  constructor(
+    tagToken: TagToken,
+    remainTokens: TopLevelToken[],
+    liquid: Liquid,
+  ) {
+    super(tagToken, remainTokens, liquid);
+    const annotation = this.tokenizer.readValue();
+    if (!annotation || this.tokenizer.remaining().trim() !== "") {
+      throw new Error("render_annotation requires one annotation argument");
+    }
+    this.#annotation = annotation;
+  }
+
+  *render(ctx: Context, emitter: Emitter): Generator<unknown, void, unknown> {
+    const annotation = toValue(yield evalToken(this.#annotation, ctx));
+    if (annotation == null) {
+      throw new TypeError("render_annotation requires an annotation");
+    }
+    const childCtx = ctx.spawn();
+    childCtx.bottom().zt = annotation;
+    const templates = (yield this.liquid._parsePartialFile(
+      "annotation",
+      childCtx.sync,
+      this.token.file,
+    )) as Template[];
+    yield this.liquid.renderer.renderTemplates(templates, childCtx, emitter);
+  }
+
+  arguments(): ValueToken[] {
+    return [this.#annotation];
+  }
+
+  *children(partials: boolean, sync: boolean): Generator<unknown, Template[]> {
+    return partials
+      ? yield this.liquid._parsePartialFile("annotation", sync, this.token.file)
+      : [];
+  }
+
+  partialScope(): PartialScope {
+    return {
+      name: "annotation",
+      isolated: true,
+      scope: [["zt", this.#annotation]],
+    };
+  }
+}
+
 export interface CreateLiquidEngineOptions {
   /**
    * Overrides the file-system module backing `{% render %}`/`{% include %}`
@@ -226,6 +266,7 @@ export function createLiquidEngine({
   });
 
   engine.registerTag("bq", BqTag);
+  engine.registerTag("render_annotation", RenderAnnotationTag);
 
   engine.registerFilter("embed", (link: unknown): string =>
     typeof link === "string" && link !== "" ? `!${link}` : "",
@@ -273,6 +314,8 @@ export function createLiquidEngine({
     },
   );
 
+  engine.registerFilter(FLATTEN_FILTER_NAME, flatten);
+
   engine.registerFilter("obsidian_tag", (value: unknown, prefix?: string) => {
     const prefixed = (item: unknown): string => {
       const body = normalizeObsidianTag(tagName(item));
@@ -282,6 +325,9 @@ export function createLiquidEngine({
       ? value.map(prefixed).filter((tag) => tag !== "")
       : prefixed(value);
   });
+
+  engine.registerFilter("pandoc_cite", formatTemplatePandocCitation);
+  engine.registerFilter("tex_cite", formatTemplateTexCitation);
 
   engine.registerTag("suffix", SuffixTag);
 
@@ -296,38 +342,17 @@ export function createLiquidEngine({
       // ItemDate "text" carries no parseable date — strftime is meaningless, so
       // render its raw user text and skip the builtin entirely.
       if (isItemDateLike(v) && v.kind === "text") return String(v);
-      return builtinDate.call(this, normalizeDateInput(v), ...args);
+      return builtinDate.call(this, toLiquidDate(v), ...args);
     },
   );
 
   return engine;
 }
 
-/**
- * Normalizes Temporal / ItemDate-shaped values into a local-time JS `Date`
- * before delegating to the builtin `date` filter, which throws on Temporal
- * objects and would otherwise parse a stringified `PlainDate` as UTC via
- * `new Date(string)`.
- */
-function normalizeDateInput(v: unknown): unknown {
-  if (v instanceof Temporal.Instant) {
-    return new Date(v.epochMilliseconds);
+function flatten(items: unknown, depth = 1): unknown[] {
+  if (!Array.isArray(items)) throw new TypeError("flatten requires an array");
+  if (!Number.isInteger(depth) || depth < 0) {
+    throw new TypeError("flatten depth must be a non-negative integer");
   }
-  if (v instanceof Temporal.PlainDate) {
-    return new Date(v.year, v.month - 1, v.day);
-  }
-  if (v instanceof Temporal.PlainYearMonth) {
-    return new Date(v.year, v.month - 1, 1);
-  }
-  if (isItemDateLike(v)) {
-    switch (v.kind) {
-      case "date":
-        return new Date(v.year!, v.month! - 1, v.day!);
-      case "yearMonth":
-        return new Date(v.year!, v.month! - 1, 1);
-      case "year":
-        return new Date(v.year!, 0, 1);
-    }
-  }
-  return v;
+  return items.flat(depth);
 }

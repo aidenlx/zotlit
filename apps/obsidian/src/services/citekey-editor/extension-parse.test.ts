@@ -3,6 +3,12 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { lookupObservation } from "@/services/citation-index/__fixtures__/citation-lookup";
+import {
+  lookupAnswerFor,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
+
 const { livePreview, parseState, tokenClassNodeProp, lineClassNodeProp } =
   vi.hoisted(() => ({
     livePreview: vi.fn(() => true),
@@ -53,10 +59,10 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
-import type { Held } from "@/lib/held-reads";
 import { rendered } from "@/services/citation-text/__fixtures__";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import { hoverPreferences } from "@/services/citekey-navigation";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 
 import { citekeyEditorExtension } from "./extension";
@@ -90,6 +96,7 @@ it.each([
     ]),
     entrySerials: false,
     summaries: new Map([["DOE22345", "Doe (2024)"]]),
+    lookup: lookupForWorks(new Map([["doe2024", "DOE22345"]])),
     literalWorks: new Map([["doe2024", "DOE22345"]]),
   };
   const held: Held<DocumentCitations> = {
@@ -109,9 +116,12 @@ it.each([
             showPopover: () => undefined,
             hoverPreferences: () => hoverPreferences(defaults),
             hoverNotePath: () => null,
-            resolveCitekey: () => ({
-              kind: "missing" as const,
-            }),
+            workspace: { trigger: () => {} },
+            observeLookup: (changed) =>
+              lookupObservation(
+                ({ citekeys = [] }) => lookupAnswerFor(citekeys, {}, "test"),
+                changed,
+              ),
             navigationEnabled: () => true,
             showFormatted: () => true,
             citationText: () => held,

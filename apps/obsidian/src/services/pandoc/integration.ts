@@ -1,6 +1,10 @@
 // Installed Native Pandoc Workflow files and its focused CLI reference.
 
+import { Effect, Schema } from "effect";
 import type { CliData } from "obsidian";
+
+import type { CliCommandHandler } from "@/lib/cli-command";
+import { decodeCliParams, noCliParams, rejectionText } from "@/lib/cli-params";
 
 import { CONTRACT_VERSION } from "./contract";
 import {
@@ -19,11 +23,9 @@ export type {
   SavePandocIntegrationResult,
 } from "./integration-save";
 
-type PandocIntegrationHandler = (params: CliData) => string;
-
 export type PandocIntegrationHandlers = Record<
   typeof PANDOC_FILES_COMMAND | typeof PANDOC_GUIDE_COMMAND,
-  PandocIntegrationHandler
+  CliCommandHandler
 >;
 
 /** The version-matched pair distributed by one installed ZotLit build. */
@@ -38,8 +40,10 @@ export function createPandocIntegrationHandlers(
   pluginVersion: string,
 ): PandocIntegrationHandlers {
   return {
-    [PANDOC_FILES_COMMAND]: (params) => {
-      assertNoParameters(PANDOC_FILES_COMMAND, params);
+    [PANDOC_FILES_COMMAND]: Effect.fn("PandocCli.files")(function* (
+      params: CliData,
+    ) {
+      yield* assertNoParameters(PANDOC_FILES_COMMAND, params);
       return JSON.stringify(
         {
           contractVersion: CONTRACT_VERSION,
@@ -51,18 +55,43 @@ export function createPandocIntegrationHandlers(
         null,
         2,
       );
-    },
-    [PANDOC_GUIDE_COMMAND]: (params) => {
-      assertNoParameters(PANDOC_GUIDE_COMMAND, params);
+    }),
+    [PANDOC_GUIDE_COMMAND]: Effect.fn("PandocCli.guide")(function* (
+      params: CliData,
+    ) {
+      yield* assertNoParameters(PANDOC_GUIDE_COMMAND, params);
       return renderPandocGuide(pluginVersion);
-    },
+    }),
   };
 }
 
-function assertNoParameters(command: string, params: CliData): void {
-  if (Object.keys(params).length > 0) {
-    throw new TypeError(`${command} accepts no parameters`);
-  }
+/**
+ * A parameter-free command got a parameter. `message` is the rejection's text,
+ * hint included, which the CLI prints; `cause` holds the rejection.
+ */
+export class PandocParamsRejected extends Schema.TaggedError<
+  PandocParamsRejected,
+  { readonly brand: unique symbol }
+>()("PandocParamsRejected", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+/** Fails with the rejection's text, hint included, which the CLI prints. */
+function assertNoParameters(
+  command: string,
+  params: CliData,
+): Effect.Effect<void, PandocParamsRejected> {
+  return decodeCliParams(params, noCliParams, { command }).pipe(
+    Effect.asVoid,
+    Effect.mapError(
+      (rejection) =>
+        new PandocParamsRejected({
+          message: rejectionText(rejection),
+          cause: rejection,
+        }),
+    ),
+  );
 }
 
 /** Man-style reference for ZotLit's part of the Native Pandoc Workflow. */
@@ -96,6 +125,7 @@ RETRIEVE OR REFRESH
     namespace versions its own CLI Contract independently.
 
 CITATION STYLE
+    A native run cites with the style the document renders with in Obsidian.
     A document selects a Zotero-installed style with the zotlit-csl property,
     which holds one CSL style ID:
 
@@ -107,9 +137,26 @@ CITATION STYLE
 
         obsidian zotlit:csl style="http://www.zotero.org/styles/nature"
 
-    Success returns contractVersion, command, the requested "styleId",
-    "parentId" for a dependent style, and "path": the absolute CSL file citeproc
-    opens. Failure returns { "errors": [...] } and stops the run.
+    A document with no zotlit-csl, csl, or citation-style cites with the style
+    ZotLit selects for it: the Profile style of an Imported Note, or else the
+    vault Citation and References Style. The filter asks for it through:
+
+        obsidian zotlit:csl file="/absolute/path/to/input.md"
+
+    Pass exactly one of style and file. Success returns contractVersion,
+    command, the resolved "styleId", "parentId" for a dependent style, "title"
+    as Zotero lists the style, and "path": the absolute CSL file citeproc opens.
+    A file answer adds "source": { "kind": "note" }, { "kind": "profile",
+    "label": "..." } (no label for the default profile), or { "kind": "vault" }. A file answer whose selection is
+    Default carries "styleId": null and no path; Pandoc's own default style
+    applies. Failure returns { "errors": [...] } and stops the run.
+
+    The filter writes one line to stderr that names the style and where it came
+    from, such as:
+
+        ZotLit: citations use Nature (from this note).
+
+    That line is no Pandoc warning, so --fail-if-warnings lets the run go on.
 
     A dependent style resolves to its independent parent's formatting under its
     own default locale, which is why the response names a file of its own rather
@@ -120,12 +167,14 @@ CITATION STYLE
     use the path the response carries; a path recorded from an earlier run can
     name content that no longer matches the installed style.
 
-    Standard Pandoc inputs stay Pandoc's: a document that carries csl alone, or
-    a run that passes --csl, is converted without ZotLit reading either. A
+    Standard Pandoc inputs stay Pandoc's: a document that carries csl or
+    citation-style alone, or a run that passes --csl, is converted with that
+    style; ZotLit only names it. A
     document that carries both csl and zotlit-csl stops with csl-ambiguous.
     ZotLit leaves lang untouched, so the document keeps the language it declares.
 
-    A pair saved under this contractVersion reads zotlit-csl. Refresh the pair
+    A pair saved under this contractVersion reads zotlit-csl and falls back to
+    the style ZotLit selects. Refresh the pair
     as RETRIEVE OR REFRESH describes before a document relies on it.
 
 RESOLVE
@@ -149,6 +198,13 @@ ERRORS
     style-unreadable             A CSL file of that style refuses to be read.
     style-invalid                That style is no standalone CSL style.
     csl-write-failed             The resolved CSL style could not be written.
+    flags-invalid                A parameter that is missing, has no value, is
+                                 written as --name, or the command does not
+                                 take; or for zotlit:csl neither style nor
+                                 file, or both.
+    style-property-invalid       The document's zotlit-csl holds no CSL style ID.
+    language-property-invalid    The document's lang holds no language tag.
+    profile-unavailable          The Imported Note's profile is unavailable.
     csl-ambiguous                The document declares both csl and zotlit-csl.
 
 COMPATIBILITY

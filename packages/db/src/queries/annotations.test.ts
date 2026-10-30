@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseAnnotationPosition } from "@/lib/zt-annot-pos";
-import { createFixtureSchema } from "@/test-utils";
+import {
+  countCompiles,
+  countStatements,
+  createFixtureSchema,
+} from "@/test-utils";
 
 import { getAnnotationsByKey, getAnnotationsByParent } from "./annotations";
 
@@ -24,6 +28,19 @@ afterEach(() => {
 });
 
 describe("getAnnotationsByParent", () => {
+  it("reads userdata 125 without local client revision columns", () => {
+    sqlite.exec(`
+      update version set version = 125 where schema = 'userdata';
+      alter table items drop column clientVersion;
+    `);
+
+    const result = getAnnotationsByParent(db, 9058);
+
+    expect(result).toHaveLength(6);
+    expect(result.every(({ version }) => version === 0)).toBe(true);
+    expect(getAnnotationsByKey(db, ["JDJKX3N6"], 1)).toHaveLength(1);
+  });
+
   it("returns visible annotations sorted by sortIndex", () => {
     const result = getAnnotationsByParent(db, 9058);
 
@@ -49,6 +66,8 @@ describe("getAnnotationsByParent", () => {
       true,
     );
     expect(typeof result[0]?.dateAdded.epochMilliseconds).toBe("number");
+    sqlite.exec("update items set clientVersion = 24 where key = 'JDJKX3N6'");
+    expect(getAnnotationsByParent(db, 9058)[0]?.version).toBe(24);
   });
 
   it("narrows fixture PDF positions", () => {
@@ -71,6 +90,58 @@ describe("getAnnotationsByParent", () => {
   });
 });
 
+describe("getAnnotationsByParent creator", () => {
+  it("reads the creator of a group item, and none where the database names none", () => {
+    sqlite.exec(`
+      insert into libraries (libraryID, type) values (2, 'group');
+      insert into groups (groupID, libraryID) values (4711, 2);
+      update items set libraryID = 2;
+      insert into users (userID, name) values (7, 'me'), (9, 'colleague');
+      insert into groupItems (itemID, createdByUserID)
+        values (9060, 7), (9061, 9), (9063, null);
+    `);
+    const creators = (client: NodeDatabaseClient) =>
+      Object.fromEntries(
+        getAnnotationsByParent(client, 9058).map(({ key, createdByUserID }) => [
+          key,
+          createdByUserID,
+        ]),
+      );
+
+    const expected = {
+      JDJKX3N6: 7,
+      V78IHLM9: 9,
+      "463QFRLZ": null,
+      "6P4FSYIT": null,
+      DZJSSBPX: null,
+      DBKE89L9: null,
+    };
+    expect(creators(db)).toEqual(expected);
+
+    // A database without local client revisions reads the same creators. A
+    // client reads the layout of its copy once, so the changed copy gets a
+    // new client.
+    sqlite.exec(`
+      update version set version = 125 where schema = 'userdata';
+      alter table items drop column clientVersion;
+    `);
+    expect(creators(drizzle({ client: sqlite, relations }))).toEqual(expected);
+  });
+});
+
+describe("getAnnotationsByParent tags", () => {
+  it("returns the annotation's tags by name, in Zotero's own order", () => {
+    const result = getAnnotationsByParent(db, 9058);
+
+    const annotation = result.find((a) => a.key === "JDJKX3N6");
+    expect(annotation?.tags).toEqual(["first-tag", "second-tag"]);
+    expect(annotation?.tagDetails).toEqual([
+      { name: "first-tag", type: 0 },
+      { name: "second-tag", type: 1 },
+    ]);
+  });
+});
+
 describe("getAnnotationsByKey", () => {
   it("returns requested visible annotation keys", () => {
     const result = getAnnotationsByKey(
@@ -89,11 +160,39 @@ describe("getAnnotationsByKey", () => {
   it("returns an empty array for empty keys", () => {
     expect(getAnnotationsByKey(db, [], USER_LIBRARY_ID)).toEqual([]);
   });
+
+  it("returns keys in request order, repeating a repeated key and leaving misses out", () => {
+    expect(
+      getAnnotationsByKey(
+        db,
+        ["V78IHLM9", "TRASHED1", "MISSING", "JDJKX3N6", "V78IHLM9"],
+        USER_LIBRARY_ID,
+      ).map((annotation) => annotation.key),
+    ).toEqual(["V78IHLM9", "JDJKX3N6", "V78IHLM9"]);
+  });
+
+  it("runs the same cached statements for one key as for many", () => {
+    const statements = countStatements(sqlite);
+    const compiles = countCompiles(sqlite);
+    const cost = (keys: string[]) => {
+      const before = statements();
+      getAnnotationsByKey(db, keys, USER_LIBRARY_ID);
+      return statements() - before;
+    };
+    cost(["JDJKX3N6"]);
+    expect(
+      cost(["JDJKX3N6", "V78IHLM9", "DBKE89L9", "463QFRLZ", "MISSING"]),
+    ).toBe(cost(["JDJKX3N6"]));
+    const compiled = compiles();
+    cost(["JDJKX3N6", "V78IHLM9", "DBKE89L9", "463QFRLZ", "MISSING"]);
+    expect(compiles()).toBe(compiled);
+  });
 });
 
 function seed(sqlite: DatabaseSync): void {
   createFixtureSchema(sqlite);
   sqlite.exec(`
+    insert into version (schema, version) values ('userdata', 129), ('compatibility', 9);
     insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values
         (9058, 3, '2025-05-27 14:44:51', '2025-05-27 14:44:51', 1, 'T2P8T29G'),
@@ -216,5 +315,10 @@ function seed(sqlite: DatabaseSync): void {
 
     insert into deletedItems (itemID, dateDeleted)
       values (9066, '2026-05-28 02:22:01');
+
+    insert into tags (tagID, name)
+      values (1, 'first-tag'), (2, 'second-tag');
+    insert into itemTags (itemID, tagID, type)
+      values (9060, 1, 0), (9060, 2, 1);
   `);
 }

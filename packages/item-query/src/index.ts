@@ -1,0 +1,144 @@
+export {
+  type FilterType,
+  type ItemQuerySchema,
+  type JsonType,
+  type SchemaCapabilities,
+  type SchemaCustomField,
+  type SchemaField,
+  type SchemaFunction,
+  type SchemaMethod,
+  type SchemaParameter,
+  type SchemaProperty,
+} from "./describe-item-query";
+export { describeQueryCustomFields } from "./describe-query-custom-fields";
+export {
+  parameterTexts,
+  parameterTypeText,
+  resultText,
+  signatureText,
+  type ParameterText,
+  type SignatureShape,
+} from "./signature-text";
+// The function registry of the Filter Expression language, for in-process
+// editors. The Query Schema stays the agent contract.
+export {
+  GLOBAL_FUNCTIONS,
+  IF_FUNCTION,
+  METHOD_ENTRIES,
+  PROPERTY_ENTRIES,
+  parameterAt,
+  type FunctionDefinition,
+  type FunctionParameter,
+  type ParameterType,
+  type PropertyDefinition,
+} from "./filter-functions";
+export type { FilterValueType } from "./filter-values";
+export { cellProperties } from "./cell-properties";
+export {
+  AttachmentFileResolver,
+  type QueryDataset,
+  type ResolveAttachmentFile,
+} from "./dataset";
+export { ITEMS } from "./query-items";
+export {
+  planItemFilter,
+  testItemSeed,
+  type ItemFilter,
+  type SeedTest,
+} from "./item-filter";
+export {
+  queryItemFrom,
+  queryItemSeedSchema,
+  readQueryItemSeed,
+  type QueryItemSeed,
+} from "./item-seed";
+export { ANNOTATIONS } from "./query-annotations";
+export {
+  ItemQueryError,
+  type ItemQueryErrorCode,
+  type ItemQueryErrorLocation,
+} from "./error";
+// The typed database failures of `collectQuery`, `consumeQuery`, and
+// `describeQueryCustomFields`, from the readers of `@zotlit/db/item-query`.
+export {
+  ItemQueryDatabaseError,
+  ItemQueryLayoutError,
+} from "@zotlit/db/item-query";
+export { QueryTimeZone } from "./query-clock";
+export {
+  collectQuery,
+  consumeQuery,
+  type QueryConsumer,
+  type QuerySummary,
+} from "./query";
+export { COUNT_FIELDS, UNLIMITED_LIMIT } from "./request";
+export { planPath } from "./projection";
+export {
+  subexpressionTypes,
+  type ContextRecord,
+  type PlannedMember,
+  type SubexpressionType,
+} from "./subexpression-types";
+export type { StaticType } from "./filter-plan";
+export {
+  projectedSortKey,
+  type LastActivitySource,
+  type SortKey,
+} from "./fields";
+export { compareScalars, compareStrings } from "./collation";
+export { errorValueText } from "./filter-values";
+export {
+  errorCell,
+  valueText,
+  type ErrorCell,
+  type ProjectionJson,
+} from "./value-text";
+export { nameDictionary, type NameDictionary } from "./name-dictionary";
+export {
+  FORMULA_NAME,
+  FORMULA_SEGMENT,
+  formulaReferences,
+  type FormulaFaultPolicy,
+  type FormulaReference,
+} from "./formulas";
+export type {
+  FormulaDiagnostics,
+  ItemQuery,
+  ItemQueryRequest,
+  ProjectionValue,
+  QueryResult,
+  QueryGroup,
+  GroupValue,
+  QueryContext,
+  QueryRow,
+  SortSpec,
+  TargetLibrary,
+} from "./request";
+export {
+  ItemQueryScheduler,
+  ItemQuerySliceObserver,
+  SLICE_BUDGET_MS,
+  type SliceObserver,
+} from "./scheduler";
+
+export {
+  diagnoseDecode,
+  renderDiagnostic,
+  type Diagnostic,
+  type DiagnosticLocation,
+} from "./diagnose";
+export { nearMatches } from "./near-match";
+export type {
+  Fault,
+  ItemQueryFault,
+  PlainFault,
+  Span,
+  Role,
+  Receiver,
+  Callee,
+  SyntaxFault,
+} from "./fault";
+
+export { ATTACHMENTS } from "./query-attachments";
+
+export { listQueryValues, type QueryValuesRequest } from "./query-values";

@@ -1,0 +1,14 @@
+/*
+ * Outranks Obsidian's unlayered `.table-drag-target` layer, so the column drop
+ * line stands over the Table's sticky header.
+ */
+.zt-column-drop-line.table-drag-target {
+  z-index: var(--layer-cover);
+}
+
+/* A column resize keeps its cursor wherever the pointer goes. */
+body.zt-is-resizing-column,
+body.zt-is-resizing-column * {
+  cursor: col-resize !important;
+  user-select: none;
+}

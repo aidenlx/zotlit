@@ -1,11 +1,13 @@
+import { Effect } from "effect";
 import { Menu } from "obsidian";
 import type {
   Setting,
-  SettingDefinitionItem,
-  SettingDefinitionPage,
+  SettingDefinition,
+  SettingDefinitionList,
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { showMenuAtButton } from "@/lib/menu";
 import { libraryLabel, selectorLabel } from "@/services/library-scope/label";
 import {
   compareSelectors,
@@ -18,8 +20,17 @@ import type {
   LibraryScope,
   LibrarySelector,
 } from "@/services/library-scope/scope";
+import { LibraryScope as LibraryScopeService } from "@/services/library-scope/service";
+import { PluginSettings } from "@/services/settings/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+
+// The Library Scope reads the rows take. Each one is synchronous, so a
+// definition build runs it through `ctx.tab.sync`.
+const effectiveScope = LibraryScopeService.use((scope) => scope.effective);
+const resolvedScope = LibraryScopeService.use((scope) => scope.current);
+const savedScopeInvalid = LibraryScopeService.use((scope) => scope.invalid);
+const availableLibraries = LibraryScopeService.use((scope) => scope.libraries);
 
 /** One selected Library as the list renders it. */
 interface SelectedEntry {
@@ -29,21 +40,11 @@ interface SelectedEntry {
   unavailable: boolean;
 }
 
-/** The Library sub-page: the library-scope rows, on their own navigable page. */
-export function libraryPage(
-  ctx: SettingTabContext,
-): SettingDefinitionPage<SettingsKey> {
-  return {
-    type: "page",
-    name: m.settings_page_library(),
-    desc: m.settings_page_library_desc(),
-    items: libraryScopeItems(ctx),
-  };
-}
-
 /**
- * Library scope rows: the All / Selected choice and, under Selected, the
- * editable list of stable selectors.
+ * Library scope: the All / Selected choice ({@link libraryScopeRow}) and,
+ * under Selected, the editable list of stable selectors
+ * ({@link selectedLibrariesList}). The list is a sibling of the row's group
+ * on the Zotero page, since a group cannot hold a list.
  *
  * Every control here reads the *effective* scope — the runtime My Library
  * fallback while the saved value is broken — so what the user edits is what
@@ -54,44 +55,50 @@ export function libraryPage(
  * controls disable and the saved value is left alone. That is distinct from a
  * resolvable scope with no available Library, which stays editable.
  */
-function libraryScopeItems(
+export function libraryScopeRow(
   ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey>[] {
-  const scope = ctx.libraryScope.effective;
+): SettingDefinition<SettingsKey> {
+  const scope = ctx.tab.sync(effectiveScope);
+  return {
+    id: "settings_library_scope",
+    name: m.settings_library_scope_name(),
+    desc: describeScope(ctx),
+    render: (setting) => renderModeRow(setting, ctx, scope),
+  };
+}
+
+export function selectedLibrariesList(
+  ctx: SettingTabContext,
+): SettingDefinitionList<SettingsKey> {
+  const scope = ctx.tab.sync(effectiveScope);
   const editable = isEditable(ctx);
   const entries = selectedEntries(ctx, scope);
-
-  return [
-    {
-      name: m.settings_library_scope_name(),
-      desc: describeScope(ctx),
-      render: (setting) => renderModeRow(setting, ctx, scope),
-    },
-    {
-      type: "list",
-      heading: m.settings_library_scope_selected(),
-      visible: () => scope.mode === "selected",
-      // The final selected Library has no delete affordance at all: Selected
-      // Libraries is never allowed to become empty.
-      onDelete:
-        editable && entries.length > 1
-          ? (index) => removeSelector(ctx, scope, index)
-          : undefined,
-      addItem: editable
-        ? {
-            name: m.settings_library_scope_add(),
-            action: (el) => openAddMenu(el, ctx, scope),
-          }
+  return {
+    type: "list",
+    id: "settings_library_scope_selected",
+    heading: m.settings_library_scope_selected(),
+    visible: () => scope.mode === "selected",
+    // The final selected Library has no delete affordance at all: Selected
+    // Libraries is never allowed to become empty.
+    onDelete:
+      editable && entries.length > 1
+        ? (index) => removeSelector(ctx, scope, index)
         : undefined,
-      items: entries.map((entry) => ({
-        name: entry.label,
-        desc: entry.unavailable
-          ? m.settings_library_scope_unavailable()
-          : undefined,
-        searchable: false,
-      })),
-    },
-  ];
+    addItem: editable
+      ? {
+          name: m.settings_library_scope_add(),
+          action: (el) => openAddMenu(el, ctx, scope),
+        }
+      : undefined,
+    items: entries.map((entry) => ({
+      id: `settings_library_scope_entry:${selectorKey(entry.selector)}`,
+      name: entry.label,
+      desc: entry.unavailable
+        ? m.settings_library_scope_unavailable()
+        : undefined,
+      searchable: false,
+    })),
+  };
 }
 
 /**
@@ -99,15 +106,15 @@ function libraryScopeItems(
  * so the rows disable and the saved value is left exactly as it is.
  */
 function isEditable(ctx: SettingTabContext): boolean {
-  return ctx.libraryScope.current !== null;
+  return ctx.tab.sync(resolvedScope) !== null;
 }
 
 function describeScope(ctx: SettingTabContext): DocumentFragment {
   const desc = createFragment();
   desc.append(m.settings_library_scope_desc());
-  const warning = ctx.libraryScope.invalid
+  const warning = ctx.tab.sync(savedScopeInvalid)
     ? m.settings_library_scope_invalid()
-    : ctx.libraryScope.current === null
+    : ctx.tab.sync(resolvedScope) === null
       ? m.settings_library_scope_db_unavailable()
       : null;
   if (warning) {
@@ -148,7 +155,7 @@ function selectedEntries(
   scope: LibraryScope,
 ): SelectedEntry[] {
   if (scope.mode !== "selected") return [];
-  const resolved = ctx.libraryScope.current;
+  const resolved = ctx.tab.sync(resolvedScope);
   const byKey = new Map(
     resolved?.available.map((library) => [
       selectorKey(library.selector),
@@ -173,9 +180,9 @@ function addableLibraries(
 ): AvailableLibrary[] {
   if (scope.mode !== "selected") return [];
   const selected = new Set(scope.libraries.map(selectorKey));
-  return ctx.libraryScope.libraries.filter(
-    (library) => !selected.has(selectorKey(library.selector)),
-  );
+  return ctx.tab
+    .sync(availableLibraries)
+    .filter((library) => !selected.has(selectorKey(library.selector)));
 }
 
 function openAddMenu(
@@ -197,8 +204,7 @@ function openAddMenu(
         .onClick(() => addSelector(ctx, scope, library.selector)),
     );
   }
-  const rect = el.getBoundingClientRect();
-  menu.showAtPosition({ x: rect.left, y: rect.bottom });
+  showMenuAtButton(menu, el);
 }
 
 function addSelector(
@@ -226,6 +232,10 @@ function removeSelector(
 
 /** Persist and rebuild the tab, so the list rows follow the new selection. */
 function saveScope(ctx: SettingTabContext, scope: LibraryScope): void {
-  ctx.settings.update({ "zotero.library-scope": scope });
-  ctx.requestUpdate();
+  void ctx.tab.run(
+    PluginSettings.use((settings) =>
+      settings.update({ "zotero.library-scope": scope }),
+    ).pipe(Effect.andThen(ctx.tab.update)),
+    m.settings_failed_save(),
+  );
 }

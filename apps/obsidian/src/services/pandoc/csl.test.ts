@@ -1,38 +1,53 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { it as effectIt } from "@effect/vitest";
+import { Effect, FileSystem, Layer, Option, PlatformError } from "effect";
+import { TestClock } from "effect/testing";
 import {
   mkdir,
   mkdtemp,
   readFile,
   readdir,
   rm,
-  stat,
-  utimes,
   writeFile,
 } from "node:fs/promises";
+import "@mock/dom-parser";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect } from "vitest";
 
 import { CONTRACT_VERSION } from "./contract";
-import { CSL_COMMAND, materializeCslStyle, resolveCslStyle } from "./csl";
+import {
+  CSL_COMMAND,
+  materializeCslStyle,
+  resolveCslStyle as resolveStyleEffect,
+} from "./csl";
 import type { CslResponse } from "./csl";
 import { resolveInstalledStyle } from "./styles";
 
 /** Filenames the filesystem refuses outright, as a file without read access is. */
 const deniedReads = new Set<string>();
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return {
-    ...actual,
-    readFile: async (...args: Parameters<typeof actual.readFile>) => {
-      const [path] = args;
-      if (typeof path === "string" && deniedReads.has(basename(path))) {
-        throw Object.assign(new Error("permission denied"), { code: "EACCES" });
-      }
-      return actual.readFile(...args);
-    },
-  };
-});
+const deniedFileSystem = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.map(FileSystem.FileSystem, (fs) =>
+    FileSystem.make({
+      ...fs,
+      readFile: (path) =>
+        deniedReads.has(basename(path))
+          ? Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "readFile",
+                pathOrDescriptor: path,
+              }),
+            )
+          : fs.readFile(path),
+    }),
+  ),
+).pipe(Layer.provide(NodeFileSystem.layer));
+const resolveCslStyle = (...args: Parameters<typeof resolveStyleEffect>) =>
+  resolveStyleEffect(...args).pipe(Effect.provide(deniedFileSystem));
 
 const PARENT = "http://www.zotero.org/styles/journal";
 const DEPENDENT = "http://www.zotero.org/styles/journal-german";
@@ -40,171 +55,246 @@ const BROKEN_DEPENDENT = "http://www.zotero.org/styles/journal-broken";
 const MISSING = "http://www.zotero.org/styles/uninstalled";
 
 describe("zotlit:csl", () => {
-  it("answers a materialized file for an independent style", async () => {
-    await using zotero = await installStyles();
+  effectIt.live("answers a materialized file for an independent style", () =>
+    Effect.gen(function* () {
+      const zotero = yield* Effect.acquireDisposable(
+        Effect.promise(() => installStyles()),
+      );
 
-    const response = await zotero.csl(PARENT);
+      const response = yield* zotero.csl(PARENT);
 
-    expect(response).toEqual({
-      contractVersion: CONTRACT_VERSION,
-      command: CSL_COMMAND,
-      styleId: PARENT,
-      path: expect.stringMatching(/\.csl$/),
-    });
-    await expect(readFile(pathOf(response), "utf8")).resolves.toContain(
-      `<id>${PARENT}</id>`,
-    );
-  });
+      expect(response).toEqual({
+        contractVersion: CONTRACT_VERSION,
+        command: CSL_COMMAND,
+        styleId: PARENT,
+        path: expect.stringMatching(/\.csl$/),
+        title: PARENT,
+      });
+      expect(
+        yield* Effect.promise(() => readFile(pathOf(response), "utf8")),
+      ).toContain(`<id>${PARENT}</id>`);
+    }),
+  );
 
-  it("names the independent parent a dependent style resolved through", async () => {
-    await using zotero = await installStyles();
+  effectIt.live(
+    "names the independent parent a dependent style resolved through",
+    () =>
+      Effect.gen(function* () {
+        const zotero = yield* Effect.acquireDisposable(
+          Effect.promise(() => installStyles()),
+        );
 
-    const response = await zotero.csl(DEPENDENT);
+        const response = yield* zotero.csl(DEPENDENT);
 
-    expect(response).toMatchObject({
-      styleId: DEPENDENT,
-      parentId: PARENT,
-    });
-    // The parent's formatting under the dependent style's own default locale.
-    const xml = await readFile(pathOf(response), "utf8");
-    expect(xml).toContain(`<id>${PARENT}</id>`);
-    expect(xml).toContain('default-locale="de-DE"');
-  });
-
-  it("answers one path for identical content and another for changed content", async () => {
-    await using zotero = await installStyles();
-
-    const first = pathOf(await zotero.csl(PARENT));
-    expect(pathOf(await zotero.csl(PARENT))).toBe(first);
-
-    await zotero.writeStyle("journal.csl", {
-      id: PARENT,
-      body: '<bibliography><layout><text value="revised"/></layout></bibliography>',
-      hidden: true,
-    });
-
-    expect(pathOf(await zotero.csl(PARENT))).not.toBe(first);
-  });
-
-  it("restamps the style it hands out, so use holds off the store reaper", async () => {
-    await using zotero = await installStyles();
-
-    const path = pathOf(await zotero.csl(PARENT));
-    const stale = Temporal.Instant.from("2024-01-01T00:00:00Z");
-    const staleSeconds = stale.epochMilliseconds / 1000;
-    await utimes(path, staleSeconds, staleSeconds);
-
-    // The second resolve finds the content already materialized and writes
-    // nothing; only the restamp separates its answer from an untouched file.
-    expect(pathOf(await zotero.csl(PARENT))).toBe(path);
-    expect((await stat(path)).mtimeMs).toBeGreaterThan(stale.epochMilliseconds);
-  });
-
-  it("never exposes a partial file to a concurrent run", async () => {
-    await using zotero = await installStyles();
-
-    const responses = await Promise.all(
-      Array.from({ length: 8 }, () => zotero.csl(DEPENDENT)),
-    );
-
-    const paths = new Set(responses.map(pathOf));
-    expect(paths.size).toBe(1);
-    const [path] = paths;
-    await expect(readFile(path!, "utf8")).resolves.toContain("</style>");
-    // The staged writes leave nothing of their own behind.
-    await expect(readdir(dirname(path!))).resolves.toEqual([basename(path!)]);
-  });
-
-  it("reports an uninstalled requested style", async () => {
-    await using zotero = await installStyles();
-
-    expect(await zotero.csl(MISSING)).toEqual({
-      contractVersion: CONTRACT_VERSION,
-      command: CSL_COMMAND,
-      errors: [
-        {
-          code: "style-missing",
-          styleId: MISSING,
-          message: expect.stringContaining(MISSING),
-        },
-      ],
-    });
-  });
-
-  it("reports an uninstalled independent parent", async () => {
-    await using zotero = await installStyles();
-    await zotero.writeStyle("orphan.csl", {
-      id: "http://www.zotero.org/styles/orphan",
-      parentId: MISSING,
-    });
-
-    expect(
-      await zotero.csl("http://www.zotero.org/styles/orphan"),
-    ).toMatchObject({
-      errors: [{ code: "parent-missing", parentId: MISSING }],
-    });
-  });
-
-  it("reports a CSL file that refuses to be read", async () => {
-    await using zotero = await installStyles();
-    deniedReads.add("journal.csl");
-
-    expect(await zotero.csl(DEPENDENT)).toMatchObject({
-      errors: [{ code: "style-unreadable", styleId: DEPENDENT }],
-    });
-  });
-
-  it("reports content that is no standalone CSL style", async () => {
-    await using zotero = await installStyles();
-    await zotero.writeCsl(
-      "broken.csl",
-      `<?xml version="1.0"?><style xmlns="http://purl.org/net/xbiblio/csl" version="1.0"><info><id>${MISSING}</id></info><bibliography><layout><text value="x"/></bibliography></style>`,
-    );
-
-    expect(await zotero.csl(MISSING)).toMatchObject({
-      errors: [{ code: "style-invalid", styleId: MISSING }],
-    });
-  });
-
-  it("reports a dependent style whose own file is no CSL style", async () => {
-    await using zotero = await installStyles();
-    // The file names the installed parent, and closes an element it never
-    // opened. The parent's formatting stands in for the formatting a dependent
-    // style leaves out, never for markup it holds broken.
-    await zotero.writeCsl(
-      "journal-broken.csl",
-      `<?xml version="1.0"?><style xmlns="http://purl.org/net/xbiblio/csl" version="1.0"><info><id>${BROKEN_DEPENDENT}</id><link href="${PARENT}" rel="independent-parent"/></info><layout/></citation></style>`,
-    );
-
-    expect(await zotero.csl(BROKEN_DEPENDENT)).toMatchObject({
-      errors: [
-        {
-          code: "style-invalid",
-          styleId: BROKEN_DEPENDENT,
+        expect(response).toMatchObject({
+          styleId: DEPENDENT,
           parentId: PARENT,
+        });
+        // The parent's formatting under the dependent style's own default locale.
+        const xml = yield* Effect.promise(() =>
+          readFile(pathOf(response), "utf8"),
+        );
+        expect(xml).toContain(`<id>${PARENT}</id>`);
+        expect(xml).toContain('default-locale="de-DE"');
+      }),
+  );
+
+  effectIt.live(
+    "answers one path for identical content and another for changed content",
+    () =>
+      Effect.gen(function* () {
+        const zotero = yield* Effect.acquireDisposable(
+          Effect.promise(() => installStyles()),
+        );
+
+        const first = pathOf(yield* zotero.csl(PARENT));
+        expect(pathOf(yield* zotero.csl(PARENT))).toBe(first);
+
+        yield* Effect.promise(() =>
+          zotero.writeStyle("journal.csl", {
+            id: PARENT,
+            body: '<bibliography><layout><text value="revised"/></layout></bibliography>',
+            hidden: true,
+          }),
+        );
+
+        expect(pathOf(yield* zotero.csl(PARENT))).not.toBe(first);
+      }),
+  );
+
+  effectIt.effect(
+    "restamps a materialized style with TestClock time (#1793)",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped();
+        const path = yield* materializeCslStyle("<style/>", directory);
+        yield* fs.utimes(path, 0, 0);
+        yield* TestClock.setTime(1_800_000_000_000);
+        expect(yield* materializeCslStyle("<style/>", directory)).toBe(path);
+        expect(Option.getOrThrow((yield* fs.stat(path)).mtime).getTime()).toBe(
+          1_800_000_000_000,
+        );
+        expect(yield* fs.readDirectory(directory)).toEqual([basename(path)]);
+      }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+  );
+
+  effectIt.live("never exposes a partial file to a concurrent run", () =>
+    Effect.gen(function* () {
+      const zotero = yield* Effect.acquireDisposable(
+        Effect.promise(() => installStyles()),
+      );
+
+      const responses = yield* Effect.all(
+        Array.from({ length: 8 }, () => zotero.csl(DEPENDENT)),
+        { concurrency: "unbounded" },
+      );
+
+      const paths = new Set(responses.map(pathOf));
+      expect(paths.size).toBe(1);
+      const [path] = paths;
+      expect(yield* Effect.promise(() => readFile(path!, "utf8"))).toContain(
+        "</style>",
+      );
+      // The staged writes leave nothing of their own behind.
+      expect(yield* Effect.promise(() => readdir(dirname(path!)))).toEqual([
+        basename(path!),
+      ]);
+    }),
+  );
+
+  effectIt.live("reports an uninstalled requested style", () =>
+    Effect.gen(function* () {
+      const zotero = yield* Effect.acquireDisposable(
+        Effect.promise(() => installStyles()),
+      );
+
+      expect(yield* zotero.csl(MISSING)).toEqual({
+        contractVersion: CONTRACT_VERSION,
+        command: CSL_COMMAND,
+        errors: [
+          {
+            code: "style-missing",
+            styleId: MISSING,
+            message: expect.stringContaining(MISSING),
+          },
+        ],
+      });
+    }),
+  );
+
+  effectIt.live("reports an uninstalled independent parent", () =>
+    Effect.gen(function* () {
+      const zotero = yield* Effect.acquireDisposable(
+        Effect.promise(() => installStyles()),
+      );
+      yield* Effect.promise(() =>
+        zotero.writeStyle("orphan.csl", {
+          id: "http://www.zotero.org/styles/orphan",
+          parentId: MISSING,
+        }),
+      );
+
+      expect(
+        yield* zotero.csl("http://www.zotero.org/styles/orphan"),
+      ).toMatchObject({
+        errors: [{ code: "parent-missing", parentId: MISSING }],
+      });
+    }),
+  );
+
+  effectIt.live("reports a CSL file that refuses to be read", () =>
+    Effect.gen(function* () {
+      const zotero = yield* Effect.acquireDisposable(
+        Effect.promise(() => installStyles()),
+      );
+      deniedReads.add("journal.csl");
+
+      expect(yield* zotero.csl(DEPENDENT)).toMatchObject({
+        errors: [{ code: "style-unreadable", styleId: DEPENDENT }],
+      });
+    }),
+  );
+
+  effectIt.live("reports content that is no standalone CSL style", () =>
+    Effect.gen(function* () {
+      const zotero = yield* Effect.acquireDisposable(
+        Effect.promise(() => installStyles()),
+      );
+      yield* Effect.promise(() =>
+        zotero.writeCsl(
+          "broken.csl",
+          `<?xml version="1.0"?><style xmlns="http://purl.org/net/xbiblio/csl" version="1.0"><info><id>${MISSING}</id></info><bibliography><layout><text value="x"/></bibliography></style>`,
+        ),
+      );
+
+      expect(yield* zotero.csl(MISSING)).toMatchObject({
+        errors: [{ code: "style-invalid", styleId: MISSING }],
+      });
+    }),
+  );
+
+  effectIt.live(
+    "reports a dependent style whose own file is no CSL style",
+    () =>
+      Effect.gen(function* () {
+        const zotero = yield* Effect.acquireDisposable(
+          Effect.promise(() => installStyles()),
+        );
+        // The file names the installed parent, and closes an element it never
+        // opened. The parent's formatting stands in for the formatting a dependent
+        // style leaves out, never for markup it holds broken.
+        yield* Effect.promise(() =>
+          zotero.writeCsl(
+            "journal-broken.csl",
+            `<?xml version="1.0"?><style xmlns="http://purl.org/net/xbiblio/csl" version="1.0"><info><id>${BROKEN_DEPENDENT}</id><link href="${PARENT}" rel="independent-parent"/></info><layout/></citation></style>`,
+          ),
+        );
+
+        expect(yield* zotero.csl(BROKEN_DEPENDENT)).toMatchObject({
+          errors: [
+            {
+              code: "style-invalid",
+              styleId: BROKEN_DEPENDENT,
+              parentId: PARENT,
+            },
+          ],
+        });
+      }),
+  );
+
+  effectIt.live("reports a materialization that fails", () =>
+    Effect.gen(function* () {
+      const zotero = yield* Effect.acquireDisposable(
+        Effect.promise(() => installStyles()),
+      );
+
+      expect(
+        yield* Effect.flip(
+          resolveCslStyle(PARENT, {
+            resolve: (styleId) =>
+              resolveInstalledStyle(zotero.dataDir, { styleId }),
+            materialize: () =>
+              Effect.fail(
+                PlatformError.systemError({
+                  _tag: "Unknown",
+                  module: "FileSystem",
+                  method: "writeFileString",
+                  description: "no space left on device",
+                }),
+              ),
+          }),
+        ),
+      ).toMatchObject({
+        _tag: "CslWriteError",
+        styleId: PARENT,
+        cause: {
+          _tag: "PlatformError",
+          reason: { description: "no space left on device" },
         },
-      ],
-    });
-  });
-
-  it("reports a materialization that fails", async () => {
-    await using zotero = await installStyles();
-
-    const response = await resolveCslStyle(PARENT, {
-      resolve: (styleId) => resolveInstalledStyle(zotero.dataDir, { styleId }),
-      materialize: () => Promise.reject(new Error("no space left on device")),
-    });
-
-    expect(response).toMatchObject({
-      errors: [
-        {
-          code: "csl-write-failed",
-          styleId: PARENT,
-          message: expect.stringContaining("no space left on device"),
-        },
-      ],
-    });
-  });
+      });
+    }),
+  );
 });
 
 /**
@@ -231,7 +321,7 @@ interface StyleFixture {
 interface ZoteroStyles extends AsyncDisposable {
   dataDir: string;
   /** One `zotlit:csl` call against this install. */
-  csl: (styleId: string) => Promise<CslResponse>;
+  csl: (styleId: string) => ReturnType<typeof resolveCslStyle>;
   writeStyle: (filename: string, fixture: StyleFixture) => Promise<void>;
   writeCsl: (filename: string, xml: string) => Promise<void>;
 }

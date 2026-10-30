@@ -1,16 +1,16 @@
 ---
 title: "Install ZotLit Companion"
-description: "Install the required ZotLit Companion add-on in Zotero."
-introduced: "2.0.0"
-updated: "2.0.0"
+description: "Install the ZotLit Companion add-on in Zotero."
 ---
 
 import { Tabs, Tab } from "@/components/tabs";
 import { VersionLedger } from "@/components/version-ledger";
 import { XpiDownload } from "@/components/xpi-download";
 import { Steps, Step } from "fumadocs-ui/components/steps";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
-ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to ZotLit. The Companion is part of every supported ZotLit setup.
+ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to ZotLit and adds ZotLit actions to Zotero's menus. ZotLit browses and reads your library without it. To decide whether you need it, read [Keep Zotero and Obsidian in sync](/docs/how-to/keep-zotero-and-obsidian-in-sync).
 
 ## Install the add-on
 
@@ -40,7 +40,9 @@ ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to Zo
       <Step>
         ### Confirm the installation
 
-        After installing, a **ZotLit** pane should appear in Zotero's settings.
+        After installing, a <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane should appear in Zotero's settings.
+
+        In Obsidian, the welcome checklist above the Library View automatically detects the installation and marks <UiLabel name={m.welcome_step_companion_title()} /> as <UiLabel name={m.welcome_step_companion_installed()} />.
 
         You do not need to configure anything here right now. The next section explains when this matters.
 
@@ -75,7 +77,9 @@ ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to Zo
       <Step>
         ### Confirm the installation
 
-        After installing, a **ZotLit** pane should appear in Zotero's settings.
+        After installing, a <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane should appear in Zotero's settings.
+
+        In Obsidian, the welcome checklist above the Library View automatically detects the installation and marks <UiLabel name={m.welcome_step_companion_title()} /> as <UiLabel name={m.welcome_step_companion_installed()} />.
 
         You do not need to configure anything here right now. The next section explains when this matters.
 
@@ -87,7 +91,7 @@ ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to Zo
 
 ## Keep the database file current
 
-The Companion enables **Keep the database file up to date for Obsidian** by default. This setting lets ZotLit read recent Zotero changes when you update a literature note. Keep it enabled under the **Database** section of the ZotLit pane.
+The Companion enables <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> by default. This setting lets ZotLit read recent Zotero changes when you update a literature note. Keep it enabled under the <UiLabel name={m["zotero.prefs_database_section"]()} /> section of the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane.
 
 This database setting works without live updates. Basic context-menu actions also work through protocol links with no extra setup.
 
@@ -101,4 +105,4 @@ The setup for live updates is covered in [Set up live updates](/docs/how-to/set-
 
 ## Next steps
 
-Follow the tutorial to [create your first literature note](/docs/tutorial/first-note).
+If you have not yet, follow the tutorial to [open your library and create your first literature note](/docs/tutorial/first-note).

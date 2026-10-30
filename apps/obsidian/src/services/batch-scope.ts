@@ -8,30 +8,25 @@
  * Library Scope in canonical order. An exact target bypasses Library Scope
  * entirely, so a link keeps working for a Library the user never selected.
  */
-import {
-  getCollectionIDByKey,
-  getIndexedItemIDsByCollection,
-  getIndexedItemIDsByLibrary,
-  getLibraries,
-  getLibraryByGroupID,
-  getNoteItemIDsByCollection,
-  getNoteItemIDsByLibrary,
-  USER_LIBRARY_ID,
-} from "@zotlit/db";
-import type { Library } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { Effect } from "effect";
+import type { RpcClientError } from "effect/rpc";
 
+import { USER_LIBRARY_ID } from "@zotlit/db";
+import type { Library } from "@zotlit/db";
+
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import { libraryLabel } from "@/services/library-scope/label";
 import { compareSelectors, selectorOf } from "@/services/library-scope/scope";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { SettingsService } from "@/services/settings/service";
+import { LibraryScope } from "@/services/library-scope/service";
+import type {
+  DbUnavailable,
+  SnapshotExpired,
+} from "@/services/zotero-reads/rpc";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import type { FlatGroupDef } from "@/views/batch-modal";
-
-const logger = getLogger("batch-scope");
 
 /** Which items a batch action collects from its scope. */
 export type BatchScopeKind = "literature-items" | "notes";
@@ -60,10 +55,12 @@ export type BatchTarget =
 export interface BatchScopeRequest {
   target: BatchTarget;
   /**
-   * Library Scope resolved against the caller's pinned client. Read only for an
+   * Library Scope resolved against the caller's Snapshot. Read only for an
    * unqualified run.
    */
-  scope: ResolvedLibraryScope;
+  scope?: ResolvedLibraryScope;
+  /** The Libraries the caller's Snapshot holds. Read only for an exact target. */
+  libraries: readonly Library[];
 }
 
 export type BatchScope =
@@ -72,17 +69,14 @@ export type BatchScope =
   | { outcome: "collection-not-found" }
   | { outcome: "resolved"; itemIDs: number[] };
 
-/** The id query each kind runs, per scope. */
-const SCOPE_QUERIES = {
-  "literature-items": {
-    byLibrary: getIndexedItemIDsByLibrary,
-    byCollection: getIndexedItemIDsByCollection,
-  },
-  notes: {
-    byLibrary: getNoteItemIDsByLibrary,
-    byCollection: getNoteItemIDsByCollection,
-  },
-} as const satisfies Record<BatchScopeKind, unknown>;
+/**
+ * How reading a batch scope through ZoteroReads fails: the source is
+ * unavailable, the read snapshot expired, or the RPC transport failed.
+ */
+export type BatchScopeError =
+  | DbUnavailable
+  | SnapshotExpired
+  | RpcClientError.RpcClientError;
 
 /**
  * Resolve which item ids a batch run covers, rejecting a link aimed at a
@@ -96,52 +90,46 @@ const SCOPE_QUERIES = {
  * already defines.
  */
 export function resolveBatchScope(
-  client: NodeDatabaseClient,
+  reads: ZoteroReadsApi,
   kind: BatchScopeKind,
   request: BatchScopeRequest,
-): BatchScope {
-  const { groupID, collectionKey } = request.target;
+): Effect.Effect<BatchScope, BatchScopeError> {
+  return Effect.gen(function* () {
+    const { groupID, collectionKey } = request.target;
 
-  let libraryIDs: number[];
-  if (groupID === undefined) {
-    libraryIDs = request.scope.available.map((library) => library.libraryID);
-  } else {
-    const libraryID = exactLibraryID(client, groupID);
-    if (libraryID === null) {
-      logger.debug("Batch scope: target library unavailable", {
+    let libraryIDs: number[];
+    if (groupID === undefined) {
+      libraryIDs = request.scope!.available.map((library) => library.libraryID);
+    } else {
+      const libraryID = exactLibraryID(request.libraries, groupID);
+      if (libraryID === null) {
+        yield* Effect.logDebug("Batch scope: target library unavailable").pipe(
+          Effect.annotateLogs({ kind, groupID }),
+          withLogCategory("batch-scope"),
+        );
+        return { outcome: "unavailable-target" };
+      }
+      libraryIDs = [libraryID];
+    }
+
+    const itemIDs: number[] = [];
+    for (const libraryID of libraryIDs) {
+      const ids = yield* reads.ScopeItemIDs({
         kind,
-        groupID,
+        libraryID,
+        ...(collectionKey !== undefined && { collectionKey }),
       });
-      return { outcome: "unavailable-target" };
+      if (ids === null) {
+        yield* Effect.logDebug("Batch scope: collection not found").pipe(
+          Effect.annotateLogs({ kind, libraryID, collectionKey }),
+          withLogCategory("batch-scope"),
+        );
+        return { outcome: "collection-not-found" };
+      }
+      itemIDs.push(...ids);
     }
-    libraryIDs = [libraryID];
-  }
-
-  const queries = SCOPE_QUERIES[kind];
-  const itemIDs: number[] = [];
-  for (const libraryID of libraryIDs) {
-    if (collectionKey === undefined) {
-      itemIDs.push(...queries.byLibrary(client, libraryID));
-      continue;
-    }
-    const collection = { libraryID, collectionKey };
-    if (getCollectionIDByKey(client, collection) === undefined) {
-      logger.debug("Batch scope: collection not found", {
-        kind,
-        ...collection,
-      });
-      return { outcome: "collection-not-found" };
-    }
-    itemIDs.push(...queries.byCollection(client, collection));
-  }
-  return { outcome: "resolved", itemIDs };
-}
-
-/** The services a library-wide run reaches its Library Scope through. */
-export interface BatchScopePlanDeps {
-  db: Pick<DatabaseService, "acquireRead">;
-  settings: Pick<SettingsService, "loaded">;
-  libraryScope: Pick<LibraryScopeService, "resolveWith">;
+    return { outcome: "resolved", itemIDs };
+  });
 }
 
 export type BatchScopePlan =
@@ -160,46 +148,58 @@ export type BatchScopePlan =
     };
 
 /**
- * The planning phase both library-wide runners share: wait for the saved scope,
- * take one read lease, resolve Library Scope against the pinned client, and
- * gather the item ids the run covers. The lease ends with this call, so nothing
- * downstream — classification, confirmation, writes — runs under it.
+ * The planning phase both library-wide runners share: open one Snapshot,
+ * resolve Library Scope for an unqualified run, and gather the item ids the run
+ * covers. The Snapshot ends with this call, so nothing downstream —
+ * classification, confirmation, writes — runs under it.
  */
-export async function planBatchScope(
-  deps: BatchScopePlanDeps,
+export function planBatchScope(
   kind: BatchScopeKind,
   target: BatchTarget,
-): Promise<BatchScopePlan> {
-  // The saved scope is read through the settings snapshot, so wait for it before
-  // resolving against the pinned client.
-  await deps.settings.loaded;
+): Effect.Effect<BatchScopePlan, BatchScopeError, LibraryScope | ZoteroReads> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* (yield* ZoteroReads).snapshot;
+      const libraries = yield* reads.Libraries({});
+      const libraryScope =
+        target.groupID === undefined
+          ? yield* (yield* LibraryScope).resolveLibraries(libraries)
+          : null;
+      let unavailableLibraries = 0;
+      if (libraryScope !== null) {
+        if (libraryScope.available.length === 0) {
+          yield* Effect.logDebug(
+            "Batch scope: no library in scope is available",
+          ).pipe(Effect.annotateLogs({ kind }), withLogCategory("batch-scope"));
+          return { outcome: "no-library-in-scope" };
+        }
+        unavailableLibraries = libraryScope.unavailable.length;
+      }
 
-  using lease = await deps.db.acquireRead();
-  const libraryScope = deps.libraryScope.resolveWith(lease.client);
-  let unavailableLibraries = 0;
-  if (target.groupID === undefined) {
-    if (libraryScope.available.length === 0) {
-      logger.debug("Batch scope: no library in scope is available", { kind });
-      return { outcome: "no-library-in-scope" };
-    }
-    unavailableLibraries = libraryScope.unavailable.length;
-  }
-
-  const scope = resolveBatchScope(lease.client, kind, {
-    target,
-    scope: libraryScope,
-  });
-  if (scope.outcome !== "resolved") return { outcome: scope.outcome };
-  return { outcome: "resolved", itemIDs: scope.itemIDs, unavailableLibraries };
+      const scope = yield* resolveBatchScope(reads, kind, {
+        target,
+        ...(libraryScope === null ? {} : { scope: libraryScope }),
+        libraries,
+      });
+      if (scope.outcome !== "resolved") return { outcome: scope.outcome };
+      return {
+        outcome: "resolved",
+        itemIDs: scope.itemIDs,
+        unavailableLibraries,
+      };
+    }),
+  );
 }
 
 /** @returns the local id of the named Library, or `null` when it is absent. */
 function exactLibraryID(
-  client: NodeDatabaseClient,
+  libraries: readonly Library[],
   groupID: number,
 ): number | null {
   if (groupID === 0) return USER_LIBRARY_ID;
-  return getLibraryByGroupID(client, groupID)?.libraryID ?? null;
+  return (
+    libraries.find((library) => library.groupID === groupID)?.libraryID ?? null
+  );
 }
 
 /** One Library that contributed rows to a run, as its confirmation names it. */
@@ -215,10 +215,10 @@ export interface BatchLibrary {
  * several Libraries groups the same way an expanded Library Scope does.
  */
 export function batchLibraries(
-  client: NodeDatabaseClient,
+  libraries: readonly Library[],
   libraryIDs: ReadonlySet<number>,
 ): BatchLibrary[] {
-  return getLibraries(client)
+  return libraries
     .filter((library) => libraryIDs.has(library.libraryID))
     .sort(compareLibraries)
     .map((library) => ({
@@ -267,6 +267,7 @@ export function batchGroups(
   const qualify = libraries.length > 1;
   return libraries.flatMap((library) =>
     kinds.map((kind) => ({
+      ...kind,
       kind: batchGroupKey(library.libraryID, kind.kind),
       header: qualify
         ? (args: { count: number }) =>

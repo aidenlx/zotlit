@@ -1,158 +1,117 @@
-import type { FileManager, TFile, Vault } from "obsidian";
+// The resolvers a Literature Note's template render calls: note paths and links, annotations, Child Notes.
+import { Effect } from "effect";
+import type { TFile } from "obsidian";
 
-import { buildFilenameContext } from "@zotlit/db";
+import { toTemplateCollection } from "@zotlit/db";
 import type {
-  CollectionCache,
-  Item,
+  ItemFacets,
   ItemTag,
   NoteResolvers,
+  NoteSource,
   TemplateCollection,
   TemplateFilenameItemData,
 } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { hasSuffixMarker } from "@zotlit/templates";
+import type { AttachmentPathContext } from "@zotlit/db/path";
+import { joinNotePath } from "@zotlit/templates";
 
 import { buildAnnotationResolvers } from "@/lib/annotation-render";
-import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
+import { withLogCategory } from "@/lib/effect-log";
 import { creatorSummary } from "@/lib/item-summary";
-import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
-import type {
-  AttachmentImport,
-  AttachmentImportService,
-} from "@/services/attachment-import/service";
-import type { DatabaseService } from "@/services/database/service";
-import type { NoteImport, NoteImporter } from "@/services/note-import/service";
-import type { NoteIndex } from "@/services/note-index/service";
+import type { MarkdownLinker } from "@/lib/obsidian-file-manager";
+import { Vault } from "@/lib/obsidian-vault";
+import type { AttachmentImportBatch } from "@/services/attachment-import/service";
+import type { PreparedExcerpts } from "@/services/excerpt-image/prepare";
+import { childNoteLink } from "@/services/note-import/child-note-link";
+import { NoteIndex } from "@/services/note-index/service";
+import { getProfileBinding } from "@/services/profile/bindings";
+import type { ProfileBindingSettings } from "@/services/profile/bindings";
 import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { Template } from "@/services/template/service";
 
-import { resolveFreeNotePath } from "./filename";
+import { baseNoteName } from "./filename";
 
-const logger = getLogger("note-feature");
+const logged = withLogCategory("note-feature");
 
-/** The vault + file-manager surface the note operations touch. */
-interface NoteVaultApp {
-  vault: Pick<
-    Vault,
-    "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
-  >;
-  fileManager: Pick<FileManager, "generateMarkdownLink" | "processFrontMatter">;
-}
+/** The services the note resolvers read during a render. */
+export type NoteResolverServices = NoteIndex | Template | Vault;
 
 /**
- * The injected dependency bundle for the note feature's composable functions.
- * Every member is a structural `Pick` of the full service sized to what the
- * operations touch, so {@link createNoteFeature} accepts the full services as-is
- * and tests hand-write stubs with no casts. Holds no mutable state — compiled
- * template artifacts live in {@link TemplateService}.
+ * Runs one resolver read synchronously, inside the template render that
+ * calls the resolver: `Effect.runSyncWith` over the write's context.
  */
-export interface NoteFeatureDeps {
-  app: NoteVaultApp;
-  template: Pick<
-    TemplateService,
-    "ready" | "loaded" | "render" | "renderFilename" | "frontmatterFields"
-  >;
-  /**
-   * Lease-only. The sync `state`/`client` accessors are omitted so async
-   * operations must pin a snapshot via `acquireRead()` and read through the
-   * lease, rather than touching a `client` a refresh swap could close mid-read.
-   * The synchronous `renderAnnotation` path takes {@link SyncRenderDeps}.
-   */
-  db: Pick<DatabaseService, "acquireRead">;
-  noteIndex: Pick<NoteIndex, "ready" | "whenIndexed" | "getNotesByItemKey">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-  settings: Pick<SettingsService, "loaded">;
-  attachmentImport: Pick<AttachmentImportService, "prepare">;
-  noteImport: Pick<NoteImporter, "prepare">;
-}
-
-/**
- * `renderAnnotation` runs synchronously during `dragstart`, so it reads a live
- * `state`/`client` snapshot off `db` in one uninterrupted tick instead of
- * awaiting a lease — no `await` boundary a refresh swap could interleave with.
- */
-export type SyncRenderDeps = NoteFeatureDeps & {
-  db: Pick<DatabaseService, "acquireRead" | "state" | "client">;
-};
+export type NoteResolverRun = <A, E>(
+  effect: Effect.Effect<A, E, NoteResolverServices>,
+) => A;
 
 interface NoteTarget {
   path: string;
   file: TFile;
 }
 
-export function fetchItemCollections(
-  cache: CollectionCache,
-  client: NodeDatabaseClient,
-  item: Pick<Item, "itemID" | "libraryID">,
-): TemplateCollection[] {
-  return (
-    cache.byItemIDs(client, item.libraryID, [item.itemID]).get(item.itemID) ??
-    []
-  );
+/** An item's facets as its note filename reads them. */
+export function templateFacets(facets: ItemFacets): {
+  itemTags: readonly ItemTag[];
+  itemCollections: TemplateCollection[];
+} {
+  return {
+    itemTags: facets.tags,
+    itemCollections: facets.collections.map(toTemplateCollection),
+  };
 }
 
-/**
- * No DB reads — `itemTags` are passed in. `canSuffix` in the return tells the
- * caller whether a retry with `forceSuffix` can disambiguate a collision.
- *
- * @throws {@link EmptyFilenameError} when the rendered filename is empty.
- */
-export function resolveNotePath(
-  ctx: NoteFeatureDeps,
-  item: Item,
-  options: {
-    itemTags: readonly ItemTag[];
-    itemCollections: readonly TemplateCollection[];
-    settings: Readonly<Settings>;
-    forceSuffix?: boolean;
-  },
-): { path: string; canSuffix: boolean } {
-  const folderSetting = options.settings["note.literature-folder"];
-  const data = buildFilenameContext({
-    item,
-    tags: options.itemTags,
-    collections: options.itemCollections,
-    authorsShort: creatorSummary,
+/** The item's own tags and collections in `source`, for its note filename. */
+export function itemFacets(
+  source: NoteSource,
+): ReturnType<typeof templateFacets> {
+  const { itemID } = source.item;
+  return templateFacets({
+    tags: source.tagsByItemID.get(itemID) ?? [],
+    collections: source.collectionsByItemID.get(itemID) ?? [],
   });
-  const rendered = ctx.template.renderFilename(data);
-  const rel = resolveRenderedRelPath(folderSetting, rendered, {
-    exists: (path) => ctx.app.vault.getAbstractFileByPath(path) !== null,
-    forceSuffix: options.forceSuffix,
-  });
-  return {
-    path: literatureNotePath(folderSetting, rel),
-    canSuffix: hasSuffixMarker(rendered),
-  };
 }
 
 /**
  * The full resolver bundle for `item`'s note context, passed to
  * `@zotlit/db`'s `fetchNoteContext`: annotation resolvers, the literature-note
  * path/link/author-summary resolvers, and `zt.notes`' child-note link mapper.
+ * The template render calls each resolver synchronously; `run` reads the
+ * services for it.
  */
 export function buildNoteResolvers(
-  ctx: Omit<NoteFeatureDeps, "db">,
+  run: NoteResolverRun,
   options: {
-    attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
-    noteImport: Pick<NoteImport, "resolveChildNote">;
-    settings: Readonly<Settings> | null;
+    attachmentImport: Pick<AttachmentImportBatch, "decide" | "resolveLink">;
+    settings: ProfileBindingSettings | null;
     sourcePath: string;
+    zoteroPref: AttachmentPathContext;
+    excerptImages?: PreparedExcerpts;
+    /** The render's link call. */
+    link: MarkdownLinker;
   },
 ): NoteResolvers {
   const resolvingFallback = new Set<string>();
   const resolveTarget = (item: TemplateFilenameItemData): NoteTarget =>
-    resolveNoteTarget(ctx, item, {
+    resolveNoteTarget(run, item, {
       settings: options.settings,
       resolvingFallback,
     });
+  const failed = (message: string, itemKey: string, error: unknown) =>
+    run(
+      Effect.logError(message).pipe(
+        Effect.annotateLogs({ itemKey, error }),
+        logged,
+      ),
+    );
+  const generateMarkdownLink = (
+    ...[file, sourcePath, subpath, alias]: [TFile, string, string?, string?]
+  ) => options.link(file, sourcePath, { subpath, alias });
 
   return {
     annotation: buildAnnotationResolvers({
-      zoteroPref: ctx.zoteroPref,
+      zoteroPref: options.zoteroPref,
       attachmentImport: options.attachmentImport,
+      annotationImageLink: options.excerptImages?.annotationImageLink,
     }),
     item: {
       authorsShort: creatorSummary,
@@ -160,67 +119,63 @@ export function buildNoteResolvers(
         try {
           return resolveTarget(item).path;
         } catch (error) {
-          logger.error("Failed to resolve literature note path", {
-            itemKey: item.indexedKey,
+          failed(
+            "Failed to resolve literature note path",
+            item.indexedKey,
             error,
-          });
+          );
           return null;
         }
       },
       noteLink: (item, alias, subpath) => {
         try {
           const target = resolveTarget(item);
-          return ctx.app.fileManager.generateMarkdownLink(
+          return generateMarkdownLink(
             target.file,
             options.sourcePath,
             subpath,
             alias,
           );
         } catch (error) {
-          logger.error("Failed to resolve literature note link", {
-            itemKey: item.indexedKey,
+          failed(
+            "Failed to resolve literature note link",
+            item.indexedKey,
             error,
-          });
+          );
           return null;
         }
       },
     },
-    resolveChildNote: (note) => options.noteImport.resolveChildNote(note),
+    resolveChildNote: (note) =>
+      childNoteLink(
+        {
+          importedNote: (noteKey) =>
+            run(
+              Effect.flatMap(NoteIndex, (noteIndex) =>
+                noteIndex.getImportedNoteByNoteKey(noteKey),
+              ),
+            )[0],
+          link: options.link,
+        },
+        note,
+        options.sourcePath,
+      ),
   };
 }
 
-/** Join a rendered relative note path under the literature-note folder. */
-function literatureNotePath(folderSetting: string, rel: string): string {
-  const folder = normalizeFolderPath(folderSetting);
-  return joinFolderPath(folder, `${rel}.md`);
-}
-
-function resolveRenderedRelPath(
-  folderSetting: string,
-  rendered: string,
-  options: { exists: (path: string) => boolean; forceSuffix?: boolean },
-): string {
-  return resolveFreeNotePath(
-    rendered,
-    (rel) => options.exists(literatureNotePath(folderSetting, rel)),
-    options.forceSuffix,
-  );
-}
-
-type NoteTargetContext = Pick<
-  NoteFeatureDeps,
-  "noteIndex" | "template" | "app"
->;
-
 function resolveNoteTarget(
-  ctx: NoteTargetContext,
+  run: NoteResolverRun,
   item: TemplateFilenameItemData,
   options: {
     settings: Readonly<Settings> | null;
     resolvingFallback: Set<string>;
   },
 ): NoteTarget {
-  const byItemKey = ctx.noteIndex.getNotesByItemKey(item.indexedKey)[0];
+  const byItemKey = run(
+    Effect.flatMap(NoteIndex, (noteIndex) =>
+      noteIndex.getNotesByItemKey(item.indexedKey),
+    ),
+  )[0];
   if (byItemKey) return { path: byItemKey.path, file: byItemKey };
 
   const { settings, resolvingFallback } = options;
@@ -233,20 +188,22 @@ function resolveNoteTarget(
   }
   resolvingFallback.add(item.indexedKey);
   try {
-    const folderSetting = settings["note.literature-folder"];
+    const folderSetting = getProfileBinding(settings, "note.literature-folder");
     // A synthetic link target must be deterministic, so drop any `suffix()`
-    // marker to the base name (`() => false` = never apply a random suffix).
-    const rel = resolveRenderedRelPath(
-      folderSetting,
-      ctx.template.renderFilename(item),
-      { exists: () => false },
+    // marker to the base name.
+    const rel = baseNoteName(
+      run(
+        Effect.flatMap(Template, (template) => template.renderFilename(item)),
+      ),
     );
-    const path = literatureNotePath(folderSetting, rel);
+    const path = joinNotePath(folderSetting, rel);
     // This item has no indexed note (checked above), so an occupant at the
     // base path belongs to a different item. The real note's random `suffix()`
     // can't be predicted here, so linking to the occupant would point at the
     // wrong item — surface no target instead.
-    if (ctx.app.vault.getAbstractFileByPath(path) !== null) {
+    if (
+      run(Effect.flatMap(Vault, (vault) => vault.getAbstractFileByPath(path)))
+    ) {
       throw new Error(
         `Cannot resolve a synthetic note path: ${path} is occupied by another note`,
       );

@@ -1,6 +1,6 @@
 import type { ProtocolAction, UpdateScope } from "@zotlit/protocol";
 
-import { registerMenu } from "@/lib/l10n";
+import { l10nArgs, registerMenu } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 
 import { copyObjectKeys } from "./copy-key.js";
@@ -8,6 +8,7 @@ import {
   exploreInObsidian,
   importInObsidian,
   importManyInObsidian,
+  openAttachmentInObsidian,
   openInObsidian,
   updateManyInObsidian,
 } from "./obsidian.js";
@@ -57,6 +58,30 @@ function selectedKind(items: Zotero.Item[]): SelectedObjectKind {
 }
 
 /**
+ * The single selected item openable as a PDF in Obsidian: a PDF attachment
+ * itself, or a regular item with at least one PDF child attachment. File
+ * existence is checked later, on the Obsidian side — `getAttachments` /
+ * `Zotero.Items.get` stay synchronous so this can gate a menu.
+ */
+function pdfOpenableItem(context: LibraryMenuContext): Zotero.Item | null {
+  const items = allItems(context);
+  if (items.length !== 1) return null;
+  const item = items[0]!;
+  if (item.isAttachment()) return item.isPDFAttachment() ? item : null;
+  const children = Zotero.Items.get(item.getAttachments());
+  return children.some((child) => child.isPDFAttachment()) ? item : null;
+}
+
+/**
+ * Whether any submenu entry can show for this selection. Every entry needs a
+ * regular item or a note, so a selection of attachments alone leaves the
+ * submenu with nothing to open.
+ */
+function submenuHasEntries(context: LibraryMenuContext): boolean {
+  return regularItems(context).length >= 1 || noteItems(context).length >= 1;
+}
+
+/**
  * `count` feeds the `$count` plural selector in the `update` label's Fluent
  * message. `setL10nArgs` needs a JSON string, not an object (see the type
  * augmentation in `types/zotero.d.ts`).
@@ -69,7 +94,7 @@ function onShowing(action: ProtocolAction) {
       return;
     }
     context.setVisible(count >= 1);
-    context.setL10nArgs(JSON.stringify({ count }));
+    context.setL10nArgs(l10nArgs("zotlit-menu-item-update", { count }));
   };
 }
 
@@ -108,12 +133,24 @@ export function registerItemMenu(pluginID: string): Disposable {
       },
       {
         menuType: "menuitem",
+        l10nID: "zotlit-menu-item-open-pdf",
+        onShowing(_event: Event, context: LibraryMenuContext): void {
+          context.setVisible(pdfOpenableItem(context) !== null);
+        },
+        onCommand(_event: Event, context: LibraryMenuContext): void {
+          const item = pdfOpenableItem(context);
+          if (item === null) return;
+          openAttachmentInObsidian(item);
+        },
+      },
+      {
+        menuType: "menuitem",
         l10nID: "zotlit-menu-item-copy-key",
         onShowing(_event: Event, context: LibraryMenuContext): void {
           const items = allItems(context);
           context.setVisible(items.length >= 1);
           context.setL10nArgs(
-            JSON.stringify({
+            l10nArgs("zotlit-menu-item-copy-key", {
               count: items.length,
               kind: selectedKind(items),
             }),
@@ -130,6 +167,7 @@ export function registerItemMenu(pluginID: string): Disposable {
         l10nID: "zotlit-menu-submenu",
         onShowing(_event: Event, context: LibraryMenuContext): void {
           context.setVisible(allItems(context).length >= 1);
+          context.setEnabled(submenuHasEntries(context));
         },
         menus: [
           {

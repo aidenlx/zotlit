@@ -9,7 +9,7 @@ import { parseItemExtra } from "@/lib/zt-extra";
 import type { ItemExtra } from "@/lib/zt-extra";
 import { toTemplateTag } from "@/lib/zt-tag";
 import type { ItemTag, TemplateTag } from "@/lib/zt-tag";
-import { itemSelectUri, itemWebUrl } from "@/lib/zt-uri";
+import { itemSelectUri, itemWebUrl, libraryViewUri } from "@/lib/zt-uri";
 import type { Creator, Item } from "@/queries/items";
 
 /**
@@ -90,7 +90,7 @@ export interface TemplateItemBaseData {
    * `publicationTitle`, which stays accessible — both names work.
    */
   containerTitle: string | null;
-  /** Citation key, from Better BibTeX or Zotero's native citation key. */
+  /** Citation key, from Zotero's native citation key field, where Better BibTeX writes the keys it generates. */
   citationKey: string | null;
   /** Alias for {@link citationKey}; both stay accessible on `zt.*`. */
   citekey: string | null;
@@ -371,6 +371,8 @@ export interface ResolvedItemCore extends TemplateAuthorData {
   backlink: string;
   /** Zotero web library URL (`https://www.zotero.org/...`); `null` for a never-synced personal library. */
   weblink: string | null;
+  /** Obsidian link (`obsidian://zotlit/show-in-library?...`) that shows the item in ZotLit's Library View. */
+  librarylink: string;
 }
 
 /** Compute the {@link ResolvedItemCore} conveniences for an item. The single
@@ -384,6 +386,7 @@ export function resolveItemCore(input: {
   return {
     backlink: itemSelectUri(input.item.key, input.item.groupID),
     weblink: itemWebUrl(input.item.key, input.item.groupID, input.username),
+    librarylink: libraryViewUri(input.item.key, input.item.groupID),
     authors: resolvePrimaryCreators(input.baseData),
     authorsShort: input.authorsShort(input.item),
   };
@@ -401,7 +404,7 @@ export interface TemplateParentItemData
    * Always `null` on a standalone annotation render (annotation-view
    * drag/insert, note import) — resolving the parent's real literature-note
    * path would require app-layer vault-index I/O, which the annotation path
-   * (synchronous on `dragstart`) intentionally avoids. Stubbed rather than
+   * intentionally avoids. Stubbed rather than
    * omitted so `zt.parentItem.notePath` reads as "unresolved" instead of
    * `undefined`.
    */

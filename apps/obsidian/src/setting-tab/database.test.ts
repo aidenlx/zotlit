@@ -1,62 +1,373 @@
-import type { Setting, SettingGroup } from "obsidian";
-import { afterEach, describe, expect, it, vi } from "vitest";
+// @vitest-environment happy-dom
+import { expect, it } from "@effect/vitest";
+import {
+  DropdownComponent,
+  ExtraButtonComponent,
+  renderRow,
+} from "@mock/obsidian";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Layer,
+  PubSub,
+  Queue,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import { TestClock } from "effect/testing";
 
-import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import * as m from "@/lib/i18n/generated/messages";
+import { defaults } from "@/services/settings/schema";
+import {
+  PluginSettings,
+  SettingsMutationError,
+} from "@/services/settings/service";
+import type {
+  ZoteroPrefSnapshot,
+  ZoteroProfileInfo,
+} from "@/services/zotero-pref/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type {
+  ZoteroReadsApi,
+  ZoteroReadsEvent,
+  ZoteroReadsState,
+} from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
+import { failureOf, recordingRuns, scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
-import { databasePageItems } from "./database";
+import {
+  databaseFileItem,
+  databaseLocationItems,
+  refreshReads,
+} from "./database";
 
-afterEach(() => vi.unstubAllGlobals());
+const SNAPSHOT: ZoteroPrefSnapshot = {
+  state: "ready",
+  prefs: new Map(),
+  resolvedProfileDir: "/home/ada/.zotero/abc.default",
+  profileDirOverride: null,
+  dataDirOverride: null,
+  dataDir: "/home/ada/Zotero",
+  databasePath: "/home/ada/Zotero/zotero.sqlite",
+  sourceId: "source-1",
+  baseAttachmentPath: null,
+  httpPort: null,
+};
 
-describe("Zotero database settings", () => {
-  it("starts with required Companion setup and symptom-based help", () => {
-    const items = databasePageItems({} as SettingTabContext);
+const PROFILES: ZoteroProfileInfo[] = [
+  { dir: "/home/ada/.zotero/abc.default", name: "default", isDefault: true },
+  { dir: "/home/ada/.zotero/xyz.thesis", name: "thesis", isDefault: false },
+];
 
-    expect(items.slice(0, 2)).toMatchObject([
-      {
-        name: "ZotLit Companion, the Zotero add-on",
-        desc: "The Companion keeps recent Zotero changes available to ZotLit.",
-      },
-      {
-        name: "Zotero changes not appearing?",
-        desc: "Follow the troubleshooting guide to make recent changes available to ZotLit.",
-      },
-    ]);
-  });
+const READS: ZoteroReadsState = {
+  state: "ready",
+  error: null,
+  moved: false,
+  dbFileMissing: false,
+  activeReadMode: "copy",
+};
 
-  it.each([
-    [0, DOCS_COMPANION],
-    [1, `${DOCS_SITE_URL}/docs/how-to/fix-stale-data`],
-  ])("opens guide %i at its documented URL", (index, expectedUrl) => {
-    const open = vi.fn();
-    vi.stubGlobal("window", { open });
-
-    buttonAction(index)();
-
-    expect(open).toHaveBeenCalledWith(expectedUrl);
-  });
+/**
+ * The Zotero location rows over a preference store and reads the test drives.
+ * A folder write moves the override and keeps the preferences until they are
+ * read again, as the real service does.
+ */
+const setup = Effect.fn("setup")(function* (
+  refresh: ZoteroReads["Service"]["refresh"] = Effect.void,
+  update: PluginSettings["Service"]["update"] = () => Effect.succeed(defaults),
+) {
+  const pref = yield* SubscriptionRef.make(SNAPSHOT);
+  const reads = yield* SubscriptionRef.make(READS);
+  const events = yield* PubSub.unbounded<ZoteroReadsEvent>({ replay: 1 });
+  const writes: string[] = [];
+  const write = (
+    field: "profileDirOverride" | "dataDirOverride",
+    dir: string | null,
+  ) =>
+    Effect.sync(() => writes.push(`${field}=${dir}`)).pipe(
+      Effect.andThen(
+        SubscriptionRef.update(pref, (current) => ({
+          ...current,
+          [field]: dir,
+        })),
+      ),
+    );
+  const services = yield* Layer.build(
+    Layer.mergeAll(
+      testNotifier().layer,
+      Layer.mock(ZoteroPref, {
+        current: SubscriptionRef.get(pref),
+        changes: SubscriptionRef.changes(pref),
+        listProfiles: Effect.succeed(PROFILES),
+        setProfileDir: (dir) => write("profileDirOverride", dir),
+        setDataDir: (dir) => write("dataDirOverride", dir),
+      }),
+      Layer.mock(ZoteroReads, {
+        reads: stubService<ZoteroReadsApi>("ZoteroReadsApi", {}),
+        current: SubscriptionRef.get(reads),
+        changes: SubscriptionRef.changes(reads),
+        refresh,
+        events: Stream.fromPubSub(events),
+      }),
+      Layer.mock(PluginSettings, {
+        current: Effect.succeed(defaults),
+        changes: Stream.empty,
+        update,
+      }),
+    ),
+  );
+  const { tab, runs } = recordingRuns((yield* scopedSettingTab(services)).tab);
+  const ctx = stubService<SettingTabContext>("SettingTabContext", { tab });
+  return { ctx, pref, reads, events, writes, runs };
 });
 
-function buttonAction(index: number): () => void {
-  let action: (() => void) | undefined;
-  const button = {
-    setButtonText: () => button,
-    onClick: (onClick: () => void) => {
-      action = onClick;
-      return button;
-    },
+/**
+ * The rendered row with the given id, so a test reads what the user gets. The
+ * row's cleanup runs when the case ends.
+ */
+const render = Effect.fnUntraced(function* (
+  ctx: SettingTabContext,
+  id: string,
+) {
+  const row = [databaseFileItem(ctx), ...databaseLocationItems(ctx)].find(
+    (item) => item.id === id,
+  );
+  if (!row) throw new Error(`Expected a render row: ${id}`);
+  const setting = renderRow(row);
+  yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
+  const dropdown = setting.components.find(
+    (control) => control instanceof DropdownComponent,
+  );
+  const button = setting.components.find(
+    (control) => control instanceof ExtraButtonComponent,
+  );
+  return {
+    dropdown,
+    button,
+    text: () => (setting.desc as unknown as DocumentFragment).textContent,
   };
-  const setting = {
-    addButton: (configure: (component: typeof button) => void) => {
-      configure(button);
-      return setting;
-    },
+});
+
+/** Let the row fibers take what is queued for them; no time passes. */
+const settle = TestClock.adjust("0 millis");
+
+it.effect(
+  "lists the profiles and writes a chosen profile folder through ZoteroPref",
+  () =>
+    Effect.gen(function* () {
+      const { ctx, pref, writes } = yield* setup();
+      const row = yield* render(ctx, "settings_db_profile_dir");
+
+      yield* settle;
+      expect(row.dropdown?.options.map((option) => option.value)).toEqual([
+        "",
+        ...PROFILES.map((profile) => profile.dir),
+        "\0browse",
+      ]);
+      expect(row.text()).toContain("/home/ada/.zotero/abc.default/prefs.js");
+
+      row.dropdown!.choose(PROFILES[1]!.dir);
+      yield* settle;
+      expect(writes).toEqual([`profileDirOverride=${PROFILES[1]!.dir}`]);
+
+      yield* SubscriptionRef.update(pref, (current) => ({
+        ...current,
+        state: "loading" as const,
+        prefs: new Map(),
+      }));
+      yield* settle;
+      expect(row.text()).toContain(m.settings_db_status_loading());
+    }),
+);
+
+it.effect(
+  "keeps the profile the user chose over a snapshot queued before the choice",
+  () =>
+    Effect.gen(function* () {
+      // Snapshots wait in a queue until the row's fiber takes them, as they do
+      // while the renderer is busy.
+      let current = SNAPSHOT;
+      const changes = yield* Queue.unbounded<ZoteroPrefSnapshot>();
+      const publish = (next: ZoteroPrefSnapshot) => {
+        current = next;
+        Queue.offerUnsafe(changes, next);
+      };
+      publish(SNAPSHOT);
+      const services = yield* Layer.build(
+        Layer.mock(ZoteroPref, {
+          current: Effect.sync(() => current),
+          changes: Stream.fromQueue(changes),
+          listProfiles: Effect.succeed(PROFILES),
+          setProfileDir: (dir) =>
+            Effect.sync(() => publish({ ...current, profileDirOverride: dir })),
+        }),
+      );
+      const ctx = stubService<SettingTabContext>("SettingTabContext", {
+        tab: (yield* scopedSettingTab(services)).tab,
+      });
+      const row = yield* render(ctx, "settings_db_profile_dir");
+
+      // Profile A's preferences finish reading, then the user picks B before
+      // the row paints A. B moves the override and keeps A's preferences.
+      publish({
+        ...current,
+        prefs: new Map(),
+        profileDirOverride: PROFILES[0]!.dir,
+      });
+      row.dropdown!.choose(PROFILES[1]!.dir);
+      yield* settle;
+
+      expect(row.dropdown?.getValue()).toBe(PROFILES[1]!.dir);
+    }),
+);
+
+it.effect(
+  "writes the data folder override and follows the resolved data folder",
+  () =>
+    Effect.gen(function* () {
+      const { ctx, pref, writes } = yield* setup();
+      const row = yield* render(ctx, "settings_db_data_dir");
+      yield* settle;
+      expect(row.text()).toContain("/home/ada/Zotero");
+
+      // A folder chosen elsewhere joins the dropdown as the selected entry.
+      yield* SubscriptionRef.update(pref, (current) => ({
+        ...current,
+        dataDirOverride: "/mnt/library",
+        dataDir: "/mnt/library",
+      }));
+      yield* settle;
+      expect(row.text()).toContain("/mnt/library");
+      expect(row.dropdown?.getValue()).toBe("/mnt/library");
+
+      row.dropdown!.choose("");
+      yield* settle;
+      expect(writes).toEqual(["dataDirOverride=null"]);
+    }),
+);
+
+it.effect("echoes the profile, data folder and Source ID as they move", () =>
+  Effect.gen(function* () {
+    const { ctx, pref } = yield* setup();
+    const row = yield* render(ctx, "settings_db_source_id");
+    yield* settle;
+    expect(row.text()).toContain("source-1");
+
+    yield* SubscriptionRef.update(pref, (current) => ({
+      ...current,
+      prefs: new Map(),
+      sourceId: "source-2",
+    }));
+    yield* settle;
+    expect(row.text()).toContain("source-2");
+  }),
+);
+
+it.effect("names the read mode again after the reads change", () =>
+  Effect.gen(function* () {
+    const { ctx, reads, events } = yield* setup();
+    const row = yield* render(ctx, "settings_db_read_mode");
+    const named = (mode: () => string) =>
+      m.settings_db_active_read_mode({ mode: mode() });
+    yield* settle;
+    expect(row.text()).toContain(named(m.settings_db_read_mode_copy));
+
+    yield* SubscriptionRef.update(reads, (current) => ({
+      ...current,
+      activeReadMode: "reflink" as const,
+    }));
+    yield* PubSub.publish(events, { _tag: "changed" });
+    yield* settle;
+    expect(row.text()).toContain(named(m.settings_db_read_mode_reflink));
+  }),
+);
+
+/** A refresh that counts its runs and ends with `outcome`. */
+const countedRefresh = (outcome: ZoteroReads["Service"]["refresh"]) => {
+  let runs = 0;
+  return {
+    refresh: Effect.suspend(() => {
+      runs += 1;
+      return outcome;
+    }),
+    runs: () => runs,
   };
-  const item = databasePageItems({} as SettingTabContext)[index];
-  if (!item || !("render" in item) || !item.render) {
-    throw new Error(`Database setting ${index} has no custom renderer`);
-  }
-  item.render(setting as unknown as Setting, {} as SettingGroup);
-  if (!action) throw new Error(`Database setting ${index} has no button`);
-  return action;
-}
+};
+
+it.effect("refreshes the reads from the database row", () =>
+  Effect.gen(function* () {
+    const refresh = countedRefresh(Effect.void);
+    const { ctx } = yield* setup(refresh.refresh);
+    const row = yield* render(ctx, "settings_db_file");
+    // The path paints once the row's fiber has wired the button.
+    yield* settle;
+    expect(row.text()).toContain("/home/ada/Zotero/zotero.sqlite");
+
+    row.button!.click();
+    yield* settle;
+    expect(refresh.runs()).toBe(1);
+  }),
+);
+
+it.effect("fails the read mode save under its label", () =>
+  Effect.gen(function* () {
+    const patches: unknown[] = [];
+    const failure = new SettingsMutationError({
+      message: "Settings are read-only",
+      cause: null,
+    });
+    const { ctx, runs } = yield* setup(Effect.void, (patch) =>
+      Effect.sync(() => patches.push(patch)).pipe(
+        Effect.andThen(Effect.fail(failure)),
+      ),
+    );
+    const row = yield* render(ctx, "settings_db_read_mode");
+    yield* settle;
+
+    row.dropdown!.choose("immutable");
+    yield* settle;
+    expect(patches).toEqual([{ "zotero.read-mode": "immutable" }]);
+    expect(runs.map((run) => [failureOf(run), run.label])).toEqual([
+      [failure, m.settings_failed_save()],
+    ]);
+  }),
+);
+
+it.effect("runs one refresh when the refresh fails", () =>
+  Effect.gen(function* () {
+    const refresh = countedRefresh(
+      Effect.fail(new DbUnavailable({ message: "zotero.sqlite is locked" })),
+    );
+    const { ctx } = yield* setup(refresh.refresh);
+    const row = yield* render(ctx, "settings_db_file");
+    yield* settle;
+    expect(row.text()).toContain("/home/ada/Zotero/zotero.sqlite");
+
+    row.button!.click();
+    yield* settle;
+    expect(refresh.runs()).toBe(1);
+  }),
+);
+
+/** How `refreshReads` ends over `refresh`, with a recording Notifier. */
+const refreshExit = <E>(refresh: Effect.Effect<void, E>) =>
+  refreshReads(refresh).pipe(Effect.provide(testNotifier().layer), Effect.exit);
+
+it.effect("fails a refresh with the database's error", () =>
+  Effect.gen(function* () {
+    const failure = new DbUnavailable({ message: "zotero.sqlite is locked" });
+    const exit = yield* refreshExit(Effect.fail(failure));
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
+  }),
+);
+
+it.effect("ends a done refresh with no failure", () =>
+  Effect.gen(function* () {
+    expect(Exit.isSuccess(yield* refreshExit(Effect.void))).toBe(true);
+  }),
+);

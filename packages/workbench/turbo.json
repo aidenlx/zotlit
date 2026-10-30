@@ -1,0 +1,39 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // The shared type contract and English fixtures for the UI tests.
+    "generate:message-types": {
+      "inputs": [
+        "scripts/generate-message-types.ts",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ],
+      "dependsOn": ["@zotlit/obsidian-i18n#build"],
+      "outputs": ["src/ui/generated/**"],
+      "outputLogs": "errors-only"
+    },
+    "build": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:message-types"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ]
+    },
+    "typecheck": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:message-types"]
+    },
+    "typecheck:test": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:message-types"]
+    },
+    "test": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:message-types"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ]
+    }
+  }
+}

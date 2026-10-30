@@ -6,6 +6,14 @@
     "allowJs": true,
     "checkJs": true,
     "isolatedDeclarations": false,
+    // Read by the effecttsgo lint rules, as in tsconfig.app.json.
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "effectFn": ["inferred-span"],
+        "allowedUnstableApis": ["effect/rpc", "effect/workers"]
+      }
+    ],
     "types": ["node"]
   },
   "include": ["./scripts/**/*.js", "./scripts/**/*.ts", "vite.config.ts"],

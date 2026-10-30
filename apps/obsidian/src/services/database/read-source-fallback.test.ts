@@ -1,31 +1,49 @@
 // Read-fallback priority at the database source boundary.
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { Effect } from "effect";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/reflink", () => {
-  class ReflinkUnsupportedError extends Error {}
+vi.mock("@/lib/reflink", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/reflink")>();
   return {
-    ReflinkUnsupportedError,
+    ...actual,
     reflink: vi.fn(async () => {
-      throw new ReflinkUnsupportedError();
+      throw new actual.ReflinkUnsupportedError();
     }),
   };
 });
 
 import { prepareRead } from "./read-source";
 
-async function createFixture(): Promise<AsyncDisposable & { source: string }> {
+function inspectPrepared<A>(
+  preparation: ReturnType<typeof prepareRead>,
+  inspect: (prepared: import("./read-source").PreparedRead) => A,
+): Promise<A> {
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.map(preparation, (prepared) => inspect(prepared)),
+    ).pipe(Effect.provide(NodeFileSystem.layer)),
+  );
+}
+
+async function createFixture(): Promise<
+  AsyncDisposable & { source: string; sqlite: DatabaseSync }
+> {
   await using stack = new AsyncDisposableStack();
   const dir = await mkdtemp(join(tmpdir(), "zotlit-read-fallback-test-"));
   stack.defer(() => rm(dir, { recursive: true, force: true }));
   const source = join(dir, "zotero.sqlite");
-  await writeFile(source, Buffer.alloc(100));
+  const sqlite = stack.use(new DatabaseSync(source));
+  sqlite.exec("CREATE TABLE fixture (value TEXT NOT NULL)");
   const cleanup = stack.move();
   return {
     source,
+    sqlite,
     async [Symbol.asyncDispose]() {
       await cleanup[Symbol.asyncDispose]();
     },
@@ -33,31 +51,59 @@ async function createFixture(): Promise<AsyncDisposable & { source: string }> {
 }
 
 describe("reflink fallback reasons", () => {
-  it("prioritizes a skipped WAL over the unsupported reflink", async () => {
+  it("keeps committed WAL rows in the verified copy fallback", async () => {
     await using fixture = await createFixture();
-    const { source } = fixture;
-    await writeFile(`${source}-wal`, "wal");
+    const { source, sqlite } = fixture;
+    sqlite.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA wal_autocheckpoint = 0;
+      PRAGMA wal_checkpoint(TRUNCATE);
+      INSERT INTO fixture VALUES ('committed in WAL');
+    `);
 
-    await using prepared = await prepareRead("reflink", source);
+    await inspectPrepared(prepareRead("reflink", source), (prepared) => {
+      using snapshot = new DatabaseSync(prepared.path, {
+        readOnly: true,
+      });
 
-    expect(prepared.fallbackReason).toBe("wal-not-replayed");
+      expect(prepared.path).not.toBe(source);
+      expect(prepared.effectiveMode).toBe("copy");
+      expect(prepared.uriOptions).toEqual({ mode: "ro" });
+      expect(prepared.fallbackReason).toBe("reflink-unsupported");
+      expect(snapshot.prepare("SELECT value FROM fixture").get()).toEqual({
+        value: "committed in WAL",
+      });
+    });
   });
 
-  it("warns when Auto falls back to an immutable read that skips a WAL", async () => {
+  it("reports Auto's verified copy fallback when reflinks are unsupported", async () => {
     await using fixture = await createFixture();
     const { source } = fixture;
-    await writeFile(`${source}-wal`, "wal");
 
-    await using prepared = await prepareRead("auto", source);
-
-    expect(prepared.fallbackReason).toBe("wal-not-replayed");
+    await inspectPrepared(prepareRead("auto", source), (prepared) => {
+      expect(prepared.path).not.toBe(source);
+      expect(prepared.effectiveMode).toBe("copy");
+      expect(prepared.fallbackReason).toBe("reflink-unsupported");
+    });
   });
 
-  it("reports the unsupported reflink when no WAL is skipped", async () => {
+  it("reports an unsupported explicit reflink when no WAL is skipped", async () => {
     await using fixture = await createFixture();
     const { source } = fixture;
-    await using prepared = await prepareRead("reflink", source);
+    await inspectPrepared(prepareRead("reflink", source), (prepared) => {
+      expect(prepared.path).not.toBe(source);
+      expect(prepared.effectiveMode).toBe("copy");
+      expect(prepared.fallbackReason).toBe("reflink-unsupported");
+    });
+  });
 
-    expect(prepared.fallbackReason).toBe("reflink-unsupported");
+  it("uses a verified main-file copy for an explicit immutable read", async () => {
+    await using fixture = await createFixture();
+    const { source } = fixture;
+    await inspectPrepared(prepareRead("immutable", source), (prepared) => {
+      expect(prepared.path).not.toBe(source);
+      expect(prepared.effectiveMode).toBe("immutable");
+      expect(prepared.uriOptions).toEqual({ mode: "ro", immutable: true });
+    });
   });
 });

@@ -1,0 +1,988 @@
+# ZotLit Obsidian Plugin
+
+The Obsidian-side integration: how Zotero data becomes vault files, in-text citations, and sidebar views.
+
+## Language
+
+### Notes
+
+**Literature Note** _(Obsidian)_:
+An Obsidian Markdown file linked one-to-one with a Zotero Item. Identified by a `zotero-key` frontmatter field containing the Item's Indexed Key. Created, updated, and overwritten through the note-feature operations. The Zotero-side source is an Item (not a Child Note).
+_Avoid_: note (ambiguous across Zotero/Obsidian boundary), Zotero note (ambiguous with Child Note), document
+
+**Imported Note** _(Obsidian)_:
+An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes, and the same `zotlit-profile` stamp as a Literature Note — written at creation from the creation context (an attached note: the parent's Literature Note stamp; otherwise the default Profile), re-emitted on every overwrite, absent meaning the default Profile. Writes follow the stamp; the parent item's Profile is never consulted after creation. Created only by an explicit import command, never by rendering a Literature Note. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
+_Avoid_: child note (that's the Zotero-side source), mirror, note (ambiguous)
+
+**Plain HTML Child Note** _(Zotero)_:
+A Child Note whose stored HTML has no usable Zotero note schema marker. Note Import preserves its general document structure and visible formatting without assigning Zotero-specific semantics to citations, annotation excerpts, or embedded attachments.
+_Avoid_: non-standard Zotero note, schema-less note
+
+**Live Text**:
+The text a vault note or document holds now: the text of the view that has it open, unsaved edits included, else the text on disk. ZotLit reads and rewrites a note through its Live Text, so an update never overwrites what the user is typing. Distinct from an Annotation's live text in Zotero, which an Annotation Card shows.
+_Avoid_: buffer, editor text, file content (the disk text only)
+
+**Managed Region**:
+The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. A Query Block in it keeps its text through the update. Content outside the markers is user-owned and preserved. A note has one only when its template has a Managed Block; the default template has none. Removing the two marker lines stops management, and an update then leaves the body untouched.
+_Avoid_: managed block, template region, synced region
+
+**Managed Frontmatter**:
+Frontmatter fields on a Literature Note whose values are re-evaluated on update. `zotero-key` is the system field; each ordered user-configured entry either declares a static key with a merge strategy and one value, or is a Spread Entry that produces several fields at once. A static-key value lives in exactly one language tier — a Liquid expression for plain values, a JSON-e template for nested construction and conditional presence, or a JavaScript expression behind JavaScript Templates. A value can return any valid frontmatter scalar, sequence, or mapping; only a JSON-e value can make its field absent, and an absent field is deleted under replace and preserved under append and keep. Each field's merge strategy (replace, append arrays, keep existing) governs how the result combines with the value already on the note. Entries apply in list order: when more than one entry produces the same key, each later entry's merge strategy combines with the pending result, so the later entry wins. Unmanaged keys are preserved. Entry order is the write order for fields on a newly created note — the first entry that produces a key sets its position; on an update, keys already on the note keep their position.
+
+**Spread Entry**:
+A Managed Frontmatter entry with no key whose value — a JSON-e template, or a JavaScript expression behind JavaScript Templates — evaluates to a string-keyed mapping; every produced key becomes a field at the entry's position under the entry's single merge strategy. A key the mapping omits is left untouched, and the whole entry can be conditionally inert; deleting a field stays a static-key capability. A produced key that is reserved or empty refuses the operation.
+_Avoid_: multi-field entry, mapping entry, extra slot
+
+### Templates
+
+**Template**:
+The source a Template Document holds, written in one rendering language — Liquid by default, or Eta when JavaScript Templates are enabled — and rendered with `zt` data to produce Markdown output. Templates call each other by name, not by file, so a set may mix languages. A Template changes language by replacing its source with the other language's edition; content is never converted between languages.
+_Avoid_: format, layout, schema
+
+**Legacy Template File** _(2.1.x)_:
+A per-slot file `zotlit-<name>.liquid.md` or `zotlit-<name>.eta.md` from the 2.1.x format: the slots `note`, `content`, `annotation`, `filename`, `cite`, and `cite2`, plus any non-canonical name that served as a partial. The one-shot converter folds the note slots into the default Profile document, folds `cite` and `cite2` into the Citation Template, and renames each partial file. The term exists for the converter and its prompt alone.
+_Avoid_: template (bare, for the retired shape), slot file (in UI copy)
+
+**Template Document**:
+Any file in the template folder that the Template Workbench edits: a Profile document, the Citation Template, or a Shared Partial. The filename prefix names the kind; a document carries an optional manifest and one source in one rendering language. One editor view opens every kind; the kind picks the tabs and the preview's root data.
+_Avoid_: template file (the retired per-slot files), slot
+
+**Template Draft**:
+Template Document source that is not the installed file at its path: a scratch file passed to a check, or the editor's current buffer. A draft carries its own manifest, so it can name an identity no installed Profile has; the draft's own source bypasses installation, while the dependencies it calls stay installed and subject to the source freshness barrier.
+_Avoid_: scratch file (the transport, not the source), unsaved template, preview source
+
+**Citation Template**:
+The one vault-global Template Document, `zotlit-citation.md`, that renders every in-text Citation: the citation suggester's insert, and an annotation's `zt.citation`. It receives the Citation Variant and renders both variants from one source. User-facing copy calls it **Citation text**.
+_Avoid_: cite template, cite2, alternate citation template (a variant, not a second template), citation format
+
+**Citation Variant**:
+The gesture a Citation was requested with, handed to the Citation Template as an enum: **main** (Enter) or **alt** (Shift+Enter, or a trailing `/` in the suggester query). The variant names the gesture only; the Citation Template decides what each variant renders. User-facing copy says **main citation** and **alternate citation**.
+_Avoid_: secondary citation, parenthetical / author-in-text (one possible mapping, not the variant), alt flag (it is an enum)
+
+**Shared Partial**:
+A vault-global Template Document, `zotlit-partial.<name>.md`, that any template renders by name. Partials live in one flat namespace; a Profile, the Citation Template, or another partial calls one with a render or include tag. A partial has no root data of its own: it renders with the data of the template that calls it. User-facing copy says **partial**.
+_Avoid_: snippet, block, include file, annotation partial (the Annotation Section belongs to the Profile document), bundled partial (the manifest copy is a sharing transport, not the partial)
+
+**Reserved Partial Name**:
+A template name a Shared Partial cannot take: the Profile source names and the Citation Template name. A file that takes one is not a partial — reconciliation keeps it out of the partial registry and reports it by name instead, and the Template Workbench refuses it rather than checking or rendering it.
+_Avoid_: invalid partial, blocked name, shadowed partial (nothing is shadowed; the file never registers)
+
+**Partial Preview Context**:
+The caller a Shared Partial is previewed as called from — Note, Annotation, or Citation — which picks the root data the partial's own editor renders, completes, and explores against. It is the reader's choice, remembered per file twice — with the workspace, which carries it back with a restored leaf, and on this device, which carries it back when the partial is closed and opened again — and it opens on Note. ADR 0055 rules out reading it off the callers: a partial nothing calls yet names no caller, and one two roots call names two. User-facing copy says **Preview as called from Note**.
+_Avoid_: partial root (a partial has no root of its own), inferred context, caller detection
+
+**Literature Note Template**:
+The single authoring object controlling what Literature Notes look like: one document per Literature Note Profile with a manifest, a note source with an optional Managed Block, and a required final Annotation Section. Both sources use one rendering language and may render shared partials by name; this document supersedes the `note`/`content` Template pair.
+_Avoid_: note template (names only the retired `note` half), unified template (vague), literature note (that is the vault file, not its template)
+
+**Literature Note Profile**:
+A named configuration under which ZotLit-written notes are created and updated. A Profile *is* its Literature Note Template document: the document's manifest carries the Profile ID, the label, and the Profile's bindings — the Literature Note target folder and citation style, and the Imported Note bindings: import folder, colored highlights, and annotations-as-template. A Profile that leaves a binding unset inherits it from the default Profile, whose bindings record is total; no vault-global copies of these values exist. Every Profile document in the template folder is a Profile — nothing else registers, points at, or installs one. Each Literature Note and each Imported Note belongs to exactly one Profile, recorded by an explicit `zotlit-profile` system frontmatter stamp; a note without a stamp belongs to the default Profile, and writes follow the stamp — membership is never inferred from another note. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
+_Avoid_: profile (bare — collides with the Zotero application profile), preset (OZI's model, deliberately reshaped), import format
+
+**Profile document**:
+The vault file that is a Literature Note Profile: a Literature Note Template document named `zotlit-profile.<slug>.md` in the template folder — the slug is the normalized label, with the Profile ID appended when two labels collide. The `zotlit-profile.` prefix is what makes the file a Profile; the Profile ID is read from the manifest, never from the filename, so renaming the file changes nothing. User-facing copy calls it the "template document" — the one name that stands alone for a user who has not yet met the word Profile.
+_Avoid_: profile file, profile record, profile settings, profile document (in UI copy)
+
+**Default Profile**:
+The built-in Literature Note Profile every vault has. Its bindings record is total and lives in plugin settings, and its look is the built-in template until the user ejects `zotlit-profile.default.md` (manifest `id: default`, which carries no bindings); it is the one Profile that is a settings record rather than a Profile document.
+_Avoid_: global settings, vault settings
+
+**Eject**:
+The moment `zotlit-profile.default.md` first exists in the template folder, from which point the Default Profile's look is that document rather than the built-in template. User-facing copy names the action "Customize"; the file's existence is the whole of the state.
+_Avoid_: customize (the verb on the surface, not the state), unlock, export default template, detach
+
+**Profile stamp**:
+The whole `zotlit-profile` system frontmatter value that records a note's Literature Note Profile. It carries a Profile hint followed by the Profile ID in parentheses; a stamp that is a bare Profile ID is also valid. Every ZotLit write of a stamped note re-emits the stamp with the Profile's current label.
+_Avoid_: profile field, profile reference
+
+**Profile ID**:
+The opaque, stable identifier of a Literature Note Profile — the only part of a Profile stamp ZotLit compares. Membership resolves by exact ID match; an unknown ID is a diagnostic, never a fallback to the label.
+_Avoid_: profile key, profile uuid
+
+**Profile hint**:
+The human-readable part of a Profile stamp: the Profile's label at the time of the write, kept so a person can recognise the Profile in a plain-text note. Informational only — a stale or mismatched hint changes nothing.
+_Avoid_: profile name (in a stamp), profile slug
+
+**Profile selector**:
+The value a note or an operation resolves its Literature Note Profile against: a Profile ID, or the literal `default` for the default Profile. The one way ZotLit names "no specific Profile" — a stamp read yields the stamped Profile ID, `default` when the note carries no stamp, or nothing when the stamp names no Profile ID (that note is unknown, never the default).
+
+**Profile resolution**:
+The step that turns a Profile selector or a note's Profile stamp into the Literature Note Profile an operation runs under — the default Profile when nothing names one, otherwise the Profile whose ID matches, with its sparse bindings merged over the default Profile. A stamp that names no configured Profile resolves to an unknown result that keeps the stamp verbatim; it never resolves to the default Profile.
+_Avoid_: profile lookup, profile find
+
+**Profile Match**:
+The condition block a Literature Note Profile carries in its manifest (`match`) that declares which Zotero Items create new Literature Notes under that Profile. A Profile has at most one; the Default Profile has none and is the fallback. It travels with the Profile document, and the sender or recipient chooses whether a shared Profile keeps it.
+_Avoid_: Profile Selection Rule, selection rule, rule list, Profile binding (a Profile's configuration), saved search (a Zotero search definition), claim
+
+**Automatic Profile Selection**:
+The choice of a Literature Note Profile for a new Literature Note as the one Profile whose Profile Match matches the source Item. Two or more matching Profiles are a Selection problem, never a race. Existing notes retain their recorded Profile membership.
+_Avoid_: Profile resolution (resolving an already chosen selector), automatic Profile switch (changing an existing note's membership), priority, rule order
+
+**Match tree**:
+The value of a Profile Match: an explicit `and` / `or` tree, in the shape of an Obsidian Bases `filters` block, whose leaves are Match conditions. The match editor mirrors the tree; each leaf is one row.
+_Avoid_: Rule Filter, filter (bare), query, search
+
+**Match condition**:
+One leaf of a Match tree: a Filter Expression restricted to the supported condition contract — Library tests, built-in Zotero item type tests, and list tests on the Item's Tags and Collection paths, which `&&`, `||`, `!`, and grouping may still combine inside the leaf. A Library is referenced as `personal` or `group:<groupID>` — the group ID is assigned by zotero.org and is the same for every member — and Tags and Collections by name, so the leaf reads the same in any vault; Library scope is an ordinary condition. The match editor writes the canonical expression for a labelled row and keeps an expression row as written; a leaf outside the contract makes the Profile Match unevaluable. The language itself is the Filter Expression context (`packages/filter-expression/GLOSSARY.md`).
+_Avoid_: Rule condition, Library scope (as a separate part), Collection key (as a reference), global membership function (`hasTag`, `inCollection`), filter (bare), query, search
+
+**List field**:
+An Item property a Match condition tests as an Obsidian Bases list: `tags`, the Item's Tag names, and `collections`, the Item's Collection paths. A list test is a list function on the field — `contains`, `containsAny`, `containsAll`, `isEmpty` — and `!` is the only negation; the Item type is a plain value, not a list.
+_Avoid_: membership predicate, tag test (as a distinct condition kind), field registry
+
+**Collection path**:
+The names of a Collection's ancestors and itself, root first, joined by `/` without escaping; the Item's `collections` field holds one per Collection the Item is filed in directly. A path names the same Collection in every Library that holds that path, and a rename of any name on it changes the path.
+_Avoid_: Collection key (as a reference), Collection label, folder path
+
+**Within test**:
+The list test `collections.within(path)`: the Item is filed in the Collection at `path` or in any of its subcollections. The default Collection test in the match editor, shown as "is inside"; `collections.contains(path)`, shown as "is", tests direct filing alone.
+_Avoid_: descendants option, subcollection scope, include subcollections (as a separate control)
+
+**Selection source**:
+Where a new Literature Note's Profile came from, in priority order: the manual choice for the current operation, the Profile a command or Companion link supplied, the Profile whose Profile Match matches, and Default. Creation surfaces show the source beside the selected Profile; a match source names its Profile.
+_Avoid_: last-used Profile, remembered Profile (retired)
+
+**Selection problem**:
+The outcome that stops Automatic Profile Selection and requires an explicit choice for the affected Item: two or more Profiles whose Profile Match matches the Item, or an invalid explicitly supplied Profile selector. A Profile Match that cannot be evaluated — an unknown Collection path, a leaf outside the contract, a syntax error — is a nonmatch for every Item and a diagnostic on that Profile's settings row, never a Selection problem.
+_Avoid_: rule error (too broad), broken rule, fallback
+
+**Managed Block**:
+The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. When its tags are Line-Owning Tags, the Managed Region occupies exactly the lines the block occupied. Role-equivalent to the retired `content` Template.
+_Avoid_: managed region (the rendered output in the note, not the template source), content block
+
+**Annotation format**:
+The pattern a Literature Note Profile uses to turn one Annotation into note content. The same format applies wherever that Profile renders annotations.
+_Avoid_: annotation editor (the control used to edit the format)
+
+**Annotation Section**:
+The required final part of a Literature Note Template document, introduced by the standalone `--- zotlit:annotation ---` line, which holds the Profile's single-annotation source and can be empty. It supplies all annotation rendering under that Profile with isolated Annotation Root data, including note calls, shared-partial calls, direct insertion, and Imported Notes.
+_Avoid_: Annotation Block (the retired development format), annotation partial (the section belongs to the Profile document)
+
+**Line-Owning Tag**:
+A Managed Block tag that occupies a line by itself: only whitespace stands between the line start and the tag, and a newline follows it directly. Its indentation and trailing newline belong to the tag; an inline tag keeps every surrounding byte.
+_Avoid_: block trimming (names the effect, not the condition), whitespace control (the engine's `-%}` and `<%_` markers, which these tags do not use)
+
+**JavaScript Templates**:
+The gated capability to run user-authored JavaScript through Eta template files. Off by default; enabled per device behind an explicit confirmation, and the flag never syncs. While off, `.eta.md` templates are inert — an operation that requires one fails with an error naming it, never falling back to substitute output — and no user-authored JavaScript is compiled or executed anywhere, settings validation included.
+_Avoid_: advanced templates, legacy templates, scripting, user scripts
+
+**Filename Template**:
+The `filename` Template, evaluated to determine a new Literature Note's filename. Uses the `zt.*` template data without note-path resolvers (the note doesn't exist yet at evaluation time); output is a single line. Its resolved output is the name part of the Note Path.
+_Avoid_: filename expression, filename setting (it is a vault file, not configuration)
+
+**Note Path**:
+The vault path of a new Literature Note: the Literature note folder joined with the resolved Filename Template output, plus `.md`. A slash in the output makes subfolders under the folder; each segment is made safe for the file system. One shared rule in `@zotlit/templates` resolves it for note creation and the Template Workbench.
+_Avoid_: filename (the last segment only), note folder (the folder part only)
+
+**Template Workbench**:
+The workflow for building and testing a Template Document: a Profile document, the Citation Template, or a Shared Partial. Three surfaces serve it: the web Workbench (Profile documents only), the Template Workbench CLI, and the Template Workbench View. The term names the activity, not one surface.
+_Avoid_: workbench (bare, too vague)
+
+**Template Workbench CLI** _(Obsidian)_:
+The agent-facing CLI surface over the template system: reports template-authoring state, returns the exact item-backed template data, renders templates entirely in memory, and manages Managed Frontmatter configuration. Inspection, rendering, and frontmatter evaluation are side-effect-free and reuse the Template Data Explorer's inert resolver behavior; mutation is scoped to Managed Frontmatter configuration only — never vault files, never note content. Selection takes one Indexed Key naming any Zotero object, with the data root as the lens on it. Every diagnostic carries its own recovery hint, so corrective guidance arrives with the failure it belongs to.
+_Avoid_: agent template workbench (names the audience, not the thing), template CLI (names the mechanism), template preview (implies rendered visual output), Template Workbench (the umbrella term for the whole workflow)
+
+**Template Completion**:
+Suggestions for fields, local variables, and language constructs at the position being edited in a Template. Accepting a suggestion completes an expression or inserts a Template Snippet.
+_Avoid_: Citation Suggester (a separate feature), field picker (the explicit field discovery surface)
+
+**Expression Completion**:
+Suggestions at the position being edited in a Filter Expression, wherever Obsidian edits one: a Formula, a Query View's filter condition, or a Match condition. It offers the Query Dataset's fields, `this.item` and `this.attachment` where the view has a Query Context, `formula.<name>` and `vault.<name>` where the expression may read them, the names a list method binds, and the language's functions, methods and properties; after `.` it offers what the receiver's type has, or every method when the type is unknown. Each entry shows its signature and description.
+_Avoid_: formula autocomplete, Bases completion (Obsidian's own, for `.base` files), Template Completion (the Template counterpart)
+
+**Signature Hint**:
+The tooltip that names the function or method whose arguments are being typed in a Filter Expression, with its parameters and types, the parameter under the caret marked, and its description.
+_Avoid_: docstring tooltip, parameter hint, argument help
+
+**Expression Colors**:
+The colors a Filter Expression shows in every editor Obsidian hosts: properties and paths, functions, values, strings, operators, punctuation and regular expressions each with the code color Obsidian defines for that kind of token, the palette a `.base` file draws from, so a community theme's code colors apply. The scheme is derived from Bases and compatible with it, not dependent on it, and colors some token kinds that a `.base` file leaves plain.
+_Avoid_: Bases colors (theirs, not ours), syntax theme
+
+**Workbench Guide**:
+The Template Workbench's built-in usage guide, disclosed in tiers: a quickstart and topic index by default, one topic section on demand. Together with command help it is the home of every workbench tooling fact — value lists come from the same registries the commands use, so the guide cannot drift from the code.
+_Avoid_: manual, skill documentation (the guide lives in the workbench, the skill points at it)
+
+**Workbench Skill**:
+The installable Agent Skill (`zotlit-template`) that teaches an agent the workbench process, policy, and safety model — thin, hand-authored prose whose tooling facts live in the Workbench Guide and command help. Distributed from the repository's `skills/` folder and through the docs site's well-known Agent Skills index.
+_Avoid_: template-workbench skill (the pre-rename install name), skill docs
+
+**Template Data Explorer** _(Obsidian)_:
+The sidebar view that displays the exact template data (`zt`) a Template receives for a real library Item, as an explorable tree anchored at the Note Root or an Annotation Root. Nodes offer copy-path — one `zt.…` path shared by both Liquid and Eta, since both engines bind the data to `zt` — copy-value, and per-engine Template Snippets; one filter box matches key names and values, scoped to the current root — changing roots resets it. Everything displayed is true at display time, and browsing never writes to the vault — link helpers that would queue imports show existing targets or labeled placeholders instead.
+_Avoid_: item details (v1's item-centric framing), template preview / data preview (preview implies rendered output, a non-goal)
+
+**Template Snippet** _(Obsidian)_:
+A paste-ready template fragment the Template Data Explorer generates for a node, in one engine's syntax. Four kinds, offered per node kind: output (`{{ zt.title }}` / `<%= zt.title %>`), if-present (guards output on truthiness), loop (iterates an array, element named by singularizing the array's key, falling back to `item`), and joined (an array flattened to a delimited string). Distinct from copy-path (the engine-neutral bare `zt.…` accessor, shared by both engines): a Snippet wraps that path in an engine's delimiters and diverges by engine where the languages differ — notably a helper node interpolates as `{{ zt.fileLink }}` in Liquid (zero-arg auto-invoke) but `<%= zt.fileLink() %>` in Eta. Liquid Snippets are always offered; Eta Snippets appear only while JavaScript Templates is enabled — inline in the row menu when Liquid alone is active, split into Liquid / Eta submenus once both are. Copy-only, like copy-path and copy-value.
+_Avoid_: template expression (a Snippet may be a statement — a loop or guard — not only an expression), snippet insertion (it copies to the clipboard, it does not write into the editor)
+
+**Note Root**:
+The Template Data Explorer's default anchor — the full note-template context for the chosen Item, exactly what the `note`/`content` templates receive as `zt`.
+
+**Annotation Root**:
+The Template Data Explorer re-anchored at a single Annotation, exactly what the Annotation Section receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
+
+**Template Data Export** _(Obsidian)_:
+The Template Data Explorer's current root, saved as a JSON file for a bug report. Always the whole root the pane is anchored at — the Note Root or the Annotation Root — never the rows an active filter leaves visible. Carries the same data the Agent CLI answers with, under a header naming the plugin version, the contract version, and the Indexed Key and root that reproduce it. Being Explorer data, it records inert placeholders where a real render would write files.
+_Avoid_: template export (suggests rendered note output), data dump (the file follows the published contract, it is not raw state)
+
+**Template Workbench View** _(Obsidian)_:
+The main-area view that edits one Template Document with the Workbench UI, over the vault file, saved the way Obsidian saves any note. For a Profile document it shows the same tabs, panes, and one undo history as the web Workbench; for the Citation Template or a Shared Partial it shows one editor with no Basic and Source modes, and the preview follows the document's kind. The native Markdown view keeps working on the same file; the two are one click apart. Its tab title is the document's name and kind.
+_Avoid_: Profile Editor (the retired name, from when the view opened Profile documents alone), native Workbench, template editor, profile view, Obsidian Workbench
+
+**Partial Placeholder**:
+The compact inline chip that the Workbench's Basic mode shows in place of a render or include call with a plain quoted partial name: the name, a short argument summary, a preview arrow, and an Edit partial action. The chip inherits the data of the slice it sits in. A call whose partial is missing shows the problem on the chip with Create and Pick actions. The Annotation placeholder is the same shape for the Annotation Section call.
+_Avoid_: partial chip, partial widget, inline partial (the source is unchanged beneath the chip)
+
+**Template Hover** _(Obsidian)_:
+The Template Workbench View's hover popover that names the field, tag, or filter under the pointer, with its type, description, syntax, and example. One Template Hover serves one visit of the pointer to the editor: it opens after Obsidian's hover delay on the first token, follows the pointer from token to token without closing, swaps its content and anchor once the pointer has rested on the next token for that same delay, and closes when the pointer rests off every token, leaves the editor, or the document changes.
+_Avoid_: hover card (the Citation Popover's retired alias), template-editor hover, token tooltip
+
+**Note Preview** _(Obsidian)_:
+The companion view that shows what the Template Workbench View's document produces for the selected Item: note name, Properties, note body with the Managed Region marked, and one annotation, displayed as Obsidian renders it. It follows its natively linked editor, or the active editor when unlinked and unpinned, like Outline.
+_Avoid_: template preview (retired for the Explorer, which shows data, not output), render pane, result view (the web column's name)
+
+**Workbench UI**:
+The shared, headless component layer that both the web Workbench and the Template Workbench View mount over the Workbench core: it renders structure and behavior and carries no styling, and each host supplies styling and the platform's own popups, menus, and dialogs.
+_Avoid_: shared components (too vague), design system (the hosts own their look), Workbench shell (the host's layout)
+
+**Render Scheduler**:
+The one rule, shared by the web Workbench and the Note Preview, for when a Profile draft is rendered: live rendering starts after a short quiet time once typing stops, Run renders now, Stop pauses live rendering while a render already running finishes, and a result the author has already typed or selected past is dropped.
+_Avoid_: render pipeline (bundles the scheduler with the composer and the transport), render worker (no Worker exists), preview debounce (names the mechanism, not the rule)
+
+**Item Snapshot** _(web Workbench)_:
+The fixed template data for one selected Item and its annotations, retained until an explicit refresh. It includes permitted local link targets and explicit unavailable values where private local data is omitted.
+_Avoid_: Template Data Export (the separate inspection artifact), live Item data (a snapshot remains fixed)
+
+**Sample Item** _(Template Workbench)_:
+Built-in Item data for trying templates in the Template Workbench, with one example per supported Item type.
+_Avoid_: fixture item (the Fixture is test infrastructure), demo data, placeholder item
+
+**Sample Annotation** _(Template Workbench)_:
+Built-in Annotation data representing an annotation type or combination of content fields for trying an Annotation format in the Template Workbench. Each example retains its own parent Item and attachment data, independently of the Item selected for the note.
+_Avoid_: placeholder annotation (the placeholder marks a call in the note)
+
+**Local Server**:
+The plugin's one loopback HTTP listener on the desktop, started on plugin load when enabled, hosting Live Update for the Companion and the Local Bridge for the web Workbench. Each hosted service has its own toggle; the server toggle governs both.
+_Avoid_: Live Update server (one hosted service, not the listener), bridge server, local API, HTTP server (the implementation, not the concept)
+
+**Local Bridge** _(web Workbench)_:
+The service the Local Server hosts for the web Workbench, answering only the operations a Workbench Connection grants: Item Snapshots, Profile document read and Save, template dependencies, and citation styles. Its contract is separate from Live Update and the Agent CLI.
+_Avoid_: Companion server, Live Update server (the Companion-facing service), bridge server, local API
+
+**Workbench Connection** _(web Workbench)_:
+A temporary, explicitly approved session between one web Workbench page and one vault, naming the website, the vault, the selected Item, the selected Profile, and the granted operations. Disconnect or plugin shutdown ends it; standalone use continues without one.
+_Avoid_: pairing, link (the Obsidian URI verb), login, bridge session
+
+**Connection code** _(web Workbench)_:
+A single-use code the plugin mints for one launch of the web Workbench and places in the opened URL's fragment, which the page exchanges for a Workbench Connection. It expires after one use or two minutes.
+_Avoid_: token (the session credential the exchange returns), pairing code, login code, one-time password
+
+### Agent CLI
+
+**CLI Contract**:
+The wire format of one `zotlit:*` command namespace — its envelope, payload fields, and diagnostic codes. Each namespace versions its own, so a bump in one says nothing about another. Distinct from the Template Contract, which is a promise about `zt` data rather than about an answer's shape.
+_Avoid_: contract version (names the number, not the thing); protocol (that is the wire format for ZotLit Companion, the Zotero add-on)
+
+**Diagnostic**:
+The failure answer of a CLI Contract: a stable code, a statement of the fault, the recovery action to follow, and the parameter or place it points at. The Item Query and Template Workbench Diagnostics also carry a Diagnostic Report, rendered by one shared renderer.
+_Avoid_: error object, failure payload, exception
+
+**CLI Dataset** _(Obsidian)_:
+The Obsidian adapter of one Query Dataset: its commands, flags, decoder, schema asset and guide. Two exist, Items and Annotations.
+_Avoid_: dataset config, query mode
+
+**Check Attempt**:
+One run of a Template Workbench check, identified apart from its source and its selection, so that the evidence it produced stays readable after either changes. A later rerun is a separate attempt, and a retained successful result never stands in for the current one.
+_Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)
+
+### Annotation view
+
+**Annotation View** _(Obsidian)_:
+The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act. Under [#1459](https://github.com/aidenlx/zotlit/issues/1459) it becomes the sidebar Query View: the Annotations Layout with the followed Item and Attachment as its Query Context, showing only the controls that have a meaning for one Attachment.
+_Avoid_: annotation sidebar, annotation panel, annotation list (that is the cards alone)
+
+**Annotation Filter**:
+The three ways an Annotation View narrows the cards it shows — by highlight colour, by tag, and by search text — combined so a card must satisfy every active one. Clearing it shows every Annotation of the Attachment again.
+_Avoid_: filter bar (the control, not the rule), tag panel, query (the search text alone)
+
+**No Match**:
+The Annotation View state in which the Attachment has Annotations but the Annotation Filter excludes all of them. It is about the filter alone: neither an empty Attachment nor an unanswered Follow Mode is a No Match.
+_Avoid_: empty state (that is no Attachment or no Annotations), no results
+
+**Annotation Card** _(Obsidian)_:
+One live Annotation presented as a card in the annotation-view sidebar — type icon, page label, Excerpt Block, comment, and tag chips. A deliberately dense surface: prose inside it renders compact.
+_Avoid_: annotation item, annotation row
+
+**Card Selection**:
+The Annotation Cards an Annotation View has selected — none, one, or several; each view holds its own, whatever its Follow Mode. It is kept in step with the Obsidian PDF view the Follow Mode follows, and each Zotero Reader selection replaces it. It holds only cards the list draws: a card the Annotation Filter hides, or one in a collapsed group, leaves it. ↑ and ↓ step through the cards in the order they are drawn, so a card shown under two group headings is reached at each.
+_Avoid_: selected annotations (the reader's are selected Annotation Marks), multi-selection (as a separate thing), primary card
+
+**Card Place**:
+Where one Annotation Card stands in the drawn list: its Annotation alone, or the group heading it stands under and its Annotation. A card shown under two group headings has two Card Places and is one card in the Card Selection; ↑ and ↓ step from place to place.
+_Avoid_: card position, card slot, card copy
+
+**Selected Card**:
+An Annotation Card in the Card Selection. A card selected alone opens its full text and offers its edit controls. A card selected with others stays compact but still shows its tag control; a press on it first selects that card alone. Only on a card selected alone is the comment an editable field: a click on an unselected card selects it and edits nothing.
+_Avoid_: focused card, active card, primary card
+
+**Excerpt Block**:
+The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note.
+_Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
+
+**Quoted Text**:
+The document text a highlight or underline Annotation carries, with Zotero's inline rich-text formatting. Zotero extracts it from the page when the range is made or changed, and the user may correct it by hand; no other Annotation type has one.
+_Avoid_: excerpt (that is the card's block or the Child-Note snapshot), highlight text, annotation text, extracted text
+
+**Text Edit**:
+A change of an Annotation's Quoted Text alone, typed by the user; the position, text range and Sort Index stay. A later Geometry Edit replaces the typed text with the text of the new range, as Zotero's own reader does.
+_Avoid_: excerpt edit, quote edit, highlight text edit
+
+**Excerpt Image**:
+The raster image representation of an image or ink Annotation's PDF region, including its ink strokes where applicable. A ZotLit Excerpt Image and a Zotero Excerpt Image have separate ownership; an image embedded in a Child Note belongs to that note's frozen snapshot.
+_Avoid_: cache image, cache PNG, annotation image (ambiguous with an image Annotation)
+
+**Reader Session**:
+One open reading of an Attachment, whichever reader hosts it — the Zotero Reader or Obsidian's PDF view. Names its source, the Attachment's Indexed Key, the parent Item's Indexed Key, and the selected Annotations' Indexed Keys, and accepts navigation and selection.
+_Avoid_: reader target, PDF reader target, annotation target
+
+**Obsidian-Openable Attachment**:
+An Attachment whose file is a PDF on this device, so Obsidian's PDF view can host a Reader Session for it. The reader decides the rule rather than the concept: Obsidian's view renders PDFs alone, which is what separates this from a Zotero-Openable Attachment, where any file the path names qualifies.
+_Avoid_: Openable Attachment (the Zotero-reader sense), Readable Attachment, reader target (see Reader Session)
+
+**Attachment File Link**:
+A Markdown link whose target is an Attachment's own file on this device, written as a `file://` URI. ZotLit writes one from the `fileLink` Template Helper on an Attachment and on an Annotation (which anchors it to `#page=N` and carries an Annotation Anchor), and from Attachment Import's fallback for a blocked source; a hand-written link of the same shape is one too. Names a device-local path, so it is valid only on the device that rendered it.
+_Avoid_: file link (ambiguous with a vault link), local link, attachment link (covers the Zotero deep link too)
+
+**Durable Annotation Link**:
+Zotero's own open link to one Annotation, `zotero://open/library/items/<attachment key>?annotation=<annotation key>&page=<page label>` (`groups/<id>` in place of `library` for a group Library). Names the Attachment and the Annotation by their keys, so it works on any device that holds the PDF, and Zotero opens it anywhere ZotLit does not. An Annotation's Backlink is one, and so is every annotation link in an imported Zotero Child Note. Its `page` is a printed page label, not a page number.
+_Avoid_: annotation backlink (in prose), zotero link, deep link
+
+**Open Target**:
+What one ZotLit gesture or followed link opens: an Attachment, or one Annotation in it, named by its Indexed Key. It opens in Obsidian's PDF view when it names an Obsidian-Openable Attachment whose file is on this device, and in Zotero otherwise; every ZotLit surface that opens an Attachment decides by this one rule, and an explicit "Open in Zotero" bypasses it.
+_Avoid_: reader target (see Reader Session), table reader, PDF target
+
+**File Link Capture**:
+Taking a clicked Attachment File Link or Durable Annotation Link as an Open Target instead of handing it to the system handler, when it names an Obsidian-Openable Attachment whose file is on this device. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off, and every Durable Annotation Link once the user turns annotation links, or their opening, off. A Durable Annotation Link the system handler keeps opens in Zotero, and one names its own Attachment even where another Attachment keeps the same file.
+_Avoid_: link interception, file link handling, whitelisting (see Approved Attachment Root)
+
+**Annotation Anchor**:
+The part of an Attachment File Link, and of the ephemeral state an open carries, that names one Annotation by its Indexed Key — the `zt-annotation` key of the link's fragment — and, for an open ZotLit makes, the opened Attachment beside it (`zt-attachment`), since two Attachments can keep one file. Obsidian reads the rest of that fragment and ignores these keys, so the `#page=N` beside them still lands on its own.
+_Avoid_: annotation id (that is Obsidian's PDF-native one), annotation param, deep link, annotation target (see Reader Session)
+
+**Mark Landing**:
+Opening or re-aiming a Reader Session so one Annotation is the selected Annotation Mark, scrolled into view, without the Mark Popup. An Annotation Anchor, a History Step, or a card click in the Annotation View names the Annotation; one the reader cannot place lands on the page alone rather than reporting a failure.
+_Avoid_: navigate, reveal (that is the Annotation View's card), jump to annotation, annotation target (see Reader Session)
+
+**Annotation Source**:
+The origin of one complete set of an Attachment's Annotation data: the Zotero database or the Zotero Local API. Both describe the same annotation collection.
+_Avoid_: fallback (that is the switch, not the source), primary/secondary source, merged source
+
+**Editing Capability**:
+Whether edits to an Attachment's Annotations can be committed to Zotero at present, including any authorization required. It is separate from whether the Annotations can be read.
+_Avoid_: degraded state (names the feeling, not the reason), fallback state, write mode, read-only mode (one of its values, not the whole)
+
+**Locked Annotation**:
+An Annotation that Zotero's own reader does not let the user edit, whatever the Editing Capability: an External Annotation, or one another user created in a group library. Its Lock Reason decides which verbs it refuses; a verb acts only when both the Editing Capability and the lock allow it.
+_Avoid_: read-only annotation (read-only is an Editing Capability value), protected annotation
+
+**Lock Reason**:
+Why an Annotation is locked. `external` — imported from the PDF file, so every edit and delete is refused. `another-user` — created by another member of a group library, so every edit is refused but delete is allowed, as in Zotero.
+
+**External Annotation**:
+An Annotation that Zotero imported from the PDF file itself rather than one made in Zotero. It is not synced, and a re-import from the file rebuilds it.
+
+**Follow Mode**:
+The one rule an Annotation View instance uses to choose the Attachment it shows: Active Tab (the Item of the active Literature Note, or the Attachment of the active Obsidian PDF view), Zotero Reader (the Attachment of the Reader Session the Zotero Reader has in front), or Pinned (one Item the user chose, with the attachment choice remembered). Chosen and changed by the user alone; a source that cannot answer shows its reason in place.
+_Avoid_: follow target, link mode, linked item (the old name of Pinned), auto-follow
+
+**Annotation Mark**:
+The painted region of one Annotation on a page of Obsidian's PDF reader. Paint, not a control: hit-tested by geometry, selected by class, rebuilt with the page.
+_Avoid_: overlay element, highlight box, mark widget
+
+**Mark Popup**:
+The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, tags, copy, delete, reveal, and the stepper through overlapping marks. Under the row stands the comment as an editable field, as on a card selected alone. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
+_Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover (the primitive, not the surface)
+
+**Mark Handle**:
+A grip drawn on the selected Annotation Mark, while editing is live, that begins a Geometry Edit. Paint like the mark it sits on, hit-tested by geometry.
+_Avoid_: resize handle (a highlight's handles move an end of its range), grip, control point
+
+**Geometry Edit**:
+A change of an Annotation's position — and, for a highlight or underline, its text range and Quoted Text — saved to Zotero with a recomputed Sort Index. The page and the Page Label stay.
+_Avoid_: move, resize, drag (the gestures, not the edit), position edit
+
+**Creation Toolbar**:
+The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight, underline, note, text, image, or ink), its colour and, for ink, its pen width and, for text, its font size, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
+_Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
+
+**Ink Stroke**:
+One continuous pointer gesture with the ink tool armed, from press to release, stored as one path of an ink Annotation: its points smoothed as Zotero's reader smooths them, in PDF points on the page it was pressed on.
+_Avoid_: path (the stored form), line, drawing, scribble
+
+**Live Stroke**:
+The Ink Stroke still under the pointer, drawn on its page from the Reader Surface State as the last animation frame smoothed it. At its release it becomes a Pending Stroke; a discarded one goes with nothing created.
+_Avoid_: preview stroke, current stroke
+
+**Pending Stroke**:
+An Ink Stroke that has been released and rounded, drawn on the page while its create is in flight.
+_Avoid_: optimistic mark, draft stroke, Annotation Draft (that is a comment)
+
+**Text Draft**:
+A text box the text tool opened on a page, typed into in Obsidian and created in Zotero once, with its text, when it is finished. Drawn on the page while its create is in flight.
+_Avoid_: text box (Zotero's, which exists in Zotero while it is typed), text editor, Annotation Draft (that is a comment)
+
+**Reader Surface State**:
+What the surfaces of one Reader Session in Obsidian's PDF view draw from: the armed tool, each tool's colour, Annotation Mark visibility, the Editing Capability, the clock a cooldown is read against, the one floating surface (nothing, the selected Annotation Mark, a text selection about to become one, an image capture, or a Text Draft), the Live Stroke and the Pending Strokes, and the Attachment's Annotations with the write state and Annotation Draft of each. One per bound PDF view; outside signals enter it through the binding alone, and each surface redraws only when its own part changed.
+_Avoid_: reader store, toolbar state, view state (that is the Annotation View's)
+
+**Annotation Draft**:
+The shared unsaved comment, Quoted Text, or tags of one Annotation, one draft per field, with the value the user started from and their current value. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
+_Avoid_: pending write (the draft has not been submitted), cached comment
+
+**Pending Proposal**:
+The value a submitted write intends for one field of an Annotation — comment, Quoted Text, colour, tags, or position — drawn by every surface in place of the confirmed value until the write settles. An Annotation Draft becomes one when it is submitted; a refused, conflicted, or lost write leaves the confirmed value drawn again.
+_Avoid_: optimistic value, provisional value, Annotation Draft (not yet submitted)
+
+**Write Conflict**:
+A conflict between the user's intended Annotation change and a different change in Zotero since the user started editing. It requires a choice between the competing values; a Zotero value already equal to the intended one is no conflict, and tags never conflict, since added and removed names merge into Zotero's current tags.
+_Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict
+
+**Annotation History**:
+The ephemeral, ordered record of ZotLit's own confirmed edits to one Attachment's Annotations that can be undone and redone. It lives while a PDF view of that Attachment is open; Zotero keeps no such record.
+_Avoid_: undo stack, edit log, history (alone; Obsidian's workspace History is navigation)
+
+**History Step**:
+One user action in the Annotation History — a create, a delete, a colour pick, a Geometry Edit, one comment editing session, one Text Edit session, or one tag editing session — held as the before and after values of the fields it changed on each Annotation it touched.
+_Avoid_: history point, undo entry, transaction
+
+**Sort Index**:
+The reading-order key Zotero keeps on every Annotation. For a PDF it names the page, the nearest character in that page's Structured Characters, and the distance from the page top. ZotLit computes it at creation and recomputes it on a Geometry Edit, the one edit Zotero's own reader recomputes it for.
+_Avoid_: sort key, reading position, annotation order
+
+**Structured Characters**:
+One page's glyphs in the reading order Zotero's reader assigns, after its dedupe and line grouping. The single input for the Sort Index offset, the Page Label, and outline extraction.
+_Avoid_: char array, text layer (that is Obsidian's DOM), page text
+
+**Page Label**:
+The printed page number Zotero shows for a page, predicted from the document's characters and catalog, then aligned to the user's earlier Annotations on the Attachment.
+_Avoid_: page number (the 1-based index), page index
+
+### Query views
+
+**Query File** _(Obsidian)_:
+A `.zotquery` vault file that holds one or more Query Views over the Zotero library, with shared filters, formulas and property settings in the shape of an Obsidian `.base` file. It opens in a tab and embeds with `![[file.zotquery]]` or `![[file.zotquery#View]]`.
+_Avoid_: base, query note, view file
+
+**Query Block**:
+A ` ```zotquery ` code block in a note that holds the same text as a Query File. The default Literature Note Template renders one under `## Annotations`, outside any Managed Region, once at creation. In a Managed Region, a full update keeps the existing block text, so toolbar changes stay.
+_Avoid_: annotation block, embed block
+
+**Query View**:
+One named view of a Query File or Query Block: a Layout with its own filters, sort, grouping and visible properties, edited through its toolbar. The sidebar Annotation View is a Query View with a fixed Query Context.
+_Avoid_: tab, page, saved search
+
+**Layout**:
+How a Query View draws its rows: Annotations (Annotation Cards), Table (Item rows that expand into Attachments, Annotations and notes, as in Zotero's item list), Papers (two-line Item rows, expanding as the Table does), List, or Cards. A host may offer only some of them; the Library View offers Papers alone, so it shows no Layout switch.
+_Avoid_: view type, mode
+
+**Grouping**:
+How a Query View gathers its rows under group headings: by one group path its Query Dataset offers, such as the Item, the colour or a tag, in an ascending, descending or manual order. A row with two values of a list path, such as two tags, stands under both headings; a row with no value stands under "No value".
+_Avoid_: group by (the file key), section, category
+
+**Query Context**:
+The Item, and the Attachment when there is one, that a Query View is relative to, read as `this.item` and `this.attachment` in its filters: the Item of the note that embeds the file or holds the block, or the Item and Attachment the sidebar Annotation View follows. In a Query File's own tab `this` has no value.
+_Avoid_: current note, scope
+
+**Property**:
+One value that a Query View can show, sort, group, filter and name for each record: a field of its Query Dataset, read by its path, a Formula Property, or a Vault Property.
+_Avoid_: column, field (on the view side), attribute
+
+**Visible Properties**:
+The properties a Query View shows, in its order: the columns of the Table, the lines of the List and Cards, and the columns of copy and CSV export. Saved as the view's `order`. A Table whose `order` leaves out the Literature Note Property hides its column, as Bases hides a property its `order` leaves out.
+_Avoid_: columns (alone), fields, shown properties
+
+**Formula Property**:
+A property of a Query File that a Formula under its top-level `formulas` key yields, named `formula.<name>`, added, edited and removed from the Properties popover. It is shown and exported like any other property; a record on which its Formula gives an Error Value shows that error in its cell. On a view whose Query Dataset cannot read its Formula, it is a problem of that view's property; a filter that reads such a Formula is a problem of that condition too.
+_Avoid_: computed property, calculated property, formula column
+
+**Vault Property**:
+A property `vault.<name>` of a view of Items: the value of the frontmatter key `<name>` on the Item's Literature Note, which the vault answers rather than ZotLit Query ([ADR 0070](docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md)). A Query View held by a Literature Note reads that note for its own Item, whichever note the Note Index ranks first. Without a Display Name it is named by its frontmatter key marked as the note's, `<name> (note)`, wherever a Query View names a property (the column header, Sort, Group, Filter, the Properties menu, copy and CSV): the note can hold a stale copy of a field the Zotero database also has, as an imported `citekey`, so the name never passes for the database field. A cell shows the value, an empty cell where the note lacks the key or holds null, or a "No note" placeholder where the Item has no Literature Note. Its type is the one Obsidian assigns the property in the Properties panel, else the one its values show as, else text; the Table edits it with that type's editor. The Literature Note Property is the first of them.
+_Avoid_: note property, frontmatter column
+
+**Literature Note Property**:
+The Vault Property `vault.literatureNote` of a Table view: the Item's Literature Note, which the Note Index answers. Each Item row shows it as a link to the note, or as a button that creates the note. It shows, moves, resizes and takes a Display Name like any other property, and the Properties popover lists it as a top-level property. The Table is the Layout that shows it; Cards and List keep it in `order` for a switch back to the Table. ZotLit Query reads the Visible Properties that are no Vault Property. Copy and CSV export write every Visible Property but the Literature Note Property, each Vault Property with the value its note holds. Sorting, grouping and filtering use the fields of the Query Dataset. A Table without `order` shows it after the default fields.
+_Avoid_: note column, Literature note column (in code)
+
+**View Plan**:
+What a Query View sends ZotLit Query for one view, and what the vault answers apart from it: the request without any Vault Property, the Vault Properties it sorts by, its vault conditions (the top-level `and` conditions that read a Vault Property) planned against the Literature Notes into a list of Indexed Keys, and how the returned rows are sorted and cut to `limit`. It is made before ZotLit Query runs, so `limit` counts the rows the researcher sees ([ADR 0070](docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md)). A vault condition inside an `or` or `not` group, or one mixed with a Zotero field, keeps the view from running, marked at its condition.
+_Avoid_: query plan (ZotLit Query's own plan of a filter)
+
+**Display Name**:
+The text a Query View shows for one property in its headers, its labels, its Properties popover, and the header row of copy and CSV export, saved under the Query File's top-level `properties` key. A property without a Display Name shows its field label or its path.
+_Avoid_: alias, column title, rename (the action, not the text)
+
+### Library view
+
+**Library View** _(Obsidian)_:
+A main-area tab that shows the Zotero library read-only, with a Library Tree, a search box, the Item list of a Query View and a Reading Card. It keeps no file: what it shows is its Library View Document, saved per vault in plugin data, and "Save as query file" turns it into a Query File.
+_Avoid_: library tab, browser, library pane
+
+**Library View Document**:
+What the Library View shows, as one value: the selected Library Tree node, the tree nodes left open, the active Reading State facets, the selected tags of the Tag Selector, the search text, the sort, the paper the Reading Card shows, its open disclosures, its width and whether it is closed. The text of its Query View follows from it, always in the Papers Layout.
+_Avoid_: library state, view state
+
+**Library Tree**:
+The tree on the left of the Library View: Recent, then each Library in the Library Scope with its Collections nested as in Zotero, each node with its paper count. Selecting a node changes the filters of the list; the tree never holds rows of its own. "Show all libraries" adds the Libraries outside the Library Scope for the session.
+_Avoid_: collection tree, sidebar tree, navigator
+
+**Tag Selector**:
+The tags under the Library Tree, as in Zotero's main window: the tag names of the Items the selected node lists, with a box that filters the names. Selecting tags narrows the list to the Items with every selected tag ([ADR 0078](docs/adr/0078-the-tag-selector-writes-tag-filters.md)).
+_Avoid_: tag cloud, tag pane, tag filter (alone)
+
+**Papers Layout**:
+The Layout of the Library View for Items, also open to any Query File: two lines per Item after the icon of its Item type, the title on one and the creators, year and publication on the other, ending with the main Attachment's kind and a note icon for the Literature Note, with the same expansion into Attachments, child notes and Annotations as the Table.
+_Avoid_: paper list, rich list
+
+**Reading Card**:
+The pane on the right of the Library View that shows the selected Item, read-only, like the title page of a paper: its title, creators and Venue, its DOI and citation key, its abstract, where it sits in the Libraries and Collections, its tags, files and Zotero notes, the other fields under "All fields", and last a preview of its first two Annotations that opens into every Annotation Card, the actions to open the PDF, open or write the Literature Note and cite, and a link that opens the Item in the sidebar Annotation View. It shows while a row is selected, beside the list in a wide pane and over it in a narrow one.
+_Avoid_: detail pane, inspector, preview
+
+**Reading State**:
+What the researcher has done with an Item: whether it was read and when, its Annotations, and its Literature Note. The Library View narrows by it with the Reading State facets Unread, Annotated, Has note and PDF, and the Reading Card shows it for the selected Item; a row shows only the note icon.
+_Avoid_: progress, status, read status
+
+**Show in Library**:
+The action that opens the Library View on an Item's first Collection with its row selected. It is offered wherever an Item stands outside the Library View: the quick switcher (Alt+Enter), a References Sidebar row, the Cited By Sidebar toolbar for the active Literature Note, a Citation Popover entry, the graph menu of a Cited Work Node, the Literature Note's command and file menu, and the Library Link a template writes with `zt.librarylink`.
+_Avoid_: reveal in library, locate
+
+**Recent**:
+The node at the top of the Library Tree that lists Items by Last Activity, newest first, each row giving the reason it is there, such as "read 2 h ago in Obsidian". It writes a sort, not a filter, over the whole Library Scope, and is the selection of a new Library View.
+_Avoid_: history, recently read (Zotero's name for its own list)
+
+### Recency
+
+**Last Activity**:
+The newest instant at which the researcher worked on an Item, on one timeline from both sides: its last Use in Obsidian, its last read in Zotero (`lastRead` of any of its Attachments), when it was added to Zotero, and the last edit of one of its child notes or Annotations. An edit of the Item's own fields in Zotero is not activity: bulk edits and tools change those without the researcher working on the paper.
+_Avoid_: last modified, last used, recency (alone)
+
+**Use**:
+An action in Obsidian that puts an Item in front of the researcher or into their writing: opening its Literature Note by any route, coming back to that note's tab, reading its PDF (opening, closing, or turning pages at most once in five minutes, as Zotero's reader records a read), inserting a citation of it, or copying its citation key. Each Use has a kind (opened, read, cited) that the reason of a Recent row names. Writing or updating notes in a batch, a view following the active note, selecting a row, a hover preview and Show in Library are not Uses.
+_Avoid_: touch, visit, access
+
+**Use Ledger**:
+The record of the last Use of each Item, kept per vault on each device and never synced. Reading crosses devices through Zotero's own `lastRead` instead.
+_Avoid_: history, usage log, recents
+
+### Note content
+
+**Annotation Excerpt**:
+A frozen snapshot of a Zotero Annotation embedded inline in a Child Note's HTML — a `span[data-annotation]` carrying the annotation's text, color, page label, and attachment URI at insertion time. Distinct from the live Annotation in the DB: edits made in the Zotero reader after insertion are not reflected in the excerpt. Converted to inline Markdown marks (highlight/underline) by the note parser.
+_Avoid_: annotation (that's the live Zotero entity), mark
+
+**Annotation Paragraph**:
+A `<p>` in a Child Note's HTML whose sole content is a single Annotation Excerpt (optionally followed by a citation). Detected structurally by the note parser; when the note's Profile enables annotations-as-template, the paragraph is subsumed and re-rendered through that Profile's Annotation Section from live DB data instead of the frozen excerpt.
+_Avoid_: annotation block, callout
+
+**Colored Highlight Syntax**:
+An opt-in Markdown representation of a highlight in an Imported Note, with a selected emoji at the start of `==...==`. The emoji comes from the Highlight Mapping for the source color.
+_Avoid_: Bear highlight, emoji highlight
+
+**Highlight Mapping**:
+A per-color choice of representation for highlights converted during Note Import: a colored HTML mark or Colored Highlight Syntax with a selected emoji. Each mapping corresponds to a recognized Zotero palette color.
+
+### Integration processes
+
+**Note Import**:
+Converting a Zotero Child Note's HTML to Obsidian Markdown and writing it as an Imported Note. Includes citation resolution, embedded-image resolution, and optional annotation-paragraph template mapping. Triggered only explicitly: by the import commands and batch import, or via protocol action (overwrite). Rendering a Literature Note never triggers it.
+
+**Attachment Import**:
+Copying an import-capable Zotero file, such as an annotation excerpt image or note-embedded image, into the vault's attachment folder. A file Zotero manages is reflinked (macOS copy-on-write) with fallback to regular copy; a linked file elsewhere is read from the file that was checked, so a swap afterwards cannot substitute another one. A source is copied once approved: automatically for Zotero's storage directory, its annotation cache, and the configured base attachment directory, or otherwise only inside an Approved Attachment Root. A blocked source, and every source while Attachment Import is disabled, instead links with a `file://` URI to its own location. An ordinary Literature Note attachment `fileLink` always links directly to the source and does not start Attachment Import.
+_Avoid_: image import (covers more than images)
+
+**Attachment Source Decision**:
+The approved-or-blocked verdict on one attachment location, which every copy consumer passes to link resolution in place of a raw path. An approved verdict names the kind of place the file came from — Zotero storage, the annotation cache, the base attachment directory, or an Approved Attachment Root — and is constructible only by the attachment import service. A blocked verdict carries its location so the `file://` fallback renders in one place. Skipped sources are reported once per operation as a count, never as a location.
+_Avoid_: approval check (names a step, not the verdict), source validation (validation is the lexical layer's job)
+
+**Citation**:
+An in-text reference to one or more Zotero Items, rendered through the `cite` template. Always a single inline line of text, wherever it renders. In editor text: an `@key` token; during Pandoc export, a wikilink to a Literature Note is a normal parenthetical Citation whose current citation key comes from the associated Zotero Item. In a Zotero note's HTML: a `span.citation[data-citation]` carrying one or more Citation Items. Each cited ref resolves item data live-DB-first (falling back to the Embedded Item Data snapshot, then a stub with null fields) and its citation key through the chain: item's own citation key → embedded snapshot key → sentinel (`KEY?`).
+
+**Citation Fragment** _(Pandoc export)_:
+The `#cite:...` fragment of a Literature Note wikilink, carrying Pandoc-specific citation details as named key-value parameters. Parameter values use URI percent encoding so the fragment remains safe inside a Markdown wikilink; other wikilink fragments keep their heading or block-link meaning.
+_Avoid_: hash, citation hash
+
+**Citation Run** _(Pandoc export)_:
+A same-line sequence of two or more Literature Note wikilinks separated only by semicolons and optional whitespace, converted into one grouped Citation. Any other text ends the run.
+_Avoid_: citation group (the group is the resulting Citation, not the source syntax), citation list
+
+**Entry Marker**:
+The marker a numeric CSL style renders ahead of each bibliography entry — the entry's citation number wrapped in the style's own affixes, such as `[1]` or `1.`. It belongs to the Citation and References Style, not to ZotLit: a sorted style can give the same Item a different Entry Marker across renders, and a non-numeric style produces none.
+_Avoid_: serial number, reference index, gutter number, Entry Serial (ZotLit's positional number, not the style's)
+
+**Entry Serial**:
+The 1-based position of a rendered entry in the References Sidebar's bibliography-ordered list — ZotLit-assigned and occurrence-independent, unlike the style-owned Entry Marker and the first-occurrence Reference Number. When a citation's formatted text contains a footnote the inline surfaces cannot render, the Entry Serial of each cited entry appears superscript in place of that footnote and in the sidebar gutter, an entry's own Entry Marker keeping precedence in the gutter.
+_Avoid_: serial number, footnote number (the document format's counter, which never renders here), fallback marker (names the mechanism, not the number)
+
+**Zotero-Openable Attachment**:
+An Attachment of a cited Item whose path names a file, so Zotero's reader can be sent to it — the stored modes and both linked-file forms. A bare web link carries no file, and neither does a row whose path does not parse, so the References Sidebar offers neither. The file's format does not decide it: a PDF, an EPUB, a web snapshot, and an office document all qualify, and Zotero owns what happens to a format its reader cannot render.
+_Avoid_: Openable Attachment (ambiguous once Obsidian's reader gained a rule of its own), PDF attachment (the format is not the rule), openable file
+
+**Reference Number**:
+An active-document identifier assigned to each distinct Literature Note Citation by first occurrence. It appears in editor widgets and in the References Sidebar's minimal reference list when no engine renders; repeated Citations share the same number, and the Markdown source stays unchanged.
+_Avoid_: citation key, reference index, Entry Serial (bibliography-ordered, not first-occurrence)
+
+**Reference Error** _(Obsidian)_:
+A References Sidebar entry for an unresolved or ambiguous Citation Key, a missing Item, a malformed Citation Fragment while Wikilink Citations is on, or a source-backed Item omitted from a completed bibliography rendering.
+_Avoid_: broken reference, missing reference (names only one cause)
+
+**References Sidebar** _(Obsidian)_:
+The active-document view of each distinct Literature Note Citation and its occurrences, cited Item, and Zotero-Openable Attachments. Its engine-rendered form follows the Citation and References Style's bibliography order and Entry Markers. Its minimal form follows first-occurrence order and Reference Numbers when the Pandoc Engine or selected style is unavailable; a rendering failure also shows its error instead of retaining stale formatted entries.
+_Avoid_: bibliography sidebar, reference list pane
+
+**Copied Bibliography** _(Obsidian)_:
+A complete, error-free point-in-time rendering of the active Markdown file's current Document Citation Set, copied as portable entry-only HTML and plain text for use outside that file. It has no ownership relationship with the Markdown source and does not update after copying; export generates its own bibliography from the Citations in the source.
+_Avoid_: inserted bibliography, managed bibliography, bibliography export
+
+**Cited By Sidebar** _(Obsidian)_:
+The active-Literature-Note view of every Citation Occurrence in the vault that resolves to the same Item, grouped by citing note. Each citing note contributes the occurrences its own Document Citation Set holds, so the Pandoc Citations and Wikilink Citations choices decide membership here as they do on every other citation-aware surface, and a source change refreshes the view immediately.
+_Avoid_: backlinks (Obsidian's view omits literal Pandoc citations), reverse references, incoming citations
+
+**Citation Context** _(Obsidian)_:
+The raw source range shown around one Citation Occurrence in the Cited By Sidebar. Its initial range contains every source line spanned by the occurrence, and the user can extend it independently before or after.
+_Avoid_: matched line, context preview, source preview
+
+**Graph Citations** _(Obsidian)_:
+The citation edges and Cited Work Nodes ZotLit adds to Obsidian's own graph views from the Citation Index, so a note connects to the works it cites. Membership follows the Document Citation Set: a literal Pandoc citation gains an edge to the cited Item's Literature Note, or to a Cited Work Node when no Literature Note exists; a wikilink citation is already a link and needs no addition. Turning the feature off removes every added edge and node; selected native groups and graph settings remain.
+_Avoid_: citation graph (the preset-opened graph, see Citation Graph), graph overlay (names the mechanism, not the feature)
+
+**Cited Work Node** _(Obsidian)_:
+A node ZotLit places in Obsidian's graph for a work cited in the vault that has no Literature Note yet, or whose Citation Key is missing or ambiguous. Labelled by its Work Label, or by its Citation Key where the key is missing or ambiguous. Obsidian's "Existing files only" toggle hides it, and clicking it creates the Literature Note.
+_Avoid_: ghost node, virtual node, unresolved node (Obsidian's term for a link to a missing note)
+
+**Work Label** _(Obsidian)_:
+The two-line text ZotLit draws under a Literature Note or Cited Work Node in Obsidian's graph: an Author Summary with the year, and the work's short title beneath it. It names the work a node stands for, so both node kinds read alike and colour alone carries whether a note exists.
+_Avoid_: node label (Obsidian's own node text), caption, node title
+
+**Literature Notes Group** _(Obsidian)_:
+An ordinary graph color group that matches Literature Notes, added by a Citation Graph command or the graph’s group shortcut. Its initial color is ZotLit orange; the graph’s native group controls own its color, order, and removal.
+
+**Citation Graph** _(Obsidian)_:
+Obsidian's own graph view, global or local, opened with ZotLit's preset: only citation-connected nodes, citation edges colored, citation popovers enabled, arrows on, and the Literature Notes Group applied. Not a separate view; every native control stays available.
+_Avoid_: ZotLit graph view (implies a view type), citation map, graph preset (names the mechanism)
+
+**Citation and References Style**:
+The Zotero-installed CSL style used for both Document Citation Text and rendered entries in the References Sidebar. A vault selection supplies the default, and a document's `zotlit-csl` property can select its own installed style by CSL ID. Zotero owns style installation; choosing Default uses the Pandoc Engine's embedded style. An unavailable selected style leaves in-text sources visible and the sidebar minimal, shows a settings warning, and raises one notice per plugin lifecycle with an action that opens the Citations settings.
+_Avoid_: citation style (conflicts with the `cite` Template's format), references style (omits in-text Citations), CSL file (names the file, not the selection)
+
+**Resolved CSL Style**:
+The standalone CSL file that ZotLit derives from a Zotero-installed Citation and References Style. For an independent style, it contains that style. For a dependent style, it combines the parent style's formatting with the dependent style's default locale. The app, built-in export, and native Pandoc integration use the same resolver; the `zotlit:csl` command materializes a content-addressed file and returns its absolute path.
+_Avoid_: parent CSL file (loses the dependent style's locale), exported style (suggests a user-owned copy)
+
+**Citation Locale**:
+The locale the CSL processor uses for localized terms, dates, names, and collation in one document. Document Language overrides the vault Citation Locale; Style Default delegates to the selected CSL style, then to the processor fallback. It is independent of Obsidian's interface language and an Item's language.
+_Avoid_: citation language, interface language, item language
+
+**Document Language** _(Pandoc)_:
+The main language declared by a note's standard Pandoc `lang` metadata, which also supplies its explicit Citation Locale. **Set citation presentation** labels this value **Document language**; choosing **Use vault citation locale and remove document language** removes `lang` and restores the vault Citation Locale for citation processing.
+_Avoid_: citation language (names only one effect), ZotLit language
+
+**Citation Presentation**:
+The combination of Citation and References Style and Citation Locale shared by Document Citation Text, the References Sidebar, the Citation Popover, the Copied Bibliography, and the initial built-in export choices. A source-less Citation Popover uses the vault selections; for documents, vault selections supply defaults that `zotlit-csl` and `lang` can override, and an invalid document override leaves citation source visible, shows the minimal References Sidebar with a note-scoped error, and keeps bibliography copy unavailable instead of silently falling back.
+_Avoid_: citation format (omits references and locale), render settings
+
+**Pandoc Engine**:
+The Pandoc WASM binary that formats references and runs the built-in export, pinned per plugin release to one upstream release asset and its SHA-256. A user starts the download from settings; ZotLit verifies the bytes against the pin before they become the cache, stores them uncompressed and content-addressed, and shares them with every vault on the device. Uninstall reaches the whole device. The engine's absence is a normal mode, and its download, checksum, and startup failures each name themselves so one fallback surface guides the user out.
+_Avoid_: Pandoc install (Pandoc CLI is a separate, user-owned install), bundled Pandoc (the plugin never ships the binary)
+
+**Managed Binary**:
+A WASM binary ZotLit depends on but never ships: pinned per plugin release to one upstream asset and its SHA-256, downloaded once the user asks from settings, verified against the pin before it becomes the cache, stored content-addressed in one device-wide store shared by every vault, and removable from the same place. Its absence is a normal mode, and its download, checksum, and startup failures each name themselves. The Pandoc Engine and the Chinese Segmenter are its two instances.
+_Avoid_: bundled binary, dependency download, plugin asset (Language Packs and schemas ship on the Resource Release instead)
+
+**Embedded Item Data**:
+A CSL-JSON snapshot of each cited Item, stored on the Zotero note container's `data-citation-items` attribute at citation-insertion time. The only source for cross-library cites and the fallback when the DB cannot resolve a ref; mapped into the zt item vocabulary by a schema-driven CSL→zt reverse mapping.
+_Avoid_: citation map (that's the derived lookup structure)
+
+**Citation Item**:
+One cited Item within a Citation, pairing the pure item data with citation-scoped properties: Locator, locator label, suppress-author, prefix, suffix. The citation-scoped properties never live on the item itself. In the cite-template data: `zt.citations` (Citation Items) alongside `zt.items` (the same items, bare).
+_Avoid_: cite item, citation entry
+
+**Citation Prefix**:
+Text that introduces one Citation Item within Pandoc citation source, before its citation key.
+_Avoid_: prefix (too broad), citation context (a separate source-preview concept)
+
+**Citation Suffix**:
+Text that follows one Citation Item within Pandoc citation source, after its citation key and Locator.
+_Avoid_: suffix (too broad), locator (a pinpoint reference, not trailing text)
+
+**Locator Label**:
+The kind of pinpoint reference a Locator contains, such as page, chapter, or section. Cite-template data exposes both its full value and the abbreviated `labelShort` value used in Pandoc source.
+_Avoid_: locator type, page label (names only one kind)
+
+**Suppress Author**:
+A Citation Item property that asks Pandoc to omit the cited author's name from citation output, represented by `-@` in Pandoc source.
+_Avoid_: omit author, hidden author
+
+**Locator**:
+A pinpoint reference within a cited work (CSL locator), e.g. a page number, with an accompanying label naming its kind (`page` by default). An annotation-derived Citation uses the annotation's page label as its Locator — mirroring Zotero's own annotation citations.
+
+### Citation insertion
+
+**Citation Suggester** _(Obsidian)_:
+The inline dropdown that searches Zotero Items as the user types a trigger in the editor and, on selection, replaces the typed trigger text with a rendered Citation followed by a single space — the **main** Citation Variant by default; a trailing `/` in the query or Shift+Enter asks for **alt**. It remains available independently of the Document Citation Set and In-text Citation Rendering. Distinct from the command-palette insert modal.
+_Avoid_: autocomplete, citation picker, editor suggester (names the mechanism, not the feature)
+
+**Bracket Trigger**:
+The always-available Citation Suggester trigger: typing `[@` (or `【@`). Its query may contain spaces and is delimited by the closing bracket.
+_Avoid_: default trigger
+
+**At Trigger**:
+The opt-in Citation Suggester trigger: a bare ASCII `@` typed at a word boundary, never mid-word. Off by default. Having no closing delimiter, its query ends at the first space; an underscore in the query stands for a space in the search.
+_Avoid_: mention trigger, @-suggester
+
+**Citekey Editor Treatment** _(Obsidian)_:
+The editor surface that In-text Citation Rendering and Citekey Navigation share for literal Pandoc citations. In Live Preview it carries the Citekey Widget while rendering is on; in either editor mode it supplies navigation targets while Citekey Navigation is on. With both choices off, ZotLit adds no visible treatment.
+_Avoid_: citekey click, citation click, Citation Key Links (the retired feature it replaces)
+
+**Citekey Widget** _(Obsidian)_:
+The Live Preview decoration that replaces a whole literal Pandoc Citation — a Citation Cluster or a bare author-in-text key — with its Document Citation Text. The source stays visible while the Pandoc Engine cannot supply formatted text and whenever the selection touches that citation; the document's other citations keep their formatted text. Source mode always shows the source.
+_Avoid_: citation preview, inline render (names the effect, not the decoration)
+
+**Rendered Citation**:
+The element a Citation's formatted text is shown in, on either surface that shows one — the Citekey Widget in Live Preview, and the Citekey Reading Rendering's span in reading mode. Both carry the same class and can become Citekey Navigation targets while Open Citations as Links is on.
+_Avoid_: citation span, formatted citation (names the text, not the element it sits in)
+
+**In-text Citation Rendering** _(Obsidian)_:
+The default-on presentation choice that shows every recognized Citation as a Rendered Citation in Live Preview and reading mode. Turning it off leaves each source in Obsidian's native presentation; Source mode always shows the Markdown source, and the choice does not change citation membership, Citekey Navigation, citation insertion, or built-in Pandoc export. A source excluded from the Document Citation Set, or active under neither rendering nor Citekey Navigation, receives no public ZotLit styling class.
+_Avoid_: citation rendering (ambiguous with reference rendering), citation display (does not say formatted or native), editor rendering (also applies to reading mode)
+
+**Document Citation Text**:
+The complete formatted text the Pandoc Engine produces for the Document Citation Set. It is produced for the whole document at once because a numbering style counts across the complete set and a position-dependent style renders each Citation Occurrence by its place in the document, so two occurrences of one source can read differently and each in-text surface shows the text of its own occurrence; a surface that cannot tell which occurrence it shows falls back to the source's first-occurrence text. Every in-text surface changes from its native source presentation only after that complete result is ready. A Citation the engine cannot format stays entirely in its source presentation.
+_Avoid_: citation cache (names the Citation Index's persistence, not this), rendered bibliography (the References Sidebar's whole-list render)
+
+**Held Read**:
+The value one surface reads for a key, kept on screen while a fresh read replaces it. Pending is the absence of a Held Read, never a verdict.
+_Avoid_: cache, SWR cache
+
+**Citekey Navigation** _(Obsidian)_:
+The interaction surface of recognized literal Pandoc citations across Live Preview, Source mode, and reading mode — selection, click, and the open-under-cursor palette commands, all routed through one flow; what hovering shows belongs to the Hover Action. Open Citations as Links chooses what a plain click does and gates the palette commands; Mod+click always opens. A single-item Citation opens its Literature Note; a multi-item Citation opens an item menu. It is independent of In-text Citation Rendering; a Literature Note wikilink joins the click surface only while it shows a Rendered Citation, and keeps Obsidian's native navigation otherwise.
+_Avoid_: citekey click (one gesture of the surface, not the concept), citekey links
+
+**Open Citations as Links** _(Obsidian)_:
+The per-vault choice of what a plain click on a Rendered Citation does, for literal Pandoc citations and Wikilink Citations alike: open the Literature Note (on), or — off, the default — place the cursor in the citation's Markdown source in Live Preview and do nothing in reading mode. Mod+click always opens the note; an unrendered citation keeps its surface's native click. Independent of the Hover Action.
+_Avoid_: Open Pandoc Citations as Links (the retired Pandoc-only scope), citation click toggle
+
+**Hover Action** _(Obsidian)_:
+The per-vault choice of what hovering a recognized citation or Literature Note wikilink shows: Off, Citation Popover (the default), or Page Preview. Off leaves Obsidian's native wikilink hover intact, and Citekey Navigation keeps selection and the open commands — never hover. A Durable Annotation Link always shows the Annotation Popover.
+_Avoid_: hover mode, popover toggle (a three-way choice, not an on/off)
+
+**Citation Popover** _(Obsidian)_:
+The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — or one work under the vault Citation Presentation when there is no source document, with the available Item actions in a cursor-proximal row. The source-less form shows the bibliography body or Item summary, with no Reference Number, Entry Marker, or Entry Serial; it is the same Hover Action choice as the document-backed form, and hover shows one result.
+_Avoid_: concise popover (the working name), hover tooltip, hover card
+
+**Annotation Popover** _(Obsidian)_:
+The hover popover of a Durable Annotation Link in Live Preview, Source mode, or Reading view: the Annotation's quoted text, comment, page label, and colour, and the Excerpt Image of an image or ink Annotation, read from the Annotation repository with no reader open, above the parent Item's reference. It is the source-less Citation Popover with the Annotation drawn above the entry, and it stays available on every annotation link; a link whose Annotation no longer exists shows a short unavailable state.
+_Avoid_: annotation hover card, annotation preview (a page preview shows a note)
+
+**Citekey Reading Rendering** _(Obsidian)_:
+The reading-mode surface of In-text Citation Rendering for literal Pandoc citations: a Markdown post-processor replaces each complete Citation the source writes — a Citation Cluster or a bare author-in-text key — with its formatted text. When any item in one Citation is unresolved, or the Pandoc Engine cannot supply its formatted text, that whole Citation stays unchanged. Code, math, and links are left alone; a Literature Note wikilink is the Wikilink Reading Rendering's surface, not this one's.
+_Avoid_: reading-mode widget (a widget is the Live Preview decoration), citation preview
+
+**Wikilink Editor Treatment** _(Obsidian)_:
+The Live Preview surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink shows its Rendered Citation, while drag and conceal interaction stay Obsidian's and click follows Open Citations as Links; hover follows the Hover Action — native under Off and Page Preview, the Citation Popover otherwise. Cursor or selection contact restores the raw text; Source mode always shows raw text.
+_Avoid_: wikilink styling (the retired marks-only scope), wikilink conceal
+
+**Wikilink Reading Rendering** _(Obsidian)_:
+The reading-mode surface of In-text Citation Rendering for Wikilink Citations: a Literature Note wikilink's display text becomes its Rendered Citation while the link's target stays Obsidian's and click follows Open Citations as Links; hover follows the Hover Action — native under Off and Page Preview, the Citation Popover otherwise. When the Pandoc Engine cannot supply formatted text, the native link stays visible.
+_Avoid_: reading-mode wikilink widget (a widget is the Live Preview decoration)
+
+### Index and identity
+
+**Library Scope**:
+The set of Libraries used for discovery and unqualified batch operations. It is either All Libraries or a non-empty set of Selected Libraries; unavailable selections remain part of the scope while available Libraries continue to serve discovery.
+
+**Note Index**:
+A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. One Full Scan populates it when the metadata cache is complete; per-file metadata-cache changes and vault renames keep the mappings current after that, and the Literature Note key set answers the Companion's `GET /literature-notes` note-status query once the Full Scan settles.
+
+**Citation Index**:
+The plugin-owned, internal vault-wide index of Citation Occurrences across every Citation Syntax, and of every Annotation Occurrence in the vault. It records only what the rendered document references: nothing inside code, math, `%%` comments, or frontmatter. It tracks derived source facts independently of which citation sources the user includes; the Document Citation Set applies those choices for citation-aware consumers. Reset Citation Index remains a Diagnostics recovery action that rebuilds this derived data without changing vault files.
+_Avoid_: citation cache (names the persistence, not the index), citation scanner (the per-file parse step, not the index)
+
+**Item Index** _(ZoteroReads)_:
+The search index over the Items of the Libraries in Library Scope, held by the ZoteroReads worker and answered through one `SearchItems` operation. Its identity is the list of covered Libraries and the connection it was built on; the worker rebuilds it from its own change feed, serves the last complete index while a rebuild runs, and hydrates the hits before it answers. It keeps the index of the list the latest search asked for; the index of another list leaves at the next change when no search asked for it since the change before. The renderer never holds the index.
+_Avoid_: search cache, item-lookup index (names the package, not the thing), MiniSearch index (names the engine)
+
+**Search Session**:
+The searches one search surface — a picker or the Citation Suggester — asks of the Item Index while it is open: each new keystroke replaces the search before it, and a change of the Libraries in Library Scope drops the pending one. Other sessions and one-shot searches, such as the template workbench's recent Items, run beside it and keep their own answers.
+_Avoid_: search handle (names the mechanism), query session
+
+**Chinese Segmenter**:
+The Managed Binary that cuts Chinese text into search words for the Item Index: the pinned `jieba-wasm` binary, loaded inside the ZoteroReads worker for indexing and for queries. Optional; without it, Chinese runs segment through the browser's own word segmentation.
+_Avoid_: jieba plugin, cm-chs-patch (a separate third-party plugin ZotLit no longer reads), tokenizer (the whole word-splitting step, of which the segmenter is one part)
+
+**Citekey Resolution Snapshot**:
+The point-in-time mapping of Citation Keys to Items that Citation Lookup answers from. Citation Key discovery covers the available Libraries in Library Scope; reverse lookup by exact Indexed Key covers every local Library.
+_Avoid_: citekey cache (implies incremental invalidation, not a wholesale rebuild)
+
+**Citation Lookup**:
+Answers for requested Citation Keys, Indexed Keys, and Annotation Indexed Keys (each answered with the Annotation's parent Item) from one published resolution revision. A document or command takes a one-shot read; a view holds an observation for as long as it is open, keeping its earlier answer while a new answer is read.
+_Avoid_: CitationReads (the retired owner), citation resolver (omits held observations), lookup cache (names retention, not the answers)
+
+**Ambiguous Citation Key**:
+A Citation Key that names more than one Item in Library Scope, whether the candidates are in one Library or several Libraries. Distinct from `duplicate-citation-key`, a document-scoped collision among cited works.
+_Avoid_: duplicate citation key, citation key conflict
+
+**Citation Occurrence**:
+One appearance of a Citation in one file — its Citation Syntax, its raw citekey, linkpath, or Annotation Indexed Key, and its full start–end position. Raw and unresolved by design: what it cites is answered at query time.
+_Avoid_: citation instance, match, hit
+
+**Citation Syntax**:
+One of the three written forms a citation takes in a note body — a literal Pandoc citation key, a wikilink to a Literature Note, or an Annotation Citation. Every Citation Occurrence has exactly one syntax.
+_Avoid_: citation format; citation style (collides with CSL citation styles)
+
+**Annotation Citation**:
+A Durable Annotation Link with exactly empty text, `[](zotero://…?annotation=…)`: a Citation of the Annotation's parent Item, located by the Annotation's page label. Any other text, including whitespace alone, makes it a labelled link, not a Citation. One whose URL names no valid Annotation is a malformed Annotation Citation and shows as a Reference Error.
+_Avoid_: annotation link citation, citation with position (describes it; not its name)
+
+**Annotation Occurrence**:
+One appearance of a Durable Annotation Link in one file — its form (Annotation Citation, labelled link, or embed `![](…)`), the Annotation's Indexed Key, and its position. Every form is one, so the Citation Index can answer where an Annotation is used. Only an Annotation Citation is also a Citation Occurrence. An Attachment File Link carrying an Annotation Anchor is not one.
+_Avoid_: annotation reference, annotation backlink (the Backlink is the link ZotLit writes, not its appearance), annotation usage
+
+**Omitted Occurrence**:
+A Citation Occurrence that stays outside an answer because the Pandoc Citations, Wikilink Citations, or Annotation Citations choice excludes its Citation Syntax. Reporting it is what makes a short answer visible as short: an answer that counts some of a document's citations otherwise reads exactly like one that counts them all.
+_Avoid_: skipped citation, filtered occurrence (both name the mechanism, not the fact)
+
+**Document Citation Set**:
+The ordered Citation Occurrences one document contributes to ZotLit's Obsidian citation-aware features after the Pandoc Citations, Wikilink Citations, and Annotation Citations choices are applied. An eligible Wikilink Citation is an unaliased Literature Note link with no fragment or a valid Citation Fragment; heading links, block links, malformed Citation Fragments, and malformed Annotation Citations stay outside the set. The References Sidebar, Cited By Sidebar, In-text Citation Rendering, numbering, and Citekey Navigation all use this same membership and source order. Setting changes recompute it immediately from the internal Citation Index; built-in Pandoc export has its own membership contract.
+_Avoid_: citation universe, rendered citations (presentation, not membership)
+
+**Citation Cluster**:
+The bracketed literal-citekey syntax `[see @a, p. 3; @b]` — one `;`-separated item per citekey, each carrying an optional prefix and suffix, and `-@` to suppress the author. It is the source text a Citation Index scan and an editor widget both read; the Citation Run is its wikilink counterpart in Pandoc export.
+_Avoid_: citation group (names the result, not the source syntax), bracketed citation
+
+**Author-in-text Citation**:
+Pandoc citation source that puts the first cited author's name into the surrounding prose, such as `@a [p. 3; @b]`. Later Citation Items and the first item's Locator and Citation Suffix stay in the trailing brackets.
+_Avoid_: bare citation (omits the author behavior), narrative citation (CSL terminology for formatted output)
+
+**Pandoc Citations**:
+The default-on choice to include literal Pandoc citation syntax, such as `@doe2024` and `[@doe2024]`, in the Document Citation Set. Turning it off leaves the source visible and excludes those occurrences from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index or changing citation insertion and export.
+_Avoid_: citekey indexing (names an internal mechanism), literal citations (omits the syntax convention)
+
+**Wikilink Citations**:
+The default-off choice to include eligible Literature Note wikilinks in the Document Citation Set. Turning it off leaves them as native Obsidian links and excludes them from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index or changing built-in Pandoc export.
+_Avoid_: wikilink as citekey (the working name), link citations
+
+**Annotation Citations**:
+The default-off choice to include Annotation Citations, the empty-text Annotation link form, in the Document Citation Set. Leaving it off keeps them as links and excludes them from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index; they remain Annotation Occurrences either way.
+_Avoid_: annotation link citations, position citations
+
+### Zotero connection
+
+**Zotero Local API**:
+Zotero's own loopback HTTP API, which Zotero serves from its `httpServer.port` when the `httpServer.localAPI.enabled` preference is on. The only write authority for Annotations. Distinct from the plugin's Local Server, which is the listener ZotLit hosts.
+_Avoid_: local API (ambiguous with the plugin's Local Server), Zotero server, Zotero HTTP server, connector API
+
+**Capability Probe**:
+A check of the Zotero Local API's availability and Zotero Server ID. It describes the connection available for live reads and edits.
+_Avoid_: ping, health check, handshake, api.ready (the Better BibTeX probe used by Pandoc export)
+
+**Write Authorization**:
+The grant Zotero issues to ZotLit, on the user's Always Allow in Zotero's own dialog, that permits writes through the Zotero Local API. Zotero's Allow issues a single-use key that ZotLit refuses, so Allow grants no Write Authorization. Reads need none; Write Authorization gates writes alone. Zotero decides it; ZotLit only asks and remembers.
+_Avoid_: login, API key (user-facing; keys are the mechanism, not the grant), permission (overloaded with Approved Attachment Root), token, One-time Authorization (Allow grants none)
+
+**Remembered Authorization** _(Write Authorization)_:
+A Write Authorization granted with Always Allow: it stays valid until Zotero clears it or the user removes ZotLit's copy. ZotLit keeps one per vault × device, bound to the Zotero Server ID that granted it, and treats it as a candidate until a write succeeds.
+_Avoid_: persistent key, stored credential, saved login
+
+**Client Name**:
+The stable string, `ZotLit for Obsidian`, under which ZotLit asks Zotero for Write Authorization and which Zotero shows in its dialog. One name for every vault.
+_Avoid_: app name (Zotero's wire field), ZotLit (alone — also the Companion's display name inside Zotero)
+
+**Zotero Server ID**:
+Zotero's stable identifier for one Zotero database, which every Zotero Local API response carries. A Remembered Authorization and cached object versions belong to the Server ID that produced them; a different ID is a different Zotero.
+_Avoid_: instance ID, Zotero ID, database ID
+
+**Device Override**:
+A device-scoped value for the Zotero profile directory or data directory — stored per vault × device, never synced — that overrides ZotLit's automatic Zotero detection (default profile from `profiles.ini`, data directory from `prefs.js`) on that device only. Clearing it returns the device to auto-detection. These two values exist solely as Device Overrides; no synced copy exists.
+_Avoid_: local setting ("local" is overloaded: local library, local attachments), per-device setting (implies a category of ordinary settings rather than an override of auto-detection)
+
+**Approved Attachment Root**:
+A canonical directory the user permitted on this device as a source for Attachment Import — stored per vault × device, never synced. User-facing copy calls it an "approved folder." Zotero's own storage directory, annotation cache, and configured base attachment directory need no such grant; only an absolute linked file outside those places requires one.
+_Avoid_: allowed folder, trusted directory (implies a broader grant than one Attachment Import source), whitelisted path
+
+### Database access
+
+**ZoteroReads**:
+The plugin's asynchronous interface to the Zotero database: use-case operations that one worker answers with plain data, with one connection and Read Mode for interactive reads and the Citation Index. ZoteroReads owns file watching and source change detection; operations that share a Snapshot read one database state across a refresh.
+_Avoid_: database service, DB client (the renderer holds no client)
+
+**Snapshot** _(ZoteroReads)_:
+One database state pinned for as long as its holder keeps it open. Every read that names the Snapshot sees that state, also after a refresh swaps in a newer one; closing it releases the state. A note write holds one Snapshot, so the Literature Note and the Child Notes it imports come from one moment.
+_Avoid_: lease, read lease, Item Snapshot (the Workbench's export of one Item)
+
+**Read Mode**:
+The strategy ZotLit uses to open `zotero.sqlite` while Zotero is running and holds the file exclusively. Configured per vault (synced) as one of four values: Auto, Reflink clone, Full copy, Immutable source. Auto resolves to one of the three concrete modes at runtime.
+
+**Main Identity**:
+The identity of one observed state of the main Zotero database file. It combines the file identity and size with the complete SQLite page-1 header, including the change counter that advances on rollback-journal commits.
+
+**WAL Generation**:
+The identity of one observed write-ahead log generation. It distinguishes an absent, empty, unstable, or present WAL; a present generation is identified by its WAL header and size. Two source fingerprints match when their path, Main Identity, and WAL Generation match; an unstable generation never matches.
+
+**Reflink Clone** _(Read Mode)_:
+Creates a lightweight snapshot of the database files into a temporary directory and opens the snapshot read-only. Sees committed changes that Zotero has not yet written to the main database file. Default on macOS (via `clonefile`); unavailable on filesystems that do not support reflinking.
+_Avoid_: copy-on-write clone (user-facing docs avoid this term)
+
+**Full Copy** _(Read Mode)_:
+Byte-for-byte copy of the database files into a temporary directory. Same freshness as Reflink clone but slower and uses more disk space, especially with large libraries. Auto never selects this mode; the user must choose it explicitly.
+_Avoid_: regular copy, normal copy
+
+**Immutable Source** _(Read Mode)_:
+Opens `zotero.sqlite` in place with SQLite's immutable flag. Skips locking and reads committed data only — recent edits not yet written to the main file are invisible until Zotero checkpoints. The fallback when cloning is unavailable; default on Windows and Linux.
+_Avoid_: direct read, read-only mode (all modes are read-only)
+
+### Releases and onboarding
+
+**Resource Release**:
+The version-matched release that carries downloadable resources outside the plugin bundle: Language Packs and template data JSON Schemas. One exists per plugin release, named for that version, holding assets built from the same commit; the plugin downloads Language Packs at runtime, while agents use CLI guides to download schemas when needed. The installed plugin supplies its matching Pandoc integration files through its own agent and UI surfaces.
+_Avoid_: pack release, asset release
+
+**Pandoc Integration Pair**:
+The matching, co-located `zotlit-cite.lua` and `zotlit.yaml` files for one installed ZotLit version. ZotLit supplies and replaces them as one exact pair.
+_Avoid_: Pandoc bundle, filter files
+
+**Native Pandoc Workflow**:
+One local Markdown input converted by a user-installed Pandoc, with the Pandoc Integration Pair resolving Literature Note Citations through a running Obsidian instance.
+_Avoid_: external export, CLI export
+
+**Pandoc CLI Guide**:
+The agent-facing reference for ZotLit's part of native Pandoc export: obtaining the matching integration files and using the resolver contract. It assumes Pandoc knowledge; general Pandoc setup and usage stay outside ZotLit.
+_Avoid_: Pandoc installer, Pandoc setup command
+
+**Welcome View** _(Obsidian)_:
+The onboarding steps of ZotLit, as a dismissable banner above the Library View, the first screen — in its fresh state on a first install, or in its upgraded state when Legacy Data was detected. It shows a header with its badge and tagline, the steps Connect to Zotero, Choose where literature notes live and Open your library as a checklist that opens only the next step, the Help Links beside them, and, in the upgraded state, the Migration Prompt. It shows until dismissed, which works in every case, or until ZotLit reads the Zotero database and the literature-notes folder exists; the "Open welcome view" command shows it again, and the Library View's "Welcome & help" view action toggles it. It has no tab of its own.
+
+**Help Links**:
+The documentation and community links of the Welcome View: Getting started, Chat & discuss, GitHub (asking for a star if the researcher likes ZotLit), Templates and Citations as tiles, Blog, Changelog and Sponsor as text links. They show whenever the Welcome View banner shows, whatever its mode or sections.
+_Avoid_: footer links, resources
+
+**Release Note**:
+The per-version changelog page on the docs site (`/changelog/<version>`) surfaced after a plugin update. An update shows a section in the Welcome View banner above the Library View, "ZotLit updated to <version>" with "What's new", until it is dismissed or opened; the page opens only on user action — in a Web Viewer leaf when available, else the system browser. Authoring the page is part of each release.
+
+**Migration Prompt**:
+The prominent banner in the Welcome View's upgraded state pointing a user upgraded from plugin v1 at the migration guide on the docs site. The banner shows whenever the Library View is open until the prompt is acknowledged — by opening the guide or dismissing the banner. The fresh state carries only a quiet footer link to the same guide, for v1 veterans starting a new vault.
+
+**Legacy Data**:
+Plugin settings on disk written by ZotLit v1 — recognized by the absence of any settings version marker. Detected once during settings load, then silently migrated to the current shape; its one-launch presence is what distinguishes a v1 upgrader from a fresh install.
+
+### Localization
+
+Message, Message Input, Language Pack, Language Pack Lifecycle, and Locale
+Alias use the canonical definitions in
+[`@zotlit/obsidian-i18n`](../../packages/obsidian-i18n/GLOSSARY.md).
+
+ZotLit configures English as its base locale, excludes `docs_` Messages from
+plugin artifacts, maps Obsidian's `zh` Locale Alias to `zh-CN`, and owns its
+release locations, consent copy, notices, and settings UI.
+
+### Protocol
+
+**Protocol Action**:
+A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Attachment action: `open-attachment` (open an Obsidian-Openable Attachment in Obsidian's PDF view). Library action: `show-in-library` (Show in Library for the Item an Indexed Key names; the Library Link that `zt.librarylink` writes into a note, so it carries no `source-id`). Long URLs fall back to HTTP PUT on the plugin's local server, which also serves the Companion's `GET /literature-notes` note-status query from the Note Index.

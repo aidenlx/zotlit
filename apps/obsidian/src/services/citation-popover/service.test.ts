@@ -1,13 +1,47 @@
+import { Effect } from "effect";
 // @vitest-environment happy-dom
-import type { TFile } from "obsidian";
-import type { ReactElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Logger, References, Stream } from "effect";
+import type { Layer } from "effect";
+import { TFile } from "obsidian";
+import { act } from "preact/test-utils";
+import type { ReactElement, ReactNode } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Held } from "@/lib/held-reads";
+import { createClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
+
+import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { LogCategory } from "@/lib/effect-log";
+import * as m from "@/lib/i18n/generated/messages";
+import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
+import {
+  lookupAnswer,
+  lookupForWorks,
+} from "@/services/citation-index/__fixtures__/lookup";
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import type { AnnotationParent } from "@/services/citation-index/lookup";
+import type { CitekeyResolution } from "@/services/citation-index/service";
+import { createCitationIndexHarness } from "@/services/citation-index/test-harness";
 import type { DocumentCitations } from "@/services/citation-text/service";
+import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import {
+  CLEAR_WORKS_SQL,
+  inProcessReadsService,
+  seedWorksSql,
+  sharedClientOpener,
+  worksSql,
+} from "@/services/zotero-reads/test-utils";
+import type { SeededWork } from "@/services/zotero-reads/test-utils";
 
+import { citationPopoverFixture } from "./__fixtures__";
+import type { CitationPopoverFixtureDeps } from "./__fixtures__";
 import type { CitationPopoverContentProps } from "./content";
-import { createCitationPopover } from "./service";
+import type { WorkHoverRequest } from "./service";
+import type { PopoverPart } from "./visits";
 
 const popovers = vi.hoisted(
   () =>
@@ -17,70 +51,155 @@ const popovers = vi.hoisted(
     }[],
 );
 
+/** A failure the next draw of entries throws, as a broken render would. */
+const draw = vi.hoisted(() => ({ fails: null as Error | null }));
+
 vi.mock("./popover", () => ({
   CitationHoverPopover: class {
-    readonly render = vi.fn(() => true);
-    readonly hide = vi.fn();
+    readonly render = vi.fn((content: unknown) => {
+      if (draw.fails && content !== null) throw draw.fails;
+      return true;
+    });
+    readonly retarget = vi.fn();
+    readonly #cleanup: (() => void)[] = [];
+    readonly hide = vi.fn(() => {
+      for (const cleanup of this.#cleanup.splice(0).reverse()) cleanup();
+    });
 
     constructor() {
       popovers.push(this);
     }
 
-    register(): void {}
-    registerEvent(): void {}
+    register(cleanup: () => void): void {
+      this.#cleanup.push(cleanup);
+    }
   },
 }));
 
-const NOTE = { path: "note.md" } as TFile;
+/** Every reads stand-in a test opened, disposed after it. */
+const opened: AsyncDisposable[] = [];
+afterEach(async () => {
+  for (const reads of opened.splice(0)) await reads[Symbol.asyncDispose]();
+});
+
+/**
+ * ZoteroReads on the in-process adapter over a `:memory:` database holding
+ * `works`. The test sets `state`; `holds` replaces the works the database
+ * holds, and `lock`/`unlock` make the item table unreadable and readable.
+ */
+function reads(works: readonly SeededWork[] = []) {
+  const client = createClient(":memory:");
+  createFixtureSchema(client.$client);
+  client.$client.exec(seedWorksSql(works));
+  const service = inProcessReadsService(sharedClientOpener(client));
+  const stub = {
+    state:
+      "ready" as import("@/services/zotero-reads/service").ZoteroReadsState["state"],
+    current: Effect.sync(
+      (): import("@/services/zotero-reads/service").ZoteroReadsState => ({
+        state: stub.state,
+        error: null,
+        moved: false,
+        dbFileMissing: false,
+        activeReadMode: null,
+      }),
+    ),
+    get ready() {
+      return service.ready;
+    },
+    get reads() {
+      return service.reads;
+    },
+    acquireRead: () => service.acquireRead(),
+    holds(next: readonly SeededWork[]) {
+      client.$client.exec(`${CLEAR_WORKS_SQL}\n${worksSql(next)}`);
+    },
+    lock() {
+      client.$client.exec("alter table items rename to lockedItems");
+    },
+    unlock() {
+      client.$client.exec("alter table lockedItems rename to items");
+    },
+    async [Symbol.asyncDispose]() {
+      await service[Symbol.asyncDispose]();
+      client.$client.close();
+    },
+  };
+  opened.push(stub);
+  return stub;
+}
+
+const NOTE = Object.assign(new TFile(), { path: "note.md" });
 
 const emptyText = (): DocumentCitations => ({
   formatted: new Map(),
   entrySerials: false,
   summaries: new Map(),
+  lookup: lookupForWorks(new Map([["ghost", null]])),
   literalWorks: new Map(),
 });
 
-function harness(initial: Held<DocumentCitations> | null) {
-  let held = initial;
-  const listeners = {
-    changed: new Set<(path: string) => void>(),
-    settled: new Set<
-      (path: string, held: Held<DocumentCitations> | null) => void
-    >(),
-    invalidated: new Set<() => void>(),
-  };
-  const citationText = {
-    peek: vi.fn(() => held),
-    on: vi.fn(
-      <K extends keyof typeof listeners>(
-        event: K,
-        listener: (typeof listeners)[K] extends Set<infer T> ? T : never,
-      ) => {
-        listeners[event].add(listener as never);
-        return () => listeners[event].delete(listener as never);
-      },
-    ),
-  };
-  const service = createCitationPopover({
-    app: {
-      vault: { getFileByPath: () => NOTE },
-      metadataCache: {
-        getFileCache: () => null,
-        on: () => ({ e: { offref: () => undefined } }),
-      },
+function harness(
+  read: () => Promise<DocumentCitations | null>,
+  { parent = null }: { parent?: AnnotationParent | null } = {},
+) {
+  let file: TFile | null = NOTE;
+  const metadataCache = new MemoryMetadataCache();
+  const citationText = { read: vi.fn(read) };
+  const readLookup = vi.fn(
+    async ({ citekeys }: { citekeys: readonly string[] }) =>
+      lookupAnswer(
+        Object.fromEntries(
+          citekeys.map((citekey) => [citekey, { kind: "missing" as const }]),
+        ),
+      ),
+  );
+  const popover = citationPopoverFixture({
+    host: {
+      vault: MemoryVault.with({
+        getFileByPath: () => file,
+      }),
+      metadataCache,
     },
-    db: { state: "ready", client: {} },
+    db: reads(),
+    citationLookup: {
+      read: ({ annotationKeys = [] }) => {
+        if (annotationKeys.length === 0)
+          throw new Error("Document fills use their one document answer");
+        return Promise.resolve(
+          new CitationLookupAnswer({
+            revision: "r1",
+            citekeys: new Map(),
+            indexedKeys: new Map(),
+            annotationKeys: new Map(annotationKeys.map((key) => [key, parent])),
+          }),
+        );
+      },
+      status: "fresh",
+      changed: Stream.empty,
+      "status-changed": Stream.empty,
+    },
     citationIndex: {
-      getDocumentCitationSet: () =>
-        Promise.resolve({ occurrences: [], citations: [], errors: [] }),
-      resolveCitekey: () => ({ kind: "missing" }),
-      resolution: "fresh",
+      getDocumentCitationSet: async (
+        _file: unknown,
+        { include }: { include: { citekeys: readonly string[] } },
+      ) => ({
+        occurrences: [],
+        citations: [],
+        errors: [],
+        sources: new Map(),
+        lookup: await readLookup(include),
+      }),
     },
     libraryScope: { current: [] },
     citationText,
+    profile: profileReader(),
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
-      on: () => () => undefined,
+      changed: Stream.empty,
+      settled: Stream.empty,
+      invalidated: Stream.empty,
+      "style-missing": Stream.empty,
       render: () =>
         Promise.resolve({
           kind: "held" as const,
@@ -92,140 +211,837 @@ function harness(initial: Held<DocumentCitations> | null) {
           },
         }),
     },
-  } as never);
+  });
+  const { service, runtime } = popover;
   const show = () =>
-    service.show({
-      event: new MouseEvent("mouseover"),
-      hoverParent: { hoverPopover: null },
-      sourcePath: NOTE.path,
-      targetEl: document.createElement("span"),
-      works: [{ citekey: "ghost" }],
-      shown: {
-        citation: {
-          source: "[@ghost]",
-          keys: [{ citekey: "ghost", start: 1, end: 7 }],
+    runtime.runSync(
+      service.show({
+        event: new MouseEvent("mouseover"),
+        hoverParent: { hoverPopover: null },
+        sourcePath: NOTE.path,
+        targetEl: document.createElement("span"),
+        works: [{ citekey: "ghost" }],
+        shown: {
+          citation: {
+            source: "[@ghost]",
+            keys: [{ citekey: "ghost", start: 1, end: 7 }],
+          },
+          at: { kind: "offset", start: 0 },
         },
-        at: { kind: "offset", start: 0 },
-      },
-      open: vi.fn(),
-    });
+        open: vi.fn(),
+      }),
+    );
+  const showWork = (
+    work: WorkHoverRequest["work"],
+    lead: (part: PopoverPart) => void,
+  ) =>
+    void runtime.runPromise(
+      service.showWork({
+        event: new MouseEvent("mouseover"),
+        hoverParent: { hoverPopover: null },
+        targetEl: document.createElement("span"),
+        work,
+        open: vi.fn(),
+        lead,
+      }),
+    );
   return {
     citationText,
-    emitChanged: () => {
-      for (const listener of listeners.changed) listener(NOTE.path);
-    },
-    emitInvalidated: () => {
-      for (const listener of listeners.invalidated) listener();
-    },
-    emitSettled: (settled: Held<DocumentCitations> | null) => {
-      for (const listener of listeners.settled) listener(NOTE.path, settled);
-    },
-    hold(value: Held<DocumentCitations>) {
-      held = value;
+    readLookup,
+    showWork,
+    removeSource() {
+      file = null;
+      metadataCache.delete(NOTE);
     },
     show,
+    [Symbol.asyncDispose]: () => popover[Symbol.asyncDispose](),
   };
 }
 
 beforeEach(() => {
   popovers.length = 0;
+  draw.fails = null;
 });
 
 describe("Citation Popover citation text", () => {
-  it("settles the second hover after the first citation-text read failed", async () => {
-    vi.useFakeTimers();
-    try {
-      const run = harness(null);
+  it("fills a newly typed hovered key from the same answer as document membership", async () => {
+    await using run = harness(() => Promise.resolve(null));
 
-      run.show();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(run.citationText.peek).toHaveBeenCalledOnce();
-      run.emitSettled(null);
-      await vi.advanceTimersByTimeAsync(100);
-      expect(popovers[0]!.render).toHaveBeenCalledOnce();
-      expect(run.citationText.peek).toHaveBeenCalledOnce();
-
-      run.show();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(run.citationText.peek).toHaveBeenCalledTimes(2);
-      run.emitSettled(null);
-      await vi.advanceTimersByTimeAsync(100);
-      expect(popovers[1]!.render).toHaveBeenCalledOnce();
-      expect(run.citationText.peek).toHaveBeenCalledTimes(2);
-      const content = popovers[1]!.render.mock
-        .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
-      expect(content.props.note).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it.each([
-    [
-      "the document changed",
-      (run: ReturnType<typeof harness>) => run.emitChanged(),
-    ],
-    [
-      "all documents changed",
-      (run: ReturnType<typeof harness>) => run.emitInvalidated(),
-    ],
-  ])("follows a replaced first read when %s", async (_name, invalidate) => {
-    const run = harness(null);
     run.show();
-    await vi.waitFor(() =>
-      expect(run.citationText.peek).toHaveBeenCalledOnce(),
-    );
-
-    invalidate(run);
-    await vi.waitFor(() =>
-      expect(run.citationText.peek).toHaveBeenCalledTimes(2),
-    );
-
-    run.hold({
-      value: emptyText(),
-      status: "fresh",
-      settled: Promise.resolve(emptyText()),
-    });
-    run.emitChanged();
 
     await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalledOnce());
+    expect(run.citationText.read).toHaveBeenCalledOnce();
+    expect(run.readLookup).toHaveBeenCalledWith({ citekeys: ["ghost"] });
+    const content = popovers[0]!.render.mock
+      .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
+    expect(content.props.note).toBeUndefined();
   });
 
-  it("uses the held citation text after its replacement read failed", async () => {
-    const text: DocumentCitations = {
-      ...emptyText(),
-      formatted: new Map([
-        [
-          "[@ghost]",
-          [
-            {
-              start: 0,
-              text: {
-                content: [
-                  {
-                    t: "Note",
-                    c: [{ t: "Para", c: [{ t: "Str", c: "held note" }] }],
-                  },
-                ],
-                citations: [{ id: "ghost", mode: "normal" }],
-              },
-              serials: [],
-            },
-          ],
-        ],
-      ]),
-    };
-    const run = harness({
-      value: text,
-      status: "failed",
-      settled: Promise.resolve(null),
-    });
-
+  it("draws the text the read settled on rather than what stood at the hover", async () => {
+    const settled = Promise.withResolvers<DocumentCitations | null>();
+    await using run = harness(() => settled.promise);
     run.show();
+    await vi.waitFor(() =>
+      expect(run.citationText.read).toHaveBeenCalledOnce(),
+    );
+    expect(popovers[0]!.render).not.toHaveBeenCalled();
+
+    settled.resolve(noteText("settled note"));
 
     await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalledOnce());
     const content = popovers[0]!.render.mock
       .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
-    expect(content.props.note).toEqual([{ t: "Str", c: "held note" }]);
+    expect(content.props.note).toEqual([{ t: "Str", c: "settled note" }]);
   });
 });
+
+describe("Citation Popover lead", () => {
+  /** What the popover drew last: the lead, then the entries below it. */
+  function lastDrawn(): [ReactNode, ReactNode] {
+    const drawn = popovers[0]!.render.mock.calls.at(-1)![0] as ReactElement<{
+      children: [ReactNode, ReactNode];
+    }>;
+    return drawn.props.children;
+  }
+
+  it("draws the lead above what the read found, and draws it again in place", async () => {
+    await using run = harness(() => Promise.resolve(null));
+    let part: PopoverPart | undefined;
+    run.showWork({ kind: "item", indexedKey: "ABCD2345" }, (given) => {
+      part = given;
+      given.draw("The annotation");
+    });
+
+    await vi.waitFor(() =>
+      expect(popovers[0]!.render).toHaveBeenCalledTimes(2),
+    );
+    const [lead, entries] = lastDrawn();
+    expect(lead).toBe("The annotation");
+    expect(
+      (entries as ReactElement<CitationPopoverContentProps>).props.unavailable,
+    ).toBe("item");
+
+    part!.draw("The edited annotation");
+    expect(lastDrawn()[0]).toBe("The edited annotation");
+    expect(lastDrawn()[1]).toBe(entries);
+  });
+
+  it.each([
+    ["the library holds no such Annotation", null],
+    [
+      "the Annotation's PDF has no Item",
+      { indexedKey: "STANDALO", citekey: null },
+    ],
+  ])("keeps the lead alone where %s", async (_case, parent) => {
+    await using run = harness(() => Promise.resolve(null), { parent });
+    run.showWork({ kind: "annotation", annotationKey: "ABCD2345" }, (part) =>
+      part.draw("The annotation"),
+    );
+
+    await vi.waitFor(() =>
+      expect(popovers[0]!.render).toHaveBeenCalledTimes(2),
+    );
+    expect(lastDrawn()).toEqual(["The annotation", null]);
+    expect(popovers[0]!.hide).not.toHaveBeenCalled();
+  });
+});
+
+/** One document's citation text, whose hovered occurrence carries a note. */
+function noteText(note: string): DocumentCitations {
+  return {
+    ...emptyText(),
+    formatted: new Map([
+      [
+        "[@ghost]",
+        [
+          {
+            start: 0,
+            text: {
+              content: [
+                { t: "Note", c: [{ t: "Para", c: [{ t: "Str", c: note }] }] },
+              ],
+              citations: [{ id: "ghost", mode: "normal" }],
+            },
+            serials: [],
+          },
+        ],
+      ],
+    ]),
+  };
+}
+
+describe("source-less Citation Popover", () => {
+  it("shows an uncited Item without a citation key under the vault presentation", async () => {
+    const readBibliography = vi.fn(async () => ({
+      entries: [
+        {
+          id: "ABCD2345",
+          marker: [{ t: "Str", c: "[1]" }],
+          content: [{ t: "Str", c: "Formatted alpha" }],
+        },
+      ],
+      hasEntryMarkers: true,
+    }));
+    await using popover = citationPopoverFixture({
+      host: {},
+      db: reads([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]),
+      citationLookup: {
+        status: "pending",
+        changed: Stream.empty,
+        "status-changed": Stream.empty,
+      },
+      libraryScope: { current: [] },
+      profile: profileReader(),
+      bibliographyRender: {
+        readBibliography,
+        changed: Stream.empty,
+        settled: Stream.empty,
+        invalidated: Stream.empty,
+        "style-missing": Stream.empty,
+      },
+    });
+
+    void Promise.resolve(
+      popover.runtime.runPromise(
+        popover.service.showWork({
+          event: new MouseEvent("mouseover"),
+          hoverParent: { hoverPopover: null },
+          targetEl: document.createElement("span"),
+          work: { kind: "item", indexedKey: "ABCD2345" },
+          open: vi.fn(),
+        }),
+      ),
+    ).catch(() => {});
+
+    await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalled());
+    const content = popovers[0]!.render.mock.calls.at(
+      -1,
+    )![0] as ReactElement<CitationPopoverContentProps>;
+    expect(content.props.blocks).toMatchObject([
+      {
+        kind: "entry",
+        citekey: null,
+        itemKey: "ABCD2345",
+        content: [{ t: "Str", c: "Formatted alpha" }],
+        marker: undefined,
+        serial: undefined,
+      },
+    ]);
+    expect(content.props.note).toBeUndefined();
+    expect(readBibliography.mock.calls[0]).toEqual([
+      [expect.objectContaining({ title: "Alpha kernels" })],
+      { signal: expect.any(AbortSignal) },
+    ]);
+  });
+});
+
+/** A Logger layer that records the Effect warnings the popover writes. */
+function captureWarnings() {
+  const warnings: {
+    message: unknown;
+    category: readonly string[];
+    annotations: Readonly<Record<string, unknown>>;
+  }[] = [];
+  const logs: Layer.Layer<never> = Logger.layer([
+    Logger.make(({ logLevel, message, fiber }) => {
+      if (logLevel !== "Warn") return;
+      warnings.push({
+        message: Array.isArray(message) ? message[0] : message,
+        category: fiber.getRef(LogCategory),
+        annotations: fiber.getRef(References.CurrentLogAnnotations),
+      });
+    }),
+  ]);
+  return { warnings, logs };
+}
+
+function workHarness(options: { logs?: Layer.Layer<never> } = {}) {
+  const events = testEvents<Record<string, () => void>>([
+    "changed",
+    "status-changed",
+    "invalidated",
+  ]);
+
+  const db = reads();
+  const citationLookup = {
+    status: "fresh" as "pending" | "fresh" | "failed",
+    resolveCitekey: vi.fn<() => CitekeyResolution>(() => ({
+      kind: "missing",
+    })),
+    read: vi.fn(async ({ citekeys }: { citekeys: readonly string[] }) =>
+      lookupAnswer(
+        Object.fromEntries(
+          citekeys.map((citekey) => [citekey, citationLookup.resolveCitekey()]),
+        ),
+      ),
+    ),
+    ...events.streams,
+  };
+  const readBibliography = vi.fn<
+    () => Promise<BibliographyRenderResult | null>
+  >(async () => null);
+  const open = vi.fn();
+  const showInLibrary = vi.fn();
+  const popover = citationPopoverFixture(
+    {
+      host: {},
+      db,
+      citationLookup,
+      libraryScope: { current: [] },
+      showInLibrary,
+      profile: profileReader(),
+      bibliographyRender: { readBibliography, ...events.streams },
+    },
+    options,
+  );
+  const { service, runtime } = popover;
+  const element = document.createElement("div");
+  const root = createRoot(element);
+  const parent = { hoverPopover: null };
+  return {
+    db,
+    citationLookup,
+    readBibliography,
+    open,
+    showInLibrary,
+    emit(event: string) {
+      events.emit(event);
+    },
+    show(
+      work: WorkHoverRequest["work"] = { kind: "item", indexedKey: "ABCD2345" },
+    ) {
+      void Promise.resolve(
+        runtime.runPromise(
+          service.showWork({
+            event: new MouseEvent("mouseover"),
+            hoverParent: { hoverPopover: null },
+            targetEl: element,
+            work,
+            open,
+          }),
+        ),
+      ).catch(() => {});
+    },
+    /**
+     * Hovers `work` under one parent the harness keeps, on a target of its
+     * own; settles once that hover's first read drew or was dropped.
+     */
+    showUnder(work: WorkHoverRequest["work"]): Promise<void> {
+      return runtime.runPromise(
+        service.showWork({
+          event: new MouseEvent("mouseover"),
+          hoverParent: parent,
+          targetEl: document.createElement("span"),
+          work,
+          open,
+        }),
+      );
+    },
+    async shown() {
+      await vi.waitFor(() =>
+        expect(popovers.at(-1)!.render).toHaveBeenCalled(),
+      );
+      const content = popovers
+        .at(-1)!
+        .render.mock.calls.at(
+          -1,
+        )![0] as ReactElement<CitationPopoverContentProps>;
+      await act(() => root.render(content));
+      return element;
+    },
+    async [Symbol.asyncDispose]() {
+      await popover[Symbol.asyncDispose]();
+      root.unmount();
+    },
+  };
+}
+
+describe("source-less lookup states", () => {
+  it("keeps delivered content and reports failed freshness when a lookup refresh fails", async () => {
+    await using run = workHarness();
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+    run.citationLookup.resolveCitekey.mockReturnValue({
+      kind: "unique",
+      item: {
+        itemID: 1,
+        libraryID: 1,
+        key: "ABCD2345",
+        indexedKey: "ABCD2345",
+      },
+    });
+    run.show({ kind: "citekey", citekey: "doe2024" });
+    expect((await run.shown()).textContent).toContain("Alpha kernels");
+    run.citationLookup.read.mockRejectedValue(new Error("worker unavailable"));
+    run.emit("changed");
+    await vi.waitFor(async () => {
+      const content = await run.shown();
+      expect(content.textContent).toContain("Alpha kernels");
+      expect(
+        content.querySelector('[data-citation-lookup-status="failed"]'),
+      ).not.toBeNull();
+    });
+    expect(popovers.at(-1)!.hide).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed citation read as database unavailable", async () => {
+    await using run = workHarness();
+    run.citationLookup.read.mockRejectedValueOnce(
+      new Error("worker unavailable"),
+    );
+    run.show({ kind: "citekey", citekey: "doe2024" });
+    expect((await run.shown()).textContent).toBe(
+      m.citation_popover_database_unavailable(),
+    );
+    expect(run.citationLookup.read).toHaveBeenCalledWith({
+      citekeys: ["doe2024"],
+      indexedKeys: [],
+      annotationKeys: [],
+    });
+  });
+
+  it("distinguishes an unavailable database from an absent exact Item", async () => {
+    await using run = workHarness();
+    run.db.state = "degraded";
+    run.show();
+    const element = await run.shown();
+    expect(element.textContent).toBe(m.citation_popover_database_unavailable());
+    expect(element.querySelector("[data-citation-popover-actions]")).toBeNull();
+
+    run.db.state = "ready";
+    run.emit("invalidated");
+    await vi.waitFor(async () => {
+      expect((await run.shown()).textContent).toBe(
+        m.citation_popover_item_unavailable(),
+      );
+    });
+    expect(popovers.at(-1)!.hide).not.toHaveBeenCalled();
+  });
+});
+
+describe("source-less Citation Key refresh", () => {
+  it("refreshes pending, missing, unique, and ambiguous results while open", async () => {
+    await using run = workHarness();
+    run.citationLookup.status = "pending";
+    run.show({ kind: "citekey", citekey: "doe2024" });
+    expect((await run.shown()).textContent).toBe(
+      m.references_citekey_pending({ citekey: "doe2024" }),
+    );
+
+    run.citationLookup.status = "fresh";
+    run.citationLookup.resolveCitekey.mockReturnValue({ kind: "missing" });
+    run.emit("changed");
+    await vi.waitFor(async () =>
+      expect((await run.shown()).textContent).toBe(
+        m.references_citekey_unresolved({ citekey: "doe2024" }),
+      ),
+    );
+
+    run.db.holds([
+      {
+        itemID: 1,
+        key: "ABCD2345",
+        title: "Alpha kernels",
+        citationKey: "doe2024",
+      },
+    ]);
+    const item = {
+      itemID: 1,
+      libraryID: 1,
+      key: "ABCD2345",
+      indexedKey: "ABCD2345",
+    };
+    run.citationLookup.resolveCitekey.mockReturnValue({ kind: "unique", item });
+    run.emit("changed");
+    await vi.waitFor(async () =>
+      expect((await run.shown()).textContent).toContain("Alpha kernels"),
+    );
+    expect(
+      (await run.shown()).querySelector("[data-citation-popover-actions]"),
+    ).not.toBeNull();
+
+    run.citationLookup.resolveCitekey.mockReturnValue({
+      kind: "ambiguous",
+      candidates: [
+        item,
+        { ...item, key: "EFGH6789", indexedKey: "EFGH6789", itemID: 2 },
+      ],
+    });
+    run.emit("changed");
+    await vi.waitFor(async () =>
+      expect((await run.shown()).textContent).toContain(
+        m.references_citekey_ambiguous({ citekey: "doe2024" }),
+      ),
+    );
+    expect(
+      (await run.shown()).querySelector("[data-citation-popover-actions]"),
+    ).toBeNull();
+  });
+});
+
+describe("source-less Item actions", () => {
+  it("keeps the displayed Item identity and reports deletion before an action", async () => {
+    await using run = workHarness();
+    run.db.holds([
+      {
+        itemID: 1,
+        key: "ABCD2345",
+        title: "Alpha kernels",
+        citationKey: "shared2024",
+      },
+    ]);
+    run.show();
+    const element = await run.shown();
+    element
+      .querySelector<HTMLButtonElement>(
+        `[aria-label="${m.references_open_note()}"]`,
+      )!
+      .click();
+    // The action reads the Item again first, so it lands once that read does.
+    await vi.waitFor(() =>
+      expect(run.open).toHaveBeenCalledExactlyOnceWith("ABCD2345", false),
+    );
+
+    // The open hid that card; the next hover shows the Item again.
+    run.open.mockClear();
+    run.show();
+    const again = await run.shown();
+    popovers.at(-1)!.hide.mockClear();
+    run.db.holds([]);
+    again
+      .querySelector<HTMLButtonElement>(
+        `[aria-label="${m.references_open_note()}"]`,
+      )!
+      .click();
+    await vi.waitFor(async () => {
+      expect((await run.shown()).textContent).toBe(
+        m.citation_popover_item_unavailable(),
+      );
+    });
+    expect(run.open).not.toHaveBeenCalled();
+    expect(popovers.at(-1)!.hide).not.toHaveBeenCalled();
+  });
+});
+
+describe("Show in Library", () => {
+  it("shows the hovered Item in the Library View and closes the popover", async () => {
+    await using run = workHarness();
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+    run.show();
+    (await run.shown())
+      .querySelector<HTMLButtonElement>(
+        `[aria-label="${m.library_view_show_in_library()}"]`,
+      )!
+      .click();
+
+    await vi.waitFor(() =>
+      expect(run.showInLibrary).toHaveBeenCalledExactlyOnceWith("ABCD2345"),
+    );
+    await vi.waitFor(() => expect(popovers.at(-1)!.hide).toHaveBeenCalled());
+  });
+});
+
+describe("popover failure and lifetime", () => {
+  it("keeps a readable Item when the formatting request throws", async () => {
+    await using run = workHarness();
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+    run.readBibliography.mockRejectedValue(new Error("Engine stopped"));
+    run.show();
+    expect((await run.shown()).textContent).toContain("Alpha kernels");
+    expect(
+      (await run.shown()).querySelector("[data-citation-popover-actions]"),
+    ).not.toBeNull();
+  });
+
+  it("closes a document popover when its source is deleted", async () => {
+    await using run = harness(() => Promise.resolve(emptyText()));
+    run.show();
+    await vi.waitFor(() => expect(popovers.at(-1)!.render).toHaveBeenCalled());
+    run.removeSource();
+    await vi.waitFor(() => expect(popovers.at(-1)!.hide).toHaveBeenCalled());
+  });
+});
+
+describe("popover draw failures", () => {
+  it("logs a failure to draw the entries and fails the first read's caller", async () => {
+    const errors: {
+      message: unknown;
+      category: readonly string[];
+      annotations: Readonly<Record<string, unknown>>;
+    }[] = [];
+    const logs: Layer.Layer<never> = Logger.layer([
+      Logger.make(({ logLevel, message, fiber }) => {
+        if (logLevel !== "Error") return;
+        errors.push({
+          message: Array.isArray(message) ? message[0] : message,
+          category: fiber.getRef(LogCategory),
+          annotations: fiber.getRef(References.CurrentLogAnnotations),
+        });
+      }),
+    ]);
+    await using run = workHarness({ logs });
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+    draw.fails = new Error("draw failed");
+
+    await expect(
+      run.showUnder({ kind: "item", indexedKey: "ABCD2345" }),
+    ).rejects.toThrow("draw failed");
+
+    expect(errors).toEqual([
+      {
+        message: "Cannot show the entries of a hovered citation",
+        category: ["citation-popover"],
+        annotations: { error: new Error("draw failed") },
+      },
+    ]);
+  });
+});
+
+describe("source-less presentation updates", () => {
+  it("keeps the newer work when the pointer moved on before the first was read", async () => {
+    await using run = workHarness();
+    run.db.holds([
+      { itemID: 1, key: "ABCD2345", title: "First work" },
+      { itemID: 2, key: "EFGH2345", title: "Second work" },
+    ]);
+    const first = Promise.withResolvers<BibliographyRenderResult | null>();
+    run.readBibliography.mockReturnValueOnce(first.promise);
+    const stale = run.showUnder({ kind: "item", indexedKey: "ABCD2345" });
+    await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalledOnce());
+
+    await run.showUnder({ kind: "item", indexedKey: "EFGH2345" });
+    expect((await run.shown()).textContent).toContain("Second work");
+    first.resolve(null);
+    await stale;
+
+    const shown = await run.shown();
+    expect(shown.textContent).toContain("Second work");
+    expect(shown.textContent).not.toContain("First work");
+  });
+
+  it("warns when a source-less read fails", async () => {
+    const { warnings, logs } = captureWarnings();
+    await using run = workHarness({ logs });
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+    run.readBibliography.mockRejectedValueOnce(new Error("renderer crashed"));
+
+    await run.showUnder({ kind: "item", indexedKey: "ABCD2345" });
+
+    expect(warnings).toEqual([
+      {
+        message: "Cannot format source-less Item",
+        category: ["citation-popover"],
+        annotations: {
+          indexedKey: "ABCD2345",
+          error: new Error("renderer crashed"),
+        },
+      },
+    ]);
+  });
+
+  it("does not warn when a superseded source-less read is aborted", async () => {
+    const { warnings, logs } = captureWarnings();
+    await using run = workHarness({ logs });
+    run.db.holds([
+      { itemID: 1, key: "ABCD2345", title: "First work" },
+      { itemID: 2, key: "EFGH2345", title: "Second work" },
+    ]);
+    const first = Promise.withResolvers<BibliographyRenderResult | null>();
+    const second = Promise.withResolvers<BibliographyRenderResult | null>();
+    run.readBibliography
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    const firstHover = run.showUnder({
+      kind: "item",
+      indexedKey: "ABCD2345",
+    });
+    await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalledOnce());
+    const secondHover = run.showUnder({
+      kind: "item",
+      indexedKey: "EFGH2345",
+    });
+
+    // The first read fails because the second hover aborted it.
+    first.reject(new DOMException("Aborted", "AbortError"));
+    second.resolve(null);
+    await Promise.all([firstHover, secondHover]);
+
+    expect(warnings).toEqual([]);
+  });
+
+  it("retains the new Item data when an older render finishes later", async () => {
+    await using run = workHarness();
+    const pending = Promise.withResolvers<BibliographyRenderResult | null>();
+    run.readBibliography.mockReturnValueOnce(pending.promise);
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Old title" }]);
+    run.show();
+    await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalledOnce());
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Corrected title" }]);
+    run.emit("invalidated");
+    expect((await run.shown()).textContent).toContain("Corrected title");
+    pending.resolve(null);
+    await pending.promise;
+    expect((await run.shown()).textContent).toContain("Corrected title");
+    expect(popovers.at(-1)!.render).toHaveBeenCalledOnce();
+  });
+
+  it("recovers from a database read failure without changing exact identity", async () => {
+    await using run = workHarness();
+    // The connection validates the copy first; the read fails after it.
+    await (await run.db.acquireRead())[Symbol.asyncDispose]();
+    run.db.lock();
+    run.show();
+    expect((await run.shown()).textContent).toBe(
+      m.citation_popover_database_unavailable(),
+    );
+    run.db.unlock();
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Recovered Item" }]);
+    run.emit("invalidated");
+    await vi.waitFor(async () =>
+      expect((await run.shown()).textContent).toContain("Recovered Item"),
+    );
+    expect(run.citationLookup.resolveCitekey).not.toHaveBeenCalled();
+  });
+});
+
+describe("source-less bibliography revalidation", () => {
+  it.each([true, false])(
+    "draws the bibliography the read settled on (success: %s)",
+    async (success) => {
+      await using run = workHarness();
+      run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+      const settled = Promise.withResolvers<BibliographyRenderResult | null>();
+      run.readBibliography.mockReturnValue(settled.promise);
+      run.show();
+      await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalled());
+
+      settled.resolve(
+        success
+          ? {
+              entries: [
+                {
+                  id: "ABCD2345",
+                  marker: undefined,
+                  content: [{ t: "Str", c: "New bibliography" }],
+                },
+              ],
+              hasEntryMarkers: false,
+            }
+          : null,
+      );
+
+      await vi.waitFor(async () =>
+        expect((await run.shown()).textContent).toContain(
+          success ? "New bibliography" : "Alpha kernels",
+        ),
+      );
+    },
+  );
+});
+
+describe("source-less empty bibliography entries", () => {
+  it("shows the LETTERS5 summary when the engine returns an empty entry", async () => {
+    await using run = workHarness();
+    run.db.holds([
+      {
+        itemID: 5,
+        key: "LETTERS5",
+        itemType: "letter",
+        title: "A letter that records no Venue at all",
+        citationKey: "chenLetterNoVenue2015",
+        date: "2015",
+        creators: [["Mei", "Chen"]],
+      },
+    ]);
+    const bibliography: BibliographyRenderResult = {
+      entries: [{ id: "LETTERS5", marker: undefined, content: [] }],
+      hasEntryMarkers: false,
+    };
+    run.readBibliography.mockResolvedValue(bibliography);
+    run.show({ kind: "item", indexedKey: "LETTERS5" });
+    const element = await run.shown();
+    expect(element.textContent).toBe(
+      "Chen (2015): A letter that records no Venue at all",
+    );
+    expect(
+      element.querySelector("[data-citation-popover-actions]"),
+    ).not.toBeNull();
+  });
+});
+
+it.each([false, true])(
+  "#1683 fills a document popover with one source read (ambiguous: %s)",
+  async (ambiguous) => {
+    await using h = await createCitationIndexHarness(
+      { "draft.md": "[@doe2024]" },
+      {
+        zoteroRows: ambiguous
+          ? seedWorksSql([
+              {
+                itemID: 1,
+                key: "ABCD2345",
+                citationKey: "doe2024",
+                title: "First study",
+              },
+              {
+                itemID: 2,
+                key: "EFGH2345",
+                citationKey: "doe2024",
+                title: "Second study",
+              },
+            ])
+          : annotationRows,
+      },
+    );
+    await using popover = citationPopoverFixture({
+      host: h.host,
+      db: h.db,
+      services: { citationIndex: h.index, citationLookup: h.lookup },
+      libraryScope: h.libraryScope,
+      citationText: { read: () => Promise.resolve(null) },
+      profile: profileReader(),
+      bibliographyRender: {
+        vaultPresentation: { styleId: null, locale: null },
+        changed: Stream.empty,
+        settled: Stream.empty,
+        invalidated: Stream.empty,
+        "style-missing": Stream.empty,
+        render: () => Promise.resolve({ kind: "unavailable" }),
+      } satisfies CitationPopoverFixtureDeps["bibliographyRender"],
+    });
+    popover.runtime.runSync(
+      popover.service.show({
+        event: new MouseEvent("mouseover"),
+        hoverParent: { hoverPopover: null },
+        sourcePath: h.draft.path,
+        targetEl: document.createElement("span"),
+        works: [{ citekey: "doe2024", indexedKey: "ABCD2345" }],
+        shown: {
+          citation: {
+            source: "[@doe2024]",
+            keys: [{ citekey: "doe2024", start: 1, end: 9 }],
+          },
+          at: { kind: "offset", start: 0 },
+        },
+        open: () => {},
+      }),
+    );
+    await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalledOnce());
+    const content = popovers[0]!.render.mock
+      .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
+    expect(content.props.blocks).toMatchObject(
+      ambiguous
+        ? [
+            {
+              kind: "ambiguous",
+              candidates: [
+                { summary: "First study" },
+                { summary: "Second study" },
+              ],
+            },
+          ]
+        : [{ kind: "entry", itemKey: "ABCD2345" }],
+    );
+    expect(h.db.itemReads).toBe(1);
+  },
+);

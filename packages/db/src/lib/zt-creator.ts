@@ -1,6 +1,4 @@
-import { getLogger } from "@logtape/logtape";
-
-const logger = getLogger(["zotlit", "db", "items"]);
+import { logLibrary } from "@zotlit/shared/logging";
 
 const CREATOR_FIELD_MODE = {
   0: "fullName",
@@ -17,6 +15,11 @@ export function creatorFieldModeToName(
   const name = CREATOR_FIELD_MODE[fieldMode];
   if (name) return name;
 
-  logger.warn("Unknown creator field mode {fieldMode}", { fieldMode });
+  logLibrary({
+    level: "warn",
+    category: ["zotlit", "db", "items"],
+    message: "Unknown creator field mode {fieldMode}",
+    properties: { fieldMode },
+  });
   return "unknown";
 }

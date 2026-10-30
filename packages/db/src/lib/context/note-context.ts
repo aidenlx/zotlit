@@ -17,8 +17,9 @@ import type {
 } from "@/lib/context/zt-template-item";
 import type { Annotation } from "@/lib/zt-annot";
 import type { Attachment } from "@/lib/zt-attach";
-import type { CollectionCache } from "@/lib/zt-collection";
-import type { GroupIDMemo } from "@/queries/_groups";
+import { toTemplateCollection } from "@/lib/zt-collection";
+import type { CollectionCache, TemplateCollection } from "@/lib/zt-collection";
+import type { ItemTag } from "@/lib/zt-tag";
 import { getZoteroIdentity } from "@/queries/account";
 import { getAnnotationsByParent } from "@/queries/annotations";
 import {
@@ -28,6 +29,7 @@ import {
 import { getRelatedKeysByItemID } from "@/queries/item-relations";
 import { getItemsByID, getItemsByKey } from "@/queries/items";
 import type { Item } from "@/queries/items";
+import type { GroupIDMemo } from "@/queries/libraries";
 import { getChildNotes } from "@/queries/notes";
 import type { ChildNote } from "@/queries/notes";
 import { resolveItemTagsByIDs } from "@/queries/tags";
@@ -49,32 +51,108 @@ export interface NoteResolvers {
   resolveChildNote?: (note: ChildNote) => TemplateNoteLink;
 }
 
+/** An item's own tags and collections: what its note path renders from. */
+export interface ItemFacets {
+  readonly tags: readonly ItemTag[];
+  /** Plain records: a template build gives each its string coercion. */
+  readonly collections: readonly TemplateCollection[];
+}
+
 /**
- * Build the full {@link NoteTemplateContext} for `item`: fetches its
- * attachments, annotations, related items, child notes, tags, and collections,
- * then assembles them via the pure {@link buildNoteContext}.
+ * The {@link ItemFacets} of each of `items`, by itemID; an unknown item has
+ * none. Pass the memos a batch already holds, so a repeat item costs nothing.
+ */
+export function fetchItemFacets(
+  client: NodeDatabaseClient,
+  items: readonly Pick<Item, "itemID" | "libraryID">[],
+  memos: { tagMemo: TagMemo; collectionCache: CollectionCache },
+): Map<number, ItemFacets> {
+  const tags = resolveItemTagsByIDs(
+    client,
+    items.map(({ itemID }) => itemID),
+    memos.tagMemo,
+  );
+  const facets = new Map<number, ItemFacets>();
+  for (const [libraryID, members] of Map.groupBy(
+    items,
+    ({ libraryID }) => libraryID,
+  )) {
+    const collections = memos.collectionCache.byItemIDs(
+      client,
+      libraryID,
+      members.map(({ itemID }) => itemID),
+    );
+    for (const { itemID } of members)
+      facets.set(itemID, {
+        tags: tags.get(itemID) ?? [],
+        // Spread keeps the enumerable fields and drops the string coercion.
+        collections: (collections.get(itemID) ?? []).map((collection) => ({
+          ...collection,
+        })),
+      });
+  }
+  return facets;
+}
+
+/**
+ * Every database row a Literature Note's `zt` root needs, as plain data: no
+ * functions, and `Temporal.Instant` as the only class instance besides `Map`
+ * and `Array`. {@link fetchNoteSource} reads it; {@link buildNoteContextFromSource}
+ * turns it into a {@link NoteTemplateContext} with the caller's resolvers.
+ */
+export interface NoteSource {
+  item: Item;
+  /** The signed-in account username, for {@link NoteTemplateContext.weblink}; `null` when unknown. */
+  username: string | null;
+  /** The item's attachments, in display order. */
+  attachments: readonly Attachment[];
+  /** Annotations keyed by their parent attachment's `itemID`. */
+  annotationsByAttachment: ReadonlyMap<number, readonly Annotation[]>;
+  /** Tag applications keyed by Zotero itemID: the item, its annotations, its related items. */
+  tagsByItemID: ReadonlyMap<number, readonly ItemTag[]>;
+  /**
+   * Collections keyed by Zotero itemID, for the item and its related items.
+   * Plain records: the build gives each its string coercion.
+   */
+  collectionsByItemID: ReadonlyMap<number, readonly TemplateCollection[]>;
+  /** Items related to {@link item}, already resolved. */
+  relatedItems: readonly Item[];
+  /** The item's child notes. */
+  childNotes: readonly ChildNote[];
+}
+
+/**
+ * Read the {@link NoteSource} for `item`: its attachments, annotations, related
+ * items, child notes, tags, and collections. Every database read of the
+ * Literature Note path happens here.
  *
  * `tagMemo`/`collectionCache` are per-batch memos (see {@link TagMemo},
  * {@link CollectionCache}) — pass the same instance a caller already used to
  * resolve `item`'s own tags/collections (e.g. for the note-filename template)
  * so this call's fetch for `item.itemID` is free.
  */
-export function fetchNoteContext(
+export function fetchNoteSource(
   client: NodeDatabaseClient,
   item: Item,
   options: {
-    resolvers: NoteResolvers;
-    /** The signed-in account username, for {@link NoteTemplateContext.weblink}; `null` when unknown. */
-    username: string | null;
+    /**
+     * The signed-in account username. Omitted, it is read from the database;
+     * pass `null` to build the note as a never-synced account does.
+     */
+    username?: string | null;
     tagMemo?: TagMemo;
     groupIdMemo?: GroupIDMemo;
     collectionCache: CollectionCache;
   },
-): NoteTemplateContext {
-  const { resolvers, groupIdMemo, collectionCache } = options;
+): NoteSource {
+  const { groupIdMemo, collectionCache } = options;
   const tagMemo: TagMemo = options.tagMemo ?? new Map();
   const libraryID = item.libraryID;
   const memo = { memo: groupIdMemo };
+  const username =
+    options.username === undefined
+      ? getZoteroIdentity(client).username
+      : options.username;
 
   const attachments = getAttachmentsByParents(client, [item.itemID], memo);
   const annotationsByAttachment = new Map<number, Annotation[]>();
@@ -90,46 +168,89 @@ export function fetchNoteContext(
 
   const relatedItems = getItemsByKey(
     client,
-    libraryID,
     getRelatedKeysByItemID(client, item.itemID),
-  );
-  const relatedItemIDs = relatedItems.map((related) => related.itemID);
-
-  const tagsByItemID = resolveItemTagsByIDs(
-    client,
-    [item.itemID, ...annotationIDs, ...relatedItemIDs],
-    tagMemo,
+    { libraryID },
   );
 
   // Collections resolve for the main item + related items only — annotations
   // are never collection members. Related items share the item's library.
-  const collectionsByItemID = collectionCache.byItemIDs(client, libraryID, [
-    item.itemID,
-    ...relatedItemIDs,
+  const facets = fetchItemFacets(client, [item, ...relatedItems], {
+    tagMemo,
+    collectionCache,
+  });
+  const tagsByItemID = new Map([
+    ...resolveItemTagsByIDs(client, annotationIDs, tagMemo),
+    ...[...facets].map(([itemID, { tags }]) => [itemID, tags] as const),
   ]);
+  const collectionsByItemID = new Map(
+    [...facets].map(([itemID, { collections }]) => [itemID, collections]),
+  );
 
   // `zt.notes` lists eagerly; the import work it triggers stays lazy (queued on
   // the link's first render).
   const childNotes = getChildNotes(client, item.itemID, memo);
 
-  return buildNoteContext({
+  return {
     item,
-    username: options.username,
+    username,
     attachments,
     annotationsByAttachment,
     tagsByItemID,
     collectionsByItemID,
     relatedItems,
     childNotes,
+  };
+}
+
+/**
+ * Assemble the full {@link NoteTemplateContext} from a {@link NoteSource} via
+ * the pure {@link buildNoteContext}. Reads no database; the resolvers run here
+ * only.
+ */
+export function buildNoteContextFromSource(
+  source: NoteSource,
+  resolvers: NoteResolvers,
+): NoteTemplateContext {
+  return buildNoteContext({
+    ...source,
+    collectionsByItemID: new Map(
+      [...source.collectionsByItemID].map(([itemID, collections]) => [
+        itemID,
+        collections.map(toTemplateCollection),
+      ]),
+    ),
     resolveChildNote: resolvers.resolveChildNote,
     ...resolvers.item,
     ...resolvers.annotation,
   });
 }
 
+/**
+ * Build the full {@link NoteTemplateContext} for `item`: {@link fetchNoteSource}
+ * followed by {@link buildNoteContextFromSource}.
+ */
+export function fetchNoteContext(
+  client: NodeDatabaseClient,
+  item: Item,
+  options: {
+    resolvers: NoteResolvers;
+    /** The signed-in account username, for {@link NoteTemplateContext.weblink}; `null` when unknown. */
+    username: string | null;
+    tagMemo?: TagMemo;
+    groupIdMemo?: GroupIDMemo;
+    collectionCache: CollectionCache;
+  },
+): NoteTemplateContext {
+  const { resolvers, ...memos } = options;
+  return buildNoteContextFromSource(
+    fetchNoteSource(client, item, memos),
+    resolvers,
+  );
+}
+
 /** A parent PDF's reusable template shape, built once per attachment and shared
  *  by every annotation off it. */
-interface ParentBundle {
+export interface AnnotationParent {
   attachment: Attachment;
   tplAttachment: TemplateAttachment;
   /** `null` when the attachment is standalone (no parent bibliographic item). */
@@ -137,44 +258,106 @@ interface ParentBundle {
 }
 
 /**
- * Resolve already-fetched {@link Annotation}s to their {@link TemplateAnnotation}s,
- * keyed by annotation key. Annotations sharing a parent PDF read its attachment
- * row, parent item, and tags once: distinct parents are batched, and each
- * parent's template bundle is reused across its annotations. An annotation
- * whose attachment is unresolvable is absent from the result; one on a
- * standalone attachment (no parent bibliographic item) is present with
- * `parentItem: null`.
- *
- * Shared by the drag-insert path (one annotation by item id) and note import's
- * annotation-template prepass (many, by key).
+ * Every database row an Annotation's template data needs, as plain data (see
+ * {@link NoteSource}). {@link fetchAnnotationSources} reads it;
+ * {@link buildAnnotationsTemplateData} turns it into template data.
  */
-export function fetchAnnotationsTemplateData(
+export interface AnnotationSources {
+  annotations: readonly Annotation[];
+  /** The annotations' distinct resolvable parent attachments. */
+  attachments: readonly Attachment[];
+  /** The attachments' parent items; a standalone attachment has none. */
+  parentItems: readonly Item[];
+  /** Tag applications keyed by Zotero itemID: the annotations and the parent items. */
+  tagsByItemID: ReadonlyMap<number, readonly ItemTag[]>;
+  /** The signed-in account username, for the parent item's web link; `null` when unknown. */
+  username: string | null;
+}
+
+/**
+ * Read the {@link AnnotationSources} for already-fetched {@link Annotation}s.
+ * Annotations sharing a parent PDF read its attachment row, parent item, and
+ * tags once: distinct parents are batched. Every database read of the
+ * annotation path happens here.
+ */
+export function fetchAnnotationSources(
   client: NodeDatabaseClient,
   annotations: readonly Annotation[],
   options: {
-    resolvers: AnnotationResolvers;
     tagMemo?: TagMemo;
     groupIdMemo?: GroupIDMemo;
+    /**
+     * The signed-in account username, for the parent item's
+     * {@link TemplateParentItemData.weblink}. Omitted, the signed-in account is
+     * read from the database; pass `null` to build the parent item as a
+     * never-synced account does, with no personal-library web link.
+     */
+    username?: string | null;
   },
-): Map<string, TemplateAnnotation> {
-  const result = new Map<string, TemplateAnnotation>();
-  if (annotations.length === 0) return result;
+): AnnotationSources {
+  if (annotations.length === 0) {
+    return {
+      annotations,
+      attachments: [],
+      parentItems: [],
+      tagsByItemID: new Map(),
+      username: options.username ?? null,
+    };
+  }
 
-  const username = getZoteroIdentity(client).username;
-  const { resolvers, groupIdMemo } = options;
-  const tagMemo: TagMemo = options.tagMemo ?? new Map();
-  const memo = { memo: groupIdMemo };
-
+  const memo = { memo: options.groupIdMemo };
   const attachments: Attachment[] = [];
   for (const itemID of distinct(annotations.map((a) => a.parentItemID))) {
     const attachment = getAttachmentByItemId(client, itemID, memo);
     if (attachment) attachments.push(attachment);
   }
+  return fetchParentSources(client, { annotations, attachments }, options);
+}
 
+/**
+ * Read the {@link AnnotationSources} of attachments alone: their parent items,
+ * the parents' tags, and the username, with no annotation row. For an
+ * Annotation that may precede its SQLite row; {@link buildAnnotationParents}
+ * turns it into each attachment's parent context.
+ */
+export function fetchAttachmentSources(
+  client: NodeDatabaseClient,
+  attachments: readonly Attachment[],
+  options: {
+    tagMemo?: TagMemo;
+    groupIdMemo?: GroupIDMemo;
+    /** As in {@link fetchAnnotationSources}. */
+    username?: string | null;
+  },
+): AnnotationSources {
+  return fetchParentSources(client, { annotations: [], attachments }, options);
+}
+
+/** The parent items and username of `attachments`, and the tags of both. */
+function fetchParentSources(
+  client: NodeDatabaseClient,
+  {
+    annotations,
+    attachments,
+  }: {
+    annotations: readonly Annotation[];
+    attachments: readonly Attachment[];
+  },
+  options: {
+    tagMemo?: TagMemo;
+    groupIdMemo?: GroupIDMemo;
+    username?: string | null;
+  },
+): AnnotationSources {
+  const username =
+    options.username === undefined
+      ? getZoteroIdentity(client).username
+      : options.username;
+  const tagMemo: TagMemo = options.tagMemo ?? new Map();
   const parentIDs = distinct(attachments.map((a) => a.parentItemID));
-  const parentItemsByID = new Map(
-    getItemsByID(client, parentIDs, memo).map((item) => [item.itemID, item]),
-  );
+  const parentItems = getItemsByID(client, parentIDs, {
+    memo: options.groupIdMemo,
+  });
 
   const tagsByItemID = resolveItemTagsByIDs(
     client,
@@ -182,8 +365,59 @@ export function fetchAnnotationsTemplateData(
     tagMemo,
   );
 
-  // Keyed by attachment itemID — equal to each annotation's `parentItemID`.
-  const bundleByAttachment = new Map<number, ParentBundle>();
+  return { annotations, attachments, parentItems, tagsByItemID, username };
+}
+
+/**
+ * Resolve {@link AnnotationSources} to {@link TemplateAnnotation}s, keyed by
+ * annotation key. Each parent's template bundle is built once and reused across
+ * its annotations. An annotation whose attachment is unresolvable is absent
+ * from the result; one on a standalone attachment (no parent bibliographic
+ * item) is present with `parentItem: null`. Reads no database; the resolvers
+ * run here only.
+ */
+export function buildAnnotationsTemplateData(
+  sources: AnnotationSources,
+  resolvers: AnnotationResolvers,
+): Map<string, TemplateAnnotation> {
+  const { annotations, tagsByItemID } = sources;
+  const result = new Map<string, TemplateAnnotation>();
+  const bundleByAttachment = buildAnnotationParents(sources, resolvers);
+
+  for (const annotation of annotations) {
+    const bundle = bundleByAttachment.get(annotation.parentItemID);
+    if (!bundle) continue;
+    result.set(
+      annotation.key,
+      annotationToTemplateData({
+        annotation,
+        tags: tagsByItemID.get(annotation.itemID) ?? [],
+        getParentAttachment: () => bundle.tplAttachment,
+        getParentItem: () => bundle.parentItem,
+        commentToMarkdown: resolvers.commentToMarkdown,
+        annotationImageLink: resolvers.annotationImageLink,
+        fileLink: (anchor) => resolvers.fileLink(bundle.attachment, anchor),
+      }),
+    );
+  }
+  return result;
+}
+
+/**
+ * Build each attachment's {@link AnnotationParent} from
+ * {@link AnnotationSources}, keyed by attachment itemID — equal to each of its
+ * annotations' `parentItemID`. Reads no database; the resolvers run here only.
+ */
+export function buildAnnotationParents(
+  sources: AnnotationSources,
+  resolvers: AnnotationResolvers,
+): Map<number, AnnotationParent> {
+  const { attachments, tagsByItemID, username } = sources;
+  const parentItemsByID = new Map(
+    sources.parentItems.map((item) => [item.itemID, item]),
+  );
+
+  const bundleByAttachment = new Map<number, AnnotationParent>();
   for (const attachment of attachments) {
     const parentItemData = parentItemsByID.get(attachment.parentItemID);
     // `null` for a standalone attachment (a PDF with no parent bibliographic
@@ -196,8 +430,8 @@ export function fetchAnnotationsTemplateData(
       });
       parentItem = withItemPreview({
         ...parentBaseData,
-        // Unresolved: this path runs synchronously on dragstart and stays
-        // cheap by design (see zt-template-item.ts's TemplateParentItemData).
+        // Unresolved by design (see zt-template-item.ts's
+        // TemplateParentItemData).
         notePath: null,
         noteLink: () => null,
         ...resolveItemCore({
@@ -214,22 +448,36 @@ export function fetchAnnotationsTemplateData(
       tplAttachment: resolveTemplateAttachment(attachment, resolvers),
     });
   }
+  return bundleByAttachment;
+}
 
-  for (const annotation of annotations) {
-    const bundle = bundleByAttachment.get(annotation.parentItemID);
-    if (!bundle) continue;
-    result.set(
-      annotation.key,
-      annotationToTemplateData({
-        annotation,
-        tags: tagsByItemID.get(annotation.itemID) ?? [],
-        getParentAttachment: () => bundle.tplAttachment,
-        getParentItem: () => bundle.parentItem,
-        commentToMarkdown: resolvers.commentToMarkdown,
-        annotationImageLink: resolvers.annotationImageLink,
-        fileLink: (page) => resolvers.fileLink(bundle.attachment, page),
-      }),
-    );
-  }
-  return result;
+/**
+ * Resolve already-fetched {@link Annotation}s to their {@link TemplateAnnotation}s,
+ * keyed by annotation key: {@link fetchAnnotationSources} followed by
+ * {@link buildAnnotationsTemplateData}.
+ *
+ * Shared by the drag-insert path (one annotation by item id) and note import's
+ * annotation-template prepass (many, by key).
+ */
+export function fetchAnnotationsTemplateData(
+  client: NodeDatabaseClient,
+  annotations: readonly Annotation[],
+  options: {
+    resolvers: AnnotationResolvers;
+    tagMemo?: TagMemo;
+    groupIdMemo?: GroupIDMemo;
+    /**
+     * The signed-in account username, for the parent item's
+     * {@link TemplateParentItemData.weblink}. Omitted, the signed-in account is
+     * read from the database; pass `null` to build the parent item as a
+     * never-synced account does, with no personal-library web link.
+     */
+    username?: string | null;
+  },
+): Map<string, TemplateAnnotation> {
+  const { resolvers, ...memos } = options;
+  return buildAnnotationsTemplateData(
+    fetchAnnotationSources(client, annotations, memos),
+    resolvers,
+  );
 }

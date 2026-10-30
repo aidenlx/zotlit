@@ -1,0 +1,39 @@
+/* The Library View runs its tree and its list to the pane's edges, as a
+   Query File tab does; each pane scrolls on its own. Obsidian's rule is
+   unlayered, so a utility on `contentEl` cannot reach it; this rule has the
+   same specificity and loads after it. */
+.view-content.zt-library-view {
+  padding: 0;
+  overflow: hidden;
+  --zt-query-toolbar-inset-start: var(--size-4-2);
+  --zt-query-toolbar-inset-end: var(--size-4-2);
+}
+
+/* The serif face of the Reading Card's title, the one place it shows: the
+   list heading's title is chrome and keeps the interface face. A custom
+   property a snippet or theme can set to its own display face. */
+.zt-library-view {
+  --zt-font-display:
+    ui-serif, "Iowan Old Style", "Charter", Georgia, "Noto Serif", "Songti SC",
+    "Noto Serif CJK SC", serif;
+}
+
+/* The Reading Card's disclosures and "Show more" are `<button>`s, and
+   Obsidian's `button` rules are unlayered, so they outrank every `zt:`
+   utility they wear. `revert-layer` rolls them back to the plugin's own
+   layers, so the utilities draw them. @see ../query-view/record-rows.css */
+.zt-root button.zt-library-card-toggle {
+  all: revert-layer;
+}
+
+/* A Reading Card resize keeps its cursor wherever the pointer goes: a rule
+   over every element of the page, which no utility on the edge reaches. */
+body.zt-is-resizing-library-card,
+body.zt-is-resizing-library-card * {
+  cursor: col-resize !important;
+}
+
+body.zt-is-resizing-library-card-height,
+body.zt-is-resizing-library-card-height * {
+  cursor: row-resize !important;
+}

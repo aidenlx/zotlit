@@ -7,50 +7,38 @@ import type {
   Plugin,
 } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
-import * as toast from "@/lib/toast";
-import type {
-  BatchImport,
-  ReimportResult,
-} from "@/services/note-import/batch-import";
-import {
-  batchImportAllToast,
-  childImportToast,
-} from "@/services/note-import/batch-import-notices";
+import { MENU_SECTION } from "@/lib/menu-section";
+import type { FileMenuContext, FileMenuSegment } from "@/services/file-menu";
 import {
   isLiteratureNote,
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
-import { InertTemplateError } from "@/services/template/errors";
 
-import type { NoteFeature, UpdateScope } from "./operations";
-import type { BatchUpdateResult } from "./update-batch";
-import { updateNoteToast } from "./update-single";
+import type { NoteActions } from "./actions-handle";
+import type { UpdateScope } from "./operations";
 
 interface NoteFeatureActionDeps {
   app: App;
-  noteFeature: NoteFeature;
-  batchImport: Pick<
-    BatchImport,
-    "runChildImportByKey" | "reimportNoteByKey" | "runBatchImportAll"
-  >;
-  updateAll: () => Promise<BatchUpdateResult>;
+  noteActions: NoteActions;
+  /** Runs Import child notes for the item `indexedKey` names. */
+  importChildNotes: (indexedKey: string) => void;
 }
 
 export function addNoteFeatureActions(
-  plugin: Pick<Plugin, "addCommand" | "registerEvent" | "register"> & {
+  plugin: Pick<Plugin, "addCommand" | "registerEvent"> & {
     app: Plugin["app"];
   },
   deps: NoteFeatureActionDeps,
 ): void {
-  plugin.register(
-    deps.noteFeature.on("frontmatter-eval-failed", ({ fields }) => {
-      new BaseNotice(
-        m.notice_frontmatter_eval_failed({ fields: fields.join(", ") }),
-      );
+  plugin.registerEvent(
+    deps.app.workspace.on("zotlit:switch-profile", ({ path }) => {
+      const file = deps.app.vault.getFileByPath(path);
+      if (!file) return;
+      const cache = deps.app.metadataCache.getFileCache(file);
+      if (itemKeyFromFrontmatter(cache) || noteKeyFromFrontmatter(cache))
+        void deps.noteActions.switchProfile(file);
     }),
   );
 
@@ -66,21 +54,22 @@ export function addNoteFeatureActions(
   });
 
   plugin.addCommand({
-    id: "overwrite-note",
-    name: m.command_overwrite_note_name(),
-    editorCheckCallback(checking, _editor, ctx) {
-      return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
-        void handleOverwriteNote(deps, file, itemKey);
-      });
+    id: "switch-literature-note-profile",
+    name: m.command_switch_literature_note_profile_name(),
+    checkCallback(checking) {
+      const file = deps.app.workspace.getActiveFile();
+      if (!file || !isLiteratureNote(file, deps.app)) return false;
+      if (!checking) void deps.noteActions.switchProfile(file);
+      return true;
     },
   });
 
   plugin.addCommand({
-    id: "import-child-notes",
-    name: m.command_import_child_notes_name(),
+    id: "overwrite-note",
+    name: m.command_overwrite_note_name(),
     editorCheckCallback(checking, _editor, ctx) {
-      return withLiteratureNote(plugin, { ctx, checking }, (_file, itemKey) => {
-        void handleChildImport(deps, itemKey);
+      return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
+        void deps.noteActions.overwriteNote(file, itemKey);
       });
     },
   });
@@ -90,7 +79,7 @@ export function addNoteFeatureActions(
     name: m.command_reimport_note_name(),
     editorCheckCallback(checking, _editor, ctx) {
       return withImportedNote(plugin, { ctx, checking }, (file, noteKey) => {
-        void reimportNote(deps, file, noteKey);
+        void deps.noteActions.reimportNote(file, noteKey);
       });
     },
   });
@@ -99,151 +88,86 @@ export function addNoteFeatureActions(
     id: "update-all-notes",
     name: m.command_update_all_notes_name(),
     callback() {
-      void handleUpdateAll(deps.updateAll);
+      void deps.noteActions.updateAll();
     },
   });
-
-  plugin.addCommand({
-    id: "import-all-notes",
-    name: m.command_import_all_notes_name(),
-    callback() {
-      void toast.promise(
-        deps.batchImport.runBatchImportAll(),
-        batchImportAllToast(),
-      );
-    },
-  });
-
-  registerFileMenu(plugin, deps);
 }
 
-function registerFileMenu(
-  plugin: Pick<Plugin, "registerEvent" | "app">,
+/**
+ * The note operations on a Literature Note's or a Note Import's file menu.
+ * Overwrite and reimport replace what the user wrote, so they stand with
+ * "Delete" rather than with the updates.
+ */
+export function noteFeatureFileMenu(
   deps: NoteFeatureActionDeps,
-): void {
-  plugin.registerEvent(
-    plugin.app.workspace.on("file-menu", (menu, file, source) => {
-      if (!(file instanceof TFile) || file.extension !== "md") return;
-      if (source === "files-menu") return;
-      buildFileMenu(menu, { file, app: plugin.app }, deps);
-    }),
-  );
+): FileMenuSegment {
+  return (menu, ctx) => buildFileMenu(menu, ctx, deps);
 }
 
 function buildFileMenu(
   menu: Menu,
-  { file, app }: { file: TFile; app: App },
+  { file, itemKey, noteKey }: FileMenuContext,
   deps: NoteFeatureActionDeps,
 ): void {
-  const cache = app.metadataCache.getFileCache(file);
-  const itemKey = itemKeyFromFrontmatter(cache);
-  const noteKey = noteKeyFromFrontmatter(cache);
-
   if (itemKey) {
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.command_update_note_name())
         .setIcon("refresh-cw")
         .onClick(() => {
-          void handleUpdateNote(deps, file, { itemKey, scope: "full" });
+          void deps.noteActions.updateNote(file, { itemKey, scope: "full" });
         }),
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.command_update_note_metadata_name())
         .setIcon("file-text")
         .onClick(() => {
-          void handleUpdateNote(deps, file, { itemKey, scope: "metadata" });
+          void deps.noteActions.updateNote(file, {
+            itemKey,
+            scope: "metadata",
+          });
         }),
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.danger)
         .setTitle(m.command_overwrite_note_name())
+        .setWarning(true)
         .setIcon("file-x")
         .onClick(() => {
-          void handleOverwriteNote(deps, file, itemKey);
+          void deps.noteActions.overwriteNote(file, itemKey);
         }),
     );
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.action)
         .setTitle(m.command_import_child_notes_name())
         .setIcon("download")
         .onClick(() => {
-          void handleChildImport(deps, itemKey);
+          deps.importChildNotes(itemKey);
         }),
     );
-  } else if (noteKey) {
+    return;
+  }
+  if (noteKey) {
     menu.addItem((item) =>
       item
-        .setSection("zotlit")
+        .setSection(MENU_SECTION.danger)
         .setTitle(m.command_reimport_note_name())
+        .setWarning(true)
         .setIcon("refresh-cw")
         .onClick(() => {
-          void reimportNote(deps, file, noteKey);
+          void deps.noteActions.reimportNote(file, noteKey);
         }),
     );
-  }
-}
-
-async function reimportNote(
-  deps: NoteFeatureActionDeps,
-  file: TFile,
-  noteKey: string,
-): Promise<void> {
-  const yes = await confirm(
-    {
-      title: m.modal_reimport_note_title(),
-      content: m.modal_reimport_note_desc(),
-      action: m.modal_reimport_note_confirm(),
-      destructive: true,
-    },
-    deps.app,
-  );
-  if (!yes) return;
-
-  await toast.promise(
-    deps.batchImport.reimportNoteByKey(noteKey, file),
-    reimportNoteToast(),
-  );
-}
-
-function reimportNoteToast(): {
-  loading: string;
-  success: (result: ReimportResult) => string | undefined;
-  error: (_msg: string, e: unknown) => string;
-} {
-  return {
-    loading: m.notice_reimporting_note(),
-    success: reimportNoteNotice,
-    error: (_msg, e) =>
-      e instanceof InertTemplateError
-        ? e.message
-        : m.notice_reimport_note_failed(),
-  };
-}
-
-function reimportNoteNotice(result: ReimportResult): string | undefined {
-  switch (result.outcome) {
-    case "db-unavailable":
-      return m.batch_update_db_unavailable();
-    case "not-found":
-      return m.notice_protocol_item_not_found();
-    case "created":
-    case "overwritten":
-      return m.notice_reimported_note();
-    case "skipped":
-      return m.notice_reimport_note_skipped();
-    default:
-      return undefined;
   }
 }
 
 /**
- * Register an editor command that updates the active literature note at the
+ * Register a command that updates the active literature note at the
  * given {@link UpdateScope}.
  */
 function addUpdateCommand(
@@ -254,87 +178,25 @@ function addUpdateCommand(
   plugin.addCommand({
     id: command.id,
     name: command.name,
-    editorCheckCallback(checking, _editor, ctx) {
+    checkCallback(checking) {
+      const ctx = { file: deps.app.workspace.getActiveFile() };
       return withLiteratureNote(plugin, { ctx, checking }, (file, itemKey) => {
-        void handleUpdateNote(deps, file, { itemKey, scope: command.scope });
+        void deps.noteActions.updateNote(file, {
+          itemKey,
+          scope: command.scope,
+        });
       });
     },
   });
 }
 
-function handleUpdateNote(
-  deps: NoteFeatureActionDeps,
-  file: TFile,
-  opts: { itemKey: string; scope: UpdateScope },
-): Promise<void> {
-  return toast.promise(
-    deps.noteFeature.updateNote(file, {
-      indexedKey: opts.itemKey,
-      scope: opts.scope,
-    }),
-    updateNoteToast(opts.scope),
-  );
-}
-
-async function handleOverwriteNote(
-  deps: NoteFeatureActionDeps,
-  file: TFile,
-  itemKey: string,
-): Promise<void> {
-  const yes = await confirm(
-    {
-      title: m.modal_overwrite_note_title(),
-      content: m.modal_overwrite_note_desc(),
-      action: m.modal_overwrite_note_confirm(),
-      destructive: true,
-    },
-    deps.app,
-  );
-  if (!yes) return;
-  await toast.promise(deps.noteFeature.overwriteNote(file, itemKey), {
-    loading: m.notice_overwriting_note(),
-    success: m.notice_overwrote_note(),
-    error: (_msg, e) =>
-      e instanceof InertTemplateError
-        ? e.message
-        : m.notice_overwrite_note_failed(),
-  });
-}
-
-function handleChildImport(
-  deps: NoteFeatureActionDeps,
-  itemKey: string,
-): Promise<void> {
-  return toast.promise(
-    deps.batchImport.runChildImportByKey(itemKey),
-    childImportToast(),
-  );
-}
-
-async function handleUpdateAll(
-  updateAll: () => Promise<BatchUpdateResult>,
-): Promise<void> {
-  await toast.promise(updateAll(), {
-    success: batchUpdateAllNotice,
-  });
-}
-
-function batchUpdateAllNotice(result: BatchUpdateResult): string | undefined {
-  switch (result.outcome) {
-    case "db-unavailable":
-      return m.batch_update_db_unavailable();
-    case "empty-selection":
-      return m.batch_update_all_empty();
-    case "no-library-in-scope":
-      return m.batch_all_no_library_in_scope();
-    default:
-      return undefined;
-  }
-}
-
-function withLiteratureNote(
+/**
+ * Run `run` on the Literature Note `ctx` holds, unless `checking`: whether a
+ * command applies there.
+ */
+export function withLiteratureNote(
   plugin: Pick<Plugin, "app">,
-  options: { ctx: MarkdownView | MarkdownFileInfo; checking: boolean },
+  options: { ctx: Pick<MarkdownFileInfo, "file">; checking: boolean },
   run: (file: TFile, itemKey: string) => void,
 ): boolean {
   const file = options.ctx.file;

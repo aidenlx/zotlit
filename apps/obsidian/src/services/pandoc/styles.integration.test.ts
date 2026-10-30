@@ -1,16 +1,19 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { it as effectIt } from "@effect/vitest";
+import { Effect } from "effect";
 // The Resolved CSL Style as citeproc reads it: what an installed style actually renders.
-
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import "@mock/dom-parser";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
 import { createCitationEngine } from "./engine";
 import { inlineText } from "./inline-content";
-import { resolveInstalledStyle } from "./styles";
+import { resolveInstalledStyle as resolveStyleEffect } from "./styles";
 import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 
 const WASM_PATH = join(
@@ -70,53 +73,65 @@ const ITEM: CslItemData = {
 };
 
 describe("Resolved CSL Style", () => {
-  it(
+  effectIt.live(
     "renders an independent style in the locale it declares none over",
-    async () => {
-      await using library = await installStyles();
+    () =>
+      Effect.gen(function* () {
+        const library = yield* Effect.acquireDisposable(
+          Effect.promise(() => installStyles()),
+        );
 
-      await expect(library.entryFor({ styleId: PARENT })).resolves.toBe(
-        "journal March",
-      );
-    },
+        expect(yield* library.entryFor({ styleId: PARENT })).toBe(
+          "journal March",
+        );
+      }),
     TIMEOUT,
   );
 
-  it(
+  effectIt.live(
     "renders a dependent style with its parent's formatting and its own locale",
-    async () => {
-      await using library = await installStyles();
+    () =>
+      Effect.gen(function* () {
+        const library = yield* Effect.acquireDisposable(
+          Effect.promise(() => installStyles()),
+        );
 
-      await expect(library.entryFor({ styleId: DEPENDENT })).resolves.toBe(
-        "journal März",
-      );
-    },
+        expect(yield* library.entryFor({ styleId: DEPENDENT })).toBe(
+          "journal März",
+        );
+      }),
     TIMEOUT,
   );
 
-  it(
+  effectIt.live(
     "renders in the Citation Locale a request names",
-    async () => {
-      await using library = await installStyles();
+    () =>
+      Effect.gen(function* () {
+        const library = yield* Effect.acquireDisposable(
+          Effect.promise(() => installStyles()),
+        );
 
-      await expect(
-        library.entryFor({ styleId: DEPENDENT, locale: "fr-FR" }),
-      ).resolves.toBe("journal mars");
-    },
+        expect(
+          yield* library.entryFor({ styleId: DEPENDENT, locale: "fr-FR" }),
+        ).toBe("journal mars");
+      }),
     TIMEOUT,
   );
 
-  it(
+  effectIt.live(
     "renders the embedded default style in the Citation Locale a request names",
-    async () => {
-      await using library = await installStyles();
+    () =>
+      Effect.gen(function* () {
+        const library = yield* Effect.acquireDisposable(
+          Effect.promise(() => installStyles()),
+        );
 
-      // The embedded style carries no CSL of its own, so the locale reaches the
-      // processor beside it: "and" between two authors turns into "und".
-      await expect(
-        library.entryFor({ styleId: null, locale: "de-DE" }),
-      ).resolves.toContain("und Bob Smith");
-    },
+        // The embedded style carries no CSL of its own, so the locale reaches the
+        // processor beside it: "and" between two authors turns into "und".
+        expect(
+          yield* library.entryFor({ styleId: null, locale: "de-DE" }),
+        ).toContain("und Bob Smith");
+      }),
     TIMEOUT,
   );
 });
@@ -124,7 +139,7 @@ describe("Resolved CSL Style", () => {
 /** The Zotero library these renders read their styles from, engine included. */
 interface StyleLibrary extends AsyncDisposable {
   /** The one bibliography entry `request` renders {@link ITEM} as, as plain text. */
-  entryFor(request: CslStyleRequest): Promise<string>;
+  entryFor(request: CslStyleRequest): Effect.Effect<string>;
 }
 
 async function installStyles(): Promise<StyleLibrary> {
@@ -143,14 +158,19 @@ async function installStyles(): Promise<StyleLibrary> {
   );
   const held = stack.move();
   return {
-    async entryFor(request) {
-      const style = await resolveInstalledStyle(dataDir, request);
-      const [entry] = await engine.renderBibliography({
-        items: [ITEM],
-        ...requested(style),
-      });
-      return entry ? inlineText(entry.content) : "";
-    },
+    entryFor: (request) =>
+      Effect.gen(function* () {
+        const style = yield* resolveStyleEffect(dataDir, request).pipe(
+          Effect.provide(NodeFileSystem.layer),
+        );
+        const [entry] = yield* Effect.promise(() =>
+          engine.renderBibliography({
+            items: [ITEM],
+            ...requested(style),
+          }),
+        );
+        return entry ? inlineText(entry.content) : "";
+      }),
     [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
   };
 }

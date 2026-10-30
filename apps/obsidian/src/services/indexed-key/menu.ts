@@ -1,9 +1,9 @@
-// Copy-key menu items and Literature Note file-menu registration.
-import { TFile } from "obsidian";
-import type { Menu, Plugin } from "obsidian";
+// Copy-key menu items, and the copy-key entry on a Literature Note's file menu.
+import type { Menu } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
+import { MENU_SECTION } from "@/lib/menu-section";
+import type { FileMenuSegment } from "@/services/file-menu";
 
 import { copyIndexedKey } from "./actions";
 import type { IndexedKeyCopyTarget, IndexedKeyKind } from "./actions";
@@ -38,22 +38,13 @@ export function addCopyIndexedKeyMenuItem(
   return true;
 }
 
-export function registerIndexedKeyFileMenu(
-  plugin: Pick<Plugin, "registerEvent" | "app">,
-): void {
-  plugin.registerEvent(
-    plugin.app.workspace.on("file-menu", (menu, file, source) => {
-      if (!(file instanceof TFile) || file.extension !== "md") return;
-      if (source === "files-menu") return;
-      const indexedKey = itemKeyFromFrontmatter(
-        plugin.app.metadataCache.getFileCache(file),
-      );
-      if (!indexedKey) return;
-      addCopyIndexedKeyMenuItem(
-        menu,
-        { indexedKey, kind: "item" },
-        { section: "zotlit" },
-      );
-    }),
-  );
+/** "Copy item key" on a Literature Note's file menu. */
+export function indexedKeyFileMenu(): FileMenuSegment {
+  return (menu, { itemKey }) => {
+    addCopyIndexedKeyMenuItem(
+      menu,
+      itemKey ? { indexedKey: itemKey, kind: "item" } : null,
+      { section: MENU_SECTION.info },
+    );
+  };
 }

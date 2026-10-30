@@ -1,6 +1,11 @@
 // Deterministic description of the Fixture.
 
-import { USER_LIBRARY_ID } from "@zotlit/db";
+import { join } from "node:path";
+
+import { CONTRACT_VERSION, USER_LIBRARY_ID } from "@zotlit/db";
+
+/** Directory the committed source assets named below are read from. */
+export const ASSET_DIR = join(import.meta.dirname, "assets");
 
 /** Names My Library in the printed Library table, beside the group IDs. */
 export const PERSONAL_SELECTOR = "my-library";
@@ -80,6 +85,8 @@ export interface FixtureCollection {
    */
   key: string;
   name: string;
+  /** Parent in the same Library; absent for a top-level collection. */
+  parentCollectionID?: number;
 }
 
 /**
@@ -90,12 +97,23 @@ export interface FixtureCollection {
  */
 export const BUILD_TIMESTAMP = "2026-08-19 08:00:00";
 
-/** `SHAREDCL` repeats in three Libraries, so a collection target must name one. */
+/**
+ * `SHAREDCL` repeats in three Libraries, so a collection target must name one.
+ * `PERSCHLD` nests under `PERSNAL2`, so a descendant walk and a direct
+ * membership check give different answers for the one Item filed there.
+ */
 export const COLLECTIONS: readonly FixtureCollection[] = [
   { collectionID: 1, libraryID: 1, key: "SHAREDCL", name: "Shared key" },
   { collectionID: 2, libraryID: 2, key: "SHAREDCL", name: "Shared key" },
   { collectionID: 3, libraryID: 3, key: "SHAREDCL", name: "Shared key" },
   { collectionID: 4, libraryID: 1, key: "PERSNAL2", name: "Personal only" },
+  {
+    collectionID: 5,
+    libraryID: 1,
+    key: "PERSCHLD",
+    name: "Personal child",
+    parentCollectionID: 4,
+  },
 ];
 
 /**
@@ -106,10 +124,51 @@ export const COLLECTIONS: readonly FixtureCollection[] = [
 export const FIXTURE_ITEM_TYPES = [
   "journalArticle",
   "bookSection",
+  "conferencePaper",
   "preprint",
   "book",
+  "thesis",
   "letter",
 ] as const;
+
+/** The Zotero fields an Item's {@link FixtureItem.fields} can carry. */
+export const FIXTURE_ITEM_FIELDS = [
+  "volume",
+  "issue",
+  "pages",
+  "place",
+  "abstractNote",
+  "DOI",
+] as const;
+
+export type FixtureItemField = (typeof FIXTURE_ITEM_FIELDS)[number];
+
+/** A vault property value as frontmatter holds it; `null` is an empty key. */
+export type FixtureVaultValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly string[];
+
+/**
+ * The property types the Fixture Vault records in `.obsidian/types.json`:
+ * one property for every type a Bases table shows, set on the vault cells
+ * showcase notes through {@link FixtureItem.vaultProperties}.
+ */
+export const VAULT_PROPERTY_TYPES: Readonly<Record<string, string>> = {
+  status: "text",
+  note: "text",
+  related: "text",
+  done: "checkbox",
+  rating: "number",
+  finished: "date",
+  started: "datetime",
+  projects: "multitext",
+  collections: "multitext",
+  tags: "tags",
+  aliases: "aliases",
+};
 
 export interface FixtureItem {
   itemID: number;
@@ -124,6 +183,41 @@ export interface FixtureItem {
   citationKey: string | null;
   /** Fixture Vault filename stem when a prose page needs a stable target. */
   literatureNoteName?: string;
+  /**
+   * Committed vault page that is this Item's Literature Note. The build copies
+   * the page and seeds no generated note, so the Item keeps one note.
+   */
+  literatureNotePage?: string;
+  /**
+   * Citation Keys the seeded Literature Note cites in its body, so a
+   * Literature Note carries citation edges of its own and a local graph can
+   * walk from one literature node to a second.
+   */
+  literatureNoteCitations?: readonly string[];
+  /**
+   * Literature Note Profile the seeded note belongs to, written as a Profile
+   * stamp. An absent value seeds the note under the default Profile, unstamped.
+   */
+  literatureNoteProfile?: string;
+  /**
+   * Seed this Item's Literature Note as an earlier default note template
+   * rendered it: the Zotero and Attachment links, then a managed region whose
+   * Annotations are a Query Block. Below the region, outside what Update Note rewrites,
+   * the note embeds a view of a Query File, so one note holds both forms.
+   */
+  literatureNoteRendered?: boolean;
+  /**
+   * End this Item's Literature Note with a Query Block of the Item's own
+   * Annotations (`item == this.item`), so the note shows a Query View whose
+   * `this` comes from its `zotero-key`.
+   */
+  literatureNoteQueryBlock?: boolean;
+  /**
+   * Vault properties the seeded Literature Note carries in its frontmatter,
+   * typed by {@link VAULT_PROPERTY_TYPES}, so the vault cells showcase shows
+   * a value of every type in a Base and in a Query File's Table side by side.
+   */
+  vaultProperties?: Readonly<Record<string, FixtureVaultValue>>;
   title: string;
   /**
    * The Item's **Venue**. The builder resolves which per-type field receives
@@ -136,6 +230,11 @@ export interface FixtureItem {
    * the container-first Venue chain has something to win against.
    */
   publisher?: string;
+  /**
+   * Locator, imprint and abstract fields under their canonical Zotero names. The build
+   * fails when {@link itemType} has no such field.
+   */
+  fields?: Readonly<Partial<Record<FixtureItemField, string>>>;
   /** Publication year, as Zotero stores the raw `date` string. */
   date: string;
   creators: readonly FixtureCreator[];
@@ -144,6 +243,8 @@ export interface FixtureItem {
   relatedKeys?: readonly string[];
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
   dateModified: string;
+  /** Addition time when a later metadata edit must be distinct. */
+  dateAdded?: string;
   collectionIDs: readonly number[];
 }
 
@@ -155,10 +256,65 @@ export interface FixtureCreator {
   fieldMode: 0 | 1;
 }
 
+/** Id of the Fixture's second Literature Note Profile, {@link LITERATURE_NOTE_PROFILES}. */
+const BOOKS_PROFILE_ID = "V1StGXR8Z5jd";
+
+/**
+ * The papers the Demo Vault Case reads: real articles with their real
+ * metadata, each on an Attachment of its own over a committed PDF, so
+ * screenshots and walkthroughs never touch a test Item.
+ */
+export const DEMO_ITEMS: readonly FixtureItem[] = [
+  {
+    itemID: 900,
+    libraryID: 1,
+    key: "DMRGRART",
+    itemType: "journalArticle",
+    citationKey: "rougier2014",
+    literatureNoteName: "rougier2014",
+    title: "Ten Simple Rules for Better Figures",
+    venue: "PLOS Computational Biology",
+    date: "2014",
+    creators: [
+      author("Nicolas P.", "Rougier"),
+      author("Michael", "Droettboom"),
+      author("Philip E.", "Bourne"),
+    ],
+    tags: [
+      { name: "visualization", type: 0 },
+      { name: "research-practice", type: 0 },
+    ],
+    dateModified: "2024-11-20 09:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 902,
+    libraryID: 1,
+    key: "DMIANART",
+    itemType: "journalArticle",
+    citationKey: "ioannidis2005",
+    literatureNoteName: "ioannidis2005",
+    title: "Why Most Published Research Findings Are False",
+    venue: "PLoS Medicine",
+    date: "2005",
+    creators: [author("John P. A.", "Ioannidis")],
+    tags: [
+      { name: "methodology", type: 0 },
+      { name: "research-practice", type: 0 },
+    ],
+    dateModified: "2024-11-19 09:00:00",
+    collectionIDs: [],
+  },
+];
+
+/** Vault folder that holds the demo papers' linked PDFs. */
+export const DEMO_PAPERS_DIR = "Papers";
+
 /**
  * The item set every discovery, Citation Key, and batch tracer reads.
  *
- * Modification times descend with item id apart from two deliberate ties:
+ * Item 2 has the newest metadata edit and an older addition time. Other
+ * modification times descend with item id apart from two deliberate ties:
  * items 7 and 9 tie across Libraries (canonical Library order decides), and
  * items 11 and 12 tie inside My Library (ascending item id decides).
  */
@@ -206,11 +362,14 @@ export const ITEMS: readonly FixtureItem[] = [
     key: "BBBB2222",
     itemType: "journalArticle",
     citationKey: "duplicateWithin2020",
+    literatureNoteName: "books-duplicateWithin2020",
+    literatureNoteProfile: BOOKS_PROFILE_ID,
     title: "Within-library duplicate, first item",
     venue: "Journal of Personal Records",
     date: "2020",
     creators: [author("Bo", "Duplicate")],
-    dateModified: "2025-03-09 12:00:00",
+    dateAdded: "2025-03-09 12:00:00",
+    dateModified: "2026-10-10 12:00:00",
     collectionIDs: [1],
   },
   {
@@ -330,7 +489,7 @@ export const ITEMS: readonly FixtureItem[] = [
     date: "2017",
     creators: [author("Kim", "Tie")],
     dateModified: "2025-03-01 12:00:00",
-    collectionIDs: [],
+    collectionIDs: [5],
   },
   {
     itemID: 12,
@@ -357,6 +516,7 @@ export const ITEMS: readonly FixtureItem[] = [
     creators: [author("Ursula", "Nafula")],
     dateModified: "2025-02-21 12:00:00",
     collectionIDs: [1],
+    literatureNoteQueryBlock: true,
   },
   {
     itemID: 28,
@@ -467,6 +627,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "rougierTenSimpleRules2014",
     literatureNoteName: "rougierTenSimpleRules2014",
+    literatureNoteCitations: ["ioannidisWhyMost2005"],
     title: "Ten Simple Rules for Better Figures",
     venue: "PLOS Computational Biology",
     date: "2014",
@@ -475,8 +636,14 @@ export const ITEMS: readonly FixtureItem[] = [
       author("Michael", "Droettboom"),
       author("Philip E.", "Bourne"),
     ],
+    // The Library View's Reading Card shows it.
+    fields: {
+      abstractNote:
+        "Fixture abstract: a figure carries the argument of a paper at a glance, so each rule keeps one message per figure.",
+    },
     dateModified: "2025-02-05 12:00:00",
     collectionIDs: [1],
+    literatureNoteRendered: true,
   },
   {
     itemID: 57,
@@ -516,7 +683,454 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2025-02-02 12:00:00",
     collectionIDs: [1],
   },
+  {
+    itemID: 60,
+    libraryID: 1,
+    key: "CNPF226A",
+    itemType: "conferencePaper",
+    citationKey: "riveraResearchInterfaces2026",
+    title: "Designing reproducible research interfaces",
+    venue: "Proceedings of the Open Research Conference",
+    date: "2026",
+    creators: [author("Mara", "Rivera"), author("Tao", "Chen")],
+    dateModified: "2025-01-03 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 61,
+    libraryID: 1,
+    key: "NW2CPDTC",
+    itemType: "book",
+    citationKey: "Kahneman2011",
+    title: "Thinking, fast and slow",
+    venue: "Penguin Books",
+    date: "2011-00-00 2011",
+    creators: [author("D", "Kahneman")],
+    dateModified: "2025-05-22 03:30:30",
+    collectionIDs: [],
+  },
+  {
+    itemID: 62,
+    libraryID: 1,
+    key: "I49R3FTL",
+    itemType: "thesis",
+    citationKey: "Batista2010",
+    title:
+      "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities",
+    venue: "",
+    date: "2010-00-00 2010",
+    creators: [author("Edgard Antunes Dias", "Batista")],
+    dateModified: "2025-05-22 03:30:30",
+    collectionIDs: [],
+  },
+  // ── Publisher by item type (discussion #1197) ─────────────────────
+  // One `publisher` property formatted per item type: a journal article with
+  // every locator and one with only a volume, a book with a place, a chapter
+  // in an edited collection, and a thesis whose university is its publisher.
+  {
+    itemID: 86,
+    libraryID: 1,
+    key: "PUBJRNL2",
+    itemType: "journalArticle",
+    citationKey: "orlovaArchivalReading2021",
+    title: "Archival reading practices in regional libraries",
+    venue: "Journal of Library History",
+    fields: { volume: "12", issue: "3", pages: "45-67" },
+    date: "2021-03-00 March 2021",
+    creators: [author("Anna", "Orlova")],
+    dateModified: "2024-11-05 12:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 87,
+    libraryID: 1,
+    key: "PUBJRNL3",
+    itemType: "journalArticle",
+    citationKey: "marshMarginaliaEvidence2019",
+    literatureNotePage: "Scan target.md",
+    title: "Marginalia as evidence of reading",
+    venue: "Book History Review",
+    fields: { volume: "8" },
+    date: "2019",
+    creators: [author("Peter", "Marsh")],
+    dateModified: "2024-11-04 12:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 88,
+    libraryID: 1,
+    key: "PUBBKPL4",
+    itemType: "book",
+    citationKey: "sokolovReadingCultures2018",
+    title: "Reading cultures of the nineteenth century",
+    venue: "Fixture Academic Press",
+    fields: { place: "Moscow" },
+    date: "2018",
+    creators: [author("Ivan", "Sokolov")],
+    dateModified: "2024-11-03 12:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 89,
+    libraryID: 1,
+    key: "PUBSECT5",
+    itemType: "bookSection",
+    citationKey: "grantFootnotesReaders2016",
+    title: "Footnotes and their readers",
+    venue: "Essays on scholarly apparatus",
+    publisher: "Leiden Fixture Publishers",
+    fields: { place: "Leiden", pages: "101-118" },
+    date: "2016",
+    creators: [
+      author("Helen", "Grant"),
+      {
+        firstName: "Jan",
+        lastName: "de Vries",
+        creatorType: "editor",
+        fieldMode: 0,
+      },
+    ],
+    dateModified: "2024-11-02 12:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 90,
+    libraryID: 1,
+    key: "PUBTHSS6",
+    itemType: "thesis",
+    citationKey: "petrovaCorrespondenceNetworks2020",
+    title: "Scholarly correspondence networks in the long nineteenth century",
+    venue: "Fixture State University",
+    fields: { place: "Saint Petersburg" },
+    date: "2020",
+    creators: [author("Maria", "Petrova")],
+    dateModified: "2024-11-01 12:00:00",
+    collectionIDs: [],
+  },
+  // ── Title collation (Item Query string order) ─────────────────────
+  // Titles that differ in case, accent, and digits. Item Query sorts them as
+  // 10, 9, apple, eclair, Éclair, Zebra in the running Obsidian, which proves
+  // that Electron's collator agrees with Node's.
+  ...(
+    [
+      [91, "SRTZEBRA", "Zebra"],
+      [92, "SRTAPPLE", "apple"],
+      [93, "SRTECLR2", "Éclair"],
+      [94, "SRTECLR3", "eclair"],
+      [95, "SRTTEN22", "10"],
+      [96, "SRTNINE2", "9"],
+    ] as const
+  ).map(([itemID, key, title]): FixtureItem => ({
+    itemID,
+    libraryID: 1,
+    key,
+    itemType: "journalArticle",
+    citationKey: null,
+    title,
+    date: "2010",
+    creators: [author("Lena", "Collator")],
+    dateModified: `2019-01-01 00:00:${String(itemID - 90).padStart(2, "0")}`,
+    collectionIDs: [],
+  })),
+  // ── Graph showcase: information-science citation web ──────────────
+  {
+    itemID: 70,
+    libraryID: 1,
+    key: "BUSH45AA",
+    itemType: "journalArticle",
+    citationKey: "bushAsWeMayThink1945",
+    literatureNoteName: "bushAsWeMayThink1945",
+    vaultProperties: {
+      status: "read",
+      note: "Foundational essay on the memex and associative trails; argues for machines that extend human memory.",
+      related: "[[tools-for-thought]]",
+      done: true,
+      rating: 5,
+      finished: "2026-09-02",
+      started: "2026-08-30T09:15:00",
+      projects: ["memex", "thesis", "hypertext history"],
+      collections: ["Reading/Hypertext", "Thesis"],
+      tags: ["reading/done", "hci"],
+      aliases: ["Memex essay"],
+    },
+    title: "As We May Think",
+    venue: "The Atlantic Monthly",
+    date: "1945",
+    creators: [author("Vannevar", "Bush")],
+    dateModified: "2024-12-31 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 71,
+    libraryID: 1,
+    key: "NELSN65A",
+    itemType: "conferencePaper",
+    citationKey: "nelsonComplexInformation1965",
+    literatureNoteName: "nelsonComplexInformation1965",
+    literatureNoteCitations: ["bushAsWeMayThink1945"],
+    vaultProperties: {
+      status: "reading",
+      related: "[Xanadu](https://xanadu.com)",
+      done: false,
+      rating: 3.5,
+      started: "2026-10-01T20:00:00",
+      projects: [
+        "hypertext",
+        "a very long project name that should wrap or truncate",
+      ],
+    },
+    title:
+      "Complex information processing: a file structure for the complex, the changing and the indeterminate",
+    venue: "Proceedings of the 1965 20th National Conference",
+    date: "1965",
+    creators: [author("Theodor Holm", "Nelson")],
+    dateModified: "2024-12-30 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 72,
+    libraryID: 1,
+    key: "GRFLD55A",
+    itemType: "journalArticle",
+    citationKey: "garfieldCitationIndexes1955",
+    literatureNoteName: "garfieldCitationIndexes1955",
+    vaultProperties: {
+      status: "read",
+      note: "Citation index proposal.",
+      done: true,
+      rating: 4,
+      finished: "2026-08-21",
+      projects: ["citations"],
+      tags: ["bibliometrics"],
+    },
+    title:
+      "Citation Indexes for Science: A New Dimension in Documentation through Association of Ideas",
+    venue: "Science",
+    date: "1955",
+    creators: [author("Eugene", "Garfield")],
+    dateModified: "2024-12-29 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 73,
+    libraryID: 1,
+    key: "SMALL73A",
+    itemType: "journalArticle",
+    citationKey: "smallCoCitationScientific1973",
+    literatureNoteName: "smallCoCitationScientific1973",
+    literatureNoteCitations: ["garfieldCitationIndexes1955"],
+    vaultProperties: {
+      status: "to-read",
+      done: false,
+      projects: ["citations", "thesis, ch. 3"],
+    },
+    title:
+      "Co-citation in the Scientific Literature: A New Measure of the Relationship between Two Documents",
+    venue: "Journal of the American Society for Information Science",
+    date: "1973",
+    creators: [author("Henry", "Small")],
+    dateModified: "2024-12-28 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 74,
+    libraryID: 1,
+    key: "LHMNN82A",
+    itemType: "bookSection",
+    citationKey: "luhmannCommunicatingSlipBoxes1981",
+    literatureNoteName: "luhmannCommunicatingSlipBoxes1981",
+    vaultProperties: {
+      status: "unread",
+      related: "[[Memex (device)]]",
+      done: false,
+      rating: 5,
+      finished: "2026-07-14",
+      projects: ["zettelkasten", "thesis"],
+    },
+    title: "Communicating with Slip Boxes: An Empirical Account",
+    venue: "Öffentliche Meinung und sozialer Wandel",
+    date: "1981",
+    creators: [author("Niklas", "Luhmann")],
+    dateModified: "2024-12-27 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 75,
+    libraryID: 1,
+    key: "AHRNS27A",
+    itemType: "book",
+    citationKey: "ahrensHowTakeSmartNotes2017",
+    literatureNoteName: "ahrensHowTakeSmartNotes2017",
+    literatureNoteCitations: ["luhmannCommunicatingSlipBoxes1981"],
+    vaultProperties: {
+      status: "reading",
+      done: false,
+      rating: 4,
+      projects: ["zettelkasten"],
+      tags: ["pkm"],
+    },
+    title:
+      "How to Take Smart Notes: One Simple Technique to Boost Writing, Learning and Thinking",
+    venue: "Sönke Ahrens",
+    date: "2017",
+    creators: [author("Sönke", "Ahrens")],
+    dateModified: "2024-12-26 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 76,
+    libraryID: 1,
+    key: "BRNRS52A",
+    itemType: "journalArticle",
+    citationKey: "bernersLeeSemanticWeb2001",
+    literatureNoteName: "bernersLeeSemanticWeb2001",
+    literatureNoteCitations: [
+      "bushAsWeMayThink1945",
+      "nelsonComplexInformation1965",
+    ],
+    title: "The Semantic Web",
+    venue: "Scientific American",
+    date: "2001",
+    creators: [
+      author("Tim", "Berners-Lee"),
+      author("James", "Hendler"),
+      author("Ora", "Lassila"),
+    ],
+    dateModified: "2024-12-25 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 77,
+    libraryID: 1,
+    key: "FRTEE22A",
+    itemType: "book",
+    citationKey: "forteBuildingSecondBrain2022",
+    literatureNoteName: "forteBuildingSecondBrain2022",
+    literatureNoteCitations: [
+      "ahrensHowTakeSmartNotes2017",
+      "bushAsWeMayThink1945",
+    ],
+    title:
+      "Building a Second Brain: A Proven Method to Organize Your Digital Life and Unlock Your Creative Potential",
+    venue: "Atria Books",
+    date: "2022",
+    creators: [author("Tiago", "Forte")],
+    dateModified: "2024-12-24 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 78,
+    libraryID: 1,
+    key: "MATSC29A",
+    itemType: "preprint",
+    citationKey: "matuschakTransformativeTools2019",
+    literatureNoteName: "matuschakTransformativeTools2019",
+    literatureNoteCitations: [
+      "bushAsWeMayThink1945",
+      "nelsonComplexInformation1965",
+      "ahrensHowTakeSmartNotes2017",
+    ],
+    vaultProperties: {
+      status: null,
+      done: null,
+      rating: null,
+      finished: null,
+      projects: [],
+    },
+    title: "How can we develop transformative tools for thought?",
+    venue: "numinous.productions",
+    date: "2019",
+    creators: [author("Andy", "Matuschak"), author("Michael", "Nielsen")],
+    dateModified: "2024-12-23 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 79,
+    libraryID: 2,
+    key: "ENGBT62A",
+    itemType: "journalArticle",
+    citationKey: "engelbartAugmentingHuman1962",
+    title: "Augmenting Human Intellect: A Conceptual Framework",
+    venue: "SRI Summary Report",
+    date: "1962",
+    creators: [author("Douglas C.", "Engelbart")],
+    dateModified: "2024-12-22 12:00:00",
+    collectionIDs: [2],
+  },
+  ...DEMO_ITEMS,
 ];
+
+/** How a seeded Citation Key resolves against the Items the build writes. */
+export type SeededCitationKeyResolution = "unique" | "ambiguous" | "missing";
+
+/**
+ * The Citation Keys the seeded vault cites for its graph cases, with the
+ * resolution each case rests on: one Item behind a Literature Note, several
+ * behind an ambiguous key, none behind an unresolved key.
+ * {@link assertSeededCitationKeys} holds the build to this map, so an Item
+ * edit that retires a case stops the build instead of leaving a seeded page
+ * that no longer shows what it names. Declare a key here as you seed a page
+ * that cites it.
+ */
+export const SEEDED_CITATION_KEYS: Readonly<
+  Record<string, SeededCitationKeyResolution>
+> = {
+  Hensher2011: "unique",
+  ahrensHowTakeSmartNotes2017: "unique",
+  bernersLeeSemanticWeb2001: "unique",
+  bushAsWeMayThink1945: "unique",
+  consortiumAlpha2020: "unique",
+  duplicateAcross2019: "ambiguous",
+  engelbartAugmentingHuman1962: "unique",
+  forteBuildingSecondBrain2022: "unique",
+  garfieldCitationIndexes1955: "unique",
+  ioannidisWhyMost2005: "unique",
+  labArchiveAlpha2021: "unique",
+  luhmannCommunicatingSlipBoxes1981: "unique",
+  marshMarginaliaEvidence2019: "unique",
+  matuschakTransformativeTools2019: "unique",
+  nelsonComplexInformation1965: "unique",
+  nonexistentCitekeyForSmokeTest2099: "missing",
+  rougierTenSimpleRules2014: "unique",
+  sharedReadingAlpha2023: "unique",
+  smallCoCitationScientific1973: "unique",
+  "wallgren-petterssonDistalMyopathyCaused2007": "unique",
+  wangMutationalClinicalSpectrum2020a: "unique",
+  wittNebulinRegulatesThin2006: "unique",
+  xuNoCitationKeyProperty2019: "missing",
+  yinClinicopathologicalFeaturesMutational2021: "unique",
+};
+
+function citationKeyResolution(
+  items: readonly FixtureItem[],
+  key: string,
+): SeededCitationKeyResolution {
+  const held = items.filter((item) => item.citationKey === key).length;
+  if (held === 0) return "missing";
+  return held === 1 ? "unique" : "ambiguous";
+}
+
+/** One message per seeded Citation Key that left its declared resolution. */
+export function seededCitationKeyDrift(
+  items: readonly FixtureItem[],
+): readonly string[] {
+  return Object.entries(SEEDED_CITATION_KEYS).flatMap(([key, declared]) => {
+    const resolution = citationKeyResolution(items, key);
+    return resolution === declared
+      ? []
+      : [
+          `seeded Citation Key "${key}" resolves as ${resolution}, the Spec declares ${declared}`,
+        ];
+  });
+}
+
+/** Stops a build whose Items no longer carry the seeded citation cases. */
+export function assertSeededCitationKeys(items: readonly FixtureItem[]): void {
+  const drift = seededCitationKeyDrift(items);
+  if (drift.length > 0) {
+    throw new Error(drift.join("; "));
+  }
+}
 
 function author(firstName: string, lastName: string): FixtureCreator {
   return { firstName, lastName, creatorType: "author", fieldMode: 0 };
@@ -560,10 +1174,10 @@ export const NOTES: readonly FixtureNote[] = [
     key: "NNNNAAAA",
     parentItemID: 1,
     title: "Reading notes on the personal alpha",
-    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the personal alpha</h1>\n<p>A child note of an item filed in two collections.</p>\n</div></div>',
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the personal alpha</h1>\n<p><img data-attachment-key="SNAP2345" data-annotation="%7B%22attachmentURI%22%3A%22http%3A%2F%2Fzotero.org%2Fusers%2Flocal%2FLOCAL%2Fitems%2FRGRPDF24%22%2C%22annotationKey%22%3A%22FDRFQ7C2%22%7D"></p>\n<p><img data-attachment-key="SNAP3456" data-annotation="%7B%22attachmentURI%22%3A%22http%3A%2F%2Fzotero.org%2Fusers%2Flocal%2FLOCAL%2Fitems%2FRGRPDF24%22%2C%22annotationKey%22%3A%22TYY6Z6ZF%22%7D"></p>\n<p>Saved snapshot <img data-attachment-key="FRZN2345"></p>\n<p>A child note of an item filed in two collections.</p>\n</div></div>',
     importedNoteBody:
       "# Reading notes on the personal alpha\n\nA child note of an item filed in two collections.\n",
-    dateModified: "2025-02-28 12:00:00",
+    dateModified: "2026-10-02 12:00:00",
     collectionIDs: [],
   },
   {
@@ -637,6 +1251,30 @@ export const NOTES: readonly FixtureNote[] = [
     trashed: true,
     collectionIDs: [],
   },
+  {
+    itemID: 33,
+    libraryID: 1,
+    key: "TRASHCLD",
+    parentItemID: 1,
+    title: "A trashed reading note on the personal alpha",
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>A trashed reading note on the personal alpha</h1>\n<p>A Child Note in the trash, so views of the Item leave it out.</p>\n</div></div>',
+    importedNoteBody: null,
+    dateModified: "2025-02-21 12:00:00",
+    trashed: true,
+    collectionIDs: [],
+  },
+  {
+    itemID: 34,
+    libraryID: 1,
+    key: "NNNNFFFF",
+    parentItemID: 57,
+    title: "Reading notes on the preprint",
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the preprint</h1>\n<p>A Child Note of an item that also has an Attachment.</p>\n</div></div>',
+    importedNoteBody:
+      "# Reading notes on the preprint\n\nA Child Note of an item that also has an Attachment.\n",
+    dateModified: "2025-02-20 12:00:00",
+    collectionIDs: [],
+  },
 ];
 
 export type FixtureAnnotationAsset =
@@ -646,18 +1284,243 @@ export type FixtureAnnotationAsset =
 
 export type FixtureAsset =
   | FixtureAnnotationAsset
+  | "excerpt-rendering/corrupt.pdf"
+  | "excerpt-rendering/encrypted.pdf"
+  | "excerpt-rendering/excerpt-rendering.pdf"
+  | "external-annotation/external-annotation.pdf"
   | "ioannidis-2005/ioannidis-2005.pdf"
+  | "pdf-parity/pdf-parity-layout.pdf"
+  | "pdf-parity/pdf-parity-scanned.pdf"
   | "rougier-2014/rougier-2014.pdf"
   | "sakimas-song/sakimas-song.html"
   | "sakimas-song/sakimas-song.pdf";
 
+/** One line-grouping branch of Zotero's PDF text-structuring algorithm. */
+export type FixtureParityBranch =
+  | "rotation"
+  | "ligature"
+  | "multi-column"
+  | "no-text-layer";
+
+/**
+ * One PDF built for the Sort Index / Page Label parity test, asset-only: no
+ * Zotero item, attachment, annotation, or collection backs it. The parity
+ * test reads it straight from the asset directory, so it stays out of the
+ * Fixture database and every count assertion that reads from there.
+ */
+export interface FixtureParityPdf {
+  /** Committed asset path, under `assets/`. */
+  readonly asset: FixtureAsset;
+  /** Line-grouping branches this PDF is built to exercise. */
+  readonly branches: readonly FixtureParityBranch[];
+  /** SHA-256 of the committed bytes; `pdf-parity/NOTICE.md` records the same value. */
+  readonly sha256: string;
+}
+
+/**
+ * The two hand-generated parity PDFs (`pdf-parity/generate.ts`): one page
+ * that drives Zotero's line-grouping algorithm through its rotation,
+ * ligature, and multi-column branches, and one scanned page with no text
+ * layer, whose only content is an image.
+ */
+export const PARITY_PDFS: readonly FixtureParityPdf[] = [
+  {
+    asset: "pdf-parity/pdf-parity-layout.pdf",
+    branches: ["rotation", "ligature", "multi-column"],
+    sha256: "3839ce157abd250ab19d57d18855e72a45eaf9a70bdd207981600ca48b67a4db",
+  },
+  {
+    asset: "pdf-parity/pdf-parity-scanned.pdf",
+    branches: ["no-text-layer"],
+    sha256: "dac746f7dee4aaf961bb8a3764611d088264cbb25ea55314914940d1ffcbbf04",
+  },
+];
+
+/** Stable vault directory for the excerpt-rendering acceptance inputs. */
+export const EXCERPT_RENDERING_VAULT_DIR = "attachments/excerpt-acceptance";
+
+export interface FixtureExcerptPdf {
+  readonly asset: FixtureAsset;
+  readonly outcome: "renderable" | "corrupt" | "password-required";
+  readonly sha256: string;
+}
+
+/**
+ * Small, generated PDFs for renderer acceptance. They are copied into the
+ * Fixture Vault, but stay out of Zotero's database and Item count assertions.
+ */
+export const EXCERPT_RENDERING_PDFS: readonly FixtureExcerptPdf[] = [
+  {
+    asset: "excerpt-rendering/excerpt-rendering.pdf",
+    outcome: "renderable",
+    sha256: "cd292fc28f13fc469df6694c64a2e4a60d5ef2e02ce2c4beb4a43065285b415a",
+  },
+  {
+    asset: "excerpt-rendering/corrupt.pdf",
+    outcome: "corrupt",
+    sha256: "48c92d5c280dfbd46680f7ec622426f4e8d90d2e1f5f7531c585a6f7ea09be67",
+  },
+  {
+    asset: "excerpt-rendering/encrypted.pdf",
+    outcome: "password-required",
+    sha256: "875fe363708b463a04568096d2681870f17a22cdd5813f7ed2b7ac779ec66374",
+  },
+];
+
+export interface FixtureExcerptCase {
+  readonly id: string;
+  readonly type: "image" | "ink";
+  readonly pageIndex: number;
+  readonly rect?: readonly [number, number, number, number];
+  readonly width?: number;
+  readonly paths?: readonly (readonly number[])[];
+  readonly measureMemory?: boolean;
+  /** Independent decoded-PNG oracles; sample coordinates are output pixels. */
+  readonly expected: {
+    readonly width: number;
+    readonly height: number;
+    readonly samples: readonly (readonly [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ])[];
+  };
+}
+
+/** Independent geometry cases consumed by desktop acceptance tests. */
+export const EXCERPT_RENDERING_CASES: readonly FixtureExcerptCase[] = [
+  {
+    id: "crop-user-unit",
+    type: "image",
+    pageIndex: 0,
+    rect: [70, 90, 190, 200],
+    expected: {
+      width: 960,
+      height: 880,
+      samples: [[480, 440, 255, 0, 0, 255]],
+    },
+  },
+  {
+    id: "rotate-90",
+    type: "image",
+    pageIndex: 1,
+    rect: [250, 250, 440, 400],
+    expected: {
+      width: 600,
+      height: 760,
+      samples: [[300, 380, 0, 115, 230, 255]],
+    },
+  },
+  {
+    id: "rotate-180",
+    type: "image",
+    pageIndex: 2,
+    rect: [70, 90, 190, 200],
+    expected: {
+      width: 480,
+      height: 440,
+      samples: [[240, 220, 255, 0, 0, 255]],
+    },
+  },
+  {
+    id: "rotate-270",
+    type: "image",
+    pageIndex: 3,
+    rect: [250, 250, 440, 400],
+    expected: {
+      width: 600,
+      height: 760,
+      samples: [[300, 380, 0, 115, 230, 255]],
+    },
+  },
+  {
+    id: "cjk-native-form-optional-content",
+    type: "image",
+    pageIndex: 4,
+    rect: [50, 350, 400, 740],
+    expected: {
+      width: 1400,
+      height: 1560,
+      samples: [
+        [200, 192, 0, 0, 0, 255],
+        [520, 192, 0, 0, 0, 255],
+        [160, 800, 255, 128, 0, 255],
+        [600, 800, 204, 0, 204, 255],
+        [200, 1240, 26, 178, 76, 255],
+      ],
+    },
+  },
+  {
+    id: "small-point-ink",
+    type: "ink",
+    pageIndex: 0,
+    width: 1,
+    paths: [[220, 180]],
+    expected: {
+      width: 480,
+      height: 480,
+      samples: [[240, 240, 255, 0, 0, 255]],
+    },
+  },
+  {
+    id: "large-multi-path-ink",
+    type: "ink",
+    pageIndex: 4,
+    width: 18,
+    paths: [
+      [60, 80, 540, 700],
+      [60, 700, 540, 80],
+    ],
+    expected: {
+      width: 2072,
+      height: 2632,
+      samples: [[1036, 1316, 255, 0, 0, 255]],
+    },
+  },
+  {
+    id: "maximum-pixels",
+    type: "image",
+    pageIndex: 0,
+    rect: [24, 36, 588, 756],
+    measureMemory: true,
+    expected: {
+      width: 3625,
+      height: 4627,
+      samples: [[1774, 2930, 0, 115, 230, 255]],
+    },
+  },
+  {
+    id: "maximum-dimension",
+    type: "image",
+    pageIndex: 5,
+    rect: [0, 0, 3000, 100],
+    measureMemory: true,
+    expected: {
+      width: 8192,
+      height: 273,
+      samples: [[4096, 136, 38, 64, 191, 255]],
+    },
+  },
+];
+
 interface FixtureAttachmentBase {
+  /** Last read in Zotero, in Unix seconds; absent means never read. */
+  lastRead?: number;
+  /** Manual or automatic Zotero Tags on the Attachment. */
+  tags?: readonly { name: string; type: 0 | 1 }[];
   itemID: number;
   libraryID: number;
   /** Bare Zotero key for the Attachment row. */
   key: string;
   parentItemID: number;
-  contentType: "application/pdf" | "text/html";
+  contentType:
+    | "application/epub+zip"
+    | "application/pdf"
+    | "image/png"
+    | "text/html";
   title: string;
   /** Committed source to copy; `null` makes a URL row or deliberate miss. */
   sourceAsset: FixtureAsset | null;
@@ -693,15 +1556,66 @@ export type FixtureAttachment = FixtureAttachmentBase &
   );
 
 /**
+ * The demo papers' PDFs, linked from {@link DEMO_PAPERS_DIR} under the names
+ * Zotero's default file renaming gives them.
+ */
+export const DEMO_ATTACHMENTS: readonly FixtureAttachment[] = [
+  {
+    itemID: 901,
+    libraryID: 1,
+    key: "DMRGRPDF",
+    parentItemID: 900,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "Full Text PDF",
+    path: `${DEMO_PAPERS_DIR}/Rougier et al. - 2014 - Ten Simple Rules for Better Figures.pdf`,
+    url: null,
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: "2024-11-20 09:00:00",
+  },
+  {
+    itemID: 903,
+    libraryID: 1,
+    key: "DMIANPDF",
+    parentItemID: 902,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "Full Text PDF",
+    path: `${DEMO_PAPERS_DIR}/Ioannidis - 2005 - Why Most Published Research Findings Are False.pdf`,
+    url: null,
+    sourceAsset: "ioannidis-2005/ioannidis-2005.pdf",
+    dateModified: "2024-11-19 09:00:00",
+  },
+];
+
+/**
  * File-backed rows cover every storage and linked-file branch. `LINKURL2`
  * exercises the URL-only branch, while `MISSNG22` resolves to the one path the
  * generator deliberately leaves absent.
  */
 export const ATTACHMENTS: readonly FixtureAttachment[] = [
   {
+    itemID: 150,
+    libraryID: 1,
+    key: "MISSLNK2",
+    parentItemID: 57,
+    linkMode: "linked_file",
+    fileRoot: "linked-files",
+    contentType: "application/pdf",
+    title: "Missing linked PDF",
+    path: "missing-linked.pdf",
+    url: null,
+    sourceAsset: null,
+    tags: [{ name: "repair-file", type: 0 }],
+    dateModified: "2025-01-03 11:15:00",
+  },
+  {
     itemID: 21,
     libraryID: 1,
     key: "PDFSTR22",
+    lastRead: 1790812800,
     parentItemID: 20,
     linkMode: "imported_file",
     contentType: "application/pdf",
@@ -723,6 +1637,19 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     url: "https://www.storybookscanada.ca/stories/en/0315/",
     sourceAsset: "sakimas-song/sakimas-song.html",
     dateModified: "2025-02-19 12:00:00",
+  },
+  {
+    itemID: 30,
+    libraryID: 1,
+    key: "EPUBS222",
+    parentItemID: 20,
+    linkMode: "linked_url",
+    contentType: "application/epub+zip",
+    title: "Sakima's Song EPUB",
+    path: null,
+    url: "https://example.invalid/sakimas-song.epub",
+    sourceAsset: null,
+    dateModified: "2025-02-18 18:00:00",
   },
   {
     itemID: 23,
@@ -768,6 +1695,7 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     itemID: 29,
     libraryID: 1,
     key: "IANPDF25",
+    lastRead: 1735689600,
     parentItemID: 28,
     linkMode: "imported_file",
     contentType: "application/pdf",
@@ -791,6 +1719,90 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     sourceAsset: "rougier-2014/rougier-2014.pdf",
     dateModified: "2025-02-04 12:00:00",
   },
+  {
+    itemID: 63,
+    libraryID: 1,
+    key: "CNPDF26A",
+    parentItemID: 60,
+    linkMode: "imported_file",
+    contentType: "application/pdf",
+    title: "Research interfaces conference paper",
+    path: "research-interfaces.pdf",
+    url: null,
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: "2025-01-03 11:00:00",
+  },
+  {
+    itemID: 80,
+    libraryID: 1,
+    key: "CNPVLT26",
+    parentItemID: 60,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "Research interfaces conference paper (linked copy)",
+    path: "attachments/research-interfaces.pdf",
+    url: null,
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: "2025-01-03 11:30:00",
+  },
+  {
+    itemID: 82,
+    libraryID: 1,
+    key: "SNAP2345",
+    parentItemID: 13,
+    linkMode: "imported_file",
+    contentType: "image/png",
+    title: "Live image excerpt snapshot",
+    path: "snapshot.png",
+    url: null,
+    sourceAsset: "rougier-2014/annotations/FDRFQ7C2.png",
+    dateModified: "2025-02-28 12:00:00",
+  },
+  {
+    itemID: 83,
+    libraryID: 1,
+    key: "SNAP3456",
+    parentItemID: 13,
+    linkMode: "imported_file",
+    contentType: "image/png",
+    title: "Live ink excerpt snapshot",
+    path: "snapshot.png",
+    url: null,
+    sourceAsset: "rougier-2014/annotations/TYY6Z6ZF.png",
+    dateModified: "2025-02-28 12:00:00",
+  },
+  {
+    itemID: 84,
+    libraryID: 1,
+    key: "FRZN2345",
+    parentItemID: 13,
+    linkMode: "imported_file",
+    contentType: "image/png",
+    title: "Frozen excerpt snapshot",
+    path: "snapshot.png",
+    url: null,
+    sourceAsset: "rougier-2014/annotations/4PE492KU.png",
+    dateModified: "2025-02-28 12:00:00",
+  },
+  {
+    // Its PDF embeds one highlight another PDF reader saved, and the Fixture
+    // seeds no Annotation here. A Paired Zotero that opens the PDF imports
+    // that highlight as an External Annotation, which Zotero keeps read-only.
+    itemID: 85,
+    libraryID: 1,
+    key: "EXTPDF25",
+    parentItemID: 57,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "External annotation PDF",
+    path: "attachments/external-annotation.pdf",
+    url: null,
+    sourceAsset: "external-annotation/external-annotation.pdf",
+    dateModified: "2025-01-02 12:00:00",
+  },
+  ...DEMO_ATTACHMENTS,
 ];
 
 interface FixtureAnnotationBase {
@@ -802,6 +1814,13 @@ interface FixtureAnnotationBase {
   text: string | null;
   comment: string | null;
   color: string;
+  /** Manual (`0`) or automatic (`1`) Zotero tags on the Annotation. */
+  tags?: readonly { name: string; type: 0 | 1 }[];
+  /**
+   * An External Annotation: Zotero imported it from the PDF file and keeps it
+   * read-only. Absent for an Annotation drawn in Zotero.
+   */
+  isExternal?: true;
   pageLabel: string;
   sortIndex: string;
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
@@ -823,6 +1842,15 @@ type FixturePdfInkPosition = {
   pageIndex: number;
   width: number;
   paths: readonly (readonly number[])[];
+};
+type FixtureEpubCfiPosition = {
+  type: "FragmentSelector";
+  value: string;
+};
+type FixtureSnapshotPosition = {
+  type: "CssSelector";
+  value: string;
+  refinedBy?: { start: number; end: number };
 };
 
 export type FixtureAnnotation = FixtureAnnotationBase &
@@ -849,10 +1877,366 @@ export type FixtureAnnotation = FixtureAnnotationBase &
         position: FixturePdfTextPosition;
         cacheImageAsset: null;
       }
+    | {
+        type: 1;
+        position: FixtureEpubCfiPosition | FixtureSnapshotPosition;
+        cacheImageAsset: null;
+      }
   );
 
-/** Real anchors captured from pages in the committed PDFs. */
+/**
+ * A reader's Annotations on the demo papers, captured from a Zotero 10 reader
+ * session: Zotero drew each one, so its position, text, Sort Index, and page
+ * label are Zotero's own. The one External Annotation, `XTPPV7Q3`, is the
+ * exception: the Spec writes the row Zotero keeps after it imports a highlight
+ * from the PDF file.
+ */
+export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
+  {
+    itemID: 904,
+    libraryID: 1,
+    key: "F9AKNNK2",
+    parentItemID: 901,
+    type: 1,
+    text: "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
+    comment:
+      "The textbook definition. The authors argue that it is too narrow.",
+    color: "#ffd400",
+    tags: [{ name: "definition", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|000434|00180",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [67.011, 612.638, 211.485, 620.77],
+        [58.054, 601.98, 211.489, 610.112],
+        [58.054, 591.321, 153.781, 599.454],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:49:36",
+    dateModified: "2026-09-26 16:54:17",
+  },
+  {
+    itemID: 905,
+    libraryID: 1,
+    key: "NEIKLK9T",
+    parentItemID: 901,
+    type: 1,
+    text: "A more accurate definition for scientific visualization would be a graphical interface between people and data.",
+    comment: "Use this framing in the chapter intro.",
+    color: "#5fb236",
+    tags: [{ name: "framing", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|000765|00287",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [180.792, 506.055, 211.469, 514.188],
+        [58.054, 495.397, 211.481, 503.53],
+        [58.054, 484.739, 211.471, 492.871],
+        [58.054, 474.081, 158.205, 482.213],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:53:32",
+    dateModified: "2026-09-26 16:54:17",
+  },
+  {
+    itemID: 906,
+    libraryID: 1,
+    key: "B9SXMZEU",
+    parentItemID: 901,
+    type: 1,
+    text: "Rule 1: Know Your Audience",
+    comment: null,
+    color: "#a28ae5",
+    pageLabel: "1",
+    sortIndex: "00000|001057|00398",
+    position: { pageIndex: 0, rects: [[58.054, 383.41, 196.512, 392.226]] },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:20",
+    dateModified: "2026-09-26 16:54:20",
+  },
+  {
+    itemID: 907,
+    libraryID: 1,
+    key: "YPM6GIAT",
+    parentItemID: 901,
+    type: 5,
+    text: "problems arise when how a visual is perceived differs significantly from the intent of the conveyer.",
+    comment: null,
+    color: "#ff6666",
+    tags: [{ name: "pitfall", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|001103|00416",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [176.711, 366.477, 211.525, 374.61],
+        [58.054, 355.819, 211.489, 363.951],
+        [58.054, 345.161, 211.459, 353.293],
+        [58.054, 334.503, 109.093, 342.635],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:25",
+    dateModified: "2026-09-26 16:54:25",
+  },
+  {
+    itemID: 908,
+    libraryID: 1,
+    key: "ADY8P65X",
+    parentItemID: 901,
+    type: 1,
+    text: "If your figure is able to convey a striking message at first glance, chances are increased that your article will draw more attention from the community.",
+    comment: "Check every figure in ch. 3 against this.",
+    color: "#ffd400",
+    tags: [{ name: "figure-design", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|002700|00389",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [297.353, 414.04, 382.849, 422.172],
+        [229.436, 403.438, 382.844, 411.57],
+        [229.436, 392.836, 382.856, 400.969],
+        [229.436, 382.234, 382.847, 390.367],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:29",
+    dateModified: "2026-09-26 16:54:29",
+  },
+  {
+    itemID: 909,
+    libraryID: 1,
+    key: "S8WTHP4F",
+    parentItemID: 901,
+    type: 1,
+    text: "you should abandon the practice of extracting a figure from your article to be put, as is, in your oral presentation.",
+    comment: "Guilty. Redraw the slides for the conference talk.",
+    color: "#f19837",
+    tags: [{ name: "talk", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|004039|00391",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [400.763, 391.588, 554.215, 399.72],
+        [400.763, 381.1, 554.177, 389.233],
+        [400.763, 370.555, 543.451, 378.687],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:33",
+    dateModified: "2026-09-26 16:54:33",
+  },
+  {
+    itemID: 910,
+    libraryID: 1,
+    key: "AGSYQ9ZZ",
+    parentItemID: 901,
+    type: 2,
+    text: null,
+    comment: "Every caption must stand on its own. Ask Sam to read them cold.",
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|004134|00427",
+    position: { pageIndex: 0, rects: [[539.795, 341.215, 561.795, 363.215]] },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:41",
+    dateModified: "2026-09-26 16:54:41",
+  },
+  {
+    itemID: 911,
+    libraryID: 1,
+    key: "TF3ZGRBV",
+    parentItemID: 901,
+    type: 5,
+    text: "you cannot explain everything within the figure itself—a figure should be accompanied by a caption.",
+    comment: null,
+    color: "#2ea8e5",
+    tags: [{ name: "figure-design", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|004245|00484",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [485.118, 297.822, 554.194, 305.954],
+        [400.762, 287.334, 554.179, 295.467],
+        [400.762, 276.789, 536.536, 284.921],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:54:37",
+    dateModified: "2026-09-26 16:54:37",
+  },
+  {
+    itemID: 912,
+    libraryID: 1,
+    key: "2G7A4A3L",
+    parentItemID: 901,
+    type: 3,
+    text: null,
+    comment: "Figure 1: the same data, drawn for three audiences.",
+    color: "#ffd400",
+    tags: [{ name: "figure", type: 0 }],
+    pageLabel: "2",
+    sortIndex: "00001|001860|00047",
+    position: { pageIndex: 1, rects: [[48.75, 395.509, 570, 743.723]] },
+    // Zotero cached this capture byte-for-byte as FDRFQ7C2's: same page, same rectangle.
+    cacheImageAsset: "rougier-2014/annotations/FDRFQ7C2.png",
+    dateAdded: "2026-09-26 16:55:19",
+    dateModified: "2026-09-26 16:55:20",
+  },
+  {
+    itemID: 913,
+    libraryID: 1,
+    key: "N5HVBIDP",
+    parentItemID: 903,
+    type: 1,
+    text: "the convenient, yet ill-founded strategy of claiming conclusive research findings solely on the basis of a single study assessed by formal statistical significance,",
+    comment: null,
+    color: "#ff6666",
+    tags: [{ name: "p-values", type: 0 }],
+    pageLabel: "696",
+    sortIndex: "00000|000872|00265",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [297.48, 530.696, 358.5, 539.192],
+        [219, 519.696, 354.36, 528.192],
+        [219, 508.696, 366.059, 517.192],
+        [219, 497.697, 362.28, 506.193],
+        [219, 486.697, 333.838, 495.193],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:57:22",
+    dateModified: "2026-09-26 16:57:22",
+  },
+  {
+    itemID: 914,
+    libraryID: 1,
+    key: "475YANAK",
+    parentItemID: 903,
+    type: 5,
+    text: "the probability that a research finding is indeed true depends on the prior probability of it being true (before doing the study), the statistical power of the study, and the level of statistical significance",
+    comment: "Three levers: prior, power, alpha.",
+    color: "#5fb236",
+    pageLabel: "696",
+    sortIndex: "00000|001671|00608",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [348.106, 221.421, 360.886, 229.917],
+        [219.001, 210.421, 352.559, 218.917],
+        [219.001, 199.421, 358.861, 207.917],
+        [219.001, 188.421, 354.361, 196.917],
+        [219.001, 177.422, 365.341, 185.918],
+        [219.001, 166.422, 367.681, 174.918],
+        [219.001, 155.423, 265.261, 163.919],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:57:26",
+    dateModified: "2026-09-26 16:57:26",
+  },
+  {
+    itemID: 915,
+    libraryID: 1,
+    key: "F4E7J5W5",
+    parentItemID: 903,
+    type: 1,
+    text: "a research finding is less likely to be true when the studies conducted in a field are smaller; when effect sizes are smaller;",
+    comment: "Both apply to the pilot cohort (n = 24). Say so in 3.2.",
+    color: "#ffd400",
+    tags: [{ name: "limitations", type: 0 }],
+    pageLabel: "696",
+    sortIndex: "00000|004269|00258",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [132.603, 516.971, 199.428, 524.819],
+        [45, 505.972, 192.275, 513.82],
+        [45, 494.972, 186.221, 502.82],
+        [45, 483.973, 130.303, 491.821],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:57:17",
+    dateModified: "2026-09-26 16:57:18",
+  },
+  {
+    // A highlight that another PDF reader saved in the file, as Zotero stores
+    // it after import: read-only, so its card shows the lock. Its rects are
+    // the two full lines, measured from the page's text layer.
+    itemID: 916,
+    libraryID: 1,
+    key: "XTPPV7Q3",
+    parentItemID: 903,
+    type: 1,
+    isExternal: true,
+    text: "the post-study probability that it is true is the positive predictive value, PPV.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "696",
+    sortIndex: "00000|002931|00430",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [393.002, 345.104, 544.022, 352.952],
+        [393.002, 334.104, 533.042, 341.952],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:58:02",
+    dateModified: "2026-09-26 16:58:02",
+  },
+];
+
+/** Reviewed anchors for the committed Fixture documents. */
 export const ANNOTATIONS: readonly FixtureAnnotation[] = [
+  {
+    itemID: 31,
+    libraryID: 1,
+    key: "EPUBAN22",
+    parentItemID: 30,
+    type: 1,
+    text: "Sakima lived with his parents and his four year old sister.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "Chapter 1",
+    sortIndex: "00000|000001|00000",
+    position: {
+      type: "FragmentSelector",
+      value: "epubcfi(/6/2!/4/2/2,:0,:66)",
+    },
+    cacheImageAsset: null,
+    dateAdded: "2025-02-15 12:00:00",
+    dateModified: "2025-02-15 12:00:00",
+  },
+  {
+    itemID: 32,
+    libraryID: 1,
+    key: "SNAPAN22",
+    parentItemID: 22,
+    type: 1,
+    text: "Sakima lived with his parents and his four year old sister.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "Sakima's Song",
+    sortIndex: "00000|000002|00000",
+    position: {
+      type: "CssSelector",
+      value: "main p:nth-of-type(1)",
+      refinedBy: { start: 0, end: 66 },
+    },
+    cacheImageAsset: null,
+    dateAdded: "2025-02-15 12:00:00",
+    dateModified: "2025-02-15 12:00:00",
+  },
   {
     itemID: 26,
     libraryID: 1,
@@ -900,6 +2284,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: "Identify Your Message",
     comment: null,
     color: "#2ea8e5",
+    tags: [{ name: "visualization", type: 0 }],
     pageLabel: "1",
     sortIndex: "00000|002041|00170",
     position: {
@@ -919,6 +2304,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: null,
     comment: null,
     color: "#ffd400",
+    tags: [{ name: "figure", type: 0 }],
     pageLabel: "2",
     sortIndex: "00001|001860|00047",
     position: {
@@ -938,6 +2324,10 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
     comment: null,
     color: "#ff6666",
+    tags: [
+      { name: "visualization", type: 0 },
+      { name: "methodology", type: 0 },
+    ],
     pageLabel: "1",
     sortIndex: "00000|000434|00180",
     position: {
@@ -961,6 +2351,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: null,
     comment: "Making figures is hard :(",
     color: "#a28ae5",
+    tags: [{ name: "figure", type: 0 }],
     pageLabel: "1",
     sortIndex: "00000|000191|00088",
     position: {
@@ -982,6 +2373,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: null,
     comment: "some text comment",
     color: "#ffd400",
+    tags: [{ name: "methodology", type: 0 }],
     pageLabel: "1",
     sortIndex: "00000|003354|00170",
     position: {
@@ -991,6 +2383,30 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     cacheImageAsset: null,
     dateAdded: "2026-08-23 16:19:19",
     dateModified: "2026-08-23 16:19:30",
+  },
+  {
+    itemID: 53,
+    libraryID: 1,
+    key: "Q8ZR4TDH",
+    parentItemID: 47,
+    type: 1,
+    text: "There are so many different ways to represent the same data: scatter plots, linear plots, bar plots, and pie charts, to name just a few.",
+    comment: null,
+    color: "#e56eee",
+    pageLabel: "1",
+    sortIndex: "00000|000566|00223",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [58.054, 570.005, 211.468, 578.137],
+        [58.054, 559.347, 211.474, 567.479],
+        [58.054, 548.688, 211.47, 556.821],
+        [58.054, 538.03, 121.296, 546.163],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-08-23 16:19:52",
+    dateModified: "2026-08-23 16:19:52",
   },
   {
     itemID: 55,
@@ -1059,6 +2475,39 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     dateAdded: "2026-08-23 16:20:12",
     dateModified: "2026-08-23 16:20:18",
   },
+  {
+    itemID: 64,
+    libraryID: 1,
+    key: "CNPAN26A",
+    parentItemID: 63,
+    type: 1,
+    text: "A reproducible interface makes its inputs and outputs inspectable.",
+    comment: "Reviewed Fixture text; it contains no personal library data.",
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|000001|00000",
+    position: { pageIndex: 0, rects: [[58, 590, 375, 610]] },
+    cacheImageAsset: null,
+    dateAdded: "2025-01-03 11:30:00",
+    dateModified: "2025-01-03 11:30:00",
+  },
+  {
+    itemID: 81,
+    libraryID: 1,
+    key: "CNPVL26A",
+    parentItemID: 80,
+    type: 1,
+    text: "A reproducible interface makes its inputs and outputs inspectable.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|000001|00000",
+    position: { pageIndex: 0, rects: [[58, 590, 375, 610]] },
+    cacheImageAsset: null,
+    dateAdded: "2025-01-03 11:30:00",
+    dateModified: "2025-01-03 11:30:00",
+  },
+  ...DEMO_ANNOTATIONS,
 ];
 
 /** One CSL style a user installed in Zotero, as the Fixture carries it. */
@@ -1088,8 +2537,173 @@ export const INSTALLED_STYLES: readonly FixtureStyle[] = [
   },
 ];
 
+/**
+ * The Fixture's second Literature Note Profile. Together with the built-in
+ * default Profile and its built-in document, it provides two document-backed
+ * layouts and two target folders for real-vault checks.
+ */
+export const LITERATURE_NOTE_PROFILES = [
+  {
+    id: BOOKS_PROFILE_ID,
+    label: "Books",
+    document: "zotlit-profile.books.md",
+    bindings: {
+      "note.literature-folder": "books",
+      "citation.references-style": INSTALLED_STYLES[0]!.id,
+    },
+  },
+] as const;
+
+/**
+ * The Fixture's Shared Partial. The Books Profile note body calls it, the
+ * Profile import example bundles a different edition under this name, and
+ * removing the file is what makes a Literature Note create refuse.
+ */
+export const FIXTURE_PARTIAL_NAME = "book-details";
+
+/**
+ * The Configured vault's `zotlit-citation.md`: the shipped Citation Template
+ * default with one visible edit, so an inserted alternate citation reads as
+ * the reader's own rather than the built-in text.
+ */
+export const CITATION_DOCUMENT_EDIT: FixtureTemplateEdit = {
+  find: '{{ zt.citations | pandoc_cite: "prefer-author-in-text" }}',
+  replace: 'cf. {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}',
+};
+
+/** One Shared Partial the Fixture Vault holds, as its `zotlit-partial.<name>.md` file carries it. */
+export interface FixtureSharedPartial {
+  /** The partial's vault-global name, which a render call names. */
+  readonly name: string;
+  readonly language: "liquid" | "eta";
+  /** The template source below the document's manifest. */
+  readonly source: string;
+}
+
+/** Shared Partial documents placed in the Fixture template folder. */
+export const SHARED_PARTIAL_DOCUMENTS: readonly FixtureSharedPartial[] = [
+  {
+    name: FIXTURE_PARTIAL_NAME,
+    language: "liquid",
+    source: `> [!info] Book details
+> Type: {{ zt.itemType }}
+> Citation key: {{ zt.citationKey | default: zt.key }}
+`,
+  },
+];
+
+/** Literature Note Template documents placed in the Fixture template folder. */
+export const LITERATURE_NOTE_DOCUMENTS = [
+  {
+    filename: "zotlit-profile.books.md",
+    source: `---
+id: ${BOOKS_PROFILE_ID}
+name: Books
+folder: books
+citationStyle: ${INSTALLED_STYLES[0]!.id}
+version: 1.0.0
+author: ZotLit
+description: A visibly distinct book layout for the End-to-end Run
+contract: ${CONTRACT_VERSION}
+filename: 'books-{{ zt.citationKey | default: zt.key }}{% suffix %}'
+match: 'itemType == "book"'
+frontmatter:
+  - key: fixture-title
+    expr: zt.title
+    merge: replace
+  - key: fixture-kind
+    value: {"$if":"zt.itemType == 'journalArticle'","then":"reference/article","else":"reference/other"}
+    merge: replace
+  - key: fixture-obsolete
+    value: {"$if":"zt.itemType == 'bookSection'","then":"retained"}
+    merge: replace
+  - value: {"fixture-spread-title":{"$eval":"zt.title"},"fixture-spread-kind":{"$eval":"zt.itemType"}}
+---
+# Book profile: {{ zt.title }}
+
+{% managed %}
+## Book details
+
+Citation key: {{ zt.citationKey }}
+
+{% render "${FIXTURE_PARTIAL_NAME}" with zt as zt %}
+{% endmanaged %}
+
+--- zotlit:annotation ---
+{% bq %}
+[!quote] Fixture page {{ zt.pageLabel }}
+
+{{ zt.text }}
+{% endbq %}
+`,
+  },
+] as const;
+
+/** Id of the Demo Vault Case's Literature Note Profile, {@link DEMO_PROFILE_DOCUMENT}. */
+const DEMO_PROFILE_ID = "Rd9QmT4kLw2P";
+
+/**
+ * The Demo Vault Case's one Literature Note Profile document. It has no
+ * match, so the shipped default Profile still writes every new note. Its
+ * properties show JSON-e rules next to an expression: `year` evaluates one
+ * field, and one keyless rule chooses which properties a note gets: a book
+ * gets `publisher`, any other item gets `journal`. A property with a key
+ * writes only that key, so only a keyless rule can choose between names.
+ */
+export const DEMO_PROFILE_DOCUMENT = {
+  filename: "zotlit-profile.reading.md",
+  source: `---
+id: ${DEMO_PROFILE_ID}
+name: Reading notes
+version: 1.0.0
+author: ZotLit
+description: Adds the year, and the publisher of a book or the journal of an article
+contract: ${CONTRACT_VERSION}
+filename: '{{ zt.citationKey | default: zt.key }}{% suffix %}'
+frontmatter:
+  - key: title
+    expr: zt.title
+    merge: replace
+  - key: year
+    value: {"$eval":"zt.date.year"}
+    merge: replace
+  - value: {"$if":"zt.itemType == 'book'","then":{"publisher":{"$eval":"zt.publisher"}},"else":{"journal":{"$eval":"zt.publicationTitle"}}}
+---
+# {{ zt.title }}
+
+[Zotero]({{ zt.backlink }})
+
+{% managed %}
+{% if zt.annotations.size > 0 %}
+## Annotations
+
+{% for annotation in zt.annotations %}
+{% render_annotation annotation %}
+{% endfor %}
+{% endif %}
+{% endmanaged %}
+
+--- zotlit:annotation ---
+{% bq %}
+[!note] Page {{ zt.pageLabel }}
+
+{{ zt.text }}
+{% endbq %}
+`,
+} as const;
+
 const STRESS_ITEM_KEY_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 const STRESS_BUILD_SEED = 0x5eed_0000;
+/**
+ * Seed of the group Library of a two-Library Stress Build. The Item count of
+ * a Library is at most the distance between the two seeds
+ * ({@link STRESS_LIBRARY_MAX_ITEM_COUNT}), so the two Libraries share no
+ * Zotero Key.
+ */
+const STRESS_GROUP_LIBRARY_SEED = 0x6eed_0000;
+/** The largest Item count of one Library in a Stress Build of whole Libraries. */
+const STRESS_LIBRARY_MAX_ITEM_COUNT =
+  STRESS_GROUP_LIBRARY_SEED - STRESS_BUILD_SEED;
 
 /** Synthetic Item count used by `pnpm fixture stress`. */
 export const DEFAULT_STRESS_ITEM_COUNT = 25_000;
@@ -1108,7 +2722,10 @@ function stressItemKey(index: number): string {
 }
 
 /** Additive synthetic corpus for an on-demand Stress Build. */
-export function createStressItems(count: number): readonly FixtureItem[] {
+export function createStressItems(
+  count: number,
+  { sparseLibraryID }: { sparseLibraryID?: number } = {},
+): readonly FixtureItem[] {
   if (!Number.isSafeInteger(count) || count < 0) {
     throw new Error(
       `stress item count must be ${STRESS_ITEM_COUNT_CONSTRAINT}, got ${count}`,
@@ -1123,10 +2740,25 @@ export function createStressItems(count: number): readonly FixtureItem[] {
       ...ANNOTATIONS.map(({ itemID }) => itemID),
     ) + 1;
 
+  const sparseLibrary = LIBRARIES.find(
+    ({ libraryID, type }) => libraryID === sparseLibraryID && type === "group",
+  );
+  if (sparseLibraryID !== undefined && !sparseLibrary) {
+    throw new Error(
+      `sparse Library must be a Fixture Group Library, got ${sparseLibraryID}`,
+    );
+  }
+  const denseLibraries = LIBRARIES.filter(
+    (library) => library !== sparseLibrary,
+  );
+
   return Array.from({ length: count }, (_, index) => {
     const seededIndex = STRESS_BUILD_SEED + index;
     const ordinal = index + 1;
-    const library = LIBRARIES[seededIndex % LIBRARIES.length]!;
+    const library =
+      sparseLibrary && (index < 10 || index >= count - 10)
+        ? sparseLibrary
+        : denseLibraries[seededIndex % denseLibraries.length]!;
     const collection = COLLECTIONS.find(
       ({ libraryID }) => libraryID === library.libraryID,
     );
@@ -1148,6 +2780,319 @@ export function createStressItems(count: number): readonly FixtureItem[] {
       collectionIDs: collection ? [collection.collectionID] : [],
     };
   });
+}
+
+/** Fixture Spec Items in My Library, the floor of a one-Library Stress Build. */
+export const STRESS_LIBRARY_MIN_ITEM_COUNT = ITEMS.filter(
+  ({ libraryID }) => libraryID === USER_LIBRARY_ID,
+).length;
+/** The Item counts a Library with `floor` Fixture Spec Items takes. */
+function stressLibraryItemCountConstraint(floor: number): string {
+  return `a safe integer of at least ${floor}, and at most ${STRESS_LIBRARY_MAX_ITEM_COUNT}`;
+}
+export const STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT =
+  stressLibraryItemCountConstraint(STRESS_LIBRARY_MIN_ITEM_COUNT);
+/** My Library sizes the Item Query performance tiers measure. */
+export const STRESS_LIBRARY_TIERS = [10_000, 50_000, 100_000] as const;
+/** The group Library that a two-Library Stress Build fills: Shared Reading. */
+export const STRESS_GROUP_LIBRARY = LIBRARIES.find(
+  ({ groupID }) => groupID === 4200309,
+)!;
+/** Fixture Spec Items in that group Library, the floor of its Item count. */
+export const STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT = ITEMS.filter(
+  ({ libraryID }) => libraryID === STRESS_GROUP_LIBRARY.libraryID,
+).length;
+export const STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT =
+  stressLibraryItemCountConstraint(STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT);
+
+/**
+ * Query targets of a one-Library Stress Build. Every synthetic Item draws each
+ * value from its index `i` in the corpus: rare values recur every 1,000 Items,
+ * common values every 10, and dominant values cover more than a quarter of the
+ * Library, so a selective and a non-selective query each have a target.
+ */
+export const STRESS_LIBRARY_VALUES = {
+  /** One paper: 3 tagged marks per 100 Items (300, 1,500, 3,000 at the measured tiers). */
+  annotations: { tag: "stress-many-marks", perHundredItems: 3 },
+  tags: {
+    /** `i % 1000 == 0`: 0.1% of the corpus. */
+    rare: "stress-rare",
+    /** `i % 10 == 5`: 10%. */
+    common: "stress-common",
+    /** `i % 5 < 3`: 60%. */
+    dominant: "stress-dominant",
+  },
+  collections: {
+    /** Top-level; files no Item directly, so its subtree is the other three. */
+    root: { key: "STRESSRT", name: "Stress Build" },
+    /** Under `root`; `i % 10 == 6`: 10%. */
+    common: { key: "STRESSCM", name: "Common" },
+    /** Under `common`; `i % 1000 == 1`: 0.1%. */
+    rare: { key: "STRESSRR", name: "Rare" },
+    /** Under `root`; `i % 5 >= 2`: 60%. */
+    dominant: { key: "STRESSDM", name: "Dominant" },
+  },
+  itemTypes: {
+    /** `i % 1000 == 2`, with Venue "Stress Build University". */
+    rare: "thesis",
+    /** `i % 10 == 7`, with Venue "Stress Build Press". */
+    common: "book",
+    /** Every other Item: about 90%. */
+    dominant: "journalArticle",
+  },
+  /** `publicationTitle` of the journal articles. */
+  venues: {
+    /** `i % 1000 == 3`. */
+    rare: "Stress Rare Journal",
+    /** `i % 10 == 8`. */
+    common: "Stress Common Journal",
+    /** Every other journal article. */
+    dominant: "Stress Dominant Journal",
+  },
+  /** Title of the Item at `i == floor(count / 2)`; every other title is unique too. */
+  uniqueTitle: "Stress Build unique title",
+} as const;
+
+/** Data a Stress Build of whole Libraries adds to the Fixture Spec. */
+export interface StressLibraryCorpus {
+  items: readonly FixtureItem[];
+  collections: readonly FixtureCollection[];
+  attachments: readonly FixtureAttachment[];
+  annotations: readonly FixtureAnnotation[];
+}
+
+const STRESS_LIBRARY_MODIFIED_EPOCH = Temporal.Instant.from(
+  "2020-01-01T00:00:00Z",
+);
+
+/**
+ * Synthetic corpus that fills My Library to exactly `itemCount` Items, with
+ * the distributions of {@link STRESS_LIBRARY_VALUES}. With `groupItemCount`,
+ * it also fills {@link STRESS_GROUP_LIBRARY} to that Item count by the same
+ * rules, with Collections, Zotero Keys, and Citation Keys of its own.
+ */
+export function createStressLibraryCorpus(
+  itemCount: number,
+  groupItemCount?: number,
+): StressLibraryCorpus {
+  const count = syntheticItemCount("Library", {
+    itemCount,
+    floor: STRESS_LIBRARY_MIN_ITEM_COUNT,
+  });
+  const groupCount =
+    groupItemCount === undefined
+      ? undefined
+      : syntheticItemCount("group Library", {
+          itemCount: groupItemCount,
+          floor: STRESS_GROUP_LIBRARY_MIN_ITEM_COUNT,
+        });
+  const firstCollectionID =
+    Math.max(...COLLECTIONS.map(({ collectionID }) => collectionID)) + 1;
+  const firstItemID =
+    Math.max(
+      ...ITEMS.map(({ itemID }) => itemID),
+      ...NOTES.map(({ itemID }) => itemID),
+      ...ATTACHMENTS.map(({ itemID }) => itemID),
+      ...ANNOTATIONS.map(({ itemID }) => itemID),
+    ) + 1;
+  const personal = fillStressLibrary({
+    libraryID: USER_LIBRARY_ID,
+    count,
+    seed: STRESS_BUILD_SEED,
+    citationKeyPrefix: "stress",
+    firstItemID,
+    firstCollectionID,
+  });
+  if (groupCount === undefined)
+    return addStressRelations(personal, itemCount, firstItemID + count);
+  const group = fillStressLibrary({
+    libraryID: STRESS_GROUP_LIBRARY.libraryID,
+    count: groupCount,
+    seed: STRESS_GROUP_LIBRARY_SEED,
+    citationKeyPrefix: "stressg",
+    firstItemID: firstItemID + personal.items.length,
+    firstCollectionID: firstCollectionID + personal.collections.length,
+  });
+  return addStressRelations(
+    {
+      items: [...personal.items, ...group.items],
+      collections: [...personal.collections, ...group.collections],
+      attachments: [],
+      annotations: [],
+    },
+    itemCount,
+    firstItemID + count + groupCount,
+  );
+}
+
+function addStressRelations(
+  corpus: StressLibraryCorpus,
+  itemCount: number,
+  firstChildID: number,
+): StressLibraryCorpus {
+  const paper = corpus.items.find((item) => item.libraryID === USER_LIBRARY_ID);
+  if (!paper) return corpus;
+  const attachment: FixtureAttachment = {
+    itemID: firstChildID,
+    libraryID: USER_LIBRARY_ID,
+    key: "STRSPDF2",
+    parentItemID: paper.itemID,
+    contentType: "application/pdf",
+    title: "Stress Build marked paper",
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: BUILD_TIMESTAMP,
+    linkMode: "imported_file",
+    path: "storage:stress.pdf",
+    url: null,
+  };
+  const count = Math.max(
+    1,
+    Math.floor(
+      (itemCount * STRESS_LIBRARY_VALUES.annotations.perHundredItems) / 100,
+    ),
+  );
+  const annotations = Array.from(
+    { length: count },
+    (_, i): FixtureAnnotation => ({
+      itemID: firstChildID + 1 + i,
+      libraryID: USER_LIBRARY_ID,
+      key: stressItemKey(i),
+      parentItemID: attachment.itemID,
+      type: 1,
+      text: `Stress Build mark ${i + 1}`,
+      comment: null,
+      color: "#ffd400",
+      tags: [{ name: STRESS_LIBRARY_VALUES.annotations.tag, type: 0 }],
+      pageLabel: "1",
+      sortIndex: String(i).padStart(8, "0"),
+      dateAdded: BUILD_TIMESTAMP,
+      dateModified: BUILD_TIMESTAMP,
+      position: { pageIndex: 0, rects: [[0, 0, 10, 10]] },
+      cacheImageAsset: null,
+    }),
+  );
+  return { ...corpus, attachments: [attachment], annotations };
+}
+
+/**
+ * The synthetic Items that fill a Library with `floor` Fixture Spec Items to
+ * `itemCount` Items.
+ *
+ * @throws {Error} when the Library does not take the Item count.
+ */
+function syntheticItemCount(
+  library: "Library" | "group Library",
+  { itemCount, floor }: { itemCount: number; floor: number },
+): number {
+  if (
+    !Number.isSafeInteger(itemCount) ||
+    itemCount < floor ||
+    itemCount > STRESS_LIBRARY_MAX_ITEM_COUNT
+  ) {
+    throw new Error(
+      `stress ${library} item count must be ${stressLibraryItemCountConstraint(floor)}, got ${itemCount}`,
+    );
+  }
+  return itemCount - floor;
+}
+
+/** The synthetic Items and Collections of one Library of a Stress Build. */
+function fillStressLibrary({
+  libraryID,
+  count,
+  seed,
+  citationKeyPrefix,
+  firstItemID,
+  firstCollectionID,
+}: {
+  libraryID: number;
+  /** Synthetic Items to make. */
+  count: number;
+  /** Start of the Zotero Keys. */
+  seed: number;
+  citationKeyPrefix: string;
+  firstItemID: number;
+  firstCollectionID: number;
+}): StressLibraryCorpus {
+  const { tags, itemTypes, venues } = STRESS_LIBRARY_VALUES;
+
+  const [root, common, rare, dominant] = (
+    ["root", "common", "rare", "dominant"] as const
+  ).map((role, offset) => ({
+    collectionID: firstCollectionID + offset,
+    libraryID,
+    ...STRESS_LIBRARY_VALUES.collections[role],
+  })) as [
+    FixtureCollection,
+    FixtureCollection,
+    FixtureCollection,
+    FixtureCollection,
+  ];
+  const collections: FixtureCollection[] = [
+    root,
+    { ...common, parentCollectionID: root.collectionID },
+    { ...rare, parentCollectionID: common.collectionID },
+    { ...dominant, parentCollectionID: root.collectionID },
+  ];
+
+  const uniqueTitleIndex = Math.floor(count / 2);
+
+  const items = Array.from({ length: count }, (_, i): FixtureItem => {
+    const ordinal = i + 1;
+    const itemType =
+      i % 1000 === 2
+        ? itemTypes.rare
+        : i % 10 === 7
+          ? itemTypes.common
+          : itemTypes.dominant;
+    const venue =
+      itemType === "thesis"
+        ? "Stress Build University"
+        : itemType === "book"
+          ? "Stress Build Press"
+          : i % 1000 === 3
+            ? venues.rare
+            : i % 10 === 8
+              ? venues.common
+              : venues.dominant;
+    const itemTags = [
+      ...(i % 1000 === 0 ? [tags.rare] : []),
+      ...(i % 10 === 5 ? [tags.common] : []),
+      ...(i % 5 < 3 ? [tags.dominant] : []),
+    ].map((name) => ({ name, type: 0 as const }));
+    const collectionIDs = [
+      ...(i % 10 === 6 ? [common.collectionID] : []),
+      ...(i % 1000 === 1 ? [rare.collectionID] : []),
+      ...(i % 5 >= 2 ? [dominant.collectionID] : []),
+    ];
+    // A multiplicative scramble by a prime keeps modification order apart
+    // from key order, one second apart for each Item.
+    const modifiedOffset = (i * 7919) % Math.max(count, 1);
+    const dateModified = STRESS_LIBRARY_MODIFIED_EPOCH.add({
+      seconds: modifiedOffset,
+    })
+      .toString()
+      .replace("T", " ")
+      .slice(0, 19);
+    return {
+      itemID: firstItemID + i,
+      libraryID,
+      key: stressItemKey(seed + i),
+      itemType,
+      citationKey: `${citationKeyPrefix}${String(ordinal).padStart(7, "0")}`,
+      title:
+        i === uniqueTitleIndex
+          ? STRESS_LIBRARY_VALUES.uniqueTitle
+          : `Synthetic stress item ${ordinal}`,
+      venue,
+      date: String(2000 + (i % 25)),
+      creators: [author("Stress", `Author ${ordinal}`)],
+      tags: itemTags,
+      dateModified,
+      collectionIDs,
+    };
+  });
+  return { items, collections, attachments: [], annotations: [] };
 }
 
 /**
@@ -1219,3 +3164,743 @@ export function findScopeCase(id: string): FixtureScopeCase {
   }
   return found;
 }
+
+/**
+ * Persisted shape of one Managed Frontmatter field, as ZotLit v2.1 saved it
+ * under `note.frontmatter-fields`.
+ */
+export interface FixtureFrontmatterField {
+  readonly key: string;
+  readonly expr: string;
+  readonly merge: "replace";
+  readonly language: "liquid";
+}
+
+/**
+ * One find-and-replace against a shipped default, which stands in for a
+ * reader's own customization.
+ */
+export interface FixtureTemplateEdit {
+  /** Text present in the shipped default source; the build fails otherwise. */
+  readonly find: string;
+  /** Visible edit that stands in for a user's customization. */
+  readonly replace: string;
+}
+
+/**
+ * Shipped default one ejected Legacy Template File starts from: a Literature
+ * Note slot's default file, or one 2.1.x citation branch.
+ */
+export type FixtureLegacyTemplateOrigin =
+  | "filename"
+  | "note"
+  | "content"
+  | "annotation"
+  | "cite"
+  | "cite2";
+
+/**
+ * The bare 2.1.x partial the Upgrader vault ejects. The one-pass conversion
+ * renames it to `zotlit-partial.annotation-callout.md`.
+ */
+export const UPGRADER_LEGACY_PARTIAL_NAME = "annotation-callout";
+
+/**
+ * One 2.1.x Legacy Template File the Upgrader vault ejects. The file is
+ * `zotlit-<name>.<language>.md` in the template folder, and its text is the
+ * shipped default of the same name with the edit applied. The bare partial is
+ * the exception: it has no default of its own, so it names the one it starts
+ * from in `from`.
+ */
+export type FixtureLegacyTemplate = FixtureTemplateEdit & {
+  /** The language the file is written in; it picks the extension. */
+  readonly language: "liquid" | "eta";
+} & (
+    | { readonly name: FixtureLegacyTemplateOrigin }
+    | {
+        readonly name: typeof UPGRADER_LEGACY_PARTIAL_NAME;
+        readonly from: FixtureLegacyTemplateOrigin;
+      }
+  );
+
+/** The graph showcase Items of {@link ITEMS} the Graph Vault Case reuses. */
+const GRAPH_SHOWCASE_ITEM_IDS: ReadonlySet<number> = new Set([
+  70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+]);
+
+/** Library of the works the Graph Vault Case's reader cites but has not written up. */
+const GRAPH_CITED_ONLY_LIBRARY_ID = 2;
+
+/**
+ * The works the Graph Vault Case reads: the ten graph showcase Items and
+ * further real works on hypertext, citation analysis, and memory and note
+ * taking, with their published metadata. The showcase Items come without
+ * their test collection, and their Literature Notes carry none of their vault
+ * properties or showcase citations. Every My Library Item gets a
+ * Literature Note; the works in {@link GRAPH_CITED_ONLY_LIBRARY_ID} get none,
+ * so each one is a Cited Work Node.
+ */
+export const GRAPH_ITEMS: readonly FixtureItem[] = [
+  ...ITEMS.filter(({ itemID }) => GRAPH_SHOWCASE_ITEM_IDS.has(itemID)).map(
+    (item) => ({ ...item, collectionIDs: [] }),
+  ),
+  // ── Hypertext and augmentation ──
+  {
+    itemID: 800,
+    libraryID: 1,
+    key: "LICKLD6A",
+    itemType: "journalArticle",
+    citationKey: "lickliderManComputerSymbiosis1960",
+    title: "Man-Computer Symbiosis",
+    venue: "IRE Transactions on Human Factors in Electronics",
+    fields: {
+      volume: "HFE-1",
+      issue: "1",
+      pages: "4–11",
+      DOI: "10.1109/THFE2.1960.4503259",
+    },
+    date: "1960",
+    creators: [author("J. C. R.", "Licklider")],
+    dateModified: "2025-03-02 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 801,
+    libraryID: 1,
+    key: "KAYGLD7A",
+    itemType: "journalArticle",
+    citationKey: "kayPersonalDynamicMedia1977",
+    title: "Personal Dynamic Media",
+    venue: "Computer",
+    fields: {
+      volume: "10",
+      issue: "3",
+      pages: "31–41",
+      DOI: "10.1109/C-M.1977.217672",
+    },
+    date: "1977",
+    creators: [author("Alan", "Kay"), author("Adele", "Goldberg")],
+    dateModified: "2025-03-03 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 802,
+    libraryID: 1,
+    key: "NELSN74A",
+    itemType: "book",
+    citationKey: "nelsonComputerLib1974",
+    title: "Computer Lib / Dream Machines",
+    date: "1974",
+    creators: [author("Theodor H.", "Nelson")],
+    dateModified: "2025-03-04 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 803,
+    libraryID: 1,
+    key: "HALSZ88A",
+    itemType: "journalArticle",
+    citationKey: "halaszReflectionsNoteCards1988",
+    title:
+      "Reflections on NoteCards: Seven Issues for the Next Generation of Hypermedia Systems",
+    venue: "Communications of the ACM",
+    fields: {
+      volume: "31",
+      issue: "7",
+      pages: "836–852",
+      DOI: "10.1145/48511.48514",
+    },
+    date: "1988",
+    creators: [author("Frank G.", "Halasz")],
+    dateModified: "2025-03-05 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 804,
+    libraryID: 1,
+    key: "SHNDR96A",
+    itemType: "conferencePaper",
+    citationKey: "shneidermanEyesHaveIt1996",
+    title:
+      "The Eyes Have It: A Task by Data Type Taxonomy for Information Visualizations",
+    venue: "Proceedings 1996 IEEE Symposium on Visual Languages",
+    fields: { pages: "336–343", DOI: "10.1109/VL.1996.545307" },
+    date: "1996",
+    creators: [author("Ben", "Shneiderman")],
+    dateModified: "2025-03-06 10:00:00",
+    collectionIDs: [],
+  },
+  // ── Citation analysis and link analysis ──
+  {
+    itemID: 805,
+    libraryID: 1,
+    key: "PRICE65A",
+    itemType: "journalArticle",
+    citationKey: "priceNetworksScientificPapers1965",
+    title: "Networks of Scientific Papers",
+    venue: "Science",
+    fields: {
+      volume: "149",
+      issue: "3683",
+      pages: "510–515",
+      DOI: "10.1126/science.149.3683.510",
+    },
+    date: "1965",
+    creators: [author("Derek J. de Solla", "Price")],
+    dateModified: "2025-03-07 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 806,
+    libraryID: GRAPH_CITED_ONLY_LIBRARY_ID,
+    key: "KESSL63A",
+    itemType: "journalArticle",
+    citationKey: "kesslerBibliographicCoupling1963",
+    title: "Bibliographic Coupling between Scientific Papers",
+    venue: "American Documentation",
+    fields: {
+      volume: "14",
+      issue: "1",
+      pages: "10–25",
+      DOI: "10.1002/asi.5090140103",
+    },
+    date: "1963",
+    creators: [author("M. M.", "Kessler")],
+    dateModified: "2025-03-08 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 807,
+    libraryID: 1,
+    key: "GRFLD72A",
+    itemType: "journalArticle",
+    citationKey: "garfieldCitationAnalysisTool1972",
+    title: "Citation Analysis as a Tool in Journal Evaluation",
+    venue: "Science",
+    fields: {
+      volume: "178",
+      issue: "4060",
+      pages: "471–479",
+      DOI: "10.1126/science.178.4060.471",
+    },
+    date: "1972",
+    creators: [author("Eugene", "Garfield")],
+    dateModified: "2025-03-09 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 808,
+    libraryID: 1,
+    key: "MERTN68A",
+    itemType: "journalArticle",
+    citationKey: "mertonMatthewEffect1968",
+    title: "The Matthew Effect in Science",
+    venue: "Science",
+    fields: {
+      volume: "159",
+      issue: "3810",
+      pages: "56–63",
+      DOI: "10.1126/science.159.3810.56",
+    },
+    date: "1968",
+    creators: [author("Robert K.", "Merton")],
+    dateModified: "2025-03-10 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 809,
+    libraryID: 1,
+    key: "BRINPG98",
+    itemType: "journalArticle",
+    citationKey: "brinAnatomyLargeScale1998",
+    title: "The Anatomy of a Large-Scale Hypertextual Web Search Engine",
+    venue: "Computer Networks and ISDN Systems",
+    fields: {
+      volume: "30",
+      issue: "1–7",
+      pages: "107–117",
+      DOI: "10.1016/S0169-7552(98)00110-X",
+    },
+    date: "1998",
+    creators: [author("Sergey", "Brin"), author("Lawrence", "Page")],
+    dateModified: "2025-03-11 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 810,
+    libraryID: 1,
+    key: "KLNBG99A",
+    itemType: "journalArticle",
+    citationKey: "kleinbergAuthoritativeSources1999",
+    title: "Authoritative Sources in a Hyperlinked Environment",
+    venue: "Journal of the ACM",
+    fields: {
+      volume: "46",
+      issue: "5",
+      pages: "604–632",
+      DOI: "10.1145/324133.324140",
+    },
+    date: "1999",
+    creators: [author("Jon M.", "Kleinberg")],
+    dateModified: "2025-03-12 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 811,
+    libraryID: 1,
+    key: "HIRSCH5A",
+    itemType: "journalArticle",
+    citationKey: "hirschIndexQuantify2005",
+    title: "An Index to Quantify an Individual's Scientific Research Output",
+    venue: "Proceedings of the National Academy of Sciences",
+    fields: {
+      volume: "102",
+      issue: "46",
+      pages: "16569–16572",
+      DOI: "10.1073/pnas.0507655102",
+    },
+    date: "2005",
+    creators: [author("J. E.", "Hirsch")],
+    dateModified: "2025-03-13 10:00:00",
+    collectionIDs: [],
+  },
+  // ── Memory, cognition, and note taking ──
+  {
+    itemID: 812,
+    libraryID: 1,
+    key: "CLARK98A",
+    itemType: "journalArticle",
+    citationKey: "clarkExtendedMind1998",
+    title: "The Extended Mind",
+    venue: "Analysis",
+    fields: {
+      volume: "58",
+      issue: "1",
+      pages: "7–19",
+      DOI: "10.1093/analys/58.1.7",
+    },
+    date: "1998",
+    creators: [author("Andy", "Clark"), author("David", "Chalmers")],
+    dateModified: "2025-03-14 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 813,
+    libraryID: 1,
+    key: "HUTCH95A",
+    itemType: "book",
+    citationKey: "hutchinsCognitionWild1995",
+    title: "Cognition in the Wild",
+    venue: "MIT Press",
+    fields: { place: "Cambridge, MA" },
+    date: "1995",
+    creators: [author("Edwin", "Hutchins")],
+    dateModified: "2025-03-15 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 814,
+    libraryID: 1,
+    key: "RDGRKP6A",
+    itemType: "journalArticle",
+    citationKey: "roedigerTestEnhancedLearning2006",
+    title:
+      "Test-Enhanced Learning: Taking Memory Tests Improves Long-Term Retention",
+    venue: "Psychological Science",
+    fields: {
+      volume: "17",
+      issue: "3",
+      pages: "249–255",
+      DOI: "10.1111/j.1467-9280.2006.01693.x",
+    },
+    date: "2006",
+    creators: [
+      author("Henry L.", "Roediger"),
+      author("Jeffrey D.", "Karpicke"),
+    ],
+    dateModified: "2025-03-16 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 815,
+    libraryID: 1,
+    key: "SWELL88A",
+    itemType: "journalArticle",
+    citationKey: "swellerCognitiveLoad1988",
+    title: "Cognitive Load During Problem Solving: Effects on Learning",
+    venue: "Cognitive Science",
+    fields: {
+      volume: "12",
+      issue: "2",
+      pages: "257–285",
+      DOI: "10.1207/s15516709cog1202_4",
+    },
+    date: "1988",
+    creators: [author("John", "Sweller")],
+    dateModified: "2025-03-17 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 816,
+    libraryID: GRAPH_CITED_ONLY_LIBRARY_ID,
+    key: "EBBNG85A",
+    itemType: "book",
+    citationKey: "ebbinghausGedachtnis1885",
+    title:
+      "Über das Gedächtnis: Untersuchungen zur experimentellen Psychologie",
+    venue: "Duncker & Humblot",
+    fields: { place: "Leipzig" },
+    date: "1885",
+    creators: [author("Hermann", "Ebbinghaus")],
+    dateModified: "2025-03-18 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 817,
+    libraryID: 1,
+    key: "MUELLR4A",
+    itemType: "journalArticle",
+    citationKey: "muellerPenMightier2014",
+    title:
+      "The Pen Is Mightier Than the Keyboard: Advantages of Longhand Over Laptop Note Taking",
+    venue: "Psychological Science",
+    fields: {
+      volume: "25",
+      issue: "6",
+      pages: "1159–1168",
+      DOI: "10.1177/0956797614524581",
+    },
+    date: "2014",
+    creators: [author("Pam A.", "Mueller"), author("Daniel M.", "Oppenheimer")],
+    dateModified: "2025-03-19 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 818,
+    libraryID: 1,
+    key: "RISKGB6A",
+    itemType: "journalArticle",
+    citationKey: "riskoCognitiveOffloading2016",
+    title: "Cognitive Offloading",
+    venue: "Trends in Cognitive Sciences",
+    fields: {
+      volume: "20",
+      issue: "9",
+      pages: "676–688",
+      DOI: "10.1016/j.tics.2016.07.002",
+    },
+    date: "2016",
+    creators: [author("Evan F.", "Risko"), author("Sam J.", "Gilbert")],
+    dateModified: "2025-03-20 10:00:00",
+    collectionIDs: [],
+  },
+];
+
+/**
+ * The reading notes a researcher wrote below the template output of each
+ * Graph Vault Case Literature Note, by Citation Key. A citation here draws an
+ * edge from one Literature Note to another work. Every Graph Item in My
+ * Library has an entry.
+ */
+export const GRAPH_LITERATURE_NOTE_BODIES: Readonly<Record<string, string>> = {
+  bushAsWeMayThink1945:
+    "Bush's real problem is selection: the record grows faster than anyone can consult it, and indexing by class and subclass does not follow how a reader thinks. The memex answers with association. A reader ties two items together, and the tie stays as a trail that a colleague can copy and follow.",
+  nelsonComplexInformation1965:
+    "Nelson coins *hypertext* and proposes the evolutionary list file, a structure for writing that keeps changing. He presents it as a way to build the memex [@bushAsWeMayThink1945].",
+  garfieldCitationIndexes1955:
+    "Garfield proposes an index that lists, for each paper, the later papers that cite it, so a reader can follow an idea forward in time. His subtitle, *association of ideas*, reads like a bibliographic version of Bush's trails [@bushAsWeMayThink1945].",
+  smallCoCitationScientific1973:
+    "Small relates two papers by how often later papers cite them together. Co-citation looks forward from the cited pair, where bibliographic coupling looks back from the citing pair [@kesslerBibliographicCoupling1963]. The counts come from the citation index that [@garfieldCitationIndexes1955] proposed.",
+  luhmannCommunicatingSlipBoxes1981:
+    "Luhmann describes his slip box as a partner in communication. Fixed card numbers let a new card branch off any older card, and cross-references let one card point to any other, so the box can surprise its owner.",
+  ahrensHowTakeSmartNotes2017:
+    "A practical account of the slip-box method for students and academic writers. The method depends on permanent notes in one's own words, each one linked to existing notes, as Luhmann worked [@luhmannCommunicatingSlipBoxes1981].",
+  bernersLeeSemanticWeb2001:
+    "The Web gave every document a global address, but its links carry no meaning a program can read. The semantic web adds that meaning through shared ontologies. Compare Nelson's typed links [@nelsonComplexInformation1965].",
+  forteBuildingSecondBrain2022:
+    "Forte organizes notes by project and by how soon they become useful, not by topic. Compare the slip box, where a note earns its place through its links [@ahrensHowTakeSmartNotes2017].",
+  matuschakTransformativeTools2019:
+    "Matuschak and Nielsen ask why so few tools for thought followed the early work on augmentation [@engelbartAugmentingHuman1962] [@kayPersonalDynamicMedia1977]. Their mnemonic medium puts spaced-repetition prompts inside an essay and relies on retrieval practice [@roedigerTestEnhancedLearning2006].",
+  lickliderManComputerSymbiosis1960:
+    'Licklider timed his own working day and found that most of his "thinking" time went to finding and arranging information. Where [@bushAsWeMayThink1945] imagined a better library, Licklider imagines a partner that works with the person in real time.',
+  kayPersonalDynamicMedia1977:
+    "The Dynabook as a medium, not a tool: a personal computer that children and adults can use to read, write, draw, and simulate. The line runs from [@lickliderManComputerSymbiosis1960] through [@engelbartAugmentingHuman1962].",
+  nelsonComputerLib1974:
+    "A self-published, two-sided book that argues computers belong to everyone. The Dream Machines side brings back the hypertext of [@nelsonComplexInformation1965] and praises the demonstrations of [@engelbartAugmentingHuman1962].",
+  halaszReflectionsNoteCards1988:
+    "Seven open issues for hypermedia, from search and composite nodes to versioning and collaborative work. Most of them are still open problems in note-taking software. The roots are in [@nelsonComplexInformation1965] and [@engelbartAugmentingHuman1962].",
+  shneidermanEyesHaveIt1996:
+    "The visual information-seeking mantra: overview first, zoom and filter, then details on demand. A useful checklist for any map of a literature.",
+  priceNetworksScientificPapers1965:
+    "Price treats the literature as a network and finds that each year's papers cite a small, recent research front much more often than the older archive. His data come from the citation index of [@garfieldCitationIndexes1955].",
+  garfieldCitationAnalysisTool1972:
+    "Garfield ranks journals by how often others cite them, the basis of the later Journal Impact Factor. A small core of journals receives most of the citations. Builds on [@garfieldCitationIndexes1955] and [@priceNetworksScientificPapers1965].",
+  mertonMatthewEffect1968:
+    "Eminent scientists receive more credit than lesser-known colleagues for comparable work, and recognition then gathers where it has already gathered. Any count of citations carries this bias.",
+  brinAnatomyLargeScale1998:
+    "PageRank treats a link as a citation and gives more weight to a citation from a page that many others cite. Compare the hubs and authorities of [@kleinbergAuthoritativeSources1999] and the journal rankings of [@garfieldCitationAnalysisTool1972].",
+  kleinbergAuthoritativeSources1999:
+    "Hubs point to good authorities, and authorities receive links from good hubs. Kleinberg connects the method to bibliometrics: co-citation [@smallCoCitationScientific1973], bibliographic coupling [@kesslerBibliographicCoupling1963], and journal impact [@garfieldCitationAnalysisTool1972].",
+  hirschIndexQuantify2005:
+    "The *h*-index is the largest *h* such that *h* papers have at least *h* citations each. Like raw counts, it rewards cumulative advantage [@mertonMatthewEffect1968]. Journal-level counts are a different measure [@garfieldCitationAnalysisTool1972].",
+  clarkExtendedMind1998:
+    "The parity principle: if a process in the world does the work that we would call cognitive when it happens in the head, it is part of cognition. Otto's notebook stands in for his memory. Compare distributed cognition [@hutchinsCognitionWild1995].",
+  hutchinsCognitionWild1995:
+    "Navigation on a ship's bridge as a cognitive system that includes people, charts, and instruments. Cognition is spread across the team and its tools, not held in one head.",
+  roedigerTestEnhancedLearning2006:
+    "Students who took a test on a passage remembered more of it a week later than students who studied it again. The forgetting curve of [@ebbinghausGedachtnis1885] is the baseline that both groups fight.",
+  swellerCognitiveLoad1988:
+    "Means-ends problem solving uses working memory that would otherwise go to learning the structure of the problem. Worked examples free that capacity.",
+  muellerPenMightier2014:
+    "Students who typed their lecture notes wrote more words and copied more of the lecture word for word, and they did worse on conceptual questions. Read with [@swellerCognitiveLoad1988]: the effort of summarizing may be the learning.",
+  riskoCognitiveOffloading2016:
+    "A review of how people use their bodies and their tools to reduce the cognitive demand of a task, such as reminders and written notes. The philosophical frame is [@clarkExtendedMind1998].",
+};
+
+/** Vault folders that hold the Graph Vault Case's research notes. */
+export const GRAPH_RESEARCH_FOLDERS = [
+  "Projects",
+  "Reading log",
+  "Topics",
+] as const;
+
+/**
+ * The global graph options the Graph Vault Case saves in
+ * `.obsidian/graph.json`: the values ZotLit's Citation Graph preset applies,
+ * with author and title labels on, and two colour groups — Literature Notes in
+ * the ZotLit accent, research notes in blue.
+ */
+export const GRAPH_VIEW_OPTIONS = {
+  search: "",
+  showTags: false,
+  showAttachments: false,
+  hideUnresolved: false,
+  showOrphans: false,
+  colorGroups: [
+    { query: '["zotero-key"]', color: { a: 1, rgb: 0xe8622c } },
+    {
+      query: GRAPH_RESEARCH_FOLDERS.map((folder) =>
+        folder.includes(" ") ? `path:"${folder}"` : `path:${folder}`,
+      ).join(" OR "),
+      color: { a: 1, rgb: 0x3b82c4 },
+    },
+  ],
+  showArrow: true,
+  "zotlit-pandoc-citations": true,
+  "zotlit-citation-connected-only": true,
+  "zotlit-color-citation-links": true,
+  "zotlit-citation-popover": true,
+  "zotlit-author-title-labels": true,
+} as const;
+
+export interface FixtureVaultCase {
+  id: "configured" | "fresh" | "upgrader" | "demo" | "graph";
+  /** One line for the maintainer choosing a case. */
+  summary: string;
+  /** Core features for a capture scenario. */
+  corePlugins?: Readonly<Record<string, boolean>>;
+  /**
+   * The only Items the case's Zotero data holds, with their child rows and
+   * parents. Absent, the case holds every Fixture Item.
+   */
+  ownItems?: readonly FixtureItem[];
+}
+
+/**
+ * A Vault Case is a named, saved Fixture Vault state. The Scope Case selects
+ * the saved Library Scope; the Vault Case selects everything else the vault
+ * holds: settings file, notes, Profiles, and template files.
+ */
+export const VAULT_CASES: readonly FixtureVaultCase[] = [
+  {
+    id: "configured",
+    summary:
+      "Current settings, the Books Profile, an edited Citation Template, the Shared Partial that Profile calls, Literature Notes (one stamped under the Books Profile), and Imported Notes. This is the default.",
+  },
+  {
+    id: "fresh",
+    summary:
+      "Vault with no notes, ZotLit installed, and no settings file: the new-user path.",
+  },
+  {
+    id: "upgrader",
+    summary:
+      "A ZotLit v2.1 vault: version-9 settings, an edited Managed Frontmatter list, and ejected Legacy Template Files with visible edits: the note slots, a mixed-language citation pair, and one bare partial.",
+  },
+  {
+    id: "demo",
+    corePlugins: { sync: false },
+    ownItems: DEMO_ITEMS,
+    summary:
+      "A researcher's vault for screenshots and walkthroughs: the demo papers' PDFs, their Literature Notes, and the pages that cite them, with only the demo papers and their annotations, English Zotero UI, and Sync disabled.",
+  },
+  {
+    id: "graph",
+    corePlugins: { sync: false, graph: true },
+    ownItems: GRAPH_ITEMS,
+    summary:
+      "A researcher's vault for graph view screenshots: research notes and Literature Notes on hypertext, citation analysis, and memory that cite one another, three cited works with no Literature Note, only those works in Zotero, a saved Citation Graph, and Sync disabled.",
+  },
+];
+
+export const DEFAULT_VAULT_CASE = "configured";
+
+export function findVaultCase(id: string): FixtureVaultCase {
+  const found = VAULT_CASES.find((vaultCase) => vaultCase.id === id);
+  if (!found) {
+    throw new Error(
+      `unknown vault case "${id}". Known: ${VAULT_CASES.map((c) => c.id).join(", ")}`,
+    );
+  }
+  return found;
+}
+
+/** The Zotero rows one build writes. */
+export interface FixtureZoteroData {
+  libraries: readonly FixtureLibrary[];
+  collections: readonly FixtureCollection[];
+  items: readonly FixtureItem[];
+  notes: readonly FixtureNote[];
+  attachments: readonly FixtureAttachment[];
+  annotations: readonly FixtureAnnotation[];
+}
+
+/** Select one complete data set, including the parents of every selected row. */
+export function vaultCaseZoteroData(
+  vaultCaseId: string,
+  items: readonly FixtureItem[],
+  collections: readonly FixtureCollection[] = COLLECTIONS,
+): FixtureZoteroData {
+  const { ownItems } = findVaultCase(vaultCaseId);
+  if (ownItems === undefined) {
+    return {
+      items,
+      libraries: LIBRARIES,
+      collections,
+      notes: NOTES,
+      attachments: ATTACHMENTS,
+      annotations: ANNOTATIONS,
+    };
+  }
+  const selected = new Set(ownItems.map(({ itemID }) => itemID));
+  const children = <T extends { itemID: number; parentItemID: number | null }>(
+    rows: readonly T[],
+  ): T[] =>
+    rows.filter((row) => {
+      if (row.parentItemID === null || !selected.has(row.parentItemID))
+        return false;
+      selected.add(row.itemID);
+      return true;
+    });
+  const attachments = children(ATTACHMENTS);
+  const notes = children(NOTES);
+  const annotations = children(ANNOTATIONS);
+  const collectionIDs = new Set(ownItems.flatMap((item) => item.collectionIDs));
+  for (const id of collectionIDs) {
+    const parent = COLLECTIONS.find(
+      (collection) => collection.collectionID === id,
+    )?.parentCollectionID;
+    if (parent != null) collectionIDs.add(parent);
+  }
+  const libraryIDs = new Set(ownItems.map((item) => item.libraryID));
+  return {
+    items: ownItems,
+    attachments,
+    notes,
+    annotations,
+    collections: COLLECTIONS.filter((collection) =>
+      collectionIDs.has(collection.collectionID),
+    ),
+    libraries: LIBRARIES.filter((library) => libraryIDs.has(library.libraryID)),
+  };
+}
+
+/** Settings version ZotLit v2.1.0 wrote, before Profiles absorbed the note bindings. */
+export const UPGRADER_SETTINGS_VERSION = 9;
+
+/** Plugin version the Upgrader vault records as its last launch. */
+export const UPGRADER_PLUGIN_VERSION = "2.1.0";
+
+/**
+ * The v2.1 `note.frontmatter-fields` list: the four shipped defaults, plus one
+ * visible addition so the list reads as user-edited.
+ */
+export const UPGRADER_FRONTMATTER_FIELDS: readonly FixtureFrontmatterField[] = [
+  { key: "title", expr: "zt.title", merge: "replace", language: "liquid" },
+  {
+    key: "related",
+    expr: "zt.relatedItems | note_links",
+    merge: "replace",
+    language: "liquid",
+  },
+  {
+    key: "collections",
+    expr: "zt.collections | collection_paths",
+    merge: "replace",
+    language: "liquid",
+  },
+  {
+    key: "citekey",
+    expr: "zt.citationKey",
+    merge: "replace",
+    language: "liquid",
+  },
+  { key: "year", expr: "zt.date.year", merge: "replace", language: "liquid" },
+];
+
+/**
+ * Legacy Template Files the Upgrader vault ejects into its template folder:
+ * the four Literature Note slots, the two citation slots, and one bare
+ * partial. Each starts from a shipped default and carries one visible edit, so
+ * a converted document is recognizably the user's own and the trashed files
+ * are easy to tell from the defaults.
+ *
+ * The pair is mixed-language on purpose: `cite` is Liquid and `cite2` is Eta,
+ * so the fold takes the Liquid side and the conversion leaves the Eta file in
+ * the vault and names it in its notice.
+ */
+export const UPGRADER_LEGACY_TEMPLATES: readonly FixtureLegacyTemplate[] = [
+  {
+    name: "filename",
+    language: "liquid",
+    find: "{{ zt.citationKey",
+    replace: "lit-{{ zt.citationKey",
+  },
+  {
+    name: "note",
+    language: "liquid",
+    find: "# {{ zt.title }}",
+    replace: "# {{ zt.title }} (v2.1 template)",
+  },
+  {
+    name: "content",
+    language: "liquid",
+    find: "## Annotations",
+    replace: "## Highlights",
+  },
+  {
+    name: "annotation",
+    language: "liquid",
+    find: "[!note] ",
+    replace: "[!quote] ",
+  },
+  {
+    name: "cite",
+    language: "liquid",
+    find: "{{ zt.citations | pandoc_cite }}",
+    replace: "({{ zt.citations | pandoc_cite }})",
+  },
+  {
+    name: "cite2",
+    language: "eta",
+    find: "<%= pandocCite(",
+    replace: "cf. <%= pandocCite(",
+  },
+  {
+    name: UPGRADER_LEGACY_PARTIAL_NAME,
+    language: "liquid",
+    from: "annotation",
+    find: "[!note] ",
+    replace: "[!tip] ",
+  },
+];

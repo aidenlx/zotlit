@@ -1,0 +1,1788 @@
+// @vitest-environment happy-dom
+import { EditorView } from "@codemirror/view";
+import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+import { PdfTextStructure } from "@zotlit/pdf-structure";
+import type {
+  PdfPageSource,
+  SelectedText,
+  TextSelection,
+} from "@zotlit/pdf-structure";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
+import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
+import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
+import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
+import type { EditingCapability } from "@/services/annotation-repository/capability";
+import type {
+  TextPosition,
+  WritablePosition,
+} from "@/services/annotation-repository/write";
+import {
+  blockedReason,
+  MAX_POSITION_LENGTH,
+  writePosition,
+} from "@/services/annotation-repository/write";
+import { createRefused } from "@/services/zotero-local-api/__fixtures__";
+import type { ZoteroRequest } from "@/services/zotero-local-api/__fixtures__";
+import { pressSubmit } from "@/views/annot-view/__fixtures__/editor-app";
+
+import {
+  annotation,
+  pageView,
+  READER_NOW as NOW,
+  readerOverZotero,
+  readerSurfaces,
+  toolColors,
+} from "./__fixtures__";
+import { arm, ingestCapability, selectTextDraft } from "./reader-surface-state";
+import type { OverlayPageView } from "./render";
+import type { ToolColorStore } from "./tools";
+
+/** The Fixture's own underline on `rougier-2014.pdf`, in PDF points. */
+const QUOTE = [
+  [67.011, 612.638, 211.485, 620.77],
+  [58.054, 601.98, 211.489, 610.112],
+] as const;
+
+const SCALE = 1.5;
+const PAGE_HEIGHT = 792;
+const PAGE_WIDTH = 612;
+const PAGE_BOX = {
+  left: 0,
+  top: 0,
+  right: PAGE_WIDTH * SCALE,
+  bottom: PAGE_HEIGHT * SCALE,
+  width: PAGE_WIDTH * SCALE,
+  height: PAGE_HEIGHT * SCALE,
+};
+
+function domRect(
+  box: Pick<DOMRect, "left" | "top" | "right" | "bottom">,
+): DOMRect {
+  return {
+    ...box,
+    x: box.left,
+    y: box.top,
+    width: box.right - box.left,
+    height: box.bottom - box.top,
+    toJSON() {
+      return this;
+    },
+  };
+}
+
+function selectionOf(members: Partial<Selection>): Selection {
+  return stubService<Selection>("Selection", members);
+}
+
+/** The client box a PDF-point rectangle occupies on the page laid out above. */
+function clientBox([x1, y1, x2, y2]: readonly number[]) {
+  return {
+    left: x1! * SCALE,
+    top: (PAGE_HEIGHT - y2!) * SCALE,
+    right: x2! * SCALE,
+    bottom: (PAGE_HEIGHT - y1!) * SCALE,
+  };
+}
+
+function boxes(rects: readonly (readonly number[])[] = QUOTE) {
+  return rects.map((rect) => clientBox(rect));
+}
+
+/** The comment editor the popup holds, or `null` while it holds none. */
+function commentView(popup: HTMLElement): EditorView | null {
+  const dom = popup.querySelector<HTMLElement>(".cm-editor");
+  return dom && EditorView.findFromDOM(dom);
+}
+
+/**
+ * What Zotero was asked to create, in request order: the one object each
+ * create `POST` carries, under the names the reader drafted it with and with
+ * its position parsed. A draft with no quoted text carries no `text`.
+ */
+function createsIn(requests: readonly ZoteroRequest[]) {
+  return requests
+    .filter(
+      ({ method, url }) => method === "POST" && url.pathname.endsWith("/items"),
+    )
+    .map(({ body }) => {
+      const [item] = JSON.parse(body ?? "[]") as {
+        annotationType: string;
+        annotationText?: string;
+        annotationComment: string;
+        annotationColor: string;
+        annotationPageLabel: string;
+        annotationSortIndex: string;
+        annotationPosition: string;
+      }[];
+      return {
+        type: item!.annotationType,
+        ...(item!.annotationText !== undefined && {
+          text: item!.annotationText,
+        }),
+        comment: item!.annotationComment,
+        color: item!.annotationColor,
+        pageLabel: item!.annotationPageLabel,
+        sortIndex: item!.annotationSortIndex,
+        position: JSON.parse(item!.annotationPosition) as WritablePosition,
+      };
+    });
+}
+
+/**
+ * One reader with a settled text selection over the quote above, and everything
+ * the creation surfaces read and write through, over a Zotero that holds one
+ * highlight.
+ *
+ * happy-dom lays nothing out, so the page box and the selection's own boxes are
+ * supplied; every other geometry step is the production one.
+ */
+async function reader(
+  options: {
+    capability?: EditingCapability;
+    /** What the page's characters make of the selection; `null` refuses it. */
+    selected?: SelectedText | null;
+  } = {},
+) {
+  const stack = new AsyncDisposableStack();
+  const containerEl = document.body.createDiv();
+  stack.defer(() => containerEl.remove());
+  containerEl.getBoundingClientRect = () => PAGE_BOX as never;
+  const pageEl = containerEl.createDiv();
+  const textLayer = pageEl.createDiv({
+    cls: "textLayer",
+    text: "Scientific visualization",
+  });
+  pageEl.getBoundingClientRect = () => PAGE_BOX as never;
+
+  const sorted: unknown[] = [];
+  const selections: TextSelection[] = [];
+  const structure = {
+    selectText: vi.fn(async (selection: TextSelection) => {
+      selections.push(selection);
+      return options.selected === undefined
+        ? {
+            pageIndex: 0,
+            rects: QUOTE.map((rect) => [...rect] as const),
+            text: "Scientific visualization",
+          }
+        : options.selected;
+    }),
+    sortIndex: vi.fn(async (position: unknown) => {
+      sorted.push(position);
+      return "00000|000434|00180";
+    }),
+    pageLabel: vi.fn(async () => "1"),
+  };
+  const reader = await readerOverZotero(stack, {
+    containerEl,
+    page: stubService<OverlayPageView>("OverlayPageView", {
+      div: pageEl,
+      viewport: stubService<OverlayPageView["viewport"]>("PDFPageViewport", {
+        transform: [SCALE, 0, 0, -SCALE, 0, PAGE_HEIGHT * SCALE],
+      }),
+    }),
+    records: [
+      annotation("PUPR5FG5", "highlight", {
+        pageIndex: 0,
+        rects: [[265.833, 611.202, 374.503, 620.019]],
+      }),
+    ],
+    capability: options.capability,
+    structure: structure as never,
+  });
+  // The repository reads Zotero on real time; the reader's own timers are
+  // driven by hand from here on.
+  useFakeTimers();
+  const { app, creation, store: surfaceState, revealed, zotero } = reader;
+
+  return {
+    app,
+    creation,
+    surfaceState,
+    focusReader: reader.focusReader,
+    containerEl,
+    pageEl,
+    zotero,
+    /** What Zotero was asked to create, in request order. */
+    get drafts() {
+      return createsIn(reader.requests);
+    },
+    sorted,
+    selections,
+    revealed,
+    structure,
+    slot: document.body.createDiv(),
+    /**
+     * A drag that starts on the page and releases with text selected, once
+     * the selection has been placed on the page's characters.
+     */
+    async selectText(rects = boxes()) {
+      this.startSelecting(rects);
+      await creation.settled;
+      // Obsidian's hover popover shows on a timer, even at no delay.
+      vi.advanceTimersByTime(0);
+    },
+    /** The same drag, left before its selection has been placed. */
+    startSelecting(rects = boxes()) {
+      const range = document.createRange();
+      range.selectNodeContents(textLayer);
+      // The capture clamps a clone of the range to each page, so the boxes are
+      // supplied on the prototype rather than on this one object.
+      vi.spyOn(Range.prototype, "getClientRects").mockReturnValue(
+        rects as never,
+      );
+      vi.spyOn(window, "getSelection").mockReturnValue(
+        selectionOf({
+          rangeCount: 1,
+          isCollapsed: false,
+          anchorNode: textLayer,
+          getRangeAt: () => range,
+          removeAllRanges: () => undefined,
+          toString: () => range.toString(),
+        }),
+      );
+      creation.press(
+        new PointerEvent("pointerdown", { clientX: 100, clientY: 100 }),
+      );
+      creation.settle();
+    },
+    /** A press on the page that selects nothing. */
+    pressEmpty() {
+      vi.spyOn(window, "getSelection").mockReturnValue(
+        selectionOf({
+          rangeCount: 0,
+          isCollapsed: true,
+          getRangeAt: () => document.createRange(),
+          removeAllRanges: () => undefined,
+        }),
+      );
+      creation.press(
+        new PointerEvent("pointerdown", { clientX: 100, clientY: 100 }),
+      );
+    },
+    press(key: string, target: EventTarget = containerEl) {
+      return reader.key({ key }, target);
+    },
+    popup() {
+      return document.querySelector<HTMLElement>(".zt-pdf-mark-popup");
+    },
+    [Symbol.asyncDispose]: () => stack.disposeAsync(),
+  };
+}
+
+beforeEach(() => {
+  setMockPlatform({ isMacOS: false });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  resetMockPlatform();
+  document.body.empty();
+});
+
+it("opens the popup in create mode once the drag on the page has ended", async () => {
+  await using open = await reader();
+
+  await open.selectText();
+
+  const verbs = [
+    ...(open.popup()?.querySelectorAll<HTMLElement>("[data-zt-verb]") ?? []),
+  ].map((node) => node.dataset.ztVerb);
+  expect(verbs).toEqual([
+    "highlight",
+    "underline",
+    "color-1",
+    "color-2",
+    "color-3",
+    "color-4",
+    "comment",
+    "copy",
+  ]);
+});
+
+it("offers the colour used last first, whichever tool used it", async () => {
+  await using open = await reader();
+  await open.selectText();
+  open.press("6");
+  await open.creation.created;
+
+  await open.selectText();
+
+  const swatches = [
+    ...(open
+      .popup()
+      ?.querySelectorAll<HTMLElement>("[data-zt-verb^='color-']") ?? []),
+  ].map((node) => node.dataset.ztVerb);
+  expect(swatches).toEqual(["color-6", "color-1", "color-2", "color-3"]);
+});
+
+it("opens nothing for a drag that did not start on the page", async () => {
+  await using open = await reader();
+  open.pageEl.getBoundingClientRect = () =>
+    domRect({ ...PAGE_BOX, left: 5000, right: 6000 });
+
+  await open.selectText();
+
+  expect(open.popup()).toBeNull();
+});
+
+it("commits a swatch click and reopens on the new mark", async () => {
+  await using open = await reader();
+  await open.selectText();
+
+  open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-3"]')!.click();
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([
+    expect.objectContaining({
+      type: "highlight",
+      color: ANNOTATION_COLORS[2],
+      text: "Scientific visualization",
+      pageLabel: "1",
+      sortIndex: "00000|000434|00180",
+    }),
+  ]);
+  expect(open.revealed).toEqual(["MADE2345"]);
+  expect(open.popup()).toBeNull();
+});
+
+it("reads the selection off the page's text layer", async () => {
+  await using open = await reader();
+
+  await open.selectText();
+
+  expect(open.selections).toEqual([
+    {
+      text: "Scientific visualization",
+      pages: [
+        expect.objectContaining({
+          pageIndex: 0,
+          layerText: "Scientific visualization",
+          start: 0,
+          end: 24,
+        }),
+      ],
+    },
+  ]);
+});
+
+it("writes the rectangles and the text the page's characters give", async () => {
+  const selected = {
+    pageIndex: 0,
+    rects: [[58.054, 601.98, 211.489, 610.112]],
+    nextPageRects: [[58.05, 263.92, 211.46, 272.05]],
+    text: "this process",
+  } as SelectedText;
+  await using open = await reader({ selected });
+  await open.selectText();
+
+  open.press("h");
+  await open.creation.created;
+
+  const position = {
+    pageIndex: 0,
+    rects: selected.rects,
+    nextPageRects: selected.nextPageRects,
+  };
+  expect(open.sorted).toEqual([position]);
+  expect(open.drafts).toEqual([
+    expect.objectContaining({ text: "this process", position }),
+  ]);
+});
+
+it("opens nothing for a selection the page's characters cannot place", async () => {
+  await using open = await reader({ selected: null });
+
+  await open.selectText();
+
+  expect(open.popup()).toBeNull();
+});
+
+it("opens nothing for a selection that collapsed before it was placed", async () => {
+  await using open = await reader();
+
+  open.startSelecting();
+  vi.spyOn(window, "getSelection").mockReturnValue(
+    selectionOf({ rangeCount: 0, isCollapsed: true }),
+  );
+  await open.creation.settled;
+  vi.advanceTimersByTime(0);
+
+  expect(open.popup()).toBeNull();
+});
+
+it("opens nothing for a selection the next press left before it was placed", async () => {
+  await using open = await reader();
+
+  open.startSelecting();
+  open.pressEmpty();
+  await open.creation.settled;
+  vi.advanceTimersByTime(0);
+
+  expect(open.popup()).toBeNull();
+});
+
+it.each([
+  { key: "h", type: "highlight" },
+  { key: "u", type: "underline" },
+])(
+  "commits $type on $key while a selection is waiting",
+  async ({ key, type }) => {
+    await using open = await reader();
+    await open.selectText();
+
+    const event = open.press(key);
+    await open.creation.created;
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(open.drafts.map((draft) => draft.type)).toEqual([type]);
+  },
+);
+
+it.each([1, 8])(
+  "commits in swatch %i while a selection is waiting",
+  async (position) => {
+    await using open = await reader();
+    await open.selectText();
+
+    open.press(String(position));
+    await open.creation.created;
+
+    expect(open.drafts.map(({ color }) => color)).toEqual([
+      ANNOTATION_COLORS[position - 1],
+    ]);
+  },
+);
+
+it("opens the comment sheet on c, and saves it with the create", async () => {
+  await using open = await reader();
+  await open.selectText();
+
+  open.press("c");
+  const editor = commentView(open.popup()!)!;
+  editor.dispatch({ changes: { from: 0, insert: "worth quoting" } });
+  pressSubmit(open.app);
+  await open.creation.created;
+
+  expect(open.drafts.map(({ comment }) => comment)).toEqual(["worth quoting"]);
+});
+
+it("saves the comment with the create from the sheet's commit, named for the mark", async () => {
+  await using open = await reader();
+  await open.selectText();
+
+  open.press("c");
+  const editor = commentView(open.popup()!)!;
+  editor.dispatch({ changes: { from: 0, insert: "worth quoting" } });
+  const commit = open
+    .popup()!
+    .querySelector<HTMLButtonElement>("button.mod-cta")!;
+  expect(commit.textContent).toBe(m.pdf_toolbar_highlight());
+  commit.click();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ comment }) => comment)).toEqual(["worth quoting"]);
+});
+
+it("arms a tool with h and u while no selection is waiting", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+
+  open.press("u");
+
+  expect(
+    open.slot
+      .querySelector('[data-zt-tool="underline"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(open.drafts).toEqual([]);
+});
+
+it("colours the armed tool with 1 to 8 while no selection is waiting", async () => {
+  await using open = await reader();
+  open.press("u");
+  open.press("5");
+
+  await open.selectText();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ type, color }) => [type, color])).toEqual([
+    ["underline", ANNOTATION_COLORS[4]],
+  ]);
+});
+
+it("opens a tool's colours from its own chevron, whether or not it is armed", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+  const chevron = open.slot.querySelector<HTMLElement>(
+    '[data-zt-tool="underline-color"]',
+  )!;
+
+  chevron.click();
+
+  const menu = Menu.instances.at(-1)!;
+  expect(menu.parentEl).toBe(chevron);
+  expect(menu.items).toHaveLength(ANNOTATION_COLORS.length);
+});
+
+it("recolours the tool its own chevron opened, leaving the other alone", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+  const colorOf = (tool: string) =>
+    open.slot.querySelector<HTMLElement>(`[data-zt-tool="${tool}"]`)?.style
+      .color;
+
+  open.slot
+    .querySelector<HTMLElement>('[data-zt-tool="underline-color"]')!
+    .click();
+  Menu.instances.at(-1)!.items[2]!.click();
+
+  expect(colorOf("underline")).toBe(ANNOTATION_COLORS[2]);
+  expect(colorOf("highlight")).toBe(ANNOTATION_COLORS[0]);
+});
+
+it("commits a released selection at once while a tool is armed", async () => {
+  await using open = await reader();
+
+  open.press("u");
+  await open.selectText();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ type }) => type)).toEqual(["underline"]);
+  expect(open.popup()).toBeNull();
+});
+
+it("writes a popup colour back as the tool it commits with", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+  await open.selectText();
+
+  open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-3"]')!.click();
+
+  expect(
+    open.slot.querySelector<HTMLElement>('[data-zt-tool="highlight"]')?.style
+      .color,
+  ).toBe(ANNOTATION_COLORS[2]);
+});
+
+it("steps back one level on Escape: sheet, then popup, then the armed tool", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+  await open.selectText();
+  open.press("c");
+  expect(commentView(open.popup()!)).not.toBeNull();
+
+  open.press("Escape");
+  expect(commentView(open.popup()!)).toBeNull();
+
+  open.press("Escape");
+  expect(open.popup()).toBeNull();
+
+  open.press("u");
+  open.press("Escape");
+  expect(
+    open.slot
+      .querySelector('[data-zt-tool="underline"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
+it("steps back on Escape wherever the focus sits in the active view", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+  open.press("u");
+
+  // The press on a tool left the focus where it was, outside the pages.
+  expect(open.press("Escape", document.body).defaultPrevented).toBe(true);
+
+  expect(
+    open.slot
+      .querySelector('[data-zt-tool="underline"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
+it("leaves Escape to the PDF view's own keys when nothing stands to step back", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+
+  expect(open.press("Escape").defaultPrevented).toBe(false);
+});
+
+it("hands the keyboard to the pages on a pointer press on the toolbar", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+  const press = new MouseEvent("mousedown", {
+    bubbles: true,
+    cancelable: true,
+  });
+
+  open.slot.querySelector('[data-zt-tool="underline"]')!.dispatchEvent(press);
+
+  expect(press.defaultPrevented).toBe(true);
+  expect(open.focusReader).toHaveBeenCalledOnce();
+});
+
+it("is inert inside a text field", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+  const field = open.containerEl.createEl("input");
+
+  for (const key of ["h", "u", "3", "c", "Escape"]) {
+    expect(open.press(key, field).defaultPrevented).toBe(false);
+  }
+
+  expect(
+    open.slot
+      .querySelector('[data-zt-tool="highlight"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
+it("leaves a modified keystroke to Obsidian's own commands", async () => {
+  await using open = await reader();
+  const event = new KeyboardEvent("keydown", {
+    key: "h",
+    ctrlKey: true,
+    cancelable: true,
+  });
+  Object.defineProperty(event, "target", { value: open.containerEl });
+
+  open.creation.key(event);
+
+  expect(event.defaultPrevented).toBe(false);
+});
+
+it("writes nothing under a block, and leaves the notice to the binding", async () => {
+  await using open = await reader({
+    capability: { kind: "read-only", reason: "zotero-unavailable" },
+  });
+  await open.selectText();
+
+  open.press("h");
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+});
+
+it("arms nothing under a block, so the toolbar does not answer the notice back", async () => {
+  await using open = await reader({
+    capability: { kind: "read-only", reason: "zotero-unavailable" },
+  });
+  open.creation.mountToolbar(open.slot);
+
+  open.press("u");
+  open.press("5");
+
+  expect(
+    open.slot
+      .querySelector('[data-zt-tool="underline"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
+it("dismisses the popup on the next press", async () => {
+  await using open = await reader();
+  await open.selectText();
+
+  open.pressEmpty();
+
+  expect(open.popup()).toBeNull();
+});
+
+it("stands the popup down when the selection collapses", async () => {
+  await using open = await reader();
+  await open.selectText();
+
+  vi.spyOn(window, "getSelection").mockReturnValue(
+    selectionOf({ rangeCount: 0, isCollapsed: true }),
+  );
+  open.creation.changed();
+
+  expect(open.popup()).toBeNull();
+});
+
+it("keeps the popup while the comment sheet holds the caret", async () => {
+  await using open = await reader();
+  await open.selectText();
+  open.press("c");
+
+  vi.spyOn(window, "getSelection").mockReturnValue(
+    selectionOf({ rangeCount: 0, isCollapsed: true }),
+  );
+  open.creation.changed();
+
+  expect(open.popup()).not.toBeNull();
+});
+
+it("takes the marks off the pages and puts them back", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+
+  const visibility = open.slot.querySelector<HTMLElement>(
+    '[data-zt-tool="visibility"]',
+  )!;
+  visibility.click();
+  expect(open.surfaceState.getState().marksVisible).toBe(false);
+
+  open.slot.querySelector<HTMLElement>('[data-zt-tool="visibility"]')!.click();
+  expect(open.surfaceState.getState().marksVisible).toBe(true);
+});
+
+it("leaves the toolbar slot as Obsidian built it when it is disposed", async () => {
+  await using open = await reader();
+  open.creation.mountToolbar(open.slot);
+  expect(open.slot.childElementCount).toBe(1);
+
+  open.creation[Symbol.dispose]();
+
+  expect(open.slot.childElementCount).toBe(0);
+});
+
+it("closes the create popup and drops its selection on a press on the page", async () => {
+  await using open = await reader();
+  await open.selectText();
+  expect(open.popup()).not.toBeNull();
+
+  open.pageEl.dispatchEvent(
+    new MouseEvent("pointerdown", {
+      clientX: 100,
+      clientY: 100,
+      bubbles: true,
+    }),
+  );
+
+  expect(open.popup()).toBeNull();
+  // Nothing waits any more, so the tool key arms rather than commits.
+  open.press("h");
+  await open.creation.created;
+  expect(open.drafts).toEqual([]);
+});
+
+it("keeps the comment sheet and its text through capability announcements", async () => {
+  await using open = await reader();
+  await open.selectText();
+  open.press("c");
+  const editor = commentView(open.popup()!)!;
+  editor.dispatch({ changes: { from: 0, insert: "worth quoting" } });
+
+  ingestCapability(open.surfaceState, { kind: "writable" }, NOW);
+  expect(commentView(open.popup()!)).toBe(editor);
+
+  // A real block stands the sheet down where it is, rather than rebuilding it.
+  ingestCapability(
+    open.surfaceState,
+    { kind: "read-only", reason: "zotero-unavailable" },
+    NOW,
+  );
+  expect(commentView(open.popup()!)).toBe(editor);
+  expect(editor.state.doc.toString()).toBe("worth quoting");
+  expect(editor.state.readOnly).toBe(true);
+});
+
+it("ignores a drag released while an armed create is still in flight", async () => {
+  await using open = await reader();
+  const answer = open.zotero.holdWrites();
+  open.press("u");
+  open.startSelecting();
+  await open.creation.settled;
+
+  // The second drag starts no create of its own while the first waits.
+  open.startSelecting();
+  await open.creation.settled;
+
+  answer();
+  await open.creation.created;
+  expect(open.drafts).toHaveLength(1);
+});
+
+it("drops the waiting selection once its page leaves the screen", async () => {
+  await using open = await reader();
+  await open.selectText();
+  expect(open.popup()).not.toBeNull();
+
+  open.pageEl.getBoundingClientRect = () =>
+    domRect({ ...PAGE_BOX, top: -5000, bottom: -4000 });
+  open.containerEl.dispatchEvent(new Event("scroll"));
+
+  expect(open.popup()).toBeNull();
+  expect(open.surfaceState.getState().floating).toEqual({ kind: "none" });
+});
+
+it("refuses an image create from a text selection, and offers the popup instead", async () => {
+  await using open = await reader();
+  arm(open.surfaceState, "image");
+
+  await open.selectText();
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.popup()).not.toBeNull();
+});
+
+/** A US Letter page laid out at its own size at the client origin. */
+const LETTER_AT_ORIGIN = {
+  left: 0,
+  top: 0,
+  right: 612,
+  bottom: 792,
+  width: 612,
+  height: 792,
+} as DOMRect;
+
+/** The highlight Zotero holds on page one; it draws round client `(300, 177)`. */
+const MARK = annotation("PUPR5FG5", "highlight", {
+  pageIndex: 0,
+  rects: [[265.833, 611.202, 374.503, 620.019]],
+});
+
+/**
+ * One pointer event on a page: a press goes down on the page, and everything
+ * after it reaches the container, as a captured pointer does.
+ */
+function pointerOn(pageEl: HTMLElement, containerEl: HTMLElement) {
+  return (
+    type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
+    [x, y]: [number, number],
+    pointerId = 1,
+  ) =>
+    (type === "pointerdown" ? pageEl : containerEl).dispatchEvent(
+      new PointerEvent(type, {
+        clientX: x,
+        clientY: y,
+        pointerId,
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+}
+
+/**
+ * One reader with the image tool armed from its toolbar, over a US Letter page
+ * laid out at its own size at the client origin: a client point `(x, y)` is
+ * the PDF point `(x, 792 - y)`. Zotero holds {@link MARK} on it.
+ */
+async function imageReader(
+  capability?: EditingCapability,
+  {
+    colors,
+    closed = false,
+    structure: given,
+  }: {
+    /** Each tool's colour and the ink width; held in memory unless given. */
+    colors?: ToolColorStore;
+    /** Whether the viewer holds no document, so no text structure stands. */
+    closed?: boolean;
+    /** The text structure the viewer holds on each ask, in place of the stub below. */
+    structure?: () => PdfTextStructure | null;
+  } = {},
+) {
+  const stack = new AsyncDisposableStack();
+  const containerEl = document.body.createDiv();
+  stack.defer(() => containerEl.remove());
+  const page = pageView();
+  containerEl.append(page.div);
+  page.div.getBoundingClientRect = () => LETTER_AT_ORIGIN;
+  vi.spyOn(window, "getSelection").mockReturnValue(
+    selectionOf({
+      rangeCount: 0,
+      isCollapsed: true,
+      removeAllRanges: () => undefined,
+    }),
+  );
+  const structure = {
+    page: vi.fn(async () => ({})),
+    pageLabels: vi.fn(async () => ["1"]),
+    sortIndex: vi.fn(async () => "00000|000100|00100"),
+    pageLabel: vi.fn(async () => "1"),
+  };
+  const surfaces = await readerOverZotero(stack, {
+    containerEl,
+    colors,
+    page: page as unknown as OverlayPageView,
+    records: [MARK],
+    capability,
+    structure: closed ? null : (given ?? (structure as never)),
+  });
+  // The repository reads Zotero on real time; the reader's own timers are
+  // driven by hand from here on.
+  useFakeTimers();
+  const slot = document.body.createDiv();
+  surfaces.creation.mountToolbar(slot);
+  // Armed as a researcher arms it, from the toolbar; the arm itself stands
+  // outside any block, which only the capture has to answer.
+  arm(surfaces.store, "image");
+
+  const pointer = pointerOn(page.div, containerEl);
+  return {
+    ...surfaces,
+    containerEl,
+    slot,
+    /** What Zotero was asked to create, in request order. */
+    get drafts() {
+      return createsIn(surfaces.requests);
+    },
+    structure,
+    pointer,
+    /** One drag from a client point to another, released there. */
+    async drag(from: [number, number], to: [number, number]) {
+      pointer("pointerdown", from);
+      pointer("pointermove", to);
+      pointer("pointerup", to);
+      await surfaces.creation.created;
+    },
+    key(name: string) {
+      surfaces.key({ key: name });
+    },
+    [Symbol.asyncDispose]: () => stack.disposeAsync(),
+  };
+}
+
+type ImageReader = Awaited<ReturnType<typeof imageReader>>;
+
+it("cancels a capture on Escape and keeps the tool; a second Escape stands it down", async () => {
+  await using open = await imageReader();
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [300, 300]);
+  open.key("Escape");
+  open.pointer("pointerup", [300, 300]);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState()).toMatchObject({
+    floating: { kind: "none" },
+    armed: "image",
+  });
+  open.key("Escape");
+  expect(open.store.getState().armed).toBeNull();
+});
+
+it("reports a press while editing is not live, and captures nothing", async () => {
+  await using open = await imageReader({
+    kind: "read-only",
+    reason: "zotero-unavailable",
+  });
+
+  await open.drag([100, 100], [300, 300]);
+
+  expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("leaves a press on a mark to the mark while the image tool is armed", async () => {
+  await using open = await imageReader();
+
+  open.pointer("pointerdown", [300, 177]);
+  open.pointer("pointerup", [300, 177]);
+  open.containerEl.dispatchEvent(
+    new MouseEvent("click", { clientX: 300, clientY: 177, bubbles: true }),
+  );
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().floating).toMatchObject({
+    kind: "selected",
+    key: "PUPR5FG5",
+  });
+});
+
+/**
+ * The image reader with another tool armed from its toolbar instead. A client
+ * point `(x, y)` is the PDF point `(x, 792 - y)`.
+ */
+async function toolReader(
+  tool: "note" | "text" | "ink",
+  ...args: Parameters<typeof imageReader>
+) {
+  const open = await imageReader(...args);
+  open.slot.querySelector<HTMLElement>(`[data-zt-tool="${tool}"]`)!.click();
+  return open;
+}
+
+it("leaves a note by the page edge unclamped, as Zotero does", async () => {
+  await using open = await toolReader("note");
+
+  open.pointer("pointerdown", [5, 787]);
+  open.pointer("pointerup", [5, 787]);
+  await open.creation.created;
+
+  expect(open.drafts.map(({ position }) => position)).toEqual([
+    { pageIndex: 0, rects: [[-6, -6, 16, 16]] },
+  ]);
+});
+
+it("creates no note from a drag, and stays armed", async () => {
+  await using open = await toolReader("note");
+
+  await open.drag([100, 100], [140, 100]);
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().armed).toBe("note");
+});
+
+it("takes a note press from the browser, so a drag under it selects no text", async () => {
+  await using open = await toolReader("note");
+
+  const pressTaken = !open.pointer("pointerdown", [100, 100]);
+  const selectStart = new Event("selectstart", {
+    bubbles: true,
+    cancelable: true,
+  });
+  open.containerEl.dispatchEvent(selectStart);
+
+  expect(pressTaken).toBe(true);
+  expect(selectStart.defaultPrevented).toBe(true);
+});
+
+it.each([
+  [
+    "a second pointer's press",
+    (open: ImageReader) => open.pointer("pointerdown", [200, 200], 2),
+  ],
+  [
+    "a pointer cancel",
+    (open: ImageReader) => open.pointer("pointercancel", [100, 100]),
+  ],
+  [
+    "a lost capture",
+    (open: ImageReader) =>
+      open.containerEl.dispatchEvent(
+        new PointerEvent("lostpointercapture", { pointerId: 1, bubbles: true }),
+      ),
+  ],
+  ["a tool change", (open: ImageReader) => arm(open.store, "highlight")],
+  ["the tool standing down", (open: ImageReader) => open.key("Escape")],
+])("creates no note from a press %s discarded", async (_, discard) => {
+  await using open = await toolReader("note");
+
+  open.pointer("pointerdown", [100, 100]);
+  discard(open);
+  open.pointer("pointerup", [100, 100]);
+  open.pointer("pointerup", [200, 200], 2);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+});
+
+it("reports a note press while editing is not live, and creates nothing", async () => {
+  // Armed while editing was live, and blocked since.
+  await using open = await toolReader("note");
+  ingestCapability(
+    open.store,
+    { kind: "read-only", reason: "zotero-unavailable" },
+    NOW,
+  );
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  await open.creation.created;
+
+  expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  expect(open.drafts).toEqual([]);
+});
+
+it("leaves a press on a mark to the mark while the note tool is armed", async () => {
+  await using open = await toolReader("note");
+
+  open.pointer("pointerdown", [300, 177]);
+  open.pointer("pointerup", [300, 177]);
+  open.containerEl.dispatchEvent(
+    new MouseEvent("click", { clientX: 300, clientY: 177, bubbles: true }),
+  );
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().floating).toMatchObject({
+    kind: "selected",
+    key: "PUPR5FG5",
+  });
+});
+
+it("creates one ink stroke as Zotero smooths it, and stays armed", async () => {
+  await using open = await toolReader("ink");
+
+  await open.drag([100, 100], [110, 100]);
+
+  // Two Chaikin passes over (100, 692)–(110, 692) cut at 100.625, 101.875,
+  // 103.75, 106.25, 108.125 and 109.375; the points under one point from the
+  // last kept one — 100.625, and the end at 110 — go.
+  const position = {
+    pageIndex: 0,
+    width: 2,
+    paths: [
+      [
+        100, 692, 101.875, 692, 103.75, 692, 106.25, 692, 108.125, 692, 109.375,
+        692,
+      ],
+    ],
+  };
+  expect(open.structure.sortIndex).toHaveBeenCalledWith(position);
+  expect(open.drafts).toEqual([
+    {
+      type: "ink",
+      color: "#2ea8e5",
+      comment: "",
+      pageLabel: "1",
+      sortIndex: "00000|000100|00100",
+      position,
+    },
+  ]);
+  expect(open.revealed).toEqual([]);
+  expect(open.store.getState()).toMatchObject({
+    floating: { kind: "none" },
+    armed: "ink",
+    liveStroke: null,
+  });
+});
+
+/**
+ * A second PDF view of the reader's Attachment, over the one repository, with
+ * the ink tool armed: the view that writes into the same Annotation History.
+ */
+function secondInkView(open: ImageReader) {
+  const containerEl = document.body.createDiv();
+  const page = pageView();
+  containerEl.append(page.div);
+  page.div.getBoundingClientRect = () => LETTER_AT_ORIGIN;
+  const surfaces = readerSurfaces({
+    containerEl,
+    page: page as unknown as OverlayPageView,
+    records: open.store.getState().records,
+    structure: open.structure as never,
+    annotations: open.service,
+    bridge: open.bridge,
+  });
+  arm(surfaces.store, "ink");
+  const pointer = pointerOn(page.div, containerEl);
+  return {
+    /** One stroke from a client point to another, released there. */
+    async drag(from: [number, number], to: [number, number]) {
+      pointer("pointerdown", from);
+      pointer("pointermove", to);
+      pointer("pointerup", to);
+      await surfaces.creation.created;
+    },
+    [Symbol.dispose]() {
+      surfaces[Symbol.dispose]();
+      containerEl.remove();
+    },
+  };
+}
+
+it("names every stroke its own group, in one reader and across two", async () => {
+  await using one = await toolReader("ink");
+  one.repository.openHistory("RGRPDF24");
+  await one.drag([100, 100], [110, 100]);
+  await one.drag([100, 120], [110, 120]);
+
+  // A second PDF view of the same Attachment writes into the one Annotation
+  // History, so a group it names alike would draw its first stroke into the
+  // other view's step and one undo press would take both.
+  using other = secondInkView(one);
+  await other.drag([100, 140], [110, 140]);
+
+  const strokes = ["MADE2345", "MADE2346", "MADE2347"];
+  const held = () => strokes.filter((key) => one.zotero.at(key) !== null);
+  expect(held()).toEqual(strokes);
+  // Each undo press takes one stroke off Zotero, the latest first.
+  await one.repository.undo("RGRPDF24");
+  expect(held()).toEqual(["MADE2345", "MADE2346"]);
+  await one.repository.undo("RGRPDF24");
+  expect(held()).toEqual(["MADE2345"]);
+  await one.repository.undo("RGRPDF24");
+  expect(held()).toEqual([]);
+});
+
+it("keeps a stroke run off the page on the page it began on", async () => {
+  await using open = await toolReader("ink");
+
+  await open.drag([600, 100], [700, 100]);
+
+  // The move is taken at the page's right edge, x = 612; the smoothing cuts
+  // (600, 612) at 611.25 and drops the end, 0.75 points on.
+  const { position } = open.drafts[0]!;
+  const [path] = "paths" in position ? position.paths : [];
+  expect(Math.max(...path!.filter((_, index) => index % 2 === 0))).toBe(611.25);
+});
+
+it("discards a stroke on Escape and keeps the tool; a second Escape stands it down", async () => {
+  await using open = await toolReader("ink");
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [150, 150]);
+  open.key("Escape");
+  open.pointer("pointerup", [150, 150]);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState()).toMatchObject({
+    armed: "ink",
+    liveStroke: null,
+    pendingStrokes: [],
+  });
+  open.key("Escape");
+  expect(open.store.getState().armed).toBeNull();
+});
+
+it.each([
+  [
+    "a second pointer's press",
+    (open: ImageReader) => open.pointer("pointerdown", [200, 200], 2),
+  ],
+  [
+    "a pointer cancel",
+    (open: ImageReader) => open.pointer("pointercancel", [150, 150]),
+  ],
+  [
+    "a lost capture",
+    (open: ImageReader) =>
+      open.containerEl.dispatchEvent(
+        new PointerEvent("lostpointercapture", { pointerId: 1, bubbles: true }),
+      ),
+  ],
+  ["a tool change", (open: ImageReader) => arm(open.store, "highlight")],
+])("creates nothing from a stroke %s discarded", async (_, discard) => {
+  await using open = await toolReader("ink");
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [150, 150]);
+  discard(open);
+  open.pointer("pointerup", [150, 150]);
+  open.pointer("pointerup", [200, 200], 2);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().liveStroke).toBeNull();
+});
+
+/** The ink reader, armed while editing was live and blocked since. */
+async function blockedInkReader() {
+  const open = await toolReader("ink");
+  ingestCapability(
+    open.store,
+    { kind: "read-only", reason: "zotero-unavailable" },
+    NOW,
+  );
+  return open;
+}
+
+it("reports a press while editing is not live, and draws nothing", async () => {
+  await using open = await blockedInkReader();
+
+  open.pointer("pointerdown", [100, 100]);
+  expect(open.store.getState().liveStroke).toBeNull();
+  open.pointer("pointerup", [150, 150]);
+  await open.creation.created;
+
+  expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  expect(open.drafts).toEqual([]);
+});
+
+it("leaves a mark unselected under a press while editing is not live", async () => {
+  await using open = await blockedInkReader();
+
+  open.pointer("pointerdown", [300, 177]);
+  open.pointer("pointerup", [300, 177]);
+  open.containerEl.dispatchEvent(
+    new MouseEvent("click", { clientX: 300, clientY: 177, bubbles: true }),
+  );
+
+  expect(open.store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("saves a stroke in the colour it was pressed in", async () => {
+  await using open = await toolReader("ink");
+  const pressed = open.store.getState().colors.ink;
+
+  open.pointer("pointerdown", [100, 100]);
+  open.key("5");
+  open.pointer("pointerup", [100, 100]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  expect(open.store.getState().colors.ink).toBe(ANNOTATION_COLORS[4]);
+  expect(pressed).not.toBe(ANNOTATION_COLORS[4]);
+  expect(open.drafts[0]!.color).toBe(pressed);
+});
+
+it("creates an image while an ink stroke still saves", async () => {
+  await using open = await toolReader("ink");
+  // Zotero holds the stroke's create open, and takes the next write at once.
+  const inkAnswered = Promise.withResolvers<void>();
+  open.zotero.answerNextWrite(async (request) => {
+    await inkAnswered.promise;
+    return await open.zotero.answers.write(request);
+  });
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  arm(open.store, "image");
+  await open.drag([300, 292], [100, 100]);
+
+  expect(open.drafts.map(({ type }) => type)).toEqual(["ink", "image"]);
+  expect(open.revealed).toEqual(["MADE2345"]);
+  inkAnswered.resolve();
+  await vi.waitFor(() => expect(open.zotero.at("MADE2346")?.type).toBe("ink"));
+});
+
+it("draws over a mark and leaves the mark unselected", async () => {
+  await using open = await toolReader("ink");
+
+  open.pointer("pointerdown", [300, 177]);
+  open.pointer("pointerup", [300, 177]);
+  open.containerEl.dispatchEvent(
+    new MouseEvent("click", { clientX: 300, clientY: 177, bubbles: true }),
+  );
+  await open.creation.created;
+
+  expect(open.drafts.map(({ type }) => type)).toEqual(["ink"]);
+  expect(open.store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("draws while an earlier stroke saves, and creates in release order", async () => {
+  await using open = await toolReader("ink");
+  const answerFirst = open.zotero.holdWrites();
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  open.pointer("pointerdown", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  // The second stroke waits on the first create, and both stay on the page.
+  expect(
+    open.store.getState().pendingStrokes.map(({ paths }) => paths),
+  ).toEqual([[[100, 692]], [[200, 592]]]);
+  answerFirst();
+  const answerSecond = open.zotero.holdWrites();
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(2));
+  answerSecond();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ position }) => position)).toEqual([
+    { pageIndex: 0, width: 2, paths: [[100, 692]] },
+    { pageIndex: 0, width: 2, paths: [[200, 592]] },
+  ]);
+});
+
+it("sends no stroke still waiting behind a create when its view closes", async () => {
+  await using open = await toolReader("ink");
+  const answerFirst = open.zotero.holdWrites();
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  open.pointer("pointerdown", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  // The first stroke is with Zotero; the second waits its turn as the view
+  // closes, and goes with the view.
+  open[Symbol.dispose]();
+  answerFirst();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ position }) => position)).toEqual([
+    { pageIndex: 0, width: 2, paths: [[100, 692]] },
+  ]);
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  expect(open.gestures.reportBlockedGesture).not.toHaveBeenCalled();
+});
+
+it("takes a refused stroke off the page", async () => {
+  await using open = await toolReader("ink");
+  open.zotero.answerNextWrite(() => createRefused());
+
+  await open.drag([100, 100], [150, 150]);
+
+  expect(open.drafts).toHaveLength(1);
+  expect(open.store.getState().pendingStrokes).toEqual([]);
+});
+
+it("takes a stroke off the page and says why when editing lapsed while it waited", async () => {
+  await using open = await toolReader("ink");
+  const answer = open.zotero.holdWrites();
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  open.pointer("pointerdown", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  // The second stroke was released while editing was live, and waits.
+  ingestCapability(
+    open.store,
+    { kind: "read-only", reason: "zotero-unavailable" },
+    NOW,
+  );
+  answer();
+  await open.creation.created;
+
+  expect(open.drafts).toHaveLength(1);
+  expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  // The first stroke saved and draws from the record Zotero answered; the
+  // second is gone.
+  const { records, pendingStrokes } = open.store.getState();
+  expect(records.map(({ key, type }) => [key, type])).toContainEqual([
+    "MADE2345",
+    "ink",
+  ]);
+  expect(pendingStrokes).toEqual([]);
+});
+
+it("takes a stroke off the page when the viewer holds no document", async () => {
+  await using open = await toolReader("ink", undefined, { closed: true });
+
+  await open.drag([100, 100], [150, 150]);
+
+  expect(open.drafts).toEqual([]);
+  expect(open.gestures.reportBlockedGesture).not.toHaveBeenCalled();
+  expect(open.store.getState().pendingStrokes).toEqual([]);
+});
+
+it("takes a stroke off the page when its create's reply is lost, and creates the next", async () => {
+  await using open = await toolReader("ink");
+  open.zotero.answerNextWrite(() =>
+    Promise.reject(new AbortError("The reply was lost")),
+  );
+
+  await open.drag([100, 100], [150, 150]);
+  expect(open.store.getState().pendingStrokes).toEqual([]);
+
+  await open.drag([200, 200], [250, 250]);
+  expect(open.drafts).toHaveLength(2);
+});
+
+it("finishes a stroke that reaches the position ceiling as its own Annotation, and draws on with the pointer held", async () => {
+  await using open = await toolReader("ink");
+  open.repository.openHistory("RGRPDF24");
+  // A zig-zag scribble of three-point steps, row after row, as long as about
+  // one and a half Annotations hold.
+  const samples = Array.from({ length: 3000 }, (_, index): [number, number] => {
+    const row = Math.floor(index / 150);
+    const column = index % 150;
+    return [
+      100 + 3 * (row % 2 === 0 ? column : 149 - column),
+      60 + 12 * row + (index % 2) * 5,
+    ];
+  });
+
+  open.pointer("pointerdown", samples[0]!);
+  for (const sample of samples.slice(1)) open.pointer("pointermove", sample);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  // The pointer still draws, and the tool is still armed.
+  expect(open.creation.capturing).toBe(true);
+  expect(open.store.getState()).toMatchObject({ armed: "ink" });
+  open.pointer("pointerup", samples.at(-1)!);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(2));
+  await open.creation.created;
+
+  const [first, second] = open.drafts.map(({ position }) => position);
+  expect(writePosition(first!).length).toBeLessThanOrEqual(MAX_POSITION_LENGTH);
+  expect(first).toMatchObject({ pageIndex: 0, width: 2 });
+  expect(second).toMatchObject({ pageIndex: 0, width: 2 });
+  const firstPath = "paths" in first! ? first.paths[0]! : [];
+  const secondPath = "paths" in second! ? second.paths[0]! : [];
+  // The second part begins where the first one ends, so the two meet.
+  expect(secondPath.slice(0, 2)).toEqual(firstPath.slice(-2));
+  expect(firstPath.slice(0, 2)).toEqual([samples[0]![0], 792 - samples[0]![1]]);
+  expect(open.store.getState()).toMatchObject({
+    armed: "ink",
+    liveStroke: null,
+  });
+  // Both parts are the one stroke, so one undo press takes both off Zotero.
+  await open.repository.undo("RGRPDF24");
+  expect([open.zotero.at("MADE2345"), open.zotero.at("MADE2346")]).toEqual([
+    null,
+    null,
+  ]);
+});
+
+/**
+ * A 2D context that sets each character half a font size wide. happy-dom has
+ * no canvas to measure the interface font with.
+ */
+function halfEmContext() {
+  let fontSize = 0;
+  return {
+    set font(font: string) {
+      fontSize = Number.parseFloat(font);
+    },
+    measureText: (text: string) => ({ width: (text.length * fontSize) / 2 }),
+  };
+}
+
+/**
+ * Opens a Text Draft with a click on page one, and types `text` into it as
+ * its textarea's input hands it on, measured by {@link halfEmContext}.
+ */
+function typeDraft(open: ImageReader, text: string) {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+    halfEmContext() as never,
+  );
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  open.creation.typeDraft(text);
+}
+
+/**
+ * One text page with no characters, read from a document the view can close.
+ * After `close()` the viewer holds no document, as Obsidian's own unload
+ * leaves it before ZotLit's disposal runs, and every read rejects, as PDF.js
+ * rejects on a destroyed document.
+ */
+function closingDocument() {
+  let closed = false;
+  const read = async <T>(value: T): Promise<T> => {
+    if (closed) throw new Error("Worker was destroyed");
+    return value;
+  };
+  const source: PdfPageSource = {
+    numPages: 1,
+    getViewBox: () => read([0, 0, 612, 792]),
+    getTextItems: () => read([]),
+    getCatalogPageLabels: () => read(null),
+  };
+  const structure = new PdfTextStructure(source);
+  return {
+    structure: () => (closed ? null : structure),
+    /** Settles once the reads a click on page one started have answered. */
+    read: async () => {
+      await Promise.all([structure.page(0), structure.pageLabels()]);
+    },
+    close: () => {
+      closed = true;
+    },
+  };
+}
+
+it("says why when a Text Draft's create reply is lost, and takes the draft off the page", async () => {
+  await using open = await toolReader("text");
+  open.zotero.answerNextWrite(() =>
+    Promise.reject(new AbortError("The reply was lost")),
+  );
+
+  typeDraft(open, "Typed");
+  open.key("Escape");
+  await open.creation.created;
+
+  expect(open.drafts).toHaveLength(1);
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [m.annot_view_write_reason_unknown_outcome()],
+  ]);
+  expect(selectTextDraft(open.store.getState())).toBeNull();
+});
+
+it("says why when no document stands to create a Text Draft from", async () => {
+  await using open = await toolReader("text", undefined, { closed: true });
+
+  typeDraft(open, "Typed");
+  open.key("Escape");
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [m.pdf_create_reason_no_document()],
+  ]);
+  expect(selectTextDraft(open.store.getState())).toBeNull();
+});
+
+it("says why a Text Draft finished after editing lapsed was not created", async () => {
+  await using open = await toolReader("text");
+  const lapsed: EditingCapability = {
+    kind: "read-only",
+    reason: "zotero-unavailable",
+  };
+
+  typeDraft(open, "Typed");
+  ingestCapability(open.store, lapsed, NOW);
+  open.key("Escape");
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  // The typed text is lost, so the create failure names the block.
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [blockedReason(lapsed, NOW)],
+  ]);
+  expect(open.gestures.reportBlockedGesture).not.toHaveBeenCalled();
+  expect(selectTextDraft(open.store.getState())).toBeNull();
+});
+
+it("creates a Text Draft finished as the view closes, from the page it read at the click", async () => {
+  const document_ = closingDocument();
+  await using open = await toolReader("text", undefined, {
+    structure: document_.structure,
+  });
+  {
+    // The view's own surfaces close; the repository outlives them.
+    using _closing = open;
+    typeDraft(open, "Typed");
+    // The reads the click started run to their end before the view closes.
+    await document_.read();
+    document_.close();
+  }
+  await open.creation.created;
+
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  expect(open.drafts).toEqual([
+    {
+      type: "text",
+      color: open.store.getState().colors.text,
+      comment: "Typed",
+      pageLabel: "1",
+      sortIndex: expect.stringMatching(/^00000\|/),
+      position: {
+        pageIndex: 0,
+        fontSize: 14,
+        rotation: 0,
+        rects: [expect.any(Array)],
+      },
+    },
+  ]);
+  // The box the typing refit: five characters half a font size wide, and
+  // Zotero's five points past them.
+  const [box] = (open.drafts[0]!.position as TextPosition).rects;
+  expect(box![2]! - box![0]!).toBeCloseTo(40, 2);
+});
+
+it("creates a Text Draft the view closes on before the Page Label pass ends, with the page's own number", async () => {
+  // The page answers; the catalog read the label pass needs never does, as a
+  // PDF.js document closed under it.
+  const structure = new PdfTextStructure({
+    numPages: 1,
+    getViewBox: async () => [0, 0, 612, 792],
+    getTextItems: async () => [],
+    getCatalogPageLabels: () => new Promise(() => {}),
+  });
+  await using open = await toolReader("text", undefined, {
+    structure: () => structure,
+  });
+  {
+    using _closing = open;
+    typeDraft(open, "Typed");
+    await structure.page(0);
+  }
+  // The binding closes the structure as it lets the document go.
+  structure.close();
+  await open.creation.created;
+
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  expect(open.drafts).toMatchObject([
+    { type: "text", comment: "Typed", pageLabel: "1" },
+  ]);
+});
+
+it("stops an image create waiting for PDF geometry when the runtime closes (#1860)", async () => {
+  await using open = await imageReader();
+  const read = Promise.withResolvers<string>();
+  const started = Promise.withResolvers<void>();
+  open.structure.sortIndex.mockImplementationOnce(() => {
+    started.resolve();
+    return read.promise;
+  });
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await started.promise;
+  let settled = false;
+  void open.creation.created.then(() => {
+    settled = true;
+  });
+  try {
+    await open.closeRuntime();
+    await vi.waitFor(() => expect(settled).toBe(true));
+    expect(open.drafts).toEqual([]);
+    expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  } finally {
+    read.resolve("00000|000100|00100");
+    await open.creation.created;
+  }
+  expect(open.drafts).toEqual([]);
+});
+
+it("stops an image create waiting for PDF geometry when its view closes", async () => {
+  await using open = await imageReader();
+  const read = Promise.withResolvers<string>();
+  open.structure.sortIndex.mockReturnValueOnce(read.promise);
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  expect(open.structure.sortIndex).toHaveBeenCalledOnce();
+
+  // The view closes before the document answers: nothing was sent yet, so
+  // the create goes with the view.
+  open[Symbol.dispose]();
+  read.resolve("00000|000100|00100");
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+});
+
+it("waits for a create Zotero holds when its view closes, and says why it failed", async () => {
+  await using open = await imageReader();
+  const reply = Promise.withResolvers<Response>();
+  open.zotero.answerNextWrite(() => reply.promise);
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  // The create is with Zotero when the view closes: the close waits for the
+  // answer, and the lost reply is still told.
+  open[Symbol.dispose]();
+  reply.reject(new AbortError("The reply was lost"));
+  await open.creation.created;
+
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [m.annot_view_write_reason_unknown_outcome()],
+  ]);
+});
+
+it("says a create's outcome is unknown when its PDF geometry read fails", async () => {
+  await using open = await imageReader();
+  open.structure.sortIndex.mockRejectedValueOnce(
+    new Error("Worker was destroyed"),
+  );
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [m.annot_view_write_reason_unknown_outcome()],
+  ]);
+});
+
+it("says nothing of a create that landed when what follows it fails, and logs it", async () => {
+  using warn = vi.spyOn(getLogger("pdf-annotation-editor"), "warn");
+  const colors: ToolColorStore = {
+    ...toolColors(),
+    use: () => {
+      throw new Error("The recent colours were not kept");
+    },
+  };
+  await using open = await imageReader(undefined, { colors });
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await open.creation.created;
+
+  // Zotero holds the Annotation, so no notice says it was not created.
+  expect(open.drafts).toHaveLength(1);
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  expect(warn).toHaveBeenCalledWith("An Annotation create did not finish", {
+    type: "image",
+    error: new Error("The recent colours were not kept"),
+  });
+});

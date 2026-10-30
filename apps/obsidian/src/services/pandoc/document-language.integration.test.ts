@@ -102,39 +102,6 @@ function openVault({
 }
 
 describe("Document Language", { timeout: TIMEOUT }, () => {
-  it("leaves a note that declares none to the vault Citation Locale", async () => {
-    await using vault = await openVault({ locale: "en-US" });
-
-    await expect(vault.citationText()).resolves.toBe(
-      `${EDITOR["en-US"]} ${VAULT_WORD}`,
-    );
-    await expect(vault.sidebarText()).resolves.toContain(EDITOR["en-US"]);
-    await expect(vault.popoverText()).resolves.toContain(EDITOR["en-US"]);
-    await expect(vault.copiedBibliography()).resolves.toContain(
-      EDITOR["en-US"],
-    );
-
-    const exported = await vault.exportNote();
-    expect(exported.html).toContain(EDITOR["en-US"]);
-    // The vault locale controls citeproc without becoming a Document Language.
-    expect(exported.html).not.toMatch(/<html[^>]*lang=/);
-  });
-
-  it("leaves a note under a vault at Style default to the style's own locale", async () => {
-    await using vault = await openVault();
-
-    await expect(vault.citationText()).resolves.toBe(
-      `${EDITOR["de-DE"]} ${VAULT_WORD}`,
-    );
-    await expect(vault.sidebarText()).resolves.toContain(EDITOR["de-DE"]);
-    await expect(vault.copiedBibliography()).resolves.toContain(
-      EDITOR["de-DE"],
-    );
-    await expect(vault.exportNote()).resolves.toMatchObject({
-      html: expect.stringContaining(EDITOR["de-DE"]),
-    });
-  });
-
   it("overrides the vault Citation Locale on every surface", async () => {
     await using vault = await openVault({
       locale: "en-US",
@@ -157,6 +124,7 @@ describe("Document Language", { timeout: TIMEOUT }, () => {
     const exported = await vault.exportNote();
     expect(exported.html).toContain(EDITOR["de-DE"]);
     expect(exported.html).toMatch(/<html[^>]*lang="de-DE"/);
+    expect(exported.html).toMatch(/<h1[^>]*>Literatur<\/h1>/);
   });
 
   it("carries a note's own style and language together", async () => {

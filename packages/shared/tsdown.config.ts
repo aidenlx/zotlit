@@ -1,8 +1,10 @@
-import { defineConfig } from "tsdown";
+import { defineLibrary } from "@zotlit/config/tsdown";
 
-export default defineConfig({
+export default defineLibrary({
   entry: [
     {
+      delimited: "./src/delimited.ts",
+      logging: "./src/logging.ts",
       "log-formatter": "./src/log-formatter.ts",
       nanoevents: "./src/nanoevents.ts",
     },

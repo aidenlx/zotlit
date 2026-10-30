@@ -1,10 +1,14 @@
 /**
  * Zotero deep-link (`zotero://`) builders, the persistent `http://zotero.org/`
- * Item URI, and the browsable web library URL. `select` navigates the library
+ * Item URI, the browsable web library URL, and the Obsidian link that shows an
+ * Item in ZotLit's Library View. `select` navigates the library
  * to an item; the format-agnostic `open` scheme navigates to an annotation
  * within its attachment (PDF / EPUB / snapshot).
  */
 import type { ZoteroUserIdentity } from "@/queries/account";
+
+import { isItemKey } from "./zt-item-key";
+import { formatIndexedKey } from "./zt-key";
 
 function libraryPath(groupID: number | null): string {
   return groupID == null ? "library" : `groups/${groupID}`;
@@ -13,6 +17,19 @@ function libraryPath(groupID: number | null): string {
 /** `zotero://select` deep link to a library item. */
 export function itemSelectUri(key: string, groupID: number | null): string {
   return `zotero://select/${libraryPath(groupID)}/items/${key}`;
+}
+
+/**
+ * `obsidian://zotlit/show-in-library` link that opens ZotLit's Library View on
+ * an item. It names the item by its Indexed Key, which is the same on every
+ * device that syncs the library, so a link written into a note keeps working.
+ * `@zotlit/protocol` decodes it (`parseShowInLibraryProtocolQuery`).
+ */
+export function libraryViewUri(key: string, groupID: number | null): string {
+  const params = new URLSearchParams({
+    "item-key": formatIndexedKey(key, groupID),
+  });
+  return `obsidian://zotlit/show-in-library?${params}`;
 }
 
 /**
@@ -29,13 +46,16 @@ export function itemSelectUri(key: string, groupID: number | null): string {
 export function itemUri(
   key: string,
   groupID: number | null,
-  user: ZoteroUserIdentity,
+  user: Pick<ZoteroUserIdentity, "userID" | "localUserKey">,
 ): string | null {
   const path = groupID != null ? `groups/${groupID}` : userPath(user);
   return path && `http://zotero.org/${path}/items/${key}`;
 }
 
-function userPath({ userID, localUserKey }: ZoteroUserIdentity): string | null {
+function userPath({
+  userID,
+  localUserKey,
+}: Pick<ZoteroUserIdentity, "userID" | "localUserKey">): string | null {
   if (userID != null) return `users/${userID}`;
   return localUserKey == null ? null : `users/local/${localUserKey}`;
 }
@@ -97,4 +117,58 @@ export function annotationOpenUri({
   if (pageLabel) params.set("page", pageLabel);
   params.sort();
   return `${attachmentOpenUri(attachmentKey, groupID)}?${params.toString()}`;
+}
+
+/** A positive decimal group id, the only kind Zotero writes in a link. */
+const GROUP_ID_RE = /^[1-9]\d*$/;
+
+/**
+ * The inverse of {@link annotationOpenUri}: what a `zotero://open` link to an
+ * annotation names. Both keys come back bare, beside the group id, so a caller
+ * that needs an Indexed Key formats one itself.
+ *
+ * @returns `null` for anything that is not an open link carrying a valid
+ *   annotation key — an attachment link with no annotation is not one.
+ */
+export function parseAnnotationOpenUri(
+  url: string,
+): AnnotationOpenUriOptions | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "zotero:" || parsed.host !== "open") return null;
+
+  const segments = parsed.pathname.split("/").slice(1);
+  let groupID: number | null;
+  let rest: string[];
+  if (segments[0] === "library") {
+    groupID = null;
+    rest = segments.slice(1);
+  } else if (segments[0] === "groups" && GROUP_ID_RE.test(segments[1] ?? "")) {
+    groupID = Number(segments[1]);
+    rest = segments.slice(2);
+  } else {
+    return null;
+  }
+  const [items, attachmentKey, ...extra] = rest;
+  if (items !== "items" || attachmentKey === undefined || extra.length > 0)
+    return null;
+
+  const annotationKey = parsed.searchParams.get("annotation");
+  if (
+    !isItemKey(attachmentKey) ||
+    annotationKey === null ||
+    !isItemKey(annotationKey)
+  )
+    return null;
+
+  return {
+    attachmentKey,
+    annotationKey,
+    pageLabel: parsed.searchParams.get("page") || null,
+    groupID,
+  };
 }

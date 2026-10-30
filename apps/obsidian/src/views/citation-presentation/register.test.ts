@@ -1,293 +1,355 @@
-import { Menu, TFile, TFolder } from "@mock/obsidian";
-import type { App, Command, Plugin, TAbstractFile } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import {
+  ButtonComponent,
+  DropdownComponent,
+  Modal,
+  settingsOf,
+  TextComponent,
+} from "@mock/obsidian";
+import { Effect, Exit, Fiber, FileSystem, Scope } from "effect";
+import type {
+  App,
+  Command,
+  Menu as ObsidianMenu,
+  MenuItem,
+  Plugin,
+} from "obsidian";
+import { describe, expect, vi } from "vitest";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { scopedBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
-import type { Settings } from "@/services/settings/schema";
+import { makeMetadataCache } from "@/lib/obsidian-metadata-cache";
+import { makeWorkspace } from "@/lib/obsidian-workspace";
+import { defaults } from "@/services/settings/schema";
+import { zoteroPrefFixture } from "@/services/zotero-pref/__fixtures__";
 
-import type { CitationPresentationModalOptions } from "./modal";
-import type { CitationPresentationChoice } from "./presentation";
-import { registerCitationPresentation } from "./register";
+import {
+  citationPresentationFileMenu,
+  registerCitationPresentation,
+  setCitationPresentation,
+} from "./register";
+import type { CitationPresentationDeps } from "./register";
 
-/** The dialog the action opens, answering with whatever this test chose. */
-const dialog = vi.hoisted(() => ({
-  opened: [] as unknown[],
-  answer: null as unknown,
-}));
+const STYLE = "http://www.zotero.org/styles/test-style";
+const styles = FileSystem.makeNoop({
+  readDirectory: (path) =>
+    Effect.succeed(path === "/zotero/styles" ? ["test-style.csl"] : []),
+  readFileString: () =>
+    Effect.succeed(
+      `<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0" class="in-text"><info><id>${STYLE}</id><title>Test style</title></info><citation><layout><text variable="title"/></layout></citation></style>`,
+    ),
+});
 
-vi.mock("./modal", () => ({
-  openCitationPresentationModal: (_app: unknown, options: unknown) => {
-    dialog.opened.push(options);
-    return Promise.resolve(dialog.answer);
-  },
-}));
-
-const NOTE_STYLE_ID = "http://www.zotero.org/styles/note-numbered";
-const VAULT_STYLE_ID = "http://www.zotero.org/styles/vault-prose";
-const DATA_DIR = "/zotero";
-
-type FileMenuHandler = (
-  menu: Menu,
-  file: TAbstractFile,
-  source: string,
-) => void;
-
-interface VaultOptions {
-  /** The properties the active note carries; `undefined` leaves no note active. */
-  note?: Record<string, unknown>;
-  settings?: Partial<Settings>;
-  /** Holds the vault selections back until `loadSettings()` hands them over. */
-  loading?: boolean;
-}
-
-/** One vault the action runs in, opened on one Markdown note. */
-function openVault({ note, settings = {}, loading }: VaultOptions = {}) {
-  const file = markdownFile("draft.md");
-  const vaultSettings = Promise.withResolvers<Settings>();
-  if (!loading) vaultSettings.resolve(settings as Settings);
-  const frontmatter = note ?? {};
-  const writes: string[] = [];
-  let command: Command | undefined;
-  let fileMenu: FileMenuHandler | undefined;
-
-  const app = {
-    workspace: {
-      getActiveFile: () => (note ? file : null),
-      on: (name: string, callback: FileMenuHandler) => {
-        if (name === "file-menu") fileMenu = callback;
-        return {};
-      },
-    },
-    metadataCache: { getFileCache: () => ({ frontmatter }) },
-    fileManager: {
-      processFrontMatter: (
-        target: TFile,
-        edit: (fm: Record<string, unknown>) => void,
-      ) => {
-        writes.push(target.path);
-        edit(frontmatter);
-        return Promise.resolve();
-      },
-    },
-  } as unknown as App;
-
-  registerCitationPresentation(
-    {
-      app,
-      addCommand: (added: Command) => {
-        command = added;
-        return added;
-      },
-      registerEvent: () => undefined,
-    } as unknown as Pick<Plugin, "addCommand" | "registerEvent" | "app">,
-    {
-      app,
-      zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
-      settings: { loaded: vaultSettings.promise },
-    },
+const setup = Effect.fn("citationPresentationTest")(function* (
+  text = "A draft.\n",
+) {
+  const host = createObsidianHost({ "draft.md": text });
+  const file = host.file("draft.md");
+  host.workspace.activeFile = file;
+  const app = stubService<App>("App", {
+    vault: stubService<App["vault"]>("Vault", {
+      process: host.vault.process.bind(host.vault),
+    }),
+    workspace: stubService<App["workspace"]>("Workspace", {
+      getActiveFile: host.workspace.getActiveFile.bind(host.workspace),
+      iterateAllLeaves: host.workspace.iterateAllLeaves.bind(host.workspace),
+    }),
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+      getFileCache: host.metadataCache.getFileCache.bind(host.metadataCache),
+    }),
+  });
+  const scope = yield* Scope.make();
+  yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+  const bridge = yield* scopedBridge.pipe(
+    Effect.provideService(Scope.Scope, scope),
   );
-
-  if (!command) throw new Error("the action registered no command");
-  if (!fileMenu) throw new Error("the action registered no file menu");
+  const { pref } = yield* zoteroPrefFixture(() => Effect.succeed(""), {
+    profileDir: "/profile",
+    dataDir: "/zotero",
+  });
+  const notifier = testNotifier();
+  const deps: CitationPresentationDeps = {
+    app,
+    bridge,
+    fileSystem: styles,
+    workspace: yield* makeWorkspace(host.workspace),
+    metadataCache: yield* makeMetadataCache(host.metadataCache),
+    zoteroPref: pref,
+    notifier: notifier.service,
+    settings: {
+      current: Effect.succeed({
+        ...defaults,
+        "citation.locale": "en-GB",
+        "note.default-profile": {
+          ...defaults["note.default-profile"],
+          bindings: {
+            ...defaults["note.default-profile"].bindings,
+            "citation.references-style": STYLE,
+          },
+        },
+      }),
+    },
+  };
+  let command: Command | undefined;
+  registerCitationPresentation(
+    stubService<Pick<Plugin, "app" | "addCommand">>("Plugin", {
+      app,
+      addCommand: (value) => {
+        command = value;
+        return value;
+      },
+    }),
+    deps,
+  );
+  if (!command) throw new Error("Command was not registered");
   const palette = command;
-  const onFileMenu = fileMenu;
   return {
+    host,
     file,
-    frontmatter,
-    /** Every note this run rewrote the properties of, newest last. */
-    writes,
-    /** The command palette entry, as the palette offers it. */
-    offered: () => palette.checkCallback?.(true) === true,
-    /** Perform the action from the palette, and let its dialog settle. */
-    async perform() {
-      palette.checkCallback?.(false);
-      await vi.waitFor(() => expect(dialog.opened.length).toBeGreaterThan(0));
-      await vi.waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    app,
+    deps,
+    scope,
+    notifier,
+    offered: () => palette.checkCallback?.(true),
+    perform: () => palette.checkCallback?.(false),
+    menu: (source = "more-options") => {
+      const items: { title: string; section: string; click: () => void }[] = [];
+      const menu: ObsidianMenu = stubService<ObsidianMenu>("Menu", {
+        addItem: (callback) => {
+          const recorded = { title: "", section: "", click: () => {} };
+          const item: MenuItem = stubService<MenuItem>("MenuItem", {
+            setSection: (value) => {
+              recorded.section = value;
+              return item;
+            },
+            setTitle: (value) => {
+              recorded.title =
+                typeof value === "string" ? value : (value.textContent ?? "");
+              return item;
+            },
+            setIcon: () => item,
+            onClick: (clicked) => {
+              recorded.click = () =>
+                clicked(stubService<MouseEvent>("MouseEvent", {}));
+              return item;
+            },
+          });
+          callback(item);
+          items.push(recorded);
+          return menu;
+        },
+      });
+      citationPresentationFileMenu(deps)(menu, {
+        file,
+        source,
+        leaf: undefined,
+        itemKey: null,
+        noteKey: null,
+      });
+      return { items };
     },
-    /** Perform it from the palette, leaving the dialog to answer as it will. */
-    async open() {
-      palette.checkCallback?.(false);
-      await vi.waitFor(() => expect(dialog.opened.length).toBeGreaterThan(0));
-      await Promise.resolve();
-    },
-    /** Perform it from the palette, leaving it to whatever it waits on. */
-    begin() {
-      palette.checkCallback?.(false);
-    },
-    /** Hand over the vault selections a loading vault held back. */
-    loadSettings() {
-      vaultSettings.resolve(settings as Settings);
-    },
-    /** One menu this action was offered a place in, as Obsidian builds it. */
-    menu(source: string, target: TAbstractFile = file as never) {
-      const menu = new Menu();
-      onFileMenu(menu, target, source);
-      return menu;
-    },
-    /** The note's More options menu, where the note on screen is configured. */
-    moreOptions(target?: TAbstractFile) {
-      return this.menu("more-options", target);
+    read: Effect.promise(() => host.vault.cachedRead(file)),
+    open: () => setCitationPresentation(file, deps),
+  };
+});
+
+function dialog() {
+  const modal = Modal.instances.at(-1)!;
+  const components = settingsOf(modal.contentEl).flatMap(
+    (row) => row.components,
+  );
+  const language = components.find(
+    (component): component is TextComponent =>
+      component instanceof TextComponent,
+  )!;
+  const style = components.find(
+    (component): component is DropdownComponent =>
+      component instanceof DropdownComponent,
+  )!;
+  return {
+    modal,
+    language,
+    style,
+    confirm: () => {
+      const button = components.find(
+        (component): component is ButtonComponent =>
+          component instanceof ButtonComponent &&
+          component.text === m.citation_presentation_confirm(),
+      )!;
+      button.click();
     },
   };
 }
 
-function markdownFile(path: string): TFile {
-  const file = new TFile();
-  file.path = path;
-  file.extension = "md";
-  return file;
-}
+const waitFor = (assertion: () => void) =>
+  Effect.promise(() => vi.waitFor(assertion));
 
-function answer(choice: CitationPresentationChoice | null): void {
-  dialog.answer = choice;
-}
+describe("Set citation presentation", () => {
+  it.effect("is offered only for an active Markdown note", () =>
+    Effect.gen(function* () {
+      const vault = yield* setup();
+      expect(vault.offered()).toBe(true);
+      vault.host.workspace.activeFile = null;
+      expect(vault.offered()).toBe(false);
+      vault.host.workspace.activeFile = vault.file;
+      vault.file.extension = "canvas";
+      expect(vault.offered()).toBe(false);
+    }),
+  );
 
-/** What the dialog was opened on, which is what the user reads in it. */
-function openedOn(): CitationPresentationModalOptions {
-  return dialog.opened.at(-1) as CitationPresentationModalOptions;
-}
+  it.effect(
+    "opens on the note's style and language with the vault locale as its placeholder",
+    () =>
+      Effect.gen(function* () {
+        const vault = yield* setup(
+          "---\nzotlit-csl: http://www.zotero.org/styles/note-numbered\nlang: de-DE\n---\nDraft.\n",
+        );
+        const pending = vault.open();
+        const opened = dialog();
+        expect(opened.style.getValue()).toBe(
+          "http://www.zotero.org/styles/note-numbered",
+        );
+        expect(opened.language.getValue()).toBe("de-DE");
+        expect(opened.language.inputEl.placeholder).toBe("en-GB");
+        opened.modal.close();
+        yield* Effect.promise(() => pending);
+      }),
+  );
 
-beforeEach(() => {
-  dialog.opened.length = 0;
-  dialog.answer = { styleId: null, language: null };
-});
+  it.effect(
+    "confirms the palette dialog and writes the note's language, keeping its other properties",
+    () =>
+      Effect.gen(function* () {
+        const vault = yield* setup("---\ntitle: Draft\n---\nA draft.\n");
+        vault.perform();
+        const opened = dialog();
+        expect(opened.style.getValue()).toBe("");
+        expect(opened.language.getValue()).toBe("");
+        yield* waitFor(() =>
+          expect(
+            opened.style.options.some((option) => option.value === STYLE),
+          ).toBe(true),
+        );
+        expect(opened.style.options[0]?.label).toBe(
+          m.citation_presentation_style_inherited({ style: "Test style" }),
+        );
+        opened.style.choose(STYLE);
+        opened.language.setValue("de-DE");
+        opened.confirm();
+        yield* waitFor(() =>
+          expect(
+            vault.host.metadataCache.getFileCache(vault.file)?.frontmatter,
+          ).toEqual({ title: "Draft", lang: "de-DE", "zotlit-csl": STYLE }),
+        );
+        expect(vault.notifier.notices).toEqual([]);
+      }),
+  );
 
-describe("the Set citation presentation action", () => {
-  it("is offered for the active Markdown note", () => {
-    expect(openVault({ note: {} }).offered()).toBe(true);
-  });
+  it.effect("dismisses without changing the note", () =>
+    Effect.gen(function* () {
+      const vault = yield* setup();
+      const pending = vault.open();
+      dialog().language.setValue("de-DE");
+      dialog().modal.close();
+      yield* Effect.promise(() => pending);
+      expect(yield* vault.read).toBe("A draft.\n");
+      expect(vault.notifier.notices).toEqual([]);
+    }),
+  );
 
-  it("stays out of reach where no note is active", () => {
-    expect(openVault().offered()).toBe(false);
-  });
+  it.effect("reports a note write failure through the Notifier (#1858)", () =>
+    Effect.gen(function* () {
+      const vault = yield* setup();
+      vault.app.vault.process = async () => {
+        throw new Error("Disk is full");
+      };
+      const pending = vault.open();
+      dialog().language.setValue("de-DE");
+      dialog().confirm();
+      yield* Effect.promise(() => pending);
+      expect(yield* vault.read).toBe("A draft.\n");
+      expect(vault.notifier.notices.map((notice) => notice.messages)).toEqual([
+        [m.notice_citation_presentation_failed()],
+      ]);
+    }),
+  );
 
-  it("stays out of reach for a file that is no note", () => {
-    const vault = openVault({ note: {} });
-    vault.file.extension = "canvas";
+  it.effect.each([false, true])(
+    "waits for a confirmed save on unload and keeps its outcome (failed: %s, #1858)",
+    (failed) =>
+      Effect.gen(function* () {
+        const vault = yield* setup();
+        const view = vault.host.openInEditor(vault.file);
+        vault.host.saves.hold();
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(() => vault.host.saves.release()),
+        );
+        if (failed)
+          vault.host.vault.modify = async () => {
+            throw new Error("Disk is full");
+          };
+        const pending = vault.open();
+        dialog().language.setValue("de-DE");
+        dialog().confirm();
+        yield* waitFor(() => expect(view.saving).toBe(true));
+        expect(view.getViewData()).toContain("lang: de-DE");
+        const closing = yield* Scope.close(vault.scope, Exit.void).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        expect(closing.pollUnsafe()).toBeUndefined();
+        yield* Effect.promise(() => vault.host.saves.release());
+        yield* Fiber.join(closing);
+        yield* Effect.promise(() => pending);
+        expect(view.saving).toBe(false);
+        if (failed) {
+          expect(yield* vault.read).toBe("A draft.\n");
+          expect(
+            vault.notifier.notices.map((notice) => notice.messages),
+          ).toEqual([[m.notice_citation_presentation_failed()]]);
+        } else {
+          expect(yield* vault.read).toContain("lang: de-DE");
+          expect(vault.notifier.notices).toEqual([]);
+        }
+      }),
+  );
 
-    expect(vault.offered()).toBe(false);
-  });
+  it.effect(
+    "closes a pending dialog on unload without changing the note (#1858)",
+    () =>
+      Effect.gen(function* () {
+        const vault = yield* setup();
+        const pending = vault.open();
+        const opened = dialog();
+        opened.language.setValue("de-DE");
+        expect(opened.modal.isOpen).toBe(true);
+        yield* Scope.close(vault.scope, Exit.void);
+        expect(opened.modal.isOpen).toBe(false);
+        yield* Effect.promise(() => pending);
+        expect(yield* vault.read).toBe("A draft.\n");
+        expect(vault.notifier.notices).toEqual([]);
+      }),
+  );
 
-  it("opens on the presentation the note reads under today", async () => {
-    const vault = openVault({
-      note: { "zotlit-csl": NOTE_STYLE_ID, lang: "de-DE" },
-      settings: {
-        "citation.references-style": VAULT_STYLE_ID,
-        "citation.locale": "en-GB",
-      },
-    });
-
-    await vault.perform();
-
-    expect(openedOn()).toMatchObject({
-      dataDir: DATA_DIR,
-      vaultStyleId: VAULT_STYLE_ID,
-      vaultLocale: "en-GB",
-      declared: { styleId: NOTE_STYLE_ID, language: "de-DE" },
-    });
-  });
-
-  it("opens on the inherited presentation for a note that declares none", async () => {
-    const vault = openVault({
-      note: {},
-      settings: { "citation.references-style": VAULT_STYLE_ID },
-    });
-
-    await vault.perform();
-
-    expect(openedOn()).toMatchObject({
-      vaultStyleId: VAULT_STYLE_ID,
-      vaultLocale: "",
-      declared: { styleId: null, language: "" },
-    });
-  });
-
-  it("opens on the vault selections a still-loading vault is about to hold", async () => {
-    const vault = openVault({
-      note: {},
-      settings: {
-        "citation.references-style": VAULT_STYLE_ID,
-        "citation.locale": "en-GB",
-      },
-      loading: true,
-    });
-
-    vault.begin();
-    await Promise.resolve();
-    expect(dialog.opened).toHaveLength(0);
-
-    vault.loadSettings();
-    await vi.waitFor(() => expect(dialog.opened.length).toBeGreaterThan(0));
-
-    expect(openedOn()).toMatchObject({
-      vaultStyleId: VAULT_STYLE_ID,
-      vaultLocale: "en-GB",
-    });
-  });
-
-  it("writes the chosen style and language into the note at once", async () => {
-    const vault = openVault({ note: { title: "Draft" } });
-    answer({ styleId: NOTE_STYLE_ID, language: "de-DE" });
-
-    await vault.perform();
-
-    expect(vault.frontmatter).toEqual({
-      title: "Draft",
-      "zotlit-csl": NOTE_STYLE_ID,
-      lang: "de-DE",
-    });
-    expect(vault.writes).toEqual(["draft.md"]);
-  });
-
-  it("hands the note back to the vault selections it chose to inherit", async () => {
-    const vault = openVault({
-      note: { title: "Draft", "zotlit-csl": NOTE_STYLE_ID, lang: "de-DE" },
-    });
-    answer({ styleId: null, language: null });
-
-    await vault.perform();
-
-    expect(vault.frontmatter).toEqual({ title: "Draft" });
-    expect(vault.writes).toEqual(["draft.md"]);
-  });
-
-  it("leaves the note alone where the dialog was dismissed", async () => {
-    const vault = openVault({ note: { "zotlit-csl": NOTE_STYLE_ID } });
-    answer(null);
-
-    await vault.open();
-
-    expect(vault.frontmatter).toEqual({ "zotlit-csl": NOTE_STYLE_ID });
-    expect(vault.writes).toEqual([]);
-  });
-});
-
-describe("the note's More options menu", () => {
-  it("offers the action from the note it was opened over", async () => {
-    const vault = openVault({ note: {} });
-    answer({ styleId: NOTE_STYLE_ID, language: null });
-
-    const item = vault.moreOptions().items[0];
-    expect(item?.title).toBe(m.command_set_citation_presentation_name());
-    expect(item?.section).toBe("zotlit");
-
-    item?.click();
-    await vi.waitFor(() => expect(vault.writes).toEqual(["draft.md"]));
-    expect(vault.frontmatter).toEqual({ "zotlit-csl": NOTE_STYLE_ID });
-  });
-
-  it("stays off a file that is no note", () => {
-    const vault = openVault({ note: {} });
-    const canvas = new TFile();
-    canvas.extension = "canvas";
-
-    expect(vault.moreOptions(canvas as never).items).toHaveLength(0);
-    expect(vault.moreOptions(new TFolder() as never).items).toHaveLength(0);
-  });
-
-  it("stays out of the menus that are no note's own", () => {
-    const vault = openVault({ note: {} });
-
-    expect(vault.menu("file-explorer-context-menu").items).toHaveLength(0);
-  });
+  it.effect("confirms from the note's More options menu", () =>
+    Effect.gen(function* () {
+      const vault = yield* setup();
+      expect(vault.menu("file-explorer-context-menu").items).toHaveLength(0);
+      const item = vault.menu().items[0]!;
+      expect(item.title).toBe(m.command_set_citation_presentation_name());
+      expect(item.section).toBe("action");
+      item.click();
+      dialog().language.setValue("fr-FR");
+      dialog().confirm();
+      yield* waitFor(() =>
+        expect(
+          vault.host.metadataCache.getFileCache(vault.file)?.frontmatter?.lang,
+        ).toBe("fr-FR"),
+      );
+      vault.file.extension = "canvas";
+      expect(vault.menu().items).toHaveLength(0);
+    }),
+  );
 });

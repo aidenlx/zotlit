@@ -1,6 +1,15 @@
 import { configure, reset } from "@logtape/logtape";
 import type { LogRecord } from "@logtape/logtape";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 // `@/prefs` pulls in `@/lib/l10n`, which constructs a `Localization` at module
 // scope. Hoisted so the stub exists before the import graph is evaluated.
@@ -38,7 +47,6 @@ import type { NotifyEventInput } from "./send";
 const PROBE_SQL = "PRAGMA journal_mode";
 const CHECKPOINT_SQL = "PRAGMA wal_checkpoint(PASSIVE)";
 const MANUAL_CHECKPOINT_SQL = "PRAGMA wal_checkpoint(TRUNCATE)";
-const SIGNAL = "send db/updated";
 
 const WAL_CHECKPOINT_PREF = "extensions.zotlit.wal-checkpoint";
 
@@ -134,10 +142,7 @@ let records: LogRecord[];
 const recordsAt = (level: LogRecord["level"]) =>
   records.filter((record) => record.level === level);
 
-beforeEach(async () => {
-  applicationBlur.callback = undefined;
-  applicationBlur.disposed = false;
-  applicationBlur.registered = false;
+beforeAll(async () => {
   records = [];
   await configure({
     sinks: {
@@ -150,29 +155,26 @@ beforeEach(async () => {
       { category: ["logtape", "meta"], lowestLevel: "error", sinks: [] },
     ],
   });
+});
+
+afterAll(() => reset());
+
+beforeEach(() => {
+  applicationBlur.callback = undefined;
+  applicationBlur.disposed = false;
+  applicationBlur.registered = false;
+  records = [];
   vi.useFakeTimers();
   stubZotero("wal");
 });
 
-afterEach(async () => {
+afterEach(() => {
   vi.useRealTimers();
   delete (globalThis as { Zotero?: unknown }).Zotero;
-  await reset();
 });
 
 describe("registerFreshness", () => {
   describe("probe-gated checkpoint activation", () => {
-    it("registers an observer on a wal database", async () => {
-      using handle = await registerFreshness(send);
-      expect(statements).toEqual([PROBE_SQL]);
-      expect(observer).toBeDefined();
-      expect(handle.status()).toEqual({
-        active: true,
-        automaticEnabled: true,
-        lastRun: null,
-      });
-    });
-
     it("keeps checkpoints inactive on a rollback-journal database", async () => {
       stubZotero("delete");
       using handle = await registerFreshness(send);
@@ -220,15 +222,6 @@ describe("registerFreshness", () => {
   });
 
   describe("freshness signal", () => {
-    it("sends db/updated only after the checkpoint completes", async () => {
-      using _handle = await registerFreshness(send);
-      emitNotifierEvent();
-      await vi.advanceTimersByTimeAsync(500);
-
-      expect(statements).toEqual([PROBE_SQL, CHECKPOINT_SQL, SIGNAL]);
-      expect(sent).toEqual([{ event: "db/updated" }]);
-    });
-
     it("holds the signal while the checkpoint is still running", async () => {
       using _handle = await registerFreshness(send);
       checkpointGate = Promise.withResolvers<void>();

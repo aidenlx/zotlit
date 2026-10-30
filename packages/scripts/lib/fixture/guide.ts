@@ -14,11 +14,23 @@ import {
   NOTES,
   PERSONAL_SELECTOR,
   SCOPE_CASES,
+  STRESS_GROUP_LIBRARY,
+  STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT,
   STRESS_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT,
+  STRESS_LIBRARY_TIERS,
+  STRESS_LIBRARY_VALUES,
   UNAVAILABLE_GROUP_IDS,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_PARTIAL_NAME,
+  UPGRADER_LEGACY_TEMPLATES,
+  UPGRADER_PLUGIN_VERSION,
+  UPGRADER_SETTINGS_VERSION,
+  VAULT_CASES,
 } from "./spec.ts";
 import type { FixtureItem, FixtureNote } from "./spec.ts";
 
+import { DEV_VAULT_CASE_ENV } from "#dev-vault";
 import { OBSIDIAN_HOST_VAULT_ENV } from "#obsidian-host-readiness";
 
 function libraryName(libraryID: number): string {
@@ -62,7 +74,11 @@ function collectionsSection(): string {
       entries.length > 1
         ? ` — shared by ${librariesRow(entries)}`
         : ` — ${libraryName(entries[0]!.libraryID)}`;
-    return `  ${key}${flag}`;
+    const parent = COLLECTIONS.find(
+      (c) => c.collectionID === entries[0]!.parentCollectionID,
+    );
+    const nesting = parent ? `, under ${parent.key}` : "";
+    return `  ${key}${flag}${nesting}`;
   });
   return `COLLECTIONS
 
@@ -152,6 +168,53 @@ The persisted key and value shape live in LIBRARY_SCOPE_SETTING_KEY
 ("${LIBRARY_SCOPE_SETTING_KEY}") and PersistedLibraryScope in spec.ts. They
 are the one place to update when the Library Scope setting changes shape.`;
 
+const VAULT_CASES_SECTION = `VAULT CASES
+
+${VAULT_CASES.map((c) => `  ${c.id.padEnd(12)} ${c.summary}`).join("\n")}
+
+A Vault Case selects what the Fixture Vault holds beside the Library Scope.
+Build one directly, or name it on a Paired Run:
+
+  pnpm fixture build --vault-case fresh
+  pnpm fixture open --for 10m --vault-case upgrader
+
+Each Vault Case other than the default opens its own Development Vault,
+tests/fixture-vault-<worktree>-<case>, so the cases never overwrite one
+another. A dev run sets ${DEV_VAULT_CASE_ENV} for the Obsidian watcher, so the
+Vite build copies each bundle into that case's vault and hot reload reaches
+it. Set ${DEV_VAULT_CASE_ENV} yourself to point dev:vault or a plain
+obsidian-vault.ts open at a case vault:
+
+  ${DEV_VAULT_CASE_ENV}=fresh pnpm --filter @zotlit/obsidian dev:vault
+
+The fresh case writes no settings file, so it accepts only the default Scope
+Case and leaves Live Updates off. The Paired Run still points ZotLit at the
+Fixture database through the Device Overrides, so the first Literature Note
+needs no Zotero setup.
+
+The upgrader case writes the ZotLit ${UPGRADER_PLUGIN_VERSION} shape: settings version ${UPGRADER_SETTINGS_VERSION} with
+the note bindings vault-global, no Profiles, release.previous-version
+${UPGRADER_PLUGIN_VERSION}, and this note.frontmatter-fields list:
+
+${UPGRADER_FRONTMATTER_FIELDS.map((f) => `  ${f.key.padEnd(12)} ${f.expr}`).join("\n")}
+
+To reproduce a reader's migration, pass their list to obsidian-vault.ts open
+or sync with --upgrader-fields <file>: a JSON field array, or their ZotLit
+data.json.
+
+Its template folder holds these ejected Legacy Template Files. Each starts
+from a shipped default and carries one visible edit:
+
+${UPGRADER_LEGACY_TEMPLATES.map((t) => `${`  zotlit-${t.name}.${t.language}.md`.padEnd(38)}${JSON.stringify(t.find)} -> ${JSON.stringify(t.replace)}`).join("\n")}
+
+The citation pair is mixed-language on purpose. The one-pass conversion folds
+the Liquid cite into zotlit-citation.md and renames the bare partial to
+zotlit-partial.${UPGRADER_LEGACY_PARTIAL_NAME}.md. It leaves the Eta cite2
+file in the vault and names it in its notice.
+
+On load, ZotLit migrates the settings to the current version, sets
+note.template-conversion-pending, and opens the conversion prompt.`;
+
 const PAIRED_RUN_SECTION = `PAIRED RUN
 
 Confirm that a live host vault answers before changing the Fixture:
@@ -159,13 +222,21 @@ Confirm that a live host vault answers before changing the Fixture:
   packages/scripts/scripts/obsidian-vault.ts check
 
 A successful check confirms host readiness. On failure, follow its recovery
-command after you open the selected host vault. Set ${OBSIDIAN_HOST_VAULT_ENV}
-to an open vault ID or folder name to select that host explicitly.
+command after you open the selected Host Vault. Set ${OBSIDIAN_HOST_VAULT_ENV}
+to a registered vault ID or unique folder name to select that host directly.
+An unset or empty value uses the focused window. Explicit selection errors stop
+the command. Each CLI probe has a five-second limit; the full check can take longer.
+
+An exact ID takes priority. Folder names must be unique across all registered
+vaults, including closed vaults; use the ID for duplicate names. If another
+folder name matches that ID, ignoring case, select another Host Vault or remove
+the conflicting registration. The selected path must exist and be recorded open.
+Saved open state can be stale; Obsidian can still open a closed window.
 
 Prepare the Fixture, open its per-worktree Development Vault, launch Paired
 Zotero, and verify that both extensions loaded:
 
-  pnpm fixture open
+  pnpm fixture open --for 10m
 
 The open command builds both extensions in parallel. It prepares the generated
 profile and Development Vault before it starts Paired Zotero, so Zotero reads
@@ -173,15 +244,44 @@ this run's HTTP port during startup.
 
 Add a Scope Case or restore the exact generated vault seed when needed:
 
-  pnpm fixture open partial --purge
+  pnpm fixture open --for 10m partial --purge
+
+The purge deletes the Development Vault folder and every ZotLit key in the
+vault's local storage, which Obsidian keeps outside that folder. A purged run
+therefore starts without held Device Overrides, Local Bridge installation ID,
+Pandoc consent, approved attachment folders, or saved view state.
 
 Use dev for the live form. It watches both extensions until Ctrl-C, then stops
 Paired Zotero and leaves the Development Vault window open:
 
-  pnpm fixture dev
+  pnpm fixture dev --for 60m
+
+Both commands hold the Desktop Slot while they run and require --for, its
+Lease, up to 60 min. When the Lease of dev ends, it stops as on Ctrl-C and
+exits 76; see pnpm desktop-slot --help.
 
 The host-vault check must succeed before the dev command starts.
-Close an existing Paired Zotero before either command rebuilds the Fixture.
+Either command closes a Paired Zotero that still holds this Fixture, then
+rebuilds and starts a fresh one. It waits for that instance to release the
+database, and reports the process it closed.
+
+The open command leaves Paired Zotero running after it exits. Close it when
+the check is done:
+
+  pnpm fixture stop
+
+The stop command closes the Zotero that holds this Fixture's database open,
+with or without a Paired Run report. It waits for that instance to release the
+database, forgets the report, and names the process it closed, or says that
+none held the Fixture. The discard command runs the same stop before it
+deletes the Fixture, so no Zotero stays on a deleted profile. Remove the
+Development Vault separately:
+
+  packages/scripts/scripts/obsidian-vault.ts remove --purge
+
+The Fixture profile grants obsidian:// standing permission through
+network.protocol-handler.external.obsidian, so a ZotLit backlink reaches the
+vault without Zotero's confirmation dialog.
 
 Fixture builds and Paired Zotero launches install Better BibTeX ${PINNED_BETTER_BIBTEX_VERSION} from its
 verified, cached XPI.
@@ -193,7 +293,24 @@ server.port in the Development Vault settings and extensions.zotlit.notify-url
 in the Fixture profile. It writes the Zotero HTTP port into
 extensions.zotero.httpServer.port in that profile. The ready report names both
 ports. This keeps the run clear of the default ports used by other ZotLit vaults
-and Zotero profiles.`;
+and Zotero profiles.
+
+Zotero's Local API stays shut until a command asks for it. Pass --local-api to
+build, open, or dev: the build sets
+extensions.zotero.httpServer.localAPI.enabled to true and gives the profile a
+free Zotero HTTP port. Paired Zotero serves the API on that port, and ZotLit
+reads the same number back from the profile, so both sides agree and the
+shipped 23119 stays clear. The build and the ready report print the base URL.
+
+Reads need no key. By default, a Paired Run with --local-api seeds one remembered
+Write Authorization in Zotero's Fixture profile and the matching record in the
+Development Vault's Obsidian SecretStorage. ZotLit can write without a dialog.
+Pass --no-grant-local-api-writes to test the authorization flow instead. That
+form leaves Zotero without the key and invalidates the Development Vault's held
+record, so the next user-initiated authorization opens Zotero's dialog.
+
+Zotero cancels every request it reads as browser traffic, so each call carries
+Zotero-Allowed-Request and the write calls also carry Zotero-Server-ID.`;
 
 const CANCEL_TESTING_SECTION = `CANCEL TESTING
 
@@ -203,11 +320,11 @@ macrotask after the confirm click therefore finds the whole plan in flight, and
 the run reports "Done.". Click Cancel in the same JavaScript turn as the
 confirm button to reach the write-phase abort:
 
-  obsidian vault=zt-fixture-vault eval code='
+  packages/scripts/scripts/obsidian-cli.ts --code '
   const modal = document.querySelector(".modal-container .modal");
   [...modal.querySelectorAll("button")].find((b) => b.classList.contains("mod-cta")).click();
   [...modal.querySelectorAll("button")].find((b) => /cancel/i.test(b.textContent)).click();
-  '
+  ' vault=zt-fixture-vault
 
 The confirm click renders the progress phase before it returns, so the second
 click aborts the run that phase already started. The modal reports
@@ -260,6 +377,32 @@ const CHANGING_THE_FIXTURE_SECTION = `CHANGING THE FIXTURE
 Edit packages/scripts/lib/fixture/spec.ts and rebuild.
 packages/scripts/lib/fixture/build.test.ts guards the Fixture Spec properties.`;
 
+const C = STRESS_LIBRARY_VALUES.collections;
+
+function stressLibraryRows(): string {
+  const { tags, itemTypes, venues } = STRESS_LIBRARY_VALUES;
+  const paths = {
+    rare: `${C.root.name}/${C.common.name}/${C.rare.name}`,
+    common: `${C.root.name}/${C.common.name}`,
+    dominant: `${C.root.name}/${C.dominant.name}`,
+  };
+  return (["rare", "common", "dominant"] as const)
+    .flatMap((frequency) =>
+      (
+        [
+          ["Tag", tags],
+          ["Collection", paths],
+          ["Item type", itemTypes],
+          ["publicationTitle", venues],
+        ] as const
+      ).map(
+        ([target, values]) =>
+          `  ${frequency.padEnd(10)}${target.padEnd(18)}${values[frequency]}`,
+      ),
+    )
+    .join("\n");
+}
+
 const STRESS_BUILD_SECTION = `STRESS BUILD
 
 Build an additive deterministic corpus for performance work:
@@ -269,6 +412,22 @@ Build an additive deterministic corpus for performance work:
 This adds ${DEFAULT_STRESS_ITEM_COUNT.toLocaleString("en-US")} synthetic Items with creators, tags, and Citation Keys across all Fixture Libraries. The corpus uses one fixed seed. Pass ${STRESS_ITEM_COUNT_CONSTRAINT} to change the scale:
 
   pnpm fixture stress 100000
+
+For Item Query performance work, fill My Library to an exact Item count. The tiers are ${STRESS_LIBRARY_TIERS.map((tier) => tier.toLocaleString("en-US")).join(", ")}; pass ${STRESS_LIBRARY_ITEM_COUNT_CONSTRAINT}:
+
+  pnpm fixture stress --library-items 10000
+
+For Item Query over two large Libraries, also fill the group Library ${STRESS_GROUP_LIBRARY.name} (group ID ${STRESS_GROUP_LIBRARY.groupID}); pass ${STRESS_GROUP_LIBRARY_ITEM_COUNT_CONSTRAINT} together with --library-items:
+
+  pnpm fixture stress --library-items 100000 --group-library-items 100000
+
+Its synthetic Items follow the rules of My Library, with Collections, Zotero Keys (a second fixed seed), and Citation Keys (stressg…) of their own. An Item of the group Library has the title of the My Library Item at the same position, as a copy has.
+
+Each group Library without an Item count keeps its Fixture Spec content. In the synthetic Items, each query target has a rare (0.1%), a common (10%), and a dominant (60% or more) value:
+
+${stressLibraryRows()}
+
+The ${C.root.name} Collection holds the other three Collections and no Items of its own. One Item of each filled Library has the title "${STRESS_LIBRARY_VALUES.uniqueTitle}". STRESS_LIBRARY_VALUES in packages/scripts/lib/fixture/spec.ts states the exact rule for each value.
 
 The ordinary pnpm fixture command keeps the Fixture at its committed Fixture Spec size.`;
 
@@ -283,6 +442,7 @@ export function renderGuide(): string {
     itemsSection(),
     notesSection(),
     SCOPE_CASES_SECTION,
+    VAULT_CASES_SECTION,
     PAIRED_RUN_SECTION,
     CANCEL_TESTING_SECTION,
     STRESS_BUILD_SECTION,

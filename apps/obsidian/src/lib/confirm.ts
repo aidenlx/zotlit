@@ -1,7 +1,10 @@
+import type { Effect } from "effect";
 import { ConfirmationModal } from "obsidian";
 import type { App } from "obsidian";
 
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
+import { modalAnswer } from "@/lib/modal-answer";
 
 export interface ConfirmOptions {
   title: string;
@@ -12,9 +15,35 @@ export interface ConfirmOptions {
   cta?: boolean;
 }
 
+/** @returns `true` once the user takes the action; `false` when the modal closes. */
 export function confirm(options: ConfirmOptions, app: App): Promise<boolean> {
+  return modalAnswer<boolean>((resolve) =>
+    openConfirmation(options, app, resolve),
+  );
+}
+
+/**
+ * {@link confirm} for Effect code.
+ *
+ * @returns `true` once the user takes the action; `false` when the modal
+ *   closes. An interrupt closes the modal.
+ */
+export function awaitConfirm(
+  options: ConfirmOptions,
+  app: App,
+): Effect.Effect<boolean> {
+  return awaitModal<boolean>((resolve) =>
+    openConfirmation(options, app, resolve),
+  );
+}
+
+/** Open the confirmation modal; `resolve` gets the user's answer. */
+function openConfirmation(
+  options: ConfirmOptions,
+  app: App,
+  resolve: (answer: boolean) => void,
+): ConfirmationModal {
   const { action, cancel, title, content, destructive, cta } = options;
-  const { resolve, promise } = Promise.withResolvers<boolean>();
   const modal = new ConfirmationModal(app);
   modal.setTitle(title);
   if (content) {
@@ -33,5 +62,5 @@ export function confirm(options: ConfirmOptions, app: App): Promise<boolean> {
   modal.setCloseCallback(() => resolve(false));
 
   modal.open();
-  return promise;
+  return modal;
 }

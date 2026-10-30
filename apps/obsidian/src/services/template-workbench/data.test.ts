@@ -1,123 +1,432 @@
+import { it } from "@effect/vitest";
 import Ajv2020 from "ajv/dist/2020";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import type { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import type { App, CliData, EventRef } from "obsidian";
+import { describe, expect } from "vitest";
 
+import { citekeysToCiteTemplateData } from "@zotlit/db";
+import type { ContractRoot } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import annotationSchema from "@zotlit/db/contract/annotation.schema.json";
+import citationSchema from "@zotlit/db/contract/citation.schema.json";
 import filenameSchema from "@zotlit/db/contract/filename.schema.json";
 import noteSchema from "@zotlit/db/contract/note.schema.json";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
+import { TemplateEngine } from "@zotlit/templates";
+import { CITATION_EXAMPLE_IDS } from "@zotlit/workbench/render";
+import type { CitationExampleId } from "@zotlit/workbench/render";
 
+import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { FileManager, layerFileManagerFrom } from "@/lib/obsidian-file-manager";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { layerVaultFrom } from "@/lib/obsidian-vault";
+import { NoteIndex } from "@/services/note-index/service";
+import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
+import { Profile } from "@/services/profile/service";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
-
+import { Template } from "@/services/template/service";
+import type { CompileError } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
-  createTemplateWorkbenchHandlers,
-  TEMPLATE_DATA_COMMAND,
-  TEMPLATE_RENDER_COMMAND,
-} from "./cli";
-import { loadTemplateData } from "./data";
-import type { TemplateDataDeps } from "./data";
+  inProcessReadsService,
+  sharedClientOpener,
+} from "@/services/zotero-reads/test-utils";
+
+import { workbenchContext, workbenchIdentity } from "./__fixtures__";
+import { createTemplateWorkbenchHandlers, TEMPLATE_DATA_COMMAND } from "./cli";
+import {
+  excerptImageContext,
+  readCitationData,
+  readTemplateData,
+} from "./data";
+import type { TemplateDataServices } from "./data";
+import { registerTemplateWorkbench } from "./register";
+
+function registeredData(deps: FixtureDeps) {
+  const { host, command } = fakeCliHost();
+  Object.assign(deps.app.vault, {
+    getMarkdownFiles: () => [{ path: "Notes/Paper.md", basename: "Paper" }],
+  });
+  Object.assign(deps.template, {
+    waitUntilSettled: () => Effect.succeed("settled" as const),
+  });
+  registerTemplateWorkbench(
+    { ...host, manifest: { version: "test" } },
+    workbenchContext(
+      deps.context,
+      workbenchIdentity({
+        vaultName: "Data fixture",
+        basePath: "/fixture",
+        apiVersion: "1.0.0",
+        sourceId: "fixture-source",
+        databasePath: "/Zotero/zotero.sqlite",
+        dataDir: "/Zotero",
+        baseAttachmentPath: null,
+      }),
+      Context.make(
+        MetadataCache,
+        stubService<MetadataCache["Service"]>("MetadataCache", {
+          fileCache: () =>
+            Effect.succeed({ frontmatter: { "zotero-key": "MAIN2345" } }),
+        }),
+      ),
+      Context.make(
+        Profile,
+        stubService<Profile["Service"]>("Profile", {
+          profileOf: () =>
+            Effect.succeed(
+              stubService<NoteProfile>("NoteProfile", {
+                ok: true,
+                profile: stubService<ResolvedProfile>("ResolvedProfile", {
+                  selector: "default",
+                }),
+              }),
+            ),
+        }),
+      ),
+    ),
+  );
+  const { handler } = command(TEMPLATE_DATA_COMMAND);
+  return (params: CliData) =>
+    handler(params).pipe(
+      Effect.map((output) => JSON.parse(output) as Record<string, any>),
+    );
+}
+
+describe("registered field discovery", () => {
+  it.effect(
+    "joins real values with definitions and expressions, with note and environment identity",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+        const run = registeredData(fixture.deps);
+        const result = yield* run({
+          note: "Notes/Paper.md",
+          root: "note",
+          query: "citekey",
+          "expect-source": "fixture-source",
+        });
+        expect(result).toMatchObject({
+          ok: true,
+          identity: {
+            vault: { path: "/fixture" },
+            source: { id: "fixture-source" },
+          },
+          selection: {
+            key: "MAIN2345",
+            note: "Notes/Paper.md",
+            profile: "default",
+            root: "note",
+          },
+        });
+        expect(result.discovery.matches[0]).toMatchObject({
+          path: "zt.citekey",
+          presence: "present",
+          value: "fixture2024",
+          definition: {
+            name: "citekey",
+            description: expect.stringContaining("citation"),
+          },
+          examples: { liquid: "{{ zt.citekey }}", eta: "<%= zt.citekey %>" },
+        });
+        expect(result.zt).toBeUndefined();
+        expect(fixture.writeCalls).toEqual([]);
+      }),
+  );
+
+  it.effect("builds data from the selected note when an item has several", () =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
+      const run = registeredData(fixture.deps);
+      // A resolved note makes the excerpt-image context read the attachment
+      // folder, which the base fixture's FileManager does not answer.
+      Object.assign(fixture.deps.app.fileManager, {
+        getAvailablePathForAttachment: async (name: string) =>
+          `attachments/${name}`,
+      });
+      const notes = [
+        { path: "Notes/One.md", basename: "One" },
+        { path: "Notes/Two.md", basename: "Two" },
+      ];
+      fixture.deps.app.vault.getMarkdownFiles = () => notes as never;
+      fixture.deps.noteIndex.getNotesByItemKey = () =>
+        Effect.succeed(notes as never);
+
+      const result = yield* run({
+        note: "Notes/Two.md",
+        root: "note",
+        path: "zt.notePath",
+      });
+
+      expect(result.selection).toMatchObject({ note: "Notes/Two.md" });
+      expect(result.discovery.matches[0]).toMatchObject({
+        path: "zt.notePath",
+        value: "Notes/Two.md",
+      });
+    }),
+  );
+
+  it.effect(
+    "inspects nested annotations and preserves empty arrays and absent fields",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+        const run = registeredData(fixture.deps);
+        const selected = { key: "MAIN2345", root: "note" };
+        expect(
+          (yield* run({ ...selected, path: "zt.annotations[0].pageLabel" }))
+            .discovery.matches[0],
+        ).toMatchObject({
+          value: "1",
+          presence: "present",
+          examples: { liquid: "{{ zt.annotations[0].pageLabel }}" },
+        });
+        expect(
+          (yield* run({ ...selected, path: "zt.tags" })).discovery.matches[0],
+        ).toMatchObject({ value: [], presence: "present" });
+        expect(
+          (yield* run({ ...selected, path: "zt.title" })).discovery.matches[0],
+        ).toMatchObject({ value: null, presence: "present" });
+        expect(
+          (yield* run({ ...selected, path: "zt.conferenceName" })).discovery
+            .matches[0],
+        ).toMatchObject({
+          presence: "absent",
+          definition: { name: "conferenceName" },
+        });
+        const absent = (yield* run({
+          ...selected,
+          path: "zt.annotations[99].comment",
+        })).discovery.matches[0];
+        expect(absent.presence).toBe("absent");
+        expect(absent).not.toHaveProperty("value");
+        expect((yield* run({ ...selected })).zt).toBeUndefined();
+        expect((yield* run({ ...selected, full: "" })).zt.indexedKey).toBe(
+          "MAIN2345",
+        );
+        expect(fixture.writeCalls).toEqual([]);
+      }),
+  );
+
+  it.effect(
+    "keeps focused reads independent of unrelated getters and rejects a different source",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture({
+          renderError: new Error("Citation must not run"),
+        });
+        const run = registeredData(fixture.deps);
+        expect(
+          yield* run({
+            key: "ANNA2345",
+            root: "annotation",
+            path: "zt.pageLabel",
+          }),
+        ).toMatchObject({ ok: true, discovery: { matches: [{ value: "1" }] } });
+        expect(
+          yield* run({
+            key: "MAIN2345",
+            root: "note",
+            query: "title",
+            "expect-source": "different-source",
+          }),
+        ).toMatchObject({ ok: false, diagnostic: { code: "TARGET_MISMATCH" } });
+        expect(fixture.writeCalls).toEqual([]);
+      }),
+  );
+
+  it.effect(
+    "keeps Annotation and Citation caller roots distinct and evaluates inert helpers",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+        const run = registeredData(fixture.deps);
+        expect(
+          yield* run({
+            key: "ANNA2345",
+            root: "annotation",
+            path: "zt.pageLabel",
+          }),
+        ).toMatchObject({
+          selection: { key: "ANNA2345", root: "annotation" },
+          discovery: { matches: [{ value: "1" }] },
+        });
+        expect(
+          yield* run({
+            example: "two-items",
+            root: "citation",
+            path: "zt.citations[1].item.citekey",
+          }),
+        ).toMatchObject({
+          selection: { example: "two-items", root: "citation" },
+          discovery: { matches: [{ value: "Kahneman2011" }] },
+        });
+        const helper = yield* run({
+          key: "MAIN2345",
+          root: "note",
+          path: "zt.notes[0].noteLink",
+        });
+        expect(helper.discovery.matches[0]).toMatchObject({
+          value: {
+            $helper: "noteLink",
+            value: "[Child](zotero://select/library/items/NATE2345)",
+          },
+          examples: { eta: "<%= zt?.notes?.[0]?.noteLink?.() %>" },
+        });
+        expect(fixture.writeCalls).toEqual([]);
+      }),
+  );
+
+  it.effect(
+    "inspects dictionary keys and retains each possible date-day type",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+        const run = registeredData(fixture.deps);
+        const field = (yield* run({
+          key: "MAIN2345",
+          root: "note",
+          path: 'zt.extra.fields["tex.mendeley-tags"]',
+        })).discovery.matches[0];
+        expect(field).toMatchObject({
+          presence: "present",
+          value: "reading",
+          definition: { type: { kind: "primitive", type: "string" } },
+        });
+        const day = (yield* run({
+          key: "MAIN2345",
+          root: "note",
+          path: "zt.date.day",
+        })).discovery.matches[0];
+        expect(day).toMatchObject({
+          value: 2,
+          definition: {
+            type: {
+              kind: "union",
+              options: expect.arrayContaining([
+                { kind: "primitive", type: "number" },
+                { kind: "primitive", type: "null" },
+              ]),
+            },
+          },
+        });
+        expect(day.definition.description).toContain("Day of month");
+      }),
+  );
+
+  it.effect(
+    "runs Eta helper examples for present, null, and absent selected values",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+        const run = registeredData(fixture.deps);
+        const engine = new TemplateEngine();
+        const present = (yield* run({
+          key: "MAIN2345",
+          root: "note",
+          path: "zt.notes[0].noteLink",
+        })).discovery.matches[0];
+        const absent = (yield* run({
+          key: "MAIN2345",
+          root: "note",
+          path: "zt.notes[99].noteLink",
+        })).discovery.matches[0];
+        expect(
+          engine.renderString(present.examples.eta, {
+            notes: [{ noteLink: () => "[[Child]]" }],
+          }),
+        ).toBe("[[Child]]");
+        expect(
+          engine.renderString(present.examples.eta, {
+            notes: [{ noteLink: null }],
+          }),
+        ).toBe("");
+        expect(engine.renderString(absent.examples.eta, { notes: [] })).toBe(
+          "",
+        );
+        const author = (yield* run({
+          example: "two-items",
+          root: "citation",
+          path: "zt.items[0].creators[0].family",
+        })).discovery.matches[0];
+        expect(author).toMatchObject({ value: "Ioannidis" });
+        expect(
+          engine.renderString(author.examples.eta, {
+            items: [{ creators: [{ family: "Ioannidis" }] }],
+          }),
+        ).toBe("Ioannidis");
+        expect(
+          (yield* run({
+            key: "MAIN2345",
+            root: "note",
+            path: "zt.creators[0].family",
+          })).ok,
+        ).toBe(true);
+      }),
+  );
+
+  it.effect.each<CliData>([
+    { key: "MAIN2345", root: "annotation", query: "text" },
+    { key: "MISS2345", root: "note", query: "title" },
+    { key: "MAIN2345", root: "note", path: "zt.citations[0]" },
+    { key: "MAIN2345", root: "note", path: "zt.title()" },
+    { key: "MAIN2345", root: "note", query: "title", full: "" },
+    { note: "missing", root: "note", query: "title" },
+  ])("gives recovery for invalid discovery %j", (params) =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
+      const result = yield* registeredData(fixture.deps)(params);
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostic: { message: expect.any(String), hint: expect.any(String) },
+      });
+      expect(fixture.writeCalls).toEqual([]);
+    }),
+  );
+});
 
 describe("zotlit:template-data with the real loader", () => {
-  it("renders through inert resolvers without invoking a write surface", async () => {
-    using fixture = createFixture({
-      render: (name, data) => {
-        const noteLink = (
-          data as { notes: { noteLink: () => string }[] }
-        ).notes[0]!.noteLink();
-        return `${name}:${noteLink}`;
-      },
-    });
-
-    expect(await runTemplateRender(fixture.deps, "MAIN2345")).toMatchObject({
-      ok: true,
-      request: {
-        key: "MAIN2345",
-        template: "note",
-        format: "json",
-      },
-      markdown: "note:",
-    });
-    expect(fixture.writeCalls).toEqual([]);
-  });
-
-  it.each([
+  it.effect.each([
     ["note", "MAIN2345", noteSchema],
     ["annotation", "ANNA2345", annotationSchema],
     ["filename", "MAIN2345", filenameSchema],
+    ["citation", "MAIN2345", citationSchema],
   ] as const)(
     "serializes fixture data that conforms to the %s schema",
-    async (root, key, schema) => {
-      using fixture = createFixture();
-      const result = await runTemplateData(fixture.deps, key, root);
-      const validate = new Ajv2020({ strict: true }).compile(schema);
+    ([root, key, schema]) =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+        const result = yield* runTemplateData(fixture.deps, key, root);
+        const validate = new Ajv2020({ strict: true }).compile(schema);
 
-      expect(result.ok).toBe(true);
-      expect(
-        validate(result.zt),
-        JSON.stringify(validate.errors, null, 2),
-      ).toBe(true);
-    },
+        expect(result.ok).toBe(true);
+        expect(
+          validate(result.zt),
+          JSON.stringify(validate.errors, null, 2),
+        ).toBe(true);
+      }),
   );
 
-  it("returns the selected annotation at the annotation root", async () => {
-    using fixture = createFixture();
+  it.effect("returns the selected annotation at the annotation root", () =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
 
-    const result = await runTemplateData(
-      fixture.deps,
-      "ANNA2345",
-      "annotation",
-    );
+      const result = yield* runTemplateData(
+        fixture.deps,
+        "ANNA2345",
+        "annotation",
+      );
 
-    expect(result).toMatchObject({
-      contractVersion: 2,
-      command: TEMPLATE_DATA_COMMAND,
-      ok: true,
-      request: {
-        key: "ANNA2345",
-        root: "annotation",
-        format: "json",
-      },
-      identity: {
-        vault: { name: "Test Vault" },
-        source: { id: "a1b2c3d4" },
-      },
-      zt: {
-        key: "ANNA2345",
-        indexedKey: "ANNA2345",
-        citation: "Fixture citation",
-      },
-    });
-  });
-
-  it.each([
-    {
-      error: new InertTemplateError("JavaScript Templates are disabled"),
-      compileError: null,
-      code: "ETA_OPT_IN_REQUIRED",
-    },
-    {
-      error: new Error("cite cannot compile"),
-      compileError: "Unexpected token",
-      code: "TEMPLATE_COMPILE_ERROR",
-    },
-    {
-      error: new Error("cite render failed"),
-      compileError: null,
-      code: "TEMPLATE_RENDER_ERROR",
-    },
-  ] as const)(
-    "returns $code when citation evaluation fails",
-    async ({ error, compileError, code }) => {
-      using fixture = createFixture({ renderError: error, compileError });
-
-      expect(
-        await runTemplateData(fixture.deps, "ANNA2345", "annotation"),
-      ).toMatchObject({
-        contractVersion: 2,
+      expect(result).toMatchObject({
+        contractVersion: 8,
         command: TEMPLATE_DATA_COMMAND,
-        ok: false,
+        ok: true,
         request: {
           key: "ANNA2345",
           root: "annotation",
@@ -127,308 +436,535 @@ describe("zotlit:template-data with the real loader", () => {
           vault: { name: "Test Vault" },
           source: { id: "a1b2c3d4" },
         },
-        diagnostic: {
-          code,
-          details: { template: "cite" },
+        zt: {
+          key: "ANNA2345",
+          indexedKey: "ANNA2345",
+          citation: "Fixture citation",
         },
       });
-    },
+    }),
   );
 
-  it("resolves a group-library annotation at the annotation root", async () => {
-    using fixture = createFixture();
+  it.effect.each([
+    {
+      error: new InertTemplateError("JavaScript Templates are disabled"),
+      compileError: null,
+      code: "ETA_OPT_IN_REQUIRED",
+    },
+    {
+      error: new Error("citation cannot compile"),
+      compileError: "Unexpected token",
+      code: "TEMPLATE_COMPILE_ERROR",
+    },
+    {
+      error: new Error("citation render failed"),
+      compileError: null,
+      code: "TEMPLATE_RENDER_ERROR",
+    },
+  ] as const)(
+    "returns $code when citation evaluation fails",
+    ({ error, compileError, code }) =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture({
+          renderError: error,
+          compileError,
+        });
 
-    expect(
-      await runTemplateData(fixture.deps, "GANN2345g42", "annotation"),
-    ).toMatchObject({
-      ok: true,
-      zt: {
-        indexedKey: "GANN2345g42",
-        parentItem: { indexedKey: "GRUP2345g42" },
-      },
-    });
-  });
+        expect(
+          yield* runTemplateData(fixture.deps, "ANNA2345", "annotation"),
+        ).toMatchObject({
+          contractVersion: 8,
+          command: TEMPLATE_DATA_COMMAND,
+          ok: false,
+          request: {
+            key: "ANNA2345",
+            root: "annotation",
+            format: "json",
+          },
+          identity: {
+            vault: { name: "Test Vault" },
+            source: { id: "a1b2c3d4" },
+          },
+          diagnostic: {
+            code,
+            details: { template: "citation" },
+          },
+        });
+      }),
+  );
 
-  it.each(["MAIN2345", "ATCH2345", "NATE2345"])(
-    "requires an annotation for selector %s at the annotation root",
-    async (key) => {
-      using fixture = createFixture();
+  it.effect("resolves a group-library annotation at the annotation root", () =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
 
       expect(
-        await runTemplateData(fixture.deps, key, "annotation"),
+        yield* runTemplateData(fixture.deps, "GANN2345g42", "annotation"),
       ).toMatchObject({
-        ok: false,
-        diagnostic: { code: "ANNOTATION_REQUIRED" },
+        ok: true,
+        zt: {
+          indexedKey: "GANN2345g42",
+          parentItem: { indexedKey: "GRUP2345g42" },
+        },
       });
-    },
+    }),
   );
 
-  it("distinguishes an unknown annotation selector", async () => {
-    using fixture = createFixture();
+  it.effect.each(["MAIN2345", "ATCH2345", "NATE2345"])(
+    "requires an annotation for selector %s at the annotation root",
+    (key) =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
 
-    expect(
-      await runTemplateData(fixture.deps, "MISS2345", "annotation"),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: { code: "KEY_NOT_FOUND" },
-    });
-  });
+        expect(
+          yield* runTemplateData(fixture.deps, key, "annotation"),
+        ).toMatchObject({
+          ok: false,
+          diagnostic: { code: "ANNOTATION_REQUIRED" },
+        });
+      }),
+  );
 
-  it("reports an Annotation whose parent Attachment row is absent", async () => {
-    using fixture = createFixture();
+  it.effect("distinguishes an unknown annotation selector", () =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
 
-    expect(
-      await runTemplateData(fixture.deps, "RPHM2345", "annotation"),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: { code: "ANNOTATION_ATTACHMENT_MISSING" },
-    });
-    expect(
-      await runTemplateData(fixture.deps, "RPHM2345", "note"),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: { code: "ANNOTATION_ATTACHMENT_MISSING" },
-    });
-  });
+      expect(
+        yield* runTemplateData(fixture.deps, "MISS2345", "annotation"),
+      ).toMatchObject({
+        ok: false,
+        diagnostic: { code: "KEY_NOT_FOUND" },
+      });
+    }),
+  );
 
-  it("serves a standalone annotation with a null parent item", async () => {
-    using fixture = createFixture();
+  it.effect("reports an Annotation whose parent Attachment row is absent", () =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
 
-    const result = await runTemplateData(
-      fixture.deps,
-      "STAN2345",
-      "annotation",
-    );
+      expect(
+        yield* runTemplateData(fixture.deps, "RPHM2345", "annotation"),
+      ).toMatchObject({
+        ok: false,
+        diagnostic: { code: "ANNOTATION_ATTACHMENT_MISSING" },
+      });
+      expect(
+        yield* runTemplateData(fixture.deps, "RPHM2345", "note"),
+      ).toMatchObject({
+        ok: false,
+        diagnostic: { code: "ANNOTATION_ATTACHMENT_MISSING" },
+      });
+    }),
+  );
 
-    expect(result).toMatchObject({
-      ok: true,
-      zt: {
-        key: "STAN2345",
-        parentItem: null,
-        citation: null,
-      },
-    });
-    expect(
-      await runTemplateData(fixture.deps, "STAN2345", "note"),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: { code: "NO_PARENT_ITEM" },
-    });
-    expect(
-      await runTemplateData(fixture.deps, "STAN2345", "filename"),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: { code: "NO_PARENT_ITEM" },
-    });
-  });
+  it.effect("serves a standalone annotation with a null parent item", () =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
 
-  it("returns the Filename Template's single-item data", async () => {
-    using fixture = createFixture();
+      const result = yield* runTemplateData(
+        fixture.deps,
+        "STAN2345",
+        "annotation",
+      );
 
-    const result = await runTemplateData(fixture.deps, "MAIN2345", "filename");
-
-    expect(result).toMatchObject({
-      contractVersion: 2,
-      command: TEMPLATE_DATA_COMMAND,
-      ok: true,
-      request: {
-        key: "MAIN2345",
-        root: "filename",
-        format: "json",
-      },
-      identity: {
-        vault: { name: "Test Vault" },
-        source: { id: "a1b2c3d4" },
-      },
-      zt: {
-        indexedKey: "MAIN2345",
-        notePath: "",
-        noteLink: {
-          $helper: "noteLink",
-          signature: "(alias?: string, subpath?: string) => string | null",
-          value: "",
+      expect(result).toMatchObject({
+        ok: true,
+        zt: {
+          key: "STAN2345",
+          parentItem: null,
+          citation: null,
         },
-      },
-    });
-    expect((result.zt as Record<string, unknown>).annotations).toBeUndefined();
-  });
+      });
+      expect(
+        yield* runTemplateData(fixture.deps, "STAN2345", "note"),
+      ).toMatchObject({
+        ok: false,
+        diagnostic: { code: "NO_PARENT_ITEM" },
+      });
+      expect(
+        yield* runTemplateData(fixture.deps, "STAN2345", "filename"),
+      ).toMatchObject({
+        ok: false,
+        diagnostic: { code: "NO_PARENT_ITEM" },
+      });
+    }),
+  );
 
-  it.each([
+  it.effect("returns the Filename Template's single-item data", () =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
+
+      const result = yield* runTemplateData(
+        fixture.deps,
+        "MAIN2345",
+        "filename",
+      );
+
+      expect(result).toMatchObject({
+        contractVersion: 8,
+        command: TEMPLATE_DATA_COMMAND,
+        ok: true,
+        request: {
+          key: "MAIN2345",
+          root: "filename",
+          format: "json",
+        },
+        identity: {
+          vault: { name: "Test Vault" },
+          source: { id: "a1b2c3d4" },
+        },
+        zt: {
+          indexedKey: "MAIN2345",
+          notePath: "",
+          noteLink: {
+            $helper: "noteLink",
+            signature: "(alias?: string, subpath?: string) => string | null",
+            value: "",
+          },
+        },
+      });
+      expect(
+        (result.zt as Record<string, unknown>).annotations,
+      ).toBeUndefined();
+    }),
+  );
+
+  it.effect("cites the selected Item alone, with no locator", () =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
+
+      const result = yield* runTemplateData(
+        fixture.deps,
+        "MAIN2345",
+        "citation",
+      );
+
+      expect(result).toMatchObject({
+        command: TEMPLATE_DATA_COMMAND,
+        ok: true,
+        request: { key: "MAIN2345", root: "citation", format: "json" },
+        zt: {
+          variant: "main",
+          citations: [
+            {
+              item: { citationKey: "fixture2024", citekey: "fixture2024" },
+              locator: null,
+              label: null,
+              labelShort: "p.",
+              suppressAuthor: false,
+              prefix: null,
+              suffix: null,
+            },
+          ],
+        },
+      });
+      const zt = result.zt as {
+        items: unknown[];
+        citations: { item: unknown }[];
+      };
+      expect(zt.items).toEqual([zt.citations[0]!.item]);
+    }),
+  );
+
+  it.effect.each(CITATION_EXAMPLE_IDS)(
+    "returns the %s example set without reading the database",
+    (example) =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+
+        const result = yield* runTemplateData(
+          fixture.deps,
+          { example },
+          "citation",
+        );
+
+        expect(result).toMatchObject({
+          ok: true,
+          request: { example, root: "citation", format: "json" },
+          zt: { variant: "main" },
+        });
+        const zt = result.zt as { citations: { item: { citekey: string } }[] };
+        expect(zt.citations.length).toBeGreaterThan(0);
+        for (const citation of zt.citations) {
+          expect(citation.item.citekey).not.toBe("fixture2024");
+        }
+      }),
+  );
+
+  it.effect(
+    "cites the journal article and the book for the two-items example",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+
+        const result = yield* runTemplateData(
+          fixture.deps,
+          { example: "two-items" },
+          "citation",
+        );
+
+        const zt = result.zt as {
+          citations: { item: { citekey: string; itemType: string } }[];
+        };
+        expect(zt.citations.map(({ item }) => item.citekey)).toEqual([
+          "ioannidisWhyMost2005",
+          "Kahneman2011",
+        ]);
+        expect(zt.citations.map(({ item }) => item.itemType)).toEqual([
+          "journalArticle",
+          "book",
+        ]);
+      }),
+  );
+
+  it.effect.each<[string, string]>([
     ["ANNA2345", "MAIN2345"],
     ["ATCH2345", "MAIN2345"],
     ["NATE2345", "MAIN2345"],
     ["GRUP2345g42", "GRUP2345g42"],
-  ])(
-    "walks selector %s to Item %s at the filename root",
-    async (key, itemKey) => {
-      using fixture = createFixture();
+  ])("walks selector %s to Item %s at the filename root", ([key, itemKey]) =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
 
       expect(
-        await runTemplateData(fixture.deps, key, "filename"),
+        yield* runTemplateData(fixture.deps, key, "filename"),
       ).toMatchObject({
         ok: true,
         zt: { indexedKey: itemKey },
       });
-    },
+    }),
   );
 
-  it.each([
+  it.effect.each<[string, string]>([
     ["MAIN2345", "MAIN2345"],
     ["ATCH2345", "MAIN2345"],
     ["ANNA2345", "MAIN2345"],
     ["NATE2345", "MAIN2345"],
     ["GRUP2345g42", "GRUP2345g42"],
-  ])("builds note data for selector %s from item %s", async (key, itemKey) => {
-    using fixture = createFixture();
-    const result = await runTemplateData(fixture.deps, key);
+  ])("builds note data for selector %s from item %s", ([key, itemKey]) =>
+    Effect.gen(function* () {
+      const fixture = yield* scopedFixture();
+      const result = yield* runTemplateData(fixture.deps, key);
 
-    expect(result).toMatchObject({
-      ok: true,
-      request: { key, root: "note", format: "json" },
-      zt: { indexedKey: itemKey },
-    });
-  });
+      expect(result).toMatchObject({
+        ok: true,
+        request: { key, root: "note", format: "json" },
+        zt: { indexedKey: itemKey },
+      });
+    }),
+  );
 
-  it.each(["FREE2345", "LANE2345"])(
+  it.effect.each(["FREE2345", "LANE2345"])(
     "rejects standalone child %s",
-    async (key) => {
-      using fixture = createFixture();
-      expect(await runTemplateData(fixture.deps, key)).toMatchObject({
-        ok: false,
-        diagnostic: { code: "NO_PARENT_ITEM" },
-      });
-    },
+    (key) =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+        expect(yield* runTemplateData(fixture.deps, key)).toMatchObject({
+          ok: false,
+          diagnostic: { code: "NO_PARENT_ITEM" },
+        });
+      }),
   );
 
-  it.each(["FREE2345", "LANE2345"])(
+  it.effect.each(["FREE2345", "LANE2345"])(
     "rejects standalone child %s at the filename root",
-    async (key) => {
-      using fixture = createFixture();
+    (key) =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
 
-      expect(
-        await runTemplateData(fixture.deps, key, "filename"),
-      ).toMatchObject({
-        ok: false,
-        diagnostic: { code: "NO_PARENT_ITEM" },
-      });
-    },
+        expect(
+          yield* runTemplateData(fixture.deps, key, "filename"),
+        ).toMatchObject({
+          ok: false,
+          diagnostic: { code: "NO_PARENT_ITEM" },
+        });
+      }),
   );
 
-  it.each(["MISS2345", "MAIN2345g999"])(
+  it.effect.each(["MISS2345", "MAIN2345g999"])(
     "reports unresolved selector %s",
-    async (key) => {
-      using fixture = createFixture();
-      expect(await runTemplateData(fixture.deps, key)).toMatchObject({
-        ok: false,
-        diagnostic: { code: "KEY_NOT_FOUND" },
-      });
-    },
+    (key) =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
+        expect(yield* runTemplateData(fixture.deps, key)).toMatchObject({
+          ok: false,
+          diagnostic: { code: "KEY_NOT_FOUND" },
+        });
+      }),
   );
 
-  it("serializes real inert resolvers without invoking a write surface", async () => {
-    using fixture = createFixture();
+  it.effect(
+    "serializes real inert resolvers without invoking a write surface",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* scopedFixture();
 
-    const result = await runTemplateData(fixture.deps, "MAIN2345");
+        const result = yield* runTemplateData(fixture.deps, "MAIN2345");
 
-    expect(result).toMatchObject({
-      ok: true,
-      zt: {
-        noteLink: {
-          $helper: "noteLink",
-          signature: "(alias?: string, subpath?: string) => string | null",
-          value: null,
-        },
-        annotations: [
-          {
-            imgLink: { $inert: expect.any(String) },
-            parentItem: { $ref: "zt" },
+        expect(result).toMatchObject({
+          ok: true,
+          zt: {
+            noteLink: {
+              $helper: "noteLink",
+              signature: "(alias?: string, subpath?: string) => string | null",
+              value: null,
+            },
+            annotations: [
+              {
+                imgLink: { $inert: expect.any(String) },
+                parentItem: { $ref: "zt" },
+              },
+            ],
+            notes: [
+              {
+                noteLink: {
+                  $helper: "noteLink",
+                  value: "[Child](zotero://select/library/items/NATE2345)",
+                },
+              },
+            ],
           },
-        ],
-        notes: [{ noteLink: { $inert: expect.any(String) } }],
-      },
-    });
-    expect(fixture.writeCalls).toEqual([]);
-  });
+        });
+        expect(fixture.writeCalls).toEqual([]);
+      }),
+  );
 });
 
-type FixtureDeps = TemplateDataDeps & {
-  templates: TemplateDataDeps["templates"] & {
-    compileErrors: ReadonlyMap<string, { message: string }>;
-  };
-};
+interface FixtureDeps {
+  readonly app: App;
+  readonly noteIndex: NoteIndex["Service"];
+  readonly template: Template["Service"];
+  /** The services the data reads, over the fixture database and `app`. */
+  readonly context: Context.Context<TemplateDataServices>;
+}
 
-function createFixture(options?: {
+/** {@link createFixture}, closed when the test's scope closes. */
+const scopedFixture = (options?: Parameters<typeof createFixture>[0]) =>
+  Effect.acquireDisposable(
+    Effect.tryPromise(async () => createFixture(options)),
+  );
+
+async function createFixture(options?: {
   renderError?: Error;
   compileError?: string | null;
   render?: (name: string, data: object) => string;
-}): {
+}): Promise<{
   deps: FixtureDeps;
   writeCalls: string[];
-  [Symbol.dispose](): void;
-} {
+  [Symbol.asyncDispose](): Promise<void>;
+}> {
   const client = createClient(":memory:");
   const sqlite = client.$client as DatabaseSync;
   const writeCalls: string[] = [];
   try {
     seed(sqlite);
+    sqlite.exec("PRAGMA query_only = ON");
+    // The service closes before the database it reads.
+    const resources = new AsyncDisposableStack();
+    resources.adopt(sqlite, (database) => database.close());
+    const zoteroReads = resources.use(
+      inProcessReadsService(sharedClientOpener(client)),
+    );
+    await zoteroReads.ready;
+    const app = stubService<App>("App", {
+      fileManager: stubService<App["fileManager"]>("FileManager", {
+        generateMarkdownLink: () => "",
+        renameFile: async () => {
+          writeCalls.push("fileManager.renameFile");
+        },
+      }),
+      vault: stubService<App["vault"]>("Vault", {
+        // The Vault tag listens for changes; nothing here emits one.
+        on: () => stubService<EventRef>("EventRef", {}),
+        offref: () => {},
+        getFileByPath: () => null,
+        create: async () => {
+          writeCalls.push("vault.create");
+          throw new Error("Unread Vault.create");
+        },
+        createBinary: async () => {
+          writeCalls.push("vault.createBinary");
+          throw new Error("Unread Vault.createBinary");
+        },
+        modify: async () => {
+          writeCalls.push("vault.modify");
+        },
+      }),
+    });
+    const scope = Scope.makeUnsafe();
+    resources.defer(() => Effect.runPromise(Scope.close(scope, Exit.void)));
+    const vault = layerVaultFrom(app.vault);
+    const capabilities = Effect.runSync(
+      Layer.buildWithScope(
+        Layer.merge(
+          vault,
+          layerFileManagerFrom(app.fileManager).pipe(Layer.provide(vault)),
+        ),
+        scope,
+      ),
+    );
+    const noteIndex = stubService<NoteIndex["Service"]>("NoteIndex", {
+      getNotesByItemKey: () => Effect.succeed([]),
+      getImportedNoteByNoteKey: () => Effect.succeed([]),
+      whenIndexed: Effect.void,
+    });
+    // A Template call fails as the plain Template threw.
+    const thrown = <A>(evaluate: () => A) => Effect.sync(evaluate);
+    const template = stubService<Template["Service"]>("Template", {
+      compileErrors: Effect.succeed(
+        options?.compileError
+          ? new Map([
+              [
+                "citation",
+                { message: options.compileError } satisfies CompileError,
+              ],
+            ])
+          : new Map(),
+      ),
+      renderCitation: (refs, variant) =>
+        thrown(() => {
+          if (options?.renderError) throw options.renderError;
+          if (options?.render) {
+            return options.render(
+              "citation",
+              citekeysToCiteTemplateData(refs, variant),
+            );
+          }
+          return "Fixture citation";
+        }),
+      render: (name, data) =>
+        thrown(() => {
+          if (options?.renderError) throw options.renderError;
+          if (options?.render) return options.render(name, data);
+          return "Fixture citation\n";
+        }),
+    });
+    const context = Context.mergeAll(
+      capabilities,
+      Context.make(ZoteroReads, zoteroReads.runtime.runSync(ZoteroReads)),
+      Context.make(NoteIndex, noteIndex),
+      Context.make(
+        PluginSettings,
+        stubService<PluginSettings["Service"]>("PluginSettings", {
+          current: Effect.succeed(settingsDefaults),
+        }),
+      ),
+      Context.make(Template, template),
+      Context.make(
+        ZoteroPref,
+        stubService<ZoteroPref["Service"]>("ZoteroPref", {
+          current: Effect.succeed(
+            stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+              dataDir: "/Zotero",
+              baseAttachmentPath: null,
+            }),
+          ),
+        }),
+      ),
+    );
     return {
-      deps: {
-        app: {
-          fileManager: {
-            generateMarkdownLink: () => "",
-            renameFile: () => {
-              writeCalls.push("fileManager.renameFile");
-            },
-          },
-          vault: {
-            getFileByPath: () => null,
-            create: () => {
-              writeCalls.push("vault.create");
-            },
-            createBinary: () => {
-              writeCalls.push("vault.createBinary");
-            },
-            modify: () => {
-              writeCalls.push("vault.modify");
-            },
-          },
-        } as never,
-        db: {
-          acquireRead: async () =>
-            ({
-              client,
-              [Symbol.dispose]() {},
-            }) as never,
-        },
-        noteIndex: {
-          getNotesByItemKey: () => [],
-          getImportedNoteByNoteKey: () => [],
-          whenIndexed: async () => {},
-        },
-        settings: {
-          loaded: Promise.resolve(settingsDefaults),
-        },
-        templates: {
-          ready: Promise.resolve(),
-          compileErrors: options?.compileError
-            ? new Map([["cite", { message: options.compileError }]])
-            : new Map(),
-          render: (name, data) => {
-            if (options?.renderError) throw options.renderError;
-            if (options?.render) return options.render(name, data);
-            return "Fixture citation\n";
-          },
-        },
-        zoteroPref: {
-          ready: Promise.resolve(),
-          dataDir: "/Zotero",
-          baseAttachmentPath: null,
-        },
-      },
+      deps: { app, noteIndex, template, context },
       writeCalls,
-      [Symbol.dispose]() {
-        sqlite.close();
-      },
+      [Symbol.asyncDispose]: () => resources.disposeAsync(),
     };
   } catch (error) {
     sqlite.close();
@@ -436,99 +972,45 @@ function createFixture(options?: {
   }
 }
 
-async function runTemplateData(
+function runTemplateData(
   deps: FixtureDeps,
-  key: string,
-  root: "note" | "annotation" | "filename" = "note",
-): Promise<Record<string, unknown>> {
+  selector: string | { example: CitationExampleId },
+  root: ContractRoot = "note",
+): Effect.Effect<Record<string, unknown>, unknown> {
   const handlers = createTemplateWorkbenchHandlers({
+    selectNote: () =>
+      Effect.succeed({
+        error: "TARGET_NOT_FOUND" as const,
+        matches: [],
+      }),
     pluginVersion: "1.2.3",
-    getIdentity: () => ({
+    getIdentity: Effect.succeed({
       vault: { name: "Test Vault", path: "/vaults/test" },
       source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
     }),
-    loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
+    loadCitation: (citation, variant) =>
+      readCitationData(citation, variant).pipe(
+        Effect.provideContext(deps.context),
+      ),
+    loadData: (indexedKey, root) =>
+      readTemplateData(indexedKey, root).pipe(
+        Effect.provideContext(deps.context),
+      ),
     templates: {
-      javascriptTemplatesEnabled: false,
-      compileErrors: deps.templates.compileErrors,
-      getTemplateFileStatuses: () => [],
-      render: deps.templates.render,
-      renderFilename: (data) => deps.templates.render("filename", data),
-      analyzeRootVariables: () => null,
-      getTemplateSource: async () => "",
-      waitUntilSettled: async () => "settled" as const,
-    },
-    frontmatter: {
-      read: () => ({
-        fields: [],
-        inertKeys: [],
-        javascriptTemplatesEnabled: false,
-      }),
-      evaluate: () => ({ values: {}, errors: {}, inertKeys: [] }),
-      validateExpr: () => null,
-      write: () => {},
+      javascriptTemplatesEnabled: Effect.succeed(false),
+      compileErrors: deps.template.compileErrors,
+      getTemplateFileStatuses: Effect.succeed([]),
+      waitUntilSettled: () => Effect.succeed("settled" as const),
     },
   });
-  return JSON.parse(
-    await handlers[TEMPLATE_DATA_COMMAND]({
-      key,
-      root,
-      format: "json",
-    }),
-  ) as Record<string, unknown>;
-}
-
-async function runTemplateRender(
-  deps: FixtureDeps,
-  key: string,
-): Promise<Record<string, unknown>> {
-  const handlers = createTemplateWorkbenchHandlers({
-    pluginVersion: "1.2.3",
-    getIdentity: () => ({
-      vault: { name: "Test Vault", path: "/vaults/test" },
-      source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
-    }),
-    loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
-    templates: {
-      javascriptTemplatesEnabled: false,
-      compileErrors: deps.templates.compileErrors,
-      getTemplateFileStatuses: () => [
-        {
-          name: "note",
-          winner: {
-            language: "liquid",
-            source: { kind: "embedded-default" },
-          },
-          editablePath: "Templates/zotlit-note.liquid.md",
-          shadowedFiles: [],
-          inertFiles: [],
-          compileError: null,
-        },
-      ],
-      render: deps.templates.render,
-      renderFilename: (data) => deps.templates.render("filename", data),
-      analyzeRootVariables: () => null,
-      getTemplateSource: async () => "",
-      waitUntilSettled: async () => "settled" as const,
-    },
-    frontmatter: {
-      read: () => ({
-        fields: [],
-        inertKeys: [],
-        javascriptTemplatesEnabled: false,
-      }),
-      evaluate: () => ({ values: {}, errors: {}, inertKeys: [] }),
-      validateExpr: () => null,
-      write: () => {},
-    },
-  });
-  return JSON.parse(
-    await handlers[TEMPLATE_RENDER_COMMAND]({
-      key,
-      template: "note",
-      format: "json",
-    }),
-  ) as Record<string, unknown>;
+  return handlers[TEMPLATE_DATA_COMMAND]({
+    ...(typeof selector === "string" ? { key: selector } : selector),
+    root,
+    full: "",
+    format: "json",
+  }).pipe(
+    Effect.map((output) => JSON.parse(output) as Record<string, unknown>),
+  );
 }
 
 function seed(sqlite: DatabaseSync): void {
@@ -547,11 +1029,11 @@ function seed(sqlite: DatabaseSync): void {
         (4, 'note');
 
     insert into fieldsCombined (fieldID, fieldName, custom)
-      values (10, 'citationKey', 0);
+      values (10, 'citationKey', 0), (11, 'date', 0), (12, 'extra', 0);
     insert into itemDataValues (valueID, value)
-      values (100, 'fixture2024');
+      values (100, 'fixture2024'), (101, '2024-01-02 2024-01-02'), (102, 'tex.mendeley-tags: reading');
     insert into itemData (itemID, fieldID, valueID)
-      values (1, 10, 100);
+      values (1, 10, 100), (1, 11, 101), (1, 12, 102);
 
     insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values
@@ -600,3 +1082,72 @@ function seed(sqlite: DatabaseSync): void {
         (50, null, '<p>standalone</p>', 'Standalone');
   `);
 }
+
+describe("excerptImageContext", () => {
+  const NOTE_PATH = "Literature/Smith 2024.md";
+  const VAULT_FOLDER = "attachments/zotero";
+  /** A file manager whose default attachment folder sits beside `sourcePath`. */
+  const fileManager = Layer.mock(FileManager, {
+    getAvailablePathForAttachment: (filename, sourcePath) =>
+      Effect.succeed(`${sourcePath ? "Literature/" : ""}${filename}`),
+  });
+  const contextOf = (
+    attachmentImport: boolean,
+    folderPath: string | null,
+    litNotePath: string | null,
+  ) =>
+    excerptImageContext(
+      {
+        "attachment.import": attachmentImport,
+        "attachment.folder-path": folderPath,
+      },
+      litNotePath,
+    ).pipe(Effect.provide(fileManager));
+
+  it.effect("links the file itself while attachment import is off", () =>
+    Effect.gen(function* () {
+      expect(yield* contextOf(false, null, NOTE_PATH)).toEqual({
+        kind: "file-url",
+      });
+    }),
+  );
+
+  it.effect(
+    "names no place with import on, no folder set and no Literature Note",
+    () =>
+      Effect.gen(function* () {
+        expect(yield* contextOf(true, null, null)).toEqual({
+          kind: "not-imported",
+        });
+      }),
+  );
+
+  it.effect("uses the set folder even without a Literature Note", () =>
+    Effect.gen(function* () {
+      // A set attachment.folder-path does not depend on a note path, so an
+      // excerpt image imported before still resolves.
+      expect(yield* contextOf(true, VAULT_FOLDER, null)).toEqual({
+        kind: "vault",
+        folderPath: VAULT_FOLDER,
+      });
+    }),
+  );
+
+  it.effect("uses the set folder when a Literature Note exists", () =>
+    Effect.gen(function* () {
+      expect(yield* contextOf(true, VAULT_FOLDER, NOTE_PATH)).toEqual({
+        kind: "vault",
+        folderPath: VAULT_FOLDER,
+      });
+    }),
+  );
+
+  it.effect("asks Obsidian for the default folder of the Literature Note", () =>
+    Effect.gen(function* () {
+      expect(yield* contextOf(true, null, NOTE_PATH)).toEqual({
+        kind: "vault",
+        folderPath: "Literature",
+      });
+    }),
+  );
+});

@@ -1,3 +1,5 @@
+import type { DatabaseSync, StatementSync } from "node:sqlite";
+
 // Shared item-fixture builders for @zotlit/db consumers' tests.
 import type { ItemFields } from "@zotlit/zotero-types";
 
@@ -17,6 +19,46 @@ export function createFixtureSchema(db: { exec(sql: string): void }): void {
   db.exec(FIXTURE_DDL);
 }
 
+/**
+ * Count the statements run on `sqlite` from now on: each `all`, `get`, `run`,
+ * or `iterate` call on a statement it prepares. Install it before the first
+ * query, so statements a query caches are counted too. A batched read runs
+ * the same count for one id as for many.
+ */
+export function countStatements(sqlite: DatabaseSync): () => number {
+  let count = 0;
+  const prepare = sqlite.prepare.bind(sqlite);
+  sqlite.prepare = (source: string) => {
+    const statement: StatementSync = prepare(source);
+    for (const method of ["all", "get", "run", "iterate"] as const) {
+      const call = statement[method].bind(statement) as (
+        ...args: unknown[]
+      ) => never;
+      statement[method] = ((...args: unknown[]) => {
+        count += 1;
+        return call(...args);
+      }) as never;
+    }
+    return statement;
+  };
+  return () => count;
+}
+
+/**
+ * Count the statements compiled on `sqlite` from now on: each `prepare` call.
+ * A warm batched read compiles none, for one id or for many: it runs only
+ * statements its queries cache.
+ */
+export function countCompiles(sqlite: DatabaseSync): () => number {
+  let count = 0;
+  const prepare = sqlite.prepare.bind(sqlite);
+  sqlite.prepare = (source: string) => {
+    count += 1;
+    return prepare(source);
+  };
+  return () => count;
+}
+
 const FIXTURE_DDL = `
   create table libraries (
     libraryID integer primary key,
@@ -24,6 +66,7 @@ const FIXTURE_DDL = `
     editable integer not null default 1,
     filesEditable integer not null default 1,
     version integer not null default 0,
+    clientVersion integer not null default 0,
     storageVersion integer not null default 0,
     lastSync integer not null default 0,
     archived integer not null default 0,
@@ -36,12 +79,23 @@ const FIXTURE_DDL = `
     description text not null default '',
     version integer not null default 0
   );
+  create table users (
+    userID integer primary key,
+    name text not null default ''
+  );
+  create table groupItems (
+    itemID integer primary key,
+    createdByUserID integer,
+    lastModifiedByUserID integer
+  );
   create table itemTypes (
     itemTypeID integer primary key,
     typeName text,
     templateItemTypeID integer,
     display integer
   );
+  create view itemTypesCombined as
+    select itemTypeID, typeName, display, 0 as custom from itemTypes;
   create table items (
     itemID integer primary key,
     itemTypeID integer not null default 0,
@@ -51,6 +105,7 @@ const FIXTURE_DDL = `
     libraryID integer not null,
     key text not null,
     version integer not null default 0,
+    clientVersion integer not null default 0,
     synced integer not null default 0
   );
   create table deletedItems (
@@ -182,6 +237,14 @@ const FIXTURE_DDL = `
     version integer not null
   );
 `;
+
+/**
+ * A row date (`dateAdded`, `dateModified`) at `iso`. Rows carry
+ * Temporal.Instant, the date type of the template contract.
+ */
+export function rowInstant(iso: string): Temporal.Instant {
+  return Temporal.Instant.from(iso);
+}
 
 /** A minimal full DB item fixture (Hensher2011-shaped defaults), overridable via `fields`/`base`. */
 export function makeItem(

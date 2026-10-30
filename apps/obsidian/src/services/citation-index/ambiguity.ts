@@ -1,18 +1,20 @@
 // One Ambiguous Citation Key's candidates, described the same way on every surface that shows them.
 
-import { getItemsByID, isChildItemFields } from "@zotlit/db";
+import { Cause, Effect } from "effect";
+
+import { isChildItemFields } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
+import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
-import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
 import { libraryLabel } from "@/services/library-scope/label";
-import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type {
+  AvailableLibrary,
+  ResolvedLibraryScope,
+} from "@/services/library-scope/scope";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { SnapshotItem } from "./snapshot";
-
-const logger = getLogger("citation-index");
 
 /**
  * One Item an Ambiguous Citation Key names, as a candidate row shows it: the
@@ -59,21 +61,50 @@ export type AmbiguousCandidatesOf = (
 
 /** Where a candidate description reads its summary and its Library from. */
 export interface CandidateDeps {
-  db: Pick<DatabaseService, "client">;
+  db: Pick<ZoteroReads["Service"], "snapshot">;
   /** Names the Library each candidate lives in. */
-  libraryScope: Pick<LibraryScopeService, "current">;
+  libraryScope: { readonly current: ResolvedLibraryScope | null };
 }
 
 /**
  * Reads each candidate's summary from the database and pairs it with the
- * Library it lives in. A read the database cannot answer leaves the summary as
- * the bare Zotero item key, so a surface still tells the candidates apart.
+ * Library it lives in, in the caller's fiber. A failed read logs and leaves
+ * the summaries as the bare Zotero item keys, so a surface still tells the
+ * candidates apart; an interrupt stays an interrupt.
  *
  * @param candidates the Items of one Ambiguous Citation Key, in the canonical
  *   order the resolution snapshot reports them.
  */
-export function describeCandidates(
-  { db, libraryScope }: CandidateDeps,
+export const describeCandidatesEffect = Effect.fnUntraced(function* (
+  deps: CandidateDeps,
+  candidates: readonly SnapshotItem[],
+) {
+  const items = yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* deps.db.snapshot;
+      return yield* reads.ItemsByIndexedKeys({
+        indexedKeys: candidates.map((candidate) => candidate.indexedKey),
+      });
+    }),
+  ).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Effect.logWarning(
+            "Ambiguous citekey candidates read without summaries",
+            cause,
+          ).pipe(
+            withLogCategory("citation-index"),
+            Effect.as(new Map<string, Item>()),
+          ),
+    ),
+  );
+  return describeWith(deps, items, candidates);
+});
+
+function describeWith(
+  { libraryScope }: CandidateDeps,
+  items: ReadonlyMap<string, Item>,
   candidates: readonly SnapshotItem[],
 ): AmbiguousCandidate[] {
   const libraries = new Map(
@@ -82,21 +113,8 @@ export function describeCandidates(
       library,
     ]),
   );
-  let items = new Map<number, Item>();
-  try {
-    items = new Map(
-      getItemsByID(
-        db.client,
-        candidates.map((candidate) => candidate.itemID),
-      ).map((item) => [item.itemID, item]),
-    );
-  } catch (error) {
-    logger.warn("Ambiguous citekey candidates read without summaries", {
-      error,
-    });
-  }
   return candidates.map((candidate) => {
-    const item = items.get(candidate.itemID);
+    const item = items.get(candidate.indexedKey);
     const fields = item?.fields;
     return {
       ...candidate,
@@ -107,4 +125,17 @@ export function describeCandidates(
       library: libraries.get(candidate.libraryID) ?? null,
     };
   });
+}
+
+/** Describe candidates from the source join already captured for a document. */
+export function describeJoinedCandidates(
+  candidates: readonly SnapshotItem[],
+  sources: ReadonlyMap<string, { summary: string }>,
+  libraries: ReadonlyMap<number, AvailableLibrary>,
+): AmbiguousCandidate[] {
+  return candidates.map((candidate) => ({
+    ...candidate,
+    summary: sources.get(candidate.indexedKey)?.summary ?? candidate.key,
+    library: libraries.get(candidate.libraryID) ?? null,
+  }));
 }

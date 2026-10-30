@@ -5,6 +5,9 @@ date: "2026-08-05"
 description: "Batch operations on collections, Citation Key Links toggle, AGPL license"
 ---
 
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
 This is the first public stable release of ZotLit v2. If you participated in the beta, thank you! Your feedback shaped every part of this release.
 
 The changes below cover what landed since beta.4; for the full v2 feature set, see the [release announcement](/blog/v2-release).
@@ -31,7 +34,7 @@ The feature resolves each citation key against Zotero's own native citation key,
 
 ### Batch operations on libraries and collections
 
-You can now create or update literature notes and import Zotero notes across an entire library or a single collection (including subcollections), instead of selecting items one at a time. Right-click a library or collection in Zotero's sidebar to find **Create or Update Literature Notes** and **Import Child and Standalone Notes** in the ZotLit submenu. The same actions are available as Obsidian commands and protocol links (`update-all`, `import-all-notes`).
+You can now create or update literature notes and import Zotero notes across an entire library or a single collection (including subcollections), instead of selecting items one at a time. Right-click a library or collection in Zotero's sidebar to find <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> and <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} /> in the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu. The same actions are available as Obsidian commands and protocol links (`update-all`, `import-all-notes`).
 
 ### Other improvements
 

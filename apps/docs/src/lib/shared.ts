@@ -4,8 +4,8 @@
 import * as v from "valibot";
 
 export const appName = "ZotLit";
-export const appDescription =
-  "ZotLit brings your Zotero library into Obsidian. Create literature notes, insert citations, and annotate PDFs without leaving your vault.";
+/** The documentation line selected by the Worker configuration. */
+export type DocsLine = "beta" | "production";
 /** Origin every canonical URL, OG card, sitemap entry, and feed link resolves against. */
 export const baseURL = "https://zotlit.aidenlx.site";
 export const docsRoute = "/docs";
@@ -19,9 +19,14 @@ export const gitConfig = {
   branch: "main",
 };
 
+const docsSourceBranches = {
+  production: "main",
+  beta: "next",
+} satisfies { production: "main"; beta: "next" };
+
 /** The repository branch that publishes each documentation line. */
-export function docsSourceBranch(docsLine: Cloudflare.Env["DOCS_LINE"]) {
-  return docsLine === "beta" ? "next" : gitConfig.branch;
+export function docsSourceBranch(docsLine: DocsLine) {
+  return docsSourceBranches[docsLine];
 }
 
 /** `owner/name`, the form GitHub's API and giscus both name the repository by. */
@@ -45,6 +50,7 @@ export const ogTypes = [
   "blog",
   "changelog",
   "docs",
+  "workbench",
 ] as const;
 export type OgType = (typeof ogTypes)[number];
 
@@ -58,10 +64,10 @@ export function ogImageUrl(type: OgType, slugs: string[] = []) {
  * unquoted one as the UTC-midnight `Date` the YAML parser built; both normalize
  * to the ISO day here. The value crosses into the collection index as that
  * string because the index is JSON — see the date note in AGENTS.md. `Date`
- * stands in for `Temporal` (policies/temporal-dates.md) because workerd carries
+ * stands in for `Temporal` (the date rule in packages/config/oxlint.base.ts) because workerd carries
  * no Temporal API.
  *
- * `source.config.ts` reads frontmatter through this schema, and the build-time
+ * `content.config.ts` reads frontmatter through this schema, and the build-time
  * OG card scan reads the same frontmatter through it again.
  */
 export const publishedOn = v.pipe(
@@ -73,7 +79,7 @@ export const publishedOn = v.pipe(
 
 /**
  * The closing year of the footer's copyright range, read at render time.
- * `Date` stands in for `Temporal` (policies/temporal-dates.md) because workerd
+ * `Date` stands in for `Temporal` (the date rule in packages/config/oxlint.base.ts) because workerd
  * carries no Temporal API.
  */
 export function currentYear() {
@@ -82,9 +88,9 @@ export function currentYear() {
 
 /**
  * Publication day in the reader's long form. Collections normalize the day to
- * its ISO form (see `source.config.ts`), so the value parses as a UTC instant
+ * its ISO form (see `content.config.ts`), so the value parses as a UTC instant
  * and formats in UTC. `Date` stands in for `Temporal`
- * (policies/temporal-dates.md) because workerd carries no Temporal API.
+ * (the date rule in packages/config/oxlint.base.ts) because workerd carries no Temporal API.
  */
 export function formatReleaseDate(isoDay: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -98,7 +104,7 @@ export function formatReleaseDate(isoDay: string) {
 /**
  * Publication day in the reader's short form, from the ISO instant GitHub
  * stamps a release with; the day is read in UTC, as the long form is. `Date`
- * stands in for `Temporal` (policies/temporal-dates.md) because workerd carries
+ * stands in for `Temporal` (the date rule in packages/config/oxlint.base.ts) because workerd carries
  * no Temporal API.
  */
 export function formatReleaseInstant(iso: string) {

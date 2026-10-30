@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { IconName } from "obsidian";
 import type { MouseEvent, ReactNode } from "react";
 
@@ -8,7 +9,7 @@ import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { ReferenceSource } from "@/services/citation-index/service";
-import type { UnusableProperty } from "@/services/pandoc/document-presentation";
+import type { DocumentPresentationFailure } from "@/services/pandoc/document-presentation";
 import { InlineContent } from "@/services/pandoc/inline-content";
 import type {
   PandocEngineFailure,
@@ -17,8 +18,8 @@ import type {
 
 import { useReferenceActions } from "./actions";
 import type { ReferenceEntry } from "./entries";
-import { useReferencesStore } from "./store";
-import type { ReferencesCopyBlock } from "./store";
+import { useReferencesModel } from "./model";
+import type { ReferencesCopyBlock } from "./state";
 
 /**
  * The pane: the fixed toolbar above, then one scrolling region holding the
@@ -27,14 +28,15 @@ import type { ReferencesCopyBlock } from "./store";
  * entries already carry.
  */
 export function References() {
-  const entries = useReferencesStore((s) => s.entries);
-  const listMode = useReferencesStore((s) => s.listMode);
-  const engine = useReferencesStore((s) => s.engine);
-  const formattingFailed = useReferencesStore((s) => s.formattingFailed);
-  const documentPresentationError = useReferencesStore(
-    (s) => s.documentPresentationError,
-  );
-  const dbReady = useReferencesStore((s) => s.dbReady);
+  const actions = useReferenceActions();
+  const {
+    entries,
+    listMode,
+    engine,
+    formattingFailed,
+    documentPresentationError,
+    dbReady,
+  } = useAtomValue(useReferencesModel().state);
   const numbered = listMode.kind === "minimal";
   const serials = listMode.kind === "bibliography" && listMode.entrySerials;
   const guttered =
@@ -61,6 +63,16 @@ export function References() {
             title={documentPresentationTitle(documentPresentationError)}
           >
             {documentPresentationBody(documentPresentationError)}
+            {documentPresentationError.property === "profile" && (
+              <Button
+                data-profile-recovery
+                onClick={() =>
+                  actions.onSwitchProfile(documentPresentationError.target)
+                }
+              >
+                {m.profile_switch_recovery()}
+              </Button>
+            )}
           </Banner>
         )}
         {formattingFailed && engine.kind === "installed" && (
@@ -108,7 +120,7 @@ export function References() {
  */
 function Toolbar() {
   const actions = useReferenceActions();
-  const copy = useReferencesStore((s) => s.copy);
+  const copy = useAtomValue(useReferencesModel().state).copy;
   const copyReady = copy.kind === "ready";
 
   return (
@@ -141,16 +153,39 @@ function Toolbar() {
 }
 
 /** The note property a document-scoped presentation failure asks the reader to repair. */
-function documentPresentationTitle(property: UnusableProperty): string {
-  return property === "language"
-    ? m.references_document_language_failed_title()
-    : m.references_document_style_failed_title();
+function documentPresentationTitle(
+  failure: DocumentPresentationFailure,
+): string {
+  switch (failure.property) {
+    case "language":
+      return m.references_document_language_failed_title();
+    case "profile":
+      return m.references_document_profile_failed_title();
+    case "profile-style":
+      return m.references_profile_style_failed_title();
+    case "style":
+      return m.references_document_style_failed_title();
+  }
 }
 
-function documentPresentationBody(property: UnusableProperty): string {
-  return property === "language"
-    ? m.references_document_language_failed_body()
-    : m.references_document_style_failed_body();
+function documentPresentationBody(
+  failure: DocumentPresentationFailure,
+): string {
+  switch (failure.property) {
+    case "language":
+      return m.references_document_language_failed_body();
+    case "profile":
+      return m.notice_imported_note_profile_unknown({
+        stamp: failure.diagnostic.stamp,
+        target: failure.target,
+      });
+    case "profile-style":
+      return m.references_profile_style_failed_body({
+        style: failure.styleId,
+      });
+    case "style":
+      return m.references_document_style_failed_body();
+  }
 }
 
 /** What the disabled copy action names in its tooltip as the thing to fix. */
@@ -213,7 +248,8 @@ function Reference({
   const actions = useReferenceActions();
   // A missing Held Read has not answered for this list, so an unresolved row
   // reads as a lookup in progress rather than a verdict.
-  const pending = useReferencesStore((s) => s.citekeyResolution) === null;
+  const pending =
+    useAtomValue(useReferencesModel().state).citekeyResolution === null;
   const presentation = referencePresentation(entry, {
     numbered,
     serials,
@@ -274,6 +310,11 @@ function Reference({
                     icon="external-link"
                     label={m.references_open_in_zotero()}
                     onClick={() => actions.onOpenInZotero(source)}
+                  />
+                  <EntryAction
+                    icon="library"
+                    label={m.library_view_show_in_library()}
+                    onClick={() => actions.onShowInLibrary(source)}
                   />
                   {/* Dropped outright when the Item stores nothing to open —
                         the row keeps "Open in Zotero" either way, so the
@@ -367,6 +408,22 @@ function referencePresentation(
         noteDisabled: false,
         source: entry.source,
       };
+    case "unreadable":
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_db_unavailable(),
+        noteDisabled: true,
+        source: undefined,
+      };
+    case "ineligible":
+      return {
+        gutter: "⚠",
+        warning: true,
+        noteLabel: m.references_item_ineligible({ key: entry.key }),
+        noteDisabled: true,
+        source: undefined,
+      };
     case "missing":
       return {
         gutter: "⚠",
@@ -389,7 +446,12 @@ function referencePresentation(
       return {
         gutter: "⚠",
         warning: true,
-        noteLabel: m.references_open_note_unresolved(),
+        noteLabel:
+          "annotationKey" in entry
+            ? m.references_annotation_unresolved({
+                annotationKey: entry.annotationKey,
+              })
+            : m.references_open_note_unresolved(),
         noteDisabled: true,
         source: undefined,
       };
@@ -407,7 +469,10 @@ function referencePresentation(
       return {
         gutter: "⚠",
         warning: true,
-        noteLabel: m.references_open_note_invalid_fragment(),
+        noteLabel:
+          entry.occurrences[0]!.kind === "annotation"
+            ? m.references_annotation_link_invalid()
+            : m.references_open_note_invalid_fragment(),
         noteDisabled: true,
         source: undefined,
       };
@@ -436,6 +501,10 @@ function ReferenceBody({
           {entry.source.summary}
         </span>
       );
+    case "unreadable":
+      return <span>{m.references_db_unavailable()}</span>;
+    case "ineligible":
+      return <span>{m.references_item_ineligible({ key: entry.key })}</span>;
     case "missing":
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
@@ -449,13 +518,21 @@ function ReferenceBody({
       if (pending) {
         return (
           <span className={cn(textClass, "zt:text-muted-foreground")}>
-            {m.references_citekey_pending({ citekey: entry.citekey })}
+            {"annotationKey" in entry
+              ? m.references_annotation_pending({
+                  annotationKey: entry.annotationKey,
+                })
+              : m.references_citekey_pending({ citekey: entry.citekey })}
           </span>
         );
       }
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
-          {m.references_citekey_unresolved({ citekey: entry.citekey })}
+          {"annotationKey" in entry
+            ? m.references_annotation_unresolved({
+                annotationKey: entry.annotationKey,
+              })
+            : m.references_citekey_unresolved({ citekey: entry.citekey })}
         </span>
       );
     // The candidates stand in place of the entry the key names none of, so the
@@ -475,7 +552,9 @@ function ReferenceBody({
     case "malformed":
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
-          {m.references_citation_fragment_invalid()}
+          {entry.occurrences[0]!.kind === "annotation"
+            ? m.references_annotation_link_invalid()
+            : m.references_citation_fragment_invalid()}
         </span>
       );
   }

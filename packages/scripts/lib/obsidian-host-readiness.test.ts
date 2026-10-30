@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHostReadiness } from "./obsidian-host-readiness.ts";
 
+type HostReadinessEffects = Parameters<typeof createObsidianHostReadiness>[0];
+
 describe("Obsidian host readiness", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("reports recovery instructions when Obsidian is stopped", async () => {
     const check = createObsidianHostReadiness(
       {
@@ -33,6 +37,135 @@ describe("Obsidian host readiness", () => {
     await expect(check()).rejects.toThrow(
       "No live Obsidian vault answered within 5 seconds.",
     );
+  });
+
+  describe("with Obsidian running and no vault window open", () => {
+    const sandbox = "/userData/Obsidian Sandbox";
+    const sandboxHost = `=> ${JSON.stringify({ id: "sandbox-id", path: sandbox })}`;
+
+    /**
+     * A check where a call without `vault=` gets "Vault not found." and a call
+     * with `vault=<id>` gets `open(id)`. Records each call's first argument.
+     */
+    function noWindowCheck({
+      registry = {
+        "notes-id": { path: "/vaults/notes", ts: 2 },
+        "sandbox-id": { open: false, path: sandbox, ts: 1 },
+      },
+      pathExists = async () => true,
+      open,
+      sandboxVaultPath = sandbox,
+    }: {
+      registry?: Awaited<ReturnType<HostReadinessEffects["readRegistry"]>>;
+      pathExists?: HostReadinessEffects["pathExists"];
+      open: (id: string) => Promise<string> | string;
+      sandboxVaultPath?: string;
+    }) {
+      const firstArgs: string[] = [];
+      const check = createObsidianHostReadiness(
+        {
+          pathExists,
+          readRegistry: async () => registry,
+          runObsidian: async ([first]) => {
+            firstArgs.push(first!);
+            return first!.startsWith("vault=")
+              ? open(first!.slice("vault=".length))
+              : "Vault not found.";
+          },
+        },
+        { environment: {}, sandboxVaultPath },
+      );
+      return { check, firstArgs };
+    }
+
+    it("opens the sandbox vault as the host", async () => {
+      const { check, firstArgs } = noWindowCheck({ open: () => sandboxHost });
+
+      await expect(check()).resolves.toEqual({
+        id: "sandbox-id",
+        path: sandbox,
+      });
+      expect(firstArgs).toEqual(["eval", "vault=sandbox-id"]);
+    });
+
+    it("waits longer for the sandbox window to load", async () => {
+      vi.useFakeTimers();
+      const { check } = noWindowCheck({
+        open: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20_000));
+          return sandboxHost;
+        },
+      });
+
+      await Promise.all([
+        expect(check()).resolves.toEqual({ id: "sandbox-id", path: sandbox }),
+        vi.advanceTimersByTimeAsync(20_000),
+      ]);
+    });
+
+    it("reports a sandbox vault that does not answer", async () => {
+      vi.useFakeTimers();
+      const { check } = noWindowCheck({ open: () => new Promise(() => {}) });
+
+      await Promise.all([
+        expect(check()).rejects.toThrow(
+          "Obsidian vault sandbox-id did not open within 30 seconds.",
+        ),
+        vi.advanceTimersByTimeAsync(30_000),
+      ]);
+    });
+
+    it("opens the most recent existing vault when no sandbox is registered", async () => {
+      const { check, firstArgs } = noWindowCheck({
+        registry: {
+          "old-id": { path: "/vaults/old", ts: 1 },
+          "missing-id": { path: "/vaults/missing", ts: 3 },
+          "recent-id": { path: "/vaults/recent", ts: 2 },
+        },
+        pathExists: async (path) => path !== "/vaults/missing",
+        open: () => '=> {"id":"recent-id","path":"/vaults/recent"}',
+      });
+
+      await expect(check()).resolves.toEqual({
+        id: "recent-id",
+        path: "/vaults/recent",
+      });
+      expect(firstArgs).toEqual(["eval", "vault=recent-id"]);
+    });
+
+    it("skips the vault at avoidPath", async () => {
+      const { check, firstArgs } = noWindowCheck({
+        open: () => '=> {"id":"notes-id","path":"/vaults/notes"}',
+      });
+
+      await expect(check({ avoidPath: sandbox })).resolves.toEqual({
+        id: "notes-id",
+        path: "/vaults/notes",
+      });
+      expect(firstArgs).toEqual(["eval", "vault=notes-id"]);
+    });
+
+    it("reports when no registered vault can be opened", async () => {
+      const { check, firstArgs } = noWindowCheck({
+        pathExists: async () => false,
+        open: () => sandboxHost,
+      });
+
+      await expect(check()).rejects.toThrow(
+        "Obsidian is running, but no vault window is open. No registered vault can be opened as the host.",
+      );
+      expect(firstArgs).toEqual(["eval"]);
+    });
+
+    it("rejects a sandbox reply from a different vault", async () => {
+      const { check } = noWindowCheck({
+        open: () => '=> {"id":"notes-id","path":"/vaults/notes"}',
+      });
+
+      await expect(check()).rejects.toThrow(
+        "Obsidian vault sandbox-id returned a different vault ID.",
+      );
+    });
   });
 
   it("labels a persisted open entry with a missing path as stale", async () => {
@@ -69,87 +202,173 @@ describe("Obsidian host readiness", () => {
     );
   });
 
-  it("uses ZT_HOST_VAULT to select an already open responder", async () => {
-    const receivedArgs: string[][] = [];
-    const check = createObsidianHostReadiness(
-      {
-        pathExists: async (path) => path.startsWith("/vaults/"),
-        readRegistry: async () => ({}),
-        runObsidian: async (args) => {
-          receivedArgs.push(args);
-          if (receivedArgs.length === 1) {
-            return '=> {"id":"notes-id","path":"/vaults/notes"}';
-          }
-          if (receivedArgs.length === 2) {
-            return '=> {"notes-id":{"open":true,"path":"/vaults/notes"},"research-id":{"open":true,"path":"/vaults/research"}}';
-          }
-          return '=> {"id":"research-id","path":"/vaults/research"}';
+  it.each(["research", "research-id"])(
+    "uses %s to bypass a nonresponsive focused window",
+    async (selected) => {
+      vi.useFakeTimers();
+      const receivedArgs: string[][] = [];
+      const registry = {
+        "notes-id": { open: true, path: "/vaults/notes" },
+        "research-id": { open: true, path: "/vaults/research" },
+      };
+      const check = createObsidianHostReadiness(
+        {
+          pathExists: async (path) => path.startsWith("/vaults/"),
+          readRegistry: async () => registry,
+          runObsidian: async (args) => {
+            receivedArgs.push(args);
+            if (!args.includes("vault=research-id")) {
+              return new Promise(() => {});
+            }
+            if (args.some((arg) => arg.includes("vault-list"))) {
+              return `=> ${JSON.stringify(registry)}`;
+            }
+            return '=> {"id":"research-id","path":"/vaults/research"}';
+          },
         },
-      },
-      { environment: { ZT_HOST_VAULT: "research" } },
-    );
+        { environment: { ZT_HOST_VAULT: selected } },
+      );
 
-    await expect(check()).resolves.toEqual({
-      id: "research-id",
-      path: "/vaults/research",
+      await Promise.all([
+        expect(check()).resolves.toEqual({
+          id: "research-id",
+          path: "/vaults/research",
+        }),
+        vi.advanceTimersByTimeAsync(5_000),
+      ]);
+      expect(receivedArgs).toHaveLength(2);
+      expect(receivedArgs.flat()).not.toContain("vault=research");
+      expect(
+        receivedArgs.every((args) => args.includes("vault=research-id")),
+      ).toBe(true);
+    },
+  );
+
+  it.each(["research-id", "RESEARCH-ID"])(
+    "rejects a folder named %s that collides with the selected ID",
+    async (folder) => {
+      const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
+        async () => '=> {"id":"research-id","path":"/vaults/research"}',
+      );
+      const check = createObsidianHostReadiness(
+        {
+          pathExists: async () => true,
+          readRegistry: async () => ({
+            "research-id": { open: true, path: "/vaults/research" },
+            "other-id": { open: false, path: `/vaults/${folder}` },
+          }),
+          runObsidian,
+        },
+        { environment: { ZT_HOST_VAULT: "research-id" } },
+      );
+
+      await expect(check()).rejects.toThrow(
+        "Selected Obsidian vault research-id conflicts with vault other-id",
+      );
+      expect(runObsidian).not.toHaveBeenCalled();
+    },
+  );
+
+  describe("with ZT_HOST_VAULT naming a closed vault", () => {
+    const registry = {
+      "research-id": { open: false, path: "/vaults/research" },
+      "notes-id": { open: true, path: "/vaults/notes" },
+    };
+
+    function closedHostCheck(runObsidian: HostReadinessEffects["runObsidian"]) {
+      const calls: string[][] = [];
+      const check = createObsidianHostReadiness(
+        {
+          pathExists: async () => true,
+          readRegistry: async () => registry,
+          runObsidian: async (args, signal) => {
+            calls.push(args);
+            return runObsidian(args, signal);
+          },
+        },
+        { environment: { ZT_HOST_VAULT: "research" }, timeoutMs: 10 },
+      );
+      return { check, calls };
+    }
+
+    it("says the vault is not open, and lists the open vaults", async () => {
+      const { check, calls } = closedHostCheck(
+        async () =>
+          `=> ${JSON.stringify({
+            "research-id": { path: "/vaults/research" },
+            "notes-id": { open: true, path: "/vaults/notes" },
+            "drafts-id": { open: true, path: "/vaults/drafts" },
+          })}`,
+      );
+
+      await expect(check()).rejects.toThrow(
+        "ZT_HOST_VAULT=research names a vault that is not open.\n\nOpen vaults:\n  - drafts-id (drafts)\n  - notes-id (notes)\n\n",
+      );
+      // A call with `vault=research-id` would open the closed vault.
+      expect(calls.flat()).not.toContain("vault=research-id");
     });
-    expect(receivedArgs).toHaveLength(3);
-    expect(receivedArgs.flat()).not.toContain("vault=research");
-    expect(receivedArgs[2]).toContain("vault=research-id");
+
+    it("says no vault window is open when the app answers without one", async () => {
+      const { check } = closedHostCheck(async () => "Vault not found.");
+
+      await expect(check()).rejects.toThrow(
+        "ZT_HOST_VAULT=research names a vault that is not open.\n\nNo vault window is open.\n\n",
+      );
+    });
+
+    it("keeps the selection failure when the app does not answer", async () => {
+      vi.useFakeTimers();
+      const { check } = closedHostCheck(() => new Promise(() => {}));
+
+      await Promise.all([
+        expect(check()).rejects.toThrow(
+          "ZT_HOST_VAULT does not identify one open vault: research",
+        ),
+        vi.advanceTimersByTimeAsync(10),
+      ]);
+    });
   });
 
-  it("does not open a closed vault selected through ZT_HOST_VAULT", async () => {
-    const receivedArgs: string[][] = [];
-    const check = createObsidianHostReadiness(
-      {
-        pathExists: async () => true,
-        readRegistry: async () => ({}),
-        runObsidian: async (args) => {
-          receivedArgs.push(args);
-          return receivedArgs.length === 1
-            ? '=> {"id":"notes-id","path":"/vaults/notes"}'
-            : '=> {"notes-id":{"open":true,"path":"/vaults/notes"},"research-id":{"open":false,"path":"/vaults/research"}}';
+  it.each(["host", "live list"])(
+    "aborts an unanswered selected vault %s probe at the configured timeout",
+    async (probe) => {
+      vi.useFakeTimers();
+      const signals: AbortSignal[] = [];
+      const check = createObsidianHostReadiness(
+        {
+          pathExists: async () => true,
+          readRegistry: async () => ({
+            "research-id": { open: true, path: "/vaults/research" },
+          }),
+          runObsidian: async (args, signal) => {
+            signals.push(signal);
+            if (
+              probe === "live list" &&
+              !args.some((arg) => arg.includes("vault-list"))
+            ) {
+              return '=> {"id":"research-id","path":"/vaults/research"}';
+            }
+            return new Promise(() => {});
+          },
         },
-      },
-      { environment: { ZT_HOST_VAULT: "research" } },
-    );
-
-    await expect(check()).rejects.toThrow(
-      "ZT_HOST_VAULT does not identify one open vault: research",
-    );
-    expect(receivedArgs.flat()).not.toContain("vault=research");
-  });
-
-  it("times out when an open selected vault does not answer its probe", async () => {
-    let calls = 0;
-    const check = createObsidianHostReadiness(
-      {
-        pathExists: async () => true,
-        readRegistry: async () => ({}),
-        runObsidian: async () => {
-          calls++;
-          if (calls === 1) {
-            return '=> {"id":"notes-id","path":"/vaults/notes"}';
-          }
-          if (calls === 2) {
-            return '=> {"research-id":{"open":true,"path":"/vaults/research"}}';
-          }
-          return new Promise(() => {});
+        {
+          environment: { ZT_HOST_VAULT: "research" },
+          timeoutMs: 10,
         },
-      },
-      {
-        environment: { ZT_HOST_VAULT: "research" },
-        timeoutMs: 10,
-      },
-    );
+      );
 
-    await expect(check()).rejects.toThrow(
-      "No live Obsidian vault answered within 10 milliseconds.",
-    );
-    expect(calls).toBe(3);
-  });
+      await Promise.all([
+        expect(check()).rejects.toThrow(
+          "No live Obsidian vault answered within 10 milliseconds.",
+        ),
+        vi.advanceTimersByTimeAsync(10),
+      ]);
+      expect(signals.at(-1)?.aborted).toBe(true);
+    },
+  );
 
   it("stops a nonresponsive CLI probe at the configured timeout", async () => {
+    vi.useFakeTimers();
     const check = createObsidianHostReadiness(
       {
         pathExists: async () => false,
@@ -159,14 +378,223 @@ describe("Obsidian host readiness", () => {
       { environment: {}, timeoutMs: 10 },
     );
 
-    const result = Promise.race([
-      check(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("probe hung")), 100),
+    await Promise.all([
+      expect(check()).rejects.toThrow(
+        "No live Obsidian vault answered within 10 milliseconds.",
       ),
+      vi.advanceTimersByTimeAsync(10),
     ]);
-    await expect(result).rejects.toThrow(
-      "No live Obsidian vault answered within 10 milliseconds.",
+  });
+
+  it.each([undefined, ""])(
+    "uses focus when the selector is %s",
+    async (selected) => {
+      const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
+        async () => '=> {"id":"notes-id","path":"/vaults/notes"}',
+      );
+      const readRegistry = vi.fn<HostReadinessEffects["readRegistry"]>(
+        async () => ({}),
+      );
+      const check = createObsidianHostReadiness(
+        { pathExists: async () => true, readRegistry, runObsidian },
+        { environment: { ZT_HOST_VAULT: selected } },
+      );
+
+      await expect(check()).resolves.toEqual({
+        id: "notes-id",
+        path: "/vaults/notes",
+      });
+      expect(runObsidian.mock.calls[0]?.[0]?.[0]).toBe("eval");
+      expect(readRegistry).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])(
+    "rejects duplicate folder names when the other vault has open=%s",
+    async (open) => {
+      const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
+        async () => '=> {"id":"research-id","path":"/vaults/research"}',
+      );
+      const check = createObsidianHostReadiness(
+        {
+          pathExists: async () => true,
+          readRegistry: async () => ({
+            "research-id": { open: true, path: "/vaults/research" },
+            "other-id": { open, path: "/other/research" },
+          }),
+          runObsidian,
+        },
+        { environment: { ZT_HOST_VAULT: "research" } },
+      );
+
+      await expect(check()).rejects.toThrow(
+        "ZT_HOST_VAULT does not identify one open vault: research",
+      );
+      expect(runObsidian).not.toHaveBeenCalled();
+    },
+  );
+
+  it("uses an exact ID to select among duplicate folder names", async () => {
+    const registry = {
+      "research-id": { open: true, path: "/vaults/research" },
+      "other-id": { open: true, path: "/other/research" },
+    };
+    const check = createObsidianHostReadiness(
+      {
+        pathExists: async () => true,
+        readRegistry: async () => registry,
+        runObsidian: async (args) => {
+          if (!args.includes("vault=research-id"))
+            throw new Error("Wrong target");
+          return args.some((arg) => arg.includes("vault-list"))
+            ? `=> ${JSON.stringify(registry)}`
+            : '=> {"id":"research-id","path":"/vaults/research"}';
+        },
+      },
+      { environment: { ZT_HOST_VAULT: "research-id" } },
     );
+
+    await expect(check()).resolves.toEqual({
+      id: "research-id",
+      path: "/vaults/research",
+    });
+  });
+
+  it("rejects an unknown vault without trying a different host", async () => {
+    const selected = "unknown";
+    const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
+      async () => '=> {"id":"notes-id","path":"/vaults/notes"}',
+    );
+    const check = createObsidianHostReadiness(
+      {
+        pathExists: async () => true,
+        readRegistry: async () => ({
+          research: { open: false, path: "/vaults/closed" },
+          "notes-id": { open: true, path: "/vaults/research" },
+        }),
+        runObsidian,
+      },
+      { environment: { ZT_HOST_VAULT: selected } },
+    );
+
+    await expect(check()).rejects.toThrow(
+      `ZT_HOST_VAULT does not identify one open vault: ${selected}`,
+    );
+    expect(runObsidian).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { when: "before", probes: 0 },
+    { when: "after", probes: 1 },
+  ])(
+    "rejects a selected base path missing $when the host probe",
+    async ({ when, probes }) => {
+      let exists = when === "after";
+      const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
+        async () => {
+          exists = false;
+          return '=> {"id":"research-id","path":"/vaults/research"}';
+        },
+      );
+      const check = createObsidianHostReadiness(
+        {
+          pathExists: async () => exists,
+          readRegistry: async () => ({
+            "research-id": { open: true, path: "/vaults/research" },
+          }),
+          runObsidian,
+        },
+        { environment: { ZT_HOST_VAULT: "research" } },
+      );
+
+      await expect(check()).rejects.toThrow(
+        "Selected Obsidian vault research-id has a missing base path: /vaults/research",
+      );
+      expect(runObsidian).toHaveBeenCalledTimes(probes);
+    },
+  );
+
+  it.each([
+    '=> {"id":"other-id","path":"/vaults/research"}',
+    '=> {"id":"research-id","path":"/other/research"}',
+    '=> {"id":"research-id"}',
+    "=> invalid",
+  ])("rejects a selected host response of %s", async (response) => {
+    const check = createObsidianHostReadiness(
+      {
+        pathExists: async () => true,
+        readRegistry: async () => ({
+          "research-id": { open: true, path: "/vaults/research" },
+        }),
+        runObsidian: async () => response,
+      },
+      { environment: { ZT_HOST_VAULT: "research" } },
+    );
+
+    await expect(check()).rejects.toThrow(
+      "Selected Obsidian vault research-id returned a different vault ID or base path.",
+    );
+  });
+
+  it.each([
+    ["invalid", "its live vault list was invalid"],
+    [
+      '{"research-id":{"open":false,"path":"/vaults/research"}}',
+      "does not identify one open vault",
+    ],
+    [
+      '{"research-id":{"open":true,"path":"/vaults/research"},"other-id":{"open":false,"path":"/other/research"}}',
+      "does not identify one open vault",
+    ],
+    [
+      '{"research-id":{"open":true,"path":"/other/research"}}',
+      "returned a different vault ID or base path",
+    ],
+    [
+      '{"other-id":{"open":true,"path":"/vaults/research"}}',
+      "returned a different vault ID or base path",
+    ],
+  ])("rejects a live vault list of %s", async (liveList, error) => {
+    const check = createObsidianHostReadiness(
+      {
+        pathExists: async () => true,
+        readRegistry: async () => ({
+          "research-id": { open: true, path: "/vaults/research" },
+        }),
+        runObsidian: async (args) =>
+          args.some((arg) => arg.includes("vault-list"))
+            ? `=> ${liveList}`
+            : '=> {"id":"research-id","path":"/vaults/research"}',
+      },
+      { environment: { ZT_HOST_VAULT: "research" } },
+    );
+
+    await expect(check()).rejects.toThrow(error);
+  });
+
+  it("keeps recovery diagnostics when explicit selection cannot read the registry", async () => {
+    const runObsidian = vi.fn<HostReadinessEffects["runObsidian"]>(
+      async () => "",
+    );
+    const check = createObsidianHostReadiness(
+      {
+        pathExists: async () => true,
+        readRegistry: async () => {
+          throw new Error("permission denied");
+        },
+        runObsidian,
+      },
+      { environment: { ZT_HOST_VAULT: "research" } },
+    );
+
+    const result = check();
+    await expect(result).rejects.toThrow(
+      "Cannot read the Obsidian vault registry to select research.",
+    );
+    await expect(result).rejects.toThrow(
+      "Registry diagnosis unavailable: permission denied",
+    );
+    await expect(result).rejects.toThrow("obsidian-vault.ts check");
+    expect(runObsidian).not.toHaveBeenCalled();
   });
 });

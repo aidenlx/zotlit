@@ -1,0 +1,64 @@
+# ZotLit Documentation
+
+The end-user documentation sites: naming and framing rules for how product concepts are presented to users. Product-domain terms are defined in the [Obsidian Plugin context](../obsidian/GLOSSARY.md); this context covers vocabulary that exists only in the docs.
+
+## Language
+
+**ZotLit** _(unqualified)_:
+The Obsidian plugin. When docs say "ZotLit" with no qualifier, they mean the Obsidian side. The Zotero side is ZotLit Companion, the Zotero add-on.
+_Avoid_: ZotLit for Obsidian, the Obsidian plugin (as a standing name; fine as an occasional clarifier)
+
+**ZotLit Companion**:
+The optional Zotero add-on: browsing, searching and reading need only the Zotero database, and the Companion adds current reads on systems where ZotLit reads only the main database file (Windows, ext4), the actions in Zotero's menus and live updates. Docs name it at the step that needs it, never as a prerequisite. Write “ZotLit Companion, the Zotero add-on” on first use in a page and “the Companion” later. It installs under the display name “ZotLit” in Zotero's add-on manager, so docs never call it by its displayed name alone.
+_Avoid_: Zotero companion, ZotLit Zotero companion, companion plugin, Zotero plugin (v1 term), zotero-obsidian-note (v1 product), ZotLit for Zotero
+
+**Library View**:
+The main-area tab that lists the Zotero library, titled “Zotero library” in Obsidian. Docs call it “the Library View” and quote its tab and command names from their Messages. It is the first screen of a new install, and the getting-started pages start from it.
+_Avoid_: library tab, library browser, Zotero library (as the name of the view; it is the tab's title)
+
+**Template Workbench**:
+The workflow for building and testing a Template Document — a Literature Note Profile's template document, the Citation Template (**citation text** in reader-facing prose), or a Shared Partial (**partial**). Three surfaces serve it: the web Workbench at `/workbench`, which edits Profile documents alone; the Template Workbench CLI for agents; and the Template Workbench View in Obsidian, which opens all three kinds. The term names the activity, not one surface; each surface qualifies by host when the difference matters.
+
+**Web Workbench** _(web)_:
+The human-facing surface at `/workbench` for editing a Literature Note Profile's template document in the browser, including its note content, Annotation format, properties, and file destination. Its beginner face prints "template" and the Profile's name, never Profile, manifest, or frontmatter.
+_Avoid_: note layout (the #938 draft's placeholder, retired by #945), web template editor
+
+**UI Label**:
+A stable, untranslated name that identifies a product control or choice in the English base catalog, such as a command, setting, menu item, button, or tooltip. Documentation quotes it from its Message instead of restating its text. A notice text that documentation quotes verbatim is treated the same way.
+_Avoid_: UI text, product copy
+
+**Settings Path**:
+The bold navigation route from Obsidian Settings to the ZotLit tab, one of its settings pages, or one setting on that page, always written from Settings through the ZotLit tab. Documentation renders it as one unit rather than as separate labels.
+_Avoid_: settings breadcrumb, menu path, Community plugins route
+
+**Section Index**:
+The wayfinding page at a section's own URL (e.g. /docs/how-to): it helps the reader find the material they need — organized around the reader's situation or question, never a flat listing of the section's pages. It routes and nothing else: no tutorial, how-to, concept, or reference content of its own. The Intro section's index is the docs index ("Introduction").
+_Avoid_: table of contents, overview page, section landing page
+
+**Pre-release**:
+The channel that carries beta builds — BRAT for ZotLit, `update-beta.json` for the Companion. It is the reader-facing name for both apps' beta line; docs never expose the branch it ships from.
+_Avoid_: beta channel, next channel, nightly, canary
+
+**Stable Docs**:
+The documentation deployment for the Stable channel, published at zotlit.aidenlx.site. Its content describes the Stable Release Line that the deployment represents.
+_Avoid_: production docs, main docs
+
+**Pre-release Docs**:
+The documentation deployment for the Pre-release channel, published at zotlit-beta.aidenlx.site. Its content can describe a Stable Release Line that is ahead of Stable Docs.
+_Avoid_: beta content, mixed docs
+
+**Dormant Pre-release**:
+The state where the Pre-release channel carries nothing newer than Stable, between beta cycles. Install pages report it as "no pre-release available" and never advertise a version behind Stable.
+_Avoid_: no beta, unreleased (that word marks a channel that never shipped)
+
+**Changelog Entry**:
+One release note on the site's /changelog, keyed by the Obsidian plugin's semver version. Companion releases have no entries of their own; a companion release is noted inside the plugin-version entry it shipped alongside.
+_Avoid_: release page, companion changelog
+
+**Stable Release Line**:
+The non-prerelease major, minor, and patch version to which a release belongs. For example, `2.0.0-beta.4` belongs to `2.0.0`.
+_Avoid_: base version, final version
+
+**v1 Docs**:
+The legacy documentation site at zotlit-v1.aidenlx.site, kept online for v1 users. v2 pages link out to it where relevant (migration guide); it is never mirrored or embedded in the v2 site.
+_Avoid_: old docs, obzt docs (stale domain)

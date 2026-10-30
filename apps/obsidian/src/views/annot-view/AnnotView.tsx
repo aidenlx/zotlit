@@ -1,176 +1,424 @@
-import { useContext, useMemo, useState } from "react";
+import type { IconName } from "obsidian";
+import {
+  Fragment,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { CSSProperties, RefObject } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
+import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
-import { SidebarToolbar } from "@/components/sidebar-toolbar";
+import { PaneState } from "@/components/pane-state";
 import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
-import { Annotation } from "./Annotation";
+import { Annotation, FIELD_SHEET_SELECTOR } from "./Annotation";
+import { cardPlace, moveOrigin } from "./card-selection";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
 import {
-  selectActiveAttachment,
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
   useSetFilterQuery,
-  useSetSelectedAttachmentID,
+  useToggleGroupCollapsed,
   useToggleSearchOpen,
-} from "./store";
+} from "./model";
+import { annotViewBody, headerShape } from "./presentation";
+import type {
+  AnnotViewBody,
+  EmptyStateAction,
+  HeaderShape,
+} from "./presentation";
+import { groupedCards, visibleOrder } from "./state";
+import { confineTabOrder } from "./tab-order";
+
+/**
+ * Whether an event landed in the open text field's sheet. `instanceOf` rather
+ * than `instanceof`: the view runs in pop-out windows.
+ *
+ * @see apps/obsidian/policies/popout-windows.md
+ */
+function inFieldSheet(target: EventTarget | null): boolean {
+  const node = target as Node | null;
+  return (
+    node?.instanceOf(Element) === true &&
+    node.closest(FIELD_SHEET_SELECTOR) !== null
+  );
+}
+
+/**
+ * Each shape `presentation.ts` derives is a fresh object, and the store is read
+ * through `useSyncExternalStore`, which compares snapshots by identity — a
+ * selector that builds one on every call never settles. So each is built from
+ * the slices it depends on and held while those are unchanged.
+ */
+function useHeaderShape(): HeaderShape {
+  const attachments = useAnnotStore((s) => s.attachments);
+  const selectedAttachmentKey = useAnnotStore((s) => s.selectedAttachmentKey);
+  const attachmentLock = useAnnotStore((s) => s.attachmentLock);
+  const capability = useAnnotStore((s) => s.capability);
+  const followMode = useAnnotStore((s) => s.followMode);
+  const itemDisplay = useAnnotStore((s) => s.itemDisplay);
+  const zoteroReaderClosed = useAnnotStore((s) => s.zoteroReaderClosed);
+  return useMemo(
+    () =>
+      headerShape({
+        attachments,
+        selectedAttachmentKey,
+        attachmentLock,
+        capability,
+        followMode,
+        itemDisplay,
+        zoteroReaderClosed,
+      }),
+    [
+      attachments,
+      selectedAttachmentKey,
+      attachmentLock,
+      capability,
+      followMode,
+      itemDisplay,
+      zoteroReaderClosed,
+    ],
+  );
+}
+
+function useBody(): AnnotViewBody {
+  const attachments = useAnnotStore((s) => s.attachments);
+  const annotations = useAnnotStore((s) => s.annotations);
+  const followMode = useAnnotStore((s) => s.followMode);
+  const liveUpdatesOn = useAnnotStore((s) => s.liveUpdatesOn);
+  const pinnedItemKey = useAnnotStore((s) => s.pinnedItemKey);
+  const queryProblem = useAnnotStore((s) => s.queryProblem);
+  return useMemo(
+    () =>
+      annotViewBody({
+        attachments,
+        annotations,
+        followMode,
+        liveUpdatesOn,
+        pinnedItemKey,
+        queryProblem,
+      }),
+    [
+      attachments,
+      annotations,
+      followMode,
+      liveUpdatesOn,
+      pinnedItemKey,
+      queryProblem,
+    ],
+  );
+}
 
 export function AnnotView() {
-  const itemKey = useAnnotStore((s) => s.itemKey);
-  const attachments = useAnnotStore((s) => s.attachments);
-  const followMode = useAnnotStore((s) => s.followMode);
   const searchOpen = useAnnotStore((s) => s.searchOpen);
+  const body = useBody();
+  /**
+   * Collapse is this view's own display state rather than part of the filter:
+   * nothing outside the pane reads it and nothing persists it, so it stays
+   * here and reaches the control row as a prop.
+   */
   const [collapsed, setCollapsed] = useState(true);
+  const searchBarId = useUniqueId();
+  /** Where Escape in the search bar sends focus, the button that opened it. */
+  const searchButtonRef = useRef<HTMLDivElement>(null);
 
-  const hasItem =
-    itemKey !== null && attachments !== null && attachments.length > 0;
+  const hasItem = body.kind === "list" || body.kind === "loading";
+  const filterError = useAnnotStore((s) => s.filterError);
+  const actions = useContext(AnnotActionsContext);
+  const editingText = useAnnotStore(
+    (s) => s.editing !== null && s.editing.field !== "tags",
+  );
+  /** Whether the press the next click ends began in the open field. */
+  const pressInField = useRef(false);
 
   return (
-    <div className="zt:@container zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
-      <Toolbar
-        hasItem={hasItem}
-        collapsed={collapsed}
-        onToggleCollapsed={() => setCollapsed((c) => !c)}
-      />
-      <ItemIdentityLabel />
-      {hasItem && searchOpen && <SearchRow />}
-      {hasItem && <FilterBar />}
-      {itemKey === null ? (
-        <div className="pane-empty zt:p-2">
-          {followMode === "reader"
-            ? m.annot_view_empty_reader()
-            : followMode === "linked"
-              ? m.annot_view_empty_linked()
-              : m.annot_view_empty()}
-        </div>
-      ) : attachments === null ? (
-        <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
-      ) : attachments.length === 0 ? (
-        <div className="pane-empty zt:p-2">{m.annot_view_no_attachments()}</div>
-      ) : (
+    // A click in the view away from an open text field ends the edit, as
+    // Escape does, before the click reaches what it landed on (ADR 0066). A
+    // drag that selected text in the field and let go outside it is still in
+    // the field. The empty list's own click closes the editor before it
+    // clears anything, so that click is left to it.
+    <div
+      className="zt:@container zt:flex zt:h-full zt:flex-col zt:overflow-hidden"
+      onPointerDownCapture={(e) => {
+        pressInField.current = inFieldSheet(e.target);
+      }}
+      onClickCapture={(e) => {
+        if (!editingText || pressInField.current || inFieldSheet(e.target))
+          return;
+        const target = e.target as Node;
+        if (
+          target.instanceOf(Element) &&
+          target.matches('.annots-container, [role="grid"]')
+        )
+          return;
+        actions.onCloseEditors();
+      }}
+    >
+      <AnnotHeader />
+      {hasItem && (
+        <FilterBar
+          searchBarId={searchBarId}
+          searchButtonRef={searchButtonRef}
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed((c) => !c)}
+        />
+      )}
+      {hasItem && searchOpen && (
+        <SearchRow id={searchBarId} searchButtonRef={searchButtonRef} />
+      )}
+      {body.kind === "list" && filterError && (
+        <p
+          className="zt:mx-2 zt:my-1 zt:text-sm zt:text-(--text-error)"
+          role="alert"
+          data-annot-view-filter-error=""
+        >
+          {m.annot_view_filter_error()}
+        </p>
+      )}
+      {body.kind === "list" ? (
         <AnnotList collapsed={collapsed} />
+      ) : body.kind === "loading" ? (
+        // Loading gives way to the cards at the top, so it waits there.
+        <div className="pane-empty zt:p-2" data-annot-view-loading="">
+          {m.annot_view_loading()}
+        </div>
+      ) : (
+        <PaneState>
+          {body.kind === "problem" ? (
+            <div
+              className="pane-empty zt:p-2"
+              role="alert"
+              data-annot-view-problem=""
+            >
+              <p className="zt:m-0">{body.message}</p>
+              {body.detail && <p className="zt:m-0 zt:mt-1">{body.detail}</p>}
+            </div>
+          ) : body.kind === "no-attachments" ? (
+            <div className="pane-empty zt:p-2">{body.message}</div>
+          ) : (
+            <EmptyPane message={body.message} action={body.action} />
+          )}
+        </PaneState>
       )}
     </div>
   );
 }
 
-interface ToolbarProps {
-  hasItem: boolean;
-  collapsed: boolean;
-  onToggleCollapsed: () => void;
-}
-
-function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
+/**
+ * The header block: one press target opening one grouped menu, in the two
+ * shapes `headerShape` leaves it. Everything it reports — the mode, the
+ * Attachment count, the read-only state, a closed reader — is inert text
+ * inside that one target, so the block takes one hover shape and one focus
+ * stop however much it has to say.
+ *
+ * @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
+ */
+function AnnotHeader() {
   const actions = useContext(AnnotActionsContext);
-  const followMode = useAnnotStore((s) => s.followMode);
-  const searchOpen = useAnnotStore((s) => s.searchOpen);
-  const toggleSearchOpen = useToggleSearchOpen();
+  const shape = useHeaderShape();
+  const labelId = useUniqueId();
 
   return (
-    <SidebarToolbar className="zt:flex-col zt:gap-2 zt:@sm:flex-row zt:@sm:items-center">
-      <SidebarToolbar.Actions className="zt:@sm:w-auto zt:@sm:shrink-0">
-        <FollowControls />
-        {hasItem && (
-          <>
-            <IconButton
-              icon={collapsed ? "chevrons-up-down" : "chevrons-down-up"}
-              onClick={onToggleCollapsed}
-              {...tooltipAttrs(
-                collapsed
-                  ? m.annot_view_expand_tooltip()
-                  : m.annot_view_collapse_tooltip(),
-              )}
-            />
-            <IconButton
-              icon="refresh-ccw"
-              onClick={() => actions.onRefresh()}
-              {...tooltipAttrs(m.annot_view_refresh_tooltip())}
-            />
-            <IconButton
-              icon="search"
-              active={searchOpen}
-              onClick={toggleSearchOpen}
-              {...tooltipAttrs(m.annot_view_search_tooltip())}
-            />
-          </>
-        )}
-      </SidebarToolbar.Actions>
-      {hasItem && followMode !== "reader" && <AttachmentSelector />}
-    </SidebarToolbar>
-  );
-}
-
-function FollowControls() {
-  const actions = useContext(AnnotActionsContext);
-  const followMode = useAnnotStore((s) => s.followMode);
-  const serverAvailable = useAnnotStore((s) => s.serverAvailable);
-
-  const followingReader = followMode === "reader";
-  const isLinked = followMode === "linked";
-
-  const readerTooltip = followingReader
-    ? m.annot_view_follow_reader_active_tooltip()
-    : serverAvailable
-      ? m.annot_view_follow_reader_tooltip()
-      : m.annot_view_follow_reader_disabled_tooltip();
-
-  return (
-    <>
-      <IconButton
-        className="zt:data-[active]:text-accent-foreground"
-        icon="book-open"
-        active={followingReader}
-        data-active={followingReader ? "" : undefined}
-        disabled={!serverAvailable && !followingReader}
-        onClick={() => actions.onToggleFollowReader()}
-        {...tooltipAttrs(readerTooltip)}
-      />
-      <IconButton
-        className="zt:data-[active]:text-accent-foreground"
-        icon={isLinked ? "unlink" : "link"}
-        active={isLinked}
-        data-active={isLinked ? "" : undefined}
-        onClick={() =>
-          isLinked ? actions.onUnlinkItem() : actions.onLinkItem()
-        }
-        {...tooltipAttrs(
-          isLinked
-            ? m.annot_view_unlink_tooltip()
-            : m.annot_view_link_tooltip(),
-        )}
-      />
-    </>
-  );
-}
-
-function ItemIdentityLabel() {
-  const followMode = useAnnotStore((s) => s.followMode);
-  const label = useAnnotStore((s) => s.itemDisplayLabel);
-
-  if (followMode === "note" || !label) return null;
-
-  return (
-    <div className="zt:truncate zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground">
-      {label}
+    <div className="zt:flex zt:items-start zt:gap-1 zt:px-2 zt:pt-2">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-labelledby={labelId}
+        onClick={(evt) => actions.onHeaderMenu(evt)}
+        className="zt-annot-header zt:inline-flex zt:max-w-full zt:min-w-0 zt:items-center zt:gap-2 zt:rounded-sm zt:px-1.5 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
+      >
+        {/* The name the block promises assistive technology, held apart from
+            the words on screen: an `aria-label` would reach the pointer too,
+            and Obsidian would draw the whole sentence as a hover tooltip.
+            @see apps/obsidian/policies/tooltips.md */}
+        <span id={labelId} className="zt:sr-only">
+          {shape.label}
+        </span>
+        <span className="zt:flex zt:min-w-0 zt:flex-col zt:gap-0.5">
+          {shape.kind === "masthead" ? (
+            <Masthead shape={shape} />
+          ) : (
+            <StatusBar shape={shape} />
+          )}
+        </span>
+        {/* The chevron belongs to the block, not to any word in it: its own
+            inline-end lane beside the text, so it stays by the words however
+            wide the pane grows, and no wrapped byline segment runs under it. */}
+        <ChromeIcon name="chevron-down" />
+      </button>
+      {/* A side dock hides the view header and its "More options", so the
+          header row carries the same menu there, in every state of the
+          view. Obsidian's own `.mod-sidedock` ancestor shows it; the wrapper
+          holds the display, since `.clickable-icon` sets its own. */}
+      <div className="zt:ms-auto zt:hidden zt:shrink-0 zt:in-[.mod-sidedock]:flex">
+        <IconButton
+          icon="more-vertical"
+          aria-haspopup="menu"
+          data-annot-view-more-options=""
+          onClick={(evt) => actions.onViewMenu(evt)}
+          {...tooltipAttrs(m.annot_view_more_tooltip())}
+        />
+      </div>
     </div>
   );
 }
 
-function SearchRow() {
+/** The Item over its byline, with the Follow Mode carried by its glyph alone. */
+function Masthead({
+  shape,
+}: {
+  shape: Extract<HeaderShape, { kind: "masthead" }>;
+}) {
+  return (
+    <>
+      <span className="zt:flex zt:min-w-0 zt:items-center zt:gap-1">
+        <ChromeIcon name={shape.modeIcon} />
+        <span
+          className="zt:min-w-0 zt:text-sm zt:font-semibold zt:text-balance"
+          data-annot-header-title=""
+        >
+          {shape.title}
+        </span>
+      </span>
+      {shape.byline.length > 0 && <Byline segments={shape.byline} />}
+    </>
+  );
+}
+
+/** The Follow Mode in full, with whatever the pane has to report after it. */
+function StatusBar({
+  shape,
+}: {
+  shape: Extract<HeaderShape, { kind: "status-bar" }>;
+}) {
+  return (
+    <span className="zt:flex zt:min-w-0 zt:items-center zt:gap-1">
+      <ChromeIcon name={shape.modeIcon} />
+      <Byline segments={[shape.modeLabel, ...shape.indicators]} />
+    </span>
+  );
+}
+
+/**
+ * A glyph in the header's chrome: the mode's own icon and the block's
+ * chevron, at the `--icon-xs` Obsidian sets beside its own 13px text, in the
+ * byline's ink.
+ */
+function ChromeIcon({ name }: { name: IconName }) {
+  return (
+    <Icon
+      name={name}
+      size="xs"
+      className="zt:shrink-0 zt:text-muted-foreground"
+    />
+  );
+}
+
+/**
+ * One line of quiet chrome, its segments divided by a separator each carries
+ * after itself — the last suppressed, so no separator can begin a wrapped line.
+ */
+function Byline({ segments }: { segments: string[] }) {
+  return (
+    <span className="zt:min-w-0 zt:text-xs zt:text-muted-foreground zt:tabular-nums">
+      {segments.map((segment, index) => (
+        <span key={segment}>
+          {segment}
+          {index < segments.length - 1 && " · "}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function EmptyPane({
+  message,
+  action,
+}: {
+  message: string;
+  action: { label: string; action: EmptyStateAction } | null;
+}) {
+  const actions = useContext(AnnotActionsContext);
+  return (
+    <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
+      <div>{message}</div>
+      {action && (
+        <button
+          onClick={() =>
+            action.action === "enable-live-updates"
+              ? actions.onEnableLiveUpdates()
+              : actions.onPinItem()
+          }
+        >
+          {action.label}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The search bar, revealed under the control row by the search toggle that
+ * names it. Escape leaves it exactly as the toggle does — closed, with the
+ * query cleared — and sends focus back to the button that opened it, so the
+ * keyboard never lands nowhere. The press stops there: Obsidian's own Escape
+ * would otherwise act on the pane behind it.
+ *
+ * The field takes `type="text"` for that: a `search` input keeps the browser's
+ * own Escape-to-clear while it holds a query, and this surface would never see
+ * the key.
+ */
+function SearchRow({
+  id,
+  searchButtonRef,
+}: {
+  id: string;
+  searchButtonRef: RefObject<HTMLDivElement | null>;
+}) {
   const filterQuery = useAnnotStore((s) => s.filterQuery);
   const setFilterQuery = useSetFilterQuery();
+  const toggleSearchOpen = useToggleSearchOpen();
+  // Preact renders `autoFocus` as the HTML attribute, which only acts at page
+  // load; a field the toggle reveals is focused by hand once it is mounted. A
+  // layout effect runs at commit, where a passive effect waits for a frame the
+  // window may not paint.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useUniqueId();
+  useLayoutEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   return (
-    <div className="zt:px-3 zt:pb-1">
+    <div id={id} className="zt:px-2 zt:pt-1">
+      {/* The field's own name, in the words the toggle that reveals it carries:
+          a placeholder is not a name, and no visible label has room in a row
+          this dense. */}
+      <label htmlFor={inputId} className="zt:sr-only">
+        {m.annot_view_search_tooltip()}
+      </label>
       <SearchInput
+        id={inputId}
+        ref={inputRef}
         value={filterQuery}
         onChange={setFilterQuery}
-        autoFocus
+        type="text"
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.stopPropagation();
+          toggleSearchOpen();
+          searchButtonRef.current?.focus();
+        }}
         placeholder={m.annot_view_search_placeholder()}
         clearLabel={m.annot_view_clear_search()}
       />
@@ -178,63 +426,225 @@ function SearchRow() {
   );
 }
 
-function AttachmentSelector() {
-  const attachments = useAnnotStore((s) => s.attachments);
-  const active = useAnnotStore(selectActiveAttachment);
-  const setAttachmentID = useSetSelectedAttachmentID();
-
-  if (!attachments || attachments.length <= 1) return null;
-
-  return (
-    <div className="zt:mx-auto zt:w-full zt:max-w-xs zt:min-w-0 zt:@sm:mx-0">
-      <select
-        className="dropdown zt:w-full zt:truncate"
-        value={String(active?.itemID ?? "")}
-        onChange={(e) => setAttachmentID(Number(e.currentTarget.value))}
-      >
-        {attachments.map((atch) => (
-          <option key={atch.itemID} value={atch.itemID}>
-            ({atch.annotCount}) {atch.path?.replace(/^storage:/, "")}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function AnnotList({ collapsed }: { collapsed: boolean }) {
+/** The Annotation Cards, in the grid the Annotations Layout draws them in. */
+export function AnnotList({
+  collapsed,
+  cardWidth,
+}: {
+  collapsed: boolean;
+  /**
+   * The narrowest a card is drawn, in pixels, as a Query View's Annotations
+   * layout sets it: the tracks fill the row from there. Without one the
+   * tracks follow the pane's width steps.
+   */
+  cardWidth?: number;
+}) {
+  const actions = useContext(AnnotActionsContext);
   const annotations = useAnnotStore((s) => s.annotations);
-  const attachment = useAnnotStore(selectActiveAttachment);
+  const groups = useAnnotStore((s) => s.groups);
+  const collapsedGroups = useAnnotStore((s) => s.collapsedGroups);
+  const toggleGroup = useToggleGroupCollapsed();
   const clearFilters = useClearFilters();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const labelId = useUniqueId();
+  /** Whether the list is scrolled off its top, which shows the top fade. */
+  const [scrolled, setScrolled] = useState(false);
 
   const filter = useAnnotFilter();
   const filtered = useMemo(
     () => (annotations ? filterAnnotations(annotations, filter) : []),
     [annotations, filter],
   );
-
-  if (!annotations || !attachment) {
-    return <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>;
-  }
+  /** The list's one tab stop: the place a move steps from, else the first. */
+  const tabStop = useAnnotStore((s) => {
+    const visible = visibleOrder(s);
+    return moveOrigin(s.cardSelection, visible) ?? visible[0] ?? null;
+  });
+  const tabOrder = useRef<Disposable | null>(null);
+  /** Only the tab stop's controls stay in the Tab order. */
+  const mountGrid = useCallback((grid: HTMLDivElement | null) => {
+    gridRef.current = grid;
+    tabOrder.current?.[Symbol.dispose]();
+    tabOrder.current = grid ? confineTabOrder(grid) : null;
+  }, []);
 
   if (isFilterActive(filter) && filtered.length === 0) {
     return (
-      <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-1 zt:p-2">
-        <div>{m.annot_view_filter_no_match()}</div>
-        <button className="zt:underline" onClick={clearFilters}>
-          {m.annot_view_clear_filters()}
-        </button>
-      </div>
+      <PaneState>
+        <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
+          <div>{m.annot_view_filter_no_match()}</div>
+          <button onClick={clearFilters}>{m.annot_view_clear_filters()}</button>
+        </div>
+      </PaneState>
     );
   }
 
   return (
-    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-3 zt:pb-8 zt:text-xs">
-      <div className="zt:columns-1 zt:gap-2 zt:@md:columns-2 zt:@md:gap-3 zt:@2xl:columns-3 zt:@4xl:columns-4">
-        {filtered.map((annot) => (
-          <Annotation key={annot.itemID} annot={annot} collapsed={collapsed} />
-        ))}
+    // A grid, never `columns`: a masonry column reads down its own length, so
+    // the page order the reader is scanning breaks the moment the pane widens.
+    // The tracks answer to the scroll box's own width through the container
+    // query on it, and `items-start` keeps each card the height of its own
+    // content rather than its row's.
+    //
+    // A click on the list's empty space, around or between the cards, closes
+    // an open card editor or clears the Card Selection.
+    <div
+      className={cn(
+        "annots-container zt:@container zt:mt-1 zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-1",
+        // Obsidian's status bar (fixed, bottom-right) overlays the pane's
+        // bottom edge in any dock. The list scrolls under it, and its end
+        // padding, the list's own 3 plus the bar's 8, lets the last card
+        // scroll fully clear of the bar; the scroll padding keeps a card
+        // scrolled into view clear of it too.
+        "zt:scroll-pb-8 zt:pb-11",
+        // A card scrolled up under the filter bar fades out rather than being
+        // cut flat. The strip lies over the top of the list, held there as the
+        // cards scroll under it (`-top-1` cancels the `pt-1`, where a sticky
+        // box stops), and is painted from the pane's own background, as
+        // Obsidian paints the leaf. It spans the side gutters too, where a
+        // card's ring and shadow reach. It shows only while the list is
+        // scrolled off its top, so at the top of the list, and in a list too
+        // short to scroll, the first row shows whole; the top scroll padding
+        // keeps a card scrolled into view below it. It sits inside the
+        // scrolled content, so the overlay scrollbar draws over it.
+        "zt:scroll-pt-2 zt:before:pointer-events-none zt:before:sticky zt:before:-top-1 zt:before:z-1 zt:before:-mx-3 zt:before:-mb-2 zt:before:block zt:before:h-2",
+        "zt:before:bg-linear-to-b zt:before:from-(--background-secondary) zt:before:to-transparent zt:[.mod-root_&]:before:from-(--background-primary)",
+        "zt:before:opacity-0 zt:before:transition-opacity zt:data-scrolled:before:opacity-100",
+      )}
+      data-scrolled={scrolled ? "" : undefined}
+      // A list that stops being scrollable, as when the pane widens, is
+      // clamped back to its top, and that clamp fires a scroll too.
+      onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
+      onClick={(e) => {
+        if (e.target !== e.currentTarget && e.target !== gridRef.current)
+          return;
+        actions.onClearSelection();
+      }}
+    >
+      {/* The grid's name, held apart from the cards: an `aria-label` on the
+          grid would reach the pointer too, and Obsidian would draw it as a
+          hover tooltip over the whole list.
+          @see apps/obsidian/policies/tooltips.md */}
+      <span id={labelId} className="zt:sr-only">
+        {m.annot_view_name()}
+      </span>
+      {/* To assistive technology the cards are one column of rows, in list
+          order, however many tracks the layout draws them in. */}
+      <div
+        ref={mountGrid}
+        className={cn(
+          "zt:grid zt:items-start zt:gap-3",
+          cardWidth === undefined
+            ? "zt:grid-cols-1 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3"
+            : "zt:grid-cols-[repeat(auto-fill,minmax(min(100%,var(--zt-card-width)),1fr))]",
+        )}
+        style={
+          cardWidth === undefined
+            ? undefined
+            : ({ "--zt-card-width": `${cardWidth}px` } as CSSProperties)
+        }
+        data-card-width={cardWidth}
+        role="grid"
+        aria-multiselectable="true"
+        aria-labelledby={labelId}
+      >
+        {groups === null
+          ? filtered.map((annot) => (
+              <Annotation
+                key={annot.key}
+                annot={annot}
+                place={cardPlace(annot.key, null)}
+                collapsed={collapsed}
+                tabStop={cardPlace(annot.key, null) === tabStop}
+              />
+            ))
+          : groupedCards(groups, filtered).map(({ annot, group, opens }) => {
+              // A Query View's grouped rows: a heading opens each run of
+              // cards that stands in one group, across every column, and a
+              // card with two tags stands once under each. The card keeps one
+              // place in the tree whether or not a heading stands before it,
+              // so a card that starts or stops a group is not mounted again
+              // and an open editor on it stays.
+              const folded = collapsedGroups.has(group.key);
+              const place = cardPlace(annot.key, group.key);
+              return (
+                <Fragment key={place}>
+                  {opens && (
+                    <GroupHeading
+                      key="group-heading"
+                      label={group.label}
+                      groupKey={group.key}
+                      expanded={!folded}
+                      onToggle={() => toggleGroup(group.key)}
+                    />
+                  )}
+                  {!folded && (
+                    <Annotation
+                      key={annot.key}
+                      annot={annot}
+                      place={place}
+                      collapsed={collapsed}
+                      tabStop={place === tabStop}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A group's heading. Its button collapses the group's cards and expands them
+ * again; the heading's own text names it, so it needs no tooltip.
+ */
+function GroupHeading({
+  label,
+  groupKey,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  groupKey: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    // A group ends on a hairline, as a group does in a Bases Cards view: every
+    // heading after the first stands under one, a little further from the
+    // cards above it than the cards stand from each other.
+    <div
+      role="row"
+      data-query-group={groupKey}
+      data-collapsed={expanded ? undefined : ""}
+      className="zt:group/heading zt:col-span-full zt:not-first:mt-1 zt:not-first:border-t-(length:--border-width) zt:not-first:border-border zt:not-first:pt-2"
+    >
+      <span role="rowheader" className="zt:flex zt:min-w-0">
+        {/* The press target is Obsidian's `clickable-icon`, which takes back
+            the button chrome Obsidian draws, unlayered, on a bare `<button>`
+            and gives the theme's own hover. It pulls back by its inline
+            padding, so the chevron starts on the cards' edge. Obsidian
+            sets a button's weight and colour unlayered as well, so the label
+            carries the heading type itself. The chevron stays shown, so a
+            collapsed group reads as collapsed without a pointer over it, in the
+            colour Obsidian gives a collapsed fold. */}
+        <button
+          type="button"
+          aria-expanded={expanded}
+          className="clickable-icon zt:-ms-(--size-2-3) zt:flex zt:min-w-0 zt:items-center zt:gap-1"
+          onClick={onToggle}
+        >
+          <Icon
+            name={expanded ? "chevron-down" : "chevron-right"}
+            size="xs"
+            className="zt:shrink-0 zt:text-(--collapse-icon-color) zt:group-data-collapsed/heading:text-(--collapse-icon-color-collapsed)"
+          />
+          <span className="zt:truncate zt:text-sm zt:font-(weight:--font-semibold) zt:text-foreground">
+            {label}
+          </span>
+        </button>
+      </span>
     </div>
   );
 }

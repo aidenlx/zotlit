@@ -1,35 +1,70 @@
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { Effect, PlatformError } from "effect";
+import { appendFile, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { layerNodeFileSystemWith } from "@/lib/__fixtures__/node-file-system";
 import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
+import { nodeFileSystemCall } from "@/lib/errno";
 
 import { planReadParents } from "./read-parent";
 import type { ReadParentPlan } from "./read-parent";
 import { prepareRead } from "./read-source";
+import type { PreparedRead } from "./read-source";
 
 vi.mock("./read-parent", () => ({ planReadParents: vi.fn() }));
 const mkdirFault = vi.hoisted(() => ({ path: "" }));
+const statSignal = vi.hoisted(() => ({
+  path: "",
+  calls: 0,
+  run: (_call: number) => {},
+}));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
-    copyFile: (...args: Parameters<typeof actual.copyFile>) =>
-      copyFile(...args),
-    async mkdir(...args: Parameters<typeof actual.mkdir>) {
-      if (String(args[0]) === mkdirFault.path) {
-        throw Object.assign(new Error("EACCES"), { code: "EACCES" });
+    async stat(...args: Parameters<typeof actual.stat>) {
+      if (String(args[0]) === statSignal.path) {
+        statSignal.calls += 1;
+        try {
+          return await actual.stat(...args);
+        } finally {
+          statSignal.run(statSignal.calls);
+        }
       }
-      await actual.mkdir(...args);
+      return actual.stat(...args);
     },
   };
 });
 
 const planMock = vi.mocked(planReadParents);
+const journalMagic = Buffer.from([
+  0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7,
+]);
 /** Overridable so one test can make a copy fail the way a full volume does. */
 let copyFile: typeof import("node:fs/promises").copyFile;
+
+/**
+ * The Node file system, where a copy runs `copyFile` and the directory at
+ * `mkdirFault.path` refuses to be created.
+ */
+const testFileSystem = layerNodeFileSystemWith((fs) => ({
+  copyFile: (from, to) =>
+    nodeFileSystemCall("copyFile", to, () => copyFile(from, to)),
+  makeDirectory: (path, options) =>
+    path === mkdirFault.path
+      ? Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "makeDirectory",
+            pathOrDescriptor: path,
+          }),
+        )
+      : fs.makeDirectory(path, options),
+}));
 
 let dir: string;
 let source: string;
@@ -41,13 +76,20 @@ beforeEach(async () => {
     );
   copyFile = realCopyFile;
   mkdirFault.path = "";
+  statSignal.path = "";
+  statSignal.calls = 0;
+  statSignal.run = (_call) => {};
   dir = await mkdtemp(join(tmpdir(), "zotlit-read-parent-place-"));
   source = join(dir, "zotero.sqlite");
-  await writeFile(source, Buffer.alloc(100));
+  using sqlite = new DatabaseSync(source);
+  sqlite.exec("CREATE TABLE fixture (value TEXT NOT NULL)");
 });
 
 afterEach(async () => {
   mkdirFault.path = "";
+  statSignal.path = "";
+  statSignal.calls = 0;
+  statSignal.run = (_call) => {};
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -58,14 +100,43 @@ function plan(...parents: string[]): void {
   });
 }
 
+function inspectPrepared<A>(
+  preparation: ReturnType<typeof prepareRead>,
+  inspect: (prepared: PreparedRead) => A,
+): Promise<A> {
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.map(preparation, (prepared) => inspect(prepared)),
+    ).pipe(Effect.provide(testFileSystem)),
+  );
+}
+
+function runPrepared(preparation: ReturnType<typeof prepareRead>) {
+  return Effect.runPromise(
+    Effect.scoped(preparation).pipe(Effect.provide(testFileSystem)),
+  );
+}
+
 describe("prepareRead placement", () => {
   it("creates the snapshot inside the parent the plan prefers", async () => {
     const diverted = join(dir, ZOTERO_DB_READ_PARENT_DIRNAME);
     plan(diverted, tmpdir());
 
-    await using prepared = await prepareRead("copy", source);
+    await inspectPrepared(prepareRead("copy", source), (prepared) =>
+      expect(dirname(dirname(prepared.path))).toBe(diverted),
+    );
+  });
 
-    expect(dirname(dirname(prepared.path))).toBe(diverted);
+  it("names the snapshot dir with this process and the owner it is given", async () => {
+    plan(tmpdir());
+
+    await inspectPrepared(
+      prepareRead("copy", source, "0123456789ab"),
+      (prepared) =>
+        expect(basename(dirname(prepared.path))).toMatch(
+          new RegExp(`^zotlit-db-${process.pid}-0123456789ab-[^-]+$`),
+        ),
+    );
   });
 
   it("propagates a failure that is not the parent's, leaving it untried", async () => {
@@ -73,8 +144,11 @@ describe("prepareRead placement", () => {
     plan(join(dir, ZOTERO_DB_READ_PARENT_DIRNAME), fallback);
     await rm(source);
 
-    await expect(prepareRead("copy", source)).rejects.toMatchObject({
-      code: "ENOENT",
+    await expect(
+      runPrepared(prepareRead("copy", source)),
+    ).rejects.toMatchObject({
+      _tag: "DbUnavailable",
+      message: expect.stringContaining("ENOENT"),
     });
     await expect(readdir(fallback)).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -90,9 +164,9 @@ describe("prepareRead placement", () => {
       await real(from, to, mode);
     };
 
-    await using prepared = await prepareRead("copy", source);
-
-    expect(dirname(dirname(prepared.path))).toBe(tmpdir());
+    await inspectPrepared(prepareRead("copy", source), (prepared) =>
+      expect(dirname(dirname(prepared.path))).toBe(tmpdir()),
+    );
   });
 
   it("falls back to the next parent when the preferred one refuses writes", async () => {
@@ -100,13 +174,142 @@ describe("prepareRead placement", () => {
     plan(preferred, tmpdir());
     mkdirFault.path = preferred;
 
-    await using prepared = await prepareRead("copy", source);
-
-    expect(dirname(dirname(prepared.path))).toBe(tmpdir());
+    await inspectPrepared(prepareRead("copy", source), (prepared) =>
+      expect(dirname(dirname(prepared.path))).toBe(tmpdir()),
+    );
   });
 });
 
 describe("prepareRead consistency guard", () => {
+  it("rejects a stable snapshot that fails integrity validation and removes it", async () => {
+    const parent = join(dir, "snapshots");
+    plan(parent);
+    {
+      using sqlite = new DatabaseSync(source, { defensive: false });
+      sqlite.exec(`
+        CREATE TABLE checked (value INTEGER);
+        INSERT INTO checked VALUES (NULL);
+        PRAGMA writable_schema = ON;
+        UPDATE sqlite_schema
+          SET sql = 'CREATE TABLE checked (value INTEGER NOT NULL)'
+          WHERE name = 'checked';
+      `);
+    }
+    await expect(
+      runPrepared(prepareRead("copy", source)),
+    ).rejects.toMatchObject({
+      _tag: "DbUnavailable",
+      message: "SQLite rejected the database read snapshot",
+    });
+    expect(await readdir(parent)).toEqual([]);
+  });
+
+  it("reads a committed exclusive-lock database with an invalidated journal", async () => {
+    await rm(source);
+    using sqlite = new DatabaseSync(source);
+    sqlite.exec(`
+      PRAGMA locking_mode = EXCLUSIVE;
+      PRAGMA journal_mode = DELETE;
+      CREATE TABLE entries (value TEXT NOT NULL);
+      INSERT INTO entries VALUES ('committed');
+    `);
+    plan(tmpdir());
+
+    const journal = await readFile(`${source}-journal`);
+    expect(journal.byteLength).toBeGreaterThan(512);
+    expect(journal.subarray(0, journalMagic.byteLength)).not.toEqual(
+      journalMagic,
+    );
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "committed",
+      });
+    });
+  });
+
+  it("retries when the acquired main file differs from the stable source", async () => {
+    plan(tmpdir());
+    const real = copyFile;
+    let corrupted = false;
+    copyFile = async (from, to, mode) => {
+      await real(from, to, mode);
+      if (from === source && !corrupted) {
+        corrupted = true;
+        await appendFile(to, "torn destination");
+      }
+    };
+
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(corrupted).toBe(true);
+      expect(clone.prepare("PRAGMA integrity_check").get()).toEqual({
+        integrity_check: "ok",
+      });
+    });
+  });
+
+  it("waits for an active rollback-journal transaction to roll back", async () => {
+    await rm(source);
+    using sqlite = new DatabaseSync(source);
+    sqlite.exec(`
+      PRAGMA journal_mode = DELETE;
+      PRAGMA cache_size = 1;
+      CREATE TABLE entries (value TEXT NOT NULL, padding BLOB NOT NULL);
+      INSERT INTO entries VALUES ('committed', randomblob(4096));
+      BEGIN IMMEDIATE;
+      UPDATE entries SET value = 'uncommitted', padding = randomblob(4096);
+    `);
+    plan(tmpdir());
+    expect(
+      (await readFile(`${source}-journal`)).subarray(
+        0,
+        journalMagic.byteLength,
+      ),
+    ).toEqual(journalMagic);
+    statSignal.path = `${source}-journal`;
+    statSignal.run = (call) => {
+      if (call === 2) sqlite.exec("ROLLBACK");
+    };
+
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(statSignal.calls).toBeGreaterThanOrEqual(2);
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "committed",
+      });
+    });
+  });
+
+  it("rejects a rollback transaction bracketed inside source fingerprinting", async () => {
+    await rm(source);
+    using sqlite = new DatabaseSync(source);
+    sqlite.exec(`
+      PRAGMA journal_mode = DELETE;
+      CREATE TABLE entries (value TEXT NOT NULL);
+      INSERT INTO entries VALUES ('committed');
+    `);
+    plan(tmpdir());
+    statSignal.path = `${source}-journal`;
+    statSignal.run = (call) => {
+      if (call === 2) {
+        sqlite.exec(`
+          BEGIN IMMEDIATE;
+          UPDATE entries SET value = 'uncommitted';
+        `);
+      }
+      if (call === 4) sqlite.exec("ROLLBACK");
+    };
+
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(statSignal.calls).toBeGreaterThanOrEqual(4);
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "committed",
+      });
+    });
+  });
+
   it("retries when a rollback-journal commit lands during the main copy", async () => {
     await rm(source);
     using sqlite = new DatabaseSync(source);
@@ -126,11 +329,11 @@ describe("prepareRead consistency guard", () => {
       }
     };
 
-    await using prepared = await prepareRead("copy", source);
-    using clone = new DatabaseSync(prepared.path, { readOnly: true });
-
-    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
-      value: "two",
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "two",
+      });
     });
   });
 
@@ -158,11 +361,46 @@ describe("prepareRead consistency guard", () => {
       }
     };
 
-    await using prepared = await prepareRead("copy", source);
-    using clone = new DatabaseSync(prepared.path, { readOnly: true });
-
-    expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
-      value: "two",
+    await inspectPrepared(prepareRead("copy", source), (prepared) => {
+      using clone = new DatabaseSync(prepared.path, { readOnly: true });
+      expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+        value: "two",
+      });
     });
+  });
+
+  it("leaves the source bytes unchanged while acquiring a committed WAL view", async () => {
+    await rm(source);
+    using sqlite = new DatabaseSync(source);
+    sqlite.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA wal_autocheckpoint = 0;
+      CREATE TABLE entries (value TEXT NOT NULL);
+      PRAGMA wal_checkpoint(TRUNCATE);
+      INSERT INTO entries VALUES ('committed in WAL');
+    `);
+    plan(tmpdir());
+    const before = {
+      main: await readFile(source),
+      wal: await readFile(`${source}-wal`),
+    };
+
+    const after = await inspectPrepared(
+      prepareRead("copy", source),
+      (prepared) => {
+        using clone = new DatabaseSync(prepared.path, { readOnly: true });
+        expect(clone.prepare("SELECT value FROM entries").get()).toEqual({
+          value: "committed in WAL",
+        });
+        return {
+          main: readFile(source),
+          wal: readFile(`${source}-wal`),
+        };
+      },
+    );
+    expect({
+      main: await after.main,
+      wal: await after.wal,
+    }).toEqual(before);
   });
 });

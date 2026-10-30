@@ -8,12 +8,17 @@ import type {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
+import { toastLanguagePackInstall } from "@/services/language-pack/notices";
+import { LanguagePack } from "@/services/language-pack/service";
+import { Release } from "@/services/release/service";
+import { PluginSettings } from "@/services/settings/service";
 import {
   BUG_REPORT,
   COMMUNITY,
   DOCS_GETTING_STARTED,
   MIGRATION_GUIDE,
 } from "@/views/welcome/links";
+import { openWelcomeView } from "@/views/welcome/register";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { languagePackDefinition } from "./language-pack";
@@ -29,10 +34,30 @@ export function migrationReminderItem(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey> {
   return {
+    id: "settings_migration_reminder",
     name: m.settings_migration_reminder_name(),
     desc: m.welcome_migration_body(),
     render: (setting) => {
       renderMigrationReminderButtons(setting, ctx);
+    },
+  };
+}
+
+/** Durable reminder for the user-consented legacy template conversion. */
+export function templateConversionReminderItem(
+  ctx: SettingTabContext,
+): SettingDefinition<SettingsKey> {
+  return {
+    id: "welcome_template_conversion",
+    name: m.welcome_template_conversion_title(),
+    desc: m.settings_template_conversion_reminder_desc(),
+    render: (setting) => {
+      setting.addButton((button) =>
+        button
+          .setButtonText(m.settings_template_conversion_reminder_action())
+          .setCta()
+          .onClick(() => void openWelcomeView(ctx.app)),
+      );
     },
   };
 }
@@ -52,7 +77,10 @@ function renderMigrationReminderButtons(
       // See the blur comment in templates.ts's renderJsTemplatesButton: the
       // reconciler skips re-rendering the row containing document.activeElement.
       btn.buttonEl.blur();
-      ctx.release.acknowledgeMigration();
+      void ctx.tab.run(
+        Release.use((release) => release.acknowledgeMigration),
+        m.settings_failed_migration_done(),
+      );
     }),
   );
 }
@@ -65,12 +93,30 @@ function renderMigrationReminderButtons(
 export function resourcesGroup(
   ctx: SettingTabContext,
 ): SettingDefinitionGroup<SettingsKey> {
-  const pending = ctx.settings.current?.["release.migration-pending"] === true;
-  const languagePack = languagePackSettingCopy(ctx.languagePack);
+  const current = ctx.tab.sync(
+    PluginSettings.use((settings) => settings.current),
+  );
+  const pending = current["release.migration-pending"] === true;
+  const templateConversionPending =
+    current["note.template-conversion-pending"] === true;
+  const pack = ctx.tab.sync(LanguagePack);
+  const languagePack = languagePackSettingCopy({
+    endonym: pack.endonym,
+    situation: ctx.tab.sync(pack.situation),
+    install: () =>
+      void ctx.tab.run(
+        toastLanguagePackInstall,
+        m.settings_failed_language_pack_install(),
+      ),
+  });
   return {
     type: "group",
+    id: "settings_resources",
     items: [
       ...(pending ? [migrationReminderItem(ctx)] : []),
+      ...(templateConversionPending
+        ? [templateConversionReminderItem(ctx)]
+        : []),
       ...(languagePack ? [languagePackDefinition(languagePack)] : []),
       ...resourcesItems(ctx),
     ],
@@ -82,19 +128,25 @@ function resourcesItems(
 ): SettingDefinition<SettingsKey>[] {
   return [
     {
+      id: "settings_resources_whats_new",
       name: m.settings_resources_whats_new_name({
-        version: ctx.plugin.manifest.version,
+        version: ctx.manifest.version,
       }),
       desc: m.settings_resources_whats_new_desc(),
       render: (setting) => {
         setting.addButton((btn) =>
-          btn
-            .setButtonText(m.settings_resources_whats_new_button())
-            .onClick(() => void ctx.release.openReleaseNote()),
+          btn.setButtonText(m.settings_resources_whats_new_button()).onClick(
+            () =>
+              void ctx.tab.run(
+                Release.use((release) => release.openReleaseNote),
+                m.settings_failed_release_note(),
+              ),
+          ),
         );
       },
     },
     {
+      id: "settings_resources_docs",
       name: m.settings_resources_docs_name(),
       desc: m.settings_resources_docs_desc(),
       render: (setting) => {
@@ -106,6 +158,7 @@ function resourcesItems(
       },
     },
     {
+      id: "settings_resources_help",
       name: m.settings_resources_help_name(),
       desc: m.settings_resources_help_desc(),
       render: (setting) => {
@@ -117,6 +170,7 @@ function resourcesItems(
       },
     },
     {
+      id: "settings_resources_bug_report",
       name: m.settings_resources_bug_report_name(),
       desc: m.settings_resources_bug_report_desc(),
       render: (setting) => {

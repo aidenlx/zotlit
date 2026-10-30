@@ -1,27 +1,34 @@
 import * as p from "@clack/prompts";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
 import { inc, prerelease, valid } from "semver";
 import { $ } from "zx";
 
 import { parseManifest as parseObsidianManifest } from "#obsidian-manifest";
 import { getWorkspaceRoot } from "#package-roots";
-import { runReleaseWithDocsHandoff } from "#release-docs-handoff";
 
 /**
  * Phase 1 of the release pipeline: local, interactive version bump.
  *
  * Bumps `apps/{app}/package.json#version` (the sole version source), runs the
- * derived sync side-effects, refreshes the lockfile, gates on `pnpm quality`
- * (aborts loudly if lint/format fails), and lands a single release commit. It
- * performs **no tagging, no push, no GitHub release** — CI (`release.yml`)
- * cuts tags/releases on merge to the line the PR targets (`main` = stable,
+ * derived sync side-effects, refreshes the lockfile, gates on
+ * `pnpm verify --release`, and lands a single release commit on a release
+ * branch, then pushes it, opens the PR and offers to merge it. It performs
+ * **no tagging, no GitHub release** — CI (`release.yml`) verifies and cuts
+ * tags/releases on merge to the line the PR targets (`main` = stable,
  * `next` = beta), keyed on package version.
  *
  * The release line is inferred from the **version** picked, not the branch:
  * a non-prerelease version targets `main` (stable graduation), a prerelease
  * targets `next`. Primary development happens on `next`; `main` receives
  * stable graduations and emergency hotfixes (patch-only).
+ *
+ * `--obsidian <bump|version>` and `--zotero <bump|version>` name the apps and
+ * their versions on the command line and run without prompts: every
+ * confirmation is taken as yes, and the release PR merges only with `--merge`.
+ * A bump is one the interactive picker offers on this branch (e.g.
+ * `prerelease`); a version is any semver.
  *
  * @see CONTRIBUTING.md "Branching model"
  * @see docs/adr/0021-next-is-the-primary-branch.md
@@ -56,7 +63,22 @@ interface Bump {
   next: string;
 }
 
-p.intro("ZotLit release");
+const { values: flags } = parseArgs({
+  options: {
+    obsidian: { type: "string" },
+    zotero: { type: "string" },
+    merge: { type: "boolean", default: false },
+  },
+});
+
+/** Version specs named on the command line, by app. Any one of them turns prompts off. */
+const requested: Partial<Record<AppName, string>> = {
+  ...(flags.obsidian !== undefined && { obsidian: flags.obsidian }),
+  ...(flags.zotero !== undefined && { zotero: flags.zotero }),
+};
+const interactive = Object.keys(requested).length === 0;
+
+p.intro(interactive ? "ZotLit release" : "ZotLit release (non-interactive)");
 
 await assertCleanWorkingTree();
 
@@ -77,25 +99,18 @@ if (currentBranch !== "main" && currentBranch !== "next") {
 // and reconciles a branch that runs ahead of origin.
 const baseRef = await resolveBaseRef(currentBranch);
 
-const selection = await p.select({
-  message: "Which app(s) to release?",
-  options: [
-    { value: "obsidian", label: "Obsidian (@zotlit/obsidian)" },
-    { value: "zotero", label: "Zotero (@zotlit/zotero)" },
-    { value: "both", label: "Both" },
-  ] as const,
-});
-if (p.isCancel(selection)) cancel();
-
-const targets: AppMeta[] =
-  selection === "both"
-    ? [APPS.obsidian, APPS.zotero]
-    : [APPS[selection as AppName]];
+const targets: AppMeta[] = interactive
+  ? await pickApps()
+  : (Object.keys(requested) as AppName[]).map((name) => APPS[name]);
 
 const bumps: Bump[] = [];
 for (const app of targets) {
   const current = (await readPackageJson(app.pkgPath)).version as string;
-  const next = await pickVersion(app, current);
+  const spec = requested[app.name];
+  const next =
+    spec === undefined
+      ? await pickVersion(app, current)
+      : resolveVersion(app, current, spec);
   if (next === null) cancel();
   bumps.push({ app, current, next });
 }
@@ -120,7 +135,7 @@ if (currentBranch === "next") {
   if (isStableGraduation) {
     if (bumps.length < Object.keys(APPS).length) {
       p.cancel(
-        "Stable releases from next must include all apps — select Both.",
+        "Stable releases from next must include all apps — select Both, or pass both --obsidian and --zotero.",
       );
       process.exit(1);
     }
@@ -133,28 +148,14 @@ if (currentBranch === "next") {
   prTarget = currentBranch;
 }
 
-await runReleaseWithDocsHandoff({
-  targets: bumps.map(({ app, next }) => ({ app: app.name, version: next })),
-  adapter: {
-    async confirm(prompt) {
-      const answer = await p.confirm(prompt);
-      if (p.isCancel(answer)) cancel();
-      return answer;
-    },
-    handoff(command) {
-      p.outro(["Review docs availability first:", command].join("\n"));
-    },
-  },
-  continueRelease: completeRelease,
-});
+await completeRelease();
 
 async function completeRelease(): Promise<void> {
   const summary = bumps.map((b) => `${b.app.name}@${b.next}`).join(", ");
   const confirmMsg = isStableGraduation
     ? `Stable release ${summary} (PR targets main). Proceed?`
     : `Release ${summary}?`;
-  const confirmed = await p.confirm({ message: confirmMsg });
-  if (p.isCancel(confirmed) || !confirmed) cancel();
+  if (!(await confirm(confirmMsg))) cancel();
 
   const stagedPaths = new Set<string>();
   const s = p.spinner();
@@ -167,48 +168,34 @@ async function completeRelease(): Promise<void> {
   s.stop("Versions bumped");
 
   await syncObsidian(bumps, stagedPaths);
-  await syncDocsReleaseLine(bumps, stagedPaths);
 
   s.start("Refreshing lockfile");
   await $({ cwd: workspaceRoot })`pnpm install --lockfile-only`;
   stagedPaths.add(join(workspaceRoot, "pnpm-lock.yaml"));
   s.stop("Lockfile refreshed");
 
-  s.start("Quality check");
-  const quality = await $({ cwd: workspaceRoot, nothrow: true })`pnpm quality`;
-  if (quality.exitCode !== 0) {
-    s.stop("Quality check failed", 1);
-    p.cancel(
-      `Quality check failed — fix lint/format errors before releasing:\n${quality.stdout}${quality.stderr}`,
-    );
+  // The full gate, Obsidian guideline review included, runs before the version
+  // commit exists. `release.yml` runs it again on the merged tree before it
+  // publishes. See ADR 0076.
+  p.log.step("Release gate (pnpm verify --release)");
+  const verify = await $({
+    cwd: workspaceRoot,
+    nothrow: true,
+    stdio: "inherit",
+  })`pnpm verify --release`;
+  if (verify.exitCode !== 0) {
+    p.cancel("Release gate failed — fix the errors above before releasing.");
     process.exit(1);
-  }
-  s.stop("Quality passed");
-
-  // Obsidian's community review rejects guideline violations, so the plugin is
-  // scanned here rather than after merge — `release.yml` only runs once the
-  // version commit has already landed. oxlint (in `pnpm quality` above) owns
-  // general hygiene; this is the Obsidian-specific pass. See ADR 0020.
-  if (bumps.some((b) => b.app.name === "obsidian")) {
-    s.start("Plugin review");
-    const review = await $({ cwd: workspaceRoot, nothrow: true })`pnpm review`;
-    if (review.exitCode !== 0) {
-      s.stop("Plugin review failed", 1);
-      p.cancel(
-        `Obsidian guideline violations — fix these before releasing:\n${review.stdout}${review.stderr}`,
-      );
-      process.exit(1);
-    }
-    s.stop("Plugin review passed");
   }
 
   const branchName = `release/${prTarget}/${bumps.map((b) => `${b.app.name}-${b.next}`).join("+")}`;
   const commitMsg = `chore: release ${summary}`;
 
-  const gitConfirm = await p.confirm({
-    message: `Create branch ${branchName}, commit, push to origin, and open a PR?`,
-  });
-  if (p.isCancel(gitConfirm) || !gitConfirm) {
+  if (
+    !(await confirm(
+      `Create branch ${branchName}, commit, push to origin, and open a PR?`,
+    ))
+  ) {
     p.outro(
       [
         "Version files updated but not committed.",
@@ -231,9 +218,30 @@ async function completeRelease(): Promise<void> {
   await $({ cwd: workspaceRoot })`git push -u origin ${branchName}`;
   s.stop("Pushed");
 
-  const openPr = await p.confirm({ message: `Open a PR to ${prTarget}?` });
-  if (!p.isCancel(openPr) && openPr) {
-    await openPR(branchName, commitMsg, prTarget);
+  const prUrl = (await confirm(`Open a PR to ${prTarget}?`))
+    ? await openPR(branchName, commitMsg, prTarget)
+    : undefined;
+
+  // Pull requests run no checks (ADR 0076), so the PR is ready to merge as
+  // soon as it exists. Merging starts `release.yml`, so without prompts it
+  // takes `--merge`.
+  let merged = false;
+  if (prUrl) {
+    const merge = interactive
+      ? await confirm(
+          `Merge the PR into ${prTarget} now? release.yml then verifies and publishes.`,
+        )
+      : flags.merge;
+    if (merge) {
+      s.start("Merging");
+      await $({ cwd: workspaceRoot })`gh pr merge ${prUrl} --merge`;
+      // The API call leaves the local checkout and the pre-push hook alone.
+      await $({
+        cwd: workspaceRoot,
+      })`gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/${branchName}`;
+      s.stop(`Merged into ${prTarget}, removed origin/${branchName}`);
+      merged = true;
+    }
   }
 
   // The release branch now lives on origin (the PR references it); drop the local
@@ -246,12 +254,13 @@ async function completeRelease(): Promise<void> {
 
   p.outro(
     [
-      `Released ${summary} on branch ${branchName}.`,
-      `On merge to ${prTarget}, release.yml cuts the tag(s) and GitHub release(s).`,
+      merged
+        ? `Merged ${summary} into ${prTarget}. release.yml verifies the merged tree, then cuts the tag(s) and GitHub release(s).`
+        : `Released ${summary} on branch ${branchName}. On merge to ${prTarget}, release.yml verifies the merged tree, then cuts the tag(s) and GitHub release(s).`,
       ...(isStableGraduation
         ? [
             "",
-            "After the PR merges to main, sync back:",
+            `${merged ? "Now" : "After the PR merges to main,"} sync back:`,
             "  git checkout next && git pull && git merge main",
             "  pnpm release  # pick preminor to start the next beta cycle",
           ]
@@ -260,11 +269,12 @@ async function completeRelease(): Promise<void> {
   );
 }
 
+/** @returns the new PR's URL when `gh` created it. */
 async function openPR(
   branch: string,
   title: string,
   base: string,
-): Promise<void> {
+): Promise<string | undefined> {
   const hasGh = await $({
     cwd: workspaceRoot,
     nothrow: true,
@@ -280,47 +290,60 @@ async function openPR(
     s.stop("PR created");
     const prUrl = created.stdout.trim();
     if (prUrl) p.log.info(`PR: ${prUrl}`);
-  } else {
-    const rootPkg = JSON.parse(
-      await readFile(join(workspaceRoot, "package.json"), "utf-8"),
-    ) as { repository?: { url?: string } | string };
-    const repoUrl =
-      typeof rootPkg.repository === "string"
-        ? rootPkg.repository
-        : rootPkg.repository?.url?.replace(/^git\+/, "").replace(/\.git$/, "");
-    const prUrl = repoUrl
-      ? `${repoUrl}/compare/${base}...${branch}?expand=1`
-      : `https://github.com — open a PR from ${branch} to ${base}`;
-    p.log.info(`Open a PR: ${prUrl}`);
+    return prUrl || undefined;
   }
+  const rootPkg = JSON.parse(
+    await readFile(join(workspaceRoot, "package.json"), "utf-8"),
+  ) as { repository?: { url?: string } | string };
+  const repoUrl =
+    typeof rootPkg.repository === "string"
+      ? rootPkg.repository
+      : rootPkg.repository?.url?.replace(/^git\+/, "").replace(/\.git$/, "");
+  const prUrl = repoUrl
+    ? `${repoUrl}/compare/${base}...${branch}?expand=1`
+    : `https://github.com — open a PR from ${branch} to ${base}`;
+  p.log.info(`Open a PR: ${prUrl}`);
+  return undefined;
+}
+
+async function pickApps(): Promise<AppMeta[]> {
+  const selection = await p.select({
+    message: "Which app(s) to release?",
+    options: [
+      { value: "obsidian", label: "Obsidian (@zotlit/obsidian)" },
+      { value: "zotero", label: "Zotero (@zotlit/zotero)" },
+      { value: "both", label: "Both" },
+    ] as const,
+  });
+  if (p.isCancel(selection)) cancel();
+  return selection === "both"
+    ? [APPS.obsidian, APPS.zotero]
+    : [APPS[selection as AppName]];
+}
+
+type BumpKind =
+  | "patch"
+  | "minor"
+  | "major"
+  | "prepatch"
+  | "preminor"
+  | "premajor"
+  | "prerelease"
+  | "custom";
+
+function preidOf(current: string): string {
+  return prerelease(current)?.[0]?.toString() ?? "beta";
 }
 
 /**
- * Interactive semver picker.
- *
- * Options are filtered by context: on `main`, only `patch` and `custom` are
- * shown (hotfix path). On `next` with a prerelease current version, `patch`
- * and `prepatch` are hidden (they produce nonsensical versions from a
+ * The bumps offered for `current` on this branch: on `main`, only `patch` and
+ * `custom` (hotfix path). On `next` with a prerelease current version, `patch`
+ * and `prepatch` are left out (they produce nonsensical versions from a
  * prerelease base). `custom` is always available as an escape hatch.
- *
- * @returns the chosen version, or `null` if cancelled.
  */
-async function pickVersion(
-  app: AppMeta,
-  current: string,
-): Promise<string | null> {
-  const preid = prerelease(current)?.[0]?.toString() ?? "beta";
+function bumpOptions(current: string): { value: BumpKind; label: string }[] {
+  const preid = preidOf(current);
   const currentIsPrerelease = prerelease(current) !== null;
-
-  type BumpKind =
-    | "patch"
-    | "minor"
-    | "major"
-    | "prepatch"
-    | "preminor"
-    | "premajor"
-    | "prerelease"
-    | "custom";
 
   const allOptions: { value: BumpKind; label: string }[] = [
     { value: "patch", label: `patch (${inc(current, "patch")})` },
@@ -354,7 +377,20 @@ async function pickVersion(
           ["patch", "prepatch"]
         : [],
   );
-  const options = allOptions.filter((o) => !hidden.has(o.value));
+  return allOptions.filter((o) => !hidden.has(o.value));
+}
+
+/**
+ * Interactive semver picker over {@link bumpOptions}.
+ *
+ * @returns the chosen version, or `null` if cancelled.
+ */
+async function pickVersion(
+  app: AppMeta,
+  current: string,
+): Promise<string | null> {
+  const preid = preidOf(current);
+  const options = bumpOptions(current);
 
   while (true) {
     const kind = await p.select({
@@ -381,6 +417,38 @@ async function pickVersion(
     }
     return next;
   }
+}
+
+/**
+ * Resolves a command-line version spec: a bump {@link bumpOptions} offers on
+ * this branch, or an explicit semver version. Exits on anything else.
+ */
+function resolveVersion(app: AppMeta, current: string, spec: string): string {
+  const kinds = bumpOptions(current)
+    .map((o) => o.value)
+    .filter((kind) => kind !== "custom");
+  const next = (kinds as string[]).includes(spec)
+    ? inc(current, spec as Exclude<BumpKind, "custom">, preidOf(current))
+    : // Normalize: `valid()` also accepts noncanonical input like `v2.0.0`.
+      valid(spec);
+  if (next === null) {
+    p.cancel(
+      `--${app.name} ${spec}: expected a semver version or one of ${kinds.join(", ")} (current ${current}).`,
+    );
+    process.exit(1);
+  }
+  p.log.info(`${app.display}: ${current} → ${next}`);
+  return next;
+}
+
+/** Asks `message`; without prompts, logs it and answers yes. */
+async function confirm(message: string): Promise<boolean> {
+  if (!interactive) {
+    p.log.info(`${message} Yes (non-interactive).`);
+    return true;
+  }
+  const answer = await p.confirm({ message });
+  return !p.isCancel(answer) && answer;
 }
 
 /**
@@ -411,21 +479,6 @@ async function syncObsidian(
   versions[manifest.version] = manifest.minAppVersion;
   await writeFile(versionsPath, `${JSON.stringify(versions, null, 2)}\n`);
   staged.add(versionsPath);
-}
-
-async function syncDocsReleaseLine(
-  releases: Bump[],
-  staged: Set<string>,
-): Promise<void> {
-  const obsidian = releases.find((b) => b.app.name === "obsidian");
-  if (!obsidian) return;
-
-  const releasePath = join(workspaceRoot, "apps/docs/zotlit-release.json");
-  await writeFile(
-    releasePath,
-    `${JSON.stringify({ version: obsidian.next }, null, 2)}\n`,
-  );
-  staged.add(releasePath);
 }
 
 async function readPackageJson(
@@ -506,6 +559,14 @@ async function resolveBaseRef(branch: string): Promise<string> {
     return "HEAD";
   }
 
+  // Without prompts, a push of commits the command line never named stays a
+  // decision for the maintainer.
+  if (!interactive) {
+    p.cancel(
+      `"${branch}" has ${ahead} commit(s) not on origin/${branch}. Push them, then release again.`,
+    );
+    process.exit(1);
+  }
   const push = await p.confirm({
     message: `"${branch}" has ${ahead} commit(s) not on origin/${branch}. Push them before bumping the version?`,
   });

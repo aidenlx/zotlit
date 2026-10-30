@@ -21,7 +21,7 @@ function load(html: string): HTMLElement {
   return root;
 }
 
-const packageRoot = getPackageRoot();
+const packageRoot = getPackageRoot(import.meta.filename);
 
 const LOCAL_USER = "http://zotero.org/users/local/BOtEiq6p/items";
 
@@ -74,9 +74,8 @@ describe("parseNoteSchema", () => {
     const schema = parseNoteSchema(root);
     expect(schema.supported).toBe(true);
     expect(schema).toMatchObject({ version: 9 });
-    if (schema.supported) {
-      expect(schema.container.innerHTML).toBe("<p>x</p>");
-    }
+    if (!schema.supported) throw new Error("schema is unsupported");
+    expect(schema.container.innerHTML).toBe("<p>x</p>");
   });
 
   it("accepts the unwrapped container returned by the API", () => {

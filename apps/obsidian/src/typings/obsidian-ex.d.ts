@@ -30,15 +30,518 @@ declare global {
 }
 
 declare module "obsidian" {
+  interface FileSystemAdapter {
+    /** Register an externally published file before an editor consumes its link (Obsidian 1.14.2). */
+    reconcileInternalFile(normalizedPath: string): Promise<void>;
+  }
+  /** Cold-loads the host PDF.js module and configures its worker. Internal. */
+  export function loadPdfJs(): Promise<
+    import("../services/excerpt-image/renderer").ExcerptPdfJs
+  >;
+  interface MarkdownPostProcessorContext {
+    /**
+     * A code block's own write-back: replaces the code of the block the
+     * processor rendered. In Live Preview it keeps the widget mounted. Internal;
+     * verified against Obsidian 1.14.4. Read only through
+     * `views/query-view/block-write.ts`.
+     */
+    replaceCode?: (code: string) => void;
+  }
+  interface ViewStateResult {
+    /** Runs after native group assignment and ephemeral handoff (Obsidian 1.14). */
+    done?: () => void;
+  }
+  interface WorkspaceLeaf {
+    /** Refreshes native tab text and tooltip after selection changes (Obsidian 1.14). */
+    updateHeader(): void;
+    /** Native descriptor/ephemeral history capture; verified in Obsidian 1.14. */
+    recordHistory(state: unknown): void;
+    /** Native leaf identity, serialized by the workspace. */
+    id: string;
+    /** Native link and pin state, serialized by the workspace (Obsidian 1.14). */
+    group: string | null;
+    pinned: boolean;
+    /**
+     * The leaf's own empty view, shown while it holds no other. Every leaf
+     * makes one, so any leaf leads to the class. Internal; verified against
+     * Obsidian 1.14.4.
+     */
+    _empty?: EmptyView;
+  }
+  /**
+   * The view of a "New tab", view type `"empty"`. Internal; verified against
+   * Obsidian 1.14.4.
+   *
+   * @see apps/obsidian/src/views/query-view/empty-view-action.ts — the one
+   *   module that reads it, through a structural probe.
+   */
+  interface EmptyView {
+    getViewType(): string;
+    /**
+     * The pill buttons, filled by `onOpen` in a fixed order: New note, New
+     * base and New canvas while their core plugins are on, Go to file unless
+     * the vault is empty, Open web viewer while that core plugin is on.
+     */
+    actionListEl: HTMLElement;
+    /** Empties `actionListEl` and fills it again. */
+    onOpen(): Promise<void>;
+  }
+  /** Members of `Platform` its declaration leaves out. Internal; verified against Obsidian 1.14.4. */
+  interface PlatformInternals {
+    /** Obsidian prints a command's hotkey beside a button only when true. */
+    hasPhysicalKeyboard: boolean;
+  }
+  interface PopoverSuggest<T> {
+    /**
+     * The suggestion popup's element, placed on the body while it shows.
+     * Internal; verified against Obsidian 1.14.2.
+     */
+    suggestEl: HTMLElement;
+    /**
+     * The chooser over the popup's list, which highlights an item; `-1`
+     * highlights none. Internal; verified against Obsidian 1.14.4, and
+     * optional, as a build may lack it.
+     */
+    suggestions?: {
+      forceSetSelectedItem?(at: number, event: Event | null): void;
+    };
+  }
+  interface ItemView {
+    /** Native content header title; refreshed separately from the tab (Obsidian 1.14). */
+    titleEl: HTMLElement;
+  }
+  interface WorkspaceContainer {
+    /**
+     * Restores and focuses this desktop window. Unlike Workspace.revealLeaf,
+     * this also works when a detached Settings window has focus.
+     * Internal; verified against Obsidian 1.13.7 and 1.14.0.
+     */
+    focus(): void;
+  }
+  interface TextFileView {
+    /** Native unsaved-text marker used by external-file three-way merging. */
+    dirty: boolean;
+    /** Native saved-text baseline and file-read/merge boundary (Obsidian 1.14). */
+    lastSavedData: string | null;
+    loadFileInternal(file: TFile, clear: boolean): Promise<void>;
+  }
+  interface FileView {
+    /** Keeps an in-memory document leaf open before its first vault write. */
+    allowNoFile: boolean;
+  }
+  interface Vault {
+    /** Reads an app setting; `readableLineLength` is Settings → Editor → Readable line length. */
+    getConfig(key: "readableLineLength"): boolean;
+  }
+  interface Workspace {
+    /**
+     * Every source `registerHoverLinkSource` registered, by id: the rows of
+     * the Page preview settings. Verified in Obsidian 1.14.4.
+     */
+    hoverLinkSources: Record<string, HoverLinkSource>;
+    /** Flushes deferred file-open/active-leaf events. Verified in Obsidian 1.14.4. */
+    requestActiveLeafEvents: { run(): void };
+    on(
+      name: "zotlit:workbench-selection",
+      callback: (
+        selection: import("../views/template-workbench/selection").WorkbenchSelectionEvent,
+      ) => void,
+      ctx?: any,
+    ): EventRef;
+    /** Active/recent navigating FileView, also used by native Outline. */
+    getActiveFileView(): FileView | null;
+    /**
+     * Re-reads the serialized layout Obsidian restored this session's leaves
+     * from, `{}` when it cannot. Internal; shape verified against Obsidian
+     * 1.13.7 and 1.14.0. Optional so a build that drops it is a guarded
+     * branch, not a crash.
+     */
+    readWorkspaceFile?(): Promise<unknown>;
+
+    on(
+      name: "zotlit:insert-template-field",
+      callback: (request: {
+        leaf: WorkspaceLeaf;
+        node: import("@zotlit/workbench/explorer").DisplayNode;
+      }) => void,
+      ctx?: any,
+    ): EventRef;
+
+    on(
+      name: "quick-preview",
+      callback: (file: TFile, source: string) => void,
+      ctx?: any,
+    ): EventRef;
+    on(
+      name: "zotlit:authoring-context",
+      callback: (
+        context: import("@/views/template-workbench/view").TemplateAuthoringContext,
+      ) => void,
+      ctx?: any,
+    ): EventRef;
+
+    on(
+      name: "zotlit:switch-profile",
+      callback: (request: { path: string }) => void,
+      ctx?: any,
+    ): EventRef;
+
+    /** A menu ZotLit built, raised before it shows so listeners add entries. */
+    on<E extends import("@/services/menu-events").ZotLitMenuEvent>(
+      name: E,
+      callback: (
+        menu: Menu,
+        info: import("@/services/menu-events").ZotLitMenuEvents[E],
+      ) => any,
+      ctx?: any,
+    ): EventRef;
+
+    /** `request.document` is the vault path of the Template Document holding
+     *  the call that refused, and `request.problem` the failure to explain on
+     *  arrival; the Default Profile stands in when there is no document. */
+    on(
+      name: "zotlit:open-template-workbench",
+      callback: (
+        request: import("@/lib/workbench-recovery").TemplateWorkbenchRequest,
+      ) => void,
+      ctx?: any,
+    ): EventRef;
+  }
   interface MetadataCache {
     /**
      * Runs `callback` once the cache is clean (no parse in progress, resolver
      * queue idle): at once if it already is, else after the next drain.
-     * Internal; shape verified against Obsidian 1.13.7. Optional so a build
-     * that drops it is a runtime branch, not a crash.
+     * Internal; shape verified against Obsidian 1.13.7, which uses it itself
+     * before it rewrites links on rename.
      */
-    onCleanCache?(callback: () => void): void;
+    onCleanCache(callback: () => void): void;
+    /**
+     * Every path the cache holds — the file list one graph render walks to
+     * build its nodes. Internal; shape verified against Obsidian 1.13.7 and
+     * 1.14.0. Optional so a build that drops it is a guarded branch.
+     */
+    getCachedFiles?(): string[];
+    /**
+     * Every text value, or text inside a list, the frontmatter property
+     * `key` holds across the vault, each once. Internal; verified against
+     * Obsidian 1.14.4. Read it only through
+     * `src/lib/obsidian-private/property-values.ts`.
+     */
+    getFrontmatterPropertyValuesForKey?(key: string): string[];
+    /**
+     * The vault's tags, `#`-prefixed, with the count of each. Internal;
+     * verified against Obsidian 1.14.4. Read it only through
+     * `src/lib/obsidian-private/property-values.ts`.
+     */
+    getTags?(): Record<string, number>;
   }
+  interface App {
+    /** Native view factories, verified against Obsidian 1.14.1. */
+    viewRegistry?: {
+      getViewCreatorByType(
+        type: string,
+      ): ((leaf: WorkspaceLeaf) => View) | undefined;
+    };
+    /**
+     * Draws `![[file.ext]]` for each file extension. Internal; verified
+     * against Obsidian 1.14.4. Optional, and each member optional, so a build
+     * that drops one is a guarded branch: read it only through
+     * `src/lib/obsidian-private/embed-registry.ts`.
+     */
+    embedRegistry?: Partial<EmbedRegistry>;
+    /**
+     * Keeps the type each property is assigned. Internal; verified against
+     * Obsidian 1.14.4. Optional, and each member optional: read it only
+     * through `src/lib/obsidian-private/metadata-type-manager.ts`.
+     */
+    metadataTypeManager?: Partial<MetadataTypeManager>;
+  }
+  /** Obsidian's property type manager (`app.metadataTypeManager`). Internal; Obsidian 1.14.4. */
+  interface MetadataTypeManager {
+    /** The widget id assigned to a property, case-insensitive; `null` where none is. */
+    getAssignedWidget(name: string): string | null;
+    /** Fires with the lowercased name of a property whose assigned type changed. */
+    on(event: "changed", callback: (name: string) => void): EventRef;
+    offref(ref: EventRef): void;
+  }
+  /** Obsidian's embed registry (`app.embedRegistry`). Internal; Obsidian 1.14.4. */
+  interface EmbedRegistry {
+    /** Throws when the extension already has a creator. */
+    registerExtension(extension: string, creator: EmbedCreator): void;
+    unregisterExtension(extension: string): void;
+    isExtensionRegistered(extension: string): boolean;
+  }
+  /** What Obsidian hands an embed creator. Internal; Obsidian 1.14.4. */
+  interface EmbedContext {
+    app: App;
+    /** The element the embed draws into. */
+    containerEl: HTMLElement;
+    /** The link text, with its `#subpath`. */
+    linktext: string;
+    /** The note that holds the embed. */
+    sourcePath: string;
+    /** How deep in embeds this one sits; Obsidian stops past 5. */
+    depth: number;
+    /** `true` for a print or an export to PDF. */
+    displayMode?: boolean;
+  }
+  /** An embed drawn by a plugin: Obsidian calls `loadFile` once it is added. */
+  interface EmbedComponent extends Component {
+    loadFile(): Promise<void> | void;
+  }
+  /**
+   * Draws one embed of `file`; `subpath` is the link's `#…` part, `""` when
+   * none. `null` lets Obsidian draw its own file card.
+   */
+  type EmbedCreator = (
+    context: EmbedContext,
+    file: TFile,
+    subpath: string,
+  ) => EmbedComponent | null;
+  /**
+   * The core `graph` view (`leaf.view` of view type `"graph"`). Internal;
+   * shape verified against Obsidian 1.13.7 and 1.14.0. Every member optional
+   * so a build that drops one is a guarded branch, not a crash.
+   */
+  interface GraphView extends ItemView {
+    onOptionsChange?(): void;
+    renderer?: GraphRenderer;
+    dataEngine?: GraphEngine;
+  }
+  /** The core `localgraph` view; same provenance as {@link GraphView}. */
+  interface LocalGraphView extends FileView {
+    renderer?: GraphRenderer;
+    engine?: GraphEngine;
+  }
+  /**
+   * The graph data engine one view owns. `render()` reads `app` once at its
+   * top and hands the result to `renderer.setData` — the seam Graph Citations
+   * rests on. Internal; shape verified against Obsidian 1.13.7 and 1.14.0.
+   *
+   * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
+   */
+  interface GraphEngine {
+    app?: App;
+    /** Rebuilds the node set from scratch on every call; returns the link count. */
+    render?(): unknown;
+    /** What one render reads. Only a key some section owns ever lands here. */
+    options?: GraphOptions;
+    /** The Filters section of the controls panel. */
+    filterOptions?: GraphControlSection;
+    /** The Groups section of the controls panel. */
+    colorGroupOptions?: GraphColorGroupSection;
+    /** The Display section of the controls panel. */
+    displayOptions?: GraphControlSection;
+    /**
+     * Hands `options` to every section, then re-renders. A colour group written
+     * this way reaches the Groups section's own option listener, which rebuilds
+     * the group rows, re-runs the search, and saves.
+     */
+    setOptions?(options: GraphOptions): void;
+    getOptions?(): GraphOptions;
+    /** Saves the options where this graph persists them; debounced. */
+    onOptionsChange?(): void;
+    /**
+     * The engine is the `HoverParent` of every hover its nodes answer: the
+     * popover hangs off it, and the engine's own unhover transitions it.
+     * Verified against Obsidian 1.14.1.
+     */
+    hoverPopover?: HoverPopover | null;
+  }
+  /**
+   * One graph's options: the native keys, plus every key a controls-panel
+   * section registered an option listener for. Persisted per graph — Graph
+   * core plugin data for the global graph, leaf state for a local one.
+   */
+  type GraphOptions = Record<string, unknown>;
+  /**
+   * One section of the graph controls panel, `engine.filterOptions` and its
+   * siblings. Internal; shape verified against Obsidian 1.13.7 and 1.14.0.
+   */
+  interface GraphControlSection {
+    /** The section body, below its header: what a row is built into. */
+    childrenEl: HTMLElement;
+    /** Keyed by option key. `engine.getOptions` enumerates these, not `engine.options`. */
+    optionListeners: Record<string, GraphOptionListener>;
+    /**
+     * What "Restore default settings" calls. It replays a fixed object of
+     * native keys, so a plugin key is skipped: a plugin row reaches the
+     * button only through a wrap of this member.
+     */
+    setDefaultOptions(): void;
+  }
+  /**
+   * The Groups section of the graph controls panel, `engine.colorGroupOptions`.
+   * It carries no `setDefaultOptions` of its own: "Restore default settings"
+   * empties it through {@link GraphColorGroupSection.setColorQueries} instead.
+   * Internal; shape verified against Obsidian 1.14.1.
+   */
+  interface GraphColorGroupSection {
+    /** The section body: the group rows, then the native "New group" container. */
+    childrenEl: HTMLElement;
+    /** The colour groups as their rows stand now. */
+    getColoredQueries(): GraphColorGroup[];
+    /**
+     * Empties {@link childrenEl} and builds it again — one row per query, then
+     * the button container — so anything else built into the section is taken
+     * with it.
+     */
+    setColorQueries(queries: GraphColorGroup[]): void;
+  }
+  /** One colour group: a search query, and the colour its matches are drawn in. */
+  interface GraphColorGroup {
+    query: string;
+    color: GraphColor | null;
+  }
+  /**
+   * What one controls-panel row registers under its option key. Reads the
+   * row's value, and writes it first when called with one. `any` because a
+   * section holds rows of every control type, as Obsidian's own
+   * `ValueComponent.registerOptionListener` declares them.
+   */
+  type GraphOptionListener = (value?: any) => any;
+  /**
+   * The PIXI renderer one view owns; the node callbacks are own properties
+   * the engine binds in its constructor. Internal; shape verified against
+   * Obsidian 1.13.7 and 1.14.0, the hover members against 1.14.1.
+   */
+  interface GraphRenderer {
+    /** Lazy graphics nodes, verified against Obsidian 1.14.1. */
+    nodes?: GraphDrawnNode[];
+    onNodeClick?: GraphNodeCallback;
+    /**
+     * The right-click callback, bound beside {@link onNodeClick} in the same
+     * engine constructor and called by the renderer only where it is present.
+     * Shape verified against Obsidian 1.13.7 and 1.14.1.
+     */
+    onNodeRightClick?: GraphNodeCallback;
+    /** The data hand-off: diffs `data` into the live node set. */
+    setData?(data: GraphData): void;
+    /** Fired once as the pointer enters a node. */
+    onNodeHover?: GraphNodeCallback;
+    /**
+     * Fired as the pointer leaves the node it entered — the renderer's own
+     * pointer-out and the frame that finds the pointer out of every node's
+     * reach. The engine's hover handler also unhovers first, but it calls its
+     * own method rather than this one, so a wrap here does not see that call
+     * and does not stand between every unhover and the hover after it.
+     */
+    onNodeUnhover?: () => void;
+    /**
+     * Asks for the frame that draws the graph again, and puts the render loop
+     * back to work where it had gone idle. The hand-off asks for one itself
+     * only where a node or an edge changed, so a change to how an unchanged
+     * graph is drawn asks here.
+     */
+    changed?(): void;
+    /** `div.graph-view`, `position: relative`, in the graph's own window. */
+    containerEl?: HTMLElement;
+    /** Every drawn node by id, positioned in world coordinates. */
+    nodeLookup?: Record<string, { x: number; y: number } | undefined>;
+    /** World-to-screen: `screen_css = (world * scale + pan) / devicePixelRatio`. */
+    scale?: number;
+    /** Native text fade offset, in zoom octaves. */
+    fTextShowMult?: number;
+    panX?: number;
+    panY?: number;
+    /**
+     * Every edge the graph draws, source to target as the link maps state it.
+     * The renderer's constructor seeds the array and `setData` keeps the same
+     * one, so an install-time check is the whole check.
+     */
+    links?: GraphLink[];
+    /**
+     * The node the pointer rests on or a drag holds; `null` while neither. An
+     * edge incident to it is the one Obsidian draws in its highlight colour.
+     */
+    getHighlightNode?(): GraphDrawnNode | null;
+  }
+  /**
+   * One edge as the renderer draws it. Internal; shape verified against
+   * Obsidian 1.14.1.
+   */
+  interface GraphLink {
+    source: GraphDrawnNode;
+    target: GraphDrawnNode;
+    /**
+     * The sprite the edge's line is drawn as, whose `tint` every frame
+     * writes. Absent until the edge's graphics are built — the first frame
+     * both its nodes are drawn — and `null` again once they are cleared.
+     */
+    line?: GraphLinkSprite | null;
+  }
+  /** One node as the renderer draws it; the renderer holds one per node id. */
+  interface GraphDrawnNode {
+    id: string;
+    initGraphics?(): boolean;
+    clearGraphics?(): void;
+    getTextStyle?(): GraphTextStyle;
+    text?: GraphTextDisplay | null;
+  }
+  interface GraphTextStyle {
+    fontFamily: string | string[];
+    fontSize: number;
+    fontWeight?: string;
+    fill: number | string;
+    wordWrap?: boolean;
+    align?: string;
+  }
+  interface GraphTextDisplay {
+    x: number;
+    y: number;
+    alpha: number;
+    visible: boolean;
+    zIndex: number;
+    eventMode: string;
+    scale: { x: number; y: number; set(x: number, y?: number): void };
+    parent: GraphTextContainer | null;
+    destroy(options?: object): void;
+    style?: GraphTextStyle;
+  }
+  interface GraphTextContainer extends GraphTextDisplay {
+    updateTransform?(): void;
+    addChild(child: GraphTextDisplay): unknown;
+    removeChild(child: GraphTextDisplay): unknown;
+  }
+  /** The sprite one edge's line is drawn as. */
+  interface GraphLinkSprite {
+    /** The line colour, packed as {@link GraphColor.rgb}. */
+    tint: number;
+  }
+  /**
+   * @param id the node id: a vault path, an unresolved linkpath, or a tag.
+   * @param type `""` for a note, else `"unresolved"`, `"tag"`, `"attachment"`, or `"focused"`.
+   */
+  type GraphNodeCallback = (evt: MouseEvent, id: string, type: string) => void;
+  /**
+   * The whole node set one render drew, keyed by node id. Internal; shape
+   * verified against Obsidian 1.13.7 through 1.14.1.
+   */
+  interface GraphData {
+    nodes: Record<string, GraphDataNode>;
+  }
+  interface GraphDataNode {
+    /** As {@link GraphNodeCallback} spells it. */
+    type: string;
+    /**
+     * The colour the node is drawn in, ahead of the one its type carries. The
+     * engine writes a matching colour group's colour here before the hand-off,
+     * and leaves it absent for every other node.
+     *
+     * Two colours stand ahead of this one (`app.js` 1.14.1,
+     * `GraphNode.getFillColor`): the node the pointer rests on or a drag holds
+     * takes the highlight colour, and a node typed `"focused"` takes the
+     * focused colour wherever the theme states one — a focused node never
+     * reaches this colour at all.
+     */
+    color?: GraphColor | null;
+  }
+  /** A graph colour: an alpha, and the channels packed `(r << 16) | (g << 8) | b`. */
+  interface GraphColor {
+    a: number;
+    rgb: number;
+  }
+
   interface App {
     /** Stable per-vault id, the namespace Obsidian gives its own IndexedDB databases. */
     appId: string;
@@ -52,7 +555,235 @@ declare module "obsidian" {
     setting: SettingsModal;
     commands: {
       executeCommandById(id: string): boolean;
+      /**
+       * Every command registered with `editorCallback` or
+       * `editorCheckCallback`, which act on `workspace.activeEditor`, plus
+       * every command pinned to the mobile toolbar, by id.
+       */
+      editorCommands: Record<string, Command>;
     };
+    hotkeyManager: {
+      /** The user's own hotkeys for a command; `undefined` when never customised. */
+      getHotkeys(id: string): ExtendedHotkey[] | undefined;
+      getDefaultHotkeys(id: string): ExtendedHotkey[] | undefined;
+      /** The command's first hotkey as Obsidian prints it, e.g. `⌘ N`; `""` when unbound. */
+      printHotkeyForCommand(id: string): string;
+    };
+  }
+  /**
+   * A stored hotkey. One recorded against a physical key carries its
+   * `KeyboardEvent.code`, which Obsidian matches in place of `key`.
+   */
+  interface ExtendedHotkey extends Hotkey {
+    code?: string;
+  }
+
+  /**
+   * Obsidian's PDF file view — `leaf.view` of view type `"pdf"`, for a vault
+   * file and an external file alike. Internal; shape verified against Obsidian
+   * 1.14.2.
+   *
+   * @see apps/obsidian/src/services/pdf-annotation-editor/seam.ts — the one
+   *   adapter that reads these members, each behind a structural probe.
+   */
+  interface PDFFileView extends FileView {
+    /**
+     * `FileView.loadFile` nulls this twice while it swaps files, so every read
+     * is a branch. An external file's path carries a `file:` prefix ahead of
+     * its absolute path.
+     */
+    file: TFile | null;
+    /** Deferred host for the child that owns Obsidian's PDF.js viewer. */
+    viewer: PDFViewerHost;
+  }
+
+  /** The deferred wrapper Obsidian loads its PDF viewer child behind. Internal. */
+  interface PDFViewerHost {
+    /** Calls back with the child once it exists, at once when it already does. */
+    then(callback: (controller: PDFViewerController) => void): void;
+    /** The child {@link PDFViewerHost.then} hands out; `null` until load and after unload. */
+    child: PDFViewerController | null;
+  }
+
+  /** The PDF viewer child, the seam ZotLit's reader surfaces rest on. Internal. */
+  interface PDFViewerController {
+    /**
+     * The PDF.js viewer `on`, `off` and `getPage` all reach through. The
+     * child's `unload` closes it and nulls this, so a subscriber unsubscribing
+     * or unpainting during teardown reads `null` here — and has nothing left
+     * to remove or to draw on.
+     */
+    pdfViewer: {
+      eventBus: unknown;
+      pdfDocument?: PDFDocumentProxy | null;
+      /**
+       * PDF.js's flag for the view a document opens at. It turns true before
+       * `setInitialView` moves to that position.
+       */
+      isInitialViewSet?: boolean;
+      /** PDF.js's own viewer; `container` is the element that scrolls. */
+      pdfViewer?: { container?: HTMLElement } | null;
+    } | null;
+    /** Subscribes on the PDF.js event bus behind `pdfViewer.eventBus`. */
+    on(event: "pagerendered", listener: PDFPageRenderedListener): void;
+    off(event: "pagerendered", listener: PDFPageRenderedListener): void;
+    on(event: "pagechanging", listener: () => void): void;
+    off(event: "pagechanging", listener: () => void): void;
+    on(event: "documentinit", listener: () => void): void;
+    off(event: "documentinit", listener: () => void): void;
+    on(event: "pagesdestroy", listener: () => void): void;
+    off(event: "pagesdestroy", listener: () => void): void;
+    /** The PDF.js page view for a one-based page number, once that page is built. */
+    getPage(pageNumber: number): PDFPageView | undefined;
+    /** Applies an Obsidian PDF subpath such as `#page=3`. */
+    applySubpath(subpath: string): void;
+    /** The reader's own toolbar; `null` once the child unloads. */
+    toolbar: PDFViewerToolbar | null;
+  }
+
+  interface PDFViewerToolbar {
+    /** The right-hand slot ZotLit's Creation Toolbar mounts into. */
+    toolbarRightEl: HTMLElement;
+  }
+
+  /** PDF.js `pagerendered`, forwarded by Obsidian's event bus. */
+  interface PDFPageRenderedEvent {
+    /** One-based. */
+    pageNumber: number;
+    source: PDFPageView;
+  }
+
+  type PDFPageRenderedListener = (event: PDFPageRenderedEvent) => void;
+
+  /** The PDF.js page view members ZotLit reads. Internal. */
+  interface PDFPageView {
+    div: HTMLElement;
+    viewport: PDFPageViewport;
+    /** The PDF.js page proxy backing this view; absent until the page loads. */
+    pdfPage?: PDFPageProxy;
+    /** PDF.js `RenderingStates`: `3` once the page has finished painting. */
+    renderingState?: number;
+  }
+
+  /**
+   * The nine properties PDF.js `PageViewport` assigns in its constructor, plus
+   * the conversions and the rebuild ZotLit calls. Zotero PDF coordinates reach
+   * the page through these. The nine are always assigned, so each is required
+   * here: a missing one is a changed seam, not a default to fill in.
+   */
+  interface PDFPageViewport {
+    /** `[x1, y1, x2, y2]` in PDF points, before scale and rotation. */
+    viewBox: readonly number[];
+    /** `/UserUnit` of the page. PDF.js folds it into the transform, not into `scale`. */
+    userUnit: number;
+    scale: number;
+    rotation: number;
+    offsetX: number;
+    offsetY: number;
+    /** The PDF-point to viewport-pixel matrix `convertToViewportPoint` applies. */
+    transform: readonly number[];
+    width: number;
+    height: number;
+    convertToViewportPoint(x: number, y: number): [number, number];
+    convertToPdfPoint?(x: number, y: number): [number, number];
+    /**
+     * Rebuilds the viewport at another scale or rotation. The overlay takes its
+     * page-unit box from `clone({ scale: 1 })`, which is identical at every zoom
+     * step; dividing the viewport box by `scale * userUnit` reaches the same
+     * units but leaves float noise, so it is the fallback for a build with no
+     * `clone`, not the first choice.
+     */
+    clone?(options: { scale?: number; rotation?: number }): PDFPageViewport;
+  }
+
+  /**
+   * The PDF.js page proxy members ZotLit reads. `includeChars` is an Obsidian
+   * patch of the bundled worker that upstream PDF.js has no counterpart for; it
+   * is what the Sort Index port reads per-glyph rectangles from.
+   */
+  interface PDFPageProxy {
+    /** `[x1, y1, x2, y2]` — the PDF page box the Sort Index measures against. */
+    view: number[];
+    /**
+     * The document-wide object store a text item's font is resolved through.
+     * A font reaches it when the page's operator list is fetched, so a page
+     * that has rendered answers the base font name and one that has not
+     * answers nothing yet.
+     */
+    commonObjs: PDFObjects;
+    getTextContent(params: { includeChars: true }): Promise<PDFTextContent>;
+    /** The viewport a scale and an offset map PDF points through. */
+    getViewport(options: {
+      scale: number;
+      offsetX?: number;
+      offsetY?: number;
+    }): PDFPageViewport;
+    /**
+     * PDF.js's own render task for a caller-owned canvas. Its creator owns the
+     * task: a task this build started is the one it may cancel, and a page's
+     * other render tasks — the reader's own — are never touched.
+     */
+    render(options: {
+      canvasContext: CanvasRenderingContext2D;
+      viewport: PDFPageViewport;
+      intent: "display";
+    }): PDFRenderTask;
+  }
+
+  /** One page render PDF.js runs onto a canvas its caller owns. */
+  interface PDFRenderTask {
+    promise: Promise<void>;
+    cancel(): void;
+    onContinue?: (continueCallback: () => void) => void;
+  }
+
+  /** PDF.js's resolved-object store, read for the base font name alone. */
+  interface PDFObjects {
+    has(objId: string): boolean;
+    get(objId: string): { name?: string } | null;
+  }
+
+  /**
+   * The PDF.js document proxy ZotLit reads the Page Label heuristic's inputs
+   * from. It hangs off the same `pdfViewer` the controller's liveness is read
+   * through, and is `null` before Obsidian opens a document.
+   */
+  interface PDFDocumentProxy {
+    numPages: number;
+    /** One-based, as PDF.js spells it. */
+    getPage(pageNumber: number): Promise<PDFPageProxy>;
+    /** The PDF catalog's `/PageLabels`, or `null` where the PDF declares none. */
+    getPageLabels(): Promise<string[] | null>;
+    /**
+     * The bytes this document was loaded from, read to completion. A document
+     * loaded from a URL fetches what it has not read yet, and one whose worker
+     * already holds the whole stream answers from it.
+     */
+    getData(): Promise<Uint8Array>;
+  }
+
+  interface PDFTextContent {
+    items: PDFTextItem[];
+  }
+
+  interface PDFTextItem {
+    /**
+     * Present only under `includeChars`. The worker reads that option as a
+     * boolean defaulting to `false`, so a build without the patch answers the
+     * same items with this key absent rather than failing the call.
+     */
+    chars?: PDFTextChar[];
+    /** The chunk's text matrix, `[a, b, c, d, e, f]`. */
+    transform: number[];
+    /** PDF.js's loaded font name, e.g. `g_d0_f1`, not the base font name. */
+    fontName: string;
+  }
+
+  /** One glyph: its character, its Unicode value, and its PDF-space rectangle. */
+  interface PDFTextChar {
+    c: string;
+    u: string;
+    r: [number, number, number, number];
   }
 
   /** The settings modal (`app.setting`). Internal; shape verified against Obsidian 1.13. */
@@ -65,6 +796,12 @@ declare module "obsidian" {
     openTabById(id: string): SettingTab | null;
     /** Render a tab, closing any open sub-pages. */
     openTab(tab: SettingTab): void;
+    /**
+     * Drop a plugin tab from the list and the search index, closing it first
+     * when it is open (its `render` cleanups run, then `hide()`). Verified
+     * against Obsidian 1.14.4.
+     */
+    removeSettingTab(tab: SettingTab): void;
     /**
      * Open a tab, descend its `pagePath` sub-pages, then reveal `result`'s definition.
      * Reads only the listed fields, so synthetic arguments navigate without a real search.
@@ -92,7 +829,10 @@ declare module "obsidian" {
     definition: SettingDefinition;
     /** Innermost page definition; absent at the tab root. */
     page?: SettingDefinitionPage;
-    /** Sub-page `name` values, outermost first. Empty at the tab root. */
+    /**
+     * The key of each sub-page, outermost first: its `id` where it carries one
+     * and its `name` otherwise. Empty at the tab root.
+     */
     pagePath: string[];
   }
 
@@ -113,6 +853,43 @@ declare module "obsidian" {
     descMatch: SearchResult | null;
     score: number;
     matches: SearchMatches;
+  }
+
+  /**
+   * Stable identity for a setting or a setting page, honored ahead of the
+   * derived key (control key, name, or heading) when Obsidian pairs a
+   * definition with its rendered row across re-renders. Absent from the
+   * vendored typings, which target Obsidian 1.13.1; the runtime reads it from
+   * 1.14 (`app.js` 1.14.2, key builders of `getSettingDefinitions`).
+   *
+   * Required here so a definition that omits one is a compile error. Derive it
+   * from the i18n message key backing the row's label, and keep it unique
+   * among the definition's siblings.
+   */
+  interface SettingDefinitionBase {
+    /**
+     * Unique id among the definition's siblings. Disambiguates siblings that
+     * share a `name`, and keeps a stable reference when a setting is renamed.
+     * Obsidian 1.13.x ignores it: there it must not carry the uniqueness the
+     * derived key already provides.
+     */
+    id: string;
+  }
+  interface SettingDefinitionGroup {
+    /**
+     * Unique id among the group's siblings, ahead of `heading` when the
+     * framework keys the group. Inherited by {@link SettingDefinitionList}.
+     * Obsidian 1.13.x ignores it.
+     */
+    id: string;
+  }
+  interface SettingDefinitionPage {
+    /**
+     * Unique id among the page's siblings, ahead of `name` when the framework
+     * keys the page. Duplicate page ids among siblings log an error, and
+     * Obsidian 1.13.x ignores it.
+     */
+    id: string;
   }
 
   interface SettingTab {
@@ -151,12 +928,55 @@ declare module "obsidian" {
     /** Convert this item into a submenu parent, returning the nested {@link Menu} to populate. Runtime API present since Obsidian 1.4, absent from the vendored typings. */
     setSubmenu(): Menu;
   }
+  interface Menu {
+    /**
+     * Register section names in the order the menu shows them, ahead of the
+     * unnamed section `""` where the menu has one. An item's section the menu
+     * never registered sorts after every registered one. Internal; verified
+     * against Obsidian 1.14.4.
+     */
+    addSections(sections: readonly string[]): this;
+    /**
+     * The Scope the menu holds the keyboard with while it shows, pushed as it
+     * loads, a `setTimeout(0)` after `showAtPosition`, and popped as it hides,
+     * parented to the keymap's empty root scope. It takes the arrows and Enter; its Escape hides the menu without
+     * taking the key. Internal; verified against Obsidian 1.13.7 and 1.14.2.
+     */
+    scope: Scope;
+  }
   interface EditorSuggest<T> {
     /** Undocumented internal driving the popover's selection; invoking it from a custom keymap handler selects the highlighted suggestion as if Enter were pressed. */
     suggestions: { useSelectedItem(evt: KeyboardEvent | MouseEvent): void };
   }
-  /** Runtime members Obsidian's own popovers are driven by, verified against Obsidian 1.13.7. */
+  /** The members Obsidian's runtime gives {@link PopoverState}; the vendored declaration lists none. */
+  enum PopoverState {
+    Showing = 0,
+    Shown = 1,
+    Hiding = 2,
+    Hidden = 3,
+  }
+  /** Runtime members Obsidian's own popovers are driven by, verified against Obsidian 1.14.1. */
   interface HoverPopover {
+    targetEl: HTMLElement | null;
+    onTarget: boolean;
+    /**
+     * Whether the popover stands open on its own. Obsidian's own
+     * should-show test reads it beside the pointer and the focus, and its
+     * global click handler leaves a focused popover alone once it has shown —
+     * so this is what pins one open that has no target to hover.
+     */
+    isFocused: boolean;
+    setIsFocused(focused: boolean): void;
+    /**
+     * The pending show or hide timer. Obsidian arms it on `activeWindow` and
+     * cancels it with the main window's `clearTimeout`, so a subclass that
+     * must cancel it clears it on the window that armed it.
+     */
+    timer: number;
+    /** Target listeners bound to the instance by the native constructor. */
+    onMouseIn: (event: MouseEvent) => void;
+    onMouseOut: (event: MouseEvent) => void;
+    transition(): void;
     /**
      * What the wait timer armed in the constructor calls: the popover takes its
      * place in the document through {@link position}, then claims its parent
@@ -172,5 +992,11 @@ declare module "obsidian" {
     hide(): void;
     /** Re-runs {@link position} as `el` resizes, which is what lets content arrive after the popover opens. */
     watchResize(el: HTMLElement): void;
+    /**
+     * The point {@link position} anchors to in place of the target's boxes.
+     * Obsidian sets it from the pointer for a tall target; a subclass sets it
+     * before each placement to anchor elsewhere. `null` uses the target.
+     */
+    staticPos: Point | null;
   }
 }

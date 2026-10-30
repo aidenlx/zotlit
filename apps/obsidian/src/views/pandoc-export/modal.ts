@@ -1,15 +1,25 @@
 // The built-in export's one dialog: output format, CSL style, and destination.
 
+import { homedir } from "node:os";
 import { extname } from "node:path";
 import { Modal, Setting } from "obsidian";
-import type { App } from "obsidian";
+import type { App, FileSystemAdapter } from "obsidian";
 
+import {
+  citationStyleLabel,
+  referencesStyleOptions,
+  STYLE_DEFAULT,
+} from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { requireDialog } from "@/lib/require";
+import type { StyleSource } from "@/services/pandoc/document-presentation";
 import type { DocumentFormat } from "@/services/pandoc/engine";
-import { referencesStyleOptions, STYLE_DEFAULT } from "@/setting-tab/citations";
+import type { InstalledCslStyle } from "@/services/pandoc/styles";
+import type { StyleDropdownOptions } from "@/views/style-dropdown";
 import { addStyleDropdown } from "@/views/style-dropdown";
+
+import { exportDestinationLocation } from "./destination";
 
 const logger = getLogger(["views", "pandoc-export"]);
 
@@ -27,11 +37,16 @@ export interface PandocExportChoices {
   destination: string;
 }
 
-export interface PandocExportModalOptions {
+export interface PandocExportModalOptions extends Pick<
+  StyleDropdownOptions,
+  "fileSystem" | "bridge"
+> {
   /** Zotero data directory the installed styles are listed from. */
   dataDir: string;
   /** Citation and References Style ID — where the style picker starts. */
   referencesStyleId: string | null;
+  /** Where the note's style comes from; the dialog names it under the picker. */
+  styleSource: StyleSource;
   /** Absolute path of the note being exported; seeds the destination. */
   notePath: string;
 }
@@ -46,13 +61,23 @@ export interface PandocExportModalOptions {
  */
 export function openPandocExportModal(
   app: App,
-  { dataDir, referencesStyleId, notePath }: PandocExportModalOptions,
-): Promise<PandocExportChoices | null> {
-  const { promise, resolve } =
-    Promise.withResolvers<PandocExportChoices | null>();
-
+  {
+    dataDir,
+    fileSystem,
+    bridge,
+    referencesStyleId,
+    styleSource,
+    notePath,
+  }: PandocExportModalOptions,
+  resolve: (choices: PandocExportChoices | null) => void,
+): Modal {
   let format: DocumentFormat = "docx";
-  let styleId = referencesStyleId ?? STYLE_DEFAULT;
+  const noteStyleId = referencesStyleId ?? STYLE_DEFAULT;
+  let styleId = noteStyleId;
+  // The listing the picker last filled from, so the dialog names a style the
+  // way the picker does.
+  let installed: readonly InstalledCslStyle[] = [];
+  const titleOf = (id: string): string => citationStyleLabel(id, installed);
   let stem = stemOf(notePath);
   const destination = (): string => `${stem}.${format}`;
 
@@ -73,19 +98,33 @@ export function openPandocExportModal(
       });
     });
 
-  addStyleDropdown(
-    new Setting(modal.contentEl)
-      .setName(m.pandoc_export_style_name())
-      .setDesc(m.pandoc_export_style_desc()),
-    {
-      dataDir,
-      value: styleId,
-      options: referencesStyleOptions,
-      onChange: (value) => {
-        styleId = value;
-      },
-    },
+  const styleSetting = new Setting(modal.contentEl).setName(
+    m.pandoc_export_style_name(),
   );
+  // The picker holds the style for this run alone, so a changed pick says the
+  // note keeps its own.
+  const showStyleSource = (): void => {
+    styleSetting.setDesc(
+      styleId === noteStyleId
+        ? sourceText(styleSource)
+        : m.pandoc_export_style_changed({ style: titleOf(noteStyleId) }),
+    );
+  };
+  showStyleSource();
+  addStyleDropdown(styleSetting, {
+    dataDir,
+    fileSystem,
+    bridge,
+    value: styleId,
+    options: (styles, selected) => {
+      installed = styles;
+      return referencesStyleOptions(styles, selected);
+    },
+    onChange: (value) => {
+      styleId = value;
+      showStyleSource();
+    },
+  });
 
   const destinationSetting = new Setting(modal.contentEl)
     .setName(m.pandoc_export_destination_name())
@@ -95,7 +134,18 @@ export function openPandocExportModal(
         .onClick(() => void browse()),
     );
   const showDestination = (): void => {
-    destinationSetting.setDesc(destination());
+    const location = exportDestinationLocation(destination(), {
+      vaultPath: (app.vault.adapter as FileSystemAdapter).getBasePath(),
+      homePath: homedir(),
+    });
+    destinationSetting.setDesc(
+      location.kind === "vault"
+        ? m.pandoc_export_destination_in_vault({
+            path: location.path,
+            vault: app.vault.getName(),
+          })
+        : location.path,
+    );
   };
   showDestination();
 
@@ -119,7 +169,7 @@ export function openPandocExportModal(
 
   modal.setCloseCallback(() => resolve(null));
   modal.open();
-  return promise;
+  return modal;
 
   async function browse(): Promise<void> {
     try {
@@ -134,6 +184,19 @@ export function openPandocExportModal(
     } catch (error) {
       logger.error("Failed to open the export destination dialog", { error });
     }
+  }
+}
+
+function sourceText(source: StyleSource): string {
+  switch (source.kind) {
+    case "note":
+      return m.pandoc_export_style_from_note();
+    case "profile":
+      return m.pandoc_export_style_from_profile({
+        profile: source.label ?? m.settings_profile_default_name(),
+      });
+    case "vault":
+      return m.pandoc_export_style_from_vault();
   }
 }
 

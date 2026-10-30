@@ -4,9 +4,16 @@
 // agent-facing contract surface, not localized UI. See
 // apps/obsidian/policies/cli-text.md.
 
-import type { CliData, CliHandler, Plugin } from "obsidian";
+import { Effect, Layer } from "effect";
+import type { CliData } from "obsidian";
 
-import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { CliCommandHandler, CliHost } from "@/lib/cli-command";
+import { createCliDiagnostics } from "@/lib/cli-diagnostic";
+import { catchRejection, decodeCliParams, noCliParams } from "@/lib/cli-params";
+import type { CliRejection } from "@/lib/cli-params";
+import { PluginHost } from "@/lib/plugin-host";
+
+import { LibraryScope } from "./service";
 
 /**
  * The wire format of the `zotlit:library-scope` commands, versioned on its
@@ -23,14 +30,9 @@ type LibraryScopeCommand =
   | typeof LIBRARY_SCOPE_COMMAND
   | typeof LIBRARY_SCOPE_GUIDE_COMMAND;
 
-/** Neither command takes a parameter. */
-const NO_PARAMS: readonly string[] = [];
-
 /**
  * The documented diagnostic codes of this CLI Contract, each defined with
- * the recovery action its diagnostic carries — mirrors the citation-index and
- * Template Workbench namespaces' own `DIAGNOSTIC_HINTS`, kept separate per
- * namespace by ADR 0026.
+ * the recovery action its diagnostic carries.
  */
 const DIAGNOSTIC_HINTS = {
   INVALID_SELECTOR:
@@ -49,13 +51,10 @@ interface Diagnostic {
   details?: { parameter: string };
 }
 
-function diagnostic(
-  code: DiagnosticCode,
-  message: string,
-  details?: Diagnostic["details"],
-): Diagnostic {
-  return { code, message, hint: DIAGNOSTIC_HINTS[code], details };
-}
+const { diagnostic, rejectionDiagnostic } = createCliDiagnostics<
+  typeof DIAGNOSTIC_HINTS,
+  Diagnostic["details"]
+>(DIAGNOSTIC_HINTS, "INVALID_SELECTOR");
 
 function envelope(command: LibraryScopeCommand, tail: object): string {
   return JSON.stringify({
@@ -66,34 +65,55 @@ function envelope(command: LibraryScopeCommand, tail: object): string {
 }
 
 interface LibraryScopeCliDeps {
-  libraryScope: Pick<LibraryScopeService, "ready" | "current">;
+  libraryScope: Pick<LibraryScope["Service"], "current">;
 }
+
+/**
+ * The `zotlit:library-scope` commands, for e2e: they read the resolved
+ * Library Scope after a Scope Case switch through the plugin's own CLI
+ * Contract surface rather than an internal eval. A dev-build diagnostic port,
+ * never registered in a production build.
+ */
+export const layerLibraryScopeCli: Layer.Layer<
+  never,
+  never,
+  PluginHost | LibraryScope
+> = __DEV__
+  ? Layer.effectDiscard(
+      Effect.gen(function* () {
+        registerLibraryScopeCli(yield* PluginHost, {
+          libraryScope: yield* LibraryScope,
+        });
+      }),
+    )
+  : Layer.empty;
 
 export function registerLibraryScopeCli(
-  plugin: Plugin,
+  host: CliHost,
   deps: LibraryScopeCliDeps,
 ): void {
-  plugin.registerCliHandler(
-    LIBRARY_SCOPE_COMMAND,
-    "Report the resolved Library Scope: mode, available Libraries, and unavailable selectors",
-    null,
-    createLibraryScopeHandler(deps),
-  );
-  plugin.registerCliHandler(
-    LIBRARY_SCOPE_GUIDE_COMMAND,
-    "Print the zotlit:library-scope CLI guide",
-    null,
-    guideHandler,
-  );
+  host.registerCliCommand(LIBRARY_SCOPE_COMMAND, {
+    description:
+      "Report the resolved Library Scope: mode, available Libraries, and unavailable selectors",
+    flags: null,
+    handler: createLibraryScopeHandler(deps),
+  });
+  host.registerCliCommand(LIBRARY_SCOPE_GUIDE_COMMAND, {
+    description: "Print the zotlit:library-scope CLI guide",
+    flags: null,
+    handler: guideHandler,
+  });
 }
 
-function createLibraryScopeHandler(deps: LibraryScopeCliDeps): CliHandler {
-  return async (params: CliData): Promise<string> => {
-    const rejected = rejectAccepted(params);
-    if (rejected) return invalidRequest(LIBRARY_SCOPE_COMMAND, rejected);
+function createLibraryScopeHandler(
+  deps: LibraryScopeCliDeps,
+): CliCommandHandler {
+  return Effect.fn("LibraryScopeCli.report")(function* (params: CliData) {
+    yield* decodeCliParams(params, noCliParams, {
+      command: LIBRARY_SCOPE_COMMAND,
+    });
 
-    await deps.libraryScope.ready;
-    const current = deps.libraryScope.current;
+    const current = yield* deps.libraryScope.current;
     if (current === null) {
       return envelope(LIBRARY_SCOPE_COMMAND, {
         ok: false,
@@ -112,24 +132,28 @@ function createLibraryScopeHandler(deps: LibraryScopeCliDeps): CliHandler {
       available: current.available,
       unavailable: current.unavailable,
     });
-  };
+  }, answerRejection(LIBRARY_SCOPE_COMMAND));
 }
 
-const guideHandler: CliHandler = (params: CliData): string => {
-  const rejected = rejectAccepted(params);
-  if (rejected) return invalidRequest(LIBRARY_SCOPE_GUIDE_COMMAND, rejected);
-  return renderGuide();
-};
+const guideHandler: CliCommandHandler = (params) =>
+  decodeCliParams(params, noCliParams, {
+    command: LIBRARY_SCOPE_GUIDE_COMMAND,
+  }).pipe(
+    Effect.as(renderGuide()),
+    answerRejection(LIBRARY_SCOPE_GUIDE_COMMAND),
+  );
+
+/** A rejected request answers its diagnostic envelope. */
+const answerRejection = (command: LibraryScopeCommand) =>
+  catchRejection((rejected) => invalidRequest(command, rejected));
 
 function invalidRequest(
   command: LibraryScopeCommand,
-  rejected: { parameter: string; message: string },
+  rejected: CliRejection,
 ): string {
   return envelope(command, {
     ok: false,
-    diagnostic: diagnostic("INVALID_SELECTOR", rejected.message, {
-      parameter: rejected.parameter,
-    }),
+    diagnostic: rejectionDiagnostic(rejected),
   });
 }
 
@@ -164,34 +188,4 @@ function renderGuide(): string {
     "",
     "Prints this page. Read-only, no parameters.",
   ].join("\n");
-}
-
-/**
- * Obsidian passes every caller token straight through as `CliData`, filtering
- * nothing itself, so each command must reject what it did not declare. A
- * `--*` token is left for Obsidian or its CLI binary and skipped; `vault`
- * typed after the command name reached us only because Obsidian's own vault
- * selection already ran; anything else is an unrecognized parameter. Local to
- * this namespace, like the citation-index and Template Workbench namespaces'
- * own copies (ADR 0026: each namespace owns its own diagnostic codes and
- * payload shape, deliberately not shared).
- */
-function rejectAccepted(
-  params: CliData,
-): { parameter: string; message: string } | null {
-  for (const key of Object.keys(params)) {
-    if (key.startsWith("--") || NO_PARAMS.includes(key)) continue;
-    if (key === "vault") {
-      return {
-        parameter: "vault",
-        message:
-          "vault must come before the command name (obsidian vault=<name> zotlit:...); placed after, Obsidian ignores it and routes the call by working directory or focused window instead.",
-      };
-    }
-    return {
-      parameter: key,
-      message: `Unknown parameter '${key}': this command takes no parameters.`,
-    };
-  }
-  return null;
 }

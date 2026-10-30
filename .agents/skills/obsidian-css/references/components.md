@@ -202,7 +202,7 @@ Workspace tab strip. Lots of state-aware variables — only override the ones yo
 | `--nav-heading-color` | Section label |
 | `--nav-heading-color-hover` | Hover |
 | `--nav-heading-color-collapsed` | Collapsed |
-| `--nav-heading-color-colapsed-hover` | Collapsed hover (sic — Obsidian variable name) |
+| `--nav-heading-color-collapsed-hover` | Collapsed hover |
 | `--nav-heading-weight` | Font weight |
 | `--nav-heading-weight-hover` | Hover font weight |
 
@@ -246,3 +246,5 @@ For list properties and similar.
 | --- | --- |
 | `--drag-ghost-background` | Ghost background while dragging |
 | `--drag-ghost-text-color` | Ghost text color |
+| `--drag-item-background` | Background of a dragged item and its reorder ghost (`--background-primary` on `body`) |
+| `--drag-item-shadow` | Shadow of a dragged item and its reorder ghost (`0 2px 8px var(--background-modifier-box-shadow)`) |

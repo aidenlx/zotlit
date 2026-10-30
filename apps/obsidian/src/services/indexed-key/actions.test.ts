@@ -1,6 +1,8 @@
-import { TFile } from "@mock/obsidian";
-import type { Command } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, Command, MetadataCache, Vault, Workspace } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { addIndexedKeyActions, indexedKeyForClipboard } from "./actions";
 
@@ -26,16 +28,18 @@ describe("copy item key command", () => {
   it("copies the active Literature Note's key", () => {
     const file = new TFile();
     let command: Command | undefined;
-    const app = {
-      workspace: { getActiveFile: () => file },
-      metadataCache: {
+    const app = stubService<App>("App", {
+      workspace: stubService<Workspace>("Workspace", {
+        getActiveFile: () => file,
+      }),
+      metadataCache: stubService<MetadataCache>("MetadataCache", {
         getFileCache: () => ({
           frontmatter: { "zotero-key": "ABCD2345g42" },
         }),
-      },
-    };
+      }),
+    });
     addIndexedKeyActions({
-      app: app as never,
+      app,
       addCommand(value) {
         command = value;
         return value;
@@ -52,9 +56,12 @@ describe("copy item key command", () => {
   it("is unavailable without an active file", () => {
     let command: Command | undefined;
     addIndexedKeyActions({
-      app: {
-        workspace: { getActiveFile: () => null },
-      } as never,
+      app: stubService<App>("App", {
+        workspace: stubService<Workspace>("Workspace", {
+          getActiveFile: () => null,
+        }),
+        vault: stubService<Vault>("Vault", {}),
+      }),
       addCommand(value) {
         command = value;
         return value;
@@ -70,10 +77,15 @@ describe("copy item key command", () => {
     const file = new TFile();
     let command: Command | undefined;
     addIndexedKeyActions({
-      app: {
-        workspace: { getActiveFile: () => file },
-        metadataCache: { getFileCache: () => ({ frontmatter: {} }) },
-      } as never,
+      app: stubService<App>("App", {
+        workspace: stubService<Workspace>("Workspace", {
+          getActiveFile: () => file,
+        }),
+        metadataCache: stubService<MetadataCache>("MetadataCache", {
+          getFileCache: () => ({ frontmatter: {} }),
+        }),
+        vault: stubService<Vault>("Vault", {}),
+      }),
       addCommand(value) {
         command = value;
         return value;

@@ -1,43 +1,31 @@
-// The Wikilink Editor Treatment service: it registers the CodeMirror extension,
+// The Wikilink Editor Treatment: it registers the CodeMirror extension,
 // answers which Literature Note a linkpath names, and asks the open editors to
 // draw again when something outside their documents changed the answer.
-
 import type { Extension } from "@codemirror/state";
-import type { App, Plugin } from "obsidian";
+import { Effect, Layer } from "effect";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
-import { getLogger } from "@/lib/log";
+import { scopedBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
+import { forkEach } from "@/lib/effect-stream";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Workspace } from "@/lib/obsidian-workspace";
+import { PluginHost } from "@/lib/plugin-host";
 import { WikilinkDisplaySettings } from "@/lib/wikilink-citation";
-import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
-import type { CitationIndex } from "@/services/citation-index/service";
-import type { CitationPopover } from "@/services/citation-popover/service";
-import type { CitationText } from "@/services/citation-text/service";
-import type { CitekeyEditor } from "@/services/citekey-editor/service";
-import { resolveLiteratureNote } from "@/services/note-index/service";
-import type { NoteIndex } from "@/services/note-index/service";
-import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import { CitationPopover } from "@/services/citation-popover/service";
+import { CitationText } from "@/services/citation-text/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
+import {
+  NoteIndex,
+  literatureNoteTargetIn,
+} from "@/services/note-index/service";
+import { PluginSettings } from "@/services/settings/service";
 
 import {
   wikilinkDecorationsChanged,
   wikilinkEditorExtension,
 } from "./extension";
-
-const logger = getLogger("wikilink-editor");
-
-export interface WikilinkEditorDeps {
-  app: App;
-  plugin: Pick<Plugin, "registerEditorExtension">;
-  noteIndex: Pick<NoteIndex, "on">;
-  /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "peek" | "on">;
-  /** The open-or-create flow every citation surface shares. */
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
-  /** What a hovered citation shows. */
-  citationPopover: CitationPopover;
-  settings: SettingsService;
-  citationIndex: Pick<CitationIndex, "citekeyOf" | "on">;
-}
 
 /**
  * The Wikilink Editor Treatment: in Live Preview a Literature Note wikilink —
@@ -55,109 +43,92 @@ export interface WikilinkEditorDeps {
  * lifetime. Source and display choices are read per decoration build, so a
  * setting change needs no extension re-registration.
  */
-export class WikilinkEditor extends Service<void> {
-  readonly #app;
-  readonly #plugin;
-  readonly #noteIndex;
-  readonly #citationText;
-  readonly #citekeyEditor;
-  readonly #citationPopover;
-  readonly #settings;
-  readonly #citationIndex;
-  readonly #extension: Extension;
+export const layerWikilinkEditor = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const host = yield* PluginHost;
+    const workspace = yield* Workspace;
+    const metadata = yield* MetadataCache;
+    const notes = yield* NoteIndex;
+    const settings = yield* PluginSettings;
+    const citationText = yield* CitationText;
+    const lookup = yield* CitationLookup;
+    const citationPopover = yield* CitationPopover;
+    const citekeyEditor = yield* CitekeyEditor;
+    const bridge = yield* scopedBridge;
+    const run = Effect.runSyncWith(yield* Effect.context<never>());
 
-  /** Registered once; emptied on disposal, which retires the treatment. */
-  readonly #extensions: Extension[] = [];
+    /** The source and display settings that decide what a link displays. */
+    const display = new WikilinkDisplaySettings();
 
-  /** The source and display settings that decide what a link displays. */
-  readonly #display = new WikilinkDisplaySettings();
+    /** Registered once; emptied when the layer closes, which retires the treatment. */
+    const extensions: Extension[] = [
+      wikilinkEditorExtension({
+        literatureNote: (linkpath, sourcePath, answer) =>
+          run(
+            literatureNoteTargetIn(metadata, linkpath, {
+              sourcePath,
+              lookup: answer,
+            }),
+          ),
+        observeLookup: (changed) => run(lookup.observe(changed)),
+        enabled: () => display.enabled,
+        citationText: (path) => run(citationText.peek(path)),
+        // Unload interrupts a pending open.
+        open: (citekey, pane) =>
+          bridge.runAndForget(citekeyEditor.openCitekey(citekey, pane)),
+        showPopover: (request) => run(citationPopover.show(request)),
+        hoverPreferences: () => display.hover,
+        popoverHover: () => display.popoverHover,
+        clickIntercepted: () => display.clickIntercepted,
+      }),
+    ];
 
-  ready: Promise<void>;
+    /**
+     * Asks the open Markdown editors to build their decorations again. The
+     * decoration layer owns what changed; this only names the reason, since
+     * what a link displays lives outside the document.
+     *
+     * @param path the one document to reach, or nothing for every editor.
+     */
+    const redraw = (path?: string) =>
+      Effect.gen(function* () {
+        const editors = dispatchToMarkdownEditors(
+          yield* workspace.markdownViews,
+          wikilinkDecorationsChanged.of(undefined),
+          { path },
+        );
+        yield* Effect.logTrace("Redrawing wikilink citations").pipe(
+          Effect.annotateLogs({ editors, path }),
+        );
+      });
 
-  constructor(deps: WikilinkEditorDeps) {
-    super();
-    this.#app = deps.app;
-    this.#plugin = deps.plugin;
-    this.#noteIndex = deps.noteIndex;
-    this.#citationText = deps.citationText;
-    this.#citekeyEditor = deps.citekeyEditor;
-    this.#citationPopover = deps.citationPopover;
-    this.#settings = deps.settings;
-    this.#citationIndex = deps.citationIndex;
-    this.#extension = wikilinkEditorExtension({
-      literatureNote: (linkpath, sourcePath) =>
-        this.#literatureNote(linkpath, sourcePath),
-      enabled: () => this.#display.enabled,
-      citationText: (path) => this.#citationText.peek(path),
-      open: (citekey, pane) => {
-        void this.#citekeyEditor.openCitekey(citekey, pane);
-      },
-      showPopover: (request) => this.#citationPopover.show(request),
-      hoverPreferences: () => this.#display.hover,
-      popoverHover: () => this.#display.popoverHover,
-      clickIntercepted: () => this.#display.clickIntercepted,
-    });
-    this.ready = this.#load();
-  }
+    host.registerEditorExtension(extensions);
+    yield* workspace.updateOptions;
+    yield* Effect.addFinalizer(() =>
+      Effect.suspend(() => {
+        extensions.length = 0;
+        return workspace.updateOptions;
+      }),
+    );
 
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
-
-    this.#plugin.registerEditorExtension(this.#extensions);
-    this.#extensions.push(this.#extension);
-    this.#app.workspace.updateOptions();
-    stack.defer(() => {
-      this.#extensions.length = 0;
-      this.#app.workspace.updateOptions();
-    });
-
-    stack.defer(this.#display.watch(this.#settings, () => this.#redraw()));
-    // Creating, deleting, or renaming a Literature Note, or a citekey
-    // resolution snapshot rebuild, changes what a link displays without
-    // changing any document; the Note Index's own invalidation is coarse, so
-    // every change redraws every open editor.
-    stack.defer(this.#noteIndex.on("changed", () => this.#redraw()));
-    stack.defer(
-      this.#citationIndex.on("resolution-changed", () => this.#redraw()),
+    // A setting change redraws whatever changes what a link displays or who
+    // answers its hover.
+    yield* forkEach(display.redraws(settings.changes), () => redraw());
+    // Creating, deleting, or renaming a Literature Note changes what a link
+    // displays without changing any document. The Note Index's own
+    // invalidation is coarse, so every change redraws every open editor.
+    yield* forkEach(notes.changes, (change) =>
+      change.type === "frontmatter-changed" ? undefined : redraw(),
     );
     // A citation's formatted text is read asynchronously and shared with every
     // other surface, so the editors showing that document draw again when it
     // lands or goes stale — until then they keep native presentation.
-    stack.defer(this.#citationText.on("changed", (path) => this.#redraw(path)));
-    stack.defer(this.#citationText.on("invalidated", () => this.#redraw()));
-
-    this.commit(stack.move());
-  }
-
-  #literatureNote(
-    linkpath: string,
-    sourcePath: string,
-  ): LiteratureNoteTarget | null {
-    const note = resolveLiteratureNote(linkpath, sourcePath, {
-      app: this.#app,
-    });
-    return (
-      note && {
-        ...note,
-        citationKey: this.#citationIndex.citekeyOf(note.indexedKey),
-      }
+    yield* forkEach(citationText.events, (event) =>
+      event.type === "changed"
+        ? redraw(event.path)
+        : event.type === "invalidated"
+          ? redraw()
+          : undefined,
     );
-  }
-
-  /**
-   * Asks the open Markdown editors to build their decorations again. The
-   * decoration layer owns what changed; this only names the reason, since what
-   * a link displays lives outside the document.
-   *
-   * @param path the one document to reach, or nothing for every editor.
-   */
-  #redraw(path?: string): void {
-    const reached = dispatchToMarkdownEditors(
-      this.#app,
-      wikilinkDecorationsChanged.of(undefined),
-      { path },
-    );
-    logger.trace("Redrawing wikilink citations", { editors: reached, path });
-  }
-}
+  }).pipe(withLogCategory("wikilink-editor")),
+);

@@ -1,48 +1,48 @@
-// Live orchestration for the Welcome View quick-start step actions: open settings, pick the literature-note folder, search the library, and locate the Zotero data directory.
+// Live orchestration for the Welcome View quick-start step actions: open settings, pick the literature-note folder and locate the Zotero data directory.
 import { FuzzySuggestModal } from "obsidian";
 import type { App, TFolder } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { openSettingsTab } from "@/lib/open-settings";
-import { requireDialog } from "@/lib/require";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 
-const logger = getLogger(["views", "welcome"]);
+import { setFolderCommand, locateZoteroCommand } from "./atoms";
+
+export function holdSetupCommands(registry: ViewRegistryHandle): () => void {
+  const releases = [
+    registry.mount(setFolderCommand),
+    registry.mount(locateZoteroCommand),
+  ];
+  return () => {
+    for (const release of releases) release();
+  };
+}
 
 export interface SetupActions {
   openSettings: () => void;
   pickFolder: () => void;
-  searchLibrary: () => void;
   locateZotero: () => void;
 }
 
 export interface SetupActionsDeps {
   app: App;
-  settings: Pick<SettingsService, "update">;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "setDataDir">;
-  /** Plugin id — prefixes command ids and identifies the settings tab. */
+  registry: ViewRegistryHandle;
+  /** Plugin id — identifies the settings tab. */
   pluginId: string;
 }
 
 export function createSetupActions(deps: SetupActionsDeps): SetupActions {
   return {
     openSettings: () => {
-      openSettingsTab(deps.app, deps.pluginId, [m.settings_page_database()]);
+      openSettingsTab(deps.app, deps.pluginId, ["settings_page_zotero"]);
     },
     pickFolder: () => {
       new LiteratureFolderModal(deps.app, (folder) => {
-        deps.settings.update({ "note.literature-folder": folder.path });
+        deps.registry.set(setFolderCommand, folder.path);
       }).open();
     },
-    searchLibrary: () => {
-      deps.app.commands.executeCommandById(
-        `${deps.pluginId}:note-quick-switcher`,
-      );
-    },
     locateZotero: () => {
-      void browseForDataDir(deps);
+      deps.registry.set(locateZoteroCommand, undefined);
     },
   };
 }
@@ -55,6 +55,11 @@ class LiteratureFolderModal extends FuzzySuggestModal<TFolder> {
     super(app);
     this.#onChoose = onChoose;
     this.setPlaceholder(m.welcome_pick_folder_placeholder());
+    this.setInstructions([
+      { command: "↑↓", purpose: m.instruction_navigate() },
+      { command: "↵", purpose: m.instruction_select() },
+      { command: "esc", purpose: m.instruction_dismiss() },
+    ]);
   }
 
   override getItems(): TFolder[] {
@@ -67,20 +72,5 @@ class LiteratureFolderModal extends FuzzySuggestModal<TFolder> {
 
   override onChooseItem(folder: TFolder): void {
     this.#onChoose(folder);
-  }
-}
-
-/** Mirror the settings data-dir browse flow: pick a directory, save it as this device's data-dir override. */
-async function browseForDataDir(deps: SetupActionsDeps): Promise<void> {
-  try {
-    const result = await requireDialog().showOpenDialog({
-      title: m.settings_db_data_dir_dialog_title(),
-      defaultPath: deps.zoteroPref.dataDir,
-      properties: ["openDirectory"],
-    });
-    if (result.canceled || result.filePaths.length === 0) return;
-    deps.zoteroPref.setDataDir(result.filePaths[0]!);
-  } catch (error) {
-    logger.error("Failed to open Zotero data directory dialog", { error });
   }
 }

@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
+import { describe, expect } from "vitest";
 
-import { defaults } from "@/services/settings/schema";
+import { forkEach } from "@/lib/effect-stream";
+import { settingsOf } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
 
 import {
@@ -50,7 +53,7 @@ describe("wikilinkCitation", () => {
 
   it("shows a Citation Fragment as its Pandoc citation text", () => {
     expect(citationSource(`${WANG_LINK}#cite:locator=7`, context())).toBe(
-      "[@wang2020, p. 7]",
+      "[@wang2020, {p. 7}]",
     );
   });
 
@@ -67,6 +70,21 @@ describe("wikilinkCitation", () => {
         }),
       ),
     ).toBe("[@xuNoCitekey2019]");
+  });
+
+  it("leaves an unrepresentable filename fallback native", () => {
+    expect(
+      citationSource(
+        "literatures/xu2019",
+        context({
+          literatureNote: () => ({
+            path: "literatures/Xu 2019.md",
+            indexedKey: "1/XU2019",
+            citationKey: null,
+          }),
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("leaves a fragment-carrying link native while Wikilink Citations is off", () => {
@@ -170,122 +188,144 @@ describe("citationOfRun", () => {
       member(WANG_LINK),
     ]);
 
-    expect(citation.source).toBe("[@wang2020, p. 7; @wang2020]");
+    expect(citation.source).toBe("[@wang2020, {p. 7}; @wang2020]");
   });
+
+  it("keeps Author-in-text mode and later items in one Citation", () => {
+    const citation = citationOfRun([
+      member(`${WANG_LINK}#cite:mode=author-in-text&locator=7`),
+      member(WANG_LINK),
+    ]);
+
+    expect(citation.source).toBe("@wang2020 [{p. 7}; @wang2020]");
+  });
+});
+
+/** Lets a Stream consumer take what was just published. */
+const settle = Effect.gen(function* () {
+  for (let turn = 0; turn < 5; turn++) yield* Effect.yieldNow;
+});
+
+/**
+ * A display that follows the real settings, seeded with `overrides` before it
+ * starts, and counts the redraws it asks for until the test Scope closes.
+ */
+const following = Effect.fnUntraced(function* (
+  overrides: Partial<Settings> = {},
+) {
+  const settings = yield* settingsOf({
+    plugin: {
+      loadData: () => Promise.resolve(null),
+      saveData: () => Promise.resolve(),
+    },
+  });
+  yield* settings.update(overrides);
+  const display = new WikilinkDisplaySettings();
+  let redraws = 0;
+  const fiber = yield* forkEach(display.redraws(settings.changes), () => {
+    redraws++;
+  });
+  yield* settle;
+  return {
+    display,
+    redraws: () => redraws,
+    stop: Fiber.interrupt(fiber),
+    update: (next: Partial<Settings>) =>
+      Effect.andThen(settings.update(next), settle),
+  };
 });
 
 describe("WikilinkDisplaySettings", () => {
-  it("seeds from the first snapshot without asking for a redraw", () => {
-    const settings = new SettingsStub({
-      "citation.wikilink-citations": true,
-    });
-    const display = new WikilinkDisplaySettings();
-    let redraws = 0;
+  it.effect("seeds from the first snapshot without asking for a redraw", () =>
+    Effect.gen(function* () {
+      const { display, redraws } = yield* following({
+        "citation.wikilink-citations": true,
+      });
 
-    display.watch(settings, () => redraws++);
+      expect(display.enabled).toBe(true);
+      expect(redraws()).toBe(0);
+    }),
+  );
 
-    expect(display.enabled).toBe(true);
-    expect(redraws).toBe(0);
-  });
+  it.effect(
+    "shows wikilinks only while their source and formatted presentation are on",
+    () =>
+      Effect.gen(function* () {
+        const { display, update } = yield* following({
+          "citation.wikilink-citations": true,
+          "citation.show-formatted": true,
+        });
 
-  it("shows wikilinks only while their source and formatted presentation are on", () => {
-    const settings = new SettingsStub({
-      "citation.wikilink-citations": true,
-      "citation.show-formatted": true,
-    });
-    const display = new WikilinkDisplaySettings();
-    display.watch(settings, () => undefined);
+        yield* update({ "citation.show-formatted": false });
+        expect(display.enabled).toBe(false);
 
-    settings.update({ "citation.show-formatted": false });
-    expect(display.enabled).toBe(false);
+        yield* update({
+          "citation.show-formatted": true,
+          "citation.wikilink-citations": false,
+        });
+        expect(display.enabled).toBe(false);
+      }),
+  );
 
-    settings.update({
-      "citation.show-formatted": true,
-      "citation.wikilink-citations": false,
-    });
-    expect(display.enabled).toBe(false);
-  });
+  it.effect(
+    "asks for a redraw when a later snapshot changes what a link displays",
+    () =>
+      Effect.gen(function* () {
+        const { redraws, update } = yield* following({
+          "citation.wikilink-citations": false,
+        });
 
-  it("asks for a redraw when a later snapshot changes what a link displays", () => {
-    const settings = new SettingsStub({
-      "citation.wikilink-citations": false,
-    });
-    const display = new WikilinkDisplaySettings();
-    let redraws = 0;
-    display.watch(settings, () => redraws++);
+        yield* update({ "citation.wikilink-citations": true });
+        expect(redraws()).toBe(1);
 
-    settings.update({ "citation.wikilink-citations": true });
-    expect(redraws).toBe(1);
+        yield* update({ "citation.show-formatted": false });
+        expect(redraws()).toBe(2);
+      }),
+  );
 
-    settings.update({ "citation.show-formatted": false });
-    expect(redraws).toBe(2);
-  });
+  it.effect("stays quiet for a setting neither surface reads", () =>
+    Effect.gen(function* () {
+      const { redraws, update } = yield* following();
 
-  it("stays quiet for a setting neither surface reads", () => {
-    const settings = new SettingsStub();
-    const display = new WikilinkDisplaySettings();
-    let redraws = 0;
-    display.watch(settings, () => redraws++);
+      yield* update({ "citation.pandoc-citations": false });
+      expect(redraws()).toBe(0);
+    }),
+  );
 
-    settings.update({ "citation.pandoc-citations": false });
-    expect(redraws).toBe(0);
-  });
+  it.effect("takes the click while Citations stay closed as links", () =>
+    Effect.gen(function* () {
+      const { display, redraws, update } = yield* following({
+        "citation.open-as-links": true,
+      });
+      expect(display.clickIntercepted).toBe(false);
 
-  it("takes the click while Citations stay closed as links", () => {
-    const settings = new SettingsStub({ "citation.open-as-links": true });
-    const display = new WikilinkDisplaySettings();
-    let redraws = 0;
-    display.watch(settings, () => redraws++);
-    expect(display.clickIntercepted).toBe(false);
+      yield* update({ "citation.open-as-links": false });
 
-    settings.update({ "citation.open-as-links": false });
+      expect(display.clickIntercepted).toBe(true);
+      expect(redraws()).toBe(1);
+    }),
+  );
 
-    expect(display.clickIntercepted).toBe(true);
-    expect(redraws).toBe(1);
-  });
+  it.effect("reads the click apart from the Hover Action", () =>
+    Effect.gen(function* () {
+      const { display } = yield* following({
+        "citation.hover-action": "off",
+      });
 
-  it("reads the click apart from the Hover Action", () => {
-    const settings = new SettingsStub({ "citation.hover-action": "off" });
-    const display = new WikilinkDisplaySettings();
-    display.watch(settings, () => undefined);
+      expect(display.popoverHover).toBe(false);
+      expect(display.clickIntercepted).toBe(true);
+    }),
+  );
 
-    expect(display.popoverHover).toBe(false);
-    expect(display.clickIntercepted).toBe(true);
-  });
+  it.effect("stops following once its consumer is interrupted", () =>
+    Effect.gen(function* () {
+      const { display, redraws, stop, update } = yield* following();
 
-  it("stops following once unsubscribed", () => {
-    const settings = new SettingsStub();
-    const display = new WikilinkDisplaySettings();
-    let redraws = 0;
+      yield* stop;
+      yield* update({ "citation.wikilink-citations": true });
 
-    display.watch(settings, () => redraws++)();
-    settings.update({ "citation.wikilink-citations": true });
-
-    expect(display.enabled).toBe(false);
-    expect(redraws).toBe(0);
-  });
+      expect(display.enabled).toBe(false);
+      expect(redraws()).toBe(0);
+    }),
+  );
 });
-
-class SettingsStub {
-  current: Readonly<Settings>;
-  readonly #listeners = new Set<
-    (settings: Readonly<Settings> | null) => void
-  >();
-
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
-  }
-
-  subscribe(
-    listener: (settings: Readonly<Settings> | null) => void,
-  ): () => void {
-    this.#listeners.add(listener);
-    listener(this.current);
-    return () => this.#listeners.delete(listener);
-  }
-
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
-    for (const listener of this.#listeners) listener(this.current);
-  }
-}

@@ -1,9 +1,11 @@
-import { defineConfig } from "tsdown";
+import { defineLibrary } from "@zotlit/config/tsdown";
 
-export default defineConfig({
+export default defineLibrary({
   entry: {
     index: "./src/fields.ts",
     csl: "./src/csl.ts",
+    "item-types": "./src/item-types.ts",
+    "field-labels": "./src/field-labels.ts",
   },
   tsconfig: "./tsconfig.lib.json",
   dts: true,

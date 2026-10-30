@@ -74,6 +74,10 @@
 
   /* ===== Radius ===== */
   --radius-*: initial;
+  /* A 2px corner, for a mark small enough that `--radius-s` would round it
+     away: an 8px swatch square under a 4px radius reads as a circle. Obsidian
+     names no radius this small, so it is stated here. */
+  --radius-xs: 2px;
   --radius-sm: var(--radius-s);
   --radius-md: var(--radius-m);
   --radius-lg: var(--radius-l);
@@ -119,6 +123,16 @@
   --ease-out: var(--anim-motion-smooth);
   --ease-in: var(--anim-motion-delay);
   --ease-in-out: var(--anim-motion-smooth);
+
+  /* A row Show in Library brings into view starts in a strong tint of the
+     accent and fades back to its own background. */
+  --animate-row-flash: zt-row-flash 1.6s var(--anim-motion-smooth);
+
+  @keyframes zt-row-flash {
+    from {
+      background-color: hsla(var(--interactive-accent-hsl), 0.35);
+    }
+  }
 }
 
 @import "tailwindcss/utilities.css" layer(utilities) prefix(zt);
@@ -129,10 +143,35 @@
    ul, headings, hr) renders clean and Tailwind owns the box-model. Kept in
    `@layer base` on purpose: `utilities` outranks it (spacing/border utilities
    still apply) and Obsidian's unlayered styles outrank it (native <select> /
-   <button> keep their look). Never touches Obsidian's own DOM, which has no
-   `.zt-root`. The nested @import is inlined + scoped by Tailwind at build time. */
+   <button> keep their look). Native renderer output uses the rollback boundary
+   below. The nested @import is inlined + scoped by Tailwind at build time. */
 @layer base {
   .zt-root {
     @import "tailwindcss/preflight.css";
+  }
+
+  /* MarkdownRenderer output keeps Obsidian's native browser defaults. The
+     surrounding view remains a preflighted plugin surface, and utilities on
+     managed ranges remain active from the higher utilities layer. */
+  .zt-root .zt-native-markdown,
+  .zt-root .zt-native-markdown *,
+  .zt-root .zt-native-markdown::before,
+  .zt-root .zt-native-markdown::after,
+  .zt-root .zt-native-markdown *::before,
+  .zt-root .zt-native-markdown *::after {
+    all: revert-layer;
+  }
+}
+
+/* A scroll container whose content reaches its trailing edge keeps that edge
+   clear of the scrollbar. Off macOS, Obsidian styles a scrollbar that takes
+   room of its own, and `stable` keeps that room whether or not the content
+   overflows, so it never shifts. On macOS the scrollbar is native, and as the
+   system sets it by default an overlay that takes no room and draws over the
+   content, so the container pads its end by Obsidian's scrollbar width. */
+@utility scroll-gutter {
+  scrollbar-gutter: stable;
+  body:not(.styled-scrollbars) & {
+    padding-inline-end: var(--scrollbar-width);
   }
 }

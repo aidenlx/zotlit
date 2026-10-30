@@ -1,11 +1,12 @@
 ---
-title: "Rebuilding ZotLit: the v2 public beta"
-description: "Why ZotLit was rebuilt and what the v2 public beta includes."
+title: "Rebuilding ZotLit, the Zotero plugin for Obsidian: the v2 public beta"
+description: "Why the ZotLit Zotero integration for Obsidian was rebuilt, and how the v2 beta handles literature notes, PDF annotations, and templates."
 date: 2026-07-25
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { ActionLink } from "@/components/action-link";
+import { Callout } from "@/components/callout";
 
 ZotLit v1 had a dependency that broke every time Obsidian updated its runtime. I tried to keep up with patches, but it wasn't sustainable. Replacing that dependency meant rebuilding most of the plugin anyway, so v2 rewrite also simplifies the internals: templates, annotations, how item fields are structured. The public beta is ready to try.
 

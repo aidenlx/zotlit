@@ -1,8 +1,18 @@
+import {
+  itemData,
+  items,
+  itemDataValues,
+  fieldsCombined,
+  deletedItems,
+} from "@drizzle/schema";
+import { eq, sql } from "drizzle-orm";
+
 import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";
 
-import { groupIDForLibrary } from "./_groups";
 import { defineQuery } from "./_shared";
+import type { QueryRow } from "./_shared";
+import { groupIDForLibrary } from "./libraries";
 
 /** Zotero's native citation-key field name in Zotero's `fieldsCombined`. */
 const CITEKEY_FIELD = "citationKey";
@@ -110,6 +120,41 @@ const citekeysByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
+const citekeyWindowQuery = defineQuery<{
+  afterItemID: number;
+  throughItemID: number;
+}>()((db, { placeholder }) =>
+  db
+    .select({
+      itemID: sql<number>`${itemData.itemID}`,
+      libraryID: items.libraryID,
+      key: items.key,
+      citekey: sql<string>`${itemDataValues.value}`,
+    })
+    .from(itemData)
+    .innerJoin(items, eq(items.itemID, itemData.itemID))
+    .innerJoin(itemDataValues, eq(itemDataValues.valueID, itemData.valueID))
+    // Unary + keeps SQLite on the itemID range index and avoids a page sort.
+    .where(sql`
+      ${itemData.itemID} > ${placeholder("afterItemID")}
+      and ${itemData.itemID} <= ${placeholder("throughItemID")}
+      and ${itemDataValues.value} <> ''
+      and not exists (select 1 from ${deletedItems} where ${deletedItems.itemID} = ${itemData.itemID})
+      and +${itemData.fieldID} = (select ${fieldsCombined.fieldID} from ${fieldsCombined} where ${fieldsCombined.fieldName} = ${CITEKEY_FIELD})
+    `)
+    .orderBy(itemData.itemID),
+);
+
+export type CitekeyRow = QueryRow<typeof citekeyWindowQuery>;
+
+/** Every live Item with a native citation key, `afterItemID < itemID <= throughItemID`, in itemID order. */
+export function getCitekeyWindow(
+  db: NodeDatabaseClient,
+  window: { afterItemID: number; throughItemID: number },
+): CitekeyRow[] {
+  return citekeyWindowQuery.prepared(db).all(window);
+}
+
 /**
  * Bulk-read every live item of `libraryID` that carries a native citation
  * key — the one read the Citation Index's resolution snapshot rebuilds from.
@@ -118,15 +163,26 @@ export function getCitekeysByLibrary(
   db: NodeDatabaseClient,
   libraryID: number,
 ): LibraryCitekey[] {
-  const groupID = groupIDForLibrary(db, libraryID);
-  const rows: LibraryCitekey[] = [];
-  for (const row of citekeysByLibraryQuery.prepared(db).all({ libraryID })) {
+  return toLibraryCitekeys(
+    citekeysByLibraryQuery.prepared(db).all({ libraryID }),
+    libraryID,
+    groupIDForLibrary(db, libraryID),
+  );
+}
+
+function toLibraryCitekeys(
+  rows: readonly QueryRow<typeof citekeysByLibraryQuery>[],
+  libraryID: number,
+  groupID: number | null,
+): LibraryCitekey[] {
+  const citekeys: LibraryCitekey[] = [];
+  for (const row of rows) {
     const citekey = row.itemDataValue?.value;
     if (!citekey) continue;
     const key = row.item?.key;
     if (!key) continue;
     if (row.itemID == null) continue;
-    rows.push({
+    citekeys.push({
       itemID: row.itemID,
       libraryID,
       key,
@@ -134,5 +190,16 @@ export function getCitekeysByLibrary(
       citekey,
     });
   }
-  return rows;
+  return citekeys;
+}
+
+const lastItemIDQuery = defineQuery<void>()((db) =>
+  db
+    .select({ itemID: sql<number>`coalesce(max(${items.itemID}), 0)` })
+    .from(items),
+);
+
+/** The largest itemID in the database, or 0 when it has no Items. */
+export function getLastItemID(db: NodeDatabaseClient): number {
+  return lastItemIDQuery.prepared(db).all()[0]!.itemID;
 }

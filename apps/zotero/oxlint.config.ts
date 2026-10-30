@@ -1,5 +1,6 @@
 import { defineConfig } from "oxlint";
 
+import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig from "@zotlit/config/oxlint";
 
 export default defineConfig({
@@ -16,6 +17,18 @@ export default defineConfig({
     ],
   },
   overrides: [
+    ...testBaselineOverrides("apps/zotero"),
+    {
+      // Zotero's Firefox 140 ESR ships no Temporal (policies/dates.md); the
+      // Node scripts have it.
+      files: ["src/**"],
+      rules: {
+        "effecttsgo/global-date": "off",
+        "effecttsgo/global-date-in-effect": "off",
+        "no-restricted-globals": "off",
+        "typescript/no-restricted-types": "off",
+      },
+    },
     {
       files: ["src/prefs/index.ts"],
       rules: {

@@ -7,41 +7,55 @@
 // app is shut. While it runs, the registry is reachable on the `vault-open` /
 // `vault-remove` / `vault-list` IPC channels, which the Obsidian CLI `eval`
 // command reaches from inside a vault window. This drives whichever route
-// applies, so cleanup never has to wake a shut app.
+// applies, so cleanup never has to wake a shut app. Removing the vault whose
+// window is the only one open closes that window first, then unregisters
+// offline if Obsidian quit with it, else through a registered vault the host
+// check opens; with none to open, it names the command to run after quitting.
 //
 // Creating needs Obsidian 1.13.4+ with "Command line interface" enabled
-// (Settings → General) and one open vault window to host the eval calls.
+// (Settings → General) and one registered vault to host the eval calls: the
+// focused vault window, else a registered vault the host check opens, Obsidian's
+// sandbox vault first.
 
+import type { VaultEntry } from "#obsidian-vault-registry";
 import { execFile } from "node:child_process";
-import {
-  access,
-  cp,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { access, cp, mkdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
+import * as v from "valibot";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
-import { getDevVaultDir, getFixtureVaultDir } from "#dev-vault";
+import { frontmatterFieldSchema } from "@zotlit/templates/constants";
+import type { FrontmatterField } from "@zotlit/templates/constants";
+
+import { holdDesktopMutex } from "#desktop-slot";
+import {
+  DEV_VAULT_CASE_ENV,
+  getDevVaultDir,
+  getFixtureVaultDir,
+} from "#dev-vault";
 import {
   buildFixture,
   DEFAULT_SCOPE_CASE,
+  DEFAULT_VAULT_CASE,
+  FIXTURE_LOCAL_API_SERVER_ID,
+  FIXTURE_LOCAL_API_WRITE_KEY,
   getFixtureLayout,
   getFixtureRoot,
   SCOPE_CASES,
+  VAULT_CASES,
 } from "#fixture";
+import { createObsidianCall, isObsidianUnreachable } from "#obsidian-cli";
 import {
   createObsidianHostReadiness,
   OBSIDIAN_HOST_TIMEOUT_MS,
   OBSIDIAN_HOST_VAULT_ENV,
+  OBSIDIAN_VAULT_OPEN_TIMEOUT_MS,
 } from "#obsidian-host-readiness";
+import { findVaultId, unregisterVaultFile } from "#obsidian-vault-registry";
 import { getWorkspaceRoot } from "#package-roots";
 
 const execFileAsync = promisify(execFile);
@@ -49,15 +63,14 @@ const execFileAsync = promisify(execFile);
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 
 const defaultVault = getDevVaultDir(workspaceRoot);
-const fixtureLayout = getFixtureLayout(getFixtureRoot(workspaceRoot));
-const fixtureVault = getFixtureVaultDir(workspaceRoot);
+// `--fixture-root` moves both to another Fixture, before any command runs.
+let fixtureLayout = getFixtureLayout(getFixtureRoot(workspaceRoot));
+let fixtureVault = getFixtureVaultDir(workspaceRoot);
+// `--inactive` opens vault windows behind the app that has the OS focus.
+let inactive = false;
 const pluginId = "zotlit";
-
-interface VaultEntry {
-  path: string;
-  ts: number;
-  open?: boolean;
-}
+/** The folder in Obsidian's user data that holds its sandbox vault. */
+const sandboxFolder = "Obsidian Sandbox";
 
 /** Where Obsidian keeps `obsidian.json`, per-vault state, and Partitions. */
 function obsidianUserData(): string {
@@ -81,13 +94,20 @@ function obsidianUserData(): string {
   );
 }
 
-/** The Obsidian CLI always exits 0 — failures come back only as output text. */
-async function cli(args: string[], signal?: AbortSignal): Promise<string> {
-  const result = await execFileAsync("obsidian", args, {
-    signal,
-    windowsHide: true,
-  });
-  return `${result.stdout}${result.stderr}`.trim();
+/**
+ * The Obsidian CLI always exits 0 — failures come back only as output text.
+ * Bounded, because a vault window that has gone while the registry still calls
+ * it open never answers at all; see `#obsidian-cli`.
+ */
+const cli = createObsidianCall();
+
+/**
+ * Swallow a probe's failure so a retry loop can poll, but never the one that
+ * says the window is gone — no number of retries brings that window back.
+ */
+function rethrowUnreachable(error: unknown): undefined {
+  if (isObsidianUnreachable(error)) throw error;
+  return undefined;
 }
 
 async function readVaultRegistry(): Promise<Record<string, VaultEntry>> {
@@ -104,15 +124,18 @@ async function readVaultRegistry(): Promise<Record<string, VaultEntry>> {
   return config.vaults ?? {};
 }
 
-const checkObsidianHost = createObsidianHostReadiness({
-  pathExists: (path) =>
-    access(path).then(
-      () => true,
-      () => false,
-    ),
-  readRegistry: readVaultRegistry,
-  runObsidian: (args, signal) => cli(args, signal),
-});
+const checkObsidianHost = createObsidianHostReadiness(
+  {
+    pathExists: (path) =>
+      access(path).then(
+        () => true,
+        () => false,
+      ),
+    readRegistry: readVaultRegistry,
+    runObsidian: (args, signal) => cli(args, { signal }),
+  },
+  { sandboxVaultPath: join(obsidianUserData(), sandboxFolder) },
+);
 
 /** Run JavaScript in a vault window. Without `target`, the focused one answers. */
 async function obEval(code: string, target?: string): Promise<string> {
@@ -128,10 +151,49 @@ async function obEval(code: string, target?: string): Promise<string> {
   return text.slice(3);
 }
 
+/**
+ * Code that opens `abs` through `vault-open` in a host window. Obsidian's main
+ * process creates the vault window during that call and later calls its `show`,
+ * which gives it the OS focus. With `--inactive`, a `browser-window-created`
+ * listener in the main process, there only for the call, makes that window's
+ * `show` call `showInactive` and its `focus` do nothing. `showInactive` still
+ * puts the window in front of every other app's windows on macOS, so `show`
+ * then calls `blur`, which there orders the window behind them.
+ *
+ * The listener also turns the window's background throttling off before its
+ * page loads. With throttling on, the renderer of a window that is not in
+ * front can drop to macOS background priority under load and run about ten
+ * times slower; the vault's startup, Restricted Mode exit, and reload then
+ * pass the 30-second CLI bound, and the call reports a live window as
+ * unreachable (#1868). With throttling off, the renderer stays at normal
+ * priority. The setting lasts through the window's reloads.
+ */
+function vaultOpenCode(abs: string): string {
+  const open = `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`;
+  if (!inactive) return open;
+  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.webContents.setBackgroundThrottling(false);win.show=()=>{win.showInactive();if(process.platform==="darwin")win.blur();};win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
+}
+
+/**
+ * Run `call`, which makes `vault-open` or `vault-remove` calls, under a short
+ * machine-wide mutex. Runs in other worktrees share the app's vault registry,
+ * and the `--inactive` window-created hook would catch another run's window.
+ */
+async function withVaultRegistry<T>(call: () => Promise<T>): Promise<T> {
+  using _registry = await holdDesktopMutex("vault-registry.lock");
+  return await call();
+}
+
+/** Any reply means the app runs, including "Vault not found." with no vault window. */
 function isObsidianRunning(): Promise<boolean> {
-  return obEval("true").then(
-    (answer) => answer === "true",
-    () => false,
+  return cli(["eval", "code=true"]).then(
+    () => true,
+    (error: unknown) => {
+      // An unreachable window is not a stopped app: taking the offline route
+      // here would rewrite the registry under a running main process.
+      rethrowUnreachable(error);
+      return false;
+    },
   );
 }
 
@@ -141,13 +203,6 @@ async function vaultList(host?: string): Promise<Record<string, VaultEntry>> {
     host,
   );
   return JSON.parse(raw) as Record<string, VaultEntry>;
-}
-
-function findVaultId(
-  vaults: Record<string, VaultEntry>,
-  abs: string,
-): string | undefined {
-  return Object.keys(vaults).find((id) => resolve(vaults[id]!.path) === abs);
 }
 
 async function waitFor(
@@ -161,12 +216,24 @@ async function waitFor(
   return false;
 }
 
-async function resolveHost(): Promise<string> {
-  return (await checkObsidianHost()).id;
+async function resolveHost(avoidPath?: string): Promise<string> {
+  return (await checkObsidianHost({ avoidPath })).id;
 }
 
-/** Pick a live window other than the vault that an online removal targets. */
-async function resolveRemovalHost(exclude?: string): Promise<string> {
+/**
+ * Pick a live window other than the vault that an online removal targets.
+ * With `exclude`, resolve to `undefined` when that vault's window is the only
+ * one open.
+ */
+async function resolveRemovalHost(abs: string): Promise<string>;
+async function resolveRemovalHost(
+  abs: string,
+  exclude: string,
+): Promise<string | undefined>;
+async function resolveRemovalHost(
+  abs: string,
+  exclude?: string,
+): Promise<string | undefined> {
   const preferred = process.env[OBSIDIAN_HOST_VAULT_ENV];
   if (preferred) {
     const id = await obEval("app.appId", preferred);
@@ -178,29 +245,20 @@ async function resolveRemovalHost(exclude?: string): Promise<string> {
     return id;
   }
 
-  const focused = await obEval("app.appId").catch(() => "");
-  if (!focused) {
-    throw new Error(
-      `no Obsidian window answered. Open a vault, or set ${OBSIDIAN_HOST_VAULT_ENV}.`,
-    );
-  }
+  // With no vault window open, the host check opens a registered vault other
+  // than the one being removed.
+  const focused = await resolveHost(abs);
   if (focused !== exclude) return focused;
 
   const vaults = await vaultList(focused);
-  const other = Object.keys(vaults).find(
-    (id) => id !== exclude && vaults[id]!.open,
-  );
-  if (!other) {
-    throw new Error(
-      `no other open vault can host the removal. Open one, or set ${OBSIDIAN_HOST_VAULT_ENV}.`,
-    );
-  }
-  return other;
+  return Object.keys(vaults).find((id) => id !== exclude && vaults[id]!.open);
 }
 
 interface SeedOptions {
   purge?: boolean;
   scopeCase?: string;
+  /** Vault Case to seed; each case has its own Development Vault folder. */
+  vaultCase?: string;
   /**
    * Live Updates port the generated seed binds, in the vault settings and in
    * the Companion's notify URL alike. Absent, both keep their shipped defaults.
@@ -208,6 +266,12 @@ interface SeedOptions {
   liveUpdatePort?: number;
   /** HTTP server port written into the generated Zotero profile. */
   zoteroHttpPort?: number;
+  /** Open Zotero's Local API in the generated profile. */
+  localApi?: boolean;
+  /** Seed the matching remembered write grant in Zotero and Obsidian. */
+  grantLocalApiWrites?: boolean;
+  /** The upgrader case's `note.frontmatter-fields`, in place of its built-in list. */
+  upgraderFields?: readonly FrontmatterField[];
 }
 
 async function create(
@@ -215,8 +279,12 @@ async function create(
   {
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
+    grantLocalApiWrites,
+    upgraderFields,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -240,8 +308,12 @@ async function create(
 
   await rebuildFixtureVault(abs, {
     scopeCase,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
+    grantLocalApiWrites,
+    upgraderFields,
   });
   if (purge) {
     const exists = await access(abs).then(
@@ -269,9 +341,8 @@ async function create(
 
   // `vault-open` registers the path and opens its window. Pass create=false
   // because the folder is already there; create=true rejects an existing one.
-  const opened = await obEval(
-    `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`,
-    host,
+  const opened = await withVaultRegistry(() =>
+    obEval(vaultOpenCode(abs), host),
   );
   if (opened !== "true") {
     throw new Error(`vault-open refused: ${opened || "unknown error"}`);
@@ -309,32 +380,61 @@ async function create(
   // A fresh vault starts in Restricted Mode, which makes it ignore the seeded
   // `community-plugins.json`. Trusting the vault reloads the window, and the
   // plugin loads from that file — no separate `plugin:enable` needed.
+  const trustedPage = await obEval("String(performance.timeOrigin)", id);
   const trusted = await cli([`vault=${id}`, "plugins:restrict", "off"]);
   if (!/disabled|^off$/i.test(trusted)) {
     throw new Error(`could not leave Restricted Mode in ${id}: ${trusted}`);
   }
+  // Obsidian loads the plugin in the old page, answers, and reloads the window
+  // 10 ms later. A call that reaches the reloading window runs before its
+  // `eval` command is registered and answers `Command "eval" not found`, so
+  // every check below waits for the new page.
+  const reloads = /reloading/i.test(trusted);
 
   // Confirm the plugin object exists — `enabledPlugins` only mirrors
   // `community-plugins.json` and says nothing about what actually loaded.
+  let reloaded = !reloads;
   const loaded = await waitFor(async () => {
     const answer = await obEval(
-      `String(${JSON.stringify(pluginId)} in app.plugins.plugins)`,
+      `JSON.stringify([String(performance.timeOrigin),${JSON.stringify(pluginId)} in app.plugins.plugins])`,
       id,
-    ).catch(() => "");
-    return answer === "true";
+    ).catch(rethrowUnreachable);
+    if (!answer) return false;
+    const [page, present] = JSON.parse(answer) as [string, boolean];
+    reloaded ||= page !== trustedPage;
+    return reloaded && present;
   });
+  if (!reloaded) {
+    throw new Error(
+      `vault ${id} left Restricted Mode but its window never reloaded`,
+    );
+  }
   if (!loaded) {
     throw new Error(
       `${pluginId} did not load in ${id}. Run 'pnpm --filter @zotlit/obsidian build:dev' and create again.`,
     );
   }
   await linkFixture(id);
+  if (localApi) {
+    await setFixtureWriteAuthorization(id, grantLocalApiWrites ?? true);
+  }
 }
 
-/** Release Windows file handles while the generated Fixture is replaced. */
-async function suspendLoadedPlugin(abs: string): Promise<AsyncDisposableStack> {
+/**
+ * Unload the plugin while the generated Fixture is replaced. Windows needs this
+ * on every sync, to release its file handles. A purge needs it on every
+ * platform, so the loaded plugin writes none of its vault-scoped local storage
+ * back after the purge clears it.
+ */
+async function suspendLoadedPlugin(
+  abs: string,
+  { always = false }: { always?: boolean } = {},
+): Promise<AsyncDisposableStack> {
   await using suspension = new AsyncDisposableStack();
-  if (process.platform !== "win32" || !(await isObsidianRunning())) {
+  if (
+    (!always && process.platform !== "win32") ||
+    !(await isObsidianRunning())
+  ) {
     return suspension.move();
   }
 
@@ -346,7 +446,7 @@ async function suspendLoadedPlugin(abs: string): Promise<AsyncDisposableStack> {
   const loaded = await obEval(
     `String(${JSON.stringify(pluginId)} in app.plugins.plugins)`,
     id,
-  ).catch(() => "false");
+  ).catch(rethrowUnreachable);
   if (loaded !== "true") return suspension.move();
 
   const disabled = await cli([
@@ -379,30 +479,48 @@ async function sync(
   {
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
+    grantLocalApiWrites,
+    upgraderFields,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
-  await resolveHost();
+  const host = await resolveHost();
 
   await access(abs).catch(() => {
     throw new Error(`no vault at ${abs}. Run 'create' first.`);
   });
 
   {
-    await using _pluginSuspension = await suspendLoadedPlugin(abs);
+    await using _pluginSuspension = await suspendLoadedPlugin(abs, {
+      always: purge,
+    });
     // Build before a purge so the generated seed captures the current dev bundle.
     await rebuildFixtureVault(abs, {
       scopeCase,
+      vaultCase,
       liveUpdatePort,
       zoteroHttpPort,
+      localApi,
+      grantLocalApiWrites,
+      upgraderFields,
     });
 
     // `--purge` deletes the folder first, so renamed or removed Fixture files
     // drop out too, not just the ones the Fixture Vault still has.
     if (purge) {
+      // Every ZotLit key and database goes with the folder, so a purged vault
+      // holds no Device Overrides, consent, view state, or stored excerpt
+      // images. Obsidian's own keys stay, including the trust marker that
+      // keeps Restricted Mode off.
+      const registered = findVaultId(await vaultList(host), abs);
       await purgeVault(abs);
+      if (registered) {
+        await clearVaultStorage(registered, host, { keyPrefix: pluginId });
+      }
       await mkdir(abs, { recursive: true });
     }
 
@@ -418,28 +536,53 @@ async function rebuildFixtureVault(
   target: string,
   {
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase = DEFAULT_VAULT_CASE,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
+    grantLocalApiWrites,
+    upgraderFields,
   }: SeedOptions = {},
 ): Promise<void> {
   if (resolve(target) === resolve(fixtureVault)) return;
 
-  const pluginBundleDir = join(
+  // The dev build's output is the source: `build:dev` declares `dist-dev` as
+  // its turbo output, so it holds the current bundle on a fresh run and on a
+  // cache hit alike, whatever `ZT_VAULT_CASE` the build saw. Reading the
+  // target's own bundle first would recycle it forever — the seed would carry
+  // the vault's old bundle, and `--purge` would copy that same bundle straight
+  // back, so a new build could never reach the vault.
+  const distDev = join(workspaceRoot, "apps", "obsidian", "dist-dev");
+  const hasDistDev = await access(join(distDev, "main.js")).then(
+    () => true,
+    () => false,
+  );
+  // The target's own bundle stands in when this script runs on its own, with
+  // no dev build in the worktree.
+  const vaultBundleDir = join(
     resolve(target),
     ".obsidian",
     "plugins",
     pluginId,
   );
-  const hasBundle = await access(join(pluginBundleDir, "main.js")).then(
+  const hasVaultBundle = await access(join(vaultBundleDir, "main.js")).then(
     () => true,
     () => false,
   );
   await buildFixture(fixtureLayout, {
     scopeCase,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
+    grantLocalApiWrites,
+    upgraderFields,
     linkedAttachmentVaultDir: resolve(target),
-    pluginBundleDir: hasBundle ? pluginBundleDir : undefined,
+    pluginBundleDir: hasDistDev
+      ? distDev
+      : hasVaultBundle
+        ? vaultBundleDir
+        : undefined,
   });
 }
 
@@ -449,25 +592,41 @@ async function open(
   {
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
+    grantLocalApiWrites,
+    upgraderFields,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
   const host = await resolveHost();
   const registered = findVaultId(await vaultList(host), abs);
 
+  const seed = {
+    purge,
+    scopeCase,
+    vaultCase,
+    liveUpdatePort,
+    zoteroHttpPort,
+    localApi,
+    grantLocalApiWrites,
+    upgraderFields,
+  };
   if (!registered) {
-    await create(abs, { purge, scopeCase, liveUpdatePort, zoteroHttpPort });
+    await create(abs, seed);
     return;
   }
 
-  await sync(abs, { purge, scopeCase, liveUpdatePort, zoteroHttpPort });
-  if ((await vaultList(host))[registered]?.open !== true) {
-    const opened = await obEval(
-      `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`,
-      host,
-    );
+  await sync(abs, seed);
+  // Undefined when the window is already open.
+  const opened = await withVaultRegistry(async () =>
+    (await vaultList(host))[registered]?.open === true
+      ? undefined
+      : await obEval(vaultOpenCode(abs), host),
+  );
+  if (opened !== undefined) {
     if (opened !== "true") {
       throw new Error(`vault-open refused: ${opened || "unknown error"}`);
     }
@@ -481,11 +640,20 @@ async function open(
     }
   }
 
-  const reloaded = await cli([
-    `vault=${registered}`,
-    "plugin:reload",
-    `id=${pluginId}`,
-  ]);
+  // Right after a vault window opens (or resumes), the CLI's own command
+  // registry can lag a beat behind `vault-list`'s `open` flag, so the first
+  // `plugin:reload` sometimes answers "not found" even though the plugin is
+  // enabled. Retry a few times before treating it as a real failure.
+  let reloaded = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    reloaded = await cli([
+      `vault=${registered}`,
+      "plugin:reload",
+      `id=${pluginId}`,
+    ]);
+    if (reloaded.toLowerCase().startsWith("reloaded:")) break;
+    await delay(250);
+  }
   if (!reloaded.toLowerCase().startsWith("reloaded:")) {
     throw new Error(`could not reload ZotLit in ${registered}: ${reloaded}`);
   }
@@ -494,13 +662,16 @@ async function open(
     const answer = await obEval(
       `String(${JSON.stringify(pluginId)} in app.plugins.plugins)`,
       registered,
-    ).catch(() => "");
+    ).catch(rethrowUnreachable);
     return answer === "true";
   });
   if (!loaded) {
     throw new Error(`ZotLit did not load in ${registered}`);
   }
   await linkFixture(registered);
+  if (localApi) {
+    await setFixtureWriteAuthorization(registered, grantLocalApiWrites ?? true);
+  }
 
   console.log(registered);
   console.error(`opened vault ${registered} at ${abs}`);
@@ -518,9 +689,9 @@ async function linkFixture(vaultId: string): Promise<void> {
   const dataDir = fixtureLayout.dataDir;
   const configured = await waitFor(async () => {
     const answer = await obEval(
-      `{const pref=app.plugins.plugins.${pluginId}.services.zoteroPref;pref.setProfileDir(${JSON.stringify(profileDir)});pref.setDataDir(${JSON.stringify(dataDir)});"configured"}`,
+      `{const services=app.plugins.plugins.${pluginId}.services;const pref=services.zoteroPref;services.bridge.runSync(pref.setProfileDir(${JSON.stringify(profileDir)}));services.bridge.runSync(pref.setDataDir(${JSON.stringify(dataDir)}));"configured"}`,
       vaultId,
-    ).catch(() => "");
+    ).catch(rethrowUnreachable);
     return answer === "configured";
   });
   if (!configured) {
@@ -528,7 +699,7 @@ async function linkFixture(vaultId: string): Promise<void> {
   }
 
   const resolved = await waitFor(async () => {
-    const report = await readFixtureLink(vaultId).catch(() => undefined);
+    const report = await readFixtureLink(vaultId).catch(rethrowUnreachable);
     return (
       report?.profileDir === profileDir && report.databasePath === databasePath
     );
@@ -541,9 +712,9 @@ async function linkFixture(vaultId: string): Promise<void> {
 
   const refreshed = await waitFor(async () => {
     const raw = await obEval(
-      `(async()=>{const services=app.plugins.plugins.${pluginId}.services;await services.db.refresh();return JSON.stringify({profileDir:services.zoteroPref.resolvedProfileDir,databasePath:services.zoteroPref.databasePath,dbState:services.db.state})})()`,
+      `(async()=>{const services=app.plugins.plugins.${pluginId}.services;await services.bridge.runPromise(services.zoteroReads.refresh).catch(()=>{});return JSON.stringify({profileDir:services.bridge.runSync(services.zoteroPref.current).resolvedProfileDir,databasePath:services.bridge.runSync(services.zoteroPref.current).databasePath,dbState:services.bridge.runSync(services.zoteroReads.current).state})})()`,
       vaultId,
-    ).catch(() => "");
+    ).catch(rethrowUnreachable);
     if (!raw) return false;
     const report = JSON.parse(raw) as FixtureLinkReport;
     return (
@@ -557,9 +728,28 @@ async function linkFixture(vaultId: string): Promise<void> {
   }
 }
 
+/** Write or invalidate the Development Vault's half of the Fixture grant. */
+async function setFixtureWriteAuthorization(
+  vaultId: string,
+  grant: boolean,
+): Promise<void> {
+  const stored = JSON.stringify({
+    version: 1,
+    serverID: FIXTURE_LOCAL_API_SERVER_ID,
+    ...(grant ? { key: FIXTURE_LOCAL_API_WRITE_KEY } : {}),
+  });
+  const answer = await obEval(
+    `{app.secretStorage.setSecret("zotlit-zotero-write-authorization",${JSON.stringify(stored)});"configured"}`,
+    vaultId,
+  ).catch(rethrowUnreachable);
+  if (answer !== "configured") {
+    throw new Error(`could not configure Zotero write access in ${vaultId}`);
+  }
+}
+
 async function readFixtureLink(vaultId: string): Promise<FixtureLinkReport> {
   const raw = await obEval(
-    `{const services=app.plugins.plugins.${pluginId}.services;JSON.stringify({profileDir:services.zoteroPref.resolvedProfileDir,databasePath:services.zoteroPref.databasePath,dbState:services.db.state})}`,
+    `{const services=app.plugins.plugins.${pluginId}.services;JSON.stringify({profileDir:services.bridge.runSync(services.zoteroPref.current).resolvedProfileDir,databasePath:services.bridge.runSync(services.zoteroPref.current).databasePath,dbState:services.bridge.runSync(services.zoteroReads.current).state})}`,
     vaultId,
   );
   return JSON.parse(raw) as FixtureLinkReport;
@@ -567,86 +757,132 @@ async function readFixtureLink(vaultId: string): Promise<FixtureLinkReport> {
 
 /**
  * Unregister without a running app, by editing the registry file directly.
- * Safe only while Obsidian is shut: a running main process holds the registry
- * in memory and would overwrite the file on its next save. The shared-origin
- * localStorage and IndexedDB keys need a live window, so they stay behind —
- * a few stale LevelDB keys that Obsidian ignores.
+ * The shared-origin localStorage and IndexedDB keys need a live window, so they
+ * stay behind — a few stale LevelDB keys that Obsidian ignores.
  */
-async function removeOffline(abs: string): Promise<string | undefined> {
-  const userData = obsidianUserData();
-  const configPath = join(userData, "obsidian.json");
+function removeOffline(abs: string): Promise<string | undefined> {
+  return unregisterVaultFile(obsidianUserData(), abs);
+}
 
-  // No registry file means nothing was ever registered.
-  const raw = await readFile(configPath, "utf-8").catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
-    },
+/**
+ * Delete vault-scoped local storage and IndexedDB databases through a live
+ * window. Obsidian and ZotLit keep both in the shared `app://obsidian.md`
+ * origin as `<vaultId>-<name>` — ZotLit's device-local excerpt store included —
+ * outside the vault folder, so they outlive a folder purge and an unregister
+ * alike. A `keyPrefix` narrows the sweep to one owner's keys and databases; the
+ * empty default takes every one the vault holds.
+ */
+async function clearVaultStorage(
+  vaultId: string,
+  host: string,
+  { keyPrefix = "" }: { keyPrefix?: string } = {},
+): Promise<void> {
+  const prefix = `${vaultId}-${keyPrefix}`;
+  // A deletion that an open connection blocks still completes once that
+  // connection closes, so `blocked` settles the wait rather than hanging it.
+  const cleared = await obEval(
+    `(async function(){var p=${JSON.stringify(prefix)};` +
+      `Object.keys(localStorage).filter(function(k){return k.indexOf(p)===0})` +
+      `.forEach(function(k){localStorage.removeItem(k)});` +
+      `var databases=await indexedDB.databases();` +
+      `await Promise.all(databases.filter(function(d){return d.name&&d.name.indexOf(p)===0}).map(function(d){` +
+      `return new Promise(function(resolve,reject){var r=indexedDB.deleteDatabase(d.name);` +
+      `r.onsuccess=r.onblocked=function(){resolve()};r.onerror=function(){reject(r.error)}})}));` +
+      `return 'ok'})()`,
+    host,
   );
-  if (raw === undefined) return undefined;
+  if (cleared !== "ok") {
+    throw new Error(`could not clear local storage for vault ${vaultId}`);
+  }
+}
 
-  let config: { vaults?: Record<string, VaultEntry> };
+/**
+ * Close the window of vault `id` and wait until `closed` holds. ZotLit is
+ * disabled first, so it releases its file handles before the window goes.
+ */
+async function closeVaultWindow(
+  id: string,
+  closed: () => Promise<boolean>,
+): Promise<void> {
+  await obEval(
+    `(async function(){await app.plugins.disablePlugin(${JSON.stringify(pluginId)});await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve)})});return 'ready'})()`,
+    id,
+  ).catch(() => undefined);
+  await obEval(
+    "app.workspace.rootSplit.containerEl.ownerDocument.defaultView.close()",
+    id,
+  ).catch(() => undefined);
+  await waitFor(closed);
+}
+
+/** Unregister the closed vault `id` through the live window `host`. */
+async function unregisterThrough(
+  host: string,
+  abs: string,
+  id: string,
+): Promise<void> {
+  // localStorage and IndexedDB live in the shared `app://obsidian.md` origin,
+  // so a surviving window clears what `vault-remove` leaves behind.
+  await clearVaultStorage(id, host).catch(() => undefined);
+  await obEval(
+    `localStorage.removeItem('enable-plugin-'+${JSON.stringify(id)});'ok'`,
+    host,
+  ).catch(() => undefined);
+
+  const removed = await withVaultRegistry(() =>
+    obEval(
+      `require('electron').ipcRenderer.sendSync('vault-remove',${JSON.stringify(abs)})`,
+      host,
+    ),
+  );
+  if (removed !== "true") {
+    throw new Error(`vault-remove refused for ${abs} (window still open?)`);
+  }
+}
+
+/**
+ * Remove vault `id` when its window is the only one open. Close that window,
+ * then unregister offline when Obsidian quit with it, or else through a
+ * registered vault the host check opens. With no other vault to open, the
+ * entry stays until Obsidian quits, and the error names the offline command.
+ */
+async function removeFromLastWindow(abs: string, id: string): Promise<string> {
+  await closeVaultWindow(id, async () => {
+    const reply = await cli(["eval", "code=app.appId"]).catch(() => undefined);
+    return reply !== `=> ${id}`;
+  });
+  if (!(await isObsidianRunning())) return (await removeOffline(abs)) ?? id;
+
+  let host: string;
   try {
-    config = JSON.parse(raw) as typeof config;
-  } catch {
+    host = await resolveHost(abs);
+  } catch (error) {
     throw new Error(
-      `${configPath} holds invalid JSON — refusing to rewrite it`,
+      `Obsidian has no vault other than ${abs} to host its removal, so the vault stays registered. Quit Obsidian, then run:\n  node packages/scripts/scripts/obsidian-vault.ts remove ${abs}`,
+      { cause: error },
     );
   }
-
-  const vaults = config.vaults ?? {};
-  const id = findVaultId(vaults, abs);
-  if (!id) return undefined;
-
-  delete vaults[id];
-  config.vaults = vaults;
-  // Write through a temp file, so an interrupted run cannot truncate the
-  // registry and cost every other vault its entry.
-  const staging = `${configPath}.zt-tmp`;
-  await writeFile(staging, JSON.stringify(config));
-  await rename(staging, configPath);
-
-  await rm(join(userData, `${id}.json`), { force: true });
-  await rm(join(userData, "Partitions", `vault-${id}`), {
-    recursive: true,
-    force: true,
-  });
+  await unregisterThrough(host, abs, id);
   return id;
 }
 
 async function removeOnline(abs: string): Promise<string | undefined> {
-  let host = await resolveRemovalHost();
+  let host = await resolveRemovalHost(abs);
   const id = findVaultId(await vaultList(host), abs);
+  if (!id) return undefined;
 
-  if (id) {
-    if (id === host) host = await resolveRemovalHost(id);
-
-    // `vault-remove` refuses while the vault window is open. Close it only when
-    // it is open, because targeting a closed vault would re-open it.
-    if ((await vaultList(host))[id]?.open) {
-      await obEval("window.close()", id).catch(() => undefined);
-      await waitFor(async () => !(await vaultList(host))[id]?.open);
-    }
-
-    // localStorage and IndexedDB live in the shared `app://obsidian.md` origin,
-    // so a surviving window clears the keys that `vault-remove` leaves behind.
-    await obEval(
-      `(function(){var id=${JSON.stringify(id)};` +
-        `Object.keys(localStorage).filter(function(k){return k.indexOf(id+'-')===0||k==='enable-plugin-'+id})` +
-        `.forEach(function(k){localStorage.removeItem(k)});` +
-        `['cache','webview','backup','sync'].forEach(function(n){indexedDB.deleteDatabase(id+'-'+n)});` +
-        `return 'ok'})()`,
-      host,
-    ).catch(() => undefined);
-
-    const removed = await obEval(
-      `require('electron').ipcRenderer.sendSync('vault-remove',${JSON.stringify(abs)})`,
-      host,
-    );
-    if (removed !== "true") {
-      throw new Error(`vault-remove refused for ${abs} (window still open?)`);
-    }
+  if (id === host) {
+    const other = await resolveRemovalHost(abs, id);
+    if (other === undefined) return removeFromLastWindow(abs, id);
+    host = other;
   }
+
+  // `vault-remove` refuses while the vault window is open. Close it only when
+  // it is open, because targeting a closed vault would re-open it.
+  if ((await vaultList(host))[id]?.open) {
+    await closeVaultWindow(id, async () => !(await vaultList(host))[id]?.open);
+  }
+  await unregisterThrough(host, abs, id);
   return id;
 }
 
@@ -714,7 +950,7 @@ const vaultPathPosition = {
 
 const syncPurgeOption = {
   describe:
-    "delete the Development Vault folder before restoring the complete generated seed",
+    "delete the Development Vault folder, the plugin's vault-scoped local storage, and its stored excerpt images before restoring the complete generated seed",
   type: "boolean",
   default: false,
 } as const;
@@ -736,6 +972,44 @@ const zoteroHttpPortOption = {
   type: "number",
 } as const;
 
+const localApiOption = {
+  describe:
+    "open Zotero's Local API in the generated profile, on the Zotero HTTP port",
+  type: "boolean",
+  default: false,
+} as const;
+
+const grantLocalApiWritesOption = {
+  describe:
+    "seed a remembered Local API write grant; use --no-grant-local-api-writes to test authorization",
+  type: "boolean",
+  default: true,
+} as const;
+
+const upgraderFieldsOption = {
+  describe:
+    "JSON file whose Managed Frontmatter fields replace the upgrader case's list: a field array, or a ZotLit data.json; needs --vault-case upgrader",
+  type: "string",
+} as const;
+
+/** The `--upgrader-fields` file, checked against the field shape ZotLit saves. */
+async function readUpgraderFields(
+  path: string | undefined,
+  vaultCase: string | undefined,
+): Promise<FrontmatterField[] | undefined> {
+  if (path === undefined) return undefined;
+  if (vaultCase !== "upgrader") {
+    throw new Error("--upgrader-fields needs --vault-case upgrader");
+  }
+  const json: unknown = JSON.parse(await readFile(resolve(path), "utf-8"));
+  return v.parse(
+    v.array(frontmatterFieldSchema),
+    Array.isArray(json)
+      ? json
+      : (json as Record<string, unknown>)["note.frontmatter-fields"],
+  );
+}
+
 const scopeCaseOption = {
   describe: "Scope Case to build",
   type: "string",
@@ -743,11 +1017,30 @@ const scopeCaseOption = {
   default: DEFAULT_SCOPE_CASE,
 } as const;
 
+const vaultCaseOption = {
+  describe: `Vault Case to build; each case other than the default uses its own Development Vault folder (default: $${DEV_VAULT_CASE_ENV})`,
+  type: "string",
+  choices: VAULT_CASES.map(({ id }) => id),
+  default: process.env[DEV_VAULT_CASE_ENV],
+} as const;
+
 const hostReadinessReference = `Host readiness:
-  Host-dependent commands require a vault window that answers within
-  ${OBSIDIAN_HOST_TIMEOUT_MS / 1_000} seconds. Run 'obsidian-vault.ts check' before changing the Fixture.
+  Host-dependent commands require a Host Vault that answers each CLI probe
+  within ${OBSIDIAN_HOST_TIMEOUT_MS / 1_000} seconds. The complete check can take longer.
+  Run 'obsidian-vault.ts check' before changing the Fixture.
+  Set ZT_HOST_VAULT=<vault-id-or-folder-name> to select the host directly.
+  An unset or empty value uses the focused window. Explicit selection errors stop.
+  An exact registered ID takes priority; a folder name must be unique across
+  all registered vaults, including closed vaults. Use an ID for duplicate names.
+  If another folder name matches that ID, ignoring case, select another Host Vault
+  or remove the conflicting registration. The selected path must exist and be recorded open.
+  Saved open state can be stale; Obsidian can still open a closed window.
+  With an unset value and Obsidian running with no vault window open, the check
+  opens a registered vault as the host and waits up to ${OBSIDIAN_VAULT_OPEN_TIMEOUT_MS / 1_000} seconds for its window:
+  the sandbox vault ('${sandboxFolder}' in Obsidian's user data) if registered,
+  else the most recently opened vault whose folder exists.
   On failure, check lists existing registered paths and missing stale paths.
-  Open the selected host vault yourself, then rerun the reported command.`;
+  Open a host vault in Obsidian, then rerun the reported command.`;
 
 const reference = `The open, create, and sync commands rebuild the Fixture Vault first. Run the
 Obsidian dev build before them so its bundle is available to copy into the
@@ -756,14 +1049,32 @@ generated seed. Open and sync keep extra Development Vault files unless
 
 Environment:
   ${OBSIDIAN_HOST_VAULT_ENV}  verified open vault name or id whose window hosts eval calls
+  ${DEV_VAULT_CASE_ENV}  Vault Case that --vault-case defaults to; the dev build copies into its vault
 
 ${hostReadinessReference}`;
 
 const vaultCli = yargs(hideBin(process.argv))
   .scriptName("obsidian-vault.ts")
+  .option("fixture-root", {
+    describe: `Fixture to build and link, instead of this worktree's own (default: ${getFixtureRoot(workspaceRoot)})`,
+    type: "string",
+    global: true,
+  })
+  .option("inactive", {
+    describe:
+      "Open vault windows behind the app that has the OS focus, as the End-to-end Run does",
+    type: "boolean",
+    global: true,
+  })
+  .middleware((argv) => {
+    inactive = argv.inactive === true;
+    if (argv["fixture-root"] === undefined) return;
+    fixtureLayout = getFixtureLayout(resolve(argv["fixture-root"]));
+    fixtureVault = fixtureLayout.vaultDir;
+  })
   .command(
     "check",
-    "verify that a live Obsidian vault can host CLI calls",
+    "verify that a live Obsidian vault can host CLI calls, opening one when no vault window is open",
     (y) => y.epilogue(hostReadinessReference),
     async () => {
       const host = await checkObsidianHost();
@@ -779,15 +1090,29 @@ const vaultCli = yargs(hideBin(process.argv))
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption)
         .option("scope-case", scopeCaseOption)
+        .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
-        .option("zotero-http-port", zoteroHttpPortOption),
+        .option("zotero-http-port", zoteroHttpPortOption)
+        .option("local-api", localApiOption)
+        .option("grant-local-api-writes", grantLocalApiWritesOption)
+        .option("upgrader-fields", upgraderFieldsOption),
     async (argv) => {
-      await open(argv["vault-path"] ?? defaultVault, {
-        purge: argv.purge,
-        scopeCase: argv["scope-case"],
-        liveUpdatePort: argv["live-update-port"],
-        zoteroHttpPort: argv["zotero-http-port"],
-      });
+      await open(
+        argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
+        {
+          purge: argv.purge,
+          scopeCase: argv["scope-case"],
+          vaultCase: argv["vault-case"],
+          liveUpdatePort: argv["live-update-port"],
+          zoteroHttpPort: argv["zotero-http-port"],
+          localApi: argv["local-api"],
+          grantLocalApiWrites: argv["grant-local-api-writes"],
+          upgraderFields: await readUpgraderFields(
+            argv["upgrader-fields"],
+            argv["vault-case"],
+          ),
+        },
+      );
     },
   )
   .command(
@@ -805,14 +1130,28 @@ const vaultCli = yargs(hideBin(process.argv))
       y
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption)
+        .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
-        .option("zotero-http-port", zoteroHttpPortOption),
+        .option("zotero-http-port", zoteroHttpPortOption)
+        .option("local-api", localApiOption)
+        .option("grant-local-api-writes", grantLocalApiWritesOption)
+        .option("upgrader-fields", upgraderFieldsOption),
     async (argv) => {
-      await sync(argv["vault-path"] ?? defaultVault, {
-        purge: argv.purge,
-        liveUpdatePort: argv["live-update-port"],
-        zoteroHttpPort: argv["zotero-http-port"],
-      });
+      await sync(
+        argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
+        {
+          purge: argv.purge,
+          vaultCase: argv["vault-case"],
+          liveUpdatePort: argv["live-update-port"],
+          zoteroHttpPort: argv["zotero-http-port"],
+          localApi: argv["local-api"],
+          grantLocalApiWrites: argv["grant-local-api-writes"],
+          upgraderFields: await readUpgraderFields(
+            argv["upgrader-fields"],
+            argv["vault-case"],
+          ),
+        },
+      );
     },
   )
   .command(
@@ -838,7 +1177,7 @@ const vaultCli = yargs(hideBin(process.argv))
   )
   .command(
     "status",
-    "print the live Obsidian host vault ID and base path",
+    "print the live Obsidian host vault ID and base path, opening a host vault when no vault window is open",
     () => {},
     async () => {
       const host = await checkObsidianHost();

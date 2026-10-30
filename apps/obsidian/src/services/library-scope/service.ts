@@ -1,35 +1,24 @@
-/**
- * `LibraryScopeService` — the live Library Scope, resolved from the saved
- * stable selectors against whatever Libraries the active Zotero database holds.
- *
- * The policy is pure and lives in `./scope.ts`; this service owns only the
- * wiring: read the saved value (and its broken-override diagnostic) from
- * {@link SettingsService}, resolve it against {@link DatabaseService}, and emit
- * `changed` when the result stops meaning the same thing to consumers.
- *
- * ## Unavailable database versus zero Libraries
- *
- * {@link LibraryScopeService.current} is `null` while the database cannot be
- * read. That is a different state from a valid scope whose Libraries are all
- * absent, which resolves normally with an empty `available` list. Settings
- * controls disable on the first and stay editable on the second, and the saved
- * value is untouched either way.
- *
- * ## Leases
- *
- * A caller holding a {@link DatabaseService.acquireRead} lease resolves once
- * against its own pinned client through {@link LibraryScopeService.resolveWith},
- * so a refresh mid-read cannot move the Libraries under it.
- */
-import { getLibraries } from "@zotlit/db";
-import type { Library } from "@zotlit/db";
-import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
+/** The live Library Scope, resolved against the Libraries held by QueryClients. */
+import {
+  Cause,
+  Context,
+  Effect,
+  Layer,
+  PubSub,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 
-import { getLogger } from "@/lib/log";
-import type { DatabaseService } from "@/services/database/service";
-import { Service } from "@/services/service-base";
-import type { SettingsService } from "@/services/settings/service";
+import type { Library } from "@zotlit/db";
+
+import { scopedBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
+import { startupBarrier } from "@/lib/effect-startup";
+import { QueryClients } from "@/services/query-client/service";
+import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import {
   DEFAULT_LIBRARY_SCOPE,
@@ -39,155 +28,231 @@ import {
 } from "./scope";
 import type {
   AvailableLibrary,
-  LibraryScope,
+  LibraryScope as SavedLibraryScope,
   ResolvedLibraryScope,
 } from "./scope";
 
-const logger = getLogger(["library-scope"]);
-
-/** The settings key holding the saved scope. */
 export const LIBRARY_SCOPE_KEY = "zotero.library-scope";
+const LIBRARIES_KEY = ["library-scope", "libraries"] as const;
 
 export interface LibraryScopeEvents {
-  /**
-   * The resolved scope changed, or became `null` because the database went
-   * away. Equivalent refreshes — including a re-read that finds the same
-   * Libraries under the same names — emit nothing.
-   */
   changed: (scope: ResolvedLibraryScope | null) => void;
+  "libraries-changed": () => void;
 }
 
-export interface LibraryScopeDeps {
-  db: DatabaseService;
-  settings: SettingsService;
-  loadLibraries?: (client: NodeDatabaseClient) => Library[];
+/** A replayable snapshot, including an invalid saved value while the database is absent. */
+export interface LibraryScopeState {
+  readonly current: ResolvedLibraryScope | null;
+  readonly all: ResolvedLibraryScope | null;
+  readonly invalid: boolean;
+  readonly effective: SavedLibraryScope;
+  readonly libraryRows: readonly Library[] | null;
 }
 
-export class LibraryScopeService extends Service<void> {
-  readonly #db;
-  readonly #settings;
-  readonly #loadLibraries;
-  readonly #emitter = createNanoEvents<LibraryScopeEvents>();
-
-  #current: ResolvedLibraryScope | null = null;
-  #lastInvalid = false;
-
-  ready: Promise<void>;
-
-  constructor(deps: LibraryScopeDeps) {
-    super();
-    this.#db = deps.db;
-    this.#settings = deps.settings;
-    this.#loadLibraries = deps.loadLibraries ?? getLibraries;
-    this.ready = this.#load();
+export class LibraryScope extends Context.Service<
+  LibraryScope,
+  {
+    readonly state: Effect.Effect<LibraryScopeState>;
+    readonly changes: Stream.Stream<LibraryScopeState>;
+    readonly current: Effect.Effect<ResolvedLibraryScope | null>;
+    readonly effective: Effect.Effect<SavedLibraryScope>;
+    readonly invalid: Effect.Effect<boolean>;
+    readonly libraries: Effect.Effect<readonly AvailableLibrary[]>;
+    readonly libraryRows: Effect.Effect<readonly Library[] | null>;
+    resolveLibraries(
+      libraries: readonly Library[],
+    ): Effect.Effect<ResolvedLibraryScope>;
   }
+>()("zotlit/library-scope/LibraryScope") {}
 
-  /**
-   * The resolved scope, or `null` while the Zotero database is unreadable.
-   * @returns the same object identity until something a consumer cares about
-   * changes, so a subscriber can compare by reference.
-   */
-  get current(): ResolvedLibraryScope | null {
-    return this.#current;
-  }
+/**
+ * The states whose resolution or validity differs from the one before,
+ * after the replayed state a subscriber starts from.
+ */
+export function scopeChanges(
+  changes: Stream.Stream<LibraryScopeState>,
+): Stream.Stream<LibraryScopeState> {
+  return changes.pipe(
+    Stream.changesWith(
+      (a, b) => a.current === b.current && a.invalid === b.invalid,
+    ),
+    Stream.drop(1),
+  );
+}
 
-  /**
-   * The scope in force: the saved value, or {@link MY_LIBRARY_SCOPE} while the
-   * saved value is broken. What the recovery UI edits, so an edit replaces the
-   * broken value with what ZotLit is actually using.
-   */
-  get effective(): LibraryScope {
-    return this.#savedScope() ?? MY_LIBRARY_SCOPE;
-  }
-
-  /**
-   * Every Library the active database holds, in canonical order — the pool a
-   * selection draws from, whatever the saved scope names. Empty while the
-   * database is unreadable.
-   */
-  get libraries(): readonly AvailableLibrary[] {
-    return this.#resolveNow(DEFAULT_LIBRARY_SCOPE)?.available ?? [];
-  }
-
-  /**
-   * The saved value failed validation and the runtime fallback — Selected
-   * My Library — is in force. Independent of database availability, so the
-   * recovery UI reports it even while no Library can be listed.
-   */
-  get invalid(): boolean {
-    return this.#settings.diagnostics.some(
-      (diagnostic) => diagnostic.key === LIBRARY_SCOPE_KEY,
+export const layerLibraryScope = Layer.effect(
+  LibraryScope,
+  Effect.gen(function* () {
+    const reads = yield* ZoteroReads;
+    const queries = yield* QueryClients;
+    const settings = yield* PluginSettings;
+    const scope = yield* Scope.Scope;
+    const { runPromise } = yield* scopedBridge;
+    let closed = false;
+    const state = yield* SubscriptionRef.make<LibraryScopeState>({
+      current: null,
+      all: null,
+      invalid: false,
+      effective: DEFAULT_LIBRARY_SCOPE,
+      libraryRows: null,
+    });
+    const invalid = Effect.map(settings.diagnostics, (diagnostics) =>
+      diagnostics.some((diagnostic) => diagnostic.key === LIBRARY_SCOPE_KEY),
     );
-  }
+    const savedScope = Effect.fn("LibraryScope.savedScope")(function* (
+      saved?: Readonly<Settings>,
+    ) {
+      return (yield* invalid)
+        ? null
+        : ((saved ?? (yield* settings.current))[LIBRARY_SCOPE_KEY] ??
+            DEFAULT_LIBRARY_SCOPE);
+    });
 
-  /** Resolve the saved scope against a caller-pinned database client. */
-  resolveWith(client: NodeDatabaseClient): ResolvedLibraryScope {
-    return resolveLibraryScope(this.#loadLibraries(client), this.#savedScope());
-  }
+    const recompute = Effect.fn("LibraryScope.recompute")(function* (
+      rows: readonly Library[] | null,
+      saved?: Readonly<Settings>,
+    ) {
+      if (closed) return;
+      const before = yield* SubscriptionRef.get(state);
+      const selected = yield* savedScope(saved);
+      const next = rows === null ? null : resolveLibraryScope(rows, selected);
+      const all =
+        rows === null ? null : resolveLibraryScope(rows, DEFAULT_LIBRARY_SCOPE);
+      const broken = selected === null;
+      const sameCurrent =
+        broken === before.invalid && sameResolution(next, before.current);
+      const sameAll = sameResolution(all, before.all);
+      if (
+        sameCurrent &&
+        sameAll &&
+        rows === before.libraryRows &&
+        (selected ?? MY_LIBRARY_SCOPE) === before.effective
+      )
+        return;
+      yield* SubscriptionRef.set(state, {
+        current: sameCurrent ? before.current : next,
+        all: sameAll ? before.all : all,
+        invalid: broken,
+        effective: selected ?? MY_LIBRARY_SCOPE,
+        libraryRows: rows,
+      });
+      if (!sameCurrent)
+        yield* Effect.logDebug("Library scope changed").pipe(
+          Effect.annotateLogs({
+            mode: next?.mode ?? null,
+            available:
+              next?.available.map((library) => library.libraryID) ?? null,
+            unavailable: next?.unavailable.length ?? null,
+            invalid: broken,
+          }),
+        );
+    });
+    const recover = <A, E>(effect: Effect.Effect<A, E>) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("Could not refresh Library scope", cause),
+        ),
+      );
+    const readLibraries = Effect.fn("LibraryScope.readLibraries")(function* () {
+      if (closed) return;
+      yield* queries.ask<Library[]>(LIBRARIES_KEY, ({ signal }) =>
+        runPromise(reads.reads.Libraries({}), { signal }),
+      );
+      yield* recompute(
+        (yield* queries.peek<Library[]>(LIBRARIES_KEY))?.value ?? null,
+      );
+    }, recover);
+    const heldLibraries = Effect.fn("LibraryScope.heldLibraries")(function* () {
+      if (closed) return null;
+      const held = yield* queries.peek<Library[]>(LIBRARIES_KEY);
+      if (held?.status === "failed")
+        yield* Effect.forkIn(readLibraries(), scope);
+      return held?.value ?? null;
+    });
 
-  on<K extends keyof LibraryScopeEvents>(
-    event: K,
-    cb: LibraryScopeEvents[K],
-  ): () => void {
-    return this.#emitter.on(event, cb);
-  }
-
-  async #load(): Promise<void> {
-    await this.#settings.loaded;
-
-    await using stack = new AsyncDisposableStack();
-    stack.defer(this.#db.on("changed", () => this.#recompute()));
-    stack.defer(this.#db.on("degraded", () => this.#recompute()));
-    stack.defer(
-      this.#settings.subscribe((next) => {
-        if (next !== null) this.#recompute();
+    queries.client.setQueryDefaults(LIBRARIES_KEY, { gcTime: Infinity });
+    yield* Stream.runForEach(queries.changes, (change) => {
+      if (
+        change.key[0] !== LIBRARIES_KEY[0] ||
+        change.key[1] !== LIBRARIES_KEY[1] ||
+        !change.changed
+      )
+        return Effect.void;
+      return recover(
+        Effect.gen(function* () {
+          const held = yield* queries.peek<Library[]>(LIBRARIES_KEY);
+          // A queued settlement cannot restore rows that degradation removed.
+          if (held?.value === change.held?.value)
+            yield* recompute(held?.value ?? null);
+        }),
+      );
+    }).pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* Stream.runForEach(reads.events, (event) =>
+      recover(
+        Effect.gen(function* () {
+          if (event._tag === "changed") {
+            yield* queries.invalidate(LIBRARIES_KEY);
+            yield* Effect.forkIn(readLibraries(), scope, {
+              startImmediately: true,
+            });
+          } else if (event._tag === "degraded") {
+            queries.client.removeQueries({ queryKey: LIBRARIES_KEY });
+            yield* recompute(null);
+          }
+        }),
+      ),
+    ).pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* Stream.runForEach(settings.changes, (saved) =>
+      recover(
+        Effect.gen(function* () {
+          yield* recompute(yield* heldLibraries(), saved);
+        }),
+      ),
+    ).pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        closed = true;
+        queries.client.removeQueries({ queryKey: LIBRARIES_KEY });
+        yield* PubSub.shutdown(state.pubsub);
       }),
     );
-    this.commit(stack.move());
 
-    await this.#db.ready;
-    this.#recompute();
-    logger.info("Library scope ready", {
-      mode: this.#current?.mode ?? null,
-      available: this.#current?.available.length ?? null,
-      invalid: this.#lastInvalid,
-    });
-  }
-
-  /** The validated saved scope, or `null` when the persisted value is broken. */
-  #savedScope(): LibraryScope | null {
-    if (this.invalid) return null;
-    return this.#settings.current?.[LIBRARY_SCOPE_KEY] ?? DEFAULT_LIBRARY_SCOPE;
-  }
-
-  #recompute(): void {
-    const invalid = this.invalid;
-    const next = this.#resolveNow(this.#savedScope());
-    if (invalid === this.#lastInvalid && sameResolution(next, this.#current)) {
-      logger.trace("Library scope refresh produced an equivalent resolution");
-      return;
-    }
-    this.#lastInvalid = invalid;
-    this.#current = next;
-    logger.debug("Library scope changed", {
-      mode: next?.mode ?? null,
-      available: next?.available.map((library) => library.libraryID) ?? null,
-      unavailable: next?.unavailable.length ?? null,
+    // Legacy ready awaited this query, not a database-ready signal. A late
+    // answer still updates the held value after the shared startup bound.
+    yield* startupBarrier(
+      readLibraries(),
+      Effect.logWarning("Library scope startup read is still pending"),
+    );
+    yield* recompute(yield* heldLibraries());
+    yield* Effect.logInfo("Library scope ready").pipe(
+      Effect.annotateLogs({
+        mode: (yield* SubscriptionRef.get(state)).current?.mode ?? null,
+      }),
+    );
+    return LibraryScope.of({
+      state: SubscriptionRef.get(state),
+      changes: SubscriptionRef.changes(state),
+      current: Effect.andThen(
+        heldLibraries(),
+        Effect.map(SubscriptionRef.get(state), (snapshot) => snapshot.current),
+      ),
+      effective: Effect.map(savedScope(), (saved) => saved ?? MY_LIBRARY_SCOPE),
       invalid,
+      libraries: Effect.andThen(
+        heldLibraries(),
+        Effect.map(
+          SubscriptionRef.get(state),
+          (snapshot) => snapshot.all?.available ?? [],
+        ),
+      ),
+      libraryRows: heldLibraries(),
+      resolveLibraries: Effect.fn("LibraryScope.resolveLibraries")(function* (
+        libraries: readonly Library[],
+      ) {
+        return resolveLibraryScope(libraries, yield* savedScope());
+      }),
     });
-    this.#emitter.emit("changed", next);
-  }
-
-  /** @returns `null` while the database holds no readable client. */
-  #resolveNow(scope: LibraryScope | null): ResolvedLibraryScope | null {
-    if (this.#db.state !== "ready") return null;
-    try {
-      return resolveLibraryScope(this.#loadLibraries(this.#db.client), scope);
-    } catch (error) {
-      logger.debug("Library scope resolution skipped; database unavailable", {
-        error,
-      });
-      return null;
-    }
-  }
-}
+  }).pipe(withLogCategory("library-scope")),
+);

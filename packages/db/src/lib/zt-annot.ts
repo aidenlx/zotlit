@@ -1,7 +1,8 @@
 import type { AnnotationPositionRaw } from "@drizzle/schema";
-import { getLogger } from "@logtape/logtape";
 
-const logger = getLogger(["zotlit", "db", "annotations"]);
+import { logLibrary } from "@zotlit/shared/logging";
+
+import type { TagType } from "./zt-tag";
 
 /**
  * Maps Zotero's numeric annotation type IDs to string names.
@@ -64,6 +65,8 @@ export interface Annotation {
   libraryID: number;
   dateAdded: Temporal.Instant;
   dateModified: Temporal.Instant;
+  /** Committed Zotero object revision stored with this Annotation. */
+  version: number;
   /** Raw `itemAnnotations.type` int; resolve names via {@link annotationTypeToName}. */
   type: AnnotationType;
   /**
@@ -80,6 +83,13 @@ export interface Annotation {
   color: string | null;
   pageLabel: string | null;
   /**
+   * The Annotation's Zotero tags, by name, in Zotero's own order. Names rather
+   * than numeric tag ids: the name is what every source of an Annotation can
+   * supply, and what a reader shows.
+   */
+  tags: string[];
+  tagDetails?: { name: string; type: TagType }[];
+  /**
    * Raw Zotero sort key. Its zero-padded formats sort correctly as text.
    *
    * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/data/item.js#L4257-L4277
@@ -88,8 +98,19 @@ export interface Annotation {
   position: AnnotationPositionRaw;
   authorName: string | null;
   isExternal: boolean;
+  /**
+   * The Zotero user who created this Annotation in a group library
+   * (`groupItems.createdByUserID`), or `null` where the database names none:
+   * every personal-library Annotation, and a group item with no creator.
+   */
+  createdByUserID: number | null;
   parentItemID: number;
   parentKey: string;
+}
+
+/** Known stored type IDs, for queries that also handle unknown future IDs. */
+export function annotationTypeIDs(): readonly AnnotationType[] {
+  return Object.keys(ANNOT_TYPE).map(Number) as AnnotationType[];
 }
 
 export function annotationTypeToName(
@@ -98,15 +119,26 @@ export function annotationTypeToName(
   const name = ANNOT_TYPE[type];
   if (name) return name;
 
-  logger.warn("Unknown annotation type {type}", { type });
+  logLibrary({
+    level: "warn",
+    category: ["zotlit", "db", "annotations"],
+    message: "Unknown annotation type {type}",
+    properties: { type },
+  });
   return "unknown";
 }
 
 /**
  * Whether Zotero renders a cached excerpt image for this annotation type.
+ *
+ * Either spelling of the type answers: a row from SQLite carries the numeric
+ * id, while an Annotation the Zotero Local API described carries the name.
+ *
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/annotations.js#L62
  */
-export function annotationHasCacheImage(_type: AnnotationType): boolean {
-  const type = ANNOT_TYPE[_type];
-  return type === "image" || type === "ink";
+export function annotationHasCacheImage(
+  type: AnnotationType | ResolvedAnnotationTypeName,
+): boolean {
+  const name = typeof type === "number" ? ANNOT_TYPE[type] : type;
+  return name === "image" || name === "ink";
 }
