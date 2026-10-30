@@ -15,11 +15,80 @@ This is the first stable release of ZotLit 2.2. It collects every change since 2
 
 <Callout type="info" title="Version requirements">
 
-- **Obsidian 1.14.2 or later** to open Zotero PDFs in Obsidian.
+- **Obsidian 1.14.5 or later.** ZotLit 2.2 does not install on an older Obsidian. ZotLit 2.1 needed 1.13.4.
 - **Zotero 10 or later** to save annotation changes from Obsidian. With Zotero 9, you can read PDFs and their annotations, but you cannot edit them.
-- **ZotLit Companion 2.2.0** in Zotero, for the new Zotero menu entries.
+- **ZotLit Companion 2.2.0** in Zotero. ZotLit 2.2 does not work with Companion 2.1.
 
 </Callout>
+
+## Breaking Changes
+
+### Obsidian 1.14.5 or later
+
+ZotLit 2.2 needs Obsidian 1.14.5 or later. ZotLit 2.1 needed 1.13.4. On an older Obsidian, the plugin stays at 2.1.4 and does not update. Update Obsidian first, then update ZotLit. See [Install ZotLit](/docs/install-zotlit).
+
+### Update ZotLit Companion together with the plugin
+
+ZotLit 2.2 does not accept requests from ZotLit Companion 2.1. Until you install Companion 2.2.0 in Zotero, these stop working and ZotLit asks you to update the Companion:
+
+- Live updates of literature notes when you change an item in Zotero.
+- The Obsidian note column in Zotero's item list.
+- Updating or importing many selected items at once from Zotero.
+
+Links that open a single item from Zotero still work. See [Install ZotLit Companion](/docs/install-companion).
+
+### PDF file links open in Obsidian
+
+A click on a PDF file link in a note now opens the PDF in Obsidian's reader, not in your system's PDF app or in Zotero. This includes the `file:///` attachment links that the 2.1 default template wrote into your notes. To keep the old behavior, turn off <UiLabel name={m.settings_reader_open_file_links_name()} /> and <UiLabel name={m.settings_reader_open_annotation_links_name()} /> under <SettingsPath page={m.settings_page_reader()} />.
+
+### Eta tag suggestions removed
+
+Obsidian's note editor no longer suggests Eta tags in template files, and the **Auto-pair Eta tags** setting is gone. Edit templates in the Template Workbench, which completes and pairs tags.
+
+### 2.1 template files become profile documents
+
+2.1 template files keep working until you convert them. The Welcome view and the settings offer the conversion. It folds the note, managed-region, filename, and annotation files into `zotlit-profile.default.md`, the two citation files into `zotlit-citation.md`, and other files into partials. ZotLit checks that the output stays the same before it writes, then moves the old files to the trash.
+
+Until you convert, the frontmatter field list has no editor, and you cannot add or import a profile of your own. See [Converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates).
+
+### New default literature notes
+
+A new note from the default template is written once. Its body has the title, the Zotero link, attachment links, and an Annotations section with a query block that reads Zotero live. After that, the body is yours to edit.
+
+- <Command inline name={m.command_update_note_name()} /> refreshes the note's
+  properties and leaves the body as you wrote it.
+- The default template adds no `%%zt-managed%%` markers and no list of Zotero child notes.
+- Notes you already have keep their markers, and an update still refreshes the text between them. If you use the default templates, that text is now the Annotations query block: the next update replaces the static annotation list and the list of child notes with it. Annotations in the block show only inside Obsidian, not in search, Publish, or other apps. To keep the static text, delete the two marker lines before you update.
+- If you customized or duplicated the Default profile, add a `{% managed %}` block to its document to keep refreshing older notes.
+
+See [Keep notes up to date](/docs/how-to/keep-notes-updated) and [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+
+### Child notes import only when you ask
+
+Creating or updating a literature note no longer writes Zotero child notes into your vault. Run <Command inline name={m.command_import_child_notes_name()} /> or <Command inline name={m.command_import_all_notes_name()} />, or start an import from Zotero. In a template, `noteLink` links to the imported file when one exists, and opens the note in Zotero otherwise. See [Import Zotero notes](/docs/how-to/import-zotero-notes).
+
+### Export stops on an unknown key or a missing style
+
+- <Command inline name={m.command_pandoc_export_name()} /> now reads literal
+  `@citation-key` text, as Pandoc does. A key that matches no item, or several
+  items, stops the export and names the keys. Before, such a note exported
+  without a reference list.
+- Exports format citations in the style the note uses in Obsidian. When Zotero cannot supply that style, the export stops and tells you. Before, it fell back to a bundled style.
+- If you run Pandoc yourself with ZotLit's integration files, save them again from this version.
+
+See [Export a note with citations](/docs/how-to/export-note-with-citations) and [Export with native Pandoc](/docs/how-to/export-with-native-pandoc).
+
+### Settings moved
+
+- Maintenance is now <SettingsPath page={m.settings_page_advanced()} />, which also holds the template folder, the template engine rows, and the local server.
+- The Database and Library pages merged into <SettingsPath page={m.settings_page_zotero()} />. Connection and database overrides are on its <UiLabel name={m.settings_page_zotero_location()} /> sub-page.
+- Note import is now <SettingsPath page={m.settings_page_note_import()} />, and the citation text is under <SettingsPath page={m.settings_page_citations()} />.
+
+Row names are unchanged, so Obsidian's settings search still finds them. See [Where settings moved](/docs/reference/settings#moved).
+
+### Agent template commands retired
+
+Eight template and frontmatter commands from ZotLit 2.1 are retired from the Obsidian CLI. Use `zotlit:template-inspect`, `zotlit:template-data`, and `zotlit:template-check` instead. See the [Template Workbench CLI reference](/docs/reference/template-workbench-cli#retired).
 
 ## Highlights
 
@@ -62,53 +131,6 @@ Show your papers in a table, much like Obsidian Bases. Create a `.zotquery` quer
 - Sort, group, search, add Formula columns, rename columns, and export to CSV or TSV.
 
 See [Track reading status in the Query View](/docs/how-to/track-reading-status), [Query files and query blocks](/docs/concepts/query-files-and-query-blocks), and [Use query files](/docs/how-to/use-query-files).
-
-## Breaking Changes
-
-### 2.1 template files become profile documents
-
-2.1 template files keep working until you convert them. The Welcome view and the settings offer the conversion. It folds the note, managed-region, filename, and annotation files into `zotlit-profile.default.md`, the two citation files into `zotlit-citation.md`, and other files into partials. ZotLit checks that the output stays the same before it writes, then moves the old files to the trash.
-
-Until you convert, the frontmatter field list has no editor, and you cannot add or import a profile of your own. See [Converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates).
-
-### New default literature notes
-
-A new note from the default template is written once. Its body has the title, the Zotero link, attachment links, and an Annotations section with a query block that reads Zotero live. After that, the body is yours to edit.
-
-- <Command inline name={m.command_update_note_name()} /> refreshes the note's
-  properties and leaves the body as you wrote it.
-- The default template adds no `%%zt-managed%%` markers and no list of Zotero child notes.
-- Notes you already have keep their markers, and an update still refreshes the text between them. To stop that, delete the two marker lines.
-- If you customized or duplicated the Default profile, add a `{% managed %}` block to its document to keep refreshing older notes.
-
-See [Keep notes up to date](/docs/how-to/keep-notes-updated) and [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
-
-### Child notes import only when you ask
-
-Creating or updating a literature note no longer writes Zotero child notes into your vault. Run <Command inline name={m.command_import_child_notes_name()} /> or <Command inline name={m.command_import_all_notes_name()} />, or start an import from Zotero. In a template, `noteLink` links to the imported file when one exists, and opens the note in Zotero otherwise. See [Import Zotero notes](/docs/how-to/import-zotero-notes).
-
-### Export stops on an unknown key or a missing style
-
-- <Command inline name={m.command_pandoc_export_name()} /> now reads literal
-  `@citation-key` text, as Pandoc does. A key that matches no item, or several
-  items, stops the export and names the keys. Before, such a note exported
-  without a reference list.
-- Exports format citations in the style the note uses in Obsidian. When Zotero cannot supply that style, the export stops and tells you. Before, it fell back to a bundled style.
-- If you run Pandoc yourself with ZotLit's integration files, save them again from this version.
-
-See [Export a note with citations](/docs/how-to/export-note-with-citations) and [Export with native Pandoc](/docs/how-to/export-with-native-pandoc).
-
-### Settings moved
-
-- Maintenance is now <SettingsPath page={m.settings_page_advanced()} />, which also holds the template folder, the template engine rows, and the local server.
-- The Database and Library pages merged into <SettingsPath page={m.settings_page_zotero()} />. Connection and database overrides are on its <UiLabel name={m.settings_page_zotero_location()} /> sub-page.
-- Note import is now <SettingsPath page={m.settings_page_note_import()} />, and the citation text is under <SettingsPath page={m.settings_page_citations()} />.
-
-Row names are unchanged, so Obsidian's settings search still finds them. See [Where settings moved](/docs/reference/settings#moved).
-
-### Agent template commands retired
-
-Nine template and frontmatter commands in ZotLit's `obsidian` CLI namespace are retired. Use `zotlit:template-inspect`, `zotlit:template-data`, and `zotlit:template-check` instead. See the [Template Workbench CLI reference](/docs/reference/template-workbench-cli#retired).
 
 ## What's New
 
