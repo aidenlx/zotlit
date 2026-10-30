@@ -101,32 +101,27 @@ export interface WorkHoverRequest extends Pick<
 > {
   work:
     | { kind: "item"; indexedKey: string }
-    | { kind: "citekey"; citekey: string };
+    | { kind: "citekey"; citekey: string }
+    /** The parent Item of the Annotation `annotationKey`, an Indexed Key. */
+    | { kind: "annotation"; annotationKey: string };
   /** Open the exact Item displayed, using its current Literature Note. */
   open: (
     indexedKey: string,
     pane: Parameters<CitationHoverRequest["open"]>[1],
   ) => void;
+  /**
+   * Starts drawing a part another surface owns above the entry, for as long as
+   * the visit lasts: the Annotation of a Durable Annotation Link.
+   */
+  lead?: (part: PopoverPart) => void;
 }
 
-/**
- * One hovered citation whose popover also holds a part another surface draws,
- * above the entries: the Annotation of an Annotation Citation.
- */
-export interface LeadHoverRequest extends CitationHoverRequest {
-  /** Starts drawing the part, for as long as the visit lasts. */
-  lead: (part: PopoverPart) => void;
-}
-
-type PopoverRequest =
-  | CitationHoverRequest
-  | LeadHoverRequest
-  | WorkHoverRequest;
+type PopoverRequest = CitationHoverRequest | WorkHoverRequest;
 
 /** What one hovered target's popover reads and shows. */
 interface CitationVisitState {
   content: ReactNode;
-  /** The part a {@link LeadHoverRequest} draws above the entries. */
+  /** The part a request's `lead` draws above the entries. */
   lead: ReactNode;
   /** What the popover shows below the lead now. */
   painted: ReactNode;
@@ -153,8 +148,7 @@ type PopoverVisit = HoverVisit<CitationVisitState>;
 export class CitationPopover extends Context.Service<
   CitationPopover,
   {
-    /** Shows `request`'s lead, when it carries one, above its entries. */
-    show(request: CitationHoverRequest | LeadHoverRequest): Effect.Effect<void>;
+    show(request: CitationHoverRequest): Effect.Effect<void>;
     /** Completes once the hover's first read has drawn, or was dropped because the pointer moved on or the popover hid. */
     showWork(request: WorkHoverRequest): Effect.Effect<void>;
     /** Closes the owner's visit, including a card still waiting to open. */
@@ -235,7 +229,7 @@ export const layerCitationPopover: Layer.Layer<
       if (bridge.closed()) return undefined;
       const currentVisit = visits.open(request.hoverParent, request.targetEl);
       const { popover, subscriptions } = currentVisit;
-      if ("lead" in request) {
+      if ("work" in request && request.lead) {
         request.lead({
           owner: popover,
           subscriptions,
@@ -289,7 +283,7 @@ export const layerCitationPopover: Layer.Layer<
         bridge.runSync(read);
       };
       subscriptions.defer(bridge.subscribe(renderInvalidated(render), draw));
-      if (!("work" in request) || request.work.kind === "citekey") {
+      if (!("work" in request) || request.work.kind !== "item") {
         subscriptions.defer(bridge.subscribe(lookupChanged(lookup), draw));
         let freshness = (yield* lookup.current).status;
         subscriptions.defer(
@@ -385,7 +379,7 @@ const fill = Effect.fn("CitationPopover.fill")(function* (
   // the document itself could not be read — nothing the popover can say,
   // beyond the lead it holds.
   if (blocks.length === 0 && !unavailable) {
-    if ("lead" in request) paint(visit, null);
+    if ("work" in request && request.lead) paint(visit, null);
     else popover.hide();
     return;
   }
@@ -480,7 +474,16 @@ const readWork = Effect.fn("CitationPopover.readWork")(function* (
     };
   }
   let indexedKey: string;
-  if (work.kind === "citekey") {
+  if (work.kind === "annotation") {
+    const answer = yield* lookup
+      .read({ annotationKeys: [work.annotationKey] })
+      .pipe(recover(() => Effect.void, Effect.succeed(null)));
+    if (answer === null) return { ...empty, unavailable: "database" };
+    const parent = answer.parentOfAnnotation(work.annotationKey);
+    // The library holds no such Annotation, which the lead says.
+    if (parent === null) return empty;
+    indexedKey = parent.indexedKey;
+  } else if (work.kind === "citekey") {
     const answer = yield* lookup
       .read({ citekeys: [work.citekey], indexedKeys: [], annotationKeys: [] })
       .pipe(recover(() => Effect.void, Effect.succeed(null)));
@@ -517,6 +520,8 @@ const readWork = Effect.fn("CitationPopover.readWork")(function* (
   ]);
   if (database === "unreadable") return { ...empty, unavailable: "database" };
   const source = sources.get(indexedKey);
+  // An Annotation on a standalone PDF has no Item to reference.
+  if (!source && work.kind === "annotation") return empty;
   if (!source) return { ...empty, unavailable: "item" };
   // Read through to the render that stands: the popover shows one entry and
   // has no stale list of its own to keep on screen meanwhile.

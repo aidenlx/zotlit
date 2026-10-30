@@ -150,9 +150,8 @@ export const schema = v.object({
   /** Show recognized Citations with the selected CSL style. */
   "citation.show-formatted": v.boolean(),
   /**
-   * Show an Annotation Citation in its place as its formatted text, and add
-   * its Item's entry to its hover. Takes effect with
-   * `citation.annotation-citations` and `citation.show-formatted`.
+   * Show an Annotation Citation in its place as its formatted text. Takes
+   * effect with `citation.annotation-citations` and `citation.show-formatted`.
    */
   "citation.render-annotation-citations": v.boolean(),
   /**

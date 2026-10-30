@@ -21,6 +21,8 @@ import {
   lookupAnswer,
   lookupForWorks,
 } from "@/services/citation-index/__fixtures__/lookup";
+import { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import type { AnnotationParent } from "@/services/citation-index/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import { createCitationIndexHarness } from "@/services/citation-index/test-harness";
 import type { DocumentCitations } from "@/services/citation-text/service";
@@ -137,7 +139,10 @@ const emptyText = (): DocumentCitations => ({
   literalWorks: new Map(),
 });
 
-function harness(read: () => Promise<DocumentCitations | null>) {
+function harness(
+  read: () => Promise<DocumentCitations | null>,
+  { parent = null }: { parent?: AnnotationParent | null } = {},
+) {
   let file: TFile | null = NOTE;
   const metadataCache = new MemoryMetadataCache();
   const citationText = { read: vi.fn(read) };
@@ -158,8 +163,17 @@ function harness(read: () => Promise<DocumentCitations | null>) {
     },
     db: reads(),
     citationLookup: {
-      read: () => {
-        throw new Error("Document fills use their one document answer");
+      read: ({ annotationKeys = [] }) => {
+        if (annotationKeys.length === 0)
+          throw new Error("Document fills use their one document answer");
+        return Promise.resolve(
+          new CitationLookupAnswer({
+            revision: "r1",
+            citekeys: new Map(),
+            indexedKeys: new Map(),
+            annotationKeys: new Map(annotationKeys.map((key) => [key, parent])),
+          }),
+        );
       },
       status: "fresh",
       changed: Stream.empty,
@@ -199,10 +213,9 @@ function harness(read: () => Promise<DocumentCitations | null>) {
     },
   });
   const { service, runtime } = popover;
-  const show = (lead?: (part: PopoverPart) => void) =>
+  const show = () =>
     runtime.runSync(
       service.show({
-        ...(lead ? { lead } : {}),
         event: new MouseEvent("mouseover"),
         hoverParent: { hoverPopover: null },
         sourcePath: NOTE.path,
@@ -218,9 +231,24 @@ function harness(read: () => Promise<DocumentCitations | null>) {
         open: vi.fn(),
       }),
     );
+  const showWork = (
+    work: WorkHoverRequest["work"],
+    lead: (part: PopoverPart) => void,
+  ) =>
+    void runtime.runPromise(
+      service.showWork({
+        event: new MouseEvent("mouseover"),
+        hoverParent: { hoverPopover: null },
+        targetEl: document.createElement("span"),
+        work,
+        open: vi.fn(),
+        lead,
+      }),
+    );
   return {
     citationText,
     readLookup,
+    showWork,
     removeSource() {
       file = null;
       metadataCache.delete(NOTE);
@@ -276,10 +304,10 @@ describe("Citation Popover lead", () => {
     return drawn.props.children;
   }
 
-  it("draws the lead above the entries, and draws it again in place", async () => {
+  it("draws the lead above what the read found, and draws it again in place", async () => {
     await using run = harness(() => Promise.resolve(null));
     let part: PopoverPart | undefined;
-    run.show((given) => {
+    run.showWork({ kind: "item", indexedKey: "ABCD2345" }, (given) => {
       part = given;
       given.draw("The annotation");
     });
@@ -290,18 +318,25 @@ describe("Citation Popover lead", () => {
     const [lead, entries] = lastDrawn();
     expect(lead).toBe("The annotation");
     expect(
-      (entries as ReactElement<CitationPopoverContentProps>).props.blocks,
-    ).toMatchObject([{ kind: "unresolved", citekey: "ghost" }]);
+      (entries as ReactElement<CitationPopoverContentProps>).props.unavailable,
+    ).toBe("item");
 
     part!.draw("The edited annotation");
     expect(lastDrawn()[0]).toBe("The edited annotation");
     expect(lastDrawn()[1]).toBe(entries);
   });
 
-  it("keeps the lead where the note reads no entries", async () => {
-    await using run = harness(() => Promise.resolve(null));
-    run.removeSource();
-    run.show((part) => part.draw("The annotation"));
+  it.each([
+    ["the library holds no such Annotation", null],
+    [
+      "the Annotation's PDF has no Item",
+      { indexedKey: "STANDALO", citekey: null },
+    ],
+  ])("keeps the lead alone where %s", async (_case, parent) => {
+    await using run = harness(() => Promise.resolve(null), { parent });
+    run.showWork({ kind: "annotation", annotationKey: "ABCD2345" }, (part) =>
+      part.draw("The annotation"),
+    );
 
     await vi.waitFor(() =>
       expect(popovers[0]!.render).toHaveBeenCalledTimes(2),

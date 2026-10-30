@@ -15,13 +15,8 @@ import type {
   AnnotationRepository,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import { HoverVisits } from "@/services/citation-popover/visits";
 import type { PopoverPart } from "@/services/citation-popover/visits";
-import type { ShownCitation } from "@/services/citation-text/present";
-import type {
-  HoveredWork,
-  NavigationPane,
-} from "@/services/citekey-navigation";
+import type { NavigationPane } from "@/services/citekey-navigation";
 import type {
   ExcerptDisplayDemand,
   ExcerptDisplays,
@@ -43,21 +38,8 @@ export interface AnnotationHoverRequest {
   sourcePath: string;
   /** The Annotation the link names, by bare keys. */
   link: AnnotationOpenUriOptions;
-  /**
-   * The citation the link is shown as, where the surface shows it as one: the
-   * popover then holds the Item's reference below the Annotation.
-   */
-  reference?: AnnotationReference;
-}
-
-/** The work an Annotation Citation cites, as the surface showing it read it. */
-export interface AnnotationReference {
-  /** The Annotation's parent Item. */
-  work: HoveredWork;
-  /** The occurrence the surface shows as formatted text. */
-  shown: ShownCitation;
-  /** Opens the parent Item's Literature Note. */
-  open: (pane: NavigationPane) => void;
+  /** Opens the Literature Note of the Annotation's parent Item. */
+  open: (indexedKey: string, pane: NavigationPane) => void;
 }
 
 export interface AnnotationPopoverCoreDeps {
@@ -92,15 +74,15 @@ export interface AnnotationPopoverCoreDeps {
  * text, comment, page label and colour, and the Excerpt Image of an image or
  * ink Annotation from ZotLit's own cache and renderer — with no reader open.
  *
- * The popover is the Citation Popover's own chrome, opened on the hover and
- * filled once the Annotation is read. Every hover reads the repository again,
- * and an open popover holds the Attachment's list and redraws on its change,
- * so an edit made in Zotero or in the Annotation View shows without a note
- * refresh. A link to an Annotation the list no longer holds says so briefly.
+ * It draws into a part of the Citation Popover, above the parent Item's
+ * reference, once the Annotation is read. Every hover reads the repository
+ * again, and an open popover holds the Attachment's list and redraws on its
+ * change, so an edit made in Zotero or in the Annotation View shows without a
+ * note refresh. A link to an Annotation the list no longer holds says so
+ * briefly.
  */
 export class AnnotationPopoverCore implements Disposable {
   readonly #deps;
-  readonly #visits = new HoverVisits(() => ({}));
   #closed = false;
 
   constructor(deps: AnnotationPopoverCoreDeps) {
@@ -109,30 +91,6 @@ export class AnnotationPopoverCore implements Disposable {
 
   [Symbol.dispose](): void {
     this.#closed = true;
-    this.#visits.hideAll();
-  }
-
-  /**
-   * Opens the popover for one hovered link and reads what it names.
-   *
-   * @returns settles once that first read has drawn, or has been dropped
-   *   because a newer read or a hide superseded it. A hover needs not wait
-   *   on it.
-   */
-  show(request: AnnotationHoverRequest): Promise<void> {
-    if (this.#closed) return Promise.resolve();
-    const { popover, subscriptions } = this.#visits.open(
-      request.hoverParent,
-      request.targetEl,
-    );
-    return this.follow(
-      {
-        owner: popover,
-        subscriptions,
-        draw: (content) => popover.render(content),
-      },
-      request,
-    );
   }
 
   /**

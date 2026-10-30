@@ -24,7 +24,6 @@ import {
 } from "@/lib/reading-view";
 import type { SectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
-import { heldCitekeyOf } from "@/services/citation-index/lookup";
 import { showCitation } from "@/services/citation-text/present";
 import type {
   DocumentCitations,
@@ -39,7 +38,7 @@ import type { NavigationPane } from "@/services/citekey-navigation";
 import { PluginSettings } from "@/services/settings/service";
 
 import { AnnotationPopover } from "./service";
-import type { AnnotationHoverRequest, AnnotationReference } from "./service";
+import type { AnnotationHoverRequest } from "./service";
 import "./style.css";
 
 /** Obsidian renders a link to another scheme as an external link. */
@@ -68,8 +67,8 @@ export interface AnnotationLinkReadingDeps {
 interface RenderedLink {
   anchor: HTMLAnchorElement;
   link: AnnotationOpenUriOptions;
-  /** What its hover adds, once the anchor shows the citation it is. */
-  reference?: AnnotationReference;
+  /** Whether the anchor shows the citation it is. */
+  citation?: boolean;
 }
 
 /** One rendered section this surface holds, and how to rewrite it. */
@@ -160,32 +159,15 @@ export class AnnotationLinkReadingCore implements Disposable {
     let next = 0;
     for (const rendered of links) {
       // A link with text of its own is no Annotation Citation.
-      if (rendered.reference === undefined && rendered.anchor.hasChildNodes())
-        continue;
+      if (!rendered.citation && rendered.anchor.hasChildNodes()) continue;
       const index = occurrences.findIndex(
         ({ link }, at) => at >= next && sameAnnotation(link, rendered.link),
       );
       if (index === -1) continue;
       next = index + 1;
-      const { source, occurrence } = occurrences[index]!;
-      const indexedKey = occurrence.text.citations[0]?.id;
-      if (indexedKey === undefined) continue;
-      showCitation(rendered.anchor, occurrence, "suppress");
+      showCitation(rendered.anchor, occurrences[index]!.occurrence, "suppress");
       rendered.anchor.classList.add(themeHook.citation, CITATION_CLASS);
-      rendered.reference = {
-        work: {
-          // An Item with no Citation Key, or one the answer does not cover,
-          // is named by its Indexed Key, which the popover shows only where
-          // the Item cannot be read.
-          citekey: heldCitekeyOf(citations.lookup, indexedKey) ?? indexedKey,
-          indexedKey,
-        },
-        shown: {
-          citation: { source, keys: [] },
-          at: { kind: "offset", start: occurrence.start },
-        },
-        open: (pane) => this.#deps.openItem(indexedKey, pane),
-      };
+      rendered.citation = true;
     }
   }
 
@@ -204,7 +186,7 @@ export class AnnotationLinkReadingCore implements Disposable {
 
   #hoverAt(
     event: MouseEvent,
-    { anchor, link, reference }: RenderedLink,
+    { anchor, link }: RenderedLink,
     sourcePath: string,
   ): void {
     // The re-entry guard Obsidian runs before its own `hover-link`: moving
@@ -219,18 +201,13 @@ export class AnnotationLinkReadingCore implements Disposable {
       targetEl: anchor,
       sourcePath,
       link,
-      // Read at the hover: the settings may have turned the citation off
-      // since the anchor last showed it.
-      reference:
-        this.#deps.citations(sourcePath) === null ? undefined : reference,
+      open: this.#deps.openItem,
     });
   }
 }
 
 /** One Annotation Citation of a document, with the text formatted for it. */
 interface AnnotationOccurrence {
-  /** The link as the document writes it, `[` to `)`. */
-  source: string;
   link: AnnotationOpenUriOptions;
   occurrence: FormattedOccurrence;
 }
@@ -254,7 +231,7 @@ function annotationOccurrences(
         range === null ||
         (occurrence.start >= range.from && occurrence.start < range.to)
       )
-        found.push({ source, link, occurrence });
+        found.push({ link, occurrence });
     }
   }
   return found.sort((a, b) => a.occurrence.start - b.occurrence.start);
