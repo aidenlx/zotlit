@@ -1,0 +1,97 @@
+---
+title: "ZotLit 2.2: read Zotero PDFs and track your reading in Obsidian"
+description: "Browse your Zotero library, read and annotate PDFs, cite annotations, and track your reading list in a table, all inside Obsidian, without a note for every paper."
+date: 2026-10-30
+---
+
+import { ActionLink } from "@/components/action-link";
+
+Hey everyone! For **Obsidian October 2026**, I am releasing **ZotLit 2.2**.
+
+You import 80 papers from a literature search, and your vault fills with 80 empty notes whose only job is to say "to-read". You read a PDF in Zotero, then switch to Obsidian to write about it, then switch back to check a page. With ZotLit 2.2, you find, read, and track your papers in Obsidian, and you write a note only when you have something to say.
+
+<ActionLink href="/docs/install-zotlit" kind="external">
+  Install ZotLit
+</ActionLink>
+
+Requires Obsidian 1.14.5+ desktop and the ZotLit Companion add-on for Zotero.
+
+## Browse your Zotero library in Obsidian
+
+When you write, the paper you need is one tab away. The **Library View** shows your Zotero libraries, collections, and tags in an Obsidian tab. Select a paper to see its abstract, its PDF, and how many annotations you made in each color. Drag a paper into a note to cite it.
+
+![The Library View with My Library filtered to papers with PDFs, and the Reading Card of one paper showing its tags, its PDF, and its annotation counts by color](/img/blog/v2.2-library-view.webp)
+
+When you meet a citation in a note, its popover has a **Show in Zotero library** button that takes you to the paper in the Library View.
+
+<ActionLink href="/docs/how-to/use-library-view" kind="external">
+  Browse your library in the Library View
+</ActionLink>
+
+## Read and annotate Zotero PDFs in Obsidian
+
+Read a paper in the tab beside your draft. ZotLit opens a paper's PDF from your Zotero storage in an Obsidian tab, so your vault holds no copies. With Zotero 10, the highlights, notes, and drawings you make in Obsidian save to Zotero, and the ones you make in Zotero appear in Obsidian.
+
+![A paper open in Obsidian's PDF reader with its Zotero highlights and underlines, one highlight's popup showing its comment and tag, and the annotation view listing each annotation as a card](/img/blog/v2.2-pdf-reader-annotations.webp)
+
+The annotation view beside the PDF has a cleaner design: each card shows the quote, your comment, and its tags. Drag a card into your note, and ZotLit inserts the quote with a link back to the exact passage. Hover the link later to see the annotation again.
+
+An annotation link can also be your citation. Turn on **Annotation citations** and **Show annotation links as citations** under **Settings > Citations**, and a link with no text, such as `[](zotero://…)`, shows as the paper's citation with the page, numbered with your other citations. Hover it to see the annotation above the paper's reference.
+
+![A thesis chapter where an annotation link shows as the citation "(Ioannidis 2005, 696)" next to an ordinary citation of Rougier et al. 2014, with its popover open: the page-696 quote and the comment "Both apply to the pilot cohort (n = 24)" above the paper's reference buttons and bibliography entry](/img/blog/v2.2-annotation-link-as-citation.webp)
+
+Showing annotation links as citations is opt-in and off by default. With it off, an annotation link stays a link, and its hover still shows the annotation.
+
+<ActionLink href="/docs/how-to/open-pdf-in-obsidian" kind="external">
+  Open an item's PDF in Obsidian
+</ActionLink>
+<ActionLink href="/docs/how-to/use-annotation-view" kind="external">
+  Use the annotation view
+</ActionLink>
+
+## Track your reading list in a table
+
+This is where the 80 empty notes go away. ZotLit Query shows your papers in a table, much like Obsidian Bases. Add columns such as reading status or rating, and edit them in place. A paper needs no literature note until you edit one of its cells; then ZotLit creates the note for you.
+
+![A table of papers with reading status, note, related, done, rating, and finished columns from each literature note, with the status cell of one paper open for editing and suggesting read, reading, to-read, and unread](/img/blog/v2.2-reading-status-table.webp)
+
+The same tables work inside a note as query blocks. The default literature note now shows the paper's annotations in a query block, which stays current as you highlight in Zotero or Obsidian.
+
+![A literature note with an embedded query block that groups the paper's annotations by color, with the Yellow group's four cards in two columns above the Red group](/img/blog/v2.2-query-block-in-note.webp)
+
+<ActionLink href="/docs/how-to/track-reading-status" kind="external">
+  Track reading status in the Query View
+</ActionLink>
+<ActionLink href="/docs/concepts/query-files-and-query-blocks" kind="external">
+  Query files and query blocks
+</ActionLink>
+
+## Also in 2.2
+
+- Citations appear as links in Obsidian's graph view. A paper you cite without a literature note shows as a dimmed node, so you can see which papers your notes have in common.
+- A literature note profile is now one document, and the Template Workbench edits it beside a live preview of the note.
+- Search and the citation picker stay responsive in large libraries, and an optional download finds more Chinese titles in search.
+- The ZotLit Query CLI lets your scripts and AI agents query your Zotero library through the Obsidian CLI.
+
+For every change in 2.2, read the [2.2.0 changelog](/changelog/2.2.0).
+
+![The global graph view with purple citation edges linking 26 literature notes in orange, such as Bush 1945, Garfield 1955, and Roediger and Karpicke 2006, seven research notes in blue, and the dimmed Cited Work Nodes Engelbart 1962, Kessler 1963, and Ebbinghaus 1885, beside the literature note for Matuschak and Nielsen 2019 with its citations and the note's local graph](/img/blog/v2.2-graph-view-citations.webp)
+
+<ActionLink href="/docs/how-to/explore-citations-in-graph" kind="external">
+  Explore citations in the graph view
+</ActionLink>
+<ActionLink href="/docs/how-to/customize-a-template" kind="external">
+  Customize a template
+</ActionLink>
+
+## Coming in November
+
+I know the current documentation is long and dense for newcomers and for busy academics who want to get back to their research. I am writing a new documentation site, together with a series of video tutorials that walk through common research workflows. I could not finish them all during Obsidian October, so they will arrive in November.
+
+Some workflow improvements have already landed in this release, such as annotation links and reviewing papers in the Library View. More are on the way, and there is still room for polish. If anything in your work with ZotLit feels slow, confusing, or awkward, please tell me on [GitHub Issues](https://github.com/aidenlx/zotlit/issues) or in the Obsidian Discord community. I welcome every suggestion and every report of friction.
+
+## Get ZotLit 2.2
+
+1. In Obsidian, open **Settings > Community plugins**, select **Browse**, and install or update **ZotLit**.
+2. In Zotero, install the matching [ZotLit Companion](/docs/install-companion) add-on.
+3. Open the command palette and run **ZotLit: Open Library View** or **ZotLit: New Query File**.

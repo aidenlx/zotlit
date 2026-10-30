@@ -68,6 +68,16 @@ Opens the Library View, a tab titled <UiLabel name={m.library_view_name()} /> th
 
 A selected row in the view answers the quick switcher's chords below, and its right-click menu lists every action on the item. See [Open, write, and cite from a row](/docs/how-to/use-library-view#rows).
 
+<Command name={m.command_show_in_library_name()} />
+
+Reveals the active literature note's item in the Library View. Opens the Library View if closed, clears any active search text and filters so the paper is not hidden, and flashes the paper's row to highlight it.
+
+| Entry point     | Details                                                                               |
+| --------------- | ------------------------------------------------------------------------------------- |
+| Command palette | Active on a literature note                                                           |
+| File menu       | Active on a literature note (<UiLabel name={m.library_view_show_in_library()} />)     |
+| Tab menu        | Active on a literature note tab (<UiLabel name={m.library_view_show_in_library()} />) |
+
 ## Literature note quick switcher [#quick-switcher]
 
 <Command name={m.command_open_lit_note_name()} />
@@ -451,6 +461,7 @@ Opens the release notes for the installed ZotLit version.
 | <UiLabel name={m.command_update_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_import_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_open_library_view_name()} />               |   yes   |  yes   |      no      | Always                                              |
+| <UiLabel name={m.command_show_in_library_name()} />                 |   yes   |   no   |     yes      | Active on a literature note                         |
 | <UiLabel name={m.command_open_lit_note_name()} />                   |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_insert_citation_name()} />                 |   yes   |   no   |      no      | An editor is open                                   |
 | <UiLabel name={m.command_open_citekey_name()} />                    |   yes   |   no   |      no      | Cursor on a recognized citation key                 |
@@ -492,12 +503,6 @@ Opens the release notes for the installed ZotLit version.
 The two <UiLabel name={m.template_workbench_open_layout()} /> rows are separate commands. The first opens the profile document you are editing; the second brings the Workbench forward from inside the view.
 
 ## Query CLI [#query-cli]
-
-<Callout type="warn" title="Experimental feature">
-
-The Query CLI is experimental. Parameters, output schemas, and diagnostic reports may change between releases.
-
-</Callout>
 
 The Query CLI reads works, files, and reading marks for agents and scripts. One `zotlit:query` command selects a Query Dataset with `from`. [How ZotLit Query works](/docs/concepts/how-zotlit-query-works) explains the datasets, filters, and groups.
 
@@ -673,7 +678,7 @@ See [Template Workbench CLI](/docs/reference/template-workbench-cli) for every c
     href="/docs/concepts/how-zotlit-query-works"
   />
   <Card
-    title="Install the ZotLit skill"
+    title="Install the ZotLit skills"
     description="Install the agent workflow that uses the Template Workbench."
     href="/docs/install-skill"
   />

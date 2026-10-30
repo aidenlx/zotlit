@@ -1,3 +1,4 @@
+import { regex } from "arkregex";
 import { createHash } from "node:crypto";
 import {
   mkdir,
@@ -55,6 +56,10 @@ import {
   FIXTURE_LOCAL_API_WRITE_KEY,
   FIXTURE_PARTIAL_NAME,
   getFixtureLayout,
+  GRAPH_ITEMS,
+  GRAPH_LITERATURE_NOTE_BODIES,
+  GRAPH_RESEARCH_FOLDERS,
+  GRAPH_VIEW_OPTIONS,
   INSTALLED_STYLES,
   ITEMS,
   legacyTemplateFilename,
@@ -2804,6 +2809,94 @@ describe("a Vault Case", () => {
         ),
       ),
     ).toHaveProperty("sync", false);
+  });
+
+  it("gives the graph vault its research notes and Literature Notes, and no test page", async () => {
+    const graph = await buildVaultCase("graph");
+
+    expect(await readdir(graph.vaultDir)).toEqual([
+      ".obsidian",
+      ...GRAPH_RESEARCH_FOLDERS,
+      "literatures",
+    ]);
+    // One note per My Library Item; the group Library works stay cited only.
+    expect((await readdir(join(graph.vaultDir, "literatures"))).sort()).toEqual(
+      GRAPH_ITEMS.filter(({ libraryID }) => libraryID === 1)
+        .map(({ citationKey }) => `${citationKey}.md`)
+        .sort(),
+    );
+    expect(
+      GRAPH_ITEMS.filter(({ libraryID }) => libraryID !== 1).map(
+        ({ citationKey }) => citationKey,
+      ),
+    ).toEqual([
+      "engelbartAugmentingHuman1962",
+      "kesslerBibliographicCoupling1963",
+      "ebbinghausGedachtnis1885",
+    ]);
+  });
+
+  it("holds only the graph Items in the graph vault's Zotero data", async () => {
+    const graph = await buildVaultCase("graph");
+    using sqlite = new DatabaseSync(graph.databasePath, { readOnly: true });
+
+    expect(
+      sqlite
+        .prepare(`select key from items where itemTypeID not in
+      (select itemTypeID from itemTypes where typeName in ('note','attachment','annotation')) order by key`)
+        .all()
+        .map(({ key }) => key),
+    ).toEqual(GRAPH_ITEMS.map(({ key }) => key).sort());
+    expect(sqlite.prepare("pragma foreign_key_check").all()).toEqual([]);
+    expect(
+      sqlite.prepare("select collectionID from collections").all(),
+    ).toEqual([]);
+    expect(
+      new Set(GRAPH_ITEMS.map(({ citationKey }) => citationKey)).size,
+    ).toBe(GRAPH_ITEMS.length);
+    for (const { key } of GRAPH_ITEMS) expect(isItemKey(key)).toBe(true);
+  });
+
+  it("resolves every graph vault citation to one graph Item, and cites every Item", async () => {
+    const graph = await buildVaultCase("graph");
+    const pages = (await readdir(graph.vaultDir, { recursive: true })).filter(
+      (path) => path.endsWith(".md"),
+    );
+    const citation = regex("(?:\\[|; )@([A-Za-z][\\w-]*)", "g");
+    const cited = new Set<string>();
+    for (const page of pages) {
+      const text = await readFile(join(graph.vaultDir, page), "utf8");
+      for (const [, key = ""] of text.matchAll(citation)) cited.add(key);
+    }
+    const keys = GRAPH_ITEMS.map(({ citationKey }) => citationKey);
+
+    expect([...cited].filter((key) => !keys.includes(key))).toEqual([]);
+    expect(keys.filter((key) => !cited.has(key!))).toEqual([]);
+    expect(new Set(Object.keys(GRAPH_LITERATURE_NOTE_BODIES))).toEqual(
+      new Set(
+        GRAPH_ITEMS.filter(({ libraryID }) => libraryID === 1).map(
+          ({ citationKey }) => citationKey,
+        ),
+      ),
+    );
+  });
+
+  it("saves a Citation Graph with author and title labels in the graph vault", async () => {
+    const graph = await buildVaultCase("graph");
+    const readJson = async (path: string): Promise<Record<string, unknown>> =>
+      JSON.parse(await readFile(join(graph.vaultDir, path), "utf8"));
+
+    expect(await readJson(".obsidian/graph.json")).toEqual(GRAPH_VIEW_OPTIONS);
+    expect(await readJson(".obsidian/graph.json")).toMatchObject({
+      "zotlit-author-title-labels": true,
+    });
+    expect(await readJson(".obsidian/core-plugins.json")).toMatchObject({
+      graph: true,
+      sync: false,
+    });
+    expect(
+      JSON.parse(await readFile(graph.pluginDataPath, "utf8")),
+    ).toMatchObject({ "citation.graph-citations": true });
   });
 
   it("leaves a fresh vault with ZotLit enabled and nothing else", async () => {

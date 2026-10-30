@@ -78,6 +78,8 @@ export function blogPostingSchema(input: {
   date: string;
   modified?: string;
   url: string;
+  /** Root-relative path of the post's social card. */
+  image?: string;
 }): WithContext<BlogPosting> {
   return {
     "@context": "https://schema.org",
@@ -91,6 +93,7 @@ export function blogPostingSchema(input: {
     author: personSchema(input.author),
     publisher: organization,
     url: absoluteUrl(input.url),
+    ...(input.image !== undefined && { image: absoluteUrl(input.image) }),
   };
 }
 

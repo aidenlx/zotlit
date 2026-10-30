@@ -205,11 +205,25 @@ The card remembers whether <UiLabel name={m.library_view_card_all_fields()} /> a
 
 Select <UiLabel name={m.library_view_details_toggle()} /> at the end of the search box's row, or press `Space` on a selected row, to show or hide the card. <UiLabel name={m.library_view_card_close()} /> on the card hides it too, and ZotLit remembers your choice. While the card shows, it follows the paper you select, by a click or by the arrow keys; with no paper selected, it asks you to select one, and counts how many papers in the library or collection you selected are unread, annotated, have a literature note, or have a PDF. On a narrow pane it opens under the tree and the list; drag its top edge to change its height, or double-click the edge to reset it. When it has the room, it shows the paper in two columns. When a search, a filter, or another tree selection takes the selected paper out of the list, the selection goes and the card shows no paper.
 
-## Show a quick switcher result in the library [#show-in-library]
+![The Library View in a narrow pane beside a thesis chapter, with the selected paper's details under the list at full width and the tooltip "Show item details" on the toggle at the end of the search row](/img/how-to/library-view-details-toggle.webp)
 
-In the [literature note quick switcher](/docs/reference/commands#quick-switcher), press `Alt+Enter` (`Option+Enter` on macOS) on a result. ZotLit opens the Library View on the paper's first collection, or on its library when the paper is in no collection, and selects its row. The view clears its search, turns off its reading-state filters, and lets go of its selected tags, so nothing hides the paper.
+## Show a paper in the library [#show-in-library]
 
-The list holds at most 1,000 papers. When the paper falls beyond them, nothing is selected and a notice says <UiLabel name={m.library_view_reveal_not_listed({ limit: 1000 })} />
+You can reveal a paper in the Library View from these places:
+
+- In the [literature note quick switcher](/docs/reference/commands#quick-switcher), press `Alt+Enter` (`Option+Enter` on macOS) on any result.
+- From an open literature note, run <Command inline name={m.command_show_in_library_name()} /> from the command palette, or select <UiLabel name={m.library_view_show_in_library()} /> from the note's tab menu or file menu.
+- In the <UiLabel name={m.references_view_name()} /> sidebar, select <UiLabel name={m.library_view_show_in_library()} /> on a reference row that matches a Zotero item.
+- In the <UiLabel name={m.cited_by_view_name()} /> view, select <UiLabel name={m.library_view_show_in_library()} /> in the toolbar.
+- In the citation hover popover, select <UiLabel name={m.library_view_show_in_library()} /> in the popover toolbar.
+- In the graph view, right-click a Cited Work Node whose citation key matches one Zotero item, and choose <UiLabel name={m.library_view_show_in_library()} />.
+- In template links, `zt.librarylink` creates an `obsidian://zotlit/show-in-library` protocol link that navigates to the paper on any synced device.
+
+![A thesis chapter with the citation popover open over a Rougier et al. citation and the tooltip "Show in Zotero library" on its library button, beside the Library View with that paper's row selected and its details below the list](/img/how-to/show-in-library.webp)
+
+When you trigger <UiLabel name={m.library_view_show_in_library()} />, ZotLit opens the Library View on the paper's collection (or its library if unfiled). It clears any active search text and turns off reading-state and tag filters so nothing hides the paper, then flashes the paper's row to highlight it.
+
+When the paper is in none of your libraries in scope, the view keeps your current search and filters and displays <UiLabel name={m.library_view_reveal_not_found()} />. When the paper falls beyond the view's 1,000-paper limit, a notice reports <UiLabel name={m.library_view_reveal_not_listed({ limit: 1000 })} />.
 
 ## Save the view as a query file [#save-as-query-file]
 

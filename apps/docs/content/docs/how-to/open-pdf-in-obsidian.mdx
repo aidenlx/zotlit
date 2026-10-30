@@ -13,7 +13,7 @@ Read a Zotero item's PDF in an Obsidian tab instead of switching to Zotero.
 
 ZotLit opens the PDF in Obsidian's own PDF reader, whether the file sits inside your vault or in Zotero's storage folder. Only PDF attachments open this way; EPUBs, web snapshots, and other file types stay in Zotero.
 
-You need Obsidian 1.14.2 or later, which ZotLit 2.2 also requires.
+You need Obsidian 1.14.5 or later, which ZotLit 2.2 requires.
 
 ## From a literature note
 
@@ -52,6 +52,10 @@ File links work for any link in your vault that points at a PDF in your Zotero l
 To open one link in your system app anyway, right-click it and choose **Open in default browser**. An annotation link then opens in Zotero. To turn the whole behavior off, clear <UiLabel name={m.settings_reader_open_file_links_name()} /> in **Settings → ZotLit → Reader**.
 
 To send annotation links alone to Zotero, clear <SettingsPath page={m.settings_page_reader()} setting={m.settings_reader_open_annotation_links_name()} />. Hovering an annotation link still shows the annotation.
+
+Hover over an annotation link in Live Preview, Source mode, or Reading view to see a popover preview. It shows the quoted text, your comment, the page number, and the highlight color. For an image or ink annotation, it displays the visual excerpt. The preview shows on every hover, whatever the citation hover settings are.
+
+![A thesis chapter with two inserted annotations, each with the quote, the paper's citation after it, and the page number as the link, and a popover over the second link that shows the quote, the comment, page 1, and a green highlight bar](/img/how-to/annotation-link-popover.webp)
 
 ## What you get
 
