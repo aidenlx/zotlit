@@ -4,6 +4,9 @@ export type LinkMarkdownView = import("obsidian").MarkdownView & {
 export type LinkGesture = "reading" | "properties" | "live-preview" | "source";
 export interface LinkSettings {
   "reader.open-annotation-links"?: boolean;
+  "citation.annotation-citations"?: boolean;
+  "citation.render-annotation-citations"?: boolean;
+  "citation.hover-action"?: "off" | "popover" | "page-preview";
 }
 
 export interface PassedLink {

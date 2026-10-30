@@ -822,6 +822,8 @@
   "settings_citation_editor_heading": "文内引用",
   "settings_citation_show_formatted_name": "显示格式化引用",
   "settings_citation_show_formatted_desc": "在实时预览和阅读视图中使用所选的引用与参考文献样式显示引用。源码模式始终显示 Markdown。ZotLit 无法格式化引用时，引用保持不变。",
+  "settings_citation_render_annotation_citations_name": "将批注链接显示为引用",
+  "settings_citation_render_annotation_citations_desc": "将没有链接文字的批注链接（如 `[](zotero://…)`）显示为带批注页码的格式化引用。悬停时显示批注及其条目的参考文献。需要开启“批注引用”和“显示格式化引用”。",
   "settings_citation_open_as_links_name": "将引用作为链接打开",
   "settings_citation_open_as_links_desc": "选择 Pandoc 引用或显示为引用的文献笔记 Wiki 链接时，打开文献笔记。关闭时，选择引用会将光标置于引用文本中，以便编辑。",
   "settings_citation_hover_heading": "悬停",

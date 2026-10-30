@@ -10,6 +10,7 @@ import type {
   AnnotationList,
   DatabaseRowsError,
 } from "@/services/annotation-repository/service";
+import { CitationPopover } from "@/services/citation-popover/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
 import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -19,13 +20,15 @@ import { createCommentRenderer } from "@/views/annot-view/comment-render";
 import { AnnotationPopoverCore } from "./popover";
 import type { AnnotationHoverRequest } from "./popover";
 
-export type { AnnotationHoverRequest } from "./popover";
+export type { AnnotationHoverRequest, AnnotationReference } from "./popover";
 
 export class AnnotationPopover extends Context.Service<
   AnnotationPopover,
   {
     /**
-     * Opens the popover for one hovered link and reads what it names.
+     * Opens the popover for one hovered link and reads what it names. A link
+     * shown as a citation opens the Citation Popover of its Item instead, with
+     * the Annotation drawn above the Item's reference.
      *
      * @returns settles once that first read has drawn, or has been dropped
      *   because a newer read or a hide superseded it. A hover needs not wait
@@ -43,6 +46,7 @@ export const layerAnnotationPopover: Layer.Layer<
   | ZoteroReads
   | ZoteroPref
   | ObsidianApp
+  | CitationPopover
 > = Layer.effect(
   AnnotationPopover,
   Effect.gen(function* () {
@@ -51,6 +55,7 @@ export const layerAnnotationPopover: Layer.Layer<
     const reads = yield* ZoteroReads;
     const pref = yield* ZoteroPref;
     const app = yield* ObsidianApp;
+    const citationPopover = yield* CitationPopover;
     const bridge = yield* scopedBridge;
     const core = yield* Effect.acquireDisposable(
       Effect.sync(
@@ -80,9 +85,24 @@ export const layerAnnotationPopover: Layer.Layer<
     );
     return AnnotationPopover.of({
       // The core catches read failures, and this starts its first read now.
-      show: Effect.fn("AnnotationPopover.show")((request) =>
-        Effect.promise(() => core.show(request)),
-      ),
+      show: Effect.fn("AnnotationPopover.show")(function* (request) {
+        const { reference } = request;
+        if (reference === undefined) {
+          return yield* Effect.promise(() => core.show(request));
+        }
+        yield* citationPopover.show({
+          event: request.event,
+          hoverParent: request.hoverParent,
+          targetEl: request.targetEl,
+          sourcePath: request.sourcePath,
+          works: [reference.work],
+          shown: reference.shown,
+          open: (_citekey, pane) => reference.open(pane),
+          lead: (part) => {
+            void core.follow(part, request);
+          },
+        });
+      }),
     });
   }).pipe(withLogCategory("annotation-popover")),
 );

@@ -6,7 +6,10 @@
 // a hidden popover lets go, and image bytes that fail to decode.
 import { it } from "@effect/vitest";
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect";
+import { Component } from "obsidian";
 import type { App, HoverParent } from "obsidian";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
 import { describe, expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -20,6 +23,8 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import { CitationPopover } from "@/services/citation-popover/service";
+import type { LeadHoverRequest } from "@/services/citation-popover/service";
 import { ExcerptDisplayFixture } from "@/services/excerpt-image/__fixtures__/display";
 import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -112,68 +117,88 @@ const COMMENT = "Making figures is hard :(";
 const EDITED =
   "update itemAnnotations set comment = 'Figures are easier now' where itemID = 51";
 
+/**
+ * The popover's Effect layer over one stored Annotation, `LAYER001`, with the
+ * Citation Popover an Annotation Citation's hover hands its reference to.
+ */
+async function layerHarness(
+  stack: AsyncDisposableStack,
+  citationPopover: Partial<CitationPopover["Service"]> = {},
+) {
+  const annotation: AnnotationRecord = {
+    key: "LAYER001",
+    parentKey: "PDFLAYER",
+    type: "highlight",
+    text: "Shown through the layer",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|000000|00000",
+    tags: [],
+    version: null,
+    lock: null,
+    position: { kind: "pdf-rects", pageIndex: 0, rects: [] },
+  };
+  const source: AnnotationSource = {
+    kind: "zotero-db",
+    database: { userID: 1, localUserKey: "user", serverID: "server" },
+    libraryID: 1,
+    libraryRevision: 1,
+  };
+  const repository = stubService<AnnotationRepository["Service"]>(
+    "AnnotationRepository",
+    {
+      read: () => Effect.succeed({ source, annotations: [annotation] }),
+      hold: () => Effect.succeed({ [Symbol.dispose]: () => {} }),
+      annotationsChanged: Stream.never,
+    },
+  );
+  const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
+    snapshot: Effect.die(new Error("No Excerpt Image is asked for")),
+  });
+  const pref = stubService<ZoteroPref["Service"]>("ZoteroPref", {
+    current: Effect.succeed({
+      dataDir: "/zotero",
+      baseAttachmentPath: null,
+    } as ZoteroPrefSnapshot),
+  });
+  const runtime = buildRuntime(
+    layerAnnotationPopover.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(AnnotationRepository, repository),
+          Layer.succeed(
+            ExcerptDisplays,
+            stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
+              open: Effect.die(
+                new Error("No hovered Annotation here has an Excerpt Image"),
+              ),
+            }),
+          ),
+          Layer.succeed(ZoteroReads, reads),
+          Layer.succeed(ZoteroPref, pref),
+          Layer.succeed(ObsidianApp, stubService<App>("App", {})),
+          Layer.mock(CitationPopover, citationPopover),
+        ),
+      ),
+    ),
+    stack,
+  );
+  await runtime.context();
+  return runtime;
+}
+
+const LAYER_LINK = {
+  attachmentKey: "PDFLAYER",
+  annotationKey: "LAYER001",
+  pageLabel: null,
+  groupID: null,
+};
+
 describe("AnnotationPopover", () => {
   it("opens through its Effect layer", async () => {
     await using stack = new AsyncDisposableStack();
-    const annotation: AnnotationRecord = {
-      key: "LAYER001",
-      parentKey: "PDFLAYER",
-      type: "highlight",
-      text: "Shown through the layer",
-      comment: null,
-      color: "#ffd400",
-      pageLabel: "1",
-      sortIndex: "00000|000000|00000",
-      tags: [],
-      version: null,
-      lock: null,
-      position: { kind: "pdf-rects", pageIndex: 0, rects: [] },
-    };
-    const source: AnnotationSource = {
-      kind: "zotero-db",
-      database: { userID: 1, localUserKey: "user", serverID: "server" },
-      libraryID: 1,
-      libraryRevision: 1,
-    };
-    const repository = stubService<AnnotationRepository["Service"]>(
-      "AnnotationRepository",
-      {
-        read: () => Effect.succeed({ source, annotations: [annotation] }),
-        hold: () => Effect.succeed({ [Symbol.dispose]: () => {} }),
-        annotationsChanged: Stream.never,
-      },
-    );
-    const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
-      snapshot: Effect.die(new Error("No Excerpt Image is asked for")),
-    });
-    const pref = stubService<ZoteroPref["Service"]>("ZoteroPref", {
-      current: Effect.succeed({
-        dataDir: "/zotero",
-        baseAttachmentPath: null,
-      } as ZoteroPrefSnapshot),
-    });
-    const runtime = buildRuntime(
-      layerAnnotationPopover.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(AnnotationRepository, repository),
-            Layer.succeed(
-              ExcerptDisplays,
-              stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
-                open: Effect.die(
-                  new Error("No hovered Annotation here has an Excerpt Image"),
-                ),
-              }),
-            ),
-            Layer.succeed(ZoteroReads, reads),
-            Layer.succeed(ZoteroPref, pref),
-            Layer.succeed(ObsidianApp, stubService<App>("App", {})),
-          ),
-        ),
-      ),
-      stack,
-    );
-    await runtime.context();
+    const runtime = await layerHarness(stack);
     const popover = runtime.runSync(AnnotationPopover);
     const hoverParent: HoverParent = { hoverPopover: null };
     const targetEl = document.body.appendChild(document.createElement("span"));
@@ -185,17 +210,71 @@ describe("AnnotationPopover", () => {
         hoverParent,
         targetEl,
         sourcePath: "note.md",
-        link: {
-          attachmentKey: "PDFLAYER",
-          annotationKey: "LAYER001",
-          pageLabel: null,
-          groupID: null,
-        },
+        link: LAYER_LINK,
       }),
     );
 
     expect((await shownUnder(hoverParent)).textContent).toContain(
       "Shown through the layer",
+    );
+  });
+
+  it("hands a link shown as a citation to the Citation Popover, with the Annotation above the reference", async () => {
+    await using stack = new AsyncDisposableStack();
+    const requests: LeadHoverRequest[] = [];
+    const runtime = await layerHarness(stack, {
+      show: (request) =>
+        Effect.sync(() => {
+          requests.push(request as LeadHoverRequest);
+        }),
+    });
+    const popover = runtime.runSync(AnnotationPopover);
+    const opened: [string, unknown][] = [];
+    const work = { citekey: "doe2024", indexedKey: "ABCD2345" };
+    const shown = {
+      citation: { source: "[](zotero://open/…)", keys: [] },
+      at: { kind: "offset" as const, start: 4 },
+    };
+    const targetEl = document.body.appendChild(document.createElement("span"));
+    stack.defer(() => targetEl.remove());
+
+    await runtime.runPromise(
+      popover.show({
+        event: new MouseEvent("mouseover"),
+        hoverParent: { hoverPopover: null },
+        targetEl,
+        sourcePath: "note.md",
+        link: LAYER_LINK,
+        reference: {
+          work,
+          shown,
+          open: (pane) => opened.push([work.indexedKey, pane]),
+        },
+      }),
+    );
+
+    expect(requests).toMatchObject([
+      { sourcePath: "note.md", targetEl, works: [work], shown },
+    ]);
+    requests[0]!.open("doe2024", "tab");
+    expect(opened).toEqual([["ABCD2345", "tab"]]);
+    const drawn = document.createElement("div");
+    const root = createRoot(drawn);
+    stack.defer(() => root.unmount());
+    const owner = new Component();
+    owner.load();
+    stack.defer(() => owner.unload());
+    const subscriptions = stack.use(new DisposableStack());
+    requests[0]!.lead({
+      owner,
+      subscriptions,
+      draw: (content) => {
+        flushSync(() => root.render(content));
+        return true;
+      },
+    });
+    await vi.waitFor(() =>
+      expect(drawn.textContent).toContain("Shown through the layer"),
     );
   });
 
@@ -231,6 +310,7 @@ describe("AnnotationPopover", () => {
               ),
               Layer.mock(ZoteroPref, {}),
               Layer.succeed(ObsidianApp, stubService<App>("App", {})),
+              Layer.mock(CitationPopover, {}),
             ),
           ),
         ),
@@ -321,6 +401,7 @@ describe("AnnotationPopover", () => {
             Layer.succeed(ZoteroReads, reads),
             Layer.succeed(ZoteroPref, pref),
             Layer.succeed(ObsidianApp, stubService<App>("App", {})),
+            Layer.mock(CitationPopover, {}),
           ),
         ),
       ),

@@ -197,7 +197,8 @@ function openValidated(
   );
 }
 
-function closeClient(client: NodeDatabaseClient): Effect.Effect<void> {
+/** Close a client, also one that `validateClient` already closed. */
+export function closeClient(client: NodeDatabaseClient): Effect.Effect<void> {
   return Effect.sync(() => client.$client.close()).pipe(
     Effect.catchDefect(() => Effect.void),
   );

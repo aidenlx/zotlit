@@ -1,7 +1,8 @@
 // The lifecycle every hover popover of the Citation Popover's chrome shares:
 // one popover per hover parent, moved between the targets that parent hovers.
 
-import type { HoverParent } from "obsidian";
+import type { Component, HoverParent } from "obsidian";
+import type { ReactNode } from "react";
 
 import { CitationHoverPopover } from "./popover";
 
@@ -15,6 +16,19 @@ export interface HoverVisit<T> {
   readonly subscriptions: DisposableStack;
   /** The current target's own state, made fresh for every target. */
   readonly state: T;
+}
+
+/**
+ * One part of a popover that another surface owns: what that surface draws
+ * into it, for as long as the visit lasts.
+ */
+export interface PopoverPart {
+  /** What the part's own rendered children load under; unloaded when the popover hides. */
+  owner: Component;
+  /** Disposed when the visit moves on or ends, which stops every later draw. */
+  subscriptions: DisposableStack;
+  /** @returns whether the popover was still live to draw `content`. */
+  draw: (content: ReactNode) => boolean;
 }
 
 interface Visit<T> {

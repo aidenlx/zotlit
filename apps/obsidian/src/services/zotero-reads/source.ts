@@ -42,6 +42,7 @@ import { reapReadClones } from "@/services/database/reap-temps";
 
 import { makeStateFeed } from "./change-feed";
 import {
+  closeClient,
   Connection,
   makeClientRef,
   makeDatabaseGenerations,
@@ -366,7 +367,8 @@ export function layerSource(
                   ),
                 catch: toDbUnavailable,
               }),
-              (client) => Effect.sync(() => client.$client.close()),
+              // validateClient closes a client that fails validation.
+              (client) => closeClient(client),
             ).pipe(Scope.provide(clientScope));
             const validated = yield* validateClient(client).pipe(
               Effect.mapError((cause) => toDbUnavailable(cause)),

@@ -4,7 +4,7 @@ import { Logger, References, Stream } from "effect";
 import type { Layer } from "effect";
 import { TFile } from "obsidian";
 import { act } from "preact/test-utils";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,6 +39,7 @@ import { citationPopoverFixture } from "./__fixtures__";
 import type { CitationPopoverFixtureDeps } from "./__fixtures__";
 import type { CitationPopoverContentProps } from "./content";
 import type { WorkHoverRequest } from "./service";
+import type { PopoverPart } from "./visits";
 
 const popovers = vi.hoisted(
   () =>
@@ -198,9 +199,10 @@ function harness(read: () => Promise<DocumentCitations | null>) {
     },
   });
   const { service, runtime } = popover;
-  const show = () =>
+  const show = (lead?: (part: PopoverPart) => void) =>
     runtime.runSync(
       service.show({
+        ...(lead ? { lead } : {}),
         event: new MouseEvent("mouseover"),
         hoverParent: { hoverPopover: null },
         sourcePath: NOTE.path,
@@ -262,6 +264,50 @@ describe("Citation Popover citation text", () => {
     const content = popovers[0]!.render.mock
       .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
     expect(content.props.note).toEqual([{ t: "Str", c: "settled note" }]);
+  });
+});
+
+describe("Citation Popover lead", () => {
+  /** What the popover drew last: the lead, then the entries below it. */
+  function lastDrawn(): [ReactNode, ReactNode] {
+    const drawn = popovers[0]!.render.mock.calls.at(-1)![0] as ReactElement<{
+      children: [ReactNode, ReactNode];
+    }>;
+    return drawn.props.children;
+  }
+
+  it("draws the lead above the entries, and draws it again in place", async () => {
+    await using run = harness(() => Promise.resolve(null));
+    let part: PopoverPart | undefined;
+    run.show((given) => {
+      part = given;
+      given.draw("The annotation");
+    });
+
+    await vi.waitFor(() =>
+      expect(popovers[0]!.render).toHaveBeenCalledTimes(2),
+    );
+    const [lead, entries] = lastDrawn();
+    expect(lead).toBe("The annotation");
+    expect(
+      (entries as ReactElement<CitationPopoverContentProps>).props.blocks,
+    ).toMatchObject([{ kind: "unresolved", citekey: "ghost" }]);
+
+    part!.draw("The edited annotation");
+    expect(lastDrawn()[0]).toBe("The edited annotation");
+    expect(lastDrawn()[1]).toBe(entries);
+  });
+
+  it("keeps the lead where the note reads no entries", async () => {
+    await using run = harness(() => Promise.resolve(null));
+    run.removeSource();
+    run.show((part) => part.draw("The annotation"));
+
+    await vi.waitFor(() =>
+      expect(popovers[0]!.render).toHaveBeenCalledTimes(2),
+    );
+    expect(lastDrawn()).toEqual(["The annotation", null]);
+    expect(popovers[0]!.hide).not.toHaveBeenCalled();
   });
 });
 

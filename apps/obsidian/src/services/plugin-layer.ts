@@ -274,8 +274,13 @@ export function pluginLayer(
     layerVault,
   ).pipe(Layer.provideMerge(Layer.succeed(ObsidianApp, plugin.app)));
   const services = Layer.mergeAll(
-    layerCitationPopover.pipe(startingAs("CitationPopover")),
-    layerAnnotationPopover.pipe(startingAs("AnnotationPopover")),
+    // An Annotation Citation's hover opens the Citation Popover.
+    layerAnnotationPopover.pipe(
+      startingAs("AnnotationPopover"),
+      Layer.provideMerge(
+        layerCitationPopover.pipe(startingAs("CitationPopover")),
+      ),
+    ),
     layerCapabilityNotices(capabilityNotices).pipe(
       startingAs("CapabilityNotices"),
     ),

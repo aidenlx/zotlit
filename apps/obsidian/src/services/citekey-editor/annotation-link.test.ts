@@ -3,7 +3,11 @@ import { EditorState, Prec } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { describe, expect, it, vi } from "vitest";
 
-const { tokenClassNodeProp } = vi.hoisted(() => ({ tokenClassNodeProp: {} }));
+const { tokenClassNodeProp, editorMode } = vi.hoisted(() => ({
+  tokenClassNodeProp: {},
+  /** Whether the next editor these tests open shows Live Preview. */
+  editorMode: { livePreview: false },
+}));
 
 // Obsidian's Markdown mode is a stream parser of its own fork, whose tree
 // carries each token's classes; the nodes here are classed as it classes them.
@@ -103,17 +107,45 @@ vi.mock("obsidian", async (importOriginal) => {
       create: () => ({ file: { path: "note.md" } }),
       update: (value) => value,
     }),
+    // Obsidian's own Live Preview flag, which a new editor reads once.
+    editorLivePreviewField: StateField.define({
+      create: () => editorMode.livePreview,
+      update: (value) => value,
+    }),
   };
 });
 
-import { editorInfoField } from "obsidian";
+import { editorInfoField, editorLivePreviewField } from "obsidian";
 
 import type { AnnotationHoverRequest } from "@/services/annotation-popover/service";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import { presented } from "@/services/citation-text/__fixtures__";
+import type { DocumentCitations } from "@/services/citation-text/present";
+import type { Held } from "@/services/query-client/service";
 
 import {
   annotationLinkAtPos,
   annotationLinkHoverExtension,
 } from "./annotation-link";
+import type { AnnotationLinkHoverHandlers } from "./annotation-link";
+
+/** The handlers of an editor whose Annotation Citations show as links. */
+function linkHandlers(
+  shown: AnnotationHoverRequest[],
+  overrides: Partial<AnnotationLinkHoverHandlers> = {},
+): AnnotationLinkHoverHandlers {
+  return {
+    showAnnotation: (request) => shown.push(request),
+    showCitations: () => false,
+    citationText: () => {
+      throw new Error("No citation text is read while citations are off");
+    },
+    openItem: () => {
+      throw new Error("Nothing opens a Literature Note here");
+    },
+    ...overrides,
+  };
+}
 
 const LINK =
   "[p. 2](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2)";
@@ -227,9 +259,7 @@ describe("annotationLinkHoverExtension", () => {
           EditorView.decorations.of(
             Decoration.set([Decoration.mark({ class: "cm-link" }).range(5, 9)]),
           ),
-          annotationLinkHoverExtension({
-            showAnnotation: (request) => shown.push(request),
-          }),
+          annotationLinkHoverExtension(linkHandlers(shown)),
         ],
       }),
     });
@@ -260,9 +290,7 @@ describe("annotationLinkHoverExtension", () => {
         doc: `See ${LINK} here.`,
         extensions: [
           editorInfoField,
-          annotationLinkHoverExtension({
-            showAnnotation: (request) => shown.push(request),
-          }),
+          annotationLinkHoverExtension(linkHandlers(shown)),
           Prec.lowest(
             EditorView.decorations.of(
               Decoration.set([
@@ -301,9 +329,7 @@ describe("annotationLinkHoverExtension", () => {
         doc: first + second,
         extensions: [
           editorInfoField,
-          annotationLinkHoverExtension({
-            showAnnotation: (request) => shown.push(request),
-          }),
+          annotationLinkHoverExtension(linkHandlers(shown)),
           Prec.lowest(
             EditorView.decorations.of(
               Decoration.set([
@@ -325,5 +351,174 @@ describe("annotationLinkHoverExtension", () => {
 
     expect(shown.map(({ link }) => link.annotationKey)).toEqual(["Q8ZR4TDH"]);
     expect(shown[0]!.targetEl.textContent).toBe(second);
+  });
+});
+
+/** An Annotation Citation, the empty-text form of a Durable Annotation Link. */
+const CITATION_URL =
+  "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2";
+const CITATION = `[](${CITATION_URL})`;
+/** Where {@link CITATION} starts in `See … here.` */
+const CITATION_START = 4;
+
+/** The document's citations, formatting {@link CITATION} as `(Doe 2024, 2)`. */
+function citationsOf(
+  formatted: Record<string, number[]> = { [CITATION]: [CITATION_START] },
+): Held<DocumentCitations> {
+  const value: DocumentCitations = {
+    lookup: lookupAnswer({}, { ABCD2345: "doe2024" }),
+    formatted: new Map(
+      Object.entries(formatted).map(([source, starts]) => [
+        source,
+        starts.map((start) => ({
+          ...presented("(Doe 2024, 2)"),
+          text: {
+            ...presented("(Doe 2024, 2)").text,
+            citations: [{ id: "ABCD2345", mode: "normal" as const }],
+          },
+          start,
+        })),
+      ]),
+    ),
+    entrySerials: false,
+    summaries: new Map(),
+    literalWorks: new Map(),
+  };
+  return { value, status: "fresh", settled: Promise.resolve(value) };
+}
+
+/** A Live Preview editor over `doc`, with `handlers`. */
+function livePreviewEditor(
+  doc: string,
+  handlers: AnnotationLinkHoverHandlers,
+  { livePreview = true }: { livePreview?: boolean } = {},
+): EditorView {
+  editorMode.livePreview = livePreview;
+  const view = new EditorView({
+    parent: document.body,
+    state: EditorState.create({
+      doc,
+      extensions: [
+        editorInfoField,
+        editorLivePreviewField,
+        annotationLinkHoverExtension(handlers),
+      ],
+    }),
+  });
+  if (livePreview) view.dom.classList.add("is-live-preview");
+  return view;
+}
+
+/** The element showing `text`, which a widget draws in the link's place. */
+function shownAs(view: EditorView, text: string): HTMLElement | undefined {
+  return [...view.contentDOM.querySelectorAll<HTMLElement>("span")].find(
+    (element) => element.textContent === text,
+  );
+}
+
+// What a reader sees is proven in the running app
+// (`packages/e2e/src/annotation-citations.e2e.ts`); these cases cover which
+// links the editor shows as citations, and what their hover and click carry.
+describe("Annotation Citations in Live Preview", () => {
+  it("shows the formatted citation in place of the link", () => {
+    const shown: AnnotationHoverRequest[] = [];
+    const view = livePreviewEditor(
+      `See ${CITATION} here.`,
+      linkHandlers(shown, {
+        showCitations: () => true,
+        citationText: () => citationsOf(),
+      }),
+    );
+    using _ = { [Symbol.dispose]: () => view.destroy() };
+
+    expect(view.contentDOM.textContent).toBe("See (Doe 2024, 2) here.");
+  });
+
+  it("keeps the link while the setting is off", () => {
+    const view = livePreviewEditor(`See ${CITATION} here.`, linkHandlers([]));
+    using _ = { [Symbol.dispose]: () => view.destroy() };
+
+    expect(view.contentDOM.textContent).toBe(`See ${CITATION} here.`);
+  });
+
+  it("keeps the link in Source mode", () => {
+    const view = livePreviewEditor(
+      `See ${CITATION} here.`,
+      linkHandlers([], {
+        showCitations: () => true,
+        citationText: () => citationsOf(),
+      }),
+      { livePreview: false },
+    );
+    using _ = { [Symbol.dispose]: () => view.destroy() };
+
+    expect(view.contentDOM.textContent).toBe(`See ${CITATION} here.`);
+  });
+
+  it("keeps a link with text, and one the citations leave out, as links", () => {
+    const labelled = `[p. 2](${CITATION_URL})`;
+    const view = livePreviewEditor(
+      `See ${labelled} and ${CITATION} here.`,
+      linkHandlers([], {
+        showCitations: () => true,
+        // No text for the empty link: the Document Citation Set leaves it
+        // out, as it does an Annotation Zotero no longer has.
+        citationText: () => citationsOf({ [labelled]: [4] }),
+      }),
+    );
+    using _ = { [Symbol.dispose]: () => view.destroy() };
+
+    expect(view.contentDOM.textContent).toBe(
+      `See ${labelled} and ${CITATION} here.`,
+    );
+  });
+
+  it("gives the hover the Annotation's Item, and opens that Item's note", () => {
+    const shown: AnnotationHoverRequest[] = [];
+    const opened: unknown[] = [];
+    const view = livePreviewEditor(
+      `See ${CITATION} here.`,
+      linkHandlers(shown, {
+        showCitations: () => true,
+        citationText: () => citationsOf(),
+        openItem: (indexedKey, pane) => opened.push([indexedKey, pane]),
+      }),
+    );
+    using _ = { [Symbol.dispose]: () => view.destroy() };
+
+    shownAs(view, "(Doe 2024, 2)")!.dispatchEvent(
+      new MouseEvent("mouseover", { bubbles: true }),
+    );
+
+    expect(shown).toHaveLength(1);
+    expect(shown[0]!.link.annotationKey).toBe("FDRFQ7C2");
+    expect(shown[0]!.reference).toMatchObject({
+      work: { citekey: "doe2024", indexedKey: "ABCD2345" },
+      shown: {
+        citation: { source: CITATION },
+        at: { kind: "offset", start: CITATION_START },
+      },
+    });
+    shown[0]!.reference!.open("tab");
+    expect(opened).toEqual([["ABCD2345", "tab"]]);
+  });
+
+  it("follows the link on a click, as the link itself does", () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    using _restore = { [Symbol.dispose]: () => open.mockRestore() };
+    const view = livePreviewEditor(
+      `See ${CITATION} here.`,
+      linkHandlers([], {
+        showCitations: () => true,
+        citationText: () => citationsOf(),
+      }),
+    );
+    using _ = { [Symbol.dispose]: () => view.destroy() };
+
+    shownAs(view, "(Doe 2024, 2)")!.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, button: 0 }),
+    );
+
+    expect(open).toHaveBeenCalledWith(CITATION_URL, undefined);
   });
 });

@@ -1008,6 +1008,8 @@
   "settings_citation_editor_heading": "In-text citations",
   "settings_citation_show_formatted_name": "Show formatted citations",
   "settings_citation_show_formatted_desc": "Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.",
+  "settings_citation_render_annotation_citations_name": "Show annotation links as citations",
+  "settings_citation_render_annotation_citations_desc": "Show annotation links with no link text, such as `[](zotero://…)`, as formatted citations with the annotation’s page. Hovering one shows the annotation and its item’s reference. Needs Annotation citations and Show formatted citations.",
   "settings_citation_open_as_links_name": "Open citations as links",
   "settings_citation_open_as_links_desc": "Open literature notes when you select a Pandoc citation or a literature note wikilink shown as a citation. When off, selecting a citation places the cursor in the citation text so you can edit it.",
   "settings_citation_hover_heading": "Hover",

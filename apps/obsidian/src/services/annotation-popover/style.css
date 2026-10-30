@@ -1,0 +1,11 @@
+/* An Annotation Citation in reading view keeps Obsidian's external-link
+   anchor, so a click still follows the link. It reads as the citation it
+   shows, without the external-link icon.
+
+   Written as a plain rule rather than as utilities: the anchor is Obsidian's
+   own DOM and its link styling is unlayered, which outranks every layer the
+   plugin's utilities live in. */
+.markdown-rendered a.external-link.zt-annotation-citation {
+  background-image: none;
+  padding-inline-end: 0;
+}
