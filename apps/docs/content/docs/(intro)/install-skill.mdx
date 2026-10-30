@@ -1,29 +1,40 @@
 ---
-title: "Install the ZotLit skill"
-description: "Install the ZotLit skill in one vault for Claude Code, Codex, or pi."
+title: "Install the ZotLit skills"
+description: "Install the four ZotLit agent skills in one vault for Claude Code, Codex, or pi: templates, library queries, citations, and Pandoc."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 
-The ZotLit skill helps an agent edit and test templates and configure managed frontmatter field templates in one vault.
+The ZotLit skills let an agent such as Claude Code, Codex, or pi work with your Zotero library and literature notes in one vault. You ask in plain language, and the agent runs ZotLit's commands for you.
+
+One installation offers four skills. Install the ones that match your work:
+
+| Skill              | What it does for your research                                                                                         | Example request                                      | Read more                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `zotlit-template`  | Creates, edits, and tests the templates that shape your literature notes, and explains template errors.                | "Add the Zotero tags below the title in my notes."   | [Template Workbench CLI](/docs/concepts/template-workbench)                            |
+| `zotlit-query`     | Searches your Zotero papers, files, and annotations for literature reviews, reading plans, and missing or broken PDFs. | "Which papers in my thesis collection have no PDF?"  | [Query your Zotero library](/docs/how-to/query-zotero-library)                         |
+| `zotlit-citations` | Finds which notes cite a paper, what a note cites, where an annotation is used, and why a citation is broken.          | "Which of my notes cite Smith 2020?"                 | [Review and troubleshoot references](/docs/how-to/review-copy-troubleshoot-references) |
+| `zotlit-pandoc`    | Sets up, refreshes, and runs the native Pandoc workflow for your manuscript, and diagnoses export problems.            | "Set up native Pandoc export for my chapter drafts." | [Export with native Pandoc](/docs/how-to/export-with-native-pandoc)                    |
 
 ## Before you start
 
 You need:
 
-- Node.js 18 or later.
-- Obsidian desktop 1.14.2 or later.
+- Node.js 22.20 or later, to run the installer.
+- Obsidian desktop 1.14.5 or later.
 - An open vault with ZotLit loaded.
 - The Obsidian CLI activated by following the [Obsidian CLI guide](https://obsidian.md/help/cli).
+- For `zotlit-pandoc` only: the [Pandoc](https://pandoc.org/installing.html) command-line program, installed on your computer.
 
 <Callout type="warn" title="Agent data access">
-  The agent you select can receive Zotero metadata and annotation text returned
-  by the Template Workbench CLI. The agent's own data-handling policies apply.
+  The agent you select can receive what ZotLit's commands return: Zotero
+  metadata, annotation text, the places in your notes where you cite a paper,
+  and file paths. The agent's own data-handling policies apply.
 </Callout>
 
-## Install the skill
+## Install the skills
 
 <Steps>
   <Step>
@@ -44,12 +55,20 @@ You need:
 
   </Step>
   <Step>
+    ### Select the skills
+
+    The installer lists the four ZotLit skills. Press Space to select each
+    skill you want, then press Enter. You can select all four.
+
+  </Step>
+  <Step>
     ### Select the vault and agents
 
-    Select **Project** scope to install the skill in the current vault. Select
-    each agent that you use there: Claude Code, Codex, or pi.
+    Select each agent that you use in this vault: Claude Code, Codex, or pi.
+    Select **Project** scope to install the skills in the current vault.
 
-    Choose the recommended symlink installation method.
+    If the installer asks for an installation method, choose the recommended
+    symlink method. Confirm the summary to install.
 
   </Step>
   <Step>
@@ -65,29 +84,42 @@ You need:
 
 Start one of the selected agents from the vault folder. Send this request:
 
-> Use the ZotLit skill to check my current template setup. Do not change any files.
+> Tell me which ZotLit skills you have, then check that ZotLit responds in this vault. Do not change any files.
 
-The agent should use the Template Workbench CLI and report the active vault and template setup. Your template files remain unchanged.
+The agent should name the ZotLit skills you installed and list the ZotLit commands that Obsidian reports for this vault. Your files remain unchanged.
 
-## Make your first template request
+## Make your first requests
 
-Describe the result you want in plain language. For example:
+Describe the result you want in plain language. Name the skill if the agent picks the wrong one. For example:
 
-> Use the ZotLit skill to add Zotero tags below the title in my literature notes. Show me the rendered result before you finish.
+- **Templates:** "Use the ZotLit template skill to add Zotero tags below the title in my literature notes. Show me the rendered result before you finish."
+- **Library queries:** "Use the ZotLit query skill to list the papers in my thesis collection that have no PDF, grouped by year."
+- **Citations:** "Use the ZotLit citations skill to find every note that cites Smith 2020, and show the sentence around each citation."
+- **Pandoc:** "Use the ZotLit Pandoc skill to set up native Pandoc export for my chapter drafts, then convert chapter 1 to Word."
 
-The agent inspects the current template and relevant Zotero data. It then edits the vault template and tests the rendered Markdown in memory.
+The template skill checks each edit against a real Zotero item and reports the output it verified. The Pandoc skill asks before it replaces an existing output file.
 
 ## See also
 
 <Cards>
   <Card
     title="Template Workbench CLI"
-    description="How the skill, CLI, and safety boundaries fit together."
+    description="How the template skill, the CLI, and their safety boundaries fit together."
     href="/docs/concepts/template-workbench"
   />
   <Card
-    title="Customize a template"
-    description="Edit a ZotLit template yourself in Obsidian."
-    href="/docs/how-to/customize-a-template"
+    title="Query your Zotero library"
+    description="The questions ZotLit Query answers and the commands the query skill runs."
+    href="/docs/how-to/query-zotero-library"
+  />
+  <Card
+    title="Review and troubleshoot references"
+    description="See what a note cites and fix citations that do not resolve."
+    href="/docs/how-to/review-copy-troubleshoot-references"
+  />
+  <Card
+    title="Export with native Pandoc"
+    description="Use ZotLit's integration files with your own Pandoc installation."
+    href="/docs/how-to/export-with-native-pandoc"
   />
 </Cards>
