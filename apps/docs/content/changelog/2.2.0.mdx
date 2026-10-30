@@ -184,6 +184,7 @@ See [Template Workbench View](/docs/concepts/template-workbench-view), [Customiz
   annotation at your cursor. Inserted annotations get correct spacing around the
   text.
 - The page chip opens the PDF in Obsidian when the file is on this computer, and in Zotero otherwise.
+- After the update, a pinned paper can open on its first attachment, and a saved filter can open empty. Pick the attachment or filter once, and the view remembers it.
 
 See [Use the annotation view](/docs/how-to/use-annotation-view).
 
@@ -269,8 +270,16 @@ maps each Zotero highlight color to an emoji, a mark, or a custom emoji. See
 - The Welcome view has an optional step to install the ZotLit Companion. See [Install ZotLit Companion](/docs/install-companion).
 - [Migrate from Zotero Integration](/docs/how-to/migrate-from-zotero-integration) maps that plugin's templates onto profiles.
 
+## Known limitations
+
+- When you change the color or comment of an annotation that you deleted in Zotero, ZotLit reports that Zotero did not save the change, but it does not say that the annotation was deleted. The card stays until Zotero's next update reaches ZotLit.
+- When you close Zotero's permission dialog with `Esc` or the close button, Zotero treats that as **Always Allow**. To take the permission back, select **Settings → Advanced → Clear Write Authorizations** in Zotero.
+- When you answer Zotero's permission dialog with **Allow**, ZotLit does not use the one-time key that Zotero creates. The key stays in Zotero until you select **Clear Write Authorizations**.
+- With live updates off, the annotation view cannot receive changes from Zotero, and it does not tell you that its list can be out of date. Turn live updates on again, and the list updates at your next save in Zotero.
+
 ## Bug Fixes
 
+- Old copies of ZotLit stayed in memory each time you turned the plugin off and on, so Obsidian used more and more memory. Now ZotLit releases them.
 - Pressing `Enter` or clicking right after typing in a picker could act on an earlier search and insert the wrong citation or create the wrong note. Now `Enter` waits for the results of what you typed.
 - A search for an eight-letter word, such as "thinking", found nothing. Now it finds the matches.
 - With <UiLabel name={m.settings_citation_open_as_links_name()} /> off, a click on a citation did not put the cursor in it. Now the cursor goes where you clicked.
