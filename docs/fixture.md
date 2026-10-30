@@ -210,7 +210,7 @@ The open and dev commands close an existing Paired Zotero on this Fixture before
 
 Both commands hold a Desktop Slot while they run. They wait while another End-to-end Run or manual session from this worktree holds one, or while every slot is taken; runs in other worktrees take their own slots. Each must state `--for <duration>`, the Lease of that hold, up to 60 min. When the Lease of `dev` ends, it stops both watchers and Paired Zotero and exits 76. Exit 75 means the holders kept the slots past the Admission Deadline; `pnpm desktop-slot status` names them.
 
-These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately. The [release checklist](release-checklist.md) holds the manual checks that a release still needs.
+These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately.
 
 ### Trial the Citation Index scan cases
 
