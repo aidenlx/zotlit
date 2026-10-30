@@ -189,16 +189,16 @@ See [Use the annotation view](/docs/how-to/use-annotation-view).
 
 ### Annotation links and citations
 
-![A literature note with two annotations in the new default layout, each with the quote, the paper's citation after it, and the page number as the link, and a popover over the second link that shows the quote, the comment, page 1, and a green highlight bar](/img/changelog/annotation-link-popover.webp)
+![A thesis chapter with two annotations in the new default layout, each with the quote, the paper's citation after it, and the page number as the link, and a popover over the second link that shows the quote, the comment, page 1, and a green highlight bar above the paper's reference buttons and bibliography entry](/img/changelog/annotation-popover-reference.webp)
 
 - Annotation links in notes are Zotero open links that name the annotation, so they work on every computer where you open the vault. A link opens the PDF in Obsidian when the file is there, and Zotero otherwise. See [Zotero open links](/docs/reference/protocol-links#zotero-open-links).
-- Hover an annotation link to see the quote, your comment, the page, and the color, or the image.
+- Hover an annotation link to see the quote, your comment, the page, and the color, or the image. Below the annotation, the popover shows the paper's reference with the same buttons as the citation popover. An annotation on a standalone PDF shows alone.
 - The default annotation layout puts the paper's citation after the quote and uses the page label as the link.
 - Turn on <UiLabel name={m.settings_citation_annotation_citations_name()} /> under <SettingsPath page={m.settings_page_citations()} /> to list the paper in the <UiLabel name={m.references_view_name()} /> and <UiLabel name={m.cited_by_view_name()} /> sidebars.
 
 ![A thesis chapter where an annotation link shows as the citation "(Ioannidis 2005, 696)" next to an ordinary citation of Rougier et al. 2014, with its popover open: the page-696 quote and the comment "Both apply to the pilot cohort (n = 24)" above the paper's reference buttons and bibliography entry](/img/changelog/annotation-link-as-citation.webp)
 
-Turn on <UiLabel name={m.settings_citation_render_annotation_citations_name()} />, also under <SettingsPath page={m.settings_page_citations()} /> and off by default, to show an annotation link with no link text, such as `[](zotero://…)`, as a citation of its paper. The annotation's page becomes the locator, as in `[@key, p. 12]`, and the citation shares the note's numbering. Its hover shows the annotation and, below it, the paper's reference with the same buttons as the citation popover. Selecting the citation still opens the annotation. The option needs <UiLabel name={m.settings_citation_annotation_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} />. See [In-text citations](/docs/reference/settings#in-text-citations).
+Turn on <UiLabel name={m.settings_citation_render_annotation_citations_name()} />, also under <SettingsPath page={m.settings_page_citations()} /> and off by default, to show an annotation link with no link text, such as `[](zotero://…)`, as a citation of its paper. The annotation's page becomes the locator, as in `[@key, p. 12]`, and the citation shares the note's numbering. Selecting the citation still opens the annotation. The option needs <UiLabel name={m.settings_citation_annotation_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} />. See [In-text citations](/docs/reference/settings#in-text-citations).
 
 ### Show in Library
 
