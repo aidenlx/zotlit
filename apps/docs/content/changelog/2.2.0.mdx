@@ -174,8 +174,9 @@ See [Use the annotation view](/docs/how-to/use-annotation-view).
 - The default annotation layout puts the paper's citation after the quote and uses the page label as the link.
 - Turn on <UiLabel name={m.settings_citation_annotation_citations_name()} /> under <SettingsPath page={m.settings_page_citations()} /> to list the paper in the <UiLabel name={m.references_view_name()} /> and <UiLabel name={m.cited_by_view_name()} /> sidebars.
 
-{/* TODO(#1678): confirm the setting label and docs link once the integrated popover PR merges */}
-A new option under <SettingsPath page={m.settings_page_citations()} />, off by default, shows an annotation link with no link text, such as `[](zotero://…)`, as a citation of its paper. The annotation's page becomes the locator, as in `[@key, p. 12]`. Its hover popover shows the annotation and the reference together, with the same buttons as the citation popover. With the option off, the hover shows the annotation popover as before.
+![A thesis chapter where an annotation link shows as the citation "(Ioannidis 2005, 696)" next to an ordinary citation of Rougier et al. 2014, with its popover open: the page-696 quote and the comment "Both apply to the pilot cohort (n = 24)" above the paper's reference buttons and bibliography entry](/img/changelog/annotation-link-as-citation.webp)
+
+Turn on <UiLabel name={m.settings_citation_render_annotation_citations_name()} />, also under <SettingsPath page={m.settings_page_citations()} /> and off by default, to show an annotation link with no link text, such as `[](zotero://…)`, as a citation of its paper. The annotation's page becomes the locator, as in `[@key, p. 12]`, and the citation shares the note's numbering. Its hover shows the annotation and, below it, the paper's reference with the same buttons as the citation popover. Selecting the citation still opens the annotation. The option needs <UiLabel name={m.settings_citation_annotation_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} />. See [In-text citations](/docs/reference/settings#in-text-citations).
 
 ### Show in Library
 
