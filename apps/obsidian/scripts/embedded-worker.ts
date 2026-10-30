@@ -67,7 +67,8 @@ export function embeddedWorker(options: EmbeddedWorkerOptions): Plugin {
           },
           rolldownOptions: {
             external: ["obsidian", "electron", ...external],
-            output: { codeSplitting: false },
+            // As in the plugin bundle: see `strictExecutionOrder` in vite.config.ts.
+            output: { codeSplitting: false, strictExecutionOrder: true },
           },
         },
       });

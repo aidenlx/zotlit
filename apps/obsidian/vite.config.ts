@@ -137,6 +137,10 @@ export default defineConfig(({ mode }) => {
         ],
         output: {
           banner: jsBanner,
+          // Effect 4.1.0 under Rolldown 1.1 otherwise leaves modules reached through
+          // `export * from "effect"` uninitialized, or drops them: the plugin then
+          // fails at load. This runs every module in source order.
+          strictExecutionOrder: true,
           codeSplitting: false,
           // plugin:zotlit is synthetic, so DevTools needs an absolute map URL.
           // build:dev is uncached because this URL belongs to this checkout.
