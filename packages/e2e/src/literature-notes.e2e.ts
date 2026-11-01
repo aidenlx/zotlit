@@ -346,7 +346,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         await obRunUntil(
           freshId,
-          async ({ app }, { notePath, helpSectionLabel, guideText }) => {
+          async (
+            { app },
+            { notePath, helpSectionLabel, guideText, bannerText },
+          ) => {
             const view = (function () {
               var leaves = app.workspace.getLeavesOfType(
                 "zotlit-template-workbench",
@@ -369,6 +372,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               !!guide &&
               guide.textContent.includes("[!quote]") &&
               guide.textContent.includes(guideText) &&
+              view.contentEl.textContent.includes(bannerText) &&
               guide!.getBoundingClientRect().height > 0 &&
               source!.getBoundingClientRect().height > 0
             );
@@ -377,6 +381,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             notePath: note.path!,
             helpSectionLabel: run.m.workbench_annotation_help_title(),
             guideText: run.m.workbench_annotation_help_finish_note(),
+            bannerText: run.m.template_workbench_shared_annotation({
+              name: run.m.settings_profile_default_name(),
+            }),
           },
           {
             what: "the Template Workbench guide section to render with its quote callout visible",

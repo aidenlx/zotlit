@@ -48,7 +48,7 @@ Enable Obsidian's **Command line interface**, which needs Obsidian installer 1.1
   <Step>
     ### Configure both citation sources
 
-    Open <SettingsPath page={m.settings_page_citations()} />. Turn on <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_wikilink_citations_name()} />.
+    Open <SettingsPath page={m.settings_page_citations()} />. Confirm that <UiLabel name={m.settings_citation_pandoc_citations_name()} /> is on, then turn on <UiLabel name={m.settings_citation_wikilink_citations_name()} />.
 
     ![The Citations settings page with Pandoc citations and Wikilink citations both turned on under Citation sources](/img/tutorial/pandoc-workflow-citation-sources.webp)
 
@@ -172,7 +172,7 @@ Enable Obsidian's **Command line interface**, which needs Obsidian installer 1.1
   <Step>
     ### Compare the Word documents
 
-    Open the native `.docx` beside the built-in export. Both documents should contain the same two formatted bibliography entries.
+    Open the native `.docx` beside the built-in export. Both documents should contain the same two formatted bibliography entries. The built-in export adds a References heading above the bibliography, and the native export does not.
 
     Compare the repeated-source formatting, locators, author modes, grouped Citation Run, literal citation, and ordinary vault link. The citation content should agree because both routes start from the same note and style.
 
