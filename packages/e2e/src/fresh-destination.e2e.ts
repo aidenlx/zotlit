@@ -21,6 +21,7 @@ import {
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import { waitFor } from "./obsidian-cli.ts";
 import { clearVault, e2eVaultDir } from "./vault-script.ts";
+import { reloadWindow } from "./window-reload.ts";
 
 describe.skipIf(!reachable)("Fresh destination flow", () => {
   const vaultPath = e2eVaultDir(workspaceRoot, "destination-vault");
@@ -346,5 +347,83 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       indexedKey: first.indexedKey,
       path: first.path,
     });
+  }, 180000);
+
+  // The folder renames under a disabled plugin, so the startup scan of the
+  // reload is what meets the saved setting in the other case.
+  it("creates the Default document in a template folder held under another case", async () => {
+    const note = await createFixtureNote(vaultId, 2, "default");
+    if (note.outcome !== "created")
+      throw new Error("The Literature Note was not created");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        vaultId,
+        async ({ app, zotlit }, { path }) => {
+          for (const type of [
+            "zotlit-template-workbench",
+            "zotlit-template-data-explorer",
+            "zotlit-note-preview",
+          ])
+            app.workspace.detachLeavesOfType(type);
+          await app.vault.delete(app.vault.getFileByPath(path)!);
+          const folder = app.vault.getFolderByPath("Templates");
+          if (folder) await app.vault.rename(folder, "templates");
+          zotlit.services.bridge.runSync(
+            zotlit.services.settings.update({ "template.folder": "templates" }),
+          );
+        },
+        { path: note.path },
+      );
+    });
+    await obRun(vaultId, async ({ app, zotlit }) => {
+      await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
+      const held = app.vault.getFileByPath(
+        "templates/zotlit-profile.default.md",
+      );
+      if (held) await app.vault.delete(held);
+      await app.plugins.disablePlugin("zotlit");
+      await app.vault.rename(
+        app.vault.getFolderByPath("templates")!,
+        "Templates",
+      );
+    });
+    await reloadWindow(vaultId);
+    expect(
+      await obRun(vaultId, ({ zotlit }) => {
+        return zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+          "template.folder"
+        ];
+      }),
+    ).toBe("Templates");
+
+    await obRun(
+      vaultId,
+      async ({ app }, { path }) => {
+        await app.workspace
+          .getLeaf(false)
+          .openFile(app.vault.getFileByPath(path)!);
+      },
+      { path: note.path },
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById(
+          "zotlit:customize-note-template",
+        );
+      },
+      undefined,
+      { what: "the zotlit customize note template command to run" },
+    );
+    await obRunUntil(
+      vaultId,
+      ({ page }, { path }) => !!page.workbench({ path }),
+      { path: "Templates/zotlit-profile.default.md" },
+      { what: "the Workbench to open the Default document" },
+    );
+    expect(await readdir(join(vaultPath, "Templates"))).toContain(
+      "zotlit-profile.default.md",
+    );
   }, 180000);
 });

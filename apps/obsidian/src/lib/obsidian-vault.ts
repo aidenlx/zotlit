@@ -5,16 +5,17 @@
 // `MetadataCache`; policies/events.md (Capability tags) describes it.
 import { Context, Effect, Layer } from "effect";
 import type { Stream } from "effect";
-import { FileSystemAdapter } from "obsidian";
+import { basename, dirname } from "node:path/posix";
+import { FileSystemAdapter, TFolder } from "obsidian";
 import type {
   DataAdapter,
   DataWriteOptions,
   TAbstractFile,
   TFile,
-  TFolder,
   Vault as ObsidianVault,
 } from "obsidian";
 
+import { joinFolderPath } from "@/lib/ensure-folder";
 import { isErrno } from "@/lib/errno";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
@@ -49,6 +50,7 @@ export type VaultSource = Pick<
   | "getFileByPath"
   | "getFolderByPath"
   | "getAbstractFileByPath"
+  | "getAbstractFileByPathInsensitive"
   | "getMarkdownFiles"
 > & {
   /** The vault's adapter, read by path. */
@@ -92,6 +94,12 @@ export interface VaultShape {
   getFolderByPath(path: string): Effect.Effect<TFolder | null>;
   /** The file or folder at `path` in the vault cache (case-sensitive), `null` when there is none. */
   getAbstractFileByPath(path: string): Effect.Effect<TAbstractFile | null>;
+  /** `path` under the path the vault holds its parent folder at, in that case. */
+  underHeldParent(path: string): Effect.Effect<string>;
+  /** The file or folder at `path`, or the one whose path differs only in case. */
+  getAbstractFileByPathInsensitive(
+    path: string,
+  ): Effect.Effect<TAbstractFile | null>;
   /** Every Markdown file in the vault now, in Obsidian's order. */
   readonly getMarkdownFiles: Effect.Effect<TFile[]>;
   /**
@@ -147,6 +155,32 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     _tag: "delete",
     file,
   }));
+  // Obsidian accepts a parent in the wrong case on a disk that folds case, then
+  // answers for a second file that no folder holds.
+  const underHeldParent = (path: string): string => {
+    const parent = heldParent(path);
+    return parent ? joinFolderPath(parent.path, basename(path)) : path;
+  };
+  const heldParent = (path: string): TFolder | null => {
+    const parent = dirname(path);
+    const held =
+      parent === "."
+        ? source.getFolderByPath("/")
+        : source.getAbstractFileByPathInsensitive(parent);
+    return held instanceof TFolder ? held : null;
+  };
+  // A new file misses the insensitive lookup, and a miss walks the whole vault.
+  // A case variant sits in the parent, so a create reads that one folder.
+  const heldInAnyCase = (path: string): TAbstractFile | null => {
+    const exact = source.getAbstractFileByPath(path);
+    if (exact) return exact;
+    const name = basename(path).toLowerCase();
+    return (
+      heldParent(path)?.children.find(
+        (child) => basename(child.path).toLowerCase() === name,
+      ) ?? null
+    );
+  };
   return Vault.of({
     read: Effect.fn("Vault.read")((file) =>
       call("read", file.path, () => source.read(file)),
@@ -167,10 +201,14 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
       call("process", file.path, () => source.process(file, fn, options)),
     ),
     create: Effect.fn("Vault.create")(
-      (path, data, options): Effect.Effect<TFile, FileExists | VaultError> =>
-        source.getAbstractFileByPath(path) === null
-          ? call("create", path, () => source.create(path, data, options))
-          : Effect.fail(new FileExists({ path })),
+      (path, data, options): Effect.Effect<TFile, FileExists | VaultError> => {
+        const held = heldInAnyCase(path);
+        if (held) return Effect.fail(new FileExists({ path: held.path }));
+        const target = underHeldParent(path);
+        return call("create", target, () =>
+          source.create(target, data, options),
+        );
+      },
     ),
     createFolder: Effect.fn("Vault.createFolder")((path) =>
       call("createFolder", path, () => source.createFolder(path)),
@@ -186,6 +224,14 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     ),
     getAbstractFileByPath: Effect.fn("Vault.getAbstractFileByPath")((path) =>
       Effect.sync(() => source.getAbstractFileByPath(path)),
+    ),
+    underHeldParent: Effect.fn("Vault.underHeldParent")((path) =>
+      Effect.sync(() => underHeldParent(path)),
+    ),
+    getAbstractFileByPathInsensitive: Effect.fn(
+      "Vault.getAbstractFileByPathInsensitive",
+    )((path) =>
+      Effect.sync(() => source.getAbstractFileByPathInsensitive(path)),
     ),
     getMarkdownFiles: Effect.sync(() => source.getMarkdownFiles()).pipe(
       Effect.withSpan("Vault.getMarkdownFiles"),

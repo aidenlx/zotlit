@@ -63,6 +63,18 @@ it.effect("moves a file to the new path through renameFile", () =>
   }),
 );
 
+it.effect("moves a file under the real path of a case-variant parent", () =>
+  Effect.gen(function* () {
+    const source = new MemoryFileManager();
+    const vault = new MemoryVault();
+    const note = vault.add("a.md");
+    vault.addFolder("Notes");
+    const files = yield* over(source, vault);
+    yield* files.renameFile(note, "notes/a.md");
+    expect(note.path).toBe("Notes/a.md");
+  }),
+);
+
 it.effect(
   "fails renameFile with FileExists when the vault cache holds the path",
   () =>
@@ -221,6 +233,8 @@ it.effect("reads the live layer's file manager from ObsidianApp", () =>
                 }),
                 vault: stubService<VaultApi>("Vault", {
                   getAbstractFileByPath: () => null,
+                  getAbstractFileByPathInsensitive: () => null,
+                  getFolderByPath: () => null,
                   on: () => ({}),
                   offref: () => {},
                 }),
