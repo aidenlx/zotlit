@@ -18,6 +18,7 @@ tester.run("no-global-this", rule("no-global-this"), {
   invalid: [
     {
       code: "const w = globalThis.window;",
+      output: "const w = window.window;",
       errors: [{ messageId: "avoidGlobal" }],
     },
   ],
