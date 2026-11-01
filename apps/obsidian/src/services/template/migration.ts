@@ -463,7 +463,7 @@ export class TemplateMigration extends Context.Service<
     readonly whenSettled: Effect.Effect<void>;
     readonly convert: Effect.Effect<
       LiteratureNoteTemplateMigrationResult,
-      TemplateFailure | SettingsMutationError | SettingsPersistenceError
+      SettingsMutationError | SettingsPersistenceError
     >;
     readonly retryCleanup: Effect.Effect<
       Extract<LiteratureNoteTemplateMigrationResult, { outcome: "converted" }>,

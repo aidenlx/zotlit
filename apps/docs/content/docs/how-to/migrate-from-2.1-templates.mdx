@@ -57,7 +57,7 @@ One case keeps a file in place. If your two citation files use different languag
 
 ## What is refused, and what you see
 
-Your vault and your settings stay as they were after every refusal. Each one reports a notice, and the banner keeps the same sentence next to the button until you try again. If you do not want to fix a 2.1 file, move it out of the template folder: ZotLit then uses the built-in template for that part, and you can copy your changes into the profile with **Edit profile** after the conversion.
+Your vault and your settings stay as they were after every refusal. Each one reports a notice, and the banner keeps the same sentence next to the button until you try again. If you do not want to fix a 2.1 file, move it out of the template folder: ZotLit then uses the built-in template for that part, and you can copy your changes into the profile with <UiLabel name={m.settings_profile_edit()} /> after the conversion.
 
 - **A converted output that does not reproduce the old one.** <UiLabel name={m.notice_literature_note_template_conversion_mismatch({ difference: "…", files: "…" })} /> This is the refusal you are most likely to meet, because it is what the byte check reports. The notice lists only the files you need to edit, and names the output that differed: `create output`, `update output`, `filename output`, `annotation output`, `main citation output`, or `alternate citation output`. Edit the 2.1 file behind that output so the converted form reproduces it, then select the button again.
 
@@ -75,7 +75,7 @@ Your vault and your settings stay as they were after every refusal. Each one rep
 
 ## Properties that need a fix [#fix-properties]
 
-A frontmatter field that fails against the item ZotLit picked does not stop the conversion. ZotLit keeps the field exactly as you wrote it, and a notice names it: <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_review({ fields: "…" })} /> ZotLit refuses to create a note through that profile until the field works, and the refusal names the field. Select **Edit profile** on the Default row of <SettingsPath />, correct the field, and save.
+A frontmatter field that fails against the item ZotLit picked does not stop the conversion. ZotLit keeps the field exactly as you wrote it, and a notice names it: <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_review({ fields: "…" })} /> ZotLit refuses to create a note through that profile until the field works, and the refusal names the field. Select <UiLabel name={m.settings_profile_edit()} /> under <SettingsPath page={m.settings_page_profiles()} />, correct the field, and save.
 
 ## While the conversion is pending
 

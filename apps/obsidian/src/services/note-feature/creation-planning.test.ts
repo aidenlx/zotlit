@@ -13,6 +13,7 @@ import { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 
 import {
+  ManagedFrontmatterRefused,
   resolveCompanionNote,
   resolveCreationProfile,
 } from "./creation-planning";
@@ -264,4 +265,12 @@ describe("creation Profile", () => {
       });
     },
   );
+});
+
+it("#1904: a refused profile note names the properties to fix", () => {
+  const refusal = new ManagedFrontmatterRefused({
+    fields: ["Date Added", "Authors"],
+  });
+
+  expect(refusal.message).toContain("Date Added, Authors");
 });
