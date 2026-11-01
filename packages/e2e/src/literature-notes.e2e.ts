@@ -1081,9 +1081,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await clickModalButton(run.vaultId, run.m.modal_cancel());
 
-    expect(confirmation).toMatch(/Update \d+ literature notes\?/);
-    expect(confirmation).toContain("No note (");
-    expect(confirmation).not.toContain("Create (");
+    const beforeCount = (text: string) => text.split("…")[0]!;
+    expect(confirmation).toContain(
+      beforeCount(run.m.batch_update_existing_confirm_intro({ count: "…" })),
+    );
+    expect(confirmation).toContain(
+      beforeCount(run.m.batch_update_group_no_note({ count: "…" })),
+    );
+    expect(confirmation).not.toContain(
+      beforeCount(run.m.batch_update_group_create({ count: "…" })),
+    );
   });
 
   // Covers both the "rendered literature note" and "batch operation"

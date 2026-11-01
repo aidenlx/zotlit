@@ -127,8 +127,10 @@ You can also open a single note from Zotero by right-clicking one item and choos
 A run that creates nothing is the way to apply a template change to notes you already have. It touches only items with a literature note and leaves the rest of your library alone.
 
 - For one note, open it and choose <UiLabel name={m.modal_update_notes_active()} /> in <Command inline name={m.command_update_notes_name()} />.
-- For items you select in Zotero, choose <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} />. That batch refreshes metadata only and creates no notes.
 - For every existing note, choose <UiLabel name={m.modal_update_notes_all()} /> with the checkbox off.
+- For properties alone on items you select in Zotero, choose <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} />. That batch creates no notes, and it leaves note bodies as they are, so a change to a managed region does not reach those notes.
+
+The collection entry in Zotero, <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />, also creates notes for items that have none.
 
 The confirmation of such a run reads <UiLabel name={m.batch_update_existing_confirm_intro({ count: "…" })} /> Items with no note are listed under <UiLabel name={m.batch_update_group_no_note({ count: "…" })} /> and are left alone. After you save a template from the web Template Workbench, the notice offers <UiLabel name={m.notice_workbench_profile_saved_action()} />. It opens this confirmation for your existing notes and creates no notes.
 

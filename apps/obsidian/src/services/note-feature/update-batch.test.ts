@@ -427,12 +427,10 @@ const runBatchUpdate = Effect.fnUntraced(function* (
 /** {@link runBatchUpdateAllEffect} on the case's services. */
 const runBatchUpdateAll = Effect.fnUntraced(function* (
   deps: UpdateDeps,
-  target?: Parameters<typeof runBatchUpdateAllEffect>[1],
-  options?: Parameters<typeof runBatchUpdateAllEffect>[2],
+  options?: Parameters<typeof runBatchUpdateAllEffect>[1],
 ) {
   return yield* runBatchUpdateAllEffect(
     portsOf(deps, yield* scopedBridge),
-    target,
     options,
   ).pipe(Effect.provide(deps.layer));
 });
@@ -2175,7 +2173,7 @@ describe("runBatchUpdateAll", () => {
         ]),
       );
 
-      yield* runBatchUpdateAll(makeDeps(), undefined, { create: false });
+      yield* runBatchUpdateAll(makeDeps(), { create: false });
 
       const { tasks, skipped, skippedHeader, intro } = yield* Effect.promise(
         () => classifyLastModal(),
@@ -2201,7 +2199,7 @@ describe("runBatchUpdateAll", () => {
         ]),
       );
 
-      yield* runBatchUpdateAll(makeDeps(), undefined, { create: true });
+      yield* runBatchUpdateAll(makeDeps(), { create: true });
 
       const { tasks } = yield* Effect.promise(() => classifyLastModal());
       expect(tasks.map((task) => task.kind)).toEqual([

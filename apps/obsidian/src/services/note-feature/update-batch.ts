@@ -173,7 +173,7 @@ export type BatchUpdateResult =
   | { outcome: "collection-not-found" }
   | { outcome: "not-found" }
   | { outcome: "single-update" }
-  /** A metadata-only single update found no note, so it created none. */
+  /** A single update found no note and was not asked to create one. */
   | { outcome: "metadata-no-note" }
   | { outcome: "batch-modal" };
 
@@ -181,8 +181,10 @@ export interface BatchUpdateOptions {
   /** How much of each existing note an update refreshes. */
   scope?: UpdateScope;
   /**
-   * Whether an item with no note gets one. Defaults to `true` for the `full`
-   * scope and `false` for the `metadata` scope, which leaves the body alone.
+   * Whether an item with no note gets one. The `metadata` scope leaves the body
+   * alone, so it creates none.
+   *
+   * @default scope === "full"
    */
   create?: boolean;
   /**
@@ -289,8 +291,8 @@ export function batchUpdateResultNotice(
 }
 
 /**
- * {@link batchUpdateItems}, and a notice for a metadata-only single update
- * that found no note. The caller renders the other outcomes.
+ * {@link batchUpdateItems}, and a notice for a single update that found no note
+ * and created none. The caller renders the other outcomes.
  */
 export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
   ports: BatchUpdatePorts,
@@ -1037,10 +1039,10 @@ export function batchCreateOutcome(
  * progress while items are classified, and the user can cancel before the run
  * starts.
  *
- * @param target.groupID names the exact Library the run covers — `0` for
+ * @param options.groupID names the exact Library the run covers — `0` for
  *   My Library, a positive integer for a group. A group this database doesn't
  *   hold returns `unavailable-target` without scanning.
- * @param target.collectionKey narrows the run to that collection of the named
+ * @param options.collectionKey narrows the run to that collection of the named
  *   Library and every collection nested under it. A key that Library doesn't
  *   hold returns `collection-not-found`.
  * @param options.create whether items with no note get one. Off, the run
@@ -1048,8 +1050,7 @@ export function batchCreateOutcome(
  */
 export const runBatchUpdateAll = Effect.fn("runBatchUpdateAll")(function* (
   ports: BatchUpdatePorts,
-  target: BatchTarget = {},
-  options: Pick<BatchUpdateOptions, "create"> = {},
+  options: BatchTarget & Pick<BatchUpdateOptions, "create"> = {},
 ) {
   if (!(yield* databaseReady)) {
     yield* Effect.logWarning("Batch update all: database not ready").pipe(
@@ -1058,7 +1059,7 @@ export const runBatchUpdateAll = Effect.fn("runBatchUpdateAll")(function* (
     return updateResult({ outcome: "db-unavailable" });
   }
 
-  const plan = yield* planBatchScope("literature-items", target);
+  const plan = yield* planBatchScope("literature-items", options);
   if (plan.outcome !== "resolved")
     return updateResult({ outcome: plan.outcome });
 
@@ -1066,7 +1067,7 @@ export const runBatchUpdateAll = Effect.fn("runBatchUpdateAll")(function* (
     return updateResult({ outcome: "empty-selection" });
   }
   return yield* runBatchUpdate(ports, plan.itemIDs, {
-    ...options,
+    create: options.create,
     unavailableLibraries: plan.unavailableLibraries,
   });
 });

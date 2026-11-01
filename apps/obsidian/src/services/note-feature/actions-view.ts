@@ -138,13 +138,17 @@ export const updateAll = Effect.fn("NoteActions.updateAll")(function* (
   ports: NoteActionPorts,
   options: Pick<BatchUpdateOptions, "create"> = {},
 ) {
-  yield* reportOutcome(runBatchUpdateAll(ports.batchUpdate, {}, options), {
+  yield* reportOutcome(runBatchUpdateAll(ports.batchUpdate, options), {
     success: batchUpdateAllNotice,
     error: () => undefined,
   });
 });
 
-/** Ask which notes to update, then update them. `note` is the active note. */
+/**
+ * Ask which notes to update, then update them.
+ *
+ * @param note the active literature note, when there is one
+ */
 export const updateNotes = Effect.fn("NoteActions.updateNotes")(function* (
   ports: NoteActionPorts,
   note?: { file: TFile; itemKey: string },
