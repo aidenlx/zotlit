@@ -48,8 +48,20 @@ const REQUESTS = [
       sort: [{ field: "title", direction: "asc" }],
       limit: null,
     },
+    keys: [
+      "ORD2MMMM",
+      "ORD2CCCC",
+      "ORD2AAAA",
+      "ORD2BBBB",
+      "ORD2YYYY",
+      "ORD2ZZZZ",
+    ],
   },
-  { name: "limited", request: { sort: [], limit: 3 } },
+  {
+    name: "limited",
+    request: { sort: [], limit: 3 },
+    keys: ["ORD2AAAA", "ORD2BBBB", "ORD2CCCC"],
+  },
   {
     name: "grouped",
     request: {
@@ -57,17 +69,19 @@ const REQUESTS = [
       sort: [{ field: "title", direction: "asc" }],
       limit: 2,
     },
+    keys: ["ORD2CCCC", "ORD2AAAA", "ORD2MMMM", "ORD2BBBB"],
   },
 ] as const satisfies readonly {
   name: string;
   request: Omit<ItemQueryRequest, "libraries">;
+  keys: readonly string[];
 }[];
 
 // Failure modes: scan order decides a sort tie, a limited selection, or a group;
 // an OR candidate plan encounters the same records in a different order.
 it.each(REQUESTS)(
   "keeps the complete $name Query Result when keys move between Item IDs",
-  async ({ request: query }) => {
+  async ({ request: query, keys }) => {
     using first = openScenarioDatabase();
     using second = openScenarioDatabase();
     const itemIDs = [101, 102, 103, 1001, 1002, 1003];
@@ -85,9 +99,12 @@ it.each(REQUESTS)(
     });
     if (baseline.exit._tag === "Failure")
       throw new Error(String(baseline.exit.cause));
-    expect(baseline.exit.value.returnedCount).toBe(
-      query.limit === null ? RECORDS.length : "group" in query ? 4 : 3,
-    );
+    const { groups, rows } = baseline.exit.value;
+    expect(
+      (groups?.flatMap((group) => group.rows) ?? rows!).map(
+        (row) => row.indexedKey,
+      ),
+    ).toEqual(keys);
     for (const forceScan of [true, false]) {
       const result = await runEffect(collectQuery(ITEMS, request), {
         client: second.db,
@@ -130,5 +147,7 @@ it("keeps the order of groups whose values collate as equal", async () => {
       throw new Error(String(result.exit.cause));
     return result.exit.value.groups?.map(({ value }) => value);
   };
-  expect(await groups([1001, 101])).toEqual(await groups([101, 1001]));
+  const expected = ["Éclairs", "Éclairs"];
+  expect(await groups([1001, 101])).toEqual(expected);
+  expect(await groups([101, 1001])).toEqual(expected);
 });
