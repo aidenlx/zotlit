@@ -756,6 +756,7 @@
   "settings_profile_empty_desc": "Add one to use a different folder, citation style, or look for some notes.",
   "settings_profile_other_heading": "Other profiles",
   "settings_profile_default_name": "Default",
+  "profile_default_description": "The built-in format for literature notes.",
   "settings_profile_default_desc": "Uses the settings on the main ZotLit page. Other profiles inherit from it.",
   "settings_profile_duplicate": "Duplicate",
   "settings_profile_share": "Share…",
