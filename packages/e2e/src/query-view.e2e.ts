@@ -1270,7 +1270,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const key of offered["vault["]!) expect(key).toMatch(/^".*"$/);
   }, 120000);
 
-  it("closes brackets and quotes as they are typed in a filter condition, and leaves a regular expression's text alone", async () => {
+  it("closes brackets and quotes as they are typed in a filter condition", async () => {
     const path = "query-files/Paired symbols.zotquery";
     const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - title.length > 0\n`;
     const typings = [

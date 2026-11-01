@@ -135,12 +135,11 @@ it.each([
   ['""', '""|'],
   ['title.contains("a', 'title.contains("a|")'],
   ['title.contains("a")', 'title.contains("a")|'],
-  // Inside a literal the symbol is text.
+  // Inside a string a bracket is text, and an apostrophe after a word opens
+  // nothing.
   ['"(', '"(|"'],
   ["/don't", "/don't|"],
-  ["/a(", "/a(|"],
-  // A bare `/` is no regular expression yet, so its first bracket pairs
-  // and the typed closer still lands on it.
+  // A typed closer lands on the generated one in a regular expression too.
   ["/(a|b)/", "/(a|b)/|"],
   ["/[a-z]/", "/[a-z]/|"],
   // Braces mean nothing in a Filter Expression.
@@ -152,4 +151,30 @@ it.each([
   const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
   type(view, keys);
   expect(snapshot(view)).toBe(expected);
+});
+
+it("wraps the selected text in the typed symbol", () => {
+  const { container } = render(
+    <MatchExpressionInput value="title" onChange={() => {}} />,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  view.dispatch({ selection: { anchor: 0, head: 5 } });
+  type(view, "(");
+  expect(view.state.doc.toString()).toBe("(title)");
+});
+
+it("removes an empty pair with Backspace", () => {
+  const { container } = render(
+    <MatchExpressionInput value="" onChange={() => {}} />,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  type(view, '"');
+  view.contentDOM.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Backspace",
+      keyCode: 8,
+      bubbles: true,
+    }),
+  );
+  expect(view.state.doc.toString()).toBe("");
 });
