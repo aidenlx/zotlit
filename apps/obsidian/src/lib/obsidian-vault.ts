@@ -158,10 +158,28 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
   // Obsidian accepts a parent in the wrong case on a disk that folds case, then
   // answers for a second file that no folder holds.
   const underHeldParent = (path: string): string => {
-    const parent = source.getAbstractFileByPathInsensitive(dirname(path));
-    return parent instanceof TFolder
-      ? joinFolderPath(parent.path, basename(path))
-      : path;
+    const parent = heldParent(path);
+    return parent ? joinFolderPath(parent.path, basename(path)) : path;
+  };
+  const heldParent = (path: string): TFolder | null => {
+    const parent = dirname(path);
+    const held =
+      parent === "."
+        ? source.getFolderByPath("/")
+        : source.getAbstractFileByPathInsensitive(parent);
+    return held instanceof TFolder ? held : null;
+  };
+  // A new file misses the insensitive lookup, and a miss walks the whole vault.
+  // A case variant sits in the parent, so a create reads that one folder.
+  const heldInAnyCase = (path: string): TAbstractFile | null => {
+    const exact = source.getAbstractFileByPath(path);
+    if (exact) return exact;
+    const name = basename(path).toLowerCase();
+    return (
+      heldParent(path)?.children.find(
+        (child) => basename(child.path).toLowerCase() === name,
+      ) ?? null
+    );
   };
   return Vault.of({
     read: Effect.fn("Vault.read")((file) =>
@@ -184,7 +202,7 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     ),
     create: Effect.fn("Vault.create")(
       (path, data, options): Effect.Effect<TFile, FileExists | VaultError> => {
-        const held = source.getAbstractFileByPathInsensitive(path);
+        const held = heldInAnyCase(path);
         if (held) return Effect.fail(new FileExists({ path: held.path }));
         const target = underHeldParent(path);
         return call("create", target, () =>

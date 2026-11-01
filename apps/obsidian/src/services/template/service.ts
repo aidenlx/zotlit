@@ -1560,34 +1560,34 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
    *
    * @returns Whether it updated, so the change arrives by `onSettingsChanged`.
    */
-  const coreAdoptFolderCase = Effect.fn("Template.core.coreAdoptFolderCase")(
-    function* (
-      setting: string,
-    ): Effect.fn.Return<boolean, never, Vault | PluginSettings> {
-      const folder = normalizeVaultPath(setting);
-      if (folder === "") return false;
-      const held = yield* (yield* Vault).getAbstractFileByPathInsensitive(
-        folder,
-      );
-      if (!(held instanceof TFolder) || held.path === folder) return false;
-      yield* (yield* PluginSettings)
-        .update({ "template.folder": held.path })
-        // The schema accepts any string for this key, so the patch cannot be invalid.
-        .pipe(Effect.orDie);
-      state.log("info", "Adopted the vault's case for the template folder", {
-        folder: held.path,
-      });
-      return true;
-    },
-  );
+  const adoptFolderCase = Effect.fn("Template.core.adoptFolderCase")(function* (
+    setting: string,
+  ): Effect.fn.Return<boolean, never, Vault | PluginSettings> {
+    const folder = normalizeVaultPath(setting);
+    if (folder === "") return false;
+    const held = yield* (yield* Vault).getAbstractFileByPathInsensitive(folder);
+    if (!(held instanceof TFolder) || held.path === folder) return false;
+    yield* (yield* PluginSettings)
+      .update({ "template.folder": held.path })
+      // The schema accepts any string for this key, so the patch cannot be invalid.
+      .pipe(Effect.orDie);
+    state.log("info", "Adopted the vault's case for the template folder", {
+      folder: held.path,
+    });
+    return true;
+  });
   const onSettingsChanged = Effect.fn("Template.core.onSettingsChanged")(
     function* (
       settings: Readonly<Settings>,
     ): Effect.fn.Return<void, never, Vault | PluginSettings> {
       if (state.closed) return;
-      if (yield* coreAdoptFolderCase(settings["template.folder"])) return;
-      state.settings.current = settings;
       const folder = normalizeVaultPath(settings["template.folder"]);
+      if (
+        folder !== state.lastTemplateFolder &&
+        (yield* adoptFolderCase(folder))
+      )
+        return;
+      state.settings.current = settings;
       const autoTrim: [AutoTrim, AutoTrim] = [
         settings["template.auto-trim-leading"],
         settings["template.auto-trim-trailing"],
@@ -2316,7 +2316,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     failStartup,
     close,
     onSettingsChanged,
-    adoptFolderCase: coreAdoptFolderCase,
+    adoptFolderCase,
     onCreateOrModify,
     onRename,
     onDelete,

@@ -234,6 +234,7 @@ it.effect("reads the live layer's file manager from ObsidianApp", () =>
                 vault: stubService<VaultApi>("Vault", {
                   getAbstractFileByPath: () => null,
                   getAbstractFileByPathInsensitive: () => null,
+                  getFolderByPath: () => null,
                   on: () => ({}),
                   offref: () => {},
                 }),

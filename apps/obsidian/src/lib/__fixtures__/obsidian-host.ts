@@ -16,6 +16,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { parseFrontMatter } from "@/lib/live-text";
 import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
+import { heldInAnyCase } from "@/lib/__fixtures__/obsidian-vault";
 import type { VaultSource } from "@/lib/obsidian-vault";
 
 type VaultEvent = "create" | "modify" | "rename" | "delete";
@@ -69,10 +70,11 @@ export class MockVault implements VaultSource {
   }
 
   addFile(path: string, content: string): TFile {
+    const folder = this.#ensureFolder(dirname(path));
     const file = makeFile(path, this.#nextStat(content), this);
     this.files.set(path, file);
     this.contents.set(path, content);
-    this.#ensureFolder(dirname(path)).children.push(file);
+    folder.children.push(file);
     return file;
   }
 
@@ -82,13 +84,9 @@ export class MockVault implements VaultSource {
   }
 
   getAbstractFileByPathInsensitive(path: string): TAbstractFile | null {
-    const exact = this.getAbstractFileByPath(path);
-    if (exact) return exact;
-    const folded = path.toLowerCase();
     return (
-      [...this.files.values(), ...this.folders.values()].find(
-        (held) => held.path.toLowerCase() === folded,
-      ) ?? null
+      this.getAbstractFileByPath(path) ??
+      heldInAnyCase([...this.files.values(), ...this.folders.values()], path)
     );
   }
 

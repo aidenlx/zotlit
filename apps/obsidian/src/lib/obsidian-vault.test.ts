@@ -212,6 +212,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const source = new MemoryVault();
+      source.addFolder("Notes");
       source.add("Notes/a.md", "held");
       const { vault } = yield* open(layerVaultFrom(source));
       const create = vi.spyOn(source, "create");

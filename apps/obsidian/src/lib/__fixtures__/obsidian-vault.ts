@@ -1,11 +1,21 @@
 // An in-memory vault for tests. The test drives it; the tag's own layer runs
 // over it (`layerVaultFrom`). It copies the shape of MemoryMetadataCache.
+import { dirname } from "node:path/posix";
 import { TFile, TFolder } from "obsidian";
 import type { DataWriteOptions, EventRef, TAbstractFile } from "obsidian";
 
 import type { VaultSource } from "@/lib/obsidian-vault";
 
 type Callback = (...args: unknown[]) => unknown;
+
+/** The first of `held` whose path differs from `path` only in case. */
+export function heldInAnyCase(
+  held: readonly TAbstractFile[],
+  path: string,
+): TAbstractFile | null {
+  const folded = path.toLowerCase();
+  return held.find((entry) => entry.path.toLowerCase() === folded) ?? null;
+}
 
 /** The files of a test vault, by path, with their text, and Obsidian's vault events. */
 export class MemoryVault implements VaultSource {
@@ -38,13 +48,9 @@ export class MemoryVault implements VaultSource {
 
   /** As Obsidian: the exact path first, then any path that differs only in case. */
   getAbstractFileByPathInsensitive(path: string): TAbstractFile | null {
-    const exact = this.getAbstractFileByPath(path);
-    if (exact) return exact;
-    const folded = path.toLowerCase();
     return (
-      [...this.files.values(), ...this.folders.values()].find(
-        (held) => held.path.toLowerCase() === folded,
-      ) ?? null
+      this.getAbstractFileByPath(path) ??
+      heldInAnyCase([...this.files.values(), ...this.folders.values()], path)
     );
   }
 
@@ -127,6 +133,7 @@ export class MemoryVault implements VaultSource {
     file.path = path;
     this.files.set(path, file);
     this.contents.set(path, data);
+    this.folders.get(dirname(path))?.children.push(file);
     this.trigger("create", file);
     return file;
   }
