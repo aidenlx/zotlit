@@ -134,8 +134,8 @@ declare module "obsidian" {
     getConfig(key: "readableLineLength"): boolean;
     /**
      * The exact path, then the first path that differs only in case. Obsidian's
-     * `FileManager.getOrCreateFolder` resolves folders this way. Verified in
-     * Obsidian 1.14.4.
+     * `FileManager.getOrCreateFolder` resolves folders this way, 74498 and
+     * 93110 in `.ob-rev-1.14.4/app.js`. Verified in Obsidian 1.14.4.
      */
     getAbstractFileByPathInsensitive(path: string): TAbstractFile | null;
   }

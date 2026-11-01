@@ -1556,20 +1556,23 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
   /**
    * Save the template folder under the case the vault holds it in. The scan
    * and every reader of the setting compare paths exactly, while a disk that
-   * folds case treats both spellings as one folder. Whether an update happened
-   * is returned, as its change arrives through `onSettingsChanged`.
+   * folds case treats both spellings as one folder.
+   *
+   * @returns Whether it updated, so the change arrives by `onSettingsChanged`.
    */
   const coreAdoptFolderCase = Effect.fn("Template.core.coreAdoptFolderCase")(
     function* (
       setting: string,
     ): Effect.fn.Return<boolean, never, Vault | PluginSettings> {
       const folder = normalizeVaultPath(setting);
-      const vault = yield* Vault;
-      if (folder === "" || (yield* vault.getFolderByPath(folder))) return false;
-      const held = yield* vault.getAbstractFileByPathInsensitive(folder);
-      if (!(held instanceof TFolder)) return false;
+      if (folder === "") return false;
+      const held = yield* (yield* Vault).getAbstractFileByPathInsensitive(
+        folder,
+      );
+      if (!(held instanceof TFolder) || held.path === folder) return false;
       yield* (yield* PluginSettings)
         .update({ "template.folder": held.path })
+        // The schema accepts any string for this key, so the patch cannot be invalid.
         .pipe(Effect.orDie);
       state.log("info", "Adopted the vault's case for the template folder", {
         folder: held.path,

@@ -7,6 +7,7 @@ import { describe, expect, vi } from "vitest";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { profileRevision } from "@/lib/profile-revision";
 import { PROFILE_ID_LENGTH } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 
@@ -1252,6 +1253,28 @@ describe("Profile", () => {
       expect(vault.contents.get("templates/zotlit-profile.default.md")).toBe(
         edited,
       );
+    }),
+  );
+
+  it.effect("refuses a save over a document held under another case", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const f = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => harness(undefined, undefined, context)),
+      );
+      f.vault.addFile("templates/ZOTLIT-PROFILE.DEFAULT.md", "Held");
+      const source = yield* Effect.promise(() =>
+        f.profile.bridge.runPromise(f.profile.getSource("default")),
+      );
+      const saving = f.profile.bridge.runPromise(
+        f.profile.saveSource("default", source, { state: "absent" }),
+      );
+      yield* TestClock.adjust(500);
+      expect(yield* Effect.promise(() => saving)).toEqual({
+        state: "refused",
+        reason: "document-exists",
+        currentRevision: profileRevision("Held"),
+      });
     }),
   );
 

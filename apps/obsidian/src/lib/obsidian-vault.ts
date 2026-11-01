@@ -15,7 +15,7 @@ import type {
   Vault as ObsidianVault,
 } from "obsidian";
 
-import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
+import { joinFolderPath } from "@/lib/ensure-folder";
 import { isErrno } from "@/lib/errno";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { obsidianEventSource } from "@/lib/obsidian-event-source";
@@ -94,6 +94,8 @@ export interface VaultShape {
   getFolderByPath(path: string): Effect.Effect<TFolder | null>;
   /** The file or folder at `path` in the vault cache (case-sensitive), `null` when there is none. */
   getAbstractFileByPath(path: string): Effect.Effect<TAbstractFile | null>;
+  /** `path` under the path the vault holds its parent folder at, in that case. */
+  underHeldParent(path: string): Effect.Effect<string>;
   /** The file or folder at `path`, or the one whose path differs only in case. */
   getAbstractFileByPathInsensitive(
     path: string,
@@ -153,6 +155,14 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     _tag: "delete",
     file,
   }));
+  // Obsidian accepts a parent in the wrong case on a disk that folds case, then
+  // answers for a second file that no folder holds.
+  const underHeldParent = (path: string): string => {
+    const parent = source.getAbstractFileByPathInsensitive(dirname(path));
+    return parent instanceof TFolder
+      ? joinFolderPath(parent.path, basename(path))
+      : path;
+  };
   return Vault.of({
     read: Effect.fn("Vault.read")((file) =>
       call("read", file.path, () => source.read(file)),
@@ -176,14 +186,10 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
       (path, data, options): Effect.Effect<TFile, FileExists | VaultError> => {
         const held = source.getAbstractFileByPathInsensitive(path);
         if (held) return Effect.fail(new FileExists({ path: held.path }));
-        // Obsidian accepts a parent in the wrong case on a disk that folds case,
-        // then answers for a second file that no folder holds.
-        const parent = source.getAbstractFileByPathInsensitive(dirname(path));
-        const target =
-          parent instanceof TFolder
-            ? joinFolderPath(normalizeFolderPath(parent.path), basename(path))
-            : path;
-        return call("create", path, () => source.create(target, data, options));
+        const target = underHeldParent(path);
+        return call("create", target, () =>
+          source.create(target, data, options),
+        );
       },
     ),
     createFolder: Effect.fn("Vault.createFolder")((path) =>
@@ -200,6 +206,9 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     ),
     getAbstractFileByPath: Effect.fn("Vault.getAbstractFileByPath")((path) =>
       Effect.sync(() => source.getAbstractFileByPath(path)),
+    ),
+    underHeldParent: Effect.fn("Vault.underHeldParent")((path) =>
+      Effect.sync(() => underHeldParent(path)),
     ),
     getAbstractFileByPathInsensitive: Effect.fn(
       "Vault.getAbstractFileByPathInsensitive",

@@ -355,6 +355,27 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     const note = await createFixtureNote(vaultId, 2, "default");
     if (note.outcome !== "created")
       throw new Error("The Literature Note was not created");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        vaultId,
+        async ({ app, zotlit }, { path }) => {
+          for (const type of [
+            "zotlit-template-workbench",
+            "zotlit-template-data-explorer",
+            "zotlit-note-preview",
+          ])
+            app.workspace.detachLeavesOfType(type);
+          await app.vault.delete(app.vault.getFileByPath(path)!);
+          const folder = app.vault.getFolderByPath("Templates");
+          if (folder) await app.vault.rename(folder, "templates");
+          zotlit.services.bridge.runSync(
+            zotlit.services.settings.update({ "template.folder": "templates" }),
+          );
+        },
+        { path: note.path },
+      );
+    });
     await obRun(vaultId, async ({ app, zotlit }) => {
       await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
       const held = app.vault.getFileByPath(
