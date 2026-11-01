@@ -88,6 +88,8 @@ export type ItemQueryReader =
   | "library-row-count"
   | "scan-page"
   | "candidate-set"
+  | "max-item-id"
+  | "text-sweep-window"
   | "universe-rows"
   | "field-vocabulary"
   | "collection-paths"
