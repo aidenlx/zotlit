@@ -69,7 +69,7 @@ Add a new case to the area file that matches its feature (create a new area file
 | `annotation-citations.e2e.ts` | Annotation Citations shown as citations: the in-text rendering in Live Preview and reading view, and the hover that holds the Annotation and the Item's reference |
 | `annotations-excerpts.e2e.ts` | PDF excerpts, rendering, worker reads |
 | `query-file.e2e.ts` | Query File tabs, new-query hotkey |
-| `query-view.e2e.ts`, `query-view-properties.e2e.ts`, `query-view-table.e2e.ts` | Query View UI, formulas, table and Items layout |
+| `query-view.e2e.ts`, `query-view-properties.e2e.ts`, `query-view-table.e2e.ts`, `query-view-filter.e2e.ts` | Query View UI, formulas, table and Items layout, the Filter's property list |
 | `library-view.e2e.ts`, `library-view-navigation.e2e.ts`, `library-view-reading.e2e.ts` | Library View browsing, search, Reading Card |
 | `literature-notes.e2e.ts` | Literature Note create/update, profiles, match workbench |
 | `local-bridge.e2e.ts` | Local Bridge / web workbench (needs `WEB_WORKBENCH_ENABLED=true`) |

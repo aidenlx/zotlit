@@ -6,10 +6,17 @@
 // @see apps/obsidian/policies/ui-seams.md
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
 
+import { matchesSearchTerm } from "@zotlit/item-query";
+
 /** A row's value and the text a query matches it by. */
 export interface ChooserRow {
   value: string;
   label: string;
+  /**
+   * Other words a query finds the row by, which it never shows: "journal" for
+   * the field that holds a paper's journal.
+   */
+  searchTerms?: readonly string[];
   /**
    * Whether the row refuses a tick. It travels with the row rather than only
    * with the rendered item, so a key reads the same flag the row draws.
@@ -97,6 +104,9 @@ export interface ChooserLayout<Row extends ChooserRow> {
  * alone decide whether the query came out empty, which is why {@link
  * ChooserLayout.empty} is reported rather than read off the row count.
  *
+ * A row's Search Terms answer to `query`, the text behind `matcher`, by
+ * {@link matchesSearchTerm}, whose matches are stricter than the fuzzy ones.
+ *
  * The row stays a type parameter because a caller's row carries more than a
  * value and a label — the tag rows hold a hit count — and the survivors are
  * handed back for that caller to render.
@@ -104,6 +114,7 @@ export interface ChooserLayout<Row extends ChooserRow> {
 export function chooserLayout<Row extends ChooserRow>(
   groups: readonly ChooserGroup<Row>[],
   matcher: ChooserMatcher | null,
+  query = "",
 ): ChooserLayout<Row> {
   const sections: ChooserSection<Row>[] = [];
   for (const [groupIndex, group] of groups.entries()) {
@@ -111,7 +122,8 @@ export function chooserLayout<Row extends ChooserRow>(
       (row) =>
         row.action !== undefined ||
         matcher === null ||
-        matcher(row.label) !== null,
+        matcher(row.label) !== null ||
+        row.searchTerms?.some((term) => matchesSearchTerm(term, query)),
     );
     if (rows.length > 0)
       sections.push({

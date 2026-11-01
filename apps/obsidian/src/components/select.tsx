@@ -39,6 +39,8 @@ export interface SelectOption {
   icon?: ReactNode;
   /** Muted text at the end of the row, such as a property's raw id. */
   detail?: string;
+  /** Other words the search finds the option by, which it never shows. */
+  searchTerms?: readonly string[];
   disabled?: boolean;
 }
 
@@ -201,6 +203,7 @@ function SelectBody({
     label: shownDetail(option)
       ? `${option.label} ${option.detail}`
       : option.label,
+    searchTerms: option.searchTerms,
     disabled: option.disabled,
     option,
   }));

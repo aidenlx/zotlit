@@ -12,8 +12,7 @@ import type {
 
 import {
   fieldOption,
-  optionTexts,
-  ranked,
+  rankedOptions,
   signature,
   takesArguments,
 } from "./expression-options";
@@ -169,12 +168,11 @@ export function memberCompletions(
   const { receiver } = access;
   const text = source.slice(receiver.from, receiver.to);
   if (isNamespace(receiver, text)) return undefined;
-  const options = ranked(
+  const options = rankedOptions(
     memberEntries(
       vocabulary.receiver?.(source, { from: receiver.from, to: receiver.to }),
     ),
     source.slice(access.from, pos),
-    optionTexts,
   );
   return options.length === 0
     ? null

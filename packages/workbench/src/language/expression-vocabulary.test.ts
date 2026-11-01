@@ -17,13 +17,10 @@ describe("the fields of a Query Dataset", () => {
     const { fields } = datasetVocabulary(ITEMS, {
       label: (path) => (path === "title" ? "Title" : undefined),
     });
-    expect(fields).toContainEqual({
-      path: "title",
-      label: "Title",
-      type: "string",
-    });
-    expect(fields).toContainEqual({ path: "dateAdded", type: "date" });
-    expect(fields).toContainEqual({ path: "creators", type: "list" });
+    const named = (path: string) => fields.find((f) => f.path === path);
+    expect(named("title")).toMatchObject({ label: "Title", type: "string" });
+    expect(named("dateAdded")).toMatchObject({ type: "date" });
+    expect(named("creators")).toMatchObject({ type: "list" });
     // `custom` is read only by bracket access to a custom field.
     expect(fields.map((field) => field.path)).not.toContain("custom");
   });
@@ -112,6 +109,7 @@ it("labels every entry by its id, as the expression names it", () => {
   ]);
   const members = vocabulary.receiver?.("item", { from: 0, to: 4 })?.members;
   expect(members).toContainEqual({
+    searchTerms: expect.any(Array),
     path: "title",
     type: "string",
     label: "Paper heading",

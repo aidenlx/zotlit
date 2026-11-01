@@ -937,7 +937,8 @@ function List<Row extends ChooserRow>({
   const { query, active, activeOptionId, optionId, publishRows, page } =
     useChooserSession();
   const { sections, rows, empty } = useMemo(
-    () => chooserLayout(groups, query ? prepareFuzzySearch(query) : null),
+    () =>
+      chooserLayout(groups, query ? prepareFuzzySearch(query) : null, query),
     [groups, query],
   );
 

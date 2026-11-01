@@ -420,8 +420,13 @@ function TypeIcon({
 export function propertyRow({
   path,
   label,
-}: Pick<PropertyEntry, "path" | "label">): ChooserRow {
-  return { value: path, label: label === path ? path : `${label} ${path}` };
+  searchTerms,
+}: Pick<PropertyEntry, "path" | "label" | "searchTerms">): ChooserRow {
+  return {
+    value: path,
+    label: label === path ? path : `${label} ${path}`,
+    searchTerms,
+  };
 }
 
 /**

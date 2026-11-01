@@ -53,6 +53,7 @@ import { useForkedEffect } from "./run";
 import { useParts, useIcon } from "./theme";
 
 import { datasetVocabulary } from "#/language/expression-vocabulary";
+import { isDatasetFieldKind } from "#/match/fields";
 
 export type {
   ConditionControlProps,
@@ -193,6 +194,10 @@ export function MatchPane({
       ...filterVocabulary("items", {
         m,
         values,
+        label: (field) =>
+          isDatasetFieldKind(field.kind)
+            ? FIELD_LABELS[schema][field.path]
+            : undefined,
         issue: (_, path) =>
           faulty &&
           answer?.kind === "problem" &&
@@ -206,7 +211,7 @@ export function MatchPane({
       }),
       expression,
     }),
-    [m, values, faulty, answer, placed, expression],
+    [m, values, schema, faulty, answer, placed, expression],
   );
   function write(next: MatchTree | undefined) {
     const saved = controller.setMatch(next);
@@ -611,6 +616,7 @@ function Row<Row extends LabelledRow>({
                   label: entry.label,
                   icon: entry.icon,
                   detail: entry.detail,
+                  searchTerms: entry.searchTerms,
                 }))}
                 onChange={(next) =>
                   onChange(freshRow(vocabulary, next as Row["kind"]))

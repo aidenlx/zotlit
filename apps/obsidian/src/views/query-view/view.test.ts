@@ -1674,7 +1674,8 @@ ${FILE}`),
     )
   ).map((option) => option.label);
   expect(kinds).toContain("Highlight colour");
-  expect(kinds).not.toContain("Color");
+  // The one "Color" left is `color`, the raw value, a field of its own.
+  expect(kinds.filter((label) => label === "Color")).toHaveLength(1);
   // A field without a Display Name keeps the name of its condition.
   expect(kinds).toContain("Item title");
 });

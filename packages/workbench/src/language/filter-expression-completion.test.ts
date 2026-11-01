@@ -47,6 +47,42 @@ function labels(...args: Parameters<typeof offered>) {
   return offered(...args)?.options.map((option) => option.label) ?? [];
 }
 
+describe("Search Terms", () => {
+  const items = datasetVocabulary(ITEMS, { label: () => undefined });
+
+  it("offers a field by a word for it, first, and writes the field's name", () => {
+    const result = offered("journal|", items);
+    expect(result?.options[0]?.insert).toBe("publicationTitle");
+  });
+
+  it("offers a member by a word for it after a dot", () => {
+    const vocabulary = datasetVocabulary(ANNOTATIONS, {
+      label: () => undefined,
+    });
+    expect(labels("item.journal|", vocabulary)).toContain("publicationTitle");
+  });
+
+  it("ranks a visible name that starts with the typed text above a hidden word", () => {
+    // `misc` is a word for `extra`.
+    expect(labels("mi|", items)[0]).toBe("min");
+    expect(labels("mi|", items)).toContain("extra");
+  });
+
+  it("ranks an exact name above an exact word for another field", () => {
+    // `format` is also a word for `medium`.
+    expect(labels("format|", items)[0]).toBe("format");
+  });
+
+  it("reads no scattered letters of a Search Term", () => {
+    const vocabulary: ExpressionVocabulary = {
+      ...FILTER,
+      fields: [{ path: "abc", searchTerms: ["journal"] }],
+    };
+    expect(labels("ourn|", vocabulary)).toEqual([]);
+    expect(labels("jour|", vocabulary)).toEqual(["abc"]);
+  });
+});
+
 describe("fields", () => {
   it("offers a field by a prefix, with its type and the label the Properties popover gives it", () => {
     const result = offered("tit|")!;
@@ -466,6 +502,7 @@ describe("the members a Query Dataset's planner reads", () => {
       insert: "title",
       kind: "field",
       type: "string",
+      searchTerms: expect.any(Array),
     });
     expect(fields.map((field) => field.label)).toContain("creators");
     // An Annotation's own field and the custom fields are no members of its Item.

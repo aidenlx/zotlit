@@ -23,6 +23,7 @@ import {
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
   filterVocabulary,
+  isDatasetFieldKind,
   NO_MATCH_DATA,
 } from "@zotlit/workbench/ui";
 import type {
@@ -262,7 +263,9 @@ export function FilterEditor({
       // A condition shows the Display Name of its field in the view's
       // Properties, and the icon the view's property list shows.
       label: (field) =>
-        field.label ?? properties?.entry(field.path).displayName,
+        field.label ??
+        properties?.entry(field.path).displayName ??
+        (isDatasetFieldKind(field.kind) ? fieldLabel(field.path) : undefined),
       icon: (field) => (
         <Icon
           name={propertyIcon(
