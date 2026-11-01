@@ -1,6 +1,6 @@
 // Template delimiter and expression bracket input shared by editor hosts.
 import { EditorSelection, Prec } from "@codemirror/state";
-import type { Extension } from "@codemirror/state";
+import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 
 import { pairingContext } from "./pairing-context";
@@ -14,16 +14,25 @@ import type { SuggestionConfig } from "./suggestions";
 
 export type PairingSource = (
   position: number,
-) => Pick<SuggestionConfig, "language" | "mode" | "scope"> | null;
+  state: EditorState,
+) =>
+  | (Pick<SuggestionConfig, "language" | "mode" | "scope"> & {
+      /** The position is literal text: nothing new opens a pair there. */
+      literal?: boolean;
+    })
+  | null;
 
-export function templatePairing(read: PairingSource = () => ({})): Extension {
+export function templatePairing(
+  read: PairingSource = () => ({}),
+  brackets: Readonly<Record<string, string>> = expressionBrackets,
+): Extension {
   return [
     pairingState,
     pairingHistory,
     Prec.highest([
       // oxlint-disable-next-line max-params -- CodeMirror inputHandler signature.
       EditorView.inputHandler.of((view, from, to, text) => {
-        const config = read(from);
+        const config = read(from, view.state);
         if (
           !config ||
           text.length !== 1 ||
@@ -161,9 +170,10 @@ export function templatePairing(read: PairingSource = () => ({})): Extension {
           return true;
         }
 
-        const closing = expressionBrackets[text];
+        const closing = brackets[text];
         if (
           !closing ||
+          config.literal ||
           pairingContext(source, from, config) !== "code" ||
           (source[from] && !/[\s\])}:;,>]/.test(source[from]))
         )
@@ -190,7 +200,7 @@ export function templatePairing(read: PairingSource = () => ({})): Extension {
               !main.empty ||
               ranges.length !== 1 ||
               view.state.readOnly ||
-              !read(main.head) ||
+              !read(main.head, view.state) ||
               view.compositionStarted
             )
               return false;

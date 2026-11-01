@@ -99,3 +99,57 @@ it("keeps what the user typed when the next key lands before the owner's render 
   act(() => set("x"));
   expect(editor.state.doc.toString()).toBe("x");
 });
+
+/** Types `text` into the field key by key, as the browser's input event does. */
+function type(view: EditorView, text: string) {
+  for (const key of text) {
+    const { from, to } = view.state.selection.main;
+    const insert = () =>
+      view.state.update({
+        changes: { from, to, insert: key },
+        selection: { anchor: from + key.length },
+        userEvent: "input.type",
+      });
+    if (
+      !view.state
+        .facet(EditorView.inputHandler)
+        .some((handler) => handler(view, from, to, key, insert))
+    )
+      view.dispatch(insert());
+  }
+}
+
+/** The field's text, with `|` at the cursor. */
+function snapshot({ state }: EditorView) {
+  const { head } = state.selection.main;
+  return `${state.sliceDoc(0, head)}|${state.sliceDoc(head)}`;
+}
+
+it.each([
+  ["(", "(|)"],
+  ["[", "[|]"],
+  ['"', '"|"'],
+  ["'", "'|'"],
+  // The closer the field wrote is typed over, so it never doubles.
+  ["()", "()|"],
+  ['""', '""|'],
+  ['title.contains("a', 'title.contains("a|")'],
+  ['title.contains("a")', 'title.contains("a")|'],
+  // Inside a literal the symbol is text.
+  ['"(', '"(|"'],
+  ["/don't", "/don't|"],
+  ["/a(", "/a(|"],
+  // A bare `/` is no regular expression yet, so its first bracket pairs
+  // and the typed closer still lands on it.
+  ["/(a|b)/", "/(a|b)/|"],
+  ["/[a-z]/", "/[a-z]/|"],
+  // Braces mean nothing in a Filter Expression.
+  ["{", "{|"],
+])("typing %s gives %s", (keys, expected) => {
+  const { container } = render(
+    <MatchExpressionInput value="" onChange={() => {}} />,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  type(view, keys);
+  expect(snapshot(view)).toBe(expected);
+});

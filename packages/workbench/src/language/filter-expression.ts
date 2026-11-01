@@ -2,7 +2,7 @@
 // `@zotlit/filter-expression`, tagged by the expression token roles so the
 // template highlighter colors it.
 import { LRLanguage, syntaxTree } from "@codemirror/language";
-import type { Range } from "@codemirror/state";
+import type { Extension, Range } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import type { Tree } from "@lezer/common";
 import { highlightTree, styleTags } from "@lezer/highlight";
@@ -12,6 +12,7 @@ import { parser } from "@zotlit/filter-expression";
 import { decorationLayer, gapsAround } from "./decorations";
 import { expressionClasses, expressionTag } from "./expression-tokens";
 import { templateHighlighter } from "./highlight";
+import { templatePairing } from "./pairing";
 import type { Span } from "./span";
 
 export const filterExpressionLanguage = LRLanguage.define({
@@ -91,4 +92,21 @@ export const filterExpressionHighlighting = decorationLayer(
       update.docChanged ||
       syntaxTree(update.state) !== syntaxTree(update.startState),
   },
+);
+
+/** The symbols a Filter Expression pairs; its grammar has no braces. */
+const expressionPairs = { "(": ")", "[": "]", '"': '"', "'": "'" };
+
+/**
+ * Closes each paired symbol as it is typed. A regular expression's text is
+ * its own: a bracket or an apostrophe there opens no pair. A closer the field
+ * wrote is still typed over there, as `/(` parses as a regular expression
+ * only after the `(` that the bare `/` paired.
+ */
+export const filterExpressionPairing: Extension = templatePairing(
+  (position, state) => ({
+    mode: "expression",
+    literal: syntaxTree(state).resolveInner(position, -1).name === "RegExp",
+  }),
+  expressionPairs,
 );

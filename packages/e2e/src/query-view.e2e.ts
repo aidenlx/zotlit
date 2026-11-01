@@ -1270,6 +1270,99 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const key of offered["vault["]!) expect(key).toMatch(/^".*"$/);
   }, 120000);
 
+  it("closes brackets and quotes as they are typed in a filter condition, and leaves a regular expression's text alone", async () => {
+    const path = "query-files/Paired symbols.zotquery";
+    const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - title.length > 0\n`;
+    const typings = [
+      'title.contains("a',
+      'title.contains("a")',
+      "title.contains('a",
+      "title.contains([",
+      "title.contains(/don't",
+    ];
+    // The field's text after each typing, with `|` at the cursor. The row is
+    // never left empty, which would remove it.
+    const typed = await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { path, source, typings }) => {
+        const { press, until } = pageHelpers;
+        await using cleanup = new AsyncDisposableStack();
+        const layout = app.workspace.getLayout();
+        cleanup.defer(() => app.workspace.changeLayout(layout));
+        const file = cleanup.adopt(
+          await app.vault.create(path, source),
+          (file) => app.vault.delete(file),
+        );
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        cleanup.defer(() => {
+          for (const popup of document.querySelectorAll<HTMLElement>(
+            "[popover]:popover-open",
+          ))
+            popup.hidePopover();
+        });
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        await (
+          leaf.view as import("@/views/query-view/file-view").QueryFileView
+        ).query.settled;
+        const el = (leaf.view as import("obsidian").ItemView).contentEl;
+        press(
+          await until("Filter button", () =>
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+          ),
+          "Filter",
+        );
+        const popup = await until("Filter popover", () =>
+          el.doc.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]:popover-open',
+          )!,
+        );
+        const content = await until("expression row", () =>
+          popup.querySelector<CodeMirrorContent>(
+            '[data-filter-section="view"] [data-condition-row] .cm-content',
+          )!,
+        );
+        const editor = content.cmTile.root.view;
+        const out: string[] = [];
+        for (const keys of typings) {
+          editor.dispatch({
+            selection: { anchor: 0, head: editor.state.doc.length },
+          });
+          editor.focus();
+          await until(
+            "focus in the field",
+            () => el.doc.activeElement === content && el.doc.hasFocus(),
+          );
+          const snapshot = () => {
+            const { state } = editor;
+            const { head } = state.selection.main;
+            return `${state.sliceDoc(0, head)}|${state.sliceDoc(head)}`;
+          };
+          // Each key lands before the next, as the field reads the DOM late
+          // and takes keys that arrive together as one insertion.
+          for (const key of keys) {
+            const before = snapshot();
+            el.doc.execCommand("insertText", false, key);
+            await until(`${key} lands`, () => snapshot() !== before);
+          }
+          out.push(snapshot());
+        }
+        popup.hidePopover();
+        return out;
+      },
+      { path, source, typings },
+    );
+    expect(typed).toEqual([
+      'title.contains("a|")',
+      'title.contains("a")|',
+      "title.contains('a|')",
+      "title.contains([|])",
+      "title.contains(/don't|)",
+    ]);
+  });
+
   it("exports a note with a Query File embed and a Query Block to PDF with their rows and no toolbar", async () => {
     const notePath = "query-files/Export check.md";
     const pdfPath = join(workspaceRoot, ".scratch", "e2e-query-export.pdf");
