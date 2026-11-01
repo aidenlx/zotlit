@@ -97,7 +97,10 @@ it.each(["containsAny", "containsAll"])(
       tuning: { forceScan: true },
     });
     expect(actual.exit).toEqual(scan.exit);
-    expect(actual.exit._tag).toBe("Success");
+    expect(actual.exit).toMatchObject({
+      _tag: "Success",
+      value: { returnedCount: 0 },
+    });
   },
 );
 
