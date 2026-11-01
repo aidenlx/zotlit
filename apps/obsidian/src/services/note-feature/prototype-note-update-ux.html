@@ -1,0 +1,1335 @@
+<!doctype html>
+<!--
+  PROTOTYPE: throwaway. Branch prototype/note-update-model. All data is mock data.
+
+  Design question: how should ZotLit offer note updates to a non-technical
+  researcher? Judge each variant from the user's side, on the same four tasks:
+  can I find it, do I know what will happen, do I feel safe.
+
+  Design plan. Treatment: utilitarian, close to native Obsidian so the mock
+  reads as the real surface. Colours: ground #f6f6f7, surface #ffffff, line
+  #e0e0e4, ink #222226, muted #6c6c75, accent #7852ee, plus ok, warn, danger.
+  Type: system UI as Obsidian uses, with a monospace face for property values.
+  Layout: one Obsidian-like window per variant; variants disagree on where the
+  choice lives. A floating bar carries the variant and the task.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prototype: offering note updates</title>
+
+    <!-- Typefaces: add the font CDN <link> for the pairing chosen in the design plan. -->
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      /* The design plan's tokens, exposed to Tailwind as utilities: bg-ground, text-ink,
+       text-accent, font-display, ... `inline` keeps the var() reference at the use site,
+       so the media-query override below still reaches every utility. */
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-accent: var(--accent);
+        --color-surface: var(--surface);
+        --color-line: var(--line);
+        --color-soft: var(--soft);
+        --color-ok: var(--ok);
+        --color-warn: var(--warn);
+        --color-danger: var(--danger);
+        --font-data: var(--font-data);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #f6f6f7;
+        --surface: #ffffff;
+        --line: #e0e0e4;
+        --soft: #efecfd;
+        --ink: #222226;
+        --muted: #6c6c75;
+        --accent: #7852ee;
+        --ok: #22744a;
+        --warn: #93590b;
+        --danger: #b42b2b;
+        --font-display: ui-sans-serif, system-ui, sans-serif;
+        --font-body: ui-sans-serif, system-ui, sans-serif;
+        --font-data: ui-monospace, "SF Mono", monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #1c1c1f;
+          --surface: #262629;
+          --line: #3a3a3f;
+          --soft: #352f52;
+          --ink: #e6e6e9;
+          --muted: #a0a0a9;
+          --accent: #a58bf6;
+          --ok: #6fce9a;
+          --warn: #e5ad5e;
+          --danger: #f08b8b;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- Diagram sources go here: one <script type="text/mermaid" id="..."> per diagram. -->
+
+    <script type="text/jsx" id="app">
+      import React, {
+        useState,
+        useEffect,
+        useMemo,
+        useSyncExternalStore,
+      } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        Check,
+        MoreHorizontal,
+        Search,
+        TriangleAlert,
+        X,
+        FileText,
+        Library,
+      } from "lucide-react";
+
+      // --- Diagram ---
+      // Diagrams are authored as <script type="text/mermaid" id="..."> blocks in the body —
+      // plain text, no escaping — and rendered with <Diagram src="thatId" />. Indentation is
+      // stripped, so the block can sit at whatever depth reads well. beautiful-mermaid loads
+      // on first mount, so a page with no diagram never fetches it; bg/fg are var() so
+      // diagrams follow the theme instead of re-rendering.
+      function decodeEntities(s) {
+        const el = document.createElement("textarea");
+        el.innerHTML = s;
+        return el.value;
+      }
+
+      function dedent(s) {
+        const lines = s.replace(/\t/g, "  ").split("\n");
+        const widths = lines
+          .filter((l) => l.trim())
+          .map((l) => l.match(/^ */)[0].length);
+        const pad = widths.length ? Math.min(...widths) : 0;
+        return lines
+          .map((l) => l.slice(pad))
+          .join("\n")
+          .trim();
+      }
+
+      let mermaidMod = null;
+      export function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => {
+          if (!mod)
+            import("beautiful-mermaid").then((m) => {
+              mermaidMod = m;
+              setMod(m);
+            });
+        }, [mod]);
+        const { svg, error } = useMemo(() => {
+          const el = document.getElementById(src);
+          if (!el)
+            return {
+              svg: null,
+              error: `no <script type="text/mermaid" id="${src}"> in this page`,
+            };
+          if (!mod) return { svg: null, error: null };
+          try {
+            const opts = {
+              bg: "var(--ground)",
+              fg: "var(--ink)",
+              transparent: true,
+            };
+            return {
+              svg: mod.renderMermaidSVG(
+                decodeEntities(dedent(el.textContent)),
+                opts,
+              ),
+              error: null,
+            };
+          } catch (e) {
+            return { svg: null, error: String(e) };
+          }
+        }, [mod, src]);
+        if (error)
+          return (
+            <pre className="text-accent text-sm whitespace-pre-wrap">
+              {error}
+            </pre>
+          );
+        return (
+          <div
+            className="overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: svg ?? "" }}
+          />
+        );
+      }
+      // --- Diagram END ---
+
+      // --- Store ---
+      // One shared store, so flipping variants keeps the task. Provider-free for trim.py.
+      const SCENARIOS = {
+        template: {
+          label: "Template changed",
+          task: "You added Date added to your template. Put it in the 6 notes you have. Keep the other 4,993 papers out of your vault.",
+          open: "kuhn",
+        },
+        zotero: {
+          label: "Fixed in Zotero",
+          task: "You corrected the publisher of Kuhn 1962 in Zotero. Get that fix into your note.",
+          open: "kuhn",
+        },
+        fresh: {
+          label: "New papers",
+          task: "Three papers in Reading group have no note yet. Make notes for them, and only them.",
+          open: null,
+        },
+        restart: {
+          label: "Start over",
+          task: "Your Latour 1987 note has an old layout. Rebuild it from your template. You accept that its body text goes.",
+          open: "latour",
+        },
+      };
+      let store = { scenario: "template", run: 0 };
+      const listeners = new Set();
+      const setStore = (patch) => {
+        store = { ...store, ...patch };
+        listeners.forEach((listener) => listener());
+      };
+      const subscribe = (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      };
+      function useProtoState() {
+        const state = useSyncExternalStore(subscribe, () => store);
+        return {
+          ...state,
+          sc: SCENARIOS[state.scenario],
+          restart: () => setStore({ run: state.run + 1 }),
+        };
+      }
+
+      const PAPERS = [
+        {
+          key: "kuhn",
+          paper: "Kuhn 1962",
+          title: "The Structure of Scientific Revolutions",
+          publisher: "Univ. of Chicago Press",
+          added: "2024-03-02",
+          note: true,
+          group: false,
+          line: "Paradigms and revolutions",
+        },
+        {
+          key: "latour",
+          paper: "Latour 1987",
+          title: "Science in Action",
+          publisher: "Harvard Univ. Press",
+          added: "2024-05-19",
+          note: true,
+          group: true,
+          line: "Follow the actors",
+        },
+        {
+          key: "haraway",
+          paper: "Haraway 1988",
+          title: "Situated Knowledges",
+          publisher: "Feminist Studies",
+          added: "2025-01-11",
+          note: true,
+          group: true,
+          line: "Partial perspective",
+        },
+        {
+          key: "shapin",
+          paper: "Shapin 1994",
+          title: "A Social History of Truth",
+          publisher: "Univ. of Chicago Press",
+          added: "2025-02-08",
+          note: true,
+          group: false,
+          line: "Trust in early science",
+        },
+        {
+          key: "merton",
+          paper: "Merton 1973",
+          title: "The Sociology of Science",
+          publisher: "Univ. of Chicago Press",
+          added: "2023-11-21",
+          note: true,
+          group: false,
+          line: "Norms of science",
+        },
+        {
+          key: "foucault",
+          paper: "Foucault 1975",
+          title: "Discipline and Punish",
+          publisher: "Gallimard",
+          added: "2025-06-30",
+          note: true,
+          group: false,
+          line: "Discipline",
+        },
+        {
+          key: "arendt",
+          paper: "Arendt 1958",
+          title: "The Human Condition",
+          publisher: "Univ. of Chicago Press",
+          added: "2026-10-02",
+          note: false,
+          group: true,
+        },
+        {
+          key: "hooks",
+          paper: "hooks 1994",
+          title: "Teaching to Transgress",
+          publisher: "Routledge",
+          added: "2026-10-28",
+          note: false,
+          group: true,
+        },
+        {
+          key: "fricker",
+          paper: "Fricker 2007",
+          title: "Epistemic Injustice",
+          publisher: "Oxford Univ. Press",
+          added: "2026-10-30",
+          note: false,
+          group: true,
+        },
+      ];
+      const paperOf = (key) => PAPERS.find((entry) => entry.key === key);
+
+      function btnClass(tone) {
+        const look =
+          tone === "primary"
+            ? "bg-accent border-accent text-surface"
+            : tone === "danger"
+              ? "bg-surface border-danger text-danger"
+              : "bg-surface border-line text-ink hover:border-accent";
+        return `cursor-pointer rounded-md border px-3 py-1.5 text-sm font-medium disabled:cursor-default disabled:opacity-40 ${look}`;
+      }
+      const Button = ({ tone, ...props }) => (
+        <button type="button" {...props} className={btnClass(tone)} />
+      );
+
+      /** The note as a researcher sees it. A building block, not a layout. */
+      function NotePage({ paperKey, publisher, children }) {
+        const paper = paperOf(paperKey);
+        return (
+          <article className="mx-auto w-full max-w-[620px] px-6 py-6">
+            <h1 className="font-display mb-3 text-2xl font-bold">
+              {paper.paper}
+            </h1>
+            <dl className="mb-4 grid grid-cols-[110px_1fr] gap-y-1 border-b border-line pb-3 text-sm">
+              <dt className="text-muted">Publisher</dt>
+              <dd className="m-0">{publisher ?? paper.publisher}</dd>
+              <dt className="text-muted">One line</dt>
+              <dd className="m-0">{paper.line}</dd>
+            </dl>
+            {children}
+            <h2 className="mb-1 text-lg font-semibold">My reading notes</h2>
+            <p className="m-0 text-muted">
+              Argues that normal science runs inside a shared framework until
+              anomalies force a break. Compare with chapter 4 of my thesis.
+            </p>
+          </article>
+        );
+      }
+
+      /** What the user sees when the task is done. Same in every variant, so outcomes compare fairly. */
+      function Outcome({ title, detail }) {
+        const { restart } = useProtoState();
+        return (
+          <div className="flex h-full items-center justify-center p-6">
+            <div className="max-w-md rounded-lg border border-line bg-surface p-5">
+              <div className="flex items-center gap-2 font-semibold text-ok">
+                <Check size={18} /> {title}
+              </div>
+              <p className="mt-2 mb-3 text-sm text-muted">{detail}</p>
+              <Button onClick={restart}>Try this task again</Button>
+            </div>
+          </div>
+        );
+      }
+
+      const Frame = ({ children }) => (
+        <div className="min-h-screen bg-ground p-3 pb-[150px] font-body text-ink">
+          <div className="relative mx-auto h-[calc(100vh-174px)] min-h-[460px] max-w-[1120px] overflow-auto rounded-lg border border-line bg-surface">
+            {children}
+          </div>
+        </div>
+      );
+
+      const Scrim = ({ children }) => (
+        <div className="absolute inset-0 z-10 flex items-start justify-center bg-black/30 p-4 pt-[8%]">
+          {children}
+        </div>
+      );
+      // --- Store END ---
+
+      // --- App ---
+      // --- Variant A ---
+      function VariantA() {
+        const { scenario, run, sc } = useProtoState();
+        return (
+          <OneCommand key={`${scenario}-${run}`} scenario={scenario} sc={sc} />
+        );
+      }
+
+      function OneCommand({ scenario, sc }) {
+        const open = sc.open;
+        const [stage, setStage] = useState("palette");
+        const [target, setTarget] = useState(
+          scenario === "fresh"
+            ? "group"
+            : scenario === "template"
+              ? "all"
+              : "this",
+        );
+        const [makeMissing, setMakeMissing] = useState(false);
+        const targets = [
+          ...(open
+            ? [
+                {
+                  id: "this",
+                  label: `This note: ${paperOf(open).paper}`,
+                  notes: 1,
+                  missing: 0,
+                },
+              ]
+            : []),
+          { id: "group", label: "Reading group", notes: 2, missing: 3 },
+          { id: "all", label: "All my notes", notes: 6, missing: 4993 },
+        ];
+        const chosen = targets.find((entry) => entry.id === target);
+        useEffect(() => setMakeMissing(target === "group"), [target]);
+        const made = makeMissing ? chosen.missing : 0;
+        const action = [
+          `Update ${chosen.notes} ${chosen.notes === 1 ? "note" : "notes"}`,
+          ...(made ? [`make ${made.toLocaleString("en-US")}`] : []),
+        ].join(" and ");
+        if (stage === "done")
+          return (
+            <Frame>
+              <Outcome
+                title={`${action} finished`}
+                detail="Your writing and your own properties stayed as they were."
+              />
+            </Frame>
+          );
+        if (stage === "restarted")
+          return (
+            <Frame>
+              <Outcome
+                title="Note rebuilt from your template"
+                detail="The body text is gone. Your own properties stayed."
+              />
+            </Frame>
+          );
+        return (
+          <Frame>
+            {open ? (
+              <NotePage paperKey={open} />
+            ) : (
+              <div className="p-10 text-center text-muted">
+                No note is open.
+              </div>
+            )}
+            {stage === "palette" && (
+              <Scrim>
+                <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-line bg-surface shadow-xl">
+                  <div className="flex items-center gap-2 border-b border-line px-3 py-2.5 text-sm">
+                    <Search size={15} className="text-muted" /> update
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setStage("dialog")}
+                    className="block w-full cursor-pointer bg-soft px-3 py-2.5 text-left text-sm"
+                  >
+                    <span className="text-muted">ZotLit: </span>Update notes…
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!open}
+                    onClick={() => setStage("confirm")}
+                    className="block w-full cursor-pointer px-3 py-2.5 text-left text-sm disabled:cursor-default disabled:opacity-40"
+                  >
+                    <span className="text-muted">ZotLit: </span>Start this note
+                    over…
+                  </button>
+                </div>
+              </Scrim>
+            )}
+            {stage === "dialog" && (
+              <Scrim>
+                <div className="w-full max-w-[460px] rounded-lg border border-line bg-surface p-5 shadow-xl">
+                  <h2 className="mt-0 mb-3 text-lg font-semibold">
+                    Update notes
+                  </h2>
+                  <fieldset className="m-0 mb-3 border-0 p-0">
+                    <legend className="mb-1 text-sm font-medium">
+                      Which notes?
+                    </legend>
+                    {targets.map((entry) => (
+                      <label
+                        key={entry.id}
+                        className="flex cursor-pointer items-center gap-2 py-1 text-sm"
+                      >
+                        <input
+                          type="radio"
+                          name="target"
+                          checked={target === entry.id}
+                          onChange={() => setTarget(entry.id)}
+                        />
+                        <span className="flex-1">{entry.label}</span>
+                        <span className="text-muted tabular-nums">
+                          {entry.notes}
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                  {chosen.missing > 0 && (
+                    <label className="mb-3 flex cursor-pointer items-center gap-2 rounded-md bg-ground p-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={makeMissing}
+                        onChange={() => setMakeMissing(!makeMissing)}
+                      />
+                      Also make notes for{" "}
+                      {chosen.missing.toLocaleString("en-US")} papers without
+                      one
+                    </label>
+                  )}
+                  <p className="mt-0 mb-4 text-sm text-muted">
+                    Refreshes the details from Zotero and your template. Your
+                    writing and your own properties stay.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={() => setStage("palette")}>Back</Button>
+                    <Button tone="primary" onClick={() => setStage("done")}>
+                      {action}
+                    </Button>
+                  </div>
+                </div>
+              </Scrim>
+            )}
+            {stage === "confirm" && (
+              <Scrim>
+                <div className="w-full max-w-[420px] rounded-lg border border-line bg-surface p-5 shadow-xl">
+                  <h2 className="mt-0 mb-2 text-lg font-semibold">
+                    Start this note over?
+                  </h2>
+                  <p className="mt-0 mb-4 text-sm text-muted">
+                    ZotLit rebuilds {paperOf(open).paper} from your template.
+                    Everything you wrote in the body goes.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={() => setStage("palette")}>Back</Button>
+                    <Button tone="danger" onClick={() => setStage("restarted")}>
+                      Start over
+                    </Button>
+                  </div>
+                </div>
+              </Scrim>
+            )}
+          </Frame>
+        );
+      }
+      // --- Variant A END ---
+
+      // --- Variant B ---
+      function VariantB() {
+        const { scenario, run, sc } = useProtoState();
+        return <SayWhatYouWant key={`${scenario}-${run}`} sc={sc} />;
+      }
+
+      function SayWhatYouWant({ sc }) {
+        const [goal, setGoal] = useState(null);
+        const [zoteroWho, setZoteroWho] = useState(sc.open ? "this" : "all");
+        const [where, setWhere] = useState("group");
+        const [done, setDone] = useState(null);
+        const open = sc.open;
+        const goals = [
+          {
+            id: "zotero",
+            title: "Bring in changes from Zotero",
+            hint: "I corrected a title, a publisher, or tags in Zotero.",
+          },
+          {
+            id: "template",
+            title: "Apply my new template",
+            hint: "I changed the properties or layout I want in my notes.",
+          },
+          {
+            id: "make",
+            title: "Make notes for new papers",
+            hint: "Some papers have no note yet.",
+          },
+          {
+            id: "over",
+            title: "Start this note over",
+            hint: open
+              ? `Rebuild ${paperOf(open).paper} from my template.`
+              : "Open a note first.",
+            danger: true,
+            off: !open,
+          },
+        ];
+        if (done)
+          return (
+            <Frame>
+              <Outcome
+                title={done}
+                detail={
+                  goal === "over"
+                    ? "The body text is gone. Your own properties stayed."
+                    : "Your writing and your own properties stayed as they were."
+                }
+              />
+            </Frame>
+          );
+        const step = (title, body, label, finish, tone = "primary") => (
+          <div>
+            <button
+              type="button"
+              onClick={() => setGoal(null)}
+              className="mb-3 cursor-pointer border-0 bg-transparent p-0 text-sm text-muted"
+            >
+              ← Choose something else
+            </button>
+            <h2 className="mt-0 mb-3 text-xl font-semibold">{title}</h2>
+            {body}
+            <div className="mt-5">
+              <Button tone={tone} onClick={() => setDone(finish)}>
+                {label}
+              </Button>
+            </div>
+          </div>
+        );
+        return (
+          <Frame>
+            <div className="mx-auto max-w-[640px] px-6 py-8">
+              {!goal && (
+                <>
+                  <div className="mb-1 text-sm text-muted">ZotLit</div>
+                  <h2 className="mt-0 mb-4 text-2xl font-semibold">
+                    What do you want to do?
+                  </h2>
+                  <div className="grid gap-2">
+                    {goals.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        disabled={entry.off}
+                        onClick={() => setGoal(entry.id)}
+                        className="cursor-pointer rounded-lg border border-line bg-surface p-3 text-left hover:border-accent disabled:cursor-default disabled:opacity-40"
+                      >
+                        <div
+                          className={`font-semibold ${entry.danger ? "text-danger" : ""}`}
+                        >
+                          {entry.title}
+                        </div>
+                        <div className="text-sm text-muted">{entry.hint}</div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              {goal === "zotero" &&
+                step(
+                  "Bring in changes from Zotero",
+                  <>
+                    <p className="mt-0 text-sm text-muted">
+                      Your writing stays. Only the details from Zotero change.
+                    </p>
+                    {[
+                      ...(open
+                        ? [["this", `Only ${paperOf(open).paper}`]]
+                        : []),
+                      ["all", "All 6 of my notes"],
+                    ].map(([id, label]) => (
+                      <label
+                        key={id}
+                        className="flex cursor-pointer items-center gap-2 py-1 text-sm"
+                      >
+                        <input
+                          type="radio"
+                          name="who"
+                          checked={zoteroWho === id}
+                          onChange={() => setZoteroWho(id)}
+                        />{" "}
+                        {label}
+                      </label>
+                    ))}
+                  </>,
+                  "Bring in changes",
+                  zoteroWho === "this"
+                    ? `Updated ${paperOf(open).paper}`
+                    : "Updated 6 notes",
+                )}
+              {goal === "template" &&
+                step(
+                  "Apply my new template",
+                  <>
+                    <p className="mt-0 text-sm">
+                      ZotLit will add <b>Date added</b> to the <b>6 notes</b>{" "}
+                      you already have.
+                    </p>
+                    <p className="text-sm text-muted">
+                      Your writing stays. No new notes are made.
+                    </p>
+                  </>,
+                  "Apply to 6 notes",
+                  "Applied your template to 6 notes",
+                )}
+              {goal === "make" &&
+                step(
+                  "Make notes for new papers",
+                  <>
+                    {[
+                      ["group", "Reading group", "3 papers without a note"],
+                      [
+                        "all",
+                        "My whole library",
+                        "4,993 papers without a note",
+                      ],
+                    ].map(([id, label, count]) => (
+                      <label
+                        key={id}
+                        className="flex cursor-pointer items-center gap-2 py-1 text-sm"
+                      >
+                        <input
+                          type="radio"
+                          name="where"
+                          checked={where === id}
+                          onChange={() => setWhere(id)}
+                        />
+                        <span className="flex-1">{label}</span>
+                        <span className="text-muted">{count}</span>
+                      </label>
+                    ))}
+                  </>,
+                  where === "group" ? "Make 3 notes" : "Make 4,993 notes",
+                  where === "group" ? "Made 3 notes" : "Made 4,993 notes",
+                )}
+              {goal === "over" &&
+                step(
+                  `Start ${paperOf(open).paper} over`,
+                  <p className="mt-0 text-sm">
+                    ZotLit rebuilds this note from your template.{" "}
+                    <b className="text-danger">
+                      Everything you wrote in the body goes.
+                    </b>
+                  </p>,
+                  "Start over",
+                  "Note rebuilt from your template",
+                  "danger",
+                )}
+            </div>
+          </Frame>
+        );
+      }
+      // --- Variant B END ---
+
+      // --- Variant C ---
+      function VariantC() {
+        const { scenario, run, sc } = useProtoState();
+        return (
+          <NotesTellYou
+            key={`${scenario}-${run}`}
+            scenario={scenario}
+            sc={sc}
+          />
+        );
+      }
+
+      function NotesTellYou({ scenario, sc }) {
+        const [sheet, setSheet] = useState(false);
+        const [popover, setPopover] = useState(false);
+        const [menu, setMenu] = useState(false);
+        const [sure, setSure] = useState(false);
+        const [sample, setSample] = useState(0);
+        const [done, setDone] = useState(null);
+        const open = sc.open ?? "kuhn";
+        const noted = PAPERS.filter((entry) => entry.note);
+        const shown = noted[sample];
+        if (done)
+          return (
+            <Frame>
+              <Outcome
+                title={done}
+                detail={
+                  scenario === "restart"
+                    ? "The body text is gone. Your own properties stayed."
+                    : "Your writing and your own properties stayed as they were."
+                }
+              />
+            </Frame>
+          );
+        const status =
+          scenario === "template"
+            ? "6 notes behind your template"
+            : scenario === "fresh"
+              ? "3 new papers in Reading group"
+              : scenario === "zotero"
+                ? "1 note behind Zotero"
+                : "All notes current";
+        return (
+          <Frame>
+            <div className="flex items-center justify-end border-b border-line px-3 py-1.5">
+              <button
+                type="button"
+                aria-label="More options"
+                onClick={() => setMenu(!menu)}
+                className="cursor-pointer rounded border-0 bg-transparent p-1 text-muted hover:text-ink"
+              >
+                <MoreHorizontal size={18} />
+              </button>
+            </div>
+            {menu && (
+              <div className="absolute top-9 right-3 z-10 w-56 rounded-md border border-line bg-surface p-1 text-sm shadow-lg">
+                <div className="px-2 py-1 text-muted">Reveal in navigation</div>
+                <div className="px-2 py-1 text-muted">Copy Zotero key</div>
+                <div className="my-1 border-t border-line" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenu(false);
+                    setSure(true);
+                  }}
+                  className="block w-full cursor-pointer rounded border-0 bg-transparent px-2 py-1 text-left text-danger hover:bg-ground"
+                >
+                  Start this note over…
+                </button>
+              </div>
+            )}
+            <NotePage
+              paperKey={open}
+              publisher={scenario === "zotero" ? "Chicago UP" : undefined}
+            >
+              {scenario === "zotero" && (
+                <div className="mb-4 rounded-md border border-warn p-3 text-sm">
+                  <div className="mb-1 font-semibold">
+                    Zotero has a newer detail
+                  </div>
+                  <div>
+                    Publisher: <s className="text-muted">Chicago UP</s> → Univ.
+                    of Chicago Press
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      tone="primary"
+                      onClick={() => setDone("Updated Kuhn 1962")}
+                    >
+                      Update this note
+                    </Button>
+                    <Button>Not now</Button>
+                  </div>
+                </div>
+              )}
+            </NotePage>
+            {scenario === "template" && !sheet && (
+              <div className="absolute top-12 right-4 z-10 w-72 rounded-md border border-line bg-surface p-3 text-sm shadow-lg">
+                <div className="font-semibold">Template saved</div>
+                <p className="mt-1 mb-2 text-muted">
+                  6 notes use this template and do not have the change yet.
+                </p>
+                <Button tone="primary" onClick={() => setSheet(true)}>
+                  Review changes
+                </Button>
+              </div>
+            )}
+            {sheet && (
+              <div className="absolute top-0 right-0 bottom-0 z-10 flex w-[360px] flex-col border-l border-line bg-surface p-4 shadow-xl">
+                <div className="flex items-center justify-between">
+                  <h2 className="m-0 text-base font-semibold">
+                    Review changes
+                  </h2>
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    onClick={() => setSheet(false)}
+                    className="cursor-pointer border-0 bg-transparent text-muted"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="mt-3 flex items-center justify-between text-sm text-muted">
+                  <span>{shown.paper}</span>
+                  <span className="flex items-center gap-2 tabular-nums">
+                    <button
+                      type="button"
+                      onClick={() => setSample((sample + 5) % 6)}
+                      className="cursor-pointer border-0 bg-transparent text-muted"
+                    >
+                      ←
+                    </button>
+                    {sample + 1} of 6
+                    <button
+                      type="button"
+                      onClick={() => setSample((sample + 1) % 6)}
+                      className="cursor-pointer border-0 bg-transparent text-muted"
+                    >
+                      →
+                    </button>
+                  </span>
+                </div>
+                <div className="mt-2 rounded-md bg-ground p-3 font-data text-xs">
+                  <div className="text-ok">+ Date added: {shown.added}</div>
+                  <div className="mt-1 text-muted"> Publisher: no change</div>
+                  <div className="text-muted"> One line: no change</div>
+                  <div className="text-muted"> Your writing: no change</div>
+                </div>
+                <p className="text-sm text-muted">
+                  Papers without a note stay out of your vault.
+                </p>
+                <div className="mt-auto">
+                  <Button
+                    tone="primary"
+                    onClick={() => setDone("Updated 6 notes")}
+                  >
+                    Apply to 6 notes
+                  </Button>
+                </div>
+              </div>
+            )}
+            {popover && (
+              <div className="absolute right-3 bottom-9 z-10 w-72 rounded-md border border-line bg-surface p-3 text-sm shadow-lg">
+                <div className="mb-1 font-semibold">New in Reading group</div>
+                {PAPERS.filter((entry) => !entry.note).map((entry) => (
+                  <div key={entry.key} className="py-0.5">
+                    {entry.paper}
+                  </div>
+                ))}
+                <div className="mt-2">
+                  <Button
+                    tone="primary"
+                    onClick={() => setDone("Made 3 notes")}
+                  >
+                    Make 3 notes
+                  </Button>
+                </div>
+              </div>
+            )}
+            {sure && (
+              <Scrim>
+                <div className="w-full max-w-[420px] rounded-lg border border-line bg-surface p-5 shadow-xl">
+                  <h2 className="mt-0 mb-2 text-lg font-semibold">
+                    Start this note over?
+                  </h2>
+                  <p className="mt-0 mb-4 text-sm text-muted">
+                    Everything you wrote in the body goes.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={() => setSure(false)}>Cancel</Button>
+                    <Button
+                      tone="danger"
+                      onClick={() => setDone("Note rebuilt from your template")}
+                    >
+                      Start over
+                    </Button>
+                  </div>
+                </div>
+              </Scrim>
+            )}
+            <div className="absolute right-0 bottom-0 left-0 flex justify-end border-t border-line bg-ground px-3 py-1 text-xs">
+              <button
+                type="button"
+                onClick={() =>
+                  scenario === "template"
+                    ? setSheet(true)
+                    : scenario === "fresh" && setPopover(!popover)
+                }
+                className={`cursor-pointer border-0 bg-transparent ${scenario === "restart" ? "text-muted" : "font-medium text-accent"}`}
+              >
+                ZotLit: {status}
+              </button>
+            </div>
+          </Frame>
+        );
+      }
+      // --- Variant C END ---
+
+      // --- Variant D ---
+      function VariantD() {
+        const { scenario, run } = useProtoState();
+        return (
+          <PickFromLibrary key={`${scenario}-${run}`} scenario={scenario} />
+        );
+      }
+
+      function PickFromLibrary({ scenario }) {
+        const [collection, setCollection] = useState(
+          scenario === "fresh" ? "group" : "all",
+        );
+        const [filter, setFilter] = useState(
+          scenario === "fresh" ? "none" : "notes",
+        );
+        const [picked, setPicked] = useState([]);
+        const [sure, setSure] = useState(false);
+        const [done, setDone] = useState(null);
+        const inCollection = PAPERS.filter(
+          (entry) => collection === "all" || entry.group,
+        );
+        const rows = inCollection.filter((entry) =>
+          filter === "notes"
+            ? entry.note
+            : filter === "none"
+              ? !entry.note
+              : true,
+        );
+        const stale = (entry) => {
+          if (!entry.note) return null;
+          if (scenario === "template") return "Template changed";
+          if (scenario === "zotero" && entry.key === "kuhn")
+            return "Zotero changed";
+          return null;
+        };
+        const pickedRows = PAPERS.filter((entry) => picked.includes(entry.key));
+        const withNote = pickedRows.filter((entry) => entry.note);
+        const without = pickedRows.filter((entry) => !entry.note);
+        const allPicked =
+          rows.length > 0 && rows.every((entry) => picked.includes(entry.key));
+        const toggle = (key) =>
+          setPicked(
+            picked.includes(key)
+              ? picked.filter((item) => item !== key)
+              : [...picked, key],
+          );
+        if (done)
+          return (
+            <Frame>
+              <Outcome
+                title={done}
+                detail={
+                  sure
+                    ? "The body text is gone. Your own properties stayed."
+                    : "Your writing and your own properties stayed as they were."
+                }
+              />
+            </Frame>
+          );
+        const tabs = [
+          ["notes", `Has a note (${collection === "all" ? 6 : 2})`],
+          ["none", `No note (${collection === "all" ? "4,993" : 3})`],
+          ["any", "Everything"],
+        ];
+        return (
+          <Frame>
+            <div className="grid h-full grid-cols-[180px_minmax(0,1fr)]">
+              <aside className="border-r border-line bg-ground p-3 text-sm">
+                <div className="mb-2 flex items-center gap-1.5 font-semibold">
+                  <Library size={15} /> Library
+                </div>
+                {[
+                  ["all", "My Library"],
+                  ["group", "Reading group"],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setCollection(id);
+                      setPicked([]);
+                    }}
+                    className={`block w-full cursor-pointer rounded border-0 px-2 py-1 text-left ${collection === id ? "bg-soft text-accent" : "bg-transparent text-ink"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </aside>
+              <div className="flex min-w-0 flex-col">
+                <div className="flex gap-1 border-b border-line p-2">
+                  {tabs.map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        setFilter(id);
+                        setPicked([]);
+                      }}
+                      className={`cursor-pointer rounded-md border-0 px-2.5 py-1 text-sm ${filter === id ? "bg-soft font-medium text-accent" : "bg-transparent text-muted"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex-1 overflow-x-auto">
+                  <table className="w-full min-w-[520px] border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-line text-xs text-muted">
+                        <th className="w-9 p-2">
+                          <input
+                            type="checkbox"
+                            aria-label="Select all rows"
+                            checked={allPicked}
+                            onChange={() =>
+                              setPicked(
+                                allPicked ? [] : rows.map((entry) => entry.key),
+                              )
+                            }
+                          />
+                        </th>
+                        <th className="p-2 font-medium">Paper</th>
+                        <th className="p-2 font-medium">Publisher</th>
+                        <th className="p-2 font-medium">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((entry) => (
+                        <tr
+                          key={entry.key}
+                          onClick={() => toggle(entry.key)}
+                          className={`cursor-pointer border-b border-line ${picked.includes(entry.key) ? "bg-soft" : ""}`}
+                        >
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              aria-label={entry.paper}
+                              checked={picked.includes(entry.key)}
+                              readOnly
+                            />
+                          </td>
+                          <td className="p-2 font-medium">{entry.paper}</td>
+                          <td className="p-2 text-muted">{entry.publisher}</td>
+                          <td className="p-2">
+                            {!entry.note ? (
+                              <span className="text-muted">No note</span>
+                            ) : stale(entry) ? (
+                              <span className="text-warn">{stale(entry)}</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-ok">
+                                <FileText size={13} /> Current
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {filter === "any" && (
+                    <p className="p-2 text-sm text-muted">
+                      and thousands more papers
+                    </p>
+                  )}
+                </div>
+                <div className="flex min-h-[52px] items-center gap-2 border-t border-line p-2">
+                  {picked.length === 0 ? (
+                    <span className="text-sm text-muted">
+                      Select papers to update or make notes.
+                    </span>
+                  ) : (
+                    <>
+                      <span className="mr-auto text-sm text-muted tabular-nums">
+                        {picked.length} selected
+                      </span>
+                      {withNote.length === 1 && (
+                        <Button tone="danger" onClick={() => setSure(true)}>
+                          Start over…
+                        </Button>
+                      )}
+                      {without.length > 0 && (
+                        <Button
+                          tone={withNote.length ? undefined : "primary"}
+                          onClick={() =>
+                            setDone(
+                              `Made ${without.length} ${without.length === 1 ? "note" : "notes"}`,
+                            )
+                          }
+                        >
+                          Make {without.length}{" "}
+                          {without.length === 1 ? "note" : "notes"}
+                        </Button>
+                      )}
+                      {withNote.length > 0 && (
+                        <Button
+                          tone="primary"
+                          onClick={() =>
+                            setDone(
+                              `Updated ${withNote.length} ${withNote.length === 1 ? "note" : "notes"}`,
+                            )
+                          }
+                        >
+                          Update {withNote.length}{" "}
+                          {withNote.length === 1 ? "note" : "notes"}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+            {sure && (
+              <Scrim>
+                <div className="w-full max-w-[420px] rounded-lg border border-line bg-surface p-5 shadow-xl">
+                  <h2 className="mt-0 mb-2 text-lg font-semibold">
+                    Start {withNote[0]?.paper} over?
+                  </h2>
+                  <p className="mt-0 mb-4 text-sm text-muted">
+                    Everything you wrote in the body goes.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={() => setSure(false)}>Cancel</Button>
+                    <Button
+                      tone="danger"
+                      onClick={() => setDone("Note rebuilt from your template")}
+                    >
+                      Start over
+                    </Button>
+                  </div>
+                </div>
+              </Scrim>
+            )}
+          </Frame>
+        );
+      }
+      // --- Variant D END ---
+
+      // --- Switcher ---
+      const VARIANTS = [
+        {
+          key: "A",
+          name: "One command",
+          component: VariantA,
+          idea: "One door. You choose which notes.",
+        },
+        {
+          key: "B",
+          name: "Say what you want",
+          component: VariantB,
+          idea: "You name the goal. ZotLit asks only what it needs.",
+        },
+        {
+          key: "C",
+          name: "Notes tell you",
+          component: VariantC,
+          idea: "ZotLit raises the change. You review it.",
+        },
+        {
+          key: "D",
+          name: "Pick from your library",
+          component: VariantD,
+          idea: "Your selection is the option.",
+        },
+      ];
+
+      function App() {
+        const { scenario, sc, restart } = useProtoState();
+        const [idx, setIdx] = useState(() => {
+          const index = VARIANTS.findIndex(
+            (variant) => variant.key === location.hash.slice(1),
+          );
+          return index >= 0 ? index : 0;
+        });
+        useEffect(() => {
+          location.hash = VARIANTS[idx].key;
+          const onKey = (event) => {
+            if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName))
+              return;
+            if (event.key === "ArrowLeft")
+              setIdx((i) => (i - 1 + VARIANTS.length) % VARIANTS.length);
+            if (event.key === "ArrowRight")
+              setIdx((i) => (i + 1) % VARIANTS.length);
+          };
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        }, [idx]);
+        const V = VARIANTS[idx];
+        return (
+          <>
+            <V.component />
+            <div
+              data-testid="switcher"
+              className="fixed right-0 bottom-0 left-0 z-50 bg-[#20202a] px-4 py-2.5 text-sm text-[#f3f3f6]"
+            >
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div className="flex items-center gap-1">
+                  {VARIANTS.map((variant, index) => (
+                    <button
+                      key={variant.key}
+                      type="button"
+                      onClick={() => setIdx(index)}
+                      className={`cursor-pointer rounded border-0 px-2 py-1 font-medium ${index === idx ? "bg-[#7852ee] text-white" : "bg-transparent text-[#c9c9d3]"}`}
+                    >
+                      {variant.key} {variant.name}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[#b5b5c2]">{V.idea}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/15 pt-2">
+                <span className="font-medium">Task</span>
+                {Object.entries(SCENARIOS).map(([id, entry]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() =>
+                      setStore({ scenario: id, run: store.run + 1 })
+                    }
+                    className={`cursor-pointer rounded border-0 px-2 py-0.5 ${scenario === id ? "bg-white text-[#20202a]" : "bg-white/10 text-[#e8e8ee]"}`}
+                  >
+                    {entry.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={restart}
+                  className="cursor-pointer border-0 bg-transparent text-[#c9c9d3] underline"
+                >
+                  Reset
+                </button>
+              </div>
+              <p className="mt-1.5 mb-0">
+                {sc.task}{" "}
+                <span className="text-[#b5b5c2]">
+                  Can you find it? Do you know what will happen? Do you feel
+                  safe?
+                </span>
+              </p>
+            </div>
+          </>
+        );
+      }
+      // --- Switcher END ---
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
