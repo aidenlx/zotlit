@@ -376,7 +376,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           {
             notePath: note.path!,
             helpSectionLabel: run.m.workbench_annotation_help_title(),
-            guideText: run.m.template_workbench_update_this_note(),
+            guideText: run.m.workbench_annotation_help_finish_note(),
           },
           {
             what: "the Template Workbench guide section to render with its quote callout visible",
