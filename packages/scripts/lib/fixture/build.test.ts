@@ -1521,7 +1521,7 @@ describe("a Stress Build", () => {
 
     using db = openClientAt(stressLayout.databasePath);
     const synthetic = indexedItems(db, 1).find(
-      ({ key }) => key === "S39PX7R9",
+      ({ key }) => key === "SZELVUFC",
     )!;
     expect(synthetic).toMatchObject({
       citationKey: "stress0000001",
@@ -1948,8 +1948,8 @@ describe("a two-Library Stress Build", () => {
         citationKey,
       })),
     ).toEqual([
-      { key: "S3GKASXZ", citationKey: "stressg0000001" },
-      { key: "S3GKATVA", citationKey: "stressg0001000" },
+      { key: "SC8LMTCA", citationKey: "stressg0000001" },
+      { key: "SQJSXZM4", citationKey: "stressg0001000" },
     ]);
   });
 

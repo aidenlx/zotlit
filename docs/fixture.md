@@ -625,7 +625,7 @@ The `Stress Build` Collection holds the other three Collections and no Items of 
 
 The first synthetic paper of each filled Library has one PDF Attachment. Its Annotations share the `stress-many-marks` Tag. The mark count is three per 100 Items: 300, 1,500, and 3,000 at the measured tiers. This heavy book supplies the concentrated Relation List case. Its parent paper carries `stress-dominant`, which also supplies the dominant Parent Record case.
 
-Stress Build content uses fixed seeds. An ordinary `pnpm fixture` build returns to the committed Fixture Spec size.
+Stress Build content uses fixed seeds. Synthetic Zotero Keys use a multiplicative permutation, so key order differs from Item ID order as it does in a real Library. Keys stay unique across the generated input ranges, and the same seed gives the same keys. Rebuild an existing Stress Build to use this key order; earlier builds used ascending keys and could understate the cost of a scan in key order. An ordinary `pnpm fixture` build returns to the committed Fixture Spec size.
 
 ## Inspect, discard, or change the Fixture
 
