@@ -1,10 +1,12 @@
 // The Filter Expression language for CodeMirror: the parser of
 // `@zotlit/filter-expression`, tagged by the expression token roles so the
 // template highlighter colors it.
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { LRLanguage, syntaxTree } from "@codemirror/language";
-import type { Range } from "@codemirror/state";
-import { Decoration } from "@codemirror/view";
-import type { Tree } from "@lezer/common";
+import { Prec } from "@codemirror/state";
+import type { Extension, Range } from "@codemirror/state";
+import { Decoration, EditorView, keymap } from "@codemirror/view";
+import type { SyntaxNode, Tree } from "@lezer/common";
 import { highlightTree, styleTags } from "@lezer/highlight";
 
 import { parser } from "@zotlit/filter-expression";
@@ -13,6 +15,9 @@ import { decorationLayer, gapsAround } from "./decorations";
 import { expressionClasses, expressionTag } from "./expression-tokens";
 import { templateHighlighter } from "./highlight";
 import type { Span } from "./span";
+
+/** The symbols that open a pair; the grammar has no braces. */
+const pairedSymbols = ["(", "[", '"', "'"];
 
 export const filterExpressionLanguage = LRLanguage.define({
   name: "filter-expression",
@@ -31,8 +36,10 @@ export const filterExpressionLanguage = LRLanguage.define({
       }),
     ],
   }),
-  // The grammar has no braces, which `closeBrackets` pairs by default.
-  languageData: { closeBrackets: { brackets: ["(", "[", '"', "'"] } },
+  languageData: {
+    // A comma joins the arguments and items a new bracket stands before.
+    closeBrackets: { brackets: pairedSymbols, before: ")]," },
+  },
 });
 
 /**
@@ -94,3 +101,35 @@ export const filterExpressionHighlighting = decorationLayer(
       syntaxTree(update.state) !== syntaxTree(update.startState),
   },
 );
+
+/**
+ * Inside a string or a regular expression a symbol is text. `closeBrackets`
+ * cannot tell: it pairs by the next character alone. The literal's own quote
+ * goes on to it, as that quote closes the literal.
+ */
+const literalSymbols = Prec.high(
+  // oxlint-disable-next-line max-params -- CodeMirror inputHandler signature.
+  EditorView.inputHandler.of((view, from, to, text, insert) => {
+    if (from !== to || view.compositionStarted || !pairedSymbols.includes(text))
+      return false;
+    const { state } = view;
+    let node: SyntaxNode | null = syntaxTree(state).resolveInner(from, -1);
+    while (node && node.name !== "String" && node.name !== "RegExp")
+      node = node.parent;
+    if (
+      !node ||
+      from >= node.to ||
+      state.sliceDoc(node.from, node.from + 1) === text
+    )
+      return false;
+    view.dispatch(insert());
+    return true;
+  }),
+);
+
+/** Closes each paired symbol as it is typed. */
+export const filterExpressionPairing: Extension = [
+  literalSymbols,
+  closeBrackets(),
+  keymap.of(closeBracketsKeymap),
+];

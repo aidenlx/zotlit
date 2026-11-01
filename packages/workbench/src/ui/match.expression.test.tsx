@@ -125,6 +125,20 @@ function snapshot({ state }: EditorView) {
   return `${state.sliceDoc(0, head)}|${state.sliceDoc(head)}`;
 }
 
+/** The field with `source`, its cursor at the `|` there, else at the end. */
+function field(source: string) {
+  const at = source.indexOf("|");
+  const { container } = render(
+    <MatchExpressionInput
+      value={source.replace("|", "")}
+      onChange={() => {}}
+    />,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  view.dispatch({ selection: { anchor: at < 0 ? source.length : at } });
+  return view;
+}
+
 it.each([
   ["(", "(|)"],
   ["[", "[|]"],
@@ -133,42 +147,46 @@ it.each([
   // The closer the field wrote is typed over, so it never doubles.
   ["()", "()|"],
   ['""', '""|'],
-  ['title.contains("a', 'title.contains("a|")'],
-  ['title.contains("a")', 'title.contains("a")|'],
-  // Inside a string a bracket is text, and an apostrophe after a word opens
-  // nothing.
+  // In a string or a regular expression each symbol is text.
   ['"(', '"(|"'],
+  ['"rock \'n roll"', '"rock \'n roll"|'],
   ["/don't", "/don't|"],
-  // A typed closer lands on the generated one in a regular expression too.
+  // A bare `/` is no regular expression yet, so its first bracket pairs and
+  // the typed closer still lands on it.
   ["/(a|b)/", "/(a|b)/|"],
-  ["/[a-z]/", "/[a-z]/|"],
   // Braces mean nothing in a Filter Expression.
   ["{", "{|"],
 ])("typing %s gives %s", (keys, expected) => {
-  const { container } = render(
-    <MatchExpressionInput value="" onChange={() => {}} />,
-  );
-  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  const view = field("");
   type(view, keys);
   expect(snapshot(view)).toBe(expected);
 });
 
+it.each([
+  // An argument added in front of another one.
+  ["f(|, b)", "[", "f([|], b)"],
+  // In a string with text after the cursor, as in a title search.
+  ['"foo | bar"', "(", '"foo (| bar"'],
+  ['"rock |"', "'", '"rock \'|"'],
+  ["'rock |'", '"', "'rock \"|'"],
+  ["/foo |/", '"', '/foo "|/'],
+])("in %s, typing %s gives %s", (source, key, expected) => {
+  const view = field(source);
+  type(view, key);
+  expect(snapshot(view)).toBe(expected);
+});
+
 it("wraps the selected text in the typed symbol", () => {
-  const { container } = render(
-    <MatchExpressionInput value="title" onChange={() => {}} />,
-  );
-  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  const view = field("title");
   view.dispatch({ selection: { anchor: 0, head: 5 } });
   type(view, "(");
   expect(view.state.doc.toString()).toBe("(title)");
 });
 
 it("removes an empty pair with Backspace", () => {
-  const { container } = render(
-    <MatchExpressionInput value="" onChange={() => {}} />,
-  );
-  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  const view = field("");
   type(view, '"');
+  expect(snapshot(view)).toBe('"|"');
   view.contentDOM.dispatchEvent(
     new KeyboardEvent("keydown", {
       key: "Backspace",

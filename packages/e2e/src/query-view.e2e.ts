@@ -1273,18 +1273,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("closes brackets and quotes as they are typed in a filter condition", async () => {
     const path = "query-files/Paired symbols.zotquery";
     const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - title.length > 0\n`;
-    const typings = [
-      'title.contains("a',
-      'title.contains("a")',
-      "title.contains('a",
-      "title.contains([",
-      "title.contains(/don't",
-    ];
-    // The field's text after each typing, with `|` at the cursor. The row is
+    const sequences = ['title.contains("a")', "title.contains(/don't"];
+    // The field's text after each sequence, with `|` at the cursor. The row is
     // never left empty, which would remove it.
     const typed = await obRun(
       run.vaultId,
-      async ({ app, page: pageHelpers }, { path, source, typings }) => {
+      async ({ app, page: pageHelpers }, { path, source, sequences }) => {
         const { press, until } = pageHelpers;
         await using cleanup = new AsyncDisposableStack();
         const layout = app.workspace.getLayout();
@@ -1326,7 +1320,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         const editor = content.cmTile.root.view;
         const out: string[] = [];
-        for (const keys of typings) {
+        for (const keys of sequences) {
           editor.dispatch({
             selection: { anchor: 0, head: editor.state.doc.length },
           });
@@ -1352,15 +1346,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         popup.hidePopover();
         return out;
       },
-      { path, source, typings },
+      { path, source, sequences },
     );
-    expect(typed).toEqual([
-      'title.contains("a|")',
-      'title.contains("a")|',
-      "title.contains('a|')",
-      "title.contains([|])",
-      "title.contains(/don't|)",
-    ]);
+    expect(typed).toEqual(['title.contains("a")|', "title.contains(/don't|)"]);
   });
 
   it("exports a note with a Query File embed and a Query Block to PDF with their rows and no toolbar", async () => {

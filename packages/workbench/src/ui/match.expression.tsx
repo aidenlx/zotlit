@@ -5,7 +5,6 @@
 import type { CompletionPresentation } from "#/language/completion";
 import type { ExpressionVocabulary } from "#/language/filter-expression-completion";
 import type { PlacedFault } from "#/language/span";
-import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { setDiagnostics, setDiagnosticsEffect } from "@codemirror/lint";
 import type { Diagnostic } from "@codemirror/lint";
@@ -29,6 +28,7 @@ import { underlineOnlyLint } from "./underline-lint";
 import {
   filterExpressionHighlighting,
   filterExpressionLanguage,
+  filterExpressionPairing,
 } from "#/language/filter-expression";
 import { filterExpressionCompletion } from "#/language/filter-expression-completion";
 import { signatureHint } from "#/language/signature-hint-tooltip";
@@ -175,17 +175,13 @@ export function MatchExpressionInput({
         extensions: [
           filterExpressionLanguage,
           filterExpressionHighlighting,
-          closeBrackets(),
+          filterExpressionPairing,
           signatureHint({
             receiver: (source, at) =>
               props.current.vocabulary?.receiver?.(source, at),
           }),
           history(),
-          keymap.of([
-            ...closeBracketsKeymap,
-            ...defaultKeymap,
-            ...historyKeymap,
-          ]),
+          keymap.of([...defaultKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
           underlineOnlyLint,
           // Each edit underlines its own text, so no underline is carried to
