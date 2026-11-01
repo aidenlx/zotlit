@@ -35,4 +35,5 @@ pre-push:
       use_stdin: true
       run: mise exec -- node packages/scripts/scripts/ai-attribution.ts push {1}
     verify:
-      run: mise exec -- node packages/scripts/scripts/verify.ts
+      use_stdin: true
+      run: mise exec -- node packages/scripts/scripts/verify.ts --pre-push
