@@ -244,6 +244,19 @@ describe("diagnosticText", () => {
   });
 });
 
+describe("diagnosisExplanation", () => {
+  it("names citation text when a citation failure names no style", () => {
+    const diagnosis = renderDiagnosis({
+      code: "citation-style-error",
+      message: "Citations could not be formatted.",
+      part: "render",
+    });
+    expect(diagnosisExplanation(m, diagnosis).object).toBe(
+      m.workbench_problems_object_citation(),
+    );
+  });
+});
+
 describe("attribution", () => {
   /** A Note calling Citation text with the note's own data: the engine fails
    *  inside the Citation Template, and the call in the note is the repair. */

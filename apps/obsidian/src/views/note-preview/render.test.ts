@@ -6,6 +6,8 @@ import { parse } from "yaml";
 import { emptyRender, SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { annotationSamples } from "@zotlit/workbench/ui";
 
+import * as m from "@/lib/i18n/generated/messages";
+import type { PandocEngineStatus } from "@/services/pandoc/service";
 import {
   getSampleItem,
   SAMPLE_ITEM_CHOICES,
@@ -540,7 +542,7 @@ Body render <%= (globalThis.${BODY_RENDERS} = (globalThis.${BODY_RENDERS} ?? 0) 
     }
   });
 
-  it("ignores citations in code and comments, and reports an unavailable citation processor", async () => {
+  it("ignores citations in code and comments, and suggests the Pandoc engine while it is unavailable", async () => {
     await using fixture = await createRenderFixture();
     const source = PROFILE_SOURCE.replace(
       "Personal space.",
@@ -555,14 +557,36 @@ Body render <%= (globalThis.${BODY_RENDERS} = (globalThis.${BODY_RENDERS} ?? 0) 
       kind: "unavailable",
       reason: "engine-absent",
     });
-    const failed = await renderNativeProfile(fixture.deps, {
-      source: `${source}\n[@figures2014]`,
-      snapshot: fixture.snapshot,
-      annotation: annotationSamples(fixture.snapshot, null).example,
-    });
-    expect(failed.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "citation-style-error" }),
+    const rendered = () =>
+      renderNativeProfile(fixture.deps, {
+        source: `${source}\n[@figures2014]`,
+        snapshot: fixture.snapshot,
+        annotation: annotationSamples(fixture.snapshot, null).example,
+      });
+    const absent = await rendered();
+    expect(absent.creationBody).toContain("[@figures2014]");
+    expect(absent.diagnostics).toEqual([]);
+    expect(absent.previewHints).toEqual(
+      (["note", "annotation"] as const).map((part) => ({
+        part,
+        message: m.profile_preview_citation_engine_absent(),
+        opensEngineSettings: true,
+      })),
     );
+    fixture.deps.pandocEngine.status = {
+      kind: "installing",
+    } as PandocEngineStatus;
+    expect((await rendered()).previewHints).toEqual(
+      (["note", "annotation"] as const).map((part) => ({
+        part,
+        message: m.notice_pandoc_engine_downloading(),
+        opensEngineSettings: false,
+      })),
+    );
+    fixture.deps.pandocEngine.status = { kind: "declined" };
+    const declined = await rendered();
+    expect(declined.previewHints).toEqual([]);
+    expect(declined.diagnostics).toEqual([]);
   });
 });
 

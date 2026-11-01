@@ -2510,6 +2510,203 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ).toEqual(expected);
   });
 
+  it("suggests the Pandoc engine beside a preview that stands without it", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const restartWith = async (empty: boolean) => {
+      await obRun(
+        vaultId,
+        async ({ app, page }, { emptyStore }) => {
+          for (const type of [
+            "zotlit-template-workbench",
+            "zotlit-note-preview",
+            "zotlit-template-data-explorer",
+          ] as const)
+            for (const leaf of page.leavesOfType(type)) leaf.detach();
+          await app.plugins.disablePlugin("zotlit");
+          // The dev-build store holds no binary, and the device's stays as it was.
+          app.saveLocalStorage(
+            "zotlit-e2e-empty-binary-store",
+            emptyStore ? true : null,
+          );
+          app.saveLocalStorage("zotlit-pandoc-engine-declined", null);
+          await app.plugins.enablePlugin("zotlit");
+        },
+        { emptyStore: empty },
+        { timeoutMs: 30_000 },
+      );
+    };
+    const popout = await obRun(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+        return app.vault.getConfig("settingsPopoutWindow");
+      },
+      undefined,
+    );
+    cleanup.defer(async () => {
+      await obRun(
+        vaultId,
+        async ({ app: host }, { previous }) => {
+          const app = host as WalkthroughApp;
+          app.setting.close();
+          app.vault.setConfig("settingsPopoutWindow", previous);
+        },
+        { previous: popout },
+      );
+      await restartWith(false);
+    });
+    await restartWith(true);
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit }) => {
+        const { pandocEngine } = zotlit.services;
+        const status = await pandocEngine.runPromise(
+          pandocEngine.binary.getStatus,
+        );
+        return status.kind === "absent";
+      },
+      undefined,
+      { what: "the Pandoc engine status to be absent on the empty store" },
+    );
+
+    await obRun(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+        const file = await app.vault.create(
+          "Engine hint.md",
+          "---\nzotero-key: DMRGRART\n---\n# Engine hint",
+        );
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      undefined,
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+        return (
+          app.metadataCache.getFileCache(
+            app.vault.getFileByPath("Engine hint.md")!,
+          )?.frontmatter?.["zotero-key"] === "DMRGRART"
+        );
+      },
+      undefined,
+      { what: "the Engine hint note frontmatter zotero-key to be DMRGRART" },
+    );
+    await obRun(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+        app.commands.executeCommandById("zotlit:customize-note-template");
+      },
+      undefined,
+    );
+    await withWorkbenchSurfaces(
+      vaultId,
+      obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          const tab = Array.from(
+            (page.leavesOfType("zotlit-template-workbench")[0]
+              ?.view)!.contentEl.querySelectorAll<HTMLElement>('[role="tab"]'),
+          ).find((candidate) => candidate.textContent === "Annotation");
+          if (tab) page.press(tab, "Annotation");
+          return !!tab;
+        },
+        undefined,
+        { what: "the Annotation tab to render in the Workbench" },
+      ),
+    );
+
+    const reading = await withWorkbenchSurfaces(
+      vaultId,
+      obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          const preview = page.leavesOfType("zotlit-note-preview")[0]?.view;
+          const text = preview?.contentEl.textContent ?? "";
+          return text.includes("Install the Pandoc engine")
+            ? {
+                citationStaysNative: /\[@\w+/.test(text),
+                problem: text.includes("Preview needs attention"),
+              }
+            : null;
+        },
+        undefined,
+        {
+          what: "the preview to suggest the Pandoc engine",
+          ready: (value) => value !== null,
+        },
+      ),
+    );
+    expect(reading).toEqual({ citationStaysNative: true, problem: false });
+
+    const settings = await obRun(
+      vaultId,
+      async ({ app: host, page }) => {
+        const app = host as WalkthroughApp;
+        app.vault.setConfig("settingsPopoutWindow", false);
+        const button = Array.from(
+          (page.leavesOfType("zotlit-note-preview")[0]
+            ?.view)!.contentEl.querySelectorAll<HTMLElement>("button"),
+        ).find((candidate) => candidate.textContent === "Open settings");
+        page.press(button, "Open settings");
+        const tab = app.setting.activeTab;
+        return tab?.id ?? null;
+      },
+      undefined,
+    );
+    expect(settings).toBe("zotlit");
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+        const row = Array.from(
+          app.setting.containerEl.querySelectorAll<HTMLElement>(
+            ".setting-item",
+          ),
+        ).find(
+          (candidate) =>
+            candidate.querySelector<HTMLElement>(".setting-item-name")
+              ?.textContent === "Pandoc engine",
+        );
+        return row?.textContent ?? app.setting.containerEl.textContent;
+      },
+      undefined,
+      {
+        what: "the Open settings button to reveal the Pandoc engine row",
+        ready: (text) => text.includes("Not installed"),
+      },
+    );
+    await obRun(
+      vaultId,
+      async ({ app: host, zotlit }) => {
+        const app = host as WalkthroughApp;
+        app.setting.close();
+        const { pandocEngine } = zotlit.services;
+        await pandocEngine.runPromise(pandocEngine.binary.decline);
+      },
+      undefined,
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        const text =
+          page.leavesOfType("zotlit-note-preview")[0]?.view.contentEl
+            .textContent ?? "";
+        return (
+          text.includes("Scientific visualization") &&
+          !text.includes("Install the Pandoc engine")
+        );
+      },
+      undefined,
+      { what: "a declined engine to take the suggestion off the preview" },
+    );
+  });
+
   it("keeps a switched note's subfolder under the target Profile's folder", async () => {
     const created = (await obRun(
       vaultId,

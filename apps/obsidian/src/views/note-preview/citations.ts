@@ -3,7 +3,7 @@ import { Effect } from "effect";
 
 import { isChildItemFields, itemToCsl } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
-import type { RenderDiagnostic } from "@zotlit/workbench/render";
+import type { PreviewHint, RenderDiagnostic } from "@zotlit/workbench/render";
 
 import type { CitationSource } from "@/lib/citation-source";
 import * as m from "@/lib/i18n/generated/messages";
@@ -22,6 +22,8 @@ import type { PresentedCitation } from "@/services/citation-text/present";
 import { resolveLiteratureNoteIn } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
+import { PandocEngine } from "@/services/pandoc/service";
+import type { PandocEngineStatus } from "@/services/pandoc/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 export interface PreviewCitation extends PresentedCitation {
@@ -45,7 +47,11 @@ export const renderDraftCitations = Effect.fn(
   locale: string | null;
   wikilinks: boolean;
 }): Effect.fn.Return<
-  { citations: readonly PreviewCitation[]; diagnostics: RenderDiagnostic[] },
+  {
+    citations: readonly PreviewCitation[];
+    diagnostics: RenderDiagnostic[];
+    hint?: Omit<PreviewHint, "part">;
+  },
   unknown,
   ViewServices
 > {
@@ -175,6 +181,11 @@ export const renderDraftCitations = Effect.fn(
     [...items.values()],
     presentation,
   );
+  // Citations stay as the author wrote them, which the engine only improves.
+  if (outcome.kind === "unavailable" && outcome.reason === "engine-absent") {
+    const hint = engineHint(yield* (yield* PandocEngine).getStatus);
+    return { citations: [], diagnostics: [], ...(hint ? { hint } : {}) };
+  }
   const formatted =
     outcome.kind === "held"
       ? yield* bibliographyRender
@@ -189,12 +200,9 @@ export const renderDraftCitations = Effect.fn(
           code: "citation-style-error",
           part: "render",
           message:
-            outcome.kind === "unavailable" && outcome.reason === "engine-absent"
-              ? m.profile_preview_citation_engine_absent()
-              : outcome.kind === "unavailable" &&
-                  outcome.reason === "style-missing"
-                ? m.profile_preview_citation_style_missing()
-                : m.profile_preview_citation_failed(),
+            outcome.kind === "unavailable" && outcome.reason === "style-missing"
+              ? m.profile_preview_citation_style_missing()
+              : m.profile_preview_citation_failed(),
         },
       ],
     };
@@ -220,6 +228,31 @@ export const renderDraftCitations = Effect.fn(
     diagnostics: [],
   };
 });
+/** What a preview suggests for each status; a declined engine stays quiet. */
+function engineHint(
+  status: PandocEngineStatus,
+): Omit<PreviewHint, "part"> | null {
+  switch (status.kind) {
+    case "absent":
+      return {
+        message: m.profile_preview_citation_engine_absent(),
+        opensEngineSettings: true,
+      };
+    case "installing":
+      return {
+        message: m.notice_pandoc_engine_downloading(),
+        opensEngineSettings: false,
+      };
+    case "failed":
+      return {
+        message: m.references_engine_failed_title(),
+        opensEngineSettings: true,
+      };
+    case "installed":
+    case "declined":
+      return null;
+  }
+}
 function namedSource(citation: DraftCitation): string {
   let source = citation.source;
   for (let index = citation.keys.length - 1; index >= 0; index--) {

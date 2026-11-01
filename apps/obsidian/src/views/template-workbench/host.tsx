@@ -358,7 +358,12 @@ function addWorkbenchMenuItems(
 export function createTemplateWorkbenchHost(
   app: App,
   ports: Pick<WorkbenchHost, "run" | "render" | "matchData" | "insertTarget"> &
-    Partial<Pick<WorkbenchHost, "markdown" | "partials">> & {
+    Partial<
+      Pick<
+        WorkbenchHost,
+        "markdown" | "partials" | "openCitationEngineSettings"
+      >
+    > & {
       /** The view an editor hover popover belongs to; one popover shows at a time. */
       hoverParent?: HoverParent;
       /**

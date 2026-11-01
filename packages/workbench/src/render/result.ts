@@ -251,6 +251,20 @@ export interface TemplateRenderResult extends RenderIdentity {
    */
   readonly annotationRanges: readonly RenderedRange[];
   readonly diagnostics: readonly RenderDiagnostic[];
+  /** What a host suggests beside a preview that rendered; see {@link PreviewHint}. */
+  readonly previewHints?: readonly PreviewHint[];
+}
+
+/**
+ * A suggestion about a preview that rendered correctly, which no change to the
+ * template answers, so it stays apart from the diagnostics.
+ */
+export interface PreviewHint {
+  /** The preview surface it sits above. */
+  readonly part: "annotation" | "note";
+  readonly message: string;
+  /** Whether the host's Citation Engine settings are the next step. */
+  readonly opensEngineSettings: boolean;
 }
 
 /** A span of rendered Markdown, as offsets into the body it belongs to. */
