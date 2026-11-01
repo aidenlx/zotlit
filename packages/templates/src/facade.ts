@@ -108,6 +108,8 @@ export interface ConvertedLegacyLiteratureNoteTemplate {
     readonly annotation: string | null;
   };
   readonly frontmatterPatch: Readonly<Record<string, unknown>>;
+  /** Fields that failed against the verification item, kept in the document. */
+  readonly frontmatterFailures: readonly string[];
 }
 
 export interface ConvertedLegacyCitationTemplate {
@@ -454,18 +456,6 @@ export class TemplateFacade {
       data.note,
       options.operationTimestamp ?? Temporal.Now.instant(),
     );
-    if (evaluation.errors.length > 0) {
-      const keys = evaluation.errors.map(({ key }) => key).join(", ");
-      throw new LegacyTemplateConversionError(
-        "legacy-frontmatter-evaluation",
-        `Converted Managed Frontmatter failed for: ${keys}`,
-        {
-          difference: "Managed Frontmatter evaluation",
-          recovery: `Correct these fields, then retry conversion: ${keys}.`,
-          fields: evaluation.errors.map(({ key }) => key),
-        },
-      );
-    }
     const frontmatterPatch = mergeManagedFrontmatterEntries(evaluation.values);
     if (legacy.annotation) {
       if (legacyRendered.annotation === null || rendered.annotation === null) {
@@ -490,6 +480,7 @@ export class TemplateFacade {
       document,
       rendered,
       frontmatterPatch,
+      frontmatterFailures: evaluation.errors.map(({ key }) => key),
     };
   }
 

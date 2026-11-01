@@ -139,6 +139,51 @@ describe("Literature Note Template document", () => {
     );
   });
 
+  // A field that fails carries over verbatim: the Profile editor is the one place
+  // that repairs it, and that editor stays locked until the conversion runs.
+  it("converts a frontmatter field that fails to evaluate and names it", () => {
+    const facade = new TemplateFacade({
+      transformRender: (name, output) =>
+        name === "content" ? formatManagedRegion(output) : output,
+    });
+    const note = '{% render "content" with zt as zt %}';
+    facade.define("note", note, "liquid");
+    facade.define("content", "Managed", "liquid");
+    facade.define("filename", "note", "liquid");
+    const fields = [
+      { key: "title", expr: "zt.title", merge: "replace", language: "liquid" },
+      {
+        key: "Date Added",
+        expr: "zt.dateAdded",
+        merge: "replace",
+        language: "liquid",
+      },
+    ] as const satisfies readonly FrontmatterField[];
+
+    const converted = facade.convertLegacyLiteratureNoteTemplates(
+      {
+        note: { source: note, language: "liquid" },
+        content: { source: "Managed", language: "liquid" },
+        filename: { source: "note", language: "liquid" },
+      },
+      {
+        note: {
+          title: "Paper",
+          dateAdded: Temporal.Instant.from("2024-01-15T10:00:00Z"),
+        },
+        filename: {},
+      },
+      { frontmatter: fields },
+    );
+
+    expect(converted.frontmatterFailures).toEqual(["Date Added"]);
+    expect(converted.frontmatterPatch).toEqual({ title: "Paper" });
+    expect(converted.document.manifest.frontmatter).toEqual([
+      { key: "title", expr: "zt.title", merge: "replace" },
+      { key: "Date Added", expr: "zt.dateAdded", merge: "replace" },
+    ]);
+  });
+
   it("moves legacy frontmatter fields structurally and evaluates only the converted entries", () => {
     const facade = new TemplateFacade({
       transformRender: (name, output) =>

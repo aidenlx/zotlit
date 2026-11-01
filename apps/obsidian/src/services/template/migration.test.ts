@@ -151,6 +151,7 @@ async function makeHarness(
         "ConvertedLegacyProfileDocument",
         {
           source: "converted source",
+          frontmatterFailures: [],
           legacyFiles: [
             "templates/zotlit-filename.liquid.md",
             "templates/zotlit-note.liquid.md",
@@ -349,6 +350,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           ],
           pendingCleanup: [],
           kept: [],
+          frontmatterFailures: [],
         });
         expect(harness.create).toHaveBeenCalledWith(
           "templates/zotlit-profile.default.md",
@@ -583,11 +585,14 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           },
         );
 
-        yield* Effect.promise(() =>
-          expect(service.bridge.runPromise(service.convert)).rejects.toThrow(
-            "Disk full",
-          ),
+        const result = yield* Effect.promise(() =>
+          service.bridge.runPromise(service.convert),
         );
+
+        expect(result).toMatchObject({
+          outcome: "refused",
+          diagnostic: { code: "conversion-failed", message: "Disk full" },
+        });
 
         // Only the document this pass created goes back; every legacy file stays.
         expect(harness.trashFile).toHaveBeenCalledTimes(1);
@@ -680,7 +685,46 @@ describe("LiteratureNoteTemplateMigrationService", () => {
   );
 
   it.effect(
-    "returns affected fields and leaves the vault untouched when the dry run fails",
+    "#1904: converts the document and names a field that failed the dry run",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
+        );
+        harness.template.convertLegacyLiteratureNoteTemplates.mockResolvedValueOnce(
+          stubService<ConvertedLegacyProfileDocument>(
+            "ConvertedLegacyProfileDocument",
+            {
+              source: "converted source",
+              legacyFiles: ["templates/zotlit-note.liquid.md"],
+              frontmatterFailures: ["Date Added"],
+            },
+          ),
+        );
+
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
+
+        expect(result).toMatchObject({
+          outcome: "converted",
+          frontmatterFailures: ["Date Added"],
+        });
+        expect(harness.create).toHaveBeenCalledTimes(1);
+        expect(
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-pending"
+          ],
+        ).toBe(false);
+      }),
+  );
+
+  it.effect(
+    "#1904: refuses with the files and the engine's words when a template cannot render",
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
@@ -691,14 +735,8 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           Effect.tryPromise(async () => harness.service),
         );
         harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
-          new LegacyTemplateConversionError(
-            "legacy-frontmatter-evaluation",
-            "Converted Managed Frontmatter failed for: tags, creators",
-            {
-              difference: "Managed Frontmatter evaluation",
-              recovery: "Correct these fields, then retry conversion.",
-              fields: ["tags", "creators"],
-            },
+          new Error(
+            "undefined filter: nosuchfilter, file:note, line:1, col:37",
           ),
         );
 
@@ -706,17 +744,46 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           harness.service.bridge.runPromise(harness.service.convert),
         );
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
           outcome: "refused",
           diagnostic: {
-            code: "legacy-frontmatter-evaluation",
-            difference: "Managed Frontmatter evaluation",
-            message: "Converted Managed Frontmatter failed for: tags, creators",
-            hint: "Correct these fields, then retry conversion.",
-            fields: ["tags", "creators"],
+            code: "unsupported-legacy-template",
+            message:
+              "undefined filter: nosuchfilter, file:note, line:1, col:37",
+            files: expect.arrayContaining(["templates/zotlit-note.liquid.md"]),
           },
         });
         expect(harness.create).not.toHaveBeenCalled();
+        expect(harness.trashFile).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "#1904: reports a failed document write as a refusal the banner can show",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        yield* Effect.acquireDisposable(
+          Effect.tryPromise(async () => harness.service),
+        );
+        harness.create.mockRejectedValueOnce(new Error("Disk full"));
+
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
+
+        expect(result).toMatchObject({
+          outcome: "refused",
+          diagnostic: { code: "conversion-failed" },
+        });
+        expect(
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-pending"
+          ],
+        ).toBe(true);
         expect(harness.trashFile).not.toHaveBeenCalled();
       }),
   );
@@ -944,6 +1011,7 @@ describe("one-pass conversion of the 2.1.x cite and partial files", () => {
           ],
           pendingCleanup: [],
           kept: [],
+          frontmatterFailures: [],
         });
         expect(harness.vault.contents.get("templates/zotlit-citation.md")).toBe(
           `---
@@ -1080,6 +1148,7 @@ language: liquid
           outcome: "converted",
           trashed: ["templates/zotlit-cite.liquid.md"],
           kept: ["templates/zotlit-cite2.eta.md"],
+          frontmatterFailures: [],
         });
         expect(harness.vault.files.has("templates/zotlit-cite2.eta.md")).toBe(
           true,

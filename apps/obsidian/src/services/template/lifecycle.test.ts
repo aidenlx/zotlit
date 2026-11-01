@@ -458,7 +458,7 @@ it.effect(
 );
 
 it.effect(
-  "#1705: TemplateMigration maps external failures with their cause",
+  "#1904: TemplateMigration refuses on an external failure and names its cause",
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost({
@@ -478,9 +478,12 @@ it.effect(
       expectTypeOf<Effect.Error<typeof migration.convert>>().toExtend<{
         readonly _tag: string;
       }>();
-      expect(yield* Effect.flip(migration.convert)).toMatchObject({
-        _tag: "TemplateOperationError",
-        cause,
+      expect(yield* migration.convert).toMatchObject({
+        outcome: "refused",
+        diagnostic: {
+          code: "conversion-failed",
+          message: "verification data unavailable",
+        },
       });
     }),
 );

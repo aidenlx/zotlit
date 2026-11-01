@@ -108,9 +108,13 @@ export class NotLiteratureNote extends Schema.TaggedError<
 export class ManagedFrontmatterRefused extends Schema.TaggedError<
   ManagedFrontmatterRefused,
   { readonly brand: unique symbol }
->()("ManagedFrontmatterRefused", {}) {
+>()("ManagedFrontmatterRefused", {
+  fields: Schema.Array(Schema.String),
+}) {
   override get message(): string {
-    return m.managed_frontmatter_refused_recovery();
+    return m.managed_frontmatter_eval_recovery({
+      field: this.fields.join(", "),
+    });
   }
 }
 
@@ -488,7 +492,10 @@ const prepareProfileNote = Effect.fnUntraced(function* (
     note,
     toInstant(yield* DateTime.now),
   );
-  if ("failures" in prepared) return yield* new ManagedFrontmatterRefused();
+  if ("failures" in prepared)
+    return yield* new ManagedFrontmatterRefused({
+      fields: prepared.failures.map(({ key }) => key),
+    });
   // Only a legacy document composes the global field set; a document's own
   // Managed Frontmatter replaces it.
   const frontmatterFields =
