@@ -662,7 +662,6 @@ const makeProfileEngine = Effect.fnUntraced(function* (
           {
             id: DEFAULT_PROFILE,
             name: m.settings_profile_default_name(),
-            description: m.profile_default_description(),
             managed: false,
             frontmatter: fields ?? DEFAULT_FRONTMATTER_FIELDS,
           },
