@@ -20,7 +20,11 @@ const RECORDS = [
 ] as const;
 
 /** Keep each key's data fixed while changing its place in the Item ID scan. */
-function seedOrder(scenario: ScenarioDatabase, itemIDs: readonly number[]) {
+function seedOrder(
+  scenario: ScenarioDatabase,
+  itemIDs: readonly number[],
+  records: readonly { key: string; title: string; type: string }[] = RECORDS,
+) {
   const insertItem = scenario.sqlite.prepare(
     "insert into items (itemID, itemTypeID, libraryID, key, dateAdded, dateModified) select ?, itemTypeID, 1, ?, '2024-01-01 00:00:00', '2024-01-01 00:00:00' from itemTypesCombined where typeName = ?",
   );
@@ -30,7 +34,7 @@ function seedOrder(scenario: ScenarioDatabase, itemIDs: readonly number[]) {
   const insertTitle = scenario.sqlite.prepare(
     "insert into itemData (itemID, fieldID, valueID) select ?, fieldID, valueID from fieldsCombined, itemDataValues where fieldName = 'title' and custom = 0 and value = ?",
   );
-  for (const [index, record] of RECORDS.entries()) {
+  for (const [index, record] of records.entries()) {
     insertItem.run(itemIDs[index]!, record.key, record.type);
     insertValue.run(record.title);
     insertTitle.run(itemIDs[index]!, record.title);
@@ -101,3 +105,30 @@ it.each(REQUESTS)(
     }
   },
 );
+
+// Failure mode: two group values collate as equal, so read order decides them.
+it("keeps the order of groups whose values collate as equal", async () => {
+  const records = [
+    { key: "ORD2DDDD", title: "Éclairs", type: "book" },
+    { key: "ORD2EEEE", title: "Éclairs", type: "book" },
+  ];
+  const groups = async (itemIDs: readonly number[]) => {
+    using scenario = openScenarioDatabase();
+    seedOrder(scenario, itemIDs, records);
+    const result = await runEffect(
+      collectQuery(ITEMS, {
+        libraries: [SCENARIO_LIBRARIES.personal],
+        fields: ["title"],
+        filter: records.map(({ key }) => `key == "${key}"`).join(" || "),
+        group: "title",
+        sort: [],
+        limit: null,
+      }),
+      { client: scenario.db, tuning: { forceScan: true } },
+    );
+    if (result.exit._tag === "Failure")
+      throw new Error(String(result.exit.cause));
+    return result.exit.value.groups?.map(({ value }) => value);
+  };
+  expect(await groups([1001, 101])).toEqual(await groups([101, 1001]));
+});

@@ -197,7 +197,11 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
     }
 
     const groupOrder = allMatches<GroupMatches<I["scan"]>>(
-      (a, b) => compareScalars(a.value, b.value),
+      // Distinct strings can collate as equal. Code units break that tie, so
+      // read order never decides the order of groups.
+      (a, b) =>
+        compareScalars(a.value, b.value) ||
+        (String(a.value) < String(b.value) ? -1 : 1),
       sizeWithin(tuning.mergeStepSize, Infinity),
     );
     let groupChunk: GroupMatches<I["scan"]>[] = [];
