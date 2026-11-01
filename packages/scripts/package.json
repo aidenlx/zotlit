@@ -19,6 +19,7 @@
     "#obsidian-vault-registry": "./lib/obsidian-vault-registry.ts",
     "#paired-zotero": "./lib/fixture/paired-zotero.ts",
     "#package-roots": "./lib/package-roots.ts",
+    "#push-refs": "./lib/push-refs.ts",
     "#test-gates": "./lib/test-gates.ts",
     "#test-policy": "./lib/test-policy.ts",
     "#snapshot-size": "./lib/snapshot-size.ts",
