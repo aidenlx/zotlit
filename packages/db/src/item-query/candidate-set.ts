@@ -323,7 +323,7 @@ const textSweepStatement = defineStatement<{
         lte(itemData.itemID, p("throughItemID")),
         sql`${unindexed(itemData.fieldID)} in (select value from json_each(${p("fieldIDs")}))`,
         eq(itemDataValues.valueID, itemData.valueID),
-        sql`(typeof(${itemDataValues.value}) <> 'text' OR ${itemDataValues.value} LIKE ${p("pattern")})`,
+        sql`(typeof(${itemDataValues.value}) <> 'text' OR instr(${itemDataValues.value}, char(0)) > 0 OR ${itemDataValues.value} LIKE ${p("pattern")})`,
         eq(items.itemID, itemData.itemID),
         eq(unindexed(items.libraryID), p("libraryID")),
       ),

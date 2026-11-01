@@ -258,9 +258,7 @@ export const readCandidatePlan = Effect.fnUntraced(function* <Leaf>(
     if (typeof itemIDs === "string") return itemIDs;
     return itemIDs.length > cap ? "candidate-cap-exceeded" : new Set(itemIDs);
   }
-  const branches = plan.plans.toSorted(
-    (a, b) => Number(requiresSweep(a)) - Number(requiresSweep(b)),
-  );
+  const branches = plan.plans.toSorted((a, b) => sweepOrder(a) - sweepOrder(b));
   if (plan.kind === "any") {
     const union = new Set<number>();
     for (const branch of branches) {
@@ -275,13 +273,12 @@ export const readCandidatePlan = Effect.fnUntraced(function* <Leaf>(
   let hasSeekSet = false;
   let reason: CandidateFallback | undefined;
   for (const branch of branches) {
-    const sweep = requiresSweep(branch);
-    if (hasSeekSet && sweep) continue;
+    if (hasSeekSet && hasSweep(branch)) continue;
     const set = yield* readCandidatePlan(branch, options);
     if (typeof set === "string") reason ??= set;
     else {
       sets.push(set);
-      if (!sweep) hasSeekSet = true;
+      if (!requiresSweep(branch)) hasSeekSet = true;
     }
   }
   if (sets.length === 0) return reason!;
@@ -296,6 +293,14 @@ function requiresSweep<Leaf>(plan: CandidatePlan<Leaf>): boolean {
   return plan.kind === "all"
     ? plan.plans.every(requiresSweep)
     : plan.plans.some(requiresSweep);
+}
+
+/** Pure seeks first, mixed branches next, and pure sweeps last. */
+function sweepOrder<Leaf>(plan: CandidatePlan<Leaf>): 0 | 1 | 2 {
+  if (plan.kind === "leaf") return plan.sweep ? 2 : 0;
+  const orders = plan.plans.map(sweepOrder);
+  if (orders.every((order) => order === 0)) return 0;
+  return orders.every((order) => order === 2) ? 2 : 1;
 }
 
 export function hasSweep<Leaf>(plan: CandidatePlan<Leaf>): boolean {

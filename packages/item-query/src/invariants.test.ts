@@ -20,6 +20,7 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryResult } from ".";
+import type { CandidateFallback } from "./candidate-plan";
 import { runEffect } from "./test-helpers";
 import type { Run, RunEvent, RunOptions } from "./test-helpers";
 
@@ -260,6 +261,8 @@ const LOOKUP_READERS: ReadonlySet<string> = new Set([
 /** One query for each path of the plan, at the production tuning. */
 const PLAN_PATHS: readonly {
   name: string;
+  category?: "text-sweep";
+  expectedFallback?: CandidateFallback | null;
   request: Request;
   annotation?: boolean;
   attachment?: boolean;
@@ -274,6 +277,8 @@ const PLAN_PATHS: readonly {
 }[] = [
   {
     name: "a text sweep within the cap",
+    category: "text-sweep",
+    expectedFallback: null,
     request: {
       filter: 'title.icontains("02599")',
       fields: [],
@@ -289,6 +294,8 @@ const PLAN_PATHS: readonly {
   },
   {
     name: "a text sweep above the cap",
+    category: "text-sweep",
+    expectedFallback: "candidate-cap-exceeded",
     request: {
       filter: 'title.contains("Bulk")',
       fields: [],
@@ -303,6 +310,8 @@ const PLAN_PATHS: readonly {
   },
   {
     name: "a stopped common-term sweep",
+    category: "text-sweep",
+    expectedFallback: "candidate-cap-exceeded",
     sweep: true,
     request: {
       filter: 'title.icontains("common")',
@@ -318,6 +327,8 @@ const PLAN_PATHS: readonly {
   },
   {
     name: "a skipped sparse sweep",
+    category: "text-sweep",
+    expectedFallback: "sparse-library",
     libraries: [SCENARIO_LIBRARIES.personal],
     request: {
       filter: 'title.icontains("exact")',
@@ -1556,9 +1567,9 @@ it("scans nested Parent Record keys without candidate reads", async () => {
   ).toBeGreaterThan(0);
 });
 
-describe.each(PLAN_PATHS.filter((path) => path.name.includes("sweep")))(
+describe.each(PLAN_PATHS.filter((path) => path.category === "text-sweep"))(
   "text sweep fallback and cancellation: $name",
-  ({ request, libraries, sweep, result: expected, name }) => {
+  ({ request, libraries, sweep, result: expected, expectedFallback }) => {
     it("keeps the forced-scan result and reports its fallback", async () => {
       const logs: NonNullable<RunOptions["logs"]> = [];
       const complete = await run(request, { libraries, sweep, logs });
@@ -1570,15 +1581,10 @@ describe.each(PLAN_PATHS.filter((path) => path.name.includes("sweep")))(
           await run(request, { libraries, sweep, tuning: { forceScan: true } }),
         ),
       );
-      const reason = name.includes("sparse")
-        ? "sparse-library"
-        : name.includes("cap") && name.includes("within")
-          ? null
-          : "candidate-cap-exceeded";
       expect(
         logs.find((log) => log.properties.dataset === "items")?.properties
           .reason,
-      ).toBe(reason);
+      ).toBe(expectedFallback);
       expect(
         itemsRead(complete.events, "text-sweep-window").reduce(
           (a, b) => a + b,
