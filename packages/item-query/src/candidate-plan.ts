@@ -160,6 +160,37 @@ export function planCandidates<Item, Leaf = CandidateLeaf>(
     const right = planCandidates(node.right, sources, lowerLeaf);
     return left && right ? { kind: "any", plans: [left, right] } : null;
   }
+  if (
+    node.kind === "method" &&
+    (node.name === "containsAny" || node.name === "containsAll")
+  ) {
+    const values =
+      node.args.length === 1 && node.args[0]?.kind === "list"
+        ? node.args[0].elements
+        : node.args;
+    if (!values.length || values.some((value) => stringLiteral(value) === null))
+      return null;
+    // Method nodes resolve by name and subject type. Lowerings read only
+    // kind, name, subject and args; the evaluator keeps the original tree.
+    const contains = values.map((value): FilterNode<Item> => ({
+      ...node,
+      name: "contains",
+      args: [value],
+    }));
+    return planCandidates(
+      contains.reduce((left, right) => ({
+        kind: "binary",
+        operator: node.name === "containsAny" ? "||" : "&&",
+        left,
+        right,
+        from: node.from,
+        to: node.to,
+        valueType: "boolean",
+      })),
+      sources,
+      lowerLeaf,
+    );
+  }
   const leaf = lowerLeaf(node, sources);
   return leaf ? { kind: "leaf", leaf } : null;
 }

@@ -2295,7 +2295,6 @@ describe("collectQuery(ITEMS) candidate sets", () => {
     "collections.contains(title)",
     "collections.contains(12)",
     'collections == ["Thesis"]',
-    'collections.containsAny("Thesis")',
     '!collections.within("Thesis")',
   ])("reads every Item's Collections for %j", async (filter) => {
     expect((await collectionReads(filter)).read).toEqual(EVERY_PERSONAL_ITEM);
@@ -2306,11 +2305,24 @@ describe("collectQuery(ITEMS) candidate sets", () => {
     '!!tags.contains("tie")',
     'if(tags.contains("tie"), true, false)',
     'tags.contains("tie") == true',
-    'tags.containsAny("tie")',
     'tags.contains("TIE".lower())',
     'tags.length > 0 && key != "ART2FULL"',
   ])("reads every Item for %j", async (filter) => {
     expect((await tagReads(filter)).read).toEqual(EVERY_PERSONAL_ITEM);
+  });
+
+  it("reads only matching Collections for single-value membership", async () => {
+    expect(await collectionReads('collections.containsAny("Thesis")')).toEqual({
+      matched: ["CHP2YEAR"],
+      read: ["CHP2YEAR"],
+    });
+  });
+
+  it("reads only matching Tags for single-value membership", async () => {
+    expect(await tagReads('tags.containsAny("tie")')).toEqual({
+      matched: TIE_ITEMS,
+      read: TIE_ITEMS,
+    });
   });
 
   it("uses a candidate set of at most 25% of the Library's `items` rows, and the scan for a larger one", async () => {
