@@ -14,9 +14,31 @@ const typeAware = new Set([
   "prefer-instanceof",
 ]);
 
-export default {
-  meta: { name: "obsidianmd" },
-  rules: Object.fromEntries(
-    Object.entries(obsidianmd.rules).filter(([name]) => !typeAware.has(name)),
-  ),
-};
+type Rule = NonNullable<(typeof obsidianmd.rules)[string]>;
+
+/** The rule without its autofix: it reports, and the author picks the global. */
+function reportOnly(rule: Rule): Rule {
+  return {
+    ...rule,
+    meta: { ...rule.meta, fixable: undefined },
+    create: (context) =>
+      rule.create(
+        new Proxy({} as typeof context, {
+          get: (_, key) =>
+            key === "report"
+              ? (report: { fix?: unknown }) =>
+                  context.report({ ...report, fix: undefined } as never)
+              : Reflect.get(context, key, context),
+        }),
+      ),
+  } as Rule;
+}
+
+const rules: Record<string, Rule> = {};
+for (const [name, rule] of Object.entries(obsidianmd.rules)) {
+  if (rule && !typeAware.has(name)) rules[name] = rule;
+}
+// `window` is undefined in a worker, so `oxlint --fix` must leave this alone.
+rules["no-global-this"] = reportOnly(rules["no-global-this"]!);
+
+export default { meta: { name: "obsidianmd" }, rules };
