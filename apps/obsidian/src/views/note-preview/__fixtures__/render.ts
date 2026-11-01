@@ -166,6 +166,8 @@ export async function createRenderFixture(options: { existing?: string; javascri
       getFileByPath: (path) => vault.getFileByPath(path),
       getFolderByPath: (path) => vault.getFolderByPath(path),
       getAbstractFileByPath: (path) => vault.getAbstractFileByPath(path),
+      getAbstractFileByPathInsensitive: (path) =>
+        vault.getAbstractFileByPathInsensitive(path),
       getRoot: () => vault.getRoot(),
       getMarkdownFiles: () => vault.getMarkdownFiles(),
     }),

@@ -179,6 +179,8 @@ async function makeHarness(
         vault: stubService<App["vault"]>("Vault", {
           ...eventMethods(new MemoryWorkspace()),
           getAbstractFileByPath: (path: string) => files.get(path) ?? null,
+          getAbstractFileByPathInsensitive: (path: string) =>
+            files.get(path) ?? null,
           getFileByPath: (path: string) => files.get(path) ?? null,
           create,
         }),
@@ -827,6 +829,8 @@ async function makeVaultHarness(
       getFileByPath: (path) => vault.getFileByPath(path),
       getFolderByPath: (path) => vault.getFolderByPath(path),
       getAbstractFileByPath: (path) => vault.getAbstractFileByPath(path),
+      getAbstractFileByPathInsensitive: (path) =>
+        vault.getAbstractFileByPathInsensitive(path),
       getRoot: () => vault.getRoot(),
       getMarkdownFiles: () => vault.getMarkdownFiles(),
     }),

@@ -18,6 +18,7 @@ import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { layerVault, layerVaultFrom, Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";
+import { ensureVaultFolder, ensureVaultParentFolder } from "@/lib/vault-folder";
 
 import { MemoryVault } from "./__fixtures__/obsidian-vault";
 
@@ -204,6 +205,56 @@ it.effect(
       expect(create).not.toHaveBeenCalled();
       expect(source.contents.get("a.md")).toBe("held");
     }),
+);
+
+it.effect(
+  "fails create with FileExists at the real path of a case variant",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryVault();
+      source.add("Notes/a.md", "held");
+      const { vault } = yield* open(layerVaultFrom(source));
+      const create = vi.spyOn(source, "create");
+      const error = yield* Effect.flip(vault.create("notes/A.md", ""));
+      expect([error._tag, error.path]).toEqual(["FileExists", "Notes/a.md"]);
+      expect(create).not.toHaveBeenCalled();
+    }),
+);
+
+it.effect("creates a file under the real path of a case-variant parent", () =>
+  Effect.gen(function* () {
+    const source = new MemoryVault();
+    source.addFolder("Templates");
+    const { vault } = yield* open(layerVaultFrom(source));
+    const file = yield* vault.create("templates/a.md", "text");
+    expect(file.path).toBe("Templates/a.md");
+    expect(source.getFileByPath("templates/a.md")).toBeNull();
+  }),
+);
+
+it.effect("reuses a case-variant folder instead of creating another", () =>
+  Effect.gen(function* () {
+    const source = new MemoryVault();
+    source.addFolder("Templates");
+    const { vault } = yield* open(layerVaultFrom(source));
+    const createFolder = vi.spyOn(source, "createFolder");
+    yield* ensureVaultParentFolder("templates/a.md").pipe(
+      Effect.provideService(Vault, vault),
+    );
+    expect(createFolder).not.toHaveBeenCalled();
+  }),
+);
+
+it.effect("fails with VaultFolderBlockedError on a case-variant file", () =>
+  Effect.gen(function* () {
+    const source = new MemoryVault();
+    source.add("Templates");
+    const { vault } = yield* open(layerVaultFrom(source));
+    const error = yield* Effect.flip(
+      ensureVaultFolder("templates").pipe(Effect.provideService(Vault, vault)),
+    );
+    expect(error._tag).toBe("VaultFolderBlockedError");
+  }),
 );
 
 it.effect(

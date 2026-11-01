@@ -132,6 +132,12 @@ declare module "obsidian" {
   interface Vault {
     /** Reads an app setting; `readableLineLength` is Settings → Editor → Readable line length. */
     getConfig(key: "readableLineLength"): boolean;
+    /**
+     * The exact path, then the first path that differs only in case. Obsidian's
+     * `FileManager.getOrCreateFolder` resolves folders this way. Verified in
+     * Obsidian 1.14.4.
+     */
+    getAbstractFileByPathInsensitive(path: string): TAbstractFile | null;
   }
   interface Workspace {
     /**

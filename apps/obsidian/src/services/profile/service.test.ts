@@ -1255,6 +1255,23 @@ describe("Profile", () => {
     }),
   );
 
+  it.effect("opens a Default document held under another case", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      const fixture = yield* Effect.acquireDisposable(
+        Effect.tryPromise(() => harness(undefined, undefined, context)),
+      );
+      const { profile, vault } = fixture;
+      const held = vault.addFile("templates/ZOTLIT-PROFILE.DEFAULT.md", "Held");
+      const pending = profile.bridge.runPromise(profile.materializeDefault);
+      yield* TestClock.adjust(500);
+      expect(yield* Effect.promise(() => pending)).toMatchObject({
+        file: held,
+        created: false,
+      });
+    }),
+  );
+
   it.effect(
     "carries the configured frontmatter fields into the ejected Default document",
     () =>

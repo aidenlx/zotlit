@@ -81,6 +81,17 @@ export class MockVault implements VaultSource {
     return this.createFile(path, content);
   }
 
+  getAbstractFileByPathInsensitive(path: string): TAbstractFile | null {
+    const exact = this.getAbstractFileByPath(path);
+    if (exact) return exact;
+    const folded = path.toLowerCase();
+    return (
+      [...this.files.values(), ...this.folders.values()].find(
+        (held) => held.path.toLowerCase() === folded,
+      ) ?? null
+    );
+  }
+
   getAbstractFileByPath(path: string): TAbstractFile | null {
     return this.files.get(path) ?? this.folders.get(path) ?? null;
   }

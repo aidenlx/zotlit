@@ -201,6 +201,10 @@ export class MockVault implements VaultSource {
     return null;
   }
 
+  getAbstractFileByPathInsensitive(path: string): TAbstractFile | null {
+    return this.getAbstractFileByPath(path);
+  }
+
   getAbstractFileByPath(path: string): TAbstractFile | null {
     return this.getFileByPath(path);
   }
@@ -871,6 +875,8 @@ export function harnessApp(
     vault: stubService<App["vault"]>("Vault", {
       getFileByPath: (path) => vault.getFileByPath(path),
       getAbstractFileByPath: (path) => vault.getAbstractFileByPath(path),
+      getAbstractFileByPathInsensitive: (path) =>
+        vault.getAbstractFileByPathInsensitive(path),
       getMarkdownFiles: () => vault.getMarkdownFiles(),
       cachedRead: (file) => vault.cachedRead(file),
       read: (file) => vault.read(file),

@@ -1116,7 +1116,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
             "FileExists",
             Effect.fnUntraced(function* (error) {
               // A folder at the path is no document to open.
-              const existing = yield* vault.getFileByPath(path);
+              const existing = yield* vault.getFileByPath(error.path);
               return existing
                 ? { file: existing, created: false }
                 : yield* error;

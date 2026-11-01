@@ -36,6 +36,18 @@ export class MemoryVault implements VaultSource {
     return this.files.get(path) ?? this.folders.get(path) ?? null;
   }
 
+  /** As Obsidian: the exact path first, then any path that differs only in case. */
+  getAbstractFileByPathInsensitive(path: string): TAbstractFile | null {
+    const exact = this.getAbstractFileByPath(path);
+    if (exact) return exact;
+    const folded = path.toLowerCase();
+    return (
+      [...this.files.values(), ...this.folders.values()].find(
+        (held) => held.path.toLowerCase() === folded,
+      ) ?? null
+    );
+  }
+
   /** As Obsidian: the files whose extension is `md`. */
   getMarkdownFiles(): TFile[] {
     return [...this.files.values()].filter((file) => file.extension === "md");

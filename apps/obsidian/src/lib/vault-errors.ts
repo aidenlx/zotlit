@@ -5,16 +5,14 @@
 import { Schema } from "effect";
 
 /**
- * The vault cache holds a file or folder at `path`, so the tag did not call
- * Obsidian. The lookup is case-sensitive: a name that differs only in case is
- * not in the cache, and a disk that folds case then fails the call as a
- * `VaultError`.
+ * The vault cache holds a file or folder at `path`, or at a path that differs
+ * only in case, so the tag did not call Obsidian.
  */
 export class FileExists extends Schema.TaggedError<
   FileExists,
   { readonly brand: unique symbol }
 >()("FileExists", {
-  /** The vault path that is taken. */
+  /** The vault path that is taken, in the case the vault holds it. */
   path: Schema.String,
 }) {
   /** Obsidian's own text for this case, which a caller that shows it shows as before. */
