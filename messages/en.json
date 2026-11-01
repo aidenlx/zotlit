@@ -96,10 +96,11 @@
   "notice_literature_note_template_conversion_required": "Convert the legacy literature note templates before you use an added profile.",
   "notice_literature_note_template_conversion_success": "Literature note templates converted. The old files are in the system trash.",
   "notice_literature_note_template_conversion_kept": "Legacy template files converted. The citation text converted as Liquid, so these Eta files stayed in place and no longer affect citations: {files}.",
-  "notice_literature_note_template_conversion_mismatch": "ZotLit kept the legacy templates unchanged because the converted {difference} did not match. Edit these files and retry: {files}.",
-  "notice_literature_note_template_conversion_unsupported": "ZotLit kept the legacy templates unchanged because this layout cannot be converted automatically. Edit these files and retry: {files}.",
+  "notice_literature_note_template_conversion_mismatch": "ZotLit kept the legacy templates unchanged because the converted {difference} did not match. Remove anything that changes on each run from these files and try again, or move them out of the template folder to use the built-in templates: {files}.",
+  "notice_literature_note_template_conversion_unsupported": "ZotLit could not convert these files: {files}. Problem: {detail}. Fix the files and try again, or move them out of the template folder to use the built-in templates.",
   "notice_literature_note_template_conversion_frontmatter_inert": "Enable JavaScript Templates, then retry conversion; affected Managed Frontmatter fields: {fields}.",
-  "notice_literature_note_template_conversion_frontmatter_evaluation": "Correct these Managed Frontmatter fields, then retry conversion: {fields}.",
+  "notice_literature_note_template_conversion_frontmatter_review": "Templates converted. Before you create notes, fix these properties: {fields}. Go to Settings → ZotLit → Literature note profiles and select Edit profile.",
+  "notice_literature_note_template_conversion_failed": "ZotLit could not convert the templates: {detail}. Check the Zotero connection and the template folder, then try again.",
   "notice_literature_note_template_conversion_no_item": "Connect a Zotero database that contains an item, then try again.",
   "notice_literature_note_template_conversion_no_annotation": "Add an annotation to a Zotero item, then try again.",
   "notice_literature_note_template_conversion_exists": "The converted profile document already exists. Rename or remove it, then try again.",
@@ -1484,7 +1485,7 @@
   "welcome_migration_body": "Custom Eta templates are not loaded until you rename them and enable the JavaScript Templates gate.",
   "welcome_companion_title": "ZotLit Companion for Zotero 10",
   "welcome_template_conversion_title": "Convert your literature note templates",
-  "welcome_template_conversion_body": "ZotLit will fold your legacy template files into template documents: the note, content, filename, and annotation files into {path}, the cite and cite2 files into one citation text, and each partial into its own file. Before it writes anything, it renders one Zotero item (with one annotation and a one-item citation where your templates use them) through the old and the new templates and compares the output, and checks that the frontmatter fields still produce values. When the checks pass, it moves the old files to Obsidian’s configured trash.",
+  "welcome_template_conversion_body": "ZotLit will fold your legacy template files into template documents: the note, content, filename, and annotation files into {path}, the cite and cite2 files into one citation text, and each partial into its own file. Before it writes anything, it renders one Zotero item (with one annotation and a one-item citation where your templates use them) through the old and the new templates and compares the output. When the checks pass, it moves the old files to Obsidian’s configured trash.",
   "welcome_template_conversion_completed_title": "Literature note templates converted",
   "welcome_template_conversion_completed_body": [
     {

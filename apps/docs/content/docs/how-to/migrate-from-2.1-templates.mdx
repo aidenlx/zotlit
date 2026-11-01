@@ -57,21 +57,25 @@ One case keeps a file in place. If your two citation files use different languag
 
 ## What is refused, and what you see
 
-Every refusal happens before the first write, so your vault and your settings stay as they were. Each one reports a notice.
+Your vault and your settings stay as they were after every refusal. Each one reports a notice, and the banner keeps the same sentence next to the button until you try again. If you do not want to fix a 2.1 file, move it out of the template folder: ZotLit then uses the built-in template for that part, and you can copy your changes into the profile with **Edit profile** after the conversion.
 
 - **A converted output that does not reproduce the old one.** <UiLabel name={m.notice_literature_note_template_conversion_mismatch({ difference: "…", files: "…" })} /> This is the refusal you are most likely to meet, because it is what the byte check reports. The notice lists only the files you need to edit, and names the output that differed: `create output`, `update output`, `filename output`, `annotation output`, `main citation output`, or `alternate citation output`. Edit the 2.1 file behind that output so the converted form reproduces it, then select the button again.
 
-- **A layout ZotLit cannot convert automatically.** <UiLabel name={m.notice_literature_note_template_conversion_unsupported({ files: "…" })} /> The conversion handles only the shapes 2.1 shipped: one content insertion in the note file, and one language across the files. The notice lists only the files you need to edit. Edit them on disk to match, then select the button again. The notice also appears when an Eta file is involved and <UiLabel name={m.settings_template_js_enable_name()} /> is off; turn the gate on under <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> and try again.
+- **A layout ZotLit cannot convert automatically.** <UiLabel name={m.notice_literature_note_template_conversion_unsupported({ detail: "…", files: "…" })} /> The conversion handles only the shapes 2.1 shipped: one content insertion in the note file, and one language across the files. The notice lists only the files you need to edit and names the problem, with a line number when ZotLit has one. A template that fails to render, or a line such as `--- zotlit:notes ---` that ZotLit keeps for its own use, also reports this notice. Edit the files to match, then select the button again. The notice also appears when an Eta file is involved and <UiLabel name={m.settings_template_js_enable_name()} /> is off; turn the gate on under <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> and try again.
 
 - **A frontmatter field written in JavaScript while the gate is off.** <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_inert({ fields: "…" })} /> Turn on <UiLabel name={m.settings_template_js_enable_name()} /> under <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} />, then select the button again. See [Enable JavaScript templates](/docs/how-to/enable-javascript-templates).
-
-- **A field that fails to evaluate against the item ZotLit picked.** <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_evaluation({ fields: "…" })} /> This release has no editor for the legacy field list, and a profile's edit actions stay disabled while the conversion is pending. The list lives in the plugin's saved settings file, under `note.frontmatter-fields`; correct the named fields there, then select the button again. Writing a profile document by hand repairs nothing: the offer stands down as soon as `zotlit-profile.default.md` exists, whatever the file holds.
 
 - **No item, or no annotation, to verify against.** <UiLabel name={m.notice_literature_note_template_conversion_no_item()} /> or <UiLabel name={m.notice_literature_note_template_conversion_no_annotation()} /> Connect a Zotero library that contains an item, then select the button again. The annotation notice appears only when an annotation file is among the files being converted.
 
 - **A converted document already exists.** <UiLabel name={m.notice_literature_note_template_conversion_exists()} /> Rename or remove the file in the way, then select the button again. The notice says "profile document" even when the occupant is `zotlit-citation.md` or a partial.
 
+- **A failure outside your templates.** <UiLabel name={m.notice_literature_note_template_conversion_failed({ detail: "…" })} /> ZotLit could not read Zotero or could not write to the template folder. Any document this attempt already wrote is removed. Fix the cause the notice names, then select the button again.
+
 - **No legacy templates left to convert.** <UiLabel name={m.notice_literature_note_template_conversion_none()} /> ZotLit found none of the files the conversion reads, so nothing is written and nothing changes. Keep using the built-in templates.
+
+## Properties that need a fix [#fix-properties]
+
+A frontmatter field that fails against the item ZotLit picked does not stop the conversion. ZotLit keeps the field exactly as you wrote it, and a notice names it: <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_review({ fields: "…" })} /> ZotLit refuses to create a note through that profile until the field works, and the refusal names the field. Select **Edit profile** on the Default row of <SettingsPath />, correct the field, and save.
 
 ## While the conversion is pending
 

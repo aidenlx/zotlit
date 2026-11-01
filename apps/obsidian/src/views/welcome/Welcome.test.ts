@@ -34,6 +34,7 @@ const CONVERTED: LiteratureNoteTemplateMigrationResult = {
   trashed: [],
   pendingCleanup: [],
   kept: [],
+  frontmatterFailures: [],
 };
 
 afterEach(async () => {
@@ -416,6 +417,39 @@ it("replaces the pending prompt with the persisted result after conversion", asy
   expect(container.textContent).not.toContain(m.welcome_migration_title());
 });
 
+it("#1904: shows a failed conversion in the banner with its cause", async () => {
+  const { actions, container, converted } = await render("upgraded", {
+    templateConversionPending: true,
+    templateFolder: "templates",
+  });
+  vi.mocked(actions.convertLiteratureNoteTemplates).mockImplementationOnce(() =>
+    converted({
+      retry: false,
+      result: {
+        outcome: "refused",
+        diagnostic: {
+          code: "conversion-failed",
+          message: "Disk full",
+          hint: "Check the template folder.",
+        },
+      },
+    }),
+  );
+
+  await act(() =>
+    [...container.querySelectorAll("button")]
+      .find(
+        (candidate) =>
+          candidate.textContent === m.welcome_template_conversion_action(),
+      )
+      ?.click(),
+  );
+
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Disk full",
+  );
+});
+
 it("keeps a refusal readable in the banner after the notice is gone", async () => {
   const { actions, container, converted } = await render("upgraded", {
     templateConversionPending: true,
@@ -447,6 +481,8 @@ it("keeps a refusal readable in the banner after the notice is gone", async () =
   const alert = container.querySelector('[role="alert"]');
   expect(alert?.textContent).toBe(
     m.notice_literature_note_template_conversion_unsupported({
+      detail:
+        "Legacy note template must contain one supported content insertion",
       files: "templates/zotlit-note.liquid.md",
     }),
   );

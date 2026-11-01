@@ -7,6 +7,10 @@ export function templateMigrationNotice(
   result: LiteratureNoteTemplateMigrationResult,
 ): string {
   if (result.outcome === "converted") {
+    if (result.frontmatterFailures.length > 0)
+      return m.notice_literature_note_template_conversion_frontmatter_review({
+        fields: result.frontmatterFailures.join(", "),
+      });
     if (result.pendingCleanup.length > 0)
       return m.notice_literature_note_template_conversion_pending_cleanup({
         files: result.pendingCleanup.join(", "),
@@ -25,16 +29,13 @@ export function templateMigrationNotice(
       });
     case "unsupported-legacy-template":
       return m.notice_literature_note_template_conversion_unsupported({
+        detail: result.diagnostic.message,
         files: result.diagnostic.files.join(", "),
       });
     case "legacy-frontmatter-inert":
       return m.notice_literature_note_template_conversion_frontmatter_inert({
         fields: result.diagnostic.fields.join(", "),
       });
-    case "legacy-frontmatter-evaluation":
-      return m.notice_literature_note_template_conversion_frontmatter_evaluation(
-        { fields: result.diagnostic.fields.join(", ") },
-      );
     case "no-verification-item":
       return m.notice_literature_note_template_conversion_no_item();
     case "no-verification-annotation":
@@ -43,5 +44,9 @@ export function templateMigrationNotice(
       return m.notice_literature_note_template_conversion_exists();
     case "no-legacy-templates":
       return m.notice_literature_note_template_conversion_none();
+    case "conversion-failed":
+      return m.notice_literature_note_template_conversion_failed({
+        detail: result.diagnostic.message,
+      });
   }
 }
