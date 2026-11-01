@@ -37,13 +37,13 @@ This tutorial walks you from your Zotero library to your first literature note. 
 
     For this tutorial, choose a paper that already has annotations, the highlights and notes you made in the Zotero PDF reader. That way you can see them in Obsidian.
 
-    In the buttons below the tree on the left, select <UiLabel name={m.library_view_facet_annotated()} />. The list now shows only the papers you have annotated. To look for one paper, type part of its title in the <UiLabel name={m.library_view_search_label()} /> box.
+    In the buttons below the tree on the left, select <UiLabel name={m.library_view_facet_annotated()} />. If you do not see the tree, select the <UiLabel name={m.library_view_show_tree()} /> button beside the search box, then scroll down the tree to reach the buttons. Dismissing the setup banner gives the list more room. The list now shows only the papers you have annotated. To look for one paper, type part of its title in the <UiLabel name={m.library_view_search_label()} /> box.
 
   </Step>
   <Step>
     ### Select the paper
 
-    Click the paper's row. The Reading Card opens on the right of the view, laid out like the paper's first page: its title, authors, and journal, then its abstract when Zotero has one, and last its annotations, with the first two quoted; select the link under them to show them all. On a narrow pane, it opens under the list.
+    Click the paper's row. The Reading Card opens on the right of the view, laid out like the paper's first page: its title, authors, and journal, then its abstract when Zotero has one, and last its annotations, with the first two shown; select the link under them to show them all. On a narrow pane, it opens under the list.
 
     ![The Library View with the Annotated filter on: two papers listed, and the Reading Card of Ten Simple Rules for Better Figures on the right, with its title, authors, and journal above the Open PDF and Write literature note buttons, and the first two of its annotations quoted at the bottom](/img/tutorial/first-note-library-view.webp)
 
@@ -98,6 +98,8 @@ This tutorial walks you from your Zotero library to your first literature note. 
 
     The note's filename is the item's citation key by default.
 
+ZotLit also saves small `zotlit-excerpt-….webp` image files at the vault root. These are excerpt images it keeps for your annotations, and you can leave them there.
+
     ZotLit built this note from the Default profile, the built-in one that decides a note's name, folder, properties, and body. Read about [profiles](/docs/concepts/profiles) to see what you can change.
 
   </Step>
@@ -107,7 +109,7 @@ This tutorial walks you from your Zotero library to your first literature note. 
 
 ZotLit writes this body once, when it creates the note. From then on the body is yours to edit. The **Annotations** section is a live view, so new highlights appear without an update. When you update the note later, ZotLit refreshes its properties and leaves the body as you wrote it.
 
-For more on how this works, see [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+The Default note has no managed region, so its body stays as you write it. To see how notes that use a managed region work, read [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
 
 ## Opening an existing note
 
@@ -117,9 +119,14 @@ You can also reach any paper's note without the library: run <Command inline nam
 
 ## What's next
 
-Now that you have a literature note with annotations, the next lesson shows you how to change how an annotation looks when you insert it into a note.
+Now that you have a literature note with annotations, you can cite it in a document or change how annotations look when you insert them.
 
 <Cards>
+  <Card
+    title="Write and export a cited note"
+    description="Insert a citation, review its reference, and export a Word document with a formatted bibliography."
+    href="/docs/tutorial/write-and-export-cited-note"
+  />
   <Card
     title="Customize your annotations"
     description="Edit a template to change how callouts render, then insert an annotation into your note."
