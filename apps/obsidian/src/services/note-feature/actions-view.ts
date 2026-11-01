@@ -31,7 +31,7 @@ import type {
   BatchUpdateResult,
   BatchUpdateServices,
 } from "./update-batch";
-import type { UpdateNotesChoice } from "./update-notes-view";
+import type { ActiveNote, UpdateNotesChoice } from "./update-notes-view";
 import {
   noteOperationDiagnosticContent,
   updateNoteToast,
@@ -52,7 +52,7 @@ export interface NoteActionPorts extends InteractiveCreationPorts {
   readonly batchUpdate: BatchUpdatePorts;
   /** Ask which notes to update; `null` when the user closes the dialog. */
   readonly chooseNotes: (
-    noteOpen: boolean,
+    note?: ActiveNote,
   ) => Effect.Effect<UpdateNotesChoice | null>;
 }
 
@@ -147,20 +147,17 @@ export const updateAll = Effect.fn("NoteActions.updateAll")(function* (
 /**
  * Ask which notes to update, then update them.
  *
- * @param note the active literature note, when there is one
+ * @param active the active literature note, when there is one
  */
 export const updateNotes = Effect.fn("NoteActions.updateNotes")(function* (
   ports: NoteActionPorts,
-  note?: { file: TFile; itemKey: string },
+  active?: ActiveNote,
 ) {
-  const choice = yield* ports.chooseNotes(note !== undefined);
+  const choice = yield* ports.chooseNotes(active);
   if (choice === null) return;
   if (choice.target === "note") {
-    if (note)
-      yield* updateNote(ports, note.file, {
-        itemKey: note.itemKey,
-        scope: "full",
-      });
+    const { file, itemKey } = choice.note;
+    yield* updateNote(ports, file, { itemKey, scope: "full" });
     return;
   }
   yield* updateAll(ports, { create: choice.create });

@@ -1093,6 +1093,75 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
+  it("creates missing notes only when the Update notes dialog is asked to", async () => {
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById("zotlit:update-notes");
+      },
+      undefined,
+      { tries: 20, what: "the zotlit update-notes command to run" },
+    );
+    await obRun(
+      run.vaultId,
+      async () => {
+        activeDocument
+          .querySelector<HTMLInputElement>(".modal input[type=checkbox]")
+          ?.click();
+      },
+      undefined,
+    );
+    await clickModalButton(run.vaultId, run.m.modal_update_notes_all());
+    const createGroup = run.m
+      .batch_update_group_create({ count: "…" })
+      .split("…")[0]!;
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { createGroup }) =>
+        activeDocument
+          .querySelector(".modal")
+          ?.textContent.includes(createGroup) ?? false,
+      { createGroup },
+      { what: "the Create group of the batch confirmation" },
+    );
+    await clickModalButton(run.vaultId, run.m.modal_cancel());
+  });
+
+  it("updates the active note from the Update notes dialog", async () => {
+    await clearNotices(run.vaultId);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { booksNotePath }) => {
+        await app.workspace
+          .getLeaf(false)
+          .openFile(app.vault.getFileByPath(booksNotePath)!);
+        return app.commands.executeCommandById("zotlit:update-notes");
+      },
+      { booksNotePath: run.booksNotePath },
+    );
+    await clickModalButton(run.vaultId, run.m.modal_update_notes_active());
+    await obRunUntil(
+      run.vaultId,
+      async ({ page }, { messages }) =>
+        page
+          .windowDocuments()
+          .some((doc) =>
+            Array.from(doc.querySelectorAll<HTMLElement>(".notice")).some(
+              (notice) =>
+                messages.some((text) => notice.textContent.includes(text)),
+            ),
+          ),
+      {
+        messages: [
+          run.m.notice_updated_note(),
+          run.m.notice_updated_note_no_region(),
+          run.m.notice_updated_note_no_managed_block(),
+        ],
+      },
+      { what: "the notice of the active note's update" },
+    );
+  });
+
   // Covers both the "rendered literature note" and "batch operation"
   // acceptance-criteria bullets together — a deliberate simplification, not
   // an oversight: update-all-notes is itself a batch write of Literature

@@ -197,7 +197,7 @@ it.effect("updates the full active note from the Update notes dialog", () =>
     yield* updateNotes(
       {
         ...harness.ports,
-        chooseNotes: () => Effect.succeed({ target: "note" }),
+        chooseNotes: (note) => Effect.succeed({ target: "note", note: note! }),
       },
       { file, itemKey: "1:ABCD2345" },
     ).pipe(Effect.provide(harness.layer));

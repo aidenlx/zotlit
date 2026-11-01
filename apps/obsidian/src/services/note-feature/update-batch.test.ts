@@ -2284,32 +2284,16 @@ describe("runBatchUpdateAll", () => {
       }),
   );
 
-  it.effect(
-    "routes a one-item multi-library expansion to the single-item path",
-    () =>
-      Effect.gen(function* () {
-        currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-        itemsIn(new Map([[3, GROUP_LIBRARY.libraryID]]));
-        // The one item goes to the trash between the library listing and its
-        // lookup, so the single-item path answers not-found.
-        const deps = makeDeps("ready", (client) => ({
-          ...client,
-          DisplayRefs: ((payload: object, options?: object) => {
-            db.$client.exec("insert into deletedItems (itemID) values (3)");
-            return (
-              client.DisplayRefs as unknown as (
-                payload: object,
-                options?: object,
-              ) => unknown
-            )(payload, options);
-          }) as unknown as ZoteroReadsClient["DisplayRefs"],
-        }));
+  it.effect("confirms a run over one item, as it does for many", () =>
+    Effect.gen(function* () {
+      currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
+      itemsIn(new Map([[3, GROUP_LIBRARY.libraryID]]));
 
-        expect(yield* runBatchUpdateAll(deps)).toEqual({
-          outcome: "not-found",
-        });
-        expect(openedModals).toHaveLength(0);
-      }),
+      expect(yield* runBatchUpdateAll(makeDeps())).toEqual({
+        outcome: "batch-modal",
+      });
+      expect(openedModals).toHaveLength(1);
+    }),
   );
 
   describe("exact target", () => {

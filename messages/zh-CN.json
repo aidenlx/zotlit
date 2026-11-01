@@ -400,7 +400,7 @@
   ],
   "notice_attachment_sources_skipped_action": "打开 ZotLit 设置",
   "notice_workbench_profile_saved": "已从网页模板工作台保存模板文档。",
-  "notice_workbench_profile_saved_action": "查看更改",
+  "notice_workbench_profile_saved_action": "更新现有笔记",
   "notice_imported_note": "已导入 {title}。",
   "notice_updated_imported_note": "更新了导入的笔记 {title}。",
   "modal_import_overwrite_title": "覆盖导入的笔记",

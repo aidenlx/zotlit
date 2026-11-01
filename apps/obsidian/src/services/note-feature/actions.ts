@@ -18,6 +18,7 @@ import {
 
 import type { NoteActions } from "./actions-handle";
 import type { UpdateScope } from "./operations";
+import type { ActiveNote } from "./update-notes-view";
 
 interface NoteFeatureActionDeps {
   app: App;
@@ -46,13 +47,8 @@ export function addNoteFeatureActions(
     id: "update-notes",
     name: m.command_update_notes_name(),
     callback() {
-      const file = deps.app.workspace.getActiveFile();
-      const itemKey =
-        file && isLiteratureNote(file, deps.app)
-          ? itemKeyFromFrontmatter(deps.app.metadataCache.getFileCache(file))
-          : undefined;
       void deps.noteActions.updateNotes(
-        file && itemKey ? { file, itemKey } : undefined,
+        literatureNoteIn(deps.app, deps.app.workspace.getActiveFile()),
       );
     },
   });
@@ -204,6 +200,15 @@ function addUpdateCommand(
   });
 }
 
+/** `file` and its item key, when `file` is a Literature Note. */
+function literatureNoteIn(app: App, file: unknown): ActiveNote | undefined {
+  if (!(file instanceof TFile) || !isLiteratureNote(file, app)) {
+    return undefined;
+  }
+  const itemKey = itemKeyFromFrontmatter(app.metadataCache.getFileCache(file));
+  return itemKey ? { file, itemKey } : undefined;
+}
+
 /**
  * Run `run` on the Literature Note `ctx` holds, unless `checking`: whether a
  * command applies there.
@@ -213,15 +218,9 @@ export function withLiteratureNote(
   options: { ctx: Pick<MarkdownFileInfo, "file">; checking: boolean },
   run: (file: TFile, itemKey: string) => void,
 ): boolean {
-  const file = options.ctx.file;
-  if (!(file instanceof TFile) || !isLiteratureNote(file, plugin.app)) {
-    return false;
-  }
-  const itemKey = itemKeyFromFrontmatter(
-    plugin.app.metadataCache.getFileCache(file),
-  );
-  if (!itemKey) return false;
-  if (!options.checking) run(file, itemKey);
+  const note = literatureNoteIn(plugin.app, options.ctx.file);
+  if (!note) return false;
+  if (!options.checking) run(note.file, note.itemKey);
   return true;
 }
 

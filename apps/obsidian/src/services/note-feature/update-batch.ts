@@ -182,11 +182,13 @@ export interface BatchUpdateOptions {
   scope?: UpdateScope;
   /**
    * Whether an item with no note gets one. The `metadata` scope leaves the body
-   * alone, so it creates none.
+   * alone, so it never creates one.
    *
-   * @default scope === "full"
+   * @default true
    */
   create?: boolean;
+  /** Confirm a run over one item too. Selections of one item skip the dialog. */
+  confirmOne?: boolean;
   /**
    * Selected Libraries this database holds no Library for. Stated in the
    * confirmation introduction so a partial run is visible before it writes.
@@ -234,12 +236,8 @@ export const batchUpdateItems = Effect.fn("batchUpdateItems")(function* (
   itemIDs: readonly number[],
   opts: BatchUpdateOptions = {},
 ) {
-  const {
-    scope = "full",
-    create = scope === "full",
-    unavailableLibraries = 0,
-    profile,
-  } = opts;
+  const { scope = "full", unavailableLibraries = 0, profile } = opts;
+  const create = scope === "full" && (opts.create ?? true);
   if (!(yield* databaseReady)) {
     yield* Effect.logWarning("Batch update: database not ready").pipe(
       Effect.annotateLogs({ count: itemIDs.length }),
@@ -261,7 +259,7 @@ export const batchUpdateItems = Effect.fn("batchUpdateItems")(function* (
     });
   }
   const profilesEnabled = (yield* profiles.profiles).length > 0;
-  if (restIDs.length === 0 && !profilesEnabled) {
+  if (restIDs.length === 0 && !profilesEnabled && !opts.confirmOne) {
     // Single id: hand the lightweight ref to updateNote, which owns the full
     // item load on the create path — no need to hydrate it here.
     const ref = yield* displayRef(firstID);
@@ -564,15 +562,9 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
         loadFailed: m.batch_update_load_failed(),
         runFailed: ports.notices.runFailed,
         progressLabel: m.batch_update_progress_label(),
-        confirmIntro: ({ actionable, notFound }) =>
+        confirmIntro: (counts) =>
           withUnavailableLibraries(
-            create
-              ? actionable === 0
-                ? m.batch_update_confirm_none({ count: notFound })
-                : m.batch_update_confirm_intro({ count: actionable })
-              : actionable === 0
-                ? m.batch_update_existing_confirm_none()
-                : m.batch_update_existing_confirm_intro({ count: actionable }),
+            create ? updateOrCreateIntro(counts) : updateExistingIntro(counts),
             unavailableLibraries,
           ),
         confirmButton: m.batch_update_confirm_button(),
@@ -1068,9 +1060,25 @@ export const runBatchUpdateAll = Effect.fn("runBatchUpdateAll")(function* (
   }
   return yield* runBatchUpdate(ports, plan.itemIDs, {
     create: options.create,
+    confirmOne: true,
     unavailableLibraries: plan.unavailableLibraries,
   });
 });
+
+function updateOrCreateIntro(counts: {
+  actionable: number;
+  notFound: number;
+}): string {
+  return counts.actionable === 0
+    ? m.batch_update_confirm_none({ count: counts.notFound })
+    : m.batch_update_confirm_intro({ count: counts.actionable });
+}
+
+function updateExistingIntro({ actionable }: { actionable: number }): string {
+  return actionable === 0
+    ? m.batch_update_existing_confirm_none()
+    : m.batch_update_existing_confirm_intro({ count: actionable });
+}
 
 function itemLabel(title: string | null, itemID: number): string {
   return title?.trim() || m.batch_update_untitled({ id: itemID });
