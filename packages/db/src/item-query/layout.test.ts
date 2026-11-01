@@ -65,7 +65,7 @@ function failureOf<A, E>(exit: Exit.Exit<A, E>): E {
 
 const firstPage = readScanPage({
   libraryID: SCENARIO_LIBRARIES.personal.libraryID,
-  afterKey: null,
+  afterItemID: 0,
 });
 
 /**

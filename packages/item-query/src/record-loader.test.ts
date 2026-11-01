@@ -53,7 +53,7 @@ async function open(scenario: ScenarioDatabase, request: Request) {
       const opened = seen;
       const page = yield* readScanPage({
         libraryID: personal.libraryID,
-        afterKey: null,
+        afterItemID: 0,
         size: HYDRATE_CHUNK_SIZE,
       });
       const scanned = yield* hydration.scan.load(page, () => personal);
