@@ -67,13 +67,13 @@ interface DragHandlers {
    * Follow the pointer.
    * @returns Whether the place under the pointer takes the drop.
    */
-  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+  // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   over: (event: globalThis.DragEvent) => boolean;
   /**
    * Take the drop, or leave it to the page.
    * @returns Whether the drag dropped.
    */
-  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+  // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   drop: (event: globalThis.DragEvent) => boolean;
   /**
    * Clean up after the drag, whatever ended it: a drop, the end of the drag
@@ -105,7 +105,7 @@ function followDrag(
     },
     { once: true },
   );
-  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+  // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   const over = (event: globalThis.DragEvent) => {
     if (!handlers.over(event)) return;
     event.preventDefault();
@@ -131,7 +131,7 @@ function followDrag(
  * would open its menu. A pointer let go with no click leaves later clicks.
  */
 function swallowClick(win: Window): void {
-  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+  // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   const swallow = (click: globalThis.MouseEvent) => {
     click.preventDefault();
     click.stopPropagation();

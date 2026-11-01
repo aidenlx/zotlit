@@ -1,0 +1,31 @@
+export const GenericL10n: null;
+/**
+ * NOTE: The L10n-implementations should use lowercase language-codes
+ *       internally.
+ */
+export class L10n {
+    static "__#private@#fixupLangCode"(langCode: any): any;
+    static "__#private@#isRTL"(lang: any): boolean;
+    constructor({ lang, isRTL }: {
+        lang: any;
+        isRTL: any;
+    }, l10n?: null);
+    _setL10n(l10n: any): void;
+    /** @inheritdoc */
+    getLanguage(): any;
+    /** @inheritdoc */
+    getDirection(): string;
+    /** @inheritdoc */
+    get(ids: any, args: null | undefined, fallback: any): Promise<any>;
+    /** @inheritdoc */
+    translate(element: any): Promise<void>;
+    /** @inheritdoc */
+    translateOnce(element: any): Promise<void>;
+    /** @inheritdoc */
+    destroy(): Promise<void>;
+    /** @inheritdoc */
+    pause(): void;
+    /** @inheritdoc */
+    resume(): void;
+    #private;
+}

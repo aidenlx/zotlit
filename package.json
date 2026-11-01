@@ -27,7 +27,7 @@
     "lint:messages": "node packages/scripts/scripts/check-messages.ts",
     "lint:unused": "node packages/scripts/scripts/check-unused-code.ts",
     "review": "turbo run //#review:plugin",
-    "review:plugin": "eslint",
+    "review:plugin": "eslint --quiet",
     "review:fix": "eslint --fix",
     "format": "oxfmt --check",
     "format:fix": "oxfmt",

@@ -57,6 +57,7 @@ function workbenchTargets(app: App, deps: RegistrationDeps) {
     if (!file || !itemKeyFromFrontmatter(app.metadataCache.getFileCache(file)))
       return null;
     const resolved = deps.registry.get(
+      // oxlint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- the checks above already prove a file
       fileProfileValueAtom((file as TFile).path),
     );
     if (!resolved?.ok) return null;

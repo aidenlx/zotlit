@@ -41,7 +41,7 @@ export function createItemDrag(deps: ItemDragDeps) {
       win.removeEventListener("dragend", cleanup);
       if (active === cleanup) active = null;
     };
-    // eslint-disable-next-line obsidianmd/editor-drop-paste
+    // oxlint-disable-next-line obsidianmd/editor-drop-paste -- handles only this view's own drag payload
     const dropRef = workspace.on("editor-drop", (dropEvent, editor, info) => {
       if (dropEvent.dataTransfer?.getData(ITEM_DRAG_TYPE) !== request) return;
       dropEvent.preventDefault();
@@ -64,7 +64,7 @@ export function createItemDrag(deps: ItemDragDeps) {
  * Refuse an Item dropped back on the Library View, so the pointer shows
  * that it lands nowhere.
  */
-// eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+// oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
 export function refuseItemDrop(event: globalThis.DragEvent): void {
   if (!event.dataTransfer?.types.includes(ITEM_DRAG_TYPE)) return;
   event.preventDefault();

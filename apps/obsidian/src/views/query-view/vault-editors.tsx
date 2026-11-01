@@ -217,7 +217,7 @@ function addChipItems(menu: Menu, { item, edit, remove }: ChipMenu) {
 function showMenu(
   menu: Menu,
   anchor: HTMLElement,
-  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+  // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   pointer: globalThis.MouseEvent | null,
 ) {
   if (!pointer || (pointer.clientX === 0 && pointer.clientY === 0))
@@ -238,7 +238,7 @@ function showMenu(
  */
 export function openChipMenu(
   chip: HTMLElement,
-  // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+  // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
   pointer: globalThis.MouseEvent | null,
   item: ChipMenu,
 ): Menu | null {

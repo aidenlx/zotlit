@@ -216,7 +216,7 @@ export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
     };
     const operation: ActiveDrag = { cancel: cleanup };
     const onDragEnd = () => cleanup();
-    // eslint-disable-next-line obsidianmd/editor-drop-paste
+    // oxlint-disable-next-line obsidianmd/editor-drop-paste -- handles only this view's own drag payload
     const dropRef = workspace.on("editor-drop", (dropEvent, editor, info) => {
       if (dropEvent.dataTransfer?.getData(SOURCE_TAG) !== request) return;
       dropEvent.preventDefault();
@@ -249,7 +249,7 @@ function insertDrop<R>(
   options: {
     annotation: AnnotationRecord;
     snapshot: AnnotationSnapshot;
-    // eslint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
+    // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
     dropEvent: globalThis.DragEvent;
     editor: Editor;
     info: MarkdownFileInfo;

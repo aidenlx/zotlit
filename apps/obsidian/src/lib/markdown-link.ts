@@ -35,7 +35,7 @@ export function syntheticFile(filePath: string): TFile {
   const hasExt = dot > 0 && dot < name.length - 1;
   // Building the synthetic TFile itself; `instanceof TFile` narrowing
   // doesn't apply here.
-  // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+  // oxlint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- builds a path-only stand-in, not a vault lookup
   return Object.assign(Object.create(TFile.prototype) as TFile, {
     path: filePath,
     name,
