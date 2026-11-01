@@ -51,6 +51,16 @@ describe("filterFields", () => {
     expect(fields.filter((f) => f.path === "date.year")).toHaveLength(1);
   });
 
+  it("offers a whole date field beside its parts", () => {
+    const type = (dataset: "annotations" | "items", path: string) =>
+      filterFields(dataset).find((f) => f.path === path)?.type;
+    expect(type("items", "date")).toBe("date");
+    expect(type("items", "filingDate")).toBe("date");
+    expect(type("annotations", "item.issueDate")).toBe("date");
+    // A record is no condition of its own, though its parts are.
+    expect(type("items", "firstAuthor")).toBeUndefined();
+  });
+
   it("offers the Item's fields on the datasets below it", () => {
     expect(
       filterFields("annotations").find(

@@ -171,14 +171,27 @@ export const isDatasetFieldKind = (
   kind: FilterFieldKind,
 ): kind is DatasetFilterFieldKind => kind.startsWith("field:");
 
-/** The cells of `dataset` its planner reads, less the paths in `common`. */
+/**
+ * The paths a condition can test: each cell of `dataset`, after the field it
+ * is part of, as `date` comes before `date.year`.
+ */
+function conditionPaths(dataset: FilterDataset): Set<string> {
+  return new Set(
+    cellProperties(ENGINES[dataset]).flatMap((path) => {
+      const dot = path.lastIndexOf(".");
+      return dot < 0 ? [path] : [path.slice(0, dot), path];
+    }),
+  );
+}
+
+/** The paths of `dataset` its planner types, less the paths in `common`. */
 function otherFields(
   dataset: FilterDataset,
   common: readonly FilterField[],
 ): FilterField[] {
   const engine = ENGINES[dataset];
   const taken = new Set(common.map((field) => field.path));
-  return cellProperties(engine).flatMap((path): FilterField[] => {
+  return [...conditionPaths(dataset)].flatMap((path): FilterField[] => {
     if (taken.has(path)) return [];
     const plan = engine.planFilter(path);
     if ("kind" in plan) return [];
