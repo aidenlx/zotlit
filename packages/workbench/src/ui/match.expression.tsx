@@ -28,6 +28,7 @@ import { underlineOnlyLint } from "./underline-lint";
 import {
   filterExpressionHighlighting,
   filterExpressionLanguage,
+  filterExpressionPairing,
 } from "#/language/filter-expression";
 import { filterExpressionCompletion } from "#/language/filter-expression-completion";
 import { signatureHint } from "#/language/signature-hint-tooltip";
@@ -174,6 +175,7 @@ export function MatchExpressionInput({
         extensions: [
           filterExpressionLanguage,
           filterExpressionHighlighting,
+          filterExpressionPairing,
           signatureHint({
             receiver: (source, at) =>
               props.current.vocabulary?.receiver?.(source, at),
