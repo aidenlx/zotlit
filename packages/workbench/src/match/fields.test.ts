@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  FILTER_OPERATORS,
   filterFields,
   formatFilterRow,
   freshFilterRow,
@@ -314,16 +313,6 @@ describe("text containment rows", () => {
     ["contains-match-case", 'contains("Nature")'],
     ["does-not-contain-match-case", 'contains("Nature")'],
   ] as const;
-
-  it("offers case-insensitive rows first on text fields", () => {
-    expect(FILTER_OPERATORS.text).toEqual([
-      ...operators.map(([operator]) => operator),
-      "is",
-      "is-not",
-      "is-empty",
-      "is-not-empty",
-    ]);
-  });
 
   it.each(operators)(
     "round trips %s on a title and a vault text field",

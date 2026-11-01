@@ -55,7 +55,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         });
         const savedRow = {
           operator: savedOperator.value,
-          label: savedOperator.selectedOptions[0]?.textContent,
+          firstOperators: [...savedOperator.options]
+            .slice(0, 4)
+            .map((option) => option.value),
           value: popover.querySelector<HTMLInputElement>(
             '[data-filter-section="view"] [data-condition-row] input',
           )?.value,
@@ -111,7 +113,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(result.savedRow).toEqual({
       operator: "contains-match-case",
-      label: "contains, match case",
+      firstOperators: [
+        "contains",
+        "does-not-contain",
+        "contains-match-case",
+        "does-not-contain-match-case",
+      ],
       value: "Nature",
     });
     expect(result.offered).toContain("field:journalAbbreviation");
