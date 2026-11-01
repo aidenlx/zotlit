@@ -427,11 +427,11 @@ const runBatchUpdate = Effect.fnUntraced(function* (
 /** {@link runBatchUpdateAllEffect} on the case's services. */
 const runBatchUpdateAll = Effect.fnUntraced(function* (
   deps: UpdateDeps,
-  target?: Parameters<typeof runBatchUpdateAllEffect>[1],
+  options?: Parameters<typeof runBatchUpdateAllEffect>[1],
 ) {
   return yield* runBatchUpdateAllEffect(
     portsOf(deps, yield* scopedBridge),
-    target,
+    options,
   ).pipe(Effect.provide(deps.layer));
 });
 
@@ -440,6 +440,8 @@ async function classifyLastModal(): Promise<{
   tasks: { id: number; kind: string }[];
   groups: FlatGroupDef[];
   intro: string;
+  skipped: { itemID: number }[];
+  skippedHeader?: (args: { count: number }) => string;
 }> {
   const opts = openedModals.at(-1);
   if (!opts) throw new Error("no modal was opened");
@@ -450,6 +452,8 @@ async function classifyLastModal(): Promise<{
   return {
     tasks: manifest.options.tasks,
     groups: manifest.options.groups,
+    skipped: manifest.options.upToDate,
+    skippedHeader: manifest.options.upToDateHeader,
     intro: opts.text.confirmIntro({
       actionable: manifest.options.tasks.length,
       notFound: manifest.options.notFound.length,
@@ -2160,6 +2164,51 @@ describe("runBatchUpdateAll", () => {
       }),
   );
 
+  it.effect("leaves papers with no note out of an existing-only run", () =>
+    Effect.gen(function* () {
+      itemsIn(
+        new Map([
+          [1, USER_LIBRARY_ID],
+          [2, USER_LIBRARY_ID],
+        ]),
+      );
+
+      yield* runBatchUpdateAll(makeDeps(), { create: false });
+
+      const { tasks, skipped, skippedHeader, intro } = yield* Effect.promise(
+        () => classifyLastModal(),
+      );
+      expect(tasks).toEqual([]);
+      expect(skipped.map((row) => row.itemID)).toEqual([1, 2]);
+      expect(skippedHeader?.({ count: 2 })).toBe(
+        m.batch_update_group_no_note({ count: 2 }),
+      );
+      expect(intro).toBe(m.batch_update_existing_confirm_none());
+      expect(
+        openedModals[0]?.text.confirmIntro({ actionable: 3, notFound: 0 }),
+      ).toBe(m.batch_update_existing_confirm_intro({ count: 3 }));
+    }),
+  );
+
+  it.effect("creates missing notes in a run that asks for them", () =>
+    Effect.gen(function* () {
+      itemsIn(
+        new Map([
+          [1, USER_LIBRARY_ID],
+          [2, USER_LIBRARY_ID],
+        ]),
+      );
+
+      yield* runBatchUpdateAll(makeDeps(), { create: true });
+
+      const { tasks } = yield* Effect.promise(() => classifyLastModal());
+      expect(tasks.map((task) => task.kind)).toEqual([
+        expect.stringContaining("create"),
+        expect.stringContaining("create"),
+      ]);
+    }),
+  );
+
   it.effect(
     "runs the available subset and states the unavailable library count",
     () =>
@@ -2235,32 +2284,16 @@ describe("runBatchUpdateAll", () => {
       }),
   );
 
-  it.effect(
-    "routes a one-item multi-library expansion to the single-item path",
-    () =>
-      Effect.gen(function* () {
-        currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
-        itemsIn(new Map([[3, GROUP_LIBRARY.libraryID]]));
-        // The one item goes to the trash between the library listing and its
-        // lookup, so the single-item path answers not-found.
-        const deps = makeDeps("ready", (client) => ({
-          ...client,
-          DisplayRefs: ((payload: object, options?: object) => {
-            db.$client.exec("insert into deletedItems (itemID) values (3)");
-            return (
-              client.DisplayRefs as unknown as (
-                payload: object,
-                options?: object,
-              ) => unknown
-            )(payload, options);
-          }) as unknown as ZoteroReadsClient["DisplayRefs"],
-        }));
+  it.effect("confirms a run over one item, as it does for many", () =>
+    Effect.gen(function* () {
+      currentScope = scopeOf([PERSONAL_LIBRARY, GROUP_LIBRARY]);
+      itemsIn(new Map([[3, GROUP_LIBRARY.libraryID]]));
 
-        expect(yield* runBatchUpdateAll(deps)).toEqual({
-          outcome: "not-found",
-        });
-        expect(openedModals).toHaveLength(0);
-      }),
+      expect(yield* runBatchUpdateAll(makeDeps())).toEqual({
+        outcome: "batch-modal",
+      });
+      expect(openedModals).toHaveLength(1);
+    }),
   );
 
   describe("exact target", () => {

@@ -329,6 +329,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
         ),
       ).toBe(true);
+      await obRun(
+        run.vaultId,
+        async (_context, { actionLabel }) => {
+          const action = Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(".notice button"),
+          ).find((button) => button.textContent.trim() === actionLabel);
+          action?.click();
+        },
+        { actionLabel: run.m.notice_workbench_profile_saved_action() },
+      );
+      const confirmIntro = run.m
+        .batch_update_existing_confirm_intro({ count: "…" })
+        .split("…")[0]!;
+      await obRunUntil(
+        run.vaultId,
+        async (_context, { confirmIntro }) =>
+          activeDocument
+            .querySelector(".modal")
+            ?.textContent.includes(confirmIntro) ?? false,
+        { confirmIntro },
+        { what: "the existing-notes confirmation of the Workbench notice" },
+      );
+      await clickModalButton(run.vaultId, run.m.modal_cancel());
       await suite.mainSettings();
       await obRunUntil(
         run.vaultId,
