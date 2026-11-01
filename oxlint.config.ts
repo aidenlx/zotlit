@@ -22,7 +22,6 @@ export default defineConfig({
     ".scratch/**",
     "tests/fixture-vault-*/**",
     "packages/scripts/lib/fixture/vault-plugins/**",
-    "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
     "video/**",
   ],

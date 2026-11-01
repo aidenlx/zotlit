@@ -19,7 +19,7 @@
     "@zotlit/obsidian": "workspace:*",
     "@zotlit/protocol": "workspace:*",
     "@zotlit/scripts": "workspace:*",
-    "obsidian": "workspace:*",
+    "obsidian": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
     "yargs": "catalog:",

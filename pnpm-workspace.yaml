@@ -66,6 +66,7 @@ catalog:
   fflate: ^0.8.2
   jieba-wasm: 2.4.0
   monkey-around: 3.0.0
+  obsidian: 1.14.4
   oxc-parser: ^0.155.0
   oxfmt: ^0.74.0
   oxlint: 1.89.0

@@ -100,7 +100,7 @@
     "fake-indexeddb": "6.2.5",
     "happy-dom": "catalog:",
     "jieba-wasm": "catalog:",
-    "obsidian": "workspace:*",
+    "obsidian": "catalog:",
     "oxlint": "catalog:",
     "pandoc-wasm": "^1.1.0",
     "tailwindcss": "catalog:",

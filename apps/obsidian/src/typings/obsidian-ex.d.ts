@@ -9,7 +9,7 @@ declare global {
    * (`createDiv()` etc., see `interface Node` in `obsidian.d.ts`), patched
    * onto every window — main and popout alike — so a detached element built
    * from a specific `doc.win` lands in that window's own document instead of
-   * always the main one. Missing from the vendored `obsidian-api` typings.
+   * always the main one. Missing from the `obsidian` typings.
    */
   interface Window {
     createEl<K extends keyof HTMLElementTagNameMap>(
