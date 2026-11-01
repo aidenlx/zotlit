@@ -1,0 +1,1400 @@
+<!doctype html>
+<!--
+  PROTOTYPE: throwaway. Lives only on the branch prototype/note-update-model.
+
+  Design question: if ZotLit separates "how much of a note to refresh" from
+  "which notes to include", can one Update all action cover discussion #1903
+  and the awkward cases, and are its defaults safe?
+
+  Behaviour marked as Today comes from update-batch.ts, write-pipeline.ts and
+  ADR 0079. Behaviour marked as Proposed is the idea under test.
+  The logic is the first <script>: pure, with no DOM. The rest is a thin shell.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prototype: updating literature notes</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-surface: var(--surface);
+        --color-line: var(--line);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-accent: var(--accent);
+        --color-accent-soft: var(--accent-soft);
+        --color-ok: var(--ok);
+        --color-warn: var(--warn);
+        --color-danger: var(--danger);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-data: var(--font-data);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #eef1f2;
+        --surface: #ffffff;
+        --line: #d5dcde;
+        --ink: #17252a;
+        --muted: #586a70;
+        --accent: #0f5f73;
+        --accent-soft: #dcecf0;
+        --ok: #24704a;
+        --warn: #96570c;
+        --danger: #ad2a2a;
+        --font-display: "Archivo", sans-serif;
+        --font-body: "Source Sans 3", sans-serif;
+        --font-data: "IBM Plex Mono", monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #101719;
+          --surface: #182225;
+          --line: #2f3e43;
+          --ink: #e4ecee;
+          --muted: #93a5aa;
+          --accent: #6cc4d8;
+          --accent-soft: #1d3b43;
+          --ok: #6fce9a;
+          --warn: #e5ad5e;
+          --danger: #f08b8b;
+        }
+      }
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+      }
+      h1,
+      h2,
+      h3 {
+        text-wrap: balance;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime"
+        }
+      }
+    </script>
+
+    <!-- The liftable logic: a pure reducer plus plan(). No DOM below this line. -->
+    <script>
+      window.NoteUpdateModel = (() => {
+        const PAPERS_WITHOUT_LISTED_ROW = 4992;
+        const fmt = (n) => n.toLocaleString("en-US");
+        const plural = (n, one, many = one + "s") =>
+          `${fmt(n)} ${n === 1 ? one : many}`;
+
+        const seedItems = () => [
+          {
+            key: "kuhn",
+            paper: "Kuhn 1962",
+            journal: "Univ. of Chicago Press",
+            dateAdded: "2024-03-02",
+            collection: "Reading group",
+            inScope: true,
+          },
+          {
+            key: "latour",
+            paper: "Latour 1987",
+            journal: "Harvard Univ. Press",
+            dateAdded: "2024-05-19",
+            collection: null,
+            inScope: true,
+          },
+          {
+            key: "haraway",
+            paper: "Haraway 1988",
+            journal: "Feminist Studies",
+            dateAdded: "2025-01-11",
+            collection: "Reading group",
+            inScope: true,
+          },
+          {
+            key: "shapin",
+            paper: "Shapin 1994",
+            journal: "Univ. of Chicago Press",
+            dateAdded: "2025-02-08",
+            collection: null,
+            inScope: true,
+          },
+          {
+            key: "foucault",
+            paper: "Foucault 1975",
+            journal: "Gallimard",
+            dateAdded: "2025-06-30",
+            collection: null,
+            inScope: true,
+          },
+          {
+            key: "merton",
+            paper: "Merton 1973",
+            journal: "Univ. of Chicago Press",
+            dateAdded: "2023-11-21",
+            collection: null,
+            inScope: false,
+          },
+          {
+            key: "arendt",
+            paper: "Arendt 1958",
+            journal: "Univ. of Chicago Press",
+            dateAdded: "2025-09-14",
+            collection: "Reading group",
+            inScope: true,
+          },
+        ];
+
+        const seedNote = (profile, oneLine, own, region) => ({
+          profile,
+          props: null,
+          oneLine,
+          own,
+          region,
+          fixedVersion: 1,
+        });
+
+        const initial = (model = "proposed", createRule = "bySource") => {
+          const items = seedItems();
+          const template = {
+            fields: ["journal"],
+            regionVersion: 1,
+            fixedVersion: 1,
+          };
+          const notes = {
+            kuhn: seedNote(
+              "Default",
+              "Paradigms and revolutions",
+              "My reading notes",
+              null,
+            ),
+            latour: seedNote(
+              "Default",
+              "Follow the actors",
+              "My reading notes",
+              null,
+            ),
+            haraway: seedNote(
+              "With managed section",
+              "Situated knowledges",
+              "My reading notes",
+              1,
+            ),
+            shapin: seedNote(
+              "Made with ZotLit v1",
+              "Trust in early science",
+              "My reading notes",
+              null,
+            ),
+            foucault: seedNote(
+              "Unavailable profile",
+              "Discipline",
+              "My reading notes",
+              null,
+            ),
+            merton: seedNote(
+              "Default",
+              "Norms of science",
+              "My reading notes",
+              null,
+            ),
+          };
+          for (const key of Object.keys(notes)) {
+            const item = items.find((entry) => entry.key === key);
+            notes[key].props = renderProps(item, template);
+          }
+          return {
+            model,
+            createRule,
+            template,
+            items,
+            notes,
+            papersWithoutListedRow: PAPERS_WITHOUT_LISTED_ROW,
+            createdInBulk: 0,
+            selected: "kuhn",
+            dialog: null,
+            changed: [],
+            lastEvent: "This is the starting library.",
+            log: [],
+          };
+        };
+
+        function renderProps(item, template) {
+          return Object.fromEntries(
+            template.fields.map((field) => [field, item[field]]),
+          );
+        }
+
+        const FIELD_LABEL = { journal: "Publisher", dateAdded: "Date added" };
+
+        /** Why a note differs from Zotero and the template, in plain words. */
+        function outOfDate(state, key) {
+          const note = state.notes[key];
+          const item = state.items.find((entry) => entry.key === key);
+          const reasons = [];
+          for (const field of state.template.fields) {
+            if (note.props[field] === undefined)
+              reasons.push(`no ${FIELD_LABEL[field]}`);
+            else if (note.props[field] !== item[field])
+              reasons.push(`${FIELD_LABEL[field]} differs`);
+          }
+          if (
+            note.region !== null &&
+            note.region !== state.template.regionVersion
+          )
+            reasons.push("old managed section");
+          return reasons;
+        }
+
+        const noteKeys = (state) => Object.keys(state.notes);
+
+        /** Which papers a target reaches. This is the "which notes" choice. */
+        function plan(state, target) {
+          const pool = state.items.filter((item) => {
+            if (target.kind === "library") return item.inScope;
+            if (target.kind === "collection")
+              return item.collection === target.collection;
+            return target.keys.includes(item.key);
+          });
+          const update = pool
+            .filter((item) => state.notes[item.key])
+            .map((item) => item.key);
+          const createNamed = pool
+            .filter((item) => !state.notes[item.key])
+            .map((item) => item.key);
+          const createUnnamed =
+            target.kind === "library" ? state.papersWithoutListedRow : 0;
+          return {
+            update,
+            createNamed,
+            createUnnamed,
+            createCount: createNamed.length + createUnnamed,
+            withRegion: update.filter((key) => state.notes[key].region !== null)
+              .length,
+            outside:
+              target.kind === "library"
+                ? noteKeys(state).filter(
+                    (key) =>
+                      !state.items.find((item) => item.key === key).inScope,
+                  )
+                : [],
+          };
+        }
+
+        /** The default of Also create. The createRule lever is the question. */
+        function createStartsOn(state, source) {
+          if (state.createRule === "alwaysOff") return false;
+          return (
+            source === "zotero-selection" || source === "zotero-collection"
+          );
+        }
+
+        /** The text and controls the batch confirmation shows now. */
+        function dialogView(state) {
+          const dialog = state.dialog;
+          if (!dialog || dialog.kind !== "bulk") return null;
+          const p = plan(state, dialog.target);
+          const creating = dialog.alsoCreate ? p.createCount : 0;
+          const lines = [];
+          if (state.model === "today") {
+            const total = p.update.length + creating;
+            return {
+              heading: "Update literature notes",
+              intro: `Update or create ${fmt(total)} literature notes?`,
+              showCreateControl: false,
+              showRegionControl: false,
+              groups: [
+                `Update (${fmt(p.update.length)})`,
+                ...(creating ? [`Create (${fmt(creating)})`] : []),
+                ...(!dialog.alsoCreate && p.createCount
+                  ? [`Skipped (${fmt(p.createCount)})`]
+                  : []),
+              ],
+              lines,
+              confirm: "Update notes",
+              plan: p,
+            };
+          }
+          if (!dialog.alsoCreate && p.createCount)
+            lines.push(
+              `${plural(p.createCount, "paper has", "papers have")} no note and stay out of your vault.`,
+            );
+          const blocked = p.update.filter(
+            (key) => state.notes[key].profile === "Unavailable profile",
+          ).length;
+          if (blocked)
+            lines.push(
+              `${plural(blocked, "note")} cannot update, because its profile is unavailable.`,
+            );
+          if (p.outside.length)
+            lines.push(
+              `${plural(p.outside.length, "note stays", "notes stay")} as it is, because its paper is outside your library scope.`,
+            );
+          const intro =
+            p.update.length === 0 && !dialog.alsoCreate
+              ? "There is nothing to update."
+              : creating
+                ? `Update ${plural(p.update.length, "note")} and create ${plural(creating, "new note")}?`
+                : `Update ${plural(p.update.length, "literature note")}?`;
+          return {
+            heading: "Update literature notes",
+            intro,
+            showCreateControl: p.createCount > 0,
+            createLabel: `Also create ${plural(p.createCount, "new note")}`,
+            showRegionControl: p.withRegion > 0,
+            regionLabel: `Refresh managed sections in ${plural(p.withRegion, "note")}`,
+            groups: [],
+            lines,
+            confirm: creating ? "Update and create" : "Update notes",
+            plan: p,
+          };
+        }
+
+        function updateNote(state, key, refreshRegion) {
+          const note = state.notes[key];
+          if (note.profile === "Unavailable profile") return false;
+          const item = state.items.find((entry) => entry.key === key);
+          state.notes[key] = {
+            ...note,
+            props: { ...note.props, ...renderProps(item, state.template) },
+            region:
+              refreshRegion && note.region !== null
+                ? state.template.regionVersion
+                : note.region,
+          };
+          return true;
+        }
+
+        function createNote(state, key) {
+          const item = state.items.find((entry) => entry.key === key);
+          state.notes[key] = {
+            profile: "Default",
+            props: renderProps(item, state.template),
+            oneLine: "",
+            own: "",
+            region: null,
+            fixedVersion: state.template.fixedVersion,
+          };
+        }
+
+        /** Why an action cannot run now, or null when it can. */
+        function refusal(state, action) {
+          const inDialog = [
+            "toggleCreate",
+            "toggleRegions",
+            "confirm",
+            "cancel",
+          ].includes(action.type);
+          const always = [
+            "reset",
+            "setModel",
+            "setCreateRule",
+            "selectNote",
+          ].includes(action.type);
+          if (state.dialog && !inDialog && !always)
+            return "Finish or cancel the open dialog first.";
+          if (!state.dialog && inDialog) return "No dialog is open.";
+          if (
+            action.type === "startBulk" &&
+            action.scope === "metadata" &&
+            state.model === "proposed"
+          )
+            return "Proposed removes this Zotero entry. Use Update all and clear Refresh managed sections.";
+          if (action.type === "overwriteAll")
+            return "ZotLit has no bulk Overwrite, today or in the proposal. Overwrite works on one note, after a confirmation.";
+          if (
+            [
+              "updateNote",
+              "overwriteAsk",
+              "writeInNote",
+              "editManaged",
+            ].includes(action.type) &&
+            !state.notes[state.selected]
+          )
+            return "Choose a paper that has a note.";
+          return null;
+        }
+
+        const titleOf = (state, key) =>
+          state.items.find((item) => item.key === key).paper;
+
+        function reduce(previous, action) {
+          if (action.type === "reset")
+            return initial(
+              action.model ?? previous.model,
+              action.createRule ?? previous.createRule,
+            );
+          const reason = refusal(previous, action);
+          const state = structuredClone(previous);
+          state.changed = [];
+          const say = (text) => {
+            state.lastEvent = text;
+            state.log = [text, ...state.log].slice(0, 12);
+          };
+          if (reason) {
+            say(`Refused. ${reason}`);
+            return state;
+          }
+          switch (action.type) {
+            case "setModel":
+              state.model = action.model;
+              state.dialog = null;
+              say(
+                action.model === "today"
+                  ? "Now showing today's behaviour."
+                  : "Now showing the proposal.",
+              );
+              break;
+            case "setCreateRule":
+              state.createRule = action.rule;
+              say(
+                action.rule === "alwaysOff"
+                  ? "Also create now always starts clear."
+                  : "Also create now starts ticked for a Zotero selection or collection.",
+              );
+              break;
+            case "selectNote":
+              state.selected = action.key;
+              break;
+            case "changeInZotero": {
+              const item = state.items.find(
+                (entry) => entry.key === state.selected,
+              );
+              item.journal = `${item.journal} (corrected)`;
+              say(
+                `You corrected ${item.paper} in Zotero. Its note does not change until an update.`,
+              );
+              break;
+            }
+            case "addProperty":
+              if (!state.template.fields.includes("dateAdded"))
+                state.template.fields.push("dateAdded");
+              say(
+                "You added Date added to the template. Existing notes do not have it yet.",
+              );
+              break;
+            case "changeRegion":
+              state.template.regionVersion += 1;
+              say("You changed the managed section of the template.");
+              break;
+            case "changeFixed":
+              state.template.fixedVersion += 1;
+              say(
+                "You changed the fixed text of the template. Only new or overwritten notes use it.",
+              );
+              break;
+            case "addPaper":
+              if (!state.items.some((item) => item.key === "hooks")) {
+                state.items.push({
+                  key: "hooks",
+                  paper: "hooks 1994",
+                  journal: "Routledge",
+                  dateAdded: "2026-10-30",
+                  collection: "Reading group",
+                  inScope: true,
+                });
+              }
+              say(
+                "You added hooks 1994 to the Reading group collection in Zotero.",
+              );
+              break;
+            case "writeInNote":
+              state.notes[state.selected].own =
+                `${state.notes[state.selected].own} + new thought`;
+              state.changed = [state.selected];
+              say(
+                `You wrote in the note for ${titleOf(state, state.selected)}.`,
+              );
+              break;
+            case "editManaged":
+              state.notes[state.selected].props.journal = "My own wording";
+              state.changed = [state.selected];
+              say(
+                `You typed over Publisher in ${titleOf(state, state.selected)}. The template manages this property.`,
+              );
+              break;
+            case "updateNote": {
+              const metadataOnly = action.scope === "metadata";
+              const ok = updateNote(state, state.selected, !metadataOnly);
+              if (ok) state.changed = [state.selected];
+              say(
+                ok
+                  ? `Updated ${titleOf(state, state.selected)}${metadataOnly ? " (properties only)" : ""}. Your writing stayed.`
+                  : `${titleOf(state, state.selected)} was not updated. Its profile is unavailable, so choose another profile first.`,
+              );
+              break;
+            }
+            case "overwriteAsk":
+              state.dialog = { kind: "overwrite", key: state.selected };
+              say(
+                `Asking before Overwrite replaces the body of ${titleOf(state, state.selected)}.`,
+              );
+              break;
+            case "startBulk": {
+              const scope = action.scope ?? "full";
+              const alsoCreate =
+                state.model === "today"
+                  ? scope === "full"
+                  : createStartsOn(state, action.source);
+              state.dialog = {
+                kind: "bulk",
+                target: action.target,
+                source: action.source,
+                scope,
+                alsoCreate,
+                refreshRegions: scope === "full",
+              };
+              say(`${action.label} opened the confirmation.`);
+              break;
+            }
+            case "toggleCreate":
+              state.dialog.alsoCreate = !state.dialog.alsoCreate;
+              say(
+                state.dialog.alsoCreate
+                  ? "Also create is ticked."
+                  : "Also create is clear.",
+              );
+              break;
+            case "toggleRegions":
+              state.dialog.refreshRegions = !state.dialog.refreshRegions;
+              say(
+                state.dialog.refreshRegions
+                  ? "Managed sections will refresh."
+                  : "Managed sections stay as they are. Properties still update.",
+              );
+              break;
+            case "cancel":
+              state.dialog = null;
+              say("Cancelled. Nothing changed.");
+              break;
+            case "confirm": {
+              const dialog = state.dialog;
+              state.dialog = null;
+              if (dialog.kind === "overwrite") {
+                const note = state.notes[dialog.key];
+                if (note.profile === "Unavailable profile") {
+                  say(
+                    `${titleOf(state, dialog.key)} was not overwritten. Its profile is unavailable.`,
+                  );
+                  break;
+                }
+                const item = state.items.find(
+                  (entry) => entry.key === dialog.key,
+                );
+                state.notes[dialog.key] = {
+                  ...note,
+                  props: {
+                    ...note.props,
+                    ...renderProps(item, state.template),
+                  },
+                  own: "",
+                  region:
+                    note.region === null ? null : state.template.regionVersion,
+                  fixedVersion: state.template.fixedVersion,
+                };
+                state.changed = [dialog.key];
+                say(
+                  `Overwrote ${titleOf(state, dialog.key)}. Your writing in the body is gone. Your own property stayed.`,
+                );
+                break;
+              }
+              const p = plan(state, dialog.target);
+              let updated = 0;
+              let failed = 0;
+              for (const key of p.update) {
+                if (updateNote(state, key, dialog.refreshRegions)) {
+                  updated += 1;
+                  state.changed.push(key);
+                } else failed += 1;
+              }
+              let created = 0;
+              if (dialog.alsoCreate) {
+                for (const key of p.createNamed) {
+                  createNote(state, key);
+                  state.changed.push(key);
+                  created += 1;
+                }
+                created += p.createUnnamed;
+                state.createdInBulk += p.createUnnamed;
+                state.papersWithoutListedRow -= p.createUnnamed;
+              }
+              say(
+                `Done. ${fmt(created)} created, ${fmt(updated)} updated, ${fmt(failed)} failed.`,
+              );
+              break;
+            }
+          }
+          return state;
+        }
+
+        const papersWithoutNote = (state) =>
+          state.papersWithoutListedRow +
+          state.items.filter((item) => item.inScope && !state.notes[item.key])
+            .length;
+        const notesInVault = (state) =>
+          noteKeys(state).length + state.createdInBulk;
+
+        return {
+          initial,
+          reduce,
+          plan,
+          dialogView,
+          outOfDate,
+          papersWithoutNote,
+          notesInVault,
+          FIELD_LABEL,
+          fmt,
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/jsx" id="app">
+      import React, { useState } from "react";
+      import { createRoot } from "react-dom/client";
+
+      const M = window.NoteUpdateModel;
+      const LIBRARY = { kind: "library" };
+      const READING_GROUP = { kind: "collection", collection: "Reading group" };
+      const EVERYTHING = {
+        type: "startBulk",
+        target: LIBRARY,
+        source: "zotero-selection",
+        label: "Select all in Zotero, then Create or Update",
+      };
+
+      const ACT = {
+        addProperty: { type: "addProperty" },
+        changeRegion: { type: "changeRegion" },
+        changeFixed: { type: "changeFixed" },
+        workbench: {
+          type: "startBulk",
+          target: LIBRARY,
+          source: "workbench",
+          label: "The Update all notes button after a Workbench save",
+        },
+        palette: {
+          type: "startBulk",
+          target: LIBRARY,
+          source: "palette",
+          label: "The Update all command",
+        },
+        collection: {
+          type: "startBulk",
+          target: READING_GROUP,
+          source: "zotero-collection",
+          label: "Create or Update on the Reading group collection",
+        },
+        pair: {
+          type: "startBulk",
+          target: { kind: "selection", keys: ["latour", "arendt"] },
+          source: "zotero-selection",
+          label: "Create or Update on two selected papers",
+        },
+        everything: EVERYTHING,
+        metadataAll: {
+          ...EVERYTHING,
+          scope: "metadata",
+          label: "Select all in Zotero, then Update Metadata",
+        },
+        confirm: { type: "confirm" },
+        cancel: { type: "cancel" },
+        toggleCreate: { type: "toggleCreate" },
+        toggleRegions: { type: "toggleRegions" },
+      };
+
+      const WALKTHROUGHS = [
+        {
+          id: "subset",
+          tab: "#1903: my subset",
+          text: "A researcher keeps 5,000 papers in Zotero and notes for a small subset. They add a property to the template and want only their existing notes to get it.",
+          watch:
+            "Notes in vault must stay the same, and the one-line descriptions must stay.",
+          model: "proposed",
+          steps: [
+            ["Add Date added to the template", ACT.addProperty],
+            ["Press Update all notes after saving", ACT.workbench],
+            ["Confirm", ACT.confirm],
+          ],
+        },
+        {
+          id: "today",
+          tab: "Same clicks today",
+          text: "The same researcher makes the same clicks in today's ZotLit.",
+          watch:
+            "Compare Notes in vault and the dialog wording with the first tab.",
+          model: "today",
+          steps: [
+            ["Add Date added to the template", ACT.addProperty],
+            ["Press Update all notes after saving", ACT.workbench],
+            ["Confirm", ACT.confirm],
+          ],
+        },
+        {
+          id: "selectall",
+          tab: "Select all in Zotero",
+          text: "The hard case for the default. The researcher selects everything in Zotero, so the run comes from a selection. Should Also create start ticked?",
+          watch:
+            "See which rule feels right. A Zotero selection usually means these papers, but not after Select all.",
+          model: "proposed",
+          steps: [
+            ["Select all in Zotero, then Create or Update", ACT.everything],
+            ["Cancel", ACT.cancel],
+            [
+              "Change the rule: always start clear",
+              { type: "setCreateRule", rule: "alwaysOff" },
+            ],
+            ["Run the same selection again", ACT.everything],
+            ["Cancel", ACT.cancel],
+            ["Now select two papers, one with no note", ACT.pair],
+          ],
+        },
+        {
+          id: "managed",
+          tab: "Managed sections",
+          text: "Haraway 1988 uses a profile with a managed section. This researcher wants a new property everywhere and does not want that section rebuilt.",
+          watch:
+            "After the run, Haraway has Date added and keeps the old managed section. The control appears only because one note in the run has a managed section.",
+          model: "proposed",
+          steps: [
+            ["Add Date added to the template", ACT.addProperty],
+            ["Change the managed section", ACT.changeRegion],
+            ["Run Update all", ACT.palette],
+            ["Clear Refresh managed sections", ACT.toggleRegions],
+            ["Confirm", ACT.confirm],
+          ],
+        },
+        {
+          id: "collection",
+          tab: "New papers",
+          text: "A new paper joins the Reading group collection. The researcher uses the Zotero collection menu, which names creation in its label.",
+          watch:
+            "Arendt and hooks get notes. Nothing outside the collection changes.",
+          model: "proposed",
+          steps: [
+            ["Add hooks 1994 to Reading group", { type: "addPaper" }],
+            ["Run Create or Update on the collection", ACT.collection],
+            ["Confirm", ACT.confirm],
+          ],
+        },
+        {
+          id: "gaps",
+          tab: "Notes it misses",
+          text: "Two notes do not follow a bulk run. Foucault has a profile that no longer exists. Merton belongs to a library outside the library scope.",
+          watch:
+            "Foucault fails and is counted. Merton is not touched. Proposed states this before the run. Today says nothing.",
+          model: "proposed",
+          steps: [
+            ["Add Date added to the template", ACT.addProperty],
+            ["Run Update all", ACT.palette],
+            ["Confirm", ACT.confirm],
+          ],
+        },
+        {
+          id: "limits",
+          tab: "Limits of safe",
+          text: "Update protects your writing and your own properties. It still replaces a property the template manages. Overwrite replaces the body.",
+          watch:
+            "Publisher loses the typed wording after Update. The body text goes only after Overwrite. The one-line description survives both.",
+          model: "proposed",
+          select: "latour",
+          steps: [
+            ["Type over Publisher in Latour", { type: "editManaged" }],
+            ["Write in the note body", { type: "writeInNote" }],
+            ["Update this note", { type: "updateNote", scope: "full" }],
+            ["Overwrite this note", { type: "overwriteAsk" }],
+            ["Confirm the overwrite", ACT.confirm],
+            ["Try to overwrite all notes", { type: "overwriteAll" }],
+          ],
+        },
+      ];
+
+      function Stat({ label, value, tone }) {
+        const color =
+          tone === "danger"
+            ? "text-danger"
+            : tone === "warn"
+              ? "text-warn"
+              : "text-ink";
+        return (
+          <div className="min-w-0">
+            <div className="text-xs font-semibold tracking-wide text-muted uppercase">
+              {label}
+            </div>
+            <div className={`font-data text-2xl tabular-nums ${color}`}>
+              {value}
+            </div>
+          </div>
+        );
+      }
+
+      function Chip({ tone, children }) {
+        const color =
+          tone === "ok"
+            ? "text-ok border-ok"
+            : tone === "warn"
+              ? "text-warn border-warn"
+              : tone === "danger"
+                ? "text-danger border-danger"
+                : "text-muted border-line";
+        return (
+          <span
+            className={`inline-block rounded border px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap ${color}`}
+          >
+            {children}
+          </span>
+        );
+      }
+
+      function statusOf(state, item) {
+        const note = state.notes[item.key];
+        if (!note) return { tone: "muted", text: "No note" };
+        if (note.profile === "Unavailable profile")
+          return { tone: "danger", text: "Cannot update" };
+        const reasons = M.outOfDate(state, item.key);
+        if (reasons.length)
+          return { tone: "warn", text: `Out of date: ${reasons.join(", ")}` };
+        return { tone: "ok", text: "Current" };
+      }
+
+      function NoteTable({ state, dispatch }) {
+        return (
+          <div className="overflow-x-auto rounded border border-line bg-surface">
+            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-line text-xs tracking-wide text-muted uppercase">
+                  <th className="p-2 font-semibold">Paper</th>
+                  <th className="p-2 font-semibold">Note type</th>
+                  <th className="p-2 font-semibold">
+                    Properties ZotLit manages
+                  </th>
+                  <th className="p-2 font-semibold">Yours</th>
+                  <th className="p-2 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.items.map((item) => {
+                  const note = state.notes[item.key];
+                  const status = statusOf(state, item);
+                  const selected = state.selected === item.key;
+                  const changed = state.changed.includes(item.key);
+                  return (
+                    <tr
+                      key={item.key}
+                      data-paper={item.key}
+                      onClick={() =>
+                        dispatch({ type: "selectNote", key: item.key })
+                      }
+                      className={`cursor-pointer border-b border-line align-top last:border-0 ${changed ? "bg-accent-soft" : ""}`}
+                    >
+                      <td className="p-2">
+                        <span
+                          className={`font-semibold ${selected ? "text-accent underline" : ""}`}
+                        >
+                          {item.paper}
+                        </span>
+                        {!item.inScope && (
+                          <div className="text-xs text-muted">
+                            Outside library scope
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-2 text-muted">
+                        {note ? note.profile : "—"}
+                      </td>
+                      <td className="p-2">
+                        {note
+                          ? Object.entries(note.props).map(([field, value]) => (
+                              <div key={field}>
+                                <span className="text-muted">
+                                  {M.FIELD_LABEL[field]}:
+                                </span>{" "}
+                                {value}
+                              </div>
+                            ))
+                          : "—"}
+                        {note?.region != null && (
+                          <div>
+                            <span className="text-muted">Managed section:</span>{" "}
+                            version {note.region}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-2">
+                        {note ? (
+                          <>
+                            <div>
+                              {note.oneLine ? (
+                                `“${note.oneLine}”`
+                              ) : (
+                                <span className="text-muted">
+                                  No description
+                                </span>
+                              )}
+                            </div>
+                            <div
+                              className={
+                                note.own ? "" : "font-semibold text-danger"
+                              }
+                            >
+                              {note.own || "Body is empty"}
+                            </div>
+                            <div className="text-xs text-muted">
+                              Fixed text: version {note.fixedVersion}
+                            </div>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="p-2">
+                        <Chip tone={status.tone}>{status.text}</Chip>
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="text-muted">
+                  <td className="p-2" colSpan={5}>
+                    and {M.fmt(state.papersWithoutListedRow)} more papers
+                    without a note
+                    {state.createdInBulk > 0 &&
+                      `, plus ${M.fmt(state.createdInBulk)} notes made in bulk`}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      function Dialog({ state, dispatch }) {
+        const dialog = state.dialog;
+        if (!dialog) return null;
+        if (dialog.kind === "overwrite") {
+          const paper = state.items.find(
+            (item) => item.key === dialog.key,
+          ).paper;
+          return (
+            <section
+              aria-label="Confirmation"
+              className="rounded border-2 border-danger bg-surface p-4"
+            >
+              <h3 className="font-display text-lg font-semibold">
+                Overwrite literature note
+              </h3>
+              <p className="my-2">
+                Replace the body of {paper} with the note template. Your own
+                properties stay. Your writing in the body does not.
+              </p>
+              <div className="flex gap-2">
+                <Btn tone="danger" onClick={() => dispatch(ACT.confirm)}>
+                  Overwrite
+                </Btn>
+                <Btn onClick={() => dispatch(ACT.cancel)}>Cancel</Btn>
+              </div>
+            </section>
+          );
+        }
+        const view = M.dialogView(state);
+        return (
+          <section
+            aria-label="Confirmation"
+            className="rounded border-2 border-accent bg-surface p-4"
+          >
+            <div className="text-xs font-semibold tracking-wide text-muted uppercase">
+              Confirmation in Obsidian (
+              {state.model === "today" ? "today" : "proposed"})
+            </div>
+            <h3 className="font-display text-lg font-semibold">
+              {view.heading}
+            </h3>
+            <p className="my-2 text-base" data-testid="dialog-intro">
+              {view.intro}
+            </p>
+            {view.groups.length > 0 && (
+              <ul className="my-2 list-disc pl-5">
+                {view.groups.map((group) => (
+                  <li key={group}>{group}</li>
+                ))}
+              </ul>
+            )}
+            {view.showCreateControl && (
+              <label className="my-1 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={dialog.alsoCreate}
+                  onChange={() => dispatch(ACT.toggleCreate)}
+                />
+                {view.createLabel}
+              </label>
+            )}
+            {view.showRegionControl && (
+              <label className="my-1 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={dialog.refreshRegions}
+                  onChange={() => dispatch(ACT.toggleRegions)}
+                />
+                {view.regionLabel}
+              </label>
+            )}
+            {view.lines.map((line) => (
+              <p key={line} className="my-1 text-sm text-muted">
+                {line}
+              </p>
+            ))}
+            <div className="mt-3 flex gap-2">
+              <Btn tone="accent" onClick={() => dispatch(ACT.confirm)}>
+                {view.confirm}
+              </Btn>
+              <Btn onClick={() => dispatch(ACT.cancel)}>Cancel</Btn>
+            </div>
+          </section>
+        );
+      }
+
+      function Btn({ tone, disabled, onClick, children }) {
+        const look =
+          tone === "accent"
+            ? "bg-accent text-surface border-accent"
+            : tone === "danger"
+              ? "bg-surface text-danger border-danger"
+              : "bg-surface text-ink border-line hover:border-accent";
+        return (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onClick}
+            className={`cursor-pointer rounded border px-2.5 py-1 text-left text-sm font-semibold disabled:cursor-default disabled:opacity-45 ${look}`}
+          >
+            {children}
+          </button>
+        );
+      }
+
+      function Group({ title, children }) {
+        return (
+          <div>
+            <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">
+              {title}
+            </h3>
+            <div className="flex flex-wrap gap-1.5">{children}</div>
+          </div>
+        );
+      }
+
+      function FreePlay({ state, dispatch }) {
+        const today = state.model === "today";
+        const selected = state.items.find(
+          (item) => item.key === state.selected,
+        ).paper;
+        return (
+          <section className="flex flex-col gap-3 rounded border border-line bg-surface p-3">
+            <div>
+              <h2 className="font-display text-lg font-semibold">Free play</h2>
+              <p className="text-sm text-muted">
+                Click a paper in the table to choose it. The selected paper is{" "}
+                {selected}.
+              </p>
+            </div>
+            <Group title="Change something">
+              <Btn onClick={() => dispatch({ type: "changeInZotero" })}>
+                Correct {selected} in Zotero
+              </Btn>
+              <Btn onClick={() => dispatch(ACT.addProperty)}>
+                Add Date added to the template
+              </Btn>
+              <Btn onClick={() => dispatch(ACT.changeRegion)}>
+                Change the managed section
+              </Btn>
+              <Btn onClick={() => dispatch(ACT.changeFixed)}>
+                Change the fixed text
+              </Btn>
+              <Btn onClick={() => dispatch({ type: "addPaper" })}>
+                Add hooks 1994 to Reading group
+              </Btn>
+              <Btn onClick={() => dispatch({ type: "writeInNote" })}>
+                Write in this note
+              </Btn>
+              <Btn onClick={() => dispatch({ type: "editManaged" })}>
+                Type over Publisher
+              </Btn>
+            </Group>
+            <Group title="This note">
+              <Btn
+                onClick={() => dispatch({ type: "updateNote", scope: "full" })}
+              >
+                Update
+              </Btn>
+              <Btn
+                onClick={() =>
+                  dispatch({ type: "updateNote", scope: "metadata" })
+                }
+              >
+                Update metadata{today ? "" : " (palette only)"}
+              </Btn>
+              <Btn
+                tone="danger"
+                onClick={() => dispatch({ type: "overwriteAsk" })}
+              >
+                Overwrite
+              </Btn>
+            </Group>
+            <Group title="Many notes in Obsidian">
+              <Btn onClick={() => dispatch(ACT.palette)}>
+                {today
+                  ? "Create or update all literature notes"
+                  : "Update all literature notes"}
+              </Btn>
+              <Btn onClick={() => dispatch(ACT.workbench)}>
+                Update all notes (after a save)
+              </Btn>
+              <Btn
+                tone="danger"
+                onClick={() => dispatch({ type: "overwriteAll" })}
+              >
+                Overwrite all notes
+              </Btn>
+            </Group>
+            <Group title="Many notes from Zotero">
+              <Btn onClick={() => dispatch(ACT.pair)}>
+                Create or Update two papers
+              </Btn>
+              <Btn onClick={() => dispatch(ACT.collection)}>
+                Create or Update Reading group
+              </Btn>
+              <Btn onClick={() => dispatch(ACT.everything)}>
+                Select all, Create or Update
+              </Btn>
+              <Btn onClick={() => dispatch(ACT.metadataAll)}>
+                Select all, Update Metadata
+              </Btn>
+            </Group>
+          </section>
+        );
+      }
+
+      function Walkthroughs({ state, dispatch, resetTo }) {
+        const [active, setActive] = useState(WALKTHROUGHS[0].id);
+        const [run, setRun] = useState(null);
+        const walk = WALKTHROUGHS.find((entry) => entry.id === active);
+        const done = run?.id === walk.id ? run.done : -1;
+        const start = () => {
+          resetTo(walk.model);
+          if (walk.select) dispatch({ type: "selectNote", key: walk.select });
+          setRun({ id: walk.id, done: 0 });
+        };
+        const press = (action, index) => {
+          dispatch(action);
+          setRun({ id: walk.id, done: index + 1 });
+        };
+        return (
+          <section className="flex flex-col gap-3 rounded border border-line bg-surface p-3">
+            <h2 className="font-display text-lg font-semibold">
+              Guided walkthroughs
+            </h2>
+            <div
+              role="tablist"
+              className="flex flex-wrap gap-1 border-b border-line pb-2"
+            >
+              {WALKTHROUGHS.map((entry) => (
+                <button
+                  key={entry.id}
+                  role="tab"
+                  type="button"
+                  aria-selected={entry.id === active}
+                  onClick={() => setActive(entry.id)}
+                  className={`cursor-pointer rounded px-2 py-1 text-sm font-semibold ${entry.id === active ? "bg-accent-soft text-accent" : "text-muted hover:text-ink"}`}
+                >
+                  {entry.tab}
+                </button>
+              ))}
+            </div>
+            <p className="max-w-[65ch]">{walk.text}</p>
+            <p className="max-w-[65ch] text-sm">
+              <span className="font-semibold">What to watch:</span> {walk.watch}
+            </p>
+            <div className="flex flex-col items-start gap-1.5">
+              <Btn tone="accent" onClick={start}>
+                {done < 0 ? "Start from a fresh library" : "Start again"}
+              </Btn>
+              {walk.steps.map(([label, action], index) => (
+                <div key={label + index} className="flex items-center gap-2">
+                  <span className="font-data w-5 text-right text-xs text-muted tabular-nums">
+                    {index + 1}
+                  </span>
+                  <Btn
+                    disabled={index !== done}
+                    onClick={() => press(action, index)}
+                  >
+                    {label}
+                  </Btn>
+                </div>
+              ))}
+              {done === walk.steps.length && (
+                <p className="text-sm font-semibold text-ok">
+                  Walkthrough finished. Check the result on this page.
+                </p>
+              )}
+            </div>
+          </section>
+        );
+      }
+
+      // --- App ---
+      function App() {
+        const [state, setState] = useState(() => M.initial());
+        const dispatch = (action) =>
+          setState((current) => M.reduce(current, action));
+        const resetTo = (model) => setState(M.initial(model, "bySource"));
+        return (
+          <main className="min-h-full bg-ground px-4 py-6 font-body text-ink sm:px-8">
+            <header className="mb-4 flex flex-col gap-1">
+              <div className="text-xs font-semibold tracking-wide text-muted uppercase">
+                Throwaway prototype · ZotLit · discussion #1903
+              </div>
+              <h1 className="font-display text-3xl font-bold">
+                Can one Update all replace the options we have?
+              </h1>
+              <p className="max-w-[75ch] text-muted">
+                This page tests one idea: separate how much of a note to refresh
+                from which notes to include. Use it to find the cases where that
+                idea is wrong. All data is mock data in this page, and nothing
+                connects to your vault.
+              </p>
+            </header>
+
+            <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded border border-line bg-surface p-3">
+              <fieldset className="flex items-center gap-1">
+                <legend className="sr-only">Behaviour</legend>
+                <span className="mr-1 text-sm font-semibold">Behaviour</span>
+                {[
+                  ["today", "Today"],
+                  ["proposed", "Proposed"],
+                ].map(([value, label]) => (
+                  <Btn
+                    key={value}
+                    tone={state.model === value ? "accent" : undefined}
+                    onClick={() => dispatch({ type: "setModel", model: value })}
+                  >
+                    {label}
+                  </Btn>
+                ))}
+              </fieldset>
+              <label className="flex items-center gap-2 text-sm">
+                <span className="font-semibold">Also create starts</span>
+                <select
+                  value={state.createRule}
+                  disabled={state.model === "today"}
+                  onChange={(event) =>
+                    dispatch({
+                      type: "setCreateRule",
+                      rule: event.target.value,
+                    })
+                  }
+                  className="rounded border border-line bg-surface p-1 text-ink"
+                >
+                  <option value="bySource">
+                    Ticked for a Zotero selection or collection
+                  </option>
+                  <option value="alwaysOff">Always clear</option>
+                </select>
+              </label>
+              <Btn onClick={() => resetTo(state.model)}>Reset library</Btn>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(340px,2fr)]">
+              <div className="flex min-w-0 flex-col gap-3">
+                <section
+                  aria-label="Current state"
+                  className="flex flex-wrap gap-x-8 gap-y-2 rounded border border-line bg-surface p-3"
+                >
+                  <Stat
+                    label="Notes in vault"
+                    value={M.fmt(M.notesInVault(state))}
+                    tone={M.notesInVault(state) > 100 ? "danger" : undefined}
+                  />
+                  <Stat
+                    label="Papers without a note"
+                    value={M.fmt(M.papersWithoutNote(state))}
+                  />
+                  <Stat
+                    label="Template properties"
+                    value={state.template.fields
+                      .map((field) => M.FIELD_LABEL[field])
+                      .join(", ")}
+                  />
+                  <Stat
+                    label="Managed section"
+                    value={`v${state.template.regionVersion}`}
+                  />
+                  <Stat
+                    label="Fixed text"
+                    value={`v${state.template.fixedVersion}`}
+                  />
+                </section>
+                <p
+                  aria-live="polite"
+                  data-testid="last-event"
+                  className={`rounded border border-line bg-surface p-2 ${state.lastEvent.startsWith("Refused") ? "font-semibold text-danger" : ""}`}
+                >
+                  <span className="text-sm text-muted">Just now: </span>
+                  {state.lastEvent}
+                </p>
+                <Dialog state={state} dispatch={dispatch} />
+                <NoteTable state={state} dispatch={dispatch} />
+              </div>
+              <div className="flex min-w-0 flex-col gap-4">
+                <FreePlay state={state} dispatch={dispatch} />
+                <Walkthroughs
+                  state={state}
+                  dispatch={dispatch}
+                  resetTo={resetTo}
+                />
+              </div>
+            </div>
+          </main>
+        );
+      }
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
