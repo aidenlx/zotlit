@@ -89,6 +89,8 @@ export interface FilterField {
 export type FilterOperator =
   | "contains"
   | "does-not-contain"
+  | "contains-match-case"
+  | "does-not-contain-match-case"
   | "contains-any"
   | "contains-all"
   | "within"
@@ -122,6 +124,8 @@ export const FILTER_OPERATORS: Record<
   text: [
     "contains",
     "does-not-contain",
+    "contains-match-case",
+    "does-not-contain-match-case",
     "is",
     "is-not",
     "is-empty",
@@ -332,8 +336,12 @@ export function formatFilterRow(
   const one = JSON.stringify(row.value);
   switch (row.operator) {
     case "contains":
-      return `${path}.contains(${one})`;
+      return `${path}.${field.type === "text" ? "icontains" : "contains"}(${one})`;
     case "does-not-contain":
+      return `!${path}.${field.type === "text" ? "icontains" : "contains"}(${one})`;
+    case "contains-match-case":
+      return `${path}.contains(${one})`;
+    case "does-not-contain-match-case":
       return `!${path}.contains(${one})`;
     case "contains-any":
     case "contains-all":
@@ -401,10 +409,18 @@ function callRow({
       ? { kind: field.kind, operator, value, values }
       : null;
   switch (method) {
-    case "contains":
-      return args.length === 1
+    case "icontains":
+      return field.type === "text" && args.length === 1
         ? row(negated ? "does-not-contain" : "contains", args[0])
         : null;
+    case "contains":
+      if (args.length !== 1) return null;
+      if (field.type === "text")
+        return row(
+          negated ? "does-not-contain-match-case" : "contains-match-case",
+          args[0],
+        );
+      return row(negated ? "does-not-contain" : "contains", args[0]);
     case "within":
       return args.length === 1
         ? row(negated ? "not-within" : "within", args[0])

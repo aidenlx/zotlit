@@ -86,6 +86,7 @@ const FILTERS: readonly string[] = [
   'itemType == "book" && key != "ART2FULL"',
   // Tags: lowered leaves, exact names, Unicode and SQL wildcard hazards.
   'tags.contains("to-read")',
+  'tags.icontains("TO-READ")',
   'tags.contains("To-Read")',
   'tags.contains("TO-READ")',
   'tags.contains("tie")',
@@ -144,6 +145,10 @@ const FILTERS: readonly string[] = [
   'title.contains("Exact")',
   'title.lower().contains("exact")',
   'title.startsWith("Lab")',
+  'title.icontains("same title")',
+  '!title.icontains("same title")',
+  'title.icontains("éclair")',
+  'title.icontains("")',
   'title == "Same Title"',
   'title.contains("%_")',
   'title.contains("🧪")',
@@ -433,6 +438,7 @@ const FILTER_MATCHES: Readonly<Record<string, readonly string[]>> = {
   // ART2FULL and ALS2CNFL; tie on the three TIE2 Items; group-only on
   // GRP2BK22; three Tags on UNI2CDE2; none on CHP2YEAR, CNF2TEXT, RPT2NDTE.
   'tags.contains("to-read")': ["ART2FULL", "BK2MNTH2", "ART2FULLg4815"],
+  'tags.icontains("TO-READ")': ["ART2FULL", "BK2MNTH2", "ART2FULLg4815"],
   'tags.contains("tie")': ["TIE2AAAA", "TIE2BBBB", "TIE2CCCC"],
   'tags.contains("methods")': ["ART2FULL", "ALS2CNFL"],
   'tags.contains("group-only")': ["GRP2BK22g4815"],
@@ -466,6 +472,10 @@ const FILTER_MATCHES: Readonly<Record<string, readonly string[]>> = {
   'title == "Same Title"': ["TIE2AAAA", "TIE2BBBB"],
   "title == null": ["TIE2CCCC"],
   'title.startsWith("Lab")': ["RPT2NDTE"],
+  'title.icontains("same title")': ["TIE2AAAA", "TIE2BBBB"],
+  '!title.icontains("same title")': except("TIE2AAAA", "TIE2BBBB"),
+  'title.icontains("éclair")': ["UNI2CDE2"],
+  'title.icontains("")': except("TIE2CCCC"),
   'title == "Trashed Article"': [],
   'title == "Group Copy of Exact Matching"': ["ART2FULLg4815"],
   'publisher == "Sage" || publisher == "Academic Press"': [

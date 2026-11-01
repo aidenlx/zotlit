@@ -148,8 +148,8 @@ FIELDS
 
 TEXT
   ==, !=, contains, startsWith, and endsWith match exactly: case and accents
-  count. Use lower() for a match that ignores case:
-    ${filter('title.lower().contains("climate")')}
+  count. Use icontains() for a match that ignores case:
+    ${filter('title.icontains("climate")')}
   Values of different types are never equal: 1 == "1" is false.
 
 TEXT HELPERS
