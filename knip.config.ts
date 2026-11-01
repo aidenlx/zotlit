@@ -8,7 +8,7 @@ const config: KnipConfig = {
   include: ["exports", "types", "enumMembers"],
   // A symbol read in its own file has a reader; only its `export` is spare.
   ignoreExportsUsedInFile: true,
-  ignoreWorkspaces: ["packages/obsidian-api", "packages/pdfjs-dist", "video"],
+  ignoreWorkspaces: ["packages/pdfjs-dist", "video"],
   ignore: ["packages/pdf-structure/src/vendor/**"],
   ignoreIssues: {
     // shadcn/ui components: each file ships the component's whole API.

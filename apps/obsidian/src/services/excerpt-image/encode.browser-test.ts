@@ -421,6 +421,7 @@ async function assertDisplays(image: { bytes: Uint8Array; mimeType: string }) {
 
 export async function run(): Promise<EncodeReport> {
   const passed: string[] = [];
+  const { userAgent } = navigator;
   const signal = new AbortController().signal;
   const pattern = canvas(64, 48);
   const patternContext = context(pattern, true);
@@ -465,7 +466,7 @@ export async function run(): Promise<EncodeReport> {
 
   return {
     passed,
-    userAgent: navigator.userAgent,
+    userAgent,
     imageDecoder:
       typeof (window as { ImageDecoder?: unknown }).ImageDecoder === "function",
     measurements,

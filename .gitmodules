@@ -1,7 +1,3 @@
-[submodule "packages/obsidian-api"]
-	path = packages/obsidian-api
-	url = https://github.com/obsidianmd/obsidian-api
-	branch = master
 [submodule "packages/pdfjs-dist"]
 	path = packages/pdfjs-dist
 	url = https://github.com/zotero-plugin-dev/zotero-pdfjs-types

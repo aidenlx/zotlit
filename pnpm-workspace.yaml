@@ -66,6 +66,7 @@ catalog:
   fflate: ^0.8.2
   jieba-wasm: 2.4.0
   monkey-around: 3.0.0
+  obsidian: 1.14.4
   oxc-parser: ^0.155.0
   oxfmt: ^0.74.0
   oxlint: 1.89.0
@@ -94,7 +95,7 @@ overrides:
   "@codemirror/state": 6.7.6
   "@codemirror/view": 6.43.13
   "zotero-types>epubjs": 0.3.93
-  "zotero-types>pdfjs-dist": workspace:*
+  "zotero-types>pdfjs-dist": link:packages/pdfjs-dist
   # platform-node 4.1.0 takes platform-node-shared ^4.1.0, whose newer releases
   # want a newer effect than the pinned 4.1.0.
   "@effect/platform-node>@effect/platform-node-shared": 4.1.0

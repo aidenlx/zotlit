@@ -13,13 +13,12 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 - `packages/protocol` — wire format (valibot schemas) for ZotLit ↔ Zotero.
 - `packages/templates` — Eta-based template rendering.
 - `packages/zotero-types` — generated item-field shapes from Zotero's upstream schema.
-- `packages/obsidian-api` — **git submodule** (`obsidianmd/obsidian-api`). Init via `mise run init`.
 - `video/` — **private, opt-in git submodule**: the workbench for product videos. Check it out with `git submodule update --init --checkout video`, then follow `video/AGENTS.md`.
 
 ## Bootstrap & toolchain
 
 - `mise` pins to Node 26 version (see `mise.toml`). Its `idiomatic_version_file_enable_tools = ["pnpm"]` setting also activates pnpm at the version declared in root `package.json`'s `packageManager` field.
-- `mise run init` initializes git submodules, including `packages/obsidian-api` and `packages/zotero-types/zotero-schema`.
+- `mise run init` initializes git submodules, including `packages/pdfjs-dist` and `packages/zotero-types/zotero-schema`.
 - Resolve tool availability from the current workspace environment. Use `pnpm exec` for workspace binaries; use the Mise-managed toolchain defined by `mise.toml`.
 - `agent-browser` (>= 0.31.1) — browser automation via CDP. Run `agent-browser skills get core` once per session for the version-matched usage guide. Session conventions and gotchas: [`docs/agents/agent-browser.md`](docs/agents/agent-browser.md).
 
@@ -34,13 +33,13 @@ Run these from the repo root. `build` / `test` / `lint` go through turbo, which 
 | `pnpm lint` / `pnpm lint:fix`     | Type-aware `oxlint` over the whole tree after dependencies build. **A clean run is the typecheck.**                          |
 | `pnpm lint:unused`                | Part of `pnpm lint`: knip fails on an export, type or enum member with no reader. Older findings sit in `packages/scripts/unused-code.json` until their code goes; a reader knip cannot see gets an entry in `knip.config.ts`. |
 | `pnpm format` / `pnpm format:fix` | Root-level `oxfmt` over the whole tree, run directly. A full pass takes under a second.                                      |
-| `pnpm review` / `pnpm review:fix` | Obsidian guideline scan of `apps/obsidian`, release-time only (see below).                                                  |
+| `pnpm review` / `pnpm review:fix` | The community directory scanner's ESLint run over `apps/obsidian`, release-time only, reporting error-level findings (see below). |
 | `pnpm quality:fix`                | Fixes lint, then format. `pnpm verify` is the check.                                                                        |
 | `pnpm verify`                     | The quality gate, run by the pre-push hook: format, generated artifacts, lint, and typecheck and tests for the packages the branch changed and their dependents. `--release` checks every package and adds `pnpm review`; on the desktop it also runs the full End-to-end Run and `pnpm e2e:worker`. GitHub runs no PR checks, so keep the hook on ([ADR 0076](docs/adr/0076-checks-run-before-push-and-ci-runs-only-to-release.md)). A branch that changes only agent docs runs format only, so a doc push needs no skip. A push that changes `pnpm-lock.yaml` or `pnpm-workspace.yaml` runs the full hook even when asked to skip checks: a dependency bump changes runtime behavior that only the tests see (#1738). |
 | `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `.scratch/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
 | `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly when none is reachable. The release gate runs it and fails instead of skipping. |
 
-oxlint and oxfmt own linting and formatting; `oxlint.config.ts` / `oxfmt.config.ts` at root and per package extend `@zotlit/config/oxlint` / `@zotlit/config/oxfmt`. ESLint serves `pnpm review` alone: it runs only the `obsidianmd/*` rules against the official Obsidian developer guidelines. `pnpm verify --release` runs it, in `release.ts` before the version commit and in `release.yml` before publishing; errors block, warnings are reported. typescript-eslint needs TypeScript 6, so root `typescript` is aliased to `@typescript/typescript6` while workspace packages keep TypeScript 7 through the catalog. Keep `eslint.config.js` and that alias ([ADR 0020](docs/adr/0020-obsidian-guideline-review-runs-on-eslint-at-release.md)).
+oxlint and oxfmt own linting and formatting; `oxlint.config.ts` / `oxfmt.config.ts` at root and per package extend `@zotlit/config/oxlint` / `@zotlit/config/oxfmt`. ESLint serves `pnpm review` alone: `eslint.config.js` mirrors the scanner in `obsidianmd/obsidian-workflows`, and `--quiet` reports its errors. `pnpm verify --release` runs it, in `release.ts` before the version commit and in `release.yml` before publishing. oxlint runs the type-free `obsidianmd/*` rules on every lint through `packages/config/oxlint-plugin-obsidian.ts`. The scanner rejects `eslint-disable` of those rules, so suppress them with `oxlint-disable-next-line <rule> -- <reason>`. typescript-eslint needs TypeScript 6, so root `typescript` is aliased to `@typescript/typescript6` while workspace packages keep TypeScript 7 through the catalog. Keep `eslint.config.js` and that alias ([ADR 0020](docs/adr/0020-obsidian-guideline-review-runs-on-eslint-at-release.md)).
 
 ### Testing
 
