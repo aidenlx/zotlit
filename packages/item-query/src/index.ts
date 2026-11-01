@@ -34,6 +34,7 @@ export {
 } from "./filter-functions";
 export type { FilterValueType } from "./filter-values";
 export { cellProperties } from "./cell-properties";
+export { fieldSearchTerms, matchesSearchTerm } from "./field-search-terms";
 export {
   AttachmentFileResolver,
   type QueryDataset,

@@ -15,7 +15,11 @@ import {
   isMemberName,
   parser,
 } from "@zotlit/filter-expression";
-import { GLOBAL_FUNCTIONS, IF_FUNCTION } from "@zotlit/item-query";
+import {
+  GLOBAL_FUNCTIONS,
+  IF_FUNCTION,
+  fieldSearchTerms,
+} from "@zotlit/item-query";
 import type { QueryDataset } from "@zotlit/item-query";
 
 import { keyCompletions } from "./expression-keys";
@@ -25,6 +29,7 @@ import {
   noteOf,
   optionTexts,
   ranked,
+  rankedOptions,
   signature,
 } from "./expression-options";
 import type {
@@ -134,11 +139,7 @@ export function expressionCompletions(
   const query = source.slice(from, pos);
   const bound = boundNameOptions(caret);
   if (query === "" && !explicit && bound.length === 0) return null;
-  const options = ranked(
-    [...bound, ...entries(vocabulary)],
-    query,
-    optionTexts,
-  );
+  const options = rankedOptions([...bound, ...entries(vocabulary)], query);
   return options.length === 0 ? null : { from, to, options };
 }
 
@@ -147,7 +148,7 @@ export function expressionCompletions(
  * type its planner gives it and the label `label` gives its path.
  */
 export function datasetExpressionFields(
-  dataset: Pick<QueryDataset, "names" | "planFilter">,
+  dataset: Pick<QueryDataset, "id" | "names" | "planFilter">,
   label: (path: string) => string | undefined = () => undefined,
 ): ExpressionField[] {
   let typed = typedFields.get(dataset);
@@ -158,7 +159,13 @@ export function datasetExpressionFields(
       if ("kind" in plan) return [];
       const type = plan.root.valueType;
       if (type === "null") return [];
-      return [{ path, ...(type === "unknown" ? {} : { type }) }];
+      return [
+        {
+          path,
+          ...(type === "unknown" ? {} : { type }),
+          searchTerms: fieldSearchTerms(dataset.id, path),
+        },
+      ];
     });
     typedFields.set(dataset, typed);
   }

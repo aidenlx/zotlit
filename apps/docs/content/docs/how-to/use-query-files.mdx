@@ -95,6 +95,8 @@ Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts
 
     Select <UiLabel name={m.workbench_match_add_condition()} />. A new row reads <UiLabel name={m.workbench_match_value_empty()} /> and filters nothing until it has a value. Choose a property, an operator, and a value. For example, choose <UiLabel name={m.workbench_filter_field_color()} />, <UiLabel name={m.workbench_filter_op_is()} />, and <UiLabel name={m.workbench_filter_color_yellow()} /> to find key highlights. In an items view, choose <UiLabel name={m.workbench_filter_field_year()} />, <UiLabel name={m.workbench_filter_op_on_or_after()} />, and enter `2020` to find recent publications.
 
+    The property list holds every Zotero field of the view's records, with the most common ones first. To find a property, type in the list's search field. Common words find a property too, in English or Chinese: `journal` or `期刊` finds the Publication field, and `summary` finds the abstract. These words only help you find the property. The filter saves the property's own name, such as `publicationTitle`.
+
   </Step>
   <Step>
     ### Combine conditions

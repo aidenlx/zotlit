@@ -2,7 +2,7 @@
 // Completion offers from it, and the ranking every part of the list shares.
 import type { SyntaxNode } from "@lezer/common";
 
-import { resultText } from "@zotlit/item-query";
+import { matchesSearchTerm, resultText } from "@zotlit/item-query";
 import type {
   ContextRecord,
   FilterValueType,
@@ -27,6 +27,8 @@ export interface ExpressionField {
   readonly label?: string;
   /** The type a Filter Expression reads; absent where it varies. */
   readonly type?: string;
+  /** The words the list also finds it by; accepting it writes `path`. */
+  readonly searchTerms?: readonly string[];
 }
 
 /** A name read under a namespace, `formula.<name>` or `vault.<name>`. */
@@ -100,6 +102,8 @@ export interface ExpressionOption {
   readonly type?: string;
   /** A field's label, or a function's or a member's description. */
   readonly note?: string;
+  /** The words a field is also found by; never written or shown. */
+  readonly searchTerms?: readonly string[];
 }
 
 /** The caret in a parsed source: the innermost node at `pos`. */
@@ -154,12 +158,14 @@ export const fieldOption = ({
   path,
   label,
   type,
+  searchTerms,
 }: ExpressionField): ExpressionOption => ({
   label: path,
   insert: path,
   kind: "field",
   ...(type === undefined ? {} : { type }),
   ...noteOf(path, label),
+  ...(searchTerms && { searchTerms }),
 });
 
 /** The texts the typed query matches: a name, and a field's or a namespace's label. */
@@ -170,6 +176,31 @@ export const optionTexts = (option: ExpressionOption): readonly string[] =>
     : [option.label];
 
 /**
+ * How well `query` finds `option` by a Search Term, on the scale of
+ * `matchScore`: an exact word ranks below an exact name and above a name that
+ * starts with `query`, and a word that starts with `query` ranks after that
+ * name, so that a hidden word never pushes aside a name the reader can see.
+ */
+function searchTermScore(option: ExpressionOption, query: string): number {
+  const terms = option.searchTerms ?? [];
+  if (terms.includes(query.toLowerCase())) return 0.5;
+  return terms.some((term) => matchesSearchTerm(term, query)) ? 1.5 : Infinity;
+}
+
+/** The items `score` does not rule out, best first, ties in the order given. */
+function rankedBy<T>(
+  items: readonly T[],
+  query: string,
+  score: (item: T) => number,
+): T[] {
+  return items
+    .map((item, order) => ({ item, order, score: query ? score(item) : 0 }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((a, b) => a.score - b.score || a.order - b.order)
+    .map(({ item }) => item);
+}
+
+/**
  * The items any of whose `texts` match `query`, best first, ties in the
  * order given; every item for an empty `query`.
  */
@@ -178,15 +209,20 @@ export function ranked<T>(
   query: string,
   texts: (item: T) => readonly string[],
 ): T[] {
-  return items
-    .map((item, order) => ({
-      item,
-      order,
-      score: query
-        ? Math.min(...texts(item).map((text) => matchScore(text, query)))
-        : 0,
-    }))
-    .filter(({ score }) => Number.isFinite(score))
-    .sort((a, b) => a.score - b.score || a.order - b.order)
-    .map(({ item }) => item);
+  return rankedBy(items, query, (item) =>
+    Math.min(...texts(item).map((text) => matchScore(text, query))),
+  );
+}
+
+/** {@link ranked} for the entries of the list, which Search Terms also find. */
+export function rankedOptions(
+  options: readonly ExpressionOption[],
+  query: string,
+): ExpressionOption[] {
+  return rankedBy(options, query, (option) =>
+    Math.min(
+      searchTermScore(option, query),
+      ...optionTexts(option).map((text) => matchScore(text, query)),
+    ),
+  );
 }

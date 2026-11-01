@@ -41,6 +41,12 @@ describe("propertyRow", () => {
       expect.arrayContaining(["title", "shortTitle"]),
     );
   });
+
+  it("finds a field by a word for it", () => {
+    const noLabel: ChooserMatcher = () => null;
+    const found = chooserLayout([{ items: rows }], noLabel, "journal").rows;
+    expect(found.map((row) => row.value)).toContain("publicationTitle");
+  });
 });
 
 describe("listedProperties", () => {

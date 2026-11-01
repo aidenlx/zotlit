@@ -4,7 +4,7 @@
 // method's scope. Expression Completion offers the members, and the Signature
 // Hint selects a method by the type. The planner is the one judge, so the
 // list cannot offer a member that evaluation rejects.
-import { subexpressionTypes } from "@zotlit/item-query";
+import { fieldSearchTerms, subexpressionTypes } from "@zotlit/item-query";
 import type { QueryDataset } from "@zotlit/item-query";
 
 import type {
@@ -48,6 +48,7 @@ export function datasetReceiver(
             ...(valueType === "unknown" ? {} : { type: valueType }),
             // A label that only repeats the path is none.
             ...(named === undefined || named === path ? {} : { label: named }),
+            searchTerms: fieldSearchTerms(dataset.id, path),
           },
         ];
       }),

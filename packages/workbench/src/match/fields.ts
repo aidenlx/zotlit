@@ -2,10 +2,20 @@
 // text: each one is a field of the dataset, an operator and a value. The
 // Query View's Filter and the Profile Match both offer them. The fields are
 // dataset-relative: an Item's title is `title` on Items and `item.title` on
-// Annotations. What a condition cannot read stays an expression row in the
-// Match editor.
+// Annotations. A few common fields come first, under names of their own; after
+// them comes every other field the dataset's planner reads, so that the list
+// cannot fall behind ZotLit Query. What a condition cannot read stays an
+// expression row in the Match editor.
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
+import {
+  ANNOTATIONS,
+  ATTACHMENTS,
+  ITEMS,
+  cellProperties,
+  fieldSearchTerms,
+} from "@zotlit/item-query";
+import type { QueryDataset } from "@zotlit/item-query";
 
 /** The records a filter selects. */
 export type FilterDataset = "annotations" | "attachments" | "items";
@@ -39,8 +49,12 @@ export type FilterValueType =
  */
 export type CustomFilterFieldKind = `custom:${string}`;
 
+/** The kind of a field of the dataset with no name of its own, by its path. */
+export type DatasetFilterFieldKind = `field:${string}`;
+
 export type FilterFieldKind =
   | CustomFilterFieldKind
+  | DatasetFilterFieldKind
   | "color"
   | "tags"
   | "comment"
@@ -68,6 +82,8 @@ export interface FilterField {
   readonly type: FilterValueType;
   /** The name the kind picker shows; a field the host adds gives one. */
   readonly label?: string;
+  /** The words the kind picker also finds it by; a query never holds one. */
+  readonly searchTerms?: readonly string[];
 }
 
 export type FilterOperator =
@@ -135,8 +151,61 @@ export const FILTER_OPERATORS: Record<
   boolean: ["is-true", "is-false"],
 };
 
+const ENGINES: Record<FilterDataset, QueryDataset<any>> = {
+  annotations: ANNOTATIONS,
+  attachments: ATTACHMENTS,
+  items: ITEMS,
+};
+
+/** How each type the planner gives is tested in a condition. */
+const VALUE_TYPES: Readonly<Record<string, FilterValueType>> = {
+  string: "text",
+  list: "list",
+  number: "number",
+  date: "date",
+  boolean: "boolean",
+};
+
+/** Whether `kind` names a field of the dataset by its path. */
+export const isDatasetFieldKind = (
+  kind: FilterFieldKind,
+): kind is DatasetFilterFieldKind => kind.startsWith("field:");
+
+/** The cells of `dataset` its planner reads, less the paths in `common`. */
+function otherFields(
+  dataset: FilterDataset,
+  common: readonly FilterField[],
+): FilterField[] {
+  const engine = ENGINES[dataset];
+  const taken = new Set(common.map((field) => field.path));
+  return cellProperties(engine).flatMap((path): FilterField[] => {
+    if (taken.has(path)) return [];
+    const plan = engine.planFilter(path);
+    if ("kind" in plan) return [];
+    const type = VALUE_TYPES[plan.root.valueType];
+    return type ? [{ kind: `field:${path}`, path, type }] : [];
+  });
+}
+
+/** The conditions of each dataset, which a descriptor never changes. */
+const fieldsOf = new Map<FilterDataset, readonly FilterField[]>();
+
 /** The conditions of a view's dataset, in the order the kind picker lists them. */
-export function filterFields(dataset: FilterDataset): FilterField[] {
+export function filterFields(dataset: FilterDataset): readonly FilterField[] {
+  let fields = fieldsOf.get(dataset);
+  if (!fields) {
+    const common = commonFields(dataset);
+    fields = [...common, ...otherFields(dataset, common)].map((field) => ({
+      ...field,
+      searchTerms: fieldSearchTerms(dataset, field.path),
+    }));
+    fieldsOf.set(dataset, fields);
+  }
+  return fields;
+}
+
+/** The fields the kind picker lists first, under names of their own. */
+function commonFields(dataset: FilterDataset): FilterField[] {
   const { item, attachment } = PREFIX[dataset];
   const fields: FilterField[] = [];
   if (dataset === "annotations")

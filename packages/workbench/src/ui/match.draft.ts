@@ -68,6 +68,8 @@ export interface MatchConditionKind<Row extends LabelledRow> {
   icon?: ReactNode;
   /** Muted text after the name in the kind picker's list, such as a field's path. */
   detail?: string;
+  /** The words the kind picker also finds it by; a query never holds one. */
+  searchTerms?: readonly string[];
   /**
    * A row of this kind at its starting value. It has no value yet, so it
    * stores nothing until the user gives it one.

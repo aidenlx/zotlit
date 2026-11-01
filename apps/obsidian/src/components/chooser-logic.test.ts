@@ -38,6 +38,19 @@ const scoresAgainstSourceOrder: ChooserMatcher = (text) => {
 
 const labelsOf = (rows: readonly ChooserRow[]) => rows.map((row) => row.label);
 
+it("finds a row by a Search Term, which its label does not show", () => {
+  const rows: ChooserRow[] = [
+    { value: "a", label: "Publication", searchTerms: ["journal name"] },
+    { value: "b", label: "Publisher", searchTerms: ["press"] },
+  ];
+  const noLabel: ChooserMatcher = () => null;
+  const groups = [{ items: rows }];
+  expect(labelsOf(chooserLayout(groups, noLabel, "journal").rows)).toEqual([
+    "Publication",
+  ]);
+  expect(chooserLayout(groups, noLabel, "ournal").empty).toBe(true);
+});
+
 /** The tag Chooser's own shape: a group of tags, then a group of one action. */
 const CLEAR: ChooserRow = {
   value: "zt:clear-tags",
