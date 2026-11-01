@@ -42,6 +42,20 @@ export function addNoteFeatureActions(
     }),
   );
 
+  plugin.addCommand({
+    id: "update-notes",
+    name: m.command_update_notes_name(),
+    callback() {
+      const file = deps.app.workspace.getActiveFile();
+      const itemKey =
+        file && isLiteratureNote(file, deps.app)
+          ? itemKeyFromFrontmatter(deps.app.metadataCache.getFileCache(file))
+          : undefined;
+      void deps.noteActions.updateNotes(
+        file && itemKey ? { file, itemKey } : undefined,
+      );
+    },
+  });
   addUpdateCommand(plugin, deps, {
     id: "update-note",
     name: m.command_update_note_name(),

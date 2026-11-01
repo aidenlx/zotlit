@@ -27,6 +27,18 @@ Reloads the Zotero database from disk. Use this after making changes in Zotero w
 | --------------- | ---------------- |
 | Command palette | Always available |
 
+## Update notes [#update-notes]
+
+<Command name={m.command_update_notes_name()} />
+
+Opens the <UiLabel name={m.modal_update_notes_title()} /> dialog, the recommended place to start an update. <UiLabel name={m.modal_update_notes_active()} /> updates the active literature note and appears only when one is active. <UiLabel name={m.modal_update_notes_all()} /> updates all existing literature notes in your [library scope](/docs/reference/settings#library-scope). The checkbox <UiLabel name={m.modal_update_notes_create()} /> is off by default; turn it on to also create notes for items that have none.
+
+| Entry point     | Details          |
+| --------------- | ---------------- |
+| Command palette | Always available |
+
+The commands below stay available for hotkeys. <Command inline name={m.command_update_note_name()} /> and <Command inline name={m.command_update_note_metadata_name()} /> run with no dialog. <Command inline name={m.command_overwrite_note_name()} /> and <Command inline name={m.command_update_all_notes_name()} /> still ask for confirmation. A run that creates nothing reads <UiLabel name={m.batch_update_existing_confirm_intro({ count: "…" })} /> and lists items without a note under <UiLabel name={m.batch_update_group_no_note({ count: "…" })} />. The Zotero metadata batch works the same way.
+
 ## Library-wide update
 
 <Command name={m.command_update_all_notes_name()} />
@@ -295,7 +307,7 @@ Only PDF attachments are offered. An item with none shows <UiLabel name={m.notic
 
 <Command name={m.command_reimport_note_name()} />
 
-Re-imports a Zotero note that was previously imported. A confirmation modal appears before overwriting.
+Overwrites an imported note with its latest content from Zotero. The file is replaced, so local edits are lost. A confirmation modal appears first, and its button reads <UiLabel name={m.modal_reimport_note_confirm()} />.
 
 | Entry point     | Details                                                 |
 | --------------- | ------------------------------------------------------- |
@@ -458,6 +470,7 @@ Opens the release notes for the installed ZotLit version.
 | Command                                                             | Palette | Ribbon |  File menu   | Available when                                      |
 | ------------------------------------------------------------------- | :-----: | :----: | :----------: | --------------------------------------------------- |
 | <UiLabel name={m.command_refresh_db_name()} />                      |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_update_notes_name()} />                    |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_update_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_import_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_open_library_view_name()} />               |   yes   |  yes   |      no      | Always                                              |

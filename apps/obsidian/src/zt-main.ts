@@ -294,7 +294,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
     stack.defer(
       registerWorkbenchSavedNotice({
         localBridge: services.localBridge,
-        updateAll: () => services.noteActions.updateAll(),
+        updateAll: () => services.noteActions.updateAll({ create: false }),
       }),
     );
     registerCitationSuggest(this, {

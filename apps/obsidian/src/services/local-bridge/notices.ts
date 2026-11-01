@@ -1,5 +1,6 @@
 // UI seam for the Local Bridge: the Notice a connected Save shows in Obsidian,
 // with the one action that carries the new look into the notes already written.
+// That action updates existing notes; it creates none.
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
@@ -10,7 +11,7 @@ const SAVED_NOTICE_DURATION_MS = 15_000;
 
 export interface WorkbenchSavedNoticeDeps {
   localBridge: Pick<LocalBridgeHandle, "onProfileSaved">;
-  /** The existing Update all notes flow, batch confirm modal and outcome notice included. */
+  /** The Update all notes flow over existing notes, batch confirm modal and outcome notice included. */
   updateAll: () => Promise<void>;
 }
 

@@ -26,10 +26,12 @@ import { NoteFeature } from "./service";
 import { switchNoteProfileInteractively } from "./switch-view";
 import { runBatchUpdateAll } from "./update-batch";
 import type {
+  BatchUpdateOptions,
   BatchUpdatePorts,
   BatchUpdateResult,
   BatchUpdateServices,
 } from "./update-batch";
+import type { UpdateNotesChoice } from "./update-notes-view";
 import {
   noteOperationDiagnosticContent,
   updateNoteToast,
@@ -48,6 +50,10 @@ export type NoteActionServices =
 export interface NoteActionPorts extends InteractiveCreationPorts {
   readonly batchImport: BatchImportPorts;
   readonly batchUpdate: BatchUpdatePorts;
+  /** Ask which notes to update; `null` when the user closes the dialog. */
+  readonly chooseNotes: (
+    noteOpen: boolean,
+  ) => Effect.Effect<UpdateNotesChoice | null>;
 }
 
 /** The notice tells the user how the task went, so a failure ends here; an interrupt passes. */
@@ -130,11 +136,30 @@ export const reimportNote = Effect.fn("NoteActions.reimportNote")(function* (
  */
 export const updateAll = Effect.fn("NoteActions.updateAll")(function* (
   ports: NoteActionPorts,
+  options: Pick<BatchUpdateOptions, "create"> = {},
 ) {
-  yield* reportOutcome(runBatchUpdateAll(ports.batchUpdate), {
+  yield* reportOutcome(runBatchUpdateAll(ports.batchUpdate, {}, options), {
     success: batchUpdateAllNotice,
     error: () => undefined,
   });
+});
+
+/** Ask which notes to update, then update them. `note` is the active note. */
+export const updateNotes = Effect.fn("NoteActions.updateNotes")(function* (
+  ports: NoteActionPorts,
+  note?: { file: TFile; itemKey: string },
+) {
+  const choice = yield* ports.chooseNotes(note !== undefined);
+  if (choice === null) return;
+  if (choice.target === "note") {
+    if (note)
+      yield* updateNote(ports, note.file, {
+        itemKey: note.itemKey,
+        scope: "full",
+      });
+    return;
+  }
+  yield* updateAll(ports, { create: choice.create });
 });
 
 /** The copy one Reimport note reports with. */

@@ -428,10 +428,12 @@ const runBatchUpdate = Effect.fnUntraced(function* (
 const runBatchUpdateAll = Effect.fnUntraced(function* (
   deps: UpdateDeps,
   target?: Parameters<typeof runBatchUpdateAllEffect>[1],
+  options?: Parameters<typeof runBatchUpdateAllEffect>[2],
 ) {
   return yield* runBatchUpdateAllEffect(
     portsOf(deps, yield* scopedBridge),
     target,
+    options,
   ).pipe(Effect.provide(deps.layer));
 });
 
@@ -440,6 +442,8 @@ async function classifyLastModal(): Promise<{
   tasks: { id: number; kind: string }[];
   groups: FlatGroupDef[];
   intro: string;
+  skipped: { itemID: number }[];
+  skippedHeader?: (args: { count: number }) => string;
 }> {
   const opts = openedModals.at(-1);
   if (!opts) throw new Error("no modal was opened");
@@ -450,6 +454,8 @@ async function classifyLastModal(): Promise<{
   return {
     tasks: manifest.options.tasks,
     groups: manifest.options.groups,
+    skipped: manifest.options.upToDate,
+    skippedHeader: manifest.options.upToDateHeader,
     intro: opts.text.confirmIntro({
       actionable: manifest.options.tasks.length,
       notFound: manifest.options.notFound.length,
@@ -2158,6 +2164,51 @@ describe("runBatchUpdateAll", () => {
         ]);
         expect(openedModals[0]?.total).toBe(3);
       }),
+  );
+
+  it.effect("leaves papers with no note out of an existing-only run", () =>
+    Effect.gen(function* () {
+      itemsIn(
+        new Map([
+          [1, USER_LIBRARY_ID],
+          [2, USER_LIBRARY_ID],
+        ]),
+      );
+
+      yield* runBatchUpdateAll(makeDeps(), undefined, { create: false });
+
+      const { tasks, skipped, skippedHeader, intro } = yield* Effect.promise(
+        () => classifyLastModal(),
+      );
+      expect(tasks).toEqual([]);
+      expect(skipped.map((row) => row.itemID)).toEqual([1, 2]);
+      expect(skippedHeader?.({ count: 2 })).toBe(
+        m.batch_update_group_no_note({ count: 2 }),
+      );
+      expect(intro).toBe(m.batch_update_existing_confirm_none());
+      expect(
+        openedModals[0]?.text.confirmIntro({ actionable: 3, notFound: 0 }),
+      ).toBe(m.batch_update_existing_confirm_intro({ count: 3 }));
+    }),
+  );
+
+  it.effect("creates missing notes in a run that asks for them", () =>
+    Effect.gen(function* () {
+      itemsIn(
+        new Map([
+          [1, USER_LIBRARY_ID],
+          [2, USER_LIBRARY_ID],
+        ]),
+      );
+
+      yield* runBatchUpdateAll(makeDeps(), undefined, { create: true });
+
+      const { tasks } = yield* Effect.promise(() => classifyLastModal());
+      expect(tasks.map((task) => task.kind)).toEqual([
+        expect.stringContaining("create"),
+        expect.stringContaining("create"),
+      ]);
+    }),
   );
 
   it.effect(

@@ -1053,6 +1053,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
+  it("offers an update of existing notes alone from the Update notes dialog", async () => {
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById("zotlit:update-notes");
+      },
+      undefined,
+      { tries: 20, what: "the zotlit update-notes command to run" },
+    );
+
+    await clickModalButton(run.vaultId, run.m.modal_update_notes_all());
+    const confirmation = await obRunUntil(
+      run.vaultId,
+      async (_context, { confirmText }) => {
+        const modal = activeDocument.querySelector<HTMLElement>(".modal");
+        const ready = Array.from(modal?.querySelectorAll("button") ?? []).some(
+          (button) => button.textContent.trim() === confirmText,
+        );
+        return ready ? modal!.textContent : "";
+      },
+      { confirmText: run.m.batch_update_confirm_button() },
+      {
+        ready: (text) => text !== "",
+        what: "the batch confirmation of the Update notes dialog",
+      },
+    );
+    await clickModalButton(run.vaultId, run.m.modal_cancel());
+
+    expect(confirmation).toMatch(/Update \d+ literature notes\?/);
+    expect(confirmation).toContain("No note (");
+    expect(confirmation).not.toContain("Create (");
+  });
+
   // Covers both the "rendered literature note" and "batch operation"
   // acceptance-criteria bullets together — a deliberate simplification, not
   // an oversight: update-all-notes is itself a batch write of Literature

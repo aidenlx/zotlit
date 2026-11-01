@@ -13,10 +13,13 @@ import {
   switchProfile,
   updateAll,
   updateNote,
+  updateNotes,
 } from "./actions-view";
 import type { NoteActionPorts, NoteActionServices } from "./actions-view";
 import type { InteractiveCreationPorts } from "./creation-view";
 import type { UpdateScope } from "./operations";
+import type { BatchUpdateOptions } from "./update-batch";
+import { awaitUpdateNotesChoice } from "./update-notes-view";
 import type { BatchUpdateNotices } from "./update-single";
 
 /** Each action asks, runs, and reports on a notice; it settles when it ends. */
@@ -33,7 +36,9 @@ export interface NoteActions {
   /** @see reimportNote */
   reimportNote(file: TFile, noteKey: string): Promise<void>;
   /** @see updateAll */
-  updateAll(): Promise<void>;
+  updateAll(options?: Pick<BatchUpdateOptions, "create">): Promise<void>;
+  /** @see updateNotes */
+  updateNotes(note?: { file: TFile; itemKey: string }): Promise<void>;
 }
 
 /**
@@ -54,6 +59,8 @@ export function bindNoteActions(
     ...ports.creation,
     batchImport: { view: ports.view, bridge },
     batchUpdate: { notices: ports.notices, view: ports.view, bridge },
+    chooseNotes: (noteOpen) =>
+      awaitUpdateNotesChoice(ports.creation.app, noteOpen),
   };
   const runExit = exitOver(bridge, context);
   const run = async <E>(effect: Effect.Effect<void, E, NoteActionServices>) =>
@@ -65,6 +72,7 @@ export function bindNoteActions(
       run(overwriteNote(actionPorts, file, itemKey)),
     reimportNote: (file, noteKey) =>
       run(reimportNote(actionPorts, file, noteKey)),
-    updateAll: () => run(updateAll(actionPorts)),
+    updateAll: (options) => run(updateAll(actionPorts, options)),
+    updateNotes: (note) => run(updateNotes(actionPorts, note)),
   };
 }
