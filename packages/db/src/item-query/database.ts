@@ -151,7 +151,8 @@ export function readerStatementSQL(client: NodeDatabaseClient): string[] {
  * for a selective term and starts the join at every `items` row of the
  * Library, which costs the same for one match as for all. With the Library
  * term outside the indexes, a statement starts at the rows its leaf or its ID
- * list names and checks the Library of each one. It changes speed only.
+ * list names, or walks a scan in Item ID order without a temporary sort,
+ * and checks the Library of each one. It changes speed only.
  */
 export function unindexed(column: AnyColumn): SQL {
   return sql`+${column}`;

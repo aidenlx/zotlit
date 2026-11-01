@@ -43,7 +43,7 @@ describe("ItemQueryStatementObserver", () => {
     using scenario = openScenarioDatabase();
     const { value, runs } = observe(
       scenario,
-      readScanPage({ libraryID: personal.libraryID, afterKey: null, size: 4 }),
+      readScanPage({ libraryID: personal.libraryID, afterItemID: 0, size: 4 }),
     );
 
     // The first statement on a copy follows the layout check.
@@ -63,7 +63,7 @@ describe("ItemQueryStatementObserver", () => {
       scenario,
       Effect.gen(function* () {
         const { libraryID } = personal;
-        const page = yield* readScanPage({ libraryID, afterKey: null });
+        const page = yield* readScanPage({ libraryID, afterItemID: 0 });
         const itemIDs = page.map((row) => row.itemID);
         yield* readLibraryRowCount(libraryID);
         yield* readCandidateSet({
@@ -110,7 +110,7 @@ describe("ItemQueryStatementObserver", () => {
     const runs: StatementRun[] = [];
 
     const exit = Effect.runSyncExit(
-      readScanPage({ libraryID: personal.libraryID, afterKey: null }).pipe(
+      readScanPage({ libraryID: personal.libraryID, afterItemID: 0 }).pipe(
         Effect.provideService(ItemQueryStatementObserver, (run) => {
           runs.push(run);
         }),

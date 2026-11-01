@@ -96,29 +96,29 @@ function universe(db: NodeDatabaseClient) {
 
 const scan = defineStatement<{
   libraryID: number;
-  afterKey: string;
+  afterItemID: number;
   limit: number;
 }>("annotation-scan-page")((db, { placeholder }) =>
   selectAnnotations(db)
     .where(
       and(
-        eq(items.libraryID, placeholder("libraryID")),
-        gt(items.key, placeholder("afterKey")),
+        eq(unindexed(items.libraryID), placeholder("libraryID")),
+        gt(items.itemID, placeholder("afterItemID")),
         ...universe(db),
       ),
     )
-    .orderBy(asc(items.key))
+    .orderBy(asc(items.itemID))
     .limit(placeholder("limit")),
 );
 
 export function readAnnotationScanPage(page: {
   libraryID: number;
-  afterKey: string | null;
+  afterItemID?: number;
   size?: number;
 }) {
   return scan.all({
     libraryID: page.libraryID,
-    afterKey: page.afterKey ?? "",
+    afterItemID: page.afterItemID ?? 0,
     limit: Math.min(page.size ?? SCAN_PAGE_SIZE, SCAN_PAGE_SIZE),
   });
 }
@@ -138,7 +138,7 @@ const universeRows = defineStatement<
         ...universe(db),
       ),
     )
-    .orderBy(asc(items.key)),
+    .orderBy(asc(items.itemID)),
 );
 
 export function readAnnotationUniverseRows(chunk: {

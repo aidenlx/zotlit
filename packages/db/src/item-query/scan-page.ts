@@ -77,30 +77,30 @@ function universeTerms(db: NodeDatabaseClient): SQL[] {
 
 const scanPageStatement = defineStatement<{
   libraryID: number;
-  afterKey: string;
+  afterItemID: number;
   limit: number;
 }>("scan-page")((db, { placeholder }) =>
   selectScanRows(db)
     .where(
       and(
-        eq(items.libraryID, placeholder("libraryID")),
-        gt(items.key, placeholder("afterKey")),
+        eq(unindexed(items.libraryID), placeholder("libraryID")),
+        gt(items.itemID, placeholder("afterItemID")),
         ...universeTerms(db),
       ),
     )
-    .orderBy(asc(items.key))
+    .orderBy(asc(items.itemID))
     .limit(placeholder("limit")),
 );
 
 /**
  * Read one keyset page of the query universe: the top-level, non-trashed Items
- * of one Library, in key order, after `afterKey` (`null` for the first page).
+ * of one Library, in Item ID order, after `afterItemID` (0 for the first page).
  * A page holds at most {@link SCAN_PAGE_SIZE} Items; a shorter page than the
  * requested size is the last one.
  */
 export function readScanPage(page: {
   libraryID: number;
-  afterKey: string | null;
+  afterItemID?: number;
   /**
    * At most {@link SCAN_PAGE_SIZE}.
    *
@@ -110,7 +110,7 @@ export function readScanPage(page: {
 }): Effect.Effect<ScanRow[], ItemQueryReaderError, ItemQueryDatabase> {
   return scanPageStatement.all({
     libraryID: page.libraryID,
-    afterKey: page.afterKey ?? "",
+    afterItemID: page.afterItemID ?? 0,
     limit: Math.min(page.size ?? SCAN_PAGE_SIZE, SCAN_PAGE_SIZE),
   });
 }
@@ -131,12 +131,12 @@ const universeRowsStatement = defineStatement<
         ...universeTerms(db),
       ),
     )
-    .orderBy(asc(items.key)),
+    .orderBy(asc(items.itemID)),
 );
 
 /**
  * Restrict a chunk of Item IDs to the query universe: the row of each ID that
- * is a top-level, non-trashed Item of the one Library, in key order and in
+ * is a top-level, non-trashed Item of the one Library, in Item ID order and in
  * the form of {@link readScanPage}. A chunk holds at most
  * {@link SCAN_PAGE_SIZE} IDs.
  */

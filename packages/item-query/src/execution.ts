@@ -65,7 +65,7 @@ export interface QueryRun<I extends { scan: ScanRow }> extends DatasetRun<I> {
   readonly libraries: readonly TargetLibrary[];
   readonly readScanPage: (page: {
     libraryID: number;
-    afterKey: string | null;
+    afterItemID: number;
     size: number;
   }) => Read<readonly I["scan"][]>;
   readonly readUniverseRows: (chunk: {
@@ -152,16 +152,16 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
           yield* takeChunk(library, page.slice(start, start + chunkSize));
         }
       });
-    /** Read and take the scan page after `afterKey`. Null: the last page. */
-    const takeScanPage = (library: number, afterKey: string | null) =>
+    /** Read and take the scan page after `afterItemID`. Null: the last page. */
+    const takeScanPage = (library: number, afterItemID: number) =>
       Effect.gen(function* () {
         const page = yield* run.readScanPage({
           libraryID: libraries[library]!.libraryID,
-          afterKey,
+          afterItemID,
           size: scanPageSize,
         });
         yield* takePage(library, page);
-        return page.length < scanPageSize ? null : page.at(-1)!.key;
+        return page.length < scanPageSize ? null : page.at(-1)!.itemID;
       });
 
     // Each Library has its own plan. The candidate pass reads the Items that
@@ -179,7 +179,7 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
         tuning,
       });
       if (candidates) {
-        const itemIDs = [...candidates];
+        const itemIDs = [...candidates].sort((a, b) => a - b);
         for (let start = 0; start < itemIDs.length; start += scanPageSize) {
           yield* takePage(
             index,
@@ -190,9 +190,9 @@ export function consumeDataset<I extends { scan: ScanRow }, A, E, R>(
           );
         }
       } else {
-        let afterKey: string | null = null;
-        do afterKey = yield* takeScanPage(index, afterKey);
-        while (afterKey !== null);
+        let afterItemID: number | null = 0;
+        do afterItemID = yield* takeScanPage(index, afterItemID);
+        while (afterItemID !== null);
       }
     }
 
