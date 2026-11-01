@@ -451,9 +451,12 @@ function diagnosticObject(
         ? m.workbench_tab_properties()
         : m.workbench_problems_object_property({ key: String(params.key) });
     case "citation-style-error":
-      return m.workbench_problems_object_style({
-        styleId: String(params.styleId),
-      });
+      // A host's own sentence can stand without naming a style.
+      return params.styleId === undefined
+        ? m.workbench_problems_object_citation()
+        : m.workbench_problems_object_style({
+            styleId: String(params.styleId),
+          });
     case "missing-dependency":
     case "unsupported-dependency":
       return params.name === undefined

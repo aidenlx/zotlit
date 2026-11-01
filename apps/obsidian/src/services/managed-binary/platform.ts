@@ -5,7 +5,7 @@ import type { App } from "obsidian";
 import { layerRequestUrlHttpClient } from "@/lib/http-client";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
-import { createOpfsBinaryStore } from "./store";
+import { createMemoryBinaryStore, createOpfsBinaryStore } from "./store";
 import type { BinaryStore } from "./store";
 
 /**
@@ -67,14 +67,24 @@ export class ManagedBinaryPlatform extends Context.Service<
   ManagedBinaryPorts
 >()("zotlit/managed-binary/ManagedBinaryPlatform") {}
 
+/** This vault's plugin starts with no Managed Binary cached, in a dev build. */
+const EMPTY_BINARY_STORE_KEY = "zotlit-e2e-empty-binary-store";
+
 /** The platform over the remote `HttpClient` the caller provides. */
 const layerManagedBinaryPlatformWith = Layer.effect(
   ManagedBinaryPlatform,
   Effect.gen(function* () {
     const app = yield* ObsidianApp;
     const http = yield* HttpClient.HttpClient;
+    // Every vault shares the device's OPFS, so an End-to-end Run reads an empty
+    // store to see a device with no binary. A dev-build port, never reached in
+    // a production build.
+    const openStore =
+      __DEV__ && app.loadLocalStorage(EMPTY_BINARY_STORE_KEY)
+        ? createMemoryBinaryStore
+        : createOpfsBinaryStore;
     return {
-      ...devicePorts({ openStore: createOpfsBinaryStore, consent: app }),
+      ...devicePorts({ openStore, consent: app }),
       download: (url) => downloadBytes(http, url),
     } satisfies ManagedBinaryPorts;
   }),

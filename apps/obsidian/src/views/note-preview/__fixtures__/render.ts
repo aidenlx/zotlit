@@ -10,6 +10,8 @@ import { makeViewRegistry } from "@/lib/view-atoms";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import { CitationParse } from "@/services/citation-parse/service";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
+import { PandocEngine } from "@/services/pandoc/service";
+import type { PandocEngineStatus } from "@/services/pandoc/service";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
 import { NoteIndex } from "@/services/note-index/service";
@@ -47,6 +49,8 @@ interface PreviewHostDeps extends TemplateDataDeps {
     readonly invalidated: Stream.Stream<void>;
     readonly "style-missing": Stream.Stream<never>;
   };
+  pandocEngine: { status: PandocEngineStatus };
+  openCitationEngineSettings: () => void;
 }
 import { Stream } from "effect";
 import { buildSettings } from "@/services/settings/__fixtures__";
@@ -240,6 +244,8 @@ export async function createRenderFixture(options: { existing?: string; javascri
       ),
     },
     bibliographyRender: { changed: Stream.empty, settled: Stream.empty, invalidated: Stream.empty, "style-missing": Stream.empty, renderCitations, readCitations, readBibliography: (async () => null) as PreviewHostDeps["bibliographyRender"]["readBibliography"], vaultPresentation: { styleId: null, locale: null } },
+    pandocEngine: { status: { kind: "absent" } as PandocEngineStatus },
+    openCitationEngineSettings: vi.fn<() => void>(),
   } satisfies PreviewHostDeps;
   const cancelled: number[] = [];
   const service = zoteroReads.runtime.runSync(ZoteroReads);
@@ -264,6 +270,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
     Layer.mock(Profile, { resolveProfile: (selector) => Effect.suspend(() => deps.profile.resolveProfile(selector)), getBuiltInSource: Effect.suspend(() => deps.profile.getBuiltInSource), changes: Stream.unwrap(Effect.suspend(() => Effect.map(deps.profile.profiles, (profiles) => Stream.make({ loaded: true, profiles, diagnostics: [], defaultDocumentPath: "", templateStatus: templates.bridge.runSync(templates.status) })))) }),
     Layer.mock(CitationParse, { parse: (request) => Effect.suspend(() => deps.citationParse.parse(request)) }),
     Layer.mock(CitationLookup, { read: (request) => Effect.tryPromise(() => deps.citationLookup.read(request)).pipe(Effect.orDie) }),
+    Layer.mock(PandocEngine, { getStatus: Effect.sync(() => deps.pandocEngine.status) }),
     Layer.mock(BibliographyRender, {
       state: Effect.sync(() => ({ missingStyle: null, vaultPresentation: deps.bibliographyRender.vaultPresentation })),
       events: Stream.unwrap(Effect.sync(() => Stream.map(deps.bibliographyRender.invalidated, () => ({ _tag: "invalidated" as const })))),

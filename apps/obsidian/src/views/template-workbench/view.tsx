@@ -690,6 +690,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       {
         run: this.#runner.run,
         render,
+        ...(deps.nativePreview && {
+          openCitationEngineSettings:
+            deps.nativePreview.openCitationEngineSettings,
+        }),
         markdown: (props) => (
           <NativeMarkdown
             {...props}

@@ -100,6 +100,7 @@ export type {
   SliceSite,
   TemplateRenderResult,
   RenderCaller,
+  PreviewHint,
   RenderDiagnostic,
   RenderDiagnosticCode,
   RenderedProperty,

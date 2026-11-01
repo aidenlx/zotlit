@@ -81,6 +81,7 @@ import type { PreviewCitation } from "./citations";
 export interface NativeRenderDeps {
   readonly app: App;
   readonly registry: ViewRegistryHandle;
+  readonly openCitationEngineSettings: () => void;
 }
 
 interface RenderEnvironment {
@@ -744,6 +745,14 @@ const renderNativeProfileEffect = Effect.fn("NotePreview.renderNativeProfile")(
         ...noteCitations.diagnostics,
         ...annotationCitations.diagnostics,
       );
+      const previewHints = [
+        ...(noteCitations.hint
+          ? [{ ...noteCitations.hint, part: "note" as const }]
+          : []),
+        ...(annotationCitations.hint
+          ? [{ ...annotationCitations.hint, part: "annotation" as const }]
+          : []),
+      ];
       return {
         ...identity,
         sourcePath,
@@ -768,6 +777,7 @@ const renderNativeProfileEffect = Effect.fn("NotePreview.renderNativeProfile")(
         partial: null,
         annotationRanges,
         diagnostics,
+        previewHints,
       };
     }).pipe(
       Effect.catchCause((cause) =>
