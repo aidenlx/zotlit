@@ -132,6 +132,15 @@ const LOWERINGS: readonly Lowering[] = [
   lowerCollections,
 ];
 
+/** The `all` plan of the branches that lower, or null when none does. */
+function allOf<Leaf>(
+  branches: readonly (CandidatePlan<Leaf> | null)[],
+): CandidatePlan<Leaf> | null {
+  const plans = branches.filter((plan) => plan !== null);
+  if (plans.length === 0) return null;
+  return plans.length === 1 ? plans[0]! : { kind: "all", plans };
+}
+
 /**
  * Plan the candidate sets of a filter. Null: no part of the filter gives a
  * set, and the query uses the scan. `&&` uses the sides that lower, `||`
@@ -149,11 +158,11 @@ export function planCandidates<Item, Leaf = CandidateLeaf>(
   ) => Leaf | null,
 ): CandidatePlan<Leaf> | null {
   if (node.kind === "binary" && node.operator === "&&") {
-    const plans = [node.left, node.right]
-      .map((side) => planCandidates(side, sources, lowerLeaf))
-      .filter((plan) => plan !== null);
-    if (plans.length === 0) return null;
-    return plans.length === 1 ? plans[0]! : { kind: "all", plans };
+    return allOf(
+      [node.left, node.right].map((side) =>
+        planCandidates(side, sources, lowerLeaf),
+      ),
+    );
   }
   if (node.kind === "binary" && node.operator === "||") {
     const left = planCandidates(node.left, sources, lowerLeaf);
@@ -172,24 +181,15 @@ export function planCandidates<Item, Leaf = CandidateLeaf>(
       return null;
     // Method nodes resolve by name and subject type. Lowerings read only
     // kind, name, subject and args; the evaluator keeps the original tree.
-    const contains = values.map((value): FilterNode<Item> => ({
-      ...node,
-      name: "contains",
-      args: [value],
-    }));
-    return planCandidates(
-      contains.reduce((left, right) => ({
-        kind: "binary",
-        operator: node.name === "containsAny" ? "||" : "&&",
-        left,
-        right,
-        from: node.from,
-        to: node.to,
-        valueType: "boolean",
-      })),
-      sources,
-      lowerLeaf,
+    const plans = values.map((value) =>
+      planCandidates(
+        { ...node, name: "contains", args: [value] },
+        sources,
+        lowerLeaf,
+      ),
     );
+    if (node.name === "containsAll") return allOf(plans);
+    return plans.every((plan) => plan !== null) ? { kind: "any", plans } : null;
   }
   const leaf = lowerLeaf(node, sources);
   return leaf ? { kind: "leaf", leaf } : null;

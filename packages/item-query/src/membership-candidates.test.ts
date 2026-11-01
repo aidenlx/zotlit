@@ -73,6 +73,34 @@ it.each([
   expect(readers).not.toContain("scan-page");
 });
 
+// Failure mode: a nested plan overflows the stack on a long argument list.
+it.each(["containsAny", "containsAll"])(
+  "plans tags.%s with 10,000 values",
+  async (method) => {
+    using scenario = openScenarioDatabase();
+    const values = Array.from(
+      { length: 10_000 },
+      (_, index) => `"tag ${index}"`,
+    );
+    const query = collectQuery(ITEMS, {
+      libraries: [SCENARIO_LIBRARIES.personal],
+      filter: `tags.${method}(${values.join(", ")})`,
+      fields: [],
+      sort: [],
+    });
+    const actual = await runEffect(query, {
+      client: scenario.db,
+      tuning: { capRatio: 1 },
+    });
+    const scan = await runEffect(query, {
+      client: scenario.db,
+      tuning: { forceScan: true },
+    });
+    expect(actual.exit).toEqual(scan.exit);
+    expect(actual.exit._tag).toBe("Success");
+  },
+);
+
 it('scans text title.containsAny("a")', async () => {
   using scenario = openScenarioDatabase();
   const actual = await runEffect(
