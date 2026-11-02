@@ -122,7 +122,7 @@ Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts
 
 The properties depend on the records of the view. An annotations view offers the color, Tags, comment, text, page, and dates of each annotation. Every view offers the paper's title, creators, first author, year, item type, Collection, and library. Annotations and attachments views also offer the file's title and file type. An items view also offers the properties of your Literature Notes, as [Track reading status](/docs/how-to/track-reading-status#filter) shows.
 
-To write a condition as a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), give it a value, then select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. The filter expression editor colors field names, functions, numbers, and strings. As you type, autocompletion suggests available fields and functions (press `Tab` or `Enter` to insert), parameter hints show expected arguments, and wavy underlines flag syntax errors immediately. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual condition row.
+To write a condition as a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. The filter expression editor colors field names, functions, numbers, and strings. As you type, autocompletion suggests available fields and functions (press `Tab` or `Enter` to insert), parameter hints show expected arguments, and wavy underlines flag syntax errors immediately. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual condition row.
 
 ![A Query View filter written as an expression, with field names, functions, numbers, and text in different colors, a wavy underline and an error message under "year", and the completion list open with "tags" at the top](/img/how-to/filter-expression-editor.webp)
 
@@ -203,7 +203,7 @@ To show the year of each paper in an items view:
   </Step>
 </Steps>
 
-The file saves the formula under its top-level `formulas` key, and every view of the file can show it. To filter by a formula, give a condition in the filter editor a value, select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row, and replace the text with, for example, `formula.year >= 2020`. One formula can also use another, for example `formula.year + 1`.
+The file saves the formula under its top-level `formulas` key, and every view of the file can show it. To filter by a formula, select <UiLabel name={m.workbench_match_edit_as_expression()} /> on a condition in the filter editor and type, for example, `formula.year >= 2020`. One formula can also use another, for example `formula.year + 1`.
 
 To change a formula, select <UiLabel name={m.query_view_properties()} />. On its row, select the chevron button, tooltipped <UiLabel name={m.query_view_property_edit()} />, or press the Right arrow key. The page of the formula opens in the same menu. Change the text in <UiLabel name={m.query_view_formula_expression()} />. The text saves shortly after you stop typing, when it has no syntax errors. The name stays as it is: to use a new name, remove the formula and add it again. Select <UiLabel name={m.query_view_back()} /> to return to the list.
 

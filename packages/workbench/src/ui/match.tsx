@@ -601,9 +601,6 @@ function Row<Row extends LabelledRow>({
   const kind = isExpression(condition)
     ? undefined
     : vocabulary.kinds.find((entry) => entry.kind === condition.kind);
-  const expression = isExpression(condition)
-    ? null
-    : asExpression(condition, vocabulary);
   return (
     <div {...part("condition")} data-condition-row="">
       <div {...part("statement", issue ? "error" : undefined)}>
@@ -661,12 +658,9 @@ function Row<Row extends LabelledRow>({
             <button
               {...part("icon-button")}
               type="button"
-              disabled={expression === null}
               aria-label={m.workbench_match_edit_as_expression()}
               {...host.tooltip(m.workbench_match_edit_as_expression())}
-              onClick={() => {
-                if (expression) onChange(expression);
-              }}
+              onClick={() => onChange(asExpression(condition, vocabulary))}
             >
               {icon("advanced")}
             </button>

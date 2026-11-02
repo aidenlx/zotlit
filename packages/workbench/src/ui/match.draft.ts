@@ -413,16 +413,15 @@ export function moveAt<Row extends LabelledRow>(
   });
 }
 
-/**
- * A labelled row as an expression row: its meaning, as text; `null` while the
- * row has no value and so no text.
- */
+/** A labelled row as an expression row: its meaning, as text. */
 export function asExpression<Row extends LabelledRow>(
   condition: Row,
   vocabulary: MatchVocabulary<Row>,
-): ExpressionCondition | null {
-  const text = kindOf(vocabulary, condition.kind).format(condition);
-  return text === null ? null : { kind: "expression", text };
+): ExpressionCondition {
+  return {
+    kind: "expression",
+    text: kindOf(vocabulary, condition.kind).format(condition) ?? "",
+  };
 }
 
 /**
