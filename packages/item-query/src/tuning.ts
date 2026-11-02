@@ -13,6 +13,8 @@ export interface Tuning {
    * for a larger one.
    */
   readonly capRatio: number;
+  /** Skip a text sweep when the global ID range exceeds this share of Library rows. */
+  readonly textSweepSparseRatio: number;
   /** Pages per Relation List or Parent Record candidate read in one Target Library. */
   readonly relationPageBudget: number;
   /**
@@ -34,6 +36,7 @@ export interface Tuning {
 /** The production tuning. The measurement record can change these values. */
 export const PRODUCTION_TUNING: Tuning = {
   capRatio: 0.25,
+  textSweepSparseRatio: 8,
   relationPageBudget: 8,
   scanPageSize: SCAN_PAGE_SIZE,
   hydrateChunkSize: HYDRATE_CHUNK_SIZE,

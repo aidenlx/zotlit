@@ -5,6 +5,7 @@ import { Effect } from "effect";
 
 import type {
   CandidateLeaf,
+  SeekCandidateLeaf,
   CollectionPaths,
   FieldVocabulary,
   ItemQueryDatabase,
@@ -18,7 +19,7 @@ import type { TargetLibrary } from "./request";
 
 /** How the engine gets a candidate set for a filter. */
 export type CandidatePlan<Leaf = CandidateLeaf> =
-  | { readonly kind: "leaf"; readonly leaf: Leaf }
+  | { readonly kind: "leaf"; readonly leaf: Leaf; readonly sweep?: true }
   /** `&&`: the intersection of the sets within the cap; one set is enough. */
   | { readonly kind: "all"; readonly plans: readonly CandidatePlan<Leaf>[] }
   /** `||`: the union of the sets; it needs every set. */
@@ -42,7 +43,7 @@ export interface CandidateSources {
 type Lowering = <Item>(
   node: FilterNode<Item>,
   sources: CandidateSources,
-) => CandidateLeaf | null;
+) => SeekCandidateLeaf | null;
 
 const stringLiteral = <Item>(
   node: FilterNode<Item> | undefined,
@@ -136,7 +137,9 @@ const LOWERINGS: readonly Lowering[] = [
 function allOf<Leaf>(
   branches: readonly (CandidatePlan<Leaf> | null)[],
 ): CandidatePlan<Leaf> | null {
-  const plans = branches.filter((plan) => plan !== null);
+  const plans = branches
+    .filter((plan) => plan !== null)
+    .flatMap((plan) => (plan.kind === "all" ? plan.plans : [plan]));
   if (plans.length === 0) return null;
   return plans.length === 1 ? plans[0]! : { kind: "all", plans };
 }
@@ -167,12 +170,20 @@ export function planCandidates<Item, Leaf = CandidateLeaf>(
   if (node.kind === "binary" && node.operator === "||") {
     const left = planCandidates(node.left, sources, lowerLeaf);
     const right = planCandidates(node.right, sources, lowerLeaf);
-    return left && right ? { kind: "any", plans: [left, right] } : null;
+    return left && right
+      ? {
+          kind: "any",
+          plans: [left, right].flatMap((plan) =>
+            plan.kind === "any" ? plan.plans : [plan],
+          ),
+        }
+      : null;
   }
   if (
     node.kind === "method" &&
     (node.name === "containsAny" || node.name === "containsAll")
   ) {
+    if (node.subject.valueType === "string") return null;
     const values =
       node.args.length === 1 && node.args[0]?.kind === "list"
         ? node.args[0].elements
@@ -208,6 +219,7 @@ export const lowerItemCandidate: Lowering = (node, sources) => {
 /** The reason this branch cannot supply a complete candidate set. */
 export type CandidateFallback =
   | "candidate-cap-exceeded"
+  | "sparse-library"
   | "relation-page-budget-exhausted"
   | "parent-page-budget-exhausted";
 
@@ -246,9 +258,10 @@ export const readCandidatePlan = Effect.fnUntraced(function* <Leaf>(
     if (typeof itemIDs === "string") return itemIDs;
     return itemIDs.length > cap ? "candidate-cap-exceeded" : new Set(itemIDs);
   }
+  const branches = plan.plans.toSorted((a, b) => sweepOrder(a) - sweepOrder(b));
   if (plan.kind === "any") {
     const union = new Set<number>();
-    for (const branch of plan.plans) {
+    for (const branch of branches) {
       const set = yield* readCandidatePlan(branch, options);
       if (typeof set === "string") return set;
       for (const itemID of set) union.add(itemID);
@@ -257,14 +270,39 @@ export const readCandidatePlan = Effect.fnUntraced(function* <Leaf>(
     return union;
   }
   const sets: ReadonlySet<number>[] = [];
+  let hasSeekSet = false;
   let reason: CandidateFallback | undefined;
-  for (const branch of plan.plans) {
+  for (const branch of branches) {
+    if (hasSeekSet && hasSweep(branch)) continue;
     const set = yield* readCandidatePlan(branch, options);
     if (typeof set === "string") reason ??= set;
-    else sets.push(set);
+    else {
+      sets.push(set);
+      if (!requiresSweep(branch)) hasSeekSet = true;
+    }
   }
   if (sets.length === 0) return reason!;
   return sets.reduce(
     (kept, set) => new Set([...kept].filter((itemID) => set.has(itemID))),
   );
 });
+
+/** An all plan can use a seek alone; an any plan needs every branch. */
+function requiresSweep<Leaf>(plan: CandidatePlan<Leaf>): boolean {
+  if (plan.kind === "leaf") return plan.sweep === true;
+  return plan.kind === "all"
+    ? plan.plans.every(requiresSweep)
+    : plan.plans.some(requiresSweep);
+}
+
+/** Pure seeks first, mixed branches next, and pure sweeps last. */
+function sweepOrder<Leaf>(plan: CandidatePlan<Leaf>): 0 | 1 | 2 {
+  if (plan.kind === "leaf") return plan.sweep ? 2 : 0;
+  const orders = plan.plans.map(sweepOrder);
+  if (orders.every((order) => order === 0)) return 0;
+  return orders.every((order) => order === 2) ? 2 : 1;
+}
+
+export function hasSweep<Leaf>(plan: CandidatePlan<Leaf>): boolean {
+  return plan.kind === "leaf" ? plan.sweep === true : plan.plans.some(hasSweep);
+}

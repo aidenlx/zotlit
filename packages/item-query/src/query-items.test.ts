@@ -57,6 +57,23 @@ async function failure(scenario: ScenarioDatabase, request: ItemQueryRequest) {
 
 const keys = (found: QueryResult) => found.rows!.map((row) => row.indexedKey);
 
+it("reads a title text sweep without a scan page", async () => {
+  using scenario = openScenarioDatabase();
+  const { exit, events } = await run(scenario, {
+    libraries: [personal],
+    filter: 'title.icontains("exact")',
+    fields: [],
+    sort: [],
+  });
+  if (!Exit.isSuccess(exit)) throw new Error(String(exit.cause));
+  expect(keys(exit.value)).toEqual(["ART2FULL"]);
+  const readers = events.flatMap((event) =>
+    event.type === "statement" ? [event.statement.reader] : [],
+  );
+  expect(readers).toContain("text-sweep-window");
+  expect(readers).not.toContain("scan-page");
+});
+
 /**
  * The hydrate statements of a run: `fields` loads the field values of a chunk,
  * `relation` loads one relation of a chunk.

@@ -321,6 +321,17 @@ const LEAF_INDEXES = ["itemTags_tagID", "itemData_fieldID", "itemData_valueID"];
 {
   describe.runIf(highest)("parity of generated filter combinations", () => {
     const GENERATED_FILTER_PARTS = [
+      'title.contains("Exact")',
+      'title.icontains("literature")',
+      'publicationTitle.contains("Handbook")',
+      'publicationTitle.icontains("handbook")',
+      'title.contains("50%_off")',
+      'title.icontains("50%_OFF")',
+      'shortTitle.contains("气候")',
+      'shortTitle.icontains("气候")',
+      'volume.contains("12")',
+      'volume.icontains("12")',
+      'title.icontains("T")',
       'key == "ART2FULL"',
       'tags.containsAny("tie", "methods")',
       'tags.containsAll("to-read", "methods")',

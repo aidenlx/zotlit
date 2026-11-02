@@ -34,13 +34,15 @@ export const runCandidatePass = Effect.fnUntraced(function* ({
           relationPageBudget: tuning.relationPageBudget,
         })
       : null;
-  const cap = plan
-    ? Math.floor(
-        (yield* dataset.readRowCount(library.libraryID)) * tuning.capRatio,
-      )
-    : null;
+  const libraryRows = plan ? yield* dataset.readRowCount(library.libraryID) : 0;
+  const cap = plan ? Math.floor(libraryRows * tuning.capRatio) : null;
   const outcome = plan
-    ? yield* readDatasetCandidates(plan, library.libraryID, cap!)
+    ? yield* readDatasetCandidates(plan, {
+        libraryID: library.libraryID,
+        cap: cap!,
+        libraryRows,
+        sparseRatio: tuning.textSweepSparseRatio,
+      })
     : null;
   const candidates = typeof outcome === "string" ? null : outcome;
   yield* Effect.logDebug(

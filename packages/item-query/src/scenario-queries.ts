@@ -52,6 +52,17 @@ export function scenarioFormulas(
  * sorted query with a projection.
  */
 const FILTERS: readonly string[] = [
+  'title.icontains("literature")',
+  'publicationTitle.contains("Handbook")',
+  'publicationTitle.icontains("handbook")',
+  'title.contains("50%_off")',
+  'title.icontains("50%_OFF")',
+  'shortTitle.contains("气候")',
+  'shortTitle.icontains("气候")',
+  'volume.contains("12")',
+  'volume.icontains("12")',
+  'title.contains("t")',
+  'title.icontains("T")',
   'indexedKey == "ART2FULL"',
   '"ART2FULLg4815" == indexedKey',
   '["ART2FULL", "ART2FULLg4815"].contains(indexedKey)',
@@ -427,6 +438,18 @@ const except = (...keys: string[]) =>
   EVERY_ITEM.filter((key) => !keys.includes(key));
 
 const FILTER_MATCHES: Readonly<Record<string, readonly string[]>> = {
+  'title.contains("Exact")': ["ART2FULL", "ART2FULLg4815"],
+  'title.icontains("literature")': ["ART2FULL"],
+  'publicationTitle.contains("Handbook")': ["CHP2YEAR"],
+  'publicationTitle.icontains("handbook")': ["CHP2YEAR"],
+  'title.contains("50%_off")': ["UNI2CDE2"],
+  'title.icontains("50%_OFF")': ["UNI2CDE2"],
+  'shortTitle.contains("气候")': ["UNI2CDE2"],
+  'shortTitle.icontains("气候")': ["UNI2CDE2"],
+  'volume.contains("12")': ["ART2FULL", "TIE2AAAA", "TIE2BBBB"],
+  'volume.icontains("12")': ["ART2FULL", "TIE2AAAA", "TIE2BBBB"],
+  'title.contains("t")': except("TIE2CCCC"),
+  'title.icontains("T")': except("TIE2CCCC"),
   'indexedKey == "ART2FULL"': ["ART2FULL"],
   '"ART2FULLg4815" == indexedKey': ["ART2FULLg4815"],
   '["ART2FULL", "ART2FULLg4815"].contains(indexedKey)': [
