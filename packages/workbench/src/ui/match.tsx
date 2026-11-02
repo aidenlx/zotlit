@@ -595,9 +595,16 @@ function Row<Row extends LabelledRow>({
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- `place` stands for `stored`, a new array on each render
     [findFault, place],
   );
+  // A blank expression stores nothing, as a placeholder row does.
   const labelled = isExpression(condition)
-    ? asLabelled(condition, vocabulary)
+    ? condition.text.trim() === ""
+      ? placeholderRow(vocabulary)
+      : asLabelled(condition, vocabulary)
     : null;
+  const editVisually =
+    labelled === null
+      ? m.workbench_match_edit_visually_unavailable()
+      : m.workbench_match_edit_visually();
   const kind = isExpression(condition)
     ? undefined
     : vocabulary.kinds.find((entry) => entry.kind === condition.kind);
@@ -630,6 +637,7 @@ function Row<Row extends LabelledRow>({
               <MatchExpressionInput
                 aria-label={m.workbench_match_expression()}
                 aria-invalid={issue !== null}
+                placeholder={m.workbench_match_expression_placeholder()}
                 value={condition.text}
                 vocabulary={vocabulary.expression}
                 fault={fault}
@@ -645,9 +653,10 @@ function Row<Row extends LabelledRow>({
             <button
               {...part("icon-button")}
               type="button"
-              disabled={labelled === null}
-              aria-label={m.workbench_match_edit_visually()}
-              {...host.tooltip(m.workbench_match_edit_visually())}
+              // Stays hoverable and focusable, so its tooltip gives the reason.
+              aria-disabled={labelled === null || undefined}
+              aria-label={editVisually}
+              {...host.tooltip(editVisually)}
               onClick={() => {
                 if (labelled) onChange(labelled);
               }}
