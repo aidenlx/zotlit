@@ -217,9 +217,9 @@ What a popup control owes the keyboard, the screen reader and the pointer. `Sele
 - **Opening.** ArrowDown and ArrowUp open it from the trigger. A printable key opens it searching for that key, with the first match highlighted. Space and Enter are the button's press.
 - **Shutting.** Escape, a pick, and a press outside shut it. So does focus leaving the popup by keyboard, Shift+Tab back onto the trigger included, since an open popup's scope goes on taking the arrows and Enter. A press on the trigger is the popover's own toggle.
 - **Claiming keys.** An open popup claims its keys on an Obsidian Scope, so the surface beneath needs no exception for it ([keyboard scope](../policies/keyboard-scope.md)).
-- **Focus back.** A popup that shuts while it holds focus hands focus to its trigger. The browser restores focus only for the first popover of a stack, so a popup inside the Sort, Group or Filter popover does this itself, from a capture-phase `beforetoggle` listener (the Chooser unmounts its session in its own listener).
+- **Focus back.** A popup that shuts while it holds focus hands focus to its trigger. `PinnedPopover` does this for every popup.
 - **Names.** A combobox trigger carries `aria-controls` for the list box while the popup is open. The list box takes its name through `aria-labelledby`, since an `aria-label` on a container is a hover tooltip ([tooltips](../policies/tooltips.md)).
-- **Placement.** The popup flips in both axes: `position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline`.
+- **Placement.** Obsidian places the popup beside its trigger, above it where the room below runs out, and keeps it inside the window.
 - **Verifying.** Focus and dismissal are checked in the running app with trusted input, not untrusted `.click()` or `dispatchEvent` alone: see the obsidian-debug skill, "Trusted input".
 
 ## ZotLit mapping
@@ -242,8 +242,8 @@ What a popup control owes the keyboard, the screen reader and the pointer. `Sele
 
 Differences from Bases:
 
-- **`…` menu surface.** Bases opens an Obsidian `Menu` at `--layer-menu`. `Chooser.PageMenu` opens a native `popover="auto"` nested in the popup, because an Obsidian `Menu` paints under the popup's top layer ([ADR 0044](adr/0044-menus-and-popovers-are-obsidians-own-primitives.md)). The icon is `more-horizontal`; Bases uses `lucide-more-vertical`.
-- **Escape.** On a page, the popup steps back from any focus; when the `…` popover is open, its light dismiss closes it first. In Configure view, Bases reverts a focused text field first and goes back on the next Escape.
+- **`…` menu surface.** Bases opens an Obsidian `Menu` at `--layer-menu`. `Chooser.PageMenu` opens a `PinnedPopover` rendered in the popup ([ADR 0044](adr/0044-menus-and-popovers-are-obsidians-own-primitives.md)). The icon is `more-horizontal`; Bases uses `lucide-more-vertical`.
+- **Escape.** On a page, the popup steps back from any focus; when the `…` popover is open, it closes first. In Configure view, Bases reverts a focused text field first and goes back on the next Escape.
 - **Unmount.** A Chooser page leaves the DOM with no blur event, so `useChooserPageSave` saves again as the page unmounts. Bases has no such hook.
 - **`Chooser.PageGone`.** It steps back when a page's subject has left the file. Bases has no counterpart.
 

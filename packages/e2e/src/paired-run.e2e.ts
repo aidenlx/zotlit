@@ -15531,12 +15531,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { page: pageHelpers },
             { blockEl }: { blockEl: NoteQueryView },
           ) => {
-            const { press } = pageHelpers;
             const el = await pageHelpers.revealQueryView(blockEl);
-            press(
-              el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
-              "Sort",
-            );
+            await pageHelpers.openToolbarPopover(el, "sort");
           },
           { blockEl },
         );
@@ -15549,7 +15545,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             const { press } = pageHelpers;
             const el = await pageHelpers.revealQueryView(blockEl);
             press(
-              el.querySelector<HTMLElement>(
+              el.doc.querySelector<HTMLElement>(
                 '[data-query-popover="sort"] [data-sort-add]',
               ),
               "Add sort",
@@ -15566,8 +15562,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ) => {
             return (
               await pageHelpers.revealQueryView(blockEl)
-            ).querySelectorAll('[data-query-popover="sort"] [data-sort-row]')
-              .length;
+            ).doc.querySelectorAll(
+              '[data-query-popover="sort"] [data-sort-row]',
+            ).length;
           },
           { blockEl },
           {
@@ -15593,7 +15590,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ) => {
               return !!(
                 await pageHelpers.revealQueryView(keyName)
-              ).querySelector(
+              ).doc.querySelector(
                 `[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]`,
               );
             },
@@ -15620,7 +15617,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               const { pick } = pageHelpers;
               const el = await pageHelpers.revealQueryView(blockEl);
               await pick(
-                el.querySelector<HTMLButtonElement>(
+                el.doc.querySelector<HTMLButtonElement>(
                   `[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]`,
                 )!,
                 value,

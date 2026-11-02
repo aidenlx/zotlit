@@ -209,9 +209,9 @@ The Annotation View lists a Zotero attachment's Annotations beside the reader, w
 
 `zt-annot-lock` appears in the card header of an annotation that Zotero's reader does not let you change, such as one that Zotero imported from the PDF file. Its tooltip and its accessible name give the reason. The card's controls for the changes that the lock refuses are dimmed.
 
-`zt-chooser` marks the anchored popover a filtering multi-select opens. It is a native popover rather than an Obsidian menu, so `:popover-open` matches it while it stands and `menu` never reaches it. It takes its chrome from `--menu-background`, `--menu-border-color`, `--menu-border-width`, `--menu-corner-shape`, `--menu-padding`, `--menu-radius`, and `--menu-shadow`, so a theme that retints menus reaches it through those.
+`zt-chooser` marks the anchored popover a filtering multi-select opens. It stands on Obsidian's popover rather than an Obsidian menu, so `menu` never reaches it, and it is in the document only while it stands. It takes its chrome from `--menu-background`, `--menu-border-color`, `--menu-border-width`, `--menu-corner-shape`, `--menu-padding`, `--menu-radius`, and `--menu-shadow`, so a theme that retints menus reaches it through those.
 
-`zt-chooser-trigger` marks the control the popup hangs under, which is a `<button>` because that is what the popover invoker attribute takes. It carries `aria-expanded` and `data-open` while its popup stands, and its Obsidian button styling is reverted, so a theme styles it from this class rather than from `button`.
+`zt-chooser-trigger` marks the control the popup hangs under, which is a `<button>`. It carries `aria-expanded` and `data-open` while its popup stands, and its Obsidian button styling is reverted, so a theme styles it from this class rather than from `button`.
 
 These class names and data attribute values are ZotLit's public theme contract for the Annotation View. DOM structure remains private.
 

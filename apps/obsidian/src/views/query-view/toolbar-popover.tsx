@@ -1,8 +1,7 @@
 // A Query View toolbar button and the popover it opens, for a control a
 // `Menu` cannot hold: a list of rows with dropdowns and drag handles. The
-// popover is a native one in the top layer, so the platform owns showing it,
-// the outside click and Escape; CSS anchor positioning places it under its
-// button, as the Chooser does.
+// popover is a `PinnedPopover`, which owns placing it under its button, the
+// outside press and Escape.
 //
 // The shell is modelled on the Bases toolbar menu, and draws it from the same
 // variables: the `--menu-*` surface, sections split by a rule, a section
@@ -19,24 +18,20 @@
 //   "Add sort" with `icon="plus"`.
 // - `toolbarPopoverClass` — the surface classes, for a popover another
 //   component owns, such as the Results menu.
-// - `popoverFallbacks` — the placement fallbacks alone, for a Chooser popup
-//   that hangs from the toolbar.
 //
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
 import type { IconName } from "obsidian";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type {
   ButtonHTMLAttributes,
-  CSSProperties,
   HTMLAttributes,
   ReactNode,
   Ref,
 } from "react";
 
-import { useUniqueId } from "@zotlit/ui";
-
 import { Icon } from "@/components/obsidian/icon";
-import { raiseTooltips, tooltipHostRoot } from "@/components/popover-surface";
+import { PinnedPopover } from "@/components/pinned-popover";
+import type { PinnedPopoverHandle } from "@/components/pinned-popover";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { ToolbarButton } from "./toolbar-button";
@@ -44,24 +39,12 @@ import { ToolbarButton } from "./toolbar-button";
 /**
  * The surface of a toolbar popover: Obsidian's menu, from the `--menu-*`
  * variables a Bases toolbar menu reads. It has no padding: its sections pad
- * themselves. Placement reads `--zt-query-popover-anchor`; it opens under its
- * button, starting at the button's start edge, and flips to the other side
- * of either axis where the window has no room.
+ * themselves.
  */
-/**
- * Where a popover goes when the window has no room under its button: above
- * it, or ending at the button's end edge, as a control near the pane's right
- * edge needs.
- */
-export const popoverFallbacks =
-  "zt:[position-try-fallbacks:flip-block,flip-inline,flip-block_flip-inline]";
-
 export const toolbarPopoverClass = cn(
-  "zt:inset-auto zt:my-1 zt:max-h-[min(--spacing(120),calc(100%_-_--spacing(2)))] zt:max-w-[min(--spacing(110),100vw)] zt:min-w-55 zt:flex-col zt:overflow-auto zt:p-0 zt:[&:popover-open]:flex",
+  "zt:flex zt:max-h-[min(--spacing(120),calc(100vh_-_--spacing(2)))] zt:max-w-[min(--spacing(110),100vw)] zt:min-w-55 zt:flex-col zt:p-0",
   "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow) zt:[backdrop-filter:var(--menu-backdrop-filter)]",
   "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
-  "zt:[position-anchor:var(--zt-query-popover-anchor)] zt:[position-area:block-end_span-inline-end]",
-  popoverFallbacks,
 );
 
 export interface ToolbarPopoverProps {
@@ -100,49 +83,43 @@ export function ToolbarPopover({
   className,
   children,
 }: ToolbarPopoverProps) {
-  const id = useUniqueId();
   const [open, setOpen] = useState(false);
-  const popover = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (open && popover.current) return raiseTooltips(popover.current);
-  }, [open]);
-  const anchor = { "--zt-query-popover-anchor": `--${id}` } as CSSProperties;
+  const button = useRef<HTMLButtonElement>(null);
+  const popover = useRef<PinnedPopoverHandle>(null);
   return (
     <>
       <ToolbarButton
+        ref={button}
         icon={icon}
         label={label}
         active={active}
         count={count}
         open={open}
         {...(off === undefined
-          ? { popoverTarget: id, "aria-expanded": open }
+          ? { onClick: () => popover.current?.toggle(), "aria-expanded": open }
           : // Off, it keeps its focus stop, so its tooltip says why.
             { "aria-disabled": true, ...tooltipAttrs(off) })}
         data-query-toolbar={hook}
-        className="zt:[anchor-name:var(--zt-query-popover-anchor)] zt:aria-disabled:cursor-default zt:aria-disabled:opacity-50 zt:aria-disabled:hover:bg-transparent zt:aria-disabled:hover:text-muted-foreground"
-        style={anchor}
+        className="zt:aria-disabled:cursor-default zt:aria-disabled:opacity-50 zt:aria-disabled:hover:bg-transparent zt:aria-disabled:hover:text-muted-foreground"
       />
-      <div
-        ref={popover}
-        id={id}
-        popover="auto"
+      <PinnedPopover
+        anchor={button}
+        handle={popover}
         data-query-popover={hook}
-        onToggle={(event) => {
-          setOpen(event.newState === "open");
-          if (event.newState === "open") onOpen?.();
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (next) onOpen?.();
           else onClose?.();
         }}
-        // The root does not clip, so an editor's tooltip drawn in it, such
+        // The surface does not clip, so an editor's tooltip drawn in it, such
         // as the Filter popover's, reaches past its edge; the contents scroll
         // in a box of their own instead.
-        className={cn(toolbarPopoverClass, tooltipHostRoot, className)}
-        style={anchor}
+        className={cn(toolbarPopoverClass, className)}
       >
         <div className="zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-auto zt:rounded-[inherit] zt:[corner-shape:inherit]">
           {children}
         </div>
-      </div>
+      </PinnedPopover>
     </>
   );
 }

@@ -152,21 +152,20 @@ export function registerEndToEndRunHooks(): void {
         const open = () =>
           docs().flatMap((doc) => [
             ...doc.querySelectorAll<HTMLElement>(
-              ".menu, .modal-container, :popover-open",
+              ".menu, .modal-container, .zt-pinned-popover",
             ),
           ]);
         const left = open().map(
           (el) =>
             `${
-              el.matches(":popover-open")
+              el.matches(".zt-pinned-popover")
                 ? "popover"
                 : el.classList.contains("menu")
                   ? "menu"
                   : "dialog"
             }: ${el.textContent.trim().slice(0, 60)}`,
         );
-        for (const el of open())
-          if (el.matches(":popover-open")) el.hidePopover();
+        for (const doc of docs()) page.closePopovers(doc);
         await until(
           "menus and dialogs close",
           async () => {

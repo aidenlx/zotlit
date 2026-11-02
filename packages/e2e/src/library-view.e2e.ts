@@ -391,20 +391,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ app, page }) => {
-        const { press, until, pick } = page;
+        const { until, pick } = page;
         const el = (
           app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
             view: LibraryView;
           })[]
         )[0]!.view.contentEl;
-        press(
-          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
-          "Sort",
-        );
+        const popover = await page.openToolbarPopover(el, "sort");
         await pick(
           await until("sort direction", () =>
-            el.querySelector<HTMLButtonElement | HTMLSelectElement>(
-              '[data-query-popover="sort"] [data-sort-direction]',
+            popover.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              "[data-sort-direction]",
             ),
           ),
           "ASC",
@@ -1018,20 +1015,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ app, page }) => {
-        const { press, until, pick } = page;
+        const { until, pick } = page;
         const el = (
           app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
             view: LibraryView;
           })[]
         )[0]!.view.contentEl;
-        press(
-          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
-          "Sort",
-        );
+        const popover = await page.openToolbarPopover(el, "sort");
         await pick(
           await until("sort direction", () =>
-            el.querySelector<HTMLButtonElement | HTMLSelectElement>(
-              '[data-query-popover="sort"] [data-sort-direction]',
+            popover.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              "[data-sort-direction]",
             ),
           ),
           "ASC",
@@ -1518,20 +1512,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ app, page }) => {
-        const { press, until, pick } = page;
+        const { until, pick } = page;
         const el = (
           app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
             view: LibraryView;
           })[]
         )[0]!.view.contentEl;
-        press(
-          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
-          "Sort",
-        );
+        const popover = await page.openToolbarPopover(el, "sort");
         await pick(
           await until("sort direction", () =>
-            el.querySelector<HTMLButtonElement | HTMLSelectElement>(
-              '[data-query-popover="sort"] [data-sort-direction]',
+            popover.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              "[data-sort-direction]",
             ),
           ),
           "ASC",
@@ -1767,7 +1758,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const picked = (await obRun(
       run.vaultId,
       async ({ app, page }) => {
-        const { press, until, pick } = page;
+        const { until, pick } = page;
         const leaf = (
           app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
             view: LibraryView;
@@ -1782,15 +1773,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             0,
           20000,
         );
-        press(
-          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
-          "Sort",
-        );
-        const popover = await until("Sort popover", () =>
-          el.querySelector<HTMLElement>(
-            '[data-query-popover="sort"]:popover-open',
-          ),
-        );
+        const popover = await page.openToolbarPopover(el, "sort");
         await pick(
           await until("sort property", () =>
             popover.querySelector<HTMLButtonElement | HTMLSelectElement>(
@@ -1803,7 +1786,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const triggers = popover.querySelectorAll<HTMLElement>(
           "[data-sort-property]",
         ).length;
-        popover.hidePopover();
+        await page.closeToolbarPopover(el, "sort");
         return { triggers };
       },
       undefined,

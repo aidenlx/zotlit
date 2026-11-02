@@ -4,9 +4,9 @@
 // host, so the toolbar popover here and the sidebar's "Filter..." mount the
 // same part.
 //
-// The popover is the toolbar's native popover in the top layer (apps/obsidian
+// The popover is a toolbar popover, which stands at the menu layer (apps/obsidian
 // ADR 0044).
-// Obsidian's typing suggestions draw in the page under it, so the value fields
+// Obsidian's typing suggestions draw under that layer, so the value fields
 // take the browser's own suggestion list instead.
 import { useAtomValue } from "@effect/atom-react";
 import { Option } from "effect";
@@ -238,7 +238,7 @@ export function FilterEditor({
       matchData: NO_MATCH_DATA,
       insertTarget: () => null,
     });
-    // The popover sits in the top layer, over Obsidian's suggestion popups.
+    // The popover stands over Obsidian's suggestion popups.
     return { ...created, inputSuggestions: undefined };
   }, [app, run]);
   useEffect(() => () => host[Symbol.dispose](), [host]);

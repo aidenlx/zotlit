@@ -2,13 +2,14 @@
 // a limit that saves to the view, and "Copy to clipboard" and "Export CSV…"
 // for the rows on screen, with one column for each visible property.
 //
-// The menu is a native popover rather than a Chooser: its limit field takes
+// The menu is a `PinnedPopover` rather than a Chooser: its limit field takes
 // the arrow keys and Enter, which a Chooser's key scope would hold.
 import { useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
+import { PinnedPopover } from "@/components/pinned-popover";
+import type { PinnedPopoverHandle } from "@/components/pinned-popover";
 import { writeClipboardRichText } from "@/lib/clipboard";
 import { saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
@@ -126,10 +127,10 @@ export function ResultsMenu({ view }: { view: QueryView }) {
   // A limit the host writes itself shows as not set.
   useQueryViewState(view, (s) => s.defaults);
   const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const handle = useRef<PinnedPopoverHandle>(null);
   const popup = useRef<HTMLDivElement>(null);
-  const popupId = useUniqueId();
-  const anchor = `--${popupId}`;
-  const close = () => popup.current?.hidePopover();
+  const close = () => handle.current?.hide();
   // The limit field takes focus once the open menu has drawn it.
   useLayoutEffect(() => {
     if (open)
@@ -143,8 +144,9 @@ export function ResultsMenu({ view }: { view: QueryView }) {
       {/* The count is plain muted text, and takes the free room after it,
           so the controls after it sit at the toolbar's end. */}
       <button
+        ref={button}
         type="button"
-        popoverTarget={popupId}
+        onClick={() => handle.current?.toggle()}
         aria-expanded={open}
         data-query-results=""
         // A limit the host writes itself, as the Library View does, shows
@@ -153,11 +155,7 @@ export function ResultsMenu({ view }: { view: QueryView }) {
           view.setByResearcher(current).limit !== undefined ? "" : undefined
         }
         data-open={open ? "" : undefined}
-        className={cn(
-          toolbarButtonClass,
-          "zt:me-auto zt:shrink zt:[anchor-name:var(--zt-query-popover-anchor)]",
-        )}
-        style={{ "--zt-query-popover-anchor": anchor } as CSSProperties}
+        className={cn(toolbarButtonClass, "zt:me-auto zt:shrink")}
       >
         <ToolbarButtonContent
           label={<CountText view={view} />}
@@ -165,18 +163,17 @@ export function ResultsMenu({ view }: { view: QueryView }) {
           labelClassName="zt:text-xs"
         />
       </button>
-      <div
+      <PinnedPopover
         ref={popup}
-        id={popupId}
-        popover="auto"
+        anchor={button}
+        handle={handle}
         data-query-results-popup=""
-        onToggle={(event) => setOpen(event.newState === "open")}
+        onOpenChange={setOpen}
         className={cn(
           themeHook.chooser,
           toolbarPopoverClass,
           "zt:max-w-80 zt:min-w-60",
         )}
-        style={{ "--zt-query-popover-anchor": anchor } as CSSProperties}
       >
         {open && (
           <>
@@ -221,7 +218,7 @@ export function ResultsMenu({ view }: { view: QueryView }) {
             </PopoverActions>
           </>
         )}
-      </div>
+      </PinnedPopover>
     </>
   );
 }

@@ -2394,7 +2394,8 @@ it("keeps Sort in place but off while a search lists its hits in rank order, and
   expect(state()).toBe("off");
   // It says why, and opens nothing.
   expect(sort()!.getAttribute("aria-label")).toBe(m.query_view_sort_ranked());
-  expect(sort()!.hasAttribute("popovertarget")).toBe(false);
+  await act(() => sort()!.click());
+  expect(document.querySelector('[data-query-popover="sort"]')).toBeNull();
   await type(view, "");
   expect(state()).toBe("on");
 });

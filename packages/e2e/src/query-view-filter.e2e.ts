@@ -25,10 +25,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           leaf.detach(),
         );
         cleanup.defer(() => {
-          for (const popup of document.querySelectorAll<HTMLElement>(
-            "[popover]:popover-open",
-          ))
-            popup.hidePopover();
+          pageHelpers.closePopovers(document);
         });
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
@@ -36,17 +33,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           leaf.view as import("@/views/query-view/file-view").QueryFileView
         ).query.settled;
         const el = (leaf.view as import("obsidian").ItemView).contentEl;
-        press(
-          await until("Filter button", () =>
-            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-          ),
-          "Filter",
-        );
-        const popover = await until("Filter popover", () =>
-          el.doc.querySelector<HTMLElement>(
-            '[data-query-popover="filter"]:popover-open',
-          )!,
-        );
+        const popover = await pageHelpers.openToolbarPopover(el, "filter");
         const kind = await until("property select", () =>
           popover.querySelector<HTMLButtonElement>(
             '[data-filter-section="view"] [data-condition-row] [role=combobox]',
@@ -54,9 +41,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         press(kind, "property select");
         const list = await until("property list", () =>
-          kind.popoverTargetElement?.matches(":popover-open")
-            ? (kind.popoverTargetElement as HTMLElement)
-            : null!,
+          el.doc.querySelector<HTMLElement>("[data-select-popup]")!,
         );
         const search = await until("search field", () =>
           list.querySelector<HTMLInputElement>("input")!,
@@ -108,7 +93,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const result = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }, { path, source }) => {
-        const { press, until } = pageHelpers;
+        const { until } = pageHelpers;
         await using cleanup = new AsyncDisposableStack();
         const layout = app.workspace.getLayout();
         cleanup.defer(() => app.workspace.changeLayout(layout));
@@ -120,10 +105,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           leaf.detach(),
         );
         cleanup.defer(() => {
-          for (const popup of document.querySelectorAll<HTMLElement>(
-            "[popover]:popover-open",
-          ))
-            popup.hidePopover();
+          pageHelpers.closePopovers(document);
         });
         // A tooltip outlives the button it hovers until a pointer comes up.
         cleanup.defer(() => {
@@ -135,17 +117,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           leaf.view as import("@/views/query-view/file-view").QueryFileView
         ).query.settled;
         const el = (leaf.view as import("obsidian").ItemView).contentEl;
-        press(
-          await until("Filter button", () =>
-            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-          ),
-          "Filter",
-        );
-        const popover = await until("Filter popover", () =>
-          el.doc.querySelector<HTMLElement>(
-            '[data-query-popover="filter"]:popover-open',
-          )!,
-        );
+        const popover = await pageHelpers.openToolbarPopover(el, "filter");
         const remove = await until("remove button", () =>
           popover.querySelector<HTMLElement>(
             '[data-filter-section="view"] [aria-label="Remove condition"]',
@@ -176,18 +148,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         tooltip.style.pointerEvents = "";
         return {
           onTop: painted === tooltip,
-          offCentre: Math.abs(
-            (box.left + box.right) / 2 - (button.left + button.right) / 2,
-          ),
+          // Obsidian keeps a tooltip inside the window, so one near its edge
+          // sits off the button's centre but still covers it.
+          underButton:
+            box.left <= (button.left + button.right) / 2 &&
+            box.right >= (button.left + button.right) / 2,
           gap: box.top - button.bottom,
           arrowShown: getComputedStyle(tooltip).overflow === "visible",
-          popoverOpen: popover.matches(":popover-open"),
+          popoverOpen: popover.isConnected,
         };
       },
       { path, source },
     );
     expect(result.onTop).toBe(true);
-    expect(result.offCentre).toBeLessThan(2);
+    expect(result.underButton).toBe(true);
     expect(result.gap).toBeGreaterThanOrEqual(0);
     expect(result.gap).toBeLessThan(16);
     expect(result.arrowShown).toBe(true);
