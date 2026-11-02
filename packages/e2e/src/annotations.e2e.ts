@@ -952,9 +952,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async (
         { app, page },
-        { addConditionLabel, removeConditionLabel, editExpressionLabel },
+        {
+          addConditionLabel,
+          removeConditionLabel,
+          editExpressionLabel,
+          valueLabel,
+        },
       ) => {
-        const { press, until } = page;
+        const { press, pick, until } = page;
         await using cleanup = new AsyncDisposableStack();
         const contents = (
           require("@electron/remote") as typeof import("@electron/remote")
@@ -1003,10 +1008,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )!;
           if (remove) press(remove, "Remove condition");
         });
-        press(
-          row.querySelector<HTMLElement>(
-            `button[aria-label=${JSON.stringify(editExpressionLabel)}]`,
+        // A row with no value has no expression to edit.
+        await pick(
+          row.querySelector<HTMLSelectElement>(
+            `select[aria-label=${JSON.stringify(valueLabel)}]`,
           )!,
+          "yellow",
+          "Value",
+        );
+        press(
+          await until("expression button", () =>
+            row.querySelector<HTMLElement>(
+              `button[aria-label=${JSON.stringify(editExpressionLabel)}]:enabled`,
+            ),
+          ),
           "Edit as expression",
         );
         const content = await until("expression field", () =>
@@ -1141,6 +1156,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         addConditionLabel: run.m.workbench_match_add_condition(),
         removeConditionLabel: run.m.workbench_match_remove_condition(),
         editExpressionLabel: run.m.workbench_match_edit_as_expression(),
+        valueLabel: run.m.workbench_filter_value(),
       },
     );
     expect(escapes).toEqual({
