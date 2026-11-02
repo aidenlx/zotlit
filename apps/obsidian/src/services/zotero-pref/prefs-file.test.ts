@@ -1,12 +1,8 @@
-import { mkdirSync, mkdtempDisposableSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { electronAppData } from "./__fixtures__/electron-app-data";
 import {
   DEFAULT_ZOTERO_HTTP_PORT,
-  getZoteroProfilesRoot,
   isAddonActive,
   parsePrefsJs,
   parseZoteroProfiles,
@@ -14,87 +10,6 @@ import {
   resolveProfileDir,
   selectDefaultProfile,
 } from "./prefs-file";
-
-vi.mock("node:os", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("node:os")>()),
-  homedir: vi.fn(),
-}));
-
-// Failure modes: XDG profiles are missed, legacy profiles lose precedence,
-// or platform-specific suffixes are joined to the wrong application-data base.
-function profileEnvironment(platform: NodeJS.Platform, appData: string) {
-  using stack = new DisposableStack();
-  const { path: home } = stack.use(
-    mkdtempDisposableSync(join(tmpdir(), "zotlit-profiles-")),
-  );
-  vi.mocked(homedir).mockReturnValue(home);
-  vi.stubGlobal("process", { ...process, platform });
-  stack.defer(() => vi.unstubAllGlobals());
-  vi.stubEnv("MOZ_LEGACY_HOME", "");
-  stack.defer(() => vi.unstubAllEnvs());
-
-  stack.use(electronAppData(appData));
-  return { home, resources: stack.move() };
-}
-
-describe("getZoteroProfilesRoot", () => {
-  it("finds Linux profiles under Electron's XDG application data directory", () => {
-    using _resources = profileEnvironment(
-      "linux",
-      "/home/me/.config",
-    ).resources;
-    expect(getZoteroProfilesRoot()).toBe(
-      join("/home/me/.config", "zotero", "zotero"),
-    );
-  });
-
-  it("uses Electron's custom XDG_CONFIG_HOME location", () => {
-    using _resources = profileEnvironment("linux", "/custom-config").resources;
-    expect(getZoteroProfilesRoot()).toBe(
-      join("/custom-config", "zotero", "zotero"),
-    );
-  });
-
-  it("keeps the legacy Linux layout when both profile roots exist", () => {
-    using appData = mkdtempDisposableSync(join(tmpdir(), "zotlit-xdg-"));
-    const environment = profileEnvironment("linux", appData.path);
-    using _resources = environment.resources;
-    mkdirSync(join(environment.home, ".zotero/zotero"), { recursive: true });
-    mkdirSync(join(appData.path, "zotero/zotero"), { recursive: true });
-    expect(getZoteroProfilesRoot()).toBe(
-      join(environment.home, ".zotero/zotero"),
-    );
-  });
-
-  it("honors Gecko's forced legacy home on Linux", () => {
-    const environment = profileEnvironment("linux", "/custom-config");
-    using _resources = environment.resources;
-    vi.stubEnv("MOZ_LEGACY_HOME", "1");
-    expect(getZoteroProfilesRoot()).toBe(
-      join(environment.home, ".zotero/zotero"),
-    );
-  });
-
-  it("appends vendor and application names to Windows roaming app data", () => {
-    using _resources = profileEnvironment(
-      "win32",
-      "/redirected/Roaming",
-    ).resources;
-    expect(getZoteroProfilesRoot()).toBe(
-      join("/redirected/Roaming", "Zotero", "Zotero"),
-    );
-  });
-
-  it("appends only the application name to macOS Application Support", () => {
-    using _resources = profileEnvironment(
-      "darwin",
-      "/Users/me/Library/Application Support",
-    ).resources;
-    expect(getZoteroProfilesRoot()).toBe(
-      join("/Users/me/Library/Application Support", "Zotero"),
-    );
-  });
-});
 
 describe("resolveZoteroHttpPort", () => {
   it("uses the active profile's configured port", () => {

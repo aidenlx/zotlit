@@ -89,7 +89,7 @@ for (const kind of ["data", "profile"] as const) {
                   Effect.ensuring(Queue.offer(stopped, path)),
                 ),
           { profileDir: "/profile" },
-          () => interrupt(),
+          { onSave: () => interrupt() },
         );
         const commit = yield* Effect.withFiber((fiber) => {
           // The synchronous OS callback interrupts exactly after persistence.
@@ -284,5 +284,45 @@ it.effect("passes an interrupted profile list through without a warning", () =>
     );
     expect(Exit.hasInterrupts(exit)).toBe(true);
     expect(logged).toEqual([]);
+  }),
+);
+
+// A slow Linux directory lookup belongs inside the existing startup I/O bound.
+it.effect("bounds profile-root discovery and publishes its late result", () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>();
+    const root = yield* Deferred.make<string>();
+    const first = yield* zoteroPrefFixture(
+      (path) =>
+        Effect.succeed(
+          path.endsWith("profiles.ini")
+            ? "[Profile0]\nName=Research\nIsRelative=1\nPath=research.default\nDefault=1"
+            : 'user_pref("extensions.zotero.useDataDir", true);\nuser_pref("extensions.zotero.dataDir", "/research-data");',
+        ),
+      null,
+      {
+        profilesRoot: Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Deferred.await(root)),
+        ),
+      },
+    ).pipe(Effect.forkChild);
+    yield* Deferred.await(started);
+    yield* TestClock.adjust("5 seconds");
+    const f = yield* Fiber.join(first);
+    expect((yield* f.pref.current).state).toBe("degraded");
+    yield* Deferred.succeed(root, "/custom-config/zotero/zotero");
+    const ready = yield* Stream.runHead(
+      Stream.filter(f.pref.changes, (s) => s.state === "ready"),
+    );
+    expect(ready).toMatchObject({
+      value: {
+        resolvedProfileDir: join(
+          "/custom-config/zotero/zotero",
+          "research.default",
+        ),
+        dataDir: "/research-data",
+      },
+    });
+    expect(yield* f.pref.profilesRoot).toBe("/custom-config/zotero/zotero");
   }),
 );
