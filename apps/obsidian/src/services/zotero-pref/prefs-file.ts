@@ -1,6 +1,5 @@
 import { parse as parseIni } from "@std/ini/parse";
 import { regex } from "arkregex";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 /** JSON primitives a `user_pref(...)` value can take. */
@@ -17,7 +16,7 @@ export const ZOTERO_HTTP_PORT_PREF = "httpServer.port";
 /** File Gecko persists user prefs to, inside the profile directory. */
 export const PREFS_FILENAME = "prefs.js";
 
-/** File that lists profiles, in the directory above `Profiles/`. */
+/** File that lists profiles in the platform's Zotero profiles root. */
 export const PROFILES_INI_FILENAME = "profiles.ini";
 
 /** File Gecko lists the profile's installed add-ons in, with their state. */
@@ -37,28 +36,6 @@ export function resolveZoteroHttpPort(
     value <= 65_535
     ? value
     : DEFAULT_ZOTERO_HTTP_PORT;
-}
-
-/**
- * Platform directory that holds {@link PROFILES_INI_FILENAME} and the
- * `Profiles/` folder. Relative `Path=` entries in `profiles.ini` are resolved
- * against it.
- *
- * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/profile.js#L88-L90
- */
-export function getZoteroProfilesRoot(): string {
-  switch (process.platform) {
-    case "win32":
-      return join(
-        process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"),
-        "Zotero",
-        "Zotero",
-      );
-    case "darwin":
-      return join(homedir(), "Library", "Application Support", "Zotero");
-    default:
-      return join(homedir(), ".zotero", "zotero");
-  }
 }
 
 /** A `[ProfileN]` entry from `profiles.ini`. */
