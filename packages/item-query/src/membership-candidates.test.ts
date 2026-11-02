@@ -6,6 +6,7 @@ import {
 } from "@zotlit/db/test-scenario";
 
 import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
+import { ItemQueryScheduler } from "./scheduler";
 import { runEffect } from "./test-helpers";
 
 // Failure modes: membership scans despite literal arguments, or a candidate
@@ -74,6 +75,9 @@ it.each([
 });
 
 // Failure mode: a nested plan overflows the stack on a long argument list.
+// It runs on the production scheduler: the list makes 10,000 statements, and a
+// pause after every operation makes them 200,000 tasks that a busy machine
+// runs slowly.
 it.each(["containsAny", "containsAll"])(
   "plans tags.%s with 10,000 values",
   async (method) => {
@@ -91,10 +95,12 @@ it.each(["containsAny", "containsAll"])(
     const actual = await runEffect(query, {
       client: scenario.db,
       tuning: { capRatio: 1 },
+      scheduler: new ItemQueryScheduler(),
     });
     const scan = await runEffect(query, {
       client: scenario.db,
       tuning: { forceScan: true },
+      scheduler: new ItemQueryScheduler(),
     });
     expect(actual.exit).toEqual(scan.exit);
     expect(actual.exit).toMatchObject({
