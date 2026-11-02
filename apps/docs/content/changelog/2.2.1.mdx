@@ -14,10 +14,10 @@ This is a maintenance release after 2.2.0. It works with ZotLit Companion 2.2.0,
 
 ### Update notes
 
-- The new <Command inline name={m.command_update_notes_name()} /> command opens a dialog with two buttons: <UiLabel name={m.modal_update_notes_active()} /> and <UiLabel name={m.modal_update_notes_all()} />.
+- The new <Command inline name={m.command_update_notes_name()} /> command opens a dialog. <UiLabel name={m.modal_update_notes_all()} /> updates every existing note. <UiLabel name={m.modal_update_notes_active()} /> shows when a literature note is open.
 - The dialog creates no notes unless you ask. The checkbox <UiLabel name={m.modal_update_notes_create()} /> is off by default.
 - After you save a template in the web Template Workbench, the notice action now reads <UiLabel name={m.notice_workbench_profile_saved_action()} />. It changes only the notes you already have. It used to read "Update all notes".
-- Runs over a library or collection now always show the confirmation, even with one item.
+- When you update a whole library or collection, ZotLit now shows the confirmation even if it holds one item.
 - The older update commands stay available for keyboard shortcuts.
 - "Update imported note from Zotero" is now <Command inline name={m.command_reimport_note_name()} />, so the name says what it does. Your hotkeys keep working.
 
@@ -54,4 +54,3 @@ See [Filter the rows](/docs/how-to/use-query-files#filter) and [Profile Match](/
 - Some disks ignore letter case, the usual setup on macOS and Windows. There, a template folder set to `templates` beside a vault folder `Templates` broke template customizing. It failed with "Could not create the template document". Now ZotLit finds the existing folder. Notes also move into such folders correctly.
 - Tooltips on controls inside popups, such as the Query View Filter and Properties popups, appeared behind the popup. Now they show above it.
 - The function argument hint in filter expressions flashed and jumped as the cursor moved. Now it stays in place.
-- The web Template Workbench's completion list slid along with each typed letter. Now it stays at the start of the word.
