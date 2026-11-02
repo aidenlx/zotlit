@@ -5,10 +5,9 @@
 // them, so one highlight and one Enter reach both. A group heading is no
 // option, and the highlight never lands on one.
 //
-// The popup is a native popover in the browser's top layer, so the platform
-// owns showing it, the outside click and Escape; CSS anchor positioning places
-// it and flips it, so nothing here measures or moves it. It wears no Obsidian
-// menu class and takes menu chrome as CSS variables instead.
+// The popup is a `PinnedPopover`, which owns showing it, the outside press and
+// its focus at closing; Obsidian places it, so nothing here measures or moves
+// it. It wears no Obsidian menu class and takes menu chrome as CSS variables instead.
 //
 // The keyboard is Obsidian's: one Scope per open of the popup, parented to the
 // app scope and pushed while the popup stands, so a key it never registered
@@ -29,6 +28,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -36,7 +36,6 @@ import {
 } from "react";
 import type {
   ButtonHTMLAttributes,
-  CSSProperties,
   HTMLAttributes,
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
@@ -67,7 +66,8 @@ import type {
   ChooserMove,
   ChooserRow,
 } from "./chooser-logic";
-import { tooltipHostRoot } from "./popover-surface";
+import { PinnedPopover } from "./pinned-popover";
+import type { PinnedPopoverHandle } from "./pinned-popover";
 import "./chooser.css";
 
 // `chooser-logic.ts` is a module of its own rather than an implementation
@@ -81,12 +81,14 @@ import "./chooser.css";
 interface ChooserState {
   selected: readonly string[];
   onValueChange: (next: string[]) => void;
-  /** What the browser last reported through the popup's beforetoggle event. */
+  /** Whether the popup stands. */
   open: boolean;
   setOpen: (open: boolean) => void;
-  /** The `--zt-chooser-*` identifier binding the popup to its trigger. */
-  anchorName: string;
   popupId: string;
+  /** The trigger, which the popup opens beside. */
+  triggerRef: RefObject<HTMLButtonElement | null>;
+  /** Opens and shuts the popup. */
+  handleRef: RefObject<PinnedPopoverHandle | null>;
   /** The popup element, held so an action can shut the popup it ran from. */
   popupRef: RefObject<HTMLDivElement | null>;
   /** Shuts the popup. Only an action ever calls it; a tick never does. */
@@ -197,15 +199,15 @@ export function useChooserPage(): Pick<
  * trigger. A popup that stands already opens the page over the one on screen.
  */
 export function useChooserOpenPage(): (page: string) => void {
-  const { popupRef, firstPage, sessionPage } = useChooser();
+  const { handleRef, firstPage, sessionPage } = useChooser();
   return useCallback(
     (page: string) => {
       const open = sessionPage.current;
       if (open) return open(page);
       firstPage.current = page;
-      popupRef.current?.showPopover();
+      handleRef.current?.show();
     },
-    [popupRef, firstPage, sessionPage],
+    [handleRef, firstPage, sessionPage],
   );
 }
 
@@ -215,14 +217,14 @@ export function useChooserOpenPage(): (page: string) => void {
  * stands already keeps its search.
  */
 export function useChooserOpenSearch(): (query: string) => void {
-  const { popupRef, firstQuery, open } = useChooser();
+  const { handleRef, firstQuery, open } = useChooser();
   return useCallback(
     (query: string) => {
       if (open) return;
       firstQuery.current = query;
-      popupRef.current?.showPopover();
+      handleRef.current?.show();
     },
-    [popupRef, firstQuery, open],
+    [handleRef, firstQuery, open],
   );
 }
 
@@ -292,12 +294,12 @@ export interface ChooserProps {
 
 export function Chooser({ value, onValueChange, children }: ChooserProps) {
   const [open, setOpen] = useState(false);
-  // An anchor name is a global identifier, so each mounted Chooser takes one
-  // of its own rather than accepting one from its caller.
   const popupId = useUniqueId();
   const listRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
-  const close = useCallback(() => popupRef.current?.hidePopover(), []);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const handleRef = useRef<PinnedPopoverHandle | null>(null);
+  const close = useCallback(() => handleRef.current?.hide(), []);
   const firstPage = useRef<string | null>(null);
   const firstQuery = useRef("");
   const sessionPage = useRef<((page: string) => void) | null>(null);
@@ -308,8 +310,9 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       onValueChange,
       open,
       setOpen,
-      anchorName: `--${popupId}`,
       popupId,
+      triggerRef,
+      handleRef,
       popupRef,
       close,
       listId: `${popupId}-list`,
@@ -426,8 +429,7 @@ function ChooserSession({ children }: { children: ReactNode }) {
 
   /**
    * One scope per open, parented to the app scope so every key it leaves
-   * alone — Escape on the rows included, which stays the platform's — reaches Obsidian's
-   * own hotkeys.
+   * alone reaches Obsidian's own hotkeys.
    */
   const [scope] = useState(() => new Scope(app.scope));
   const activeValue = useCallback(() => {
@@ -494,15 +496,14 @@ function ChooserSession({ children }: { children: ReactNode }) {
       field.form?.requestSubmit();
       return false;
     };
-    // On the rows, Escape is the popover's own light dismiss, which a
-    // handler returning `false` would suppress, so it falls through. On a
-    // page, it steps back to the rows. A layer standing over the page — its
-    // `PageMenu`, or a field's own popup such as a Formula's completion list
-    // or Signature Hint — pushes a Scope above this one while it stands, so
-    // its Escape never reaches here.
+    // On the rows, Escape shuts the popup. On a page, it steps back to the
+    // rows. A layer standing over the page — its `PageMenu`, or a field's own
+    // popup such as a Formula's completion list or Signature Hint — pushes a
+    // Scope above this one while it stands, so its Escape never reaches here.
     const escape = (event: KeyboardEvent) => {
-      if (composing(event) || latest.current.page === null) return;
-      back();
+      if (composing(event)) return;
+      if (latest.current.page === null) close();
+      else back();
       return false;
     };
     // Ctrl-P and Ctrl-N repeat the arrows, the way every Obsidian list
@@ -602,7 +603,7 @@ function ChooserSession({ children }: { children: ReactNode }) {
 
 export interface ChooserTriggerProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
-  "popoverTarget" | "type"
+  "type"
 > {
   ref?: Ref<HTMLButtonElement>;
   /**
@@ -614,12 +615,12 @@ export interface ChooserTriggerProps extends Omit<
 }
 
 /**
- * The control the popup hangs under. The popover target attribute makes the
- * browser the one that opens and closes it, which is what keeps a press while
- * the popup stands from reopening what the outside click just dismissed.
+ * The control the popup hangs under. A press toggles the popup; the popup
+ * leaves a press on its trigger to this toggle, which keeps a press while the
+ * popup stands from reopening it.
  *
- * It carries the anchor name and `data-open`, so the caller's own content
- * reads the open state through `zt:group-data-open:` rather than a prop.
+ * It carries `data-open`, so the caller's own content reads the open state
+ * through `zt:group-data-open:` rather than a prop.
  *
  * Spec aidenlx/zotlit#1190 names a `Chooser.Value` part inside it. There is
  * none: a part that renders the selection has to decide what a selection
@@ -637,26 +638,31 @@ export interface ChooserTriggerProps extends Omit<
  * caller's utilities draw it. The wrapper would add `variant`, `loading` and
  * `icon` with no caller to take them, and save no rule: both routes render a
  * `<button>` inside `.zt-root`, so Obsidian's unlayered `button` rules reach
- * it either way. The attribute is not the difference — `Button` spreads
- * `popovertarget` through to its own element as this one does.
+ * it either way.
  *
  * @see ./chooser.css
  * @see .agents/skills/obsidian-css/SKILL.md
  */
 function Trigger({
   className,
-  style,
   ref,
   blocked,
   onClick,
   ...rest
 }: ChooserTriggerProps) {
-  const { anchorName, popupId, open, listId } = useChooser();
+  const { triggerRef, handleRef, open, listId } = useChooser();
+  const attach = useCallback(
+    (node: HTMLButtonElement | null) => {
+      triggerRef.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [triggerRef, ref],
+  );
   return (
     <button
-      ref={ref}
+      ref={attach}
       type="button"
-      popoverTarget={popupId}
       aria-expanded={open}
       // A trigger that stands as a combobox names the list box it controls,
       // which stands only while the popup is open.
@@ -666,136 +672,80 @@ function Trigger({
       {...rest}
       // A native `disabled` would drop the trigger from the tab order and
       // from the pointer events Obsidian's tooltip reads, so a blocked
-      // trigger cancels the click instead: that cancels the popover invoker
-      // too, for a press from the keyboard as from the pointer.
+      // trigger opens nothing instead, for a press from the keyboard as from
+      // the pointer. A caller that cancels the click keeps the popup shut.
       onClick={(e) => {
-        if (blocked) {
-          e.preventDefault();
-          return;
-        }
+        if (blocked) return;
         onClick?.(e);
+        if (!e.defaultPrevented) handleRef.current?.toggle();
       }}
       className={cn(
         themeHook.chooserTrigger,
-        "zt:group zt:[anchor-name:var(--zt-chooser-anchor)]",
+        "zt:group",
         "zt:aria-disabled:cursor-default zt:aria-disabled:opacity-50",
         className,
       )}
-      style={{ "--zt-chooser-anchor": anchorName, ...style } as CSSProperties}
     />
   );
 }
 
 export interface ChooserPopupProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  "id" | "popover" | "onToggle" | "onBeforeToggle"
+  "id" | "popover"
 > {
-  ref?: Ref<HTMLDivElement>;
+  /** Opens and shuts the popup, for a caller outside the Chooser's parts. */
+  handle?: Ref<PinnedPopoverHandle>;
 }
 
 /**
- * The popup itself. `inset: auto` hands placement to the position area: the
- * popover user-agent rule pins all four edges, which would strand a flipped
- * popup at the top of the viewport instead of above its trigger.
- *
- * Its height is the smaller of a comfortable list and the room the trigger
- * leaves: `position-area` makes the space on the chosen side the popup's
- * containing block, so a percentage height resolves against that space and
- * against the space on the other side once `flip-block` has flipped it. The
- * cap keeps a long vocabulary from filling a tall pane; the percentage keeps
- * a popup near an edge inside the viewport, scrolling its rows instead of
- * running off it.
- *
- * The display utility is gated on `:popover-open`. A closed popover is hidden
- * by the user-agent rule `[popover]:not(:popover-open) { display: none }`, and
- * an unconditional author-origin `display` outranks it — the popup then keeps
- * painting after it closes, dropping out of the top layer so the view behind
- * draws over it. It reads as a popup that will not close and has lost its
- * background.
+ * The popup itself. Its height is capped, so a long vocabulary does not fill a
+ * tall pane, and stays inside the window, scrolling its rows.
  *
  * The root does not clip, so an editor's tooltip drawn in it, such as a
  * Formula page's, reaches past its edge; its rows and its pages scroll in
  * boxes of their own.
  */
-function Popup({
-  className,
-  style,
-  ref,
-  children,
-  ...rest
-}: ChooserPopupProps) {
-  const { anchorName, popupId, popupRef, setOpen, open, listRef } =
+function Popup({ className, handle, children, ...rest }: ChooserPopupProps) {
+  const { popupId, popupRef, triggerRef, handleRef, setOpen, open, listRef } =
     useChooser();
-  /**
-   * The root holds the popup element too, beside whatever ref the caller
-   * passed. Two things reach for it: opening moves DOM focus to the search
-   * field inside it, and an action row closes the popup it ran from by hiding
-   * this element — the capability #1193 asks for when it says running an
-   * action leaves the popup standing unless the action chooses otherwise. In a
-   * popout window this element is also the only handle on the right document's
-   * popup.
-   *
-   * Memoised because a fresh callback ref is detached and reattached on every
-   * render, which would null `popupRef` and the caller's ref mid-flight.
-   */
-  const attach = useCallback(
-    (node: HTMLDivElement | null) => {
-      popupRef.current = node;
-      if (typeof ref === "function") ref(node);
-      else if (ref) ref.current = node;
-    },
-    [popupRef, ref],
+  useImperativeHandle(
+    handle,
+    () => ({
+      show: () => handleRef.current?.show(),
+      hide: () => handleRef.current?.hide(),
+      toggle: () => handleRef.current?.toggle(),
+      contains: (node) => handleRef.current?.contains(node) ?? false,
+    }),
+    [handleRef],
   );
 
   /**
-   * `beforetoggle` mounts and unmounts the session. The browser sends it
-   * before the popup shows, so the first frame the popup paints already
-   * holds the new session's empty search and fresh rows.
-   *
-   * `toggle` moves DOM focus into the popup once it shows, because the
-   * highlight is named by whatever element holds focus: a screen reader
-   * follows the active descendant of the focused element, and Enter on a
-   * trigger that kept focus is the invoker press that shuts the popup again.
-   * The search field takes focus when the caller rendered one; the list box
-   * takes it otherwise, which is why the list carries a programmatic tab
-   * index. The search part is optional, so the highlight cannot depend on it
-   * to have an owner. Focus waits for `toggle` because a popup that is not
-   * yet shown cannot take it.
-   *
-   * Both are listened to here rather than through JSX props, so they reach
-   * the element under every DOM the component renders in.
-   *
-   * Preact renders the unmount inside the `beforetoggle` listener, so by the
-   * time a caller's own bubbling listener runs, the search field is gone and
-   * focus has dropped to the body. A caller that acts on the focus a closing
-   * popup holds, as the Select hands it back to its trigger, listens in the
-   * capture phase.
+   * Opening moves DOM focus into the popup, because the highlight is named by
+   * whatever element holds focus: a screen reader follows the active
+   * descendant of the focused element, and Enter on a trigger that kept focus
+   * is a press that shuts the popup again. The search field takes focus when
+   * the caller rendered one; the list box takes it otherwise, which is why the
+   * list carries a programmatic tab index. The search part is optional, so the
+   * highlight cannot depend on it to have an owner. The session is mounted by
+   * this effect's time, so the first frame the popup paints already holds its
+   * empty search and fresh rows.
    */
   useLayoutEffect(() => {
     const popup = popupRef.current;
-    if (!popup) return;
-    const onBeforeToggle = (event: Event) =>
-      setOpen((event as ToggleEvent).newState === "open");
-    const onToggle = (event: Event) => {
-      if ((event as ToggleEvent).newState !== "open") return;
-      // A popup that opened on a page has focused that page's field already.
-      if (popup.contains(popup.doc.activeElement)) return;
-      const field = popup.querySelector<HTMLElement>("input");
-      (field ?? listRef.current)?.focus();
-    };
-    popup.addEventListener("beforetoggle", onBeforeToggle);
-    popup.addEventListener("toggle", onToggle);
-    return () => {
-      popup.removeEventListener("beforetoggle", onBeforeToggle);
-      popup.removeEventListener("toggle", onToggle);
-    };
-  }, [popupRef, setOpen, listRef]);
+    if (!open || !popup) return;
+    // A popup that opened on a page has focused that page's field already.
+    if (popup.contains(popup.doc.activeElement)) return;
+    const field = popup.querySelector<HTMLElement>("input");
+    (field ?? listRef.current)?.focus();
+  }, [open, popupRef, listRef]);
 
   return (
-    <div
-      ref={attach}
+    <PinnedPopover
+      ref={popupRef}
+      anchor={triggerRef}
+      handle={handleRef}
+      onOpenChange={setOpen}
       id={popupId}
-      popover="auto"
       {...rest}
       // An undo or a redo typed in the popup is its field's own text editing.
       // A Scope cannot keep it so: answering `false` cancels the browser's
@@ -808,20 +758,17 @@ function Popup({
       }}
       className={cn(
         themeHook.chooser,
-        "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
-        tooltipHostRoot,
+        "zt:flex zt:[max-height:min(--spacing(75),calc(100vh_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col",
         // No padding of its own: the search field runs edge to edge over its
         // rule, and the list carries the inset — `--menu-padding` — as
         // Obsidian's Bases toolbar menus are built.
         "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",
         "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
-        "zt:[position-anchor:var(--zt-chooser-anchor)] zt:[position-area:block-end_span-inline-end] zt:[position-try-fallbacks:flip-block]",
         className,
       )}
-      style={{ "--zt-chooser-anchor": anchorName, ...style } as CSSProperties}
     >
       {open && <ChooserSession>{children}</ChooserSession>}
-    </div>
+    </PinnedPopover>
   );
 }
 
@@ -1568,76 +1515,40 @@ export interface ChooserPageMenuProps {
 
 /**
  * The "…" button of a page and the menu it opens, as a Bases menu page
- * offers its page's actions. An Obsidian `Menu` paints under the popup's top
- * layer, so the menu is a popover of its own, nested in the popup: the
- * platform keeps the popup open while it stands, and Escape or a click
- * outside it closes it alone.
- *
- * While the menu stands, a Scope of its own sits above the Chooser's, so the
- * Chooser's keys — Escape stepping back from the page among them — never hear
- * a key meant for the menu. It registers nothing: Escape falls to the app
- * scope it is parented to, and the light dismiss closes the menu alone. It is
- * pushed as the menu opens, from the gesture in the window that holds the
- * popup, and popped as the menu closes or unmounts.
+ * offers its page's actions. The menu is a popover of its own, rendered in the
+ * popup: the popup stays open while it stands, and Escape or a press outside
+ * it closes it alone. Its Scope sits above the Chooser's while it stands, so
+ * the Chooser's keys never hear a key meant for the menu.
  */
 function PageMenu({ label, items }: ChooserPageMenuProps) {
-  const app = useObsidianApp();
   const id = useUniqueId();
-  const menu = useRef<HTMLDivElement>(null);
-  // `beforetoggle`, not `toggle`: the browser queues `toggle` after the menu
-  // shows, and a key arriving first would reach the Chooser.
-  useLayoutEffect(() => {
-    const el = menu.current;
-    if (!el) return;
-    const scope = new Scope(app.scope);
-    let pushed = false;
-    const release = () => {
-      if (pushed) app.keymap.popScope(scope);
-      pushed = false;
-    };
-    const onBeforeToggle = (event: ToggleEvent) => {
-      if (event.newState !== "open") return release();
-      if (pushed) return;
-      app.keymap.pushScope(scope);
-      pushed = true;
-    };
-    el.addEventListener("beforetoggle", onBeforeToggle);
-    return () => {
-      el.removeEventListener("beforetoggle", onBeforeToggle);
-      release();
-    };
-  }, [app]);
-  const anchor = { "--zt-chooser-menu-anchor": `--${id}` } as CSSProperties;
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<PinnedPopoverHandle>(null);
   return (
     <>
       <button
+        ref={button}
         type="button"
         id={`${id}-button`}
-        popoverTarget={id}
-        className={cn(
-          chooserIconButton,
-          "zt:[anchor-name:var(--zt-chooser-menu-anchor)]",
-        )}
+        onClick={() => menu.current?.toggle()}
+        className={chooserIconButton}
         data-chooser-page-menu=""
         {...tooltipAttrs(label)}
-        style={anchor}
       >
         <Icon name="more-horizontal" size="s" />
       </button>
-      <div
-        ref={menu}
+      <PinnedPopover
+        anchor={button}
+        handle={menu}
         id={id}
-        popover="auto"
         role="menu"
         // Named by its button: an `aria-label` would show a tooltip.
         aria-labelledby={`${id}-button`}
         className={cn(
-          "zt:inset-auto zt:my-1 zt:min-w-45 zt:flex-col zt:p-(--size-4-1) zt:[&:popover-open]:flex",
+          "zt:flex zt:min-w-45 zt:flex-col zt:p-(--size-4-1)",
           "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",
           "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
-          "zt:[position-anchor:var(--zt-chooser-menu-anchor)] zt:[position-area:block-end_span-inline-start] zt:[position-try-fallbacks:flip-block,flip-inline,flip-block_flip-inline]",
         )}
-        style={anchor}
       >
         {items.map((item, index) => (
           <Fragment key={item.title}>
@@ -1655,7 +1566,7 @@ function PageMenu({ label, items }: ChooserPageMenuProps) {
                 item.warning && !item.disabled && "zt:text-(--text-error)",
               )}
               onClick={() => {
-                menu.current?.hidePopover();
+                menu.current?.hide();
                 item.onSelect();
               }}
             >
@@ -1669,7 +1580,7 @@ function PageMenu({ label, items }: ChooserPageMenuProps) {
             </button>
           </Fragment>
         ))}
-      </div>
+      </PinnedPopover>
     </>
   );
 }

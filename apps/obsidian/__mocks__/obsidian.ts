@@ -365,6 +365,20 @@ export class HoverPopover {
 
   load(): void {
     this.#loaded = true;
+    this.onload();
+  }
+
+  onload(): void {}
+
+  // oxlint-disable-next-line max-params -- Obsidian's own signature
+  registerDomEvent(
+    el: Document | HTMLElement,
+    type: string,
+    callback: EventListener,
+    options?: boolean | AddEventListenerOptions,
+  ): void {
+    el.addEventListener(type, callback, options);
+    this.#unload.push(() => el.removeEventListener(type, callback, options));
   }
 
   registerEvent(ref: EventRef): void {

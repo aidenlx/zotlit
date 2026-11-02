@@ -11,7 +11,7 @@ import { Effect } from "effect";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
-import { createElement, Fragment } from "react";
+import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
@@ -22,13 +22,12 @@ import type {
   QuerySummary,
 } from "@zotlit/item-query";
 
-import { shimPopover } from "@/components/__fixtures__/popover";
-import type { ShimmedPopover } from "@/components/__fixtures__/popover";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { pressTop } from "@/lib/__fixtures__/keymap";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AppContext } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -999,12 +998,12 @@ describe("saving a toolbar edit", () => {
     expect(saveAs).toHaveBeenCalledOnce();
 
     // The result count still opens its menu, with no limit to set.
-    await shimPopover(
-      fixed.el.querySelector<HTMLElement>("[data-query-results-popup]")!,
-    ).open();
-    expect(fixed.el.querySelector("[data-query-copy]")).not.toBeNull();
-    expect(fixed.el.querySelector("[data-query-export]")).not.toBeNull();
-    expect(fixed.el.querySelector("[data-query-limit]")).toBeNull();
+    await act(() =>
+      fixed.el.querySelector<HTMLElement>("[data-query-results]")!.click(),
+    );
+    expect(document.querySelector("[data-query-copy]")).not.toBeNull();
+    expect(document.querySelector("[data-query-export]")).not.toBeNull();
+    expect(document.querySelector("[data-query-limit]")).toBeNull();
   });
 
   it("draws no toolbar row where the host places Sort and Save as query file itself, which still sort and save from the host's place", async () => {
@@ -1028,8 +1027,8 @@ describe("saving a toolbar edit", () => {
     await act(() =>
       root.render(
         createElement(
-          Fragment,
-          null,
+          AppContext,
+          { value: editorApp() },
           createElement(SortButton, { view: hosted.view }),
           createElement(SaveAsButton, { view: hosted.view }),
         ),
@@ -1061,9 +1060,6 @@ describe("saving a toolbar edit", () => {
     // The menu names the Layout on screen; the view's own name is the host's.
     expect(trigger().textContent).toBe("Table");
     await act(() => trigger().click());
-    await shimPopover(
-      document.querySelector<HTMLElement>("[data-query-view-list]")!,
-    ).open();
     expect(
       [...document.querySelectorAll("[data-query-view-layout-option]")].map(
         (row) => row.getAttribute("data-query-view-layout-option"),
@@ -1176,17 +1172,22 @@ it("collapses a group heading and expands it again", async () => {
   expect(cards(el)).toEqual(["ANNOTAAA", "ANNOTBBB"]);
 });
 
-/** A Select's popup, opened as the browser opens it (see `shimPopover`). */
-const shims = new WeakMap<HTMLElement, ShimmedPopover>();
+/**
+ * Presses on `target`, which shuts every open pinned popover it stands outside
+ * of. A press inside a popover shuts only the popovers opened from within it.
+ */
+function pressOutside(target: Element = document.body): Promise<void> {
+  return act(() => {
+    target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+}
 
+/** A Select's popup, opened by a press on its trigger. */
 async function openSelect(trigger: Element): Promise<HTMLElement> {
-  const popup = trigger.ownerDocument.getElementById(
-    trigger.getAttribute("popovertarget")!,
+  await act(() => (trigger as HTMLElement).click());
+  return trigger.ownerDocument.querySelector<HTMLElement>(
+    "[data-select-popup]",
   )!;
-  let shim = shims.get(popup);
-  if (!shim) shims.set(popup, (shim = shimPopover(popup)));
-  await shim.open();
-  return popup;
 }
 
 /** The rows a Select offers, by value and by the label each row shows. */
@@ -1200,7 +1201,9 @@ async function selectOptions(
     value: option.dataset.value!,
     label: option.querySelector("[data-select-label]")!.textContent!,
   }));
-  await act(() => popup.hidePopover());
+  // A press beside the trigger shuts the Select's popup and leaves the popover
+  // that holds the trigger open.
+  await pressOutside(trigger.parentElement ?? document.body);
   return options;
 }
 
@@ -1222,13 +1225,33 @@ async function choose(trigger: Element, value: string): Promise<void> {
   );
 }
 
+/**
+ * A toolbar popover stands on the body while it is open, and its button opens
+ * it; a closed one keeps its contents out of the document.
+ */
+async function openPopover(
+  el: HTMLElement,
+  hook: string,
+): Promise<HTMLElement> {
+  const popover = () =>
+    el.ownerDocument.querySelector<HTMLElement>(
+      `[data-query-popover="${hook}"]`,
+    );
+  if (!popover())
+    await act(() =>
+      el.querySelector<HTMLElement>(`[data-query-toolbar="${hook}"]`)!.click(),
+    );
+  return popover()!;
+}
+
 it("adds sorts from the toolbar, runs them in order, and saves them to the file", async () => {
   const { view, el, run, settle, saved } = await mount([]);
   await act(() => view.setText(TAGGED));
   await settle();
 
+  await openPopover(el, "sort");
   const editor = () =>
-    el.querySelector<HTMLElement>('[data-query-popover="sort"]')!;
+    el.ownerDocument.querySelector<HTMLElement>('[data-query-popover="sort"]')!;
   // The sort list offers only properties ZotLit Query can sort.
   const offered = [
     ...editor().querySelectorAll<HTMLButtonElement>("[data-sort-add]"),
@@ -1286,8 +1309,11 @@ it("sets a Manual group order where a tick hides a group, and saves it to the fi
   await act(() => view.setText(TAGGED));
   await settle();
 
+  await openPopover(el, "group");
   const editor = () =>
-    el.querySelector<HTMLElement>('[data-query-popover="group"]')!;
+    el.ownerDocument.querySelector<HTMLElement>(
+      '[data-query-popover="group"]',
+    )!;
   await choose(editor().querySelector("[data-group-direction]")!, "MANUAL");
   await settle();
   const rows = () => [
@@ -1488,8 +1514,11 @@ it("names the tokens a syntax error lacks once, at the row and in the view's dia
   );
 });
 
+/** A section of the open Filter popover; `openPopover` opens it first. */
 function section(el: HTMLElement, name: "all" | "view"): HTMLElement {
-  return el.querySelector<HTMLElement>(`[data-filter-section="${name}"]`)!;
+  return el.ownerDocument.querySelector<HTMLElement>(
+    `[data-query-popover="filter"] [data-filter-section="${name}"]`,
+  )!;
 }
 
 it("edits the filters for all views and for this view from the Filter popover", async () => {
@@ -1504,6 +1533,7 @@ it("edits the filters for all views and for this view from the Filter popover", 
   expect(
     el.querySelector('[data-query-toolbar="filter"]')?.textContent,
   ).toContain("Filter");
+  await openPopover(el, "filter");
   expect(section(el, "all").textContent).toContain("All views");
   expect(section(el, "view").textContent).toContain("This view");
 
@@ -1557,6 +1587,7 @@ it("offers the vault properties in the Filter popover of an Items view, in brack
   );
   await settle();
 
+  await openPopover(el, "filter");
   const [status] = section(el, "view").querySelectorAll("[data-condition-row]");
   const kind = status!.querySelector(
     `[aria-label="${m.workbench_match_condition_kind()}"]`,
@@ -1600,6 +1631,7 @@ it("filters by a checkbox vault property as true or false from the Filter popove
   );
   await settle();
 
+  await openPopover(el, "filter");
   const [done] = section(el, "view").querySelectorAll("[data-condition-row]");
   const kind = done!.querySelector(
     `[aria-label="${m.workbench_match_condition_kind()}"]`,
@@ -1639,6 +1671,7 @@ it("offers a vault property's operators by its type, as its type changes", async
 `),
   );
   await settle();
+  await openPopover(el, "filter");
   const operators = () => {
     const [row] = section(el, "view").querySelectorAll("[data-condition-row]");
     const operator = row!.querySelector<HTMLSelectElement>("select");
@@ -1665,6 +1698,7 @@ ${FILE}`),
   );
   await settle();
 
+  await openPopover(el, "filter");
   const [color] = section(el, "view").querySelectorAll("[data-condition-row]");
   const kinds = (
     await selectOptions(
@@ -1694,6 +1728,7 @@ it("shows the query's diagnostic at the wrong condition in the Filter popover", 
   });
   await settle();
 
+  await openPopover(el, "filter");
   const rows = section(el, "view").querySelectorAll("[data-condition-row]");
   expect(rows[0]!.querySelector('[role="alert"]')?.textContent).toBe(
     "colourName is not a field of Annotations. Use colorName.",
@@ -1706,11 +1741,7 @@ it("offers the Tags and Collections of the Libraries the view reads", async () =
   await act(() => view.setText(FILE));
   await settle();
   // The popover reads the values while it is open.
-  await act(() => {
-    el.querySelector('[data-query-popover="filter"]')!.dispatchEvent(
-      Object.assign(new Event("toggle"), { newState: "open" }),
-    );
-  });
+  await openPopover(el, "filter");
   await waitFor(() =>
     expect(view.registry.get(filterValuesAtom)).toMatchObject({
       _tag: "Success",
@@ -3453,12 +3484,6 @@ it("ticks the default properties of a view without order, and a tick writes them
   await settle();
   await act(() => {
     el.querySelector<HTMLElement>("[data-query-properties]")!.click();
-    // happy-dom has no popover, so the test sends the event that opens it.
-    document
-      .querySelector("[data-query-properties-popup]")!
-      .dispatchEvent(
-        Object.assign(new Event("beforetoggle"), { newState: "open" }),
-      );
   });
   const rows = [
     ...document.querySelectorAll<HTMLElement>("[data-query-property]"),
@@ -3501,12 +3526,6 @@ it("offers the Literature Note Property in the Properties popover of a Table tha
   expect(tableText(el)[0]).toEqual(["", "Title"]);
   await act(() => {
     el.querySelector<HTMLElement>("[data-query-properties]")!.click();
-    // happy-dom has no popover, so the test sends the event that opens it.
-    document
-      .querySelector("[data-query-properties-popup]")!
-      .dispatchEvent(
-        Object.assign(new Event("beforetoggle"), { newState: "open" }),
-      );
   });
   // Its path has a dot, as the fields of a parent record do, yet it shows
   // without a search.
@@ -3541,12 +3560,6 @@ it("keeps the row of a nested property in the Properties popover when a tick hid
   await settle();
   await act(() => {
     el.querySelector<HTMLElement>("[data-query-properties]")!.click();
-    // happy-dom has no popover, so the test sends the event that opens it.
-    document
-      .querySelector("[data-query-properties-popup]")!
-      .dispatchEvent(
-        Object.assign(new Event("beforetoggle"), { newState: "open" }),
-      );
   });
   const row = () =>
     document.querySelector<HTMLElement>('[data-query-property="item.title"]');
@@ -3585,12 +3598,6 @@ it("keeps the row and the page of a typed path in the Properties popover when it
   await settle();
   await act(() => {
     el.querySelector<HTMLElement>("[data-query-properties]")!.click();
-    // happy-dom has no popover, so the test sends the event that opens it.
-    document
-      .querySelector("[data-query-properties-popup]")!
-      .dispatchEvent(
-        Object.assign(new Event("beforetoggle"), { newState: "open" }),
-      );
   });
   const row = () =>
     document.querySelector<HTMLElement>('[data-query-property="myField"]');
@@ -3606,23 +3613,22 @@ it("keeps the row and the page of a typed path in the Properties popover when it
   );
   const page = () =>
     document.querySelector('[data-query-property-page="myField"]');
-  // happy-dom has no popover, so the menu's hidePopover does nothing here.
-  const proto: Partial<HTMLElement> = HTMLElement.prototype;
-  if (!proto.hidePopover) {
-    proto.hidePopover = () => {};
-    onTestFinished(() => {
-      delete proto.hidePopover;
-    });
-  }
-  const pick = (hook: string) =>
-    document
-      .querySelector<HTMLElement>(`[data-chooser-page-menu-item="${hook}"]`)!
-      .click();
+  // The page menu opens with its button and shuts on a pick.
+  const pick = async (hook: string) => {
+    await act(() =>
+      document.querySelector<HTMLElement>("[data-chooser-page-menu]")!.click(),
+    );
+    await act(() =>
+      document
+        .querySelector<HTMLElement>(`[data-chooser-page-menu-item="${hook}"]`)!
+        .click(),
+    );
+  };
   expect(page()).not.toBe(null);
-  await act(() => pick("show"));
+  await pick("show");
   await settle();
   expect(written.at(-1)).toContain("myField");
-  await act(() => pick("hide"));
+  await pick("hide");
   await settle();
   expect(written.at(-1)).not.toContain("myField");
   expect(page()).not.toBe(null);
@@ -5743,12 +5749,6 @@ ${order.map((path) => `      - ${path}\n`).join("")}`),
         mounted.el
           .querySelector<HTMLElement>("[data-query-properties]")!
           .click();
-        // happy-dom has no popover, so the test sends the event that opens it.
-        document
-          .querySelector("[data-query-properties-popup]")!
-          .dispatchEvent(
-            Object.assign(new Event("beforetoggle"), { newState: "open" }),
-          );
       });
       const type = async (text: string) => {
         const input = document.querySelector<HTMLInputElement>(

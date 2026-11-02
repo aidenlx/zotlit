@@ -1,0 +1,26 @@
+/* The shell Obsidian places. Its `.popover.hover-popover` rules are unlayered
+   and outrank every `zt:` utility, so the shell gives up its look here and the
+   surface inside it draws the popover with utilities. It does not clip, so an
+   editor's tooltip drawn in the surface reaches past its edge. It stands at
+   the menu layer, so a popup opened in a modal shows over the modal, and a
+   tooltip stands over it. `max-content` keeps a popover near the window's edge
+   at its own width; Obsidian then moves it back on screen. */
+.popover.hover-popover.zt-pinned-popover {
+  z-index: var(--layer-menu);
+  display: block;
+  width: max-content;
+  max-width: 100vw;
+  max-height: none;
+  min-height: 0;
+  overflow: visible;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+}
+
+/* Obsidian gives a hover popover's child a fixed width for a note preview. */
+.popover.hover-popover.zt-pinned-popover > .zt-pinned-popover-body {
+  width: auto;
+}

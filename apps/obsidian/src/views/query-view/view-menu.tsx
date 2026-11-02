@@ -26,6 +26,7 @@ import {
 } from "@/components/chooser";
 import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
 import { Icon } from "@/components/obsidian/icon";
+import type { PinnedPopoverHandle } from "@/components/pinned-popover";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -33,7 +34,6 @@ import { ConfigureViewFields, viewActions } from "./configure-view";
 import { layoutOf, layoutsFor } from "./layouts";
 import { useQueryViewState } from "./model";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
-import { popoverFallbacks } from "./toolbar-popover";
 import type { QueryView } from "./view";
 
 /** The drag payload of a view row: its place in the file's list. */
@@ -52,7 +52,7 @@ export function ViewMenu({ view }: { view: QueryView }) {
 function ViewSwitch({ view }: { view: QueryView }) {
   const file = useQueryViewState(view, (s) => s.file);
   const current = useQueryViewState(view, (s) => s.view);
-  const popup = useRef<HTMLDivElement>(null);
+  const popup = useRef<PinnedPopoverHandle>(null);
 
   const views = useMemo(() => file?.views ?? [], [file]);
   const currentIndex = current ? views.indexOf(current) : -1;
@@ -67,18 +67,15 @@ function ViewSwitch({ view }: { view: QueryView }) {
         const picked = next.find((value) => value !== String(currentIndex));
         const name = picked === undefined ? undefined : views[Number(picked)];
         if (name) view.pickView(name.name);
-        popup.current?.hidePopover();
+        popup.current?.hide();
       }}
     >
       <ViewMenuTrigger view={view} />
       <Chooser.Popup
-        ref={popup}
+        handle={popup}
         // "Configure view" holds more than the list, as the Properties
         // popover does.
-        className={cn(
-          "zt:[max-height:min(--spacing(120),calc(100%_-_--spacing(2)))]",
-          popoverFallbacks,
-        )}
+        className="zt:[max-height:min(--spacing(120),calc(100vh_-_--spacing(2)))]"
         data-query-view-list=""
       >
         <Chooser.Input
@@ -98,7 +95,7 @@ function ViewSwitch({ view }: { view: QueryView }) {
 function LayoutSwitch({ view }: { view: QueryView }) {
   const file = useQueryViewState(view, (s) => s.file);
   const current = useQueryViewState(view, (s) => s.view);
-  const popup = useRef<HTMLDivElement>(null);
+  const popup = useRef<PinnedPopoverHandle>(null);
   const offered = view.layouts;
   const layouts = useMemo(
     () => (current ? layoutsFor(current, offered) : []),
@@ -125,7 +122,7 @@ function LayoutSwitch({ view }: { view: QueryView }) {
       onValueChange={(next) => {
         const picked = next.find((type) => type !== current.type);
         if (picked !== undefined) view.document.setViewLayout(index, picked);
-        popup.current?.hidePopover();
+        popup.current?.hide();
       }}
     >
       <Chooser.Trigger
@@ -140,11 +137,7 @@ function LayoutSwitch({ view }: { view: QueryView }) {
           chevron
         />
       </Chooser.Trigger>
-      <Chooser.Popup
-        ref={popup}
-        className={popoverFallbacks}
-        data-query-view-list=""
-      >
+      <Chooser.Popup handle={popup} data-query-view-list="">
         <Chooser.List groups={groups} label={m.query_view_layout()}>
           {(row) => (
             <Chooser.Item

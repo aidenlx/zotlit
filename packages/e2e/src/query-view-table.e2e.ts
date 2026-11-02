@@ -45,11 +45,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // Teardown closes a popover a failed step left open; not a reader's press.
       await obRun(
         run.vaultId,
-        async ({ app }, { filePath, original, created, layout }) => {
-          for (const popup of activeDocument.querySelectorAll<HTMLElement>(
-            "[popover]:popover-open",
-          ))
-            popup.hidePopover();
+        async (
+          { app, page: pageHelpers },
+          { filePath, original, created, layout },
+        ) => {
+          pageHelpers.closePopovers(activeDocument);
           for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
             leaf.detach();
           await app.vault.modify(app.vault.getFileByPath(filePath)!, original);
@@ -208,7 +208,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return (
           activeDocument
             .querySelector<HTMLElement>(
-              "[data-query-view-list]:popover-open [data-chooser-page]",
+              "[data-query-view-list] [data-chooser-page]",
             )
             ?.querySelector<HTMLInputElement>("[data-query-view-name]")
             ?.value === expectedValue
@@ -224,7 +224,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async (_context) => {
         const select = activeDocument
           .querySelector<HTMLElement>(
-            "[data-query-view-list]:popover-open [data-chooser-page]",
+            "[data-query-view-list] [data-chooser-page]",
           )!
           .querySelector<HTMLSelectElement>("[data-query-view-dataset]")!;
         select!.value = "items";
@@ -238,7 +238,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return [
           ...activeDocument
             .querySelector<HTMLElement>(
-              "[data-query-view-list]:popover-open [data-chooser-page]",
+              "[data-query-view-list] [data-chooser-page]",
             )!
             .querySelectorAll<HTMLOptionElement>(
               "[data-query-view-layout] option",
@@ -283,7 +283,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         press(
           activeDocument
             .querySelector<HTMLElement>(
-              "[data-query-view-list]:popover-open [data-chooser-page]",
+              "[data-query-view-list] [data-chooser-page]",
             )!
             .querySelector<HTMLElement>("[data-chooser-page-close]")!,
           "Close",

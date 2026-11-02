@@ -143,11 +143,8 @@ export function createPageHelpers(app: PageApp) {
     }
     press(el, what);
     const button = el as HTMLButtonElement;
-    const popup = await until(
-      `${what} opens`,
-      () =>
-        button.popoverTargetElement?.matches(":popover-open") &&
-        button.popoverTargetElement,
+    const popup = await until(`${what} opens`, () =>
+      button.ownerDocument.querySelector<HTMLElement>("[data-select-popup]"),
     );
     const row = await until(`${what} offers ${value}`, () =>
       popup.querySelector<HTMLElement>(
@@ -155,7 +152,7 @@ export function createPageHelpers(app: PageApp) {
       ),
     );
     press(row, `${what} row ${value}`);
-    await until(`${what} shuts`, () => !popup.matches(":popover-open"));
+    await until(`${what} shuts`, () => !popup.isConnected);
     return el;
   }
   // oxlint-disable-next-line max-params -- Preserve the page gesture API during the migration (#1848).
@@ -229,6 +226,45 @@ export function createPageHelpers(app: PageApp) {
       },
     };
   }
+  /**
+   * Opens a Query View toolbar popover and returns it. The popover exists in
+   * the view's document body only while open, so a closed one is opened with
+   * its toolbar button and an open one is left as found.
+   */
+  async function openToolbarPopover(contentEl: HTMLElement, hook: string) {
+    const selector = `[data-query-popover="${hook}"]`;
+    if (!contentEl.doc.querySelector(selector))
+      press(
+        await until(`${hook} toolbar button`, () =>
+          contentEl.querySelector<HTMLElement>(
+            `[data-query-toolbar="${hook}"]`,
+          ),
+        ),
+        `${hook} toolbar button`,
+      );
+    return until(`${hook} popover opens`, () =>
+      contentEl.doc.querySelector<HTMLElement>(selector),
+    );
+  }
+  /** Closes an open Query View toolbar popover with its toolbar button. */
+  async function closeToolbarPopover(contentEl: HTMLElement, hook: string) {
+    const selector = `[data-query-popover="${hook}"]`;
+    if (!contentEl.doc.querySelector(selector)) return;
+    press(
+      contentEl.querySelector<HTMLElement>(`[data-query-toolbar="${hook}"]`),
+      `${hook} toolbar button`,
+    );
+    await until(
+      `${hook} popover closes`,
+      () => !contentEl.doc.querySelector(selector),
+    );
+  }
+  /**
+   * Shuts every open pinned popover of a document, as a press outside does.
+   */
+  function closePopovers(doc: Document) {
+    doc.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  }
   function menuReady(): Promise<string> {
     return new Promise((resolve) =>
       activeWindow.setTimeout(() => resolve("ready"), 0),
@@ -289,8 +325,8 @@ export function createPageHelpers(app: PageApp) {
       "View menu",
     );
     const row = await until(`view menu row ${name}`, () =>
-      view.contentEl.querySelector<HTMLElement>(
-        `[data-query-view-list]:popover-open [data-query-view-row="${CSS.escape(name)}"]`,
+      view.contentEl.doc.querySelector<HTMLElement>(
+        `[data-query-view-list] [data-query-view-row="${CSS.escape(name)}"]`,
       ),
     );
     press(row, name);
@@ -937,6 +973,9 @@ export function createPageHelpers(app: PageApp) {
     fire,
     tap,
     trusted,
+    openToolbarPopover,
+    closeToolbarPopover,
+    closePopovers,
     menuReady,
     windowDocuments,
     popupEditor,

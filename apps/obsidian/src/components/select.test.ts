@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The Select is a Chooser that keeps one value. happy-dom has no popover, so
-// these tests stand in for the browser's toggle events.
+// The Select is a Chooser that keeps one value. Its popup is a pinned popover
+// on the document's body, so a test finds it there while it is open.
 import { render } from "preact";
 import { act } from "preact/test-utils";
 import { createElement as h } from "react";
@@ -10,7 +10,6 @@ import { pressTop } from "@/lib/__fixtures__/keymap";
 import { AppContext } from "@/lib/app-context";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
-import { shimPopover } from "./__fixtures__/popover";
 import { Select } from "./select";
 import type { SelectOption } from "./select";
 
@@ -54,9 +53,8 @@ function mount(onChange: (next: string) => void = () => {}) {
     slot,
   );
   const trigger = slot.querySelector<HTMLButtonElement>("button")!;
-  const popup = slot.querySelector<HTMLElement>("[popover]")!;
-  shimPopover(popup);
-  const hide = vi.spyOn(popup, "hidePopover");
+  const popup = () =>
+    document.querySelector<HTMLElement>("[data-select-popup]");
   const key = (init: KeyboardEventInit) =>
     act(() => {
       trigger.dispatchEvent(
@@ -68,20 +66,20 @@ function mount(onChange: (next: string) => void = () => {}) {
       );
     });
   const rows = () =>
-    [...popup.querySelectorAll<HTMLElement>('[role="option"]')].map(
+    [...popup()!.querySelectorAll<HTMLElement>('[role="option"]')].map(
       (row) => row.textContent,
     );
-  return { app, host, trigger, popup, outside, hide, key, rows };
+  return { app, host, trigger, popup, outside, key, rows };
 }
 
 it("opens searching for a printable key, on its first match", async () => {
   const { trigger, popup, key, rows } = mount();
   await key({ key: "v" });
-  expect(popup.querySelector("input")!.value).toBe("v");
+  expect(popup()!.querySelector("input")!.value).toBe("v");
   expect(rows()).toEqual(["Volumevolume"]);
-  const list = popup.querySelector('[role="listbox"]')!;
+  const list = popup()!.querySelector('[role="listbox"]')!;
   expect(list.getAttribute("aria-activedescendant")).toBe(
-    popup.querySelector('[role="option"]')!.id,
+    popup()!.querySelector('[role="option"]')!.id,
   );
   expect(trigger.getAttribute("aria-controls")).toBe(list.id);
   // The list takes the field's name; an `aria-label` would be a hover tooltip.
@@ -95,14 +93,14 @@ it("leaves a shortcut and Space to the trigger", async () => {
   const { trigger, popup, key } = mount();
   await key({ key: "v", ctrlKey: true });
   await key({ key: " " });
-  expect(popup.querySelector("input")).toBeNull();
+  expect(popup()).toBeNull();
   expect(trigger.hasAttribute("aria-controls")).toBe(false);
 });
 
 it("shuts when focus leaves for its trigger by keyboard, not by a press", async () => {
-  const { trigger, popup, hide, key } = mount();
+  const { trigger, popup, key } = mount();
   await key({ key: "ArrowDown" });
-  const field = popup.querySelector("input")!;
+  const field = popup()!.querySelector("input")!;
   const leave = (to: Element) =>
     act(() => {
       field.dispatchEvent(
@@ -114,24 +112,24 @@ it("shuts when focus leaves for its trigger by keyboard, not by a press", async 
     trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
   });
   await leave(trigger);
-  expect(hide).not.toHaveBeenCalled();
+  expect(popup()).not.toBeNull();
   document.dispatchEvent(new PointerEvent("pointerup"));
   // Shift+Tab onto the trigger shuts it, as it shuts a native select's list.
   await leave(trigger);
-  expect(hide).toHaveBeenCalledOnce();
+  expect(popup()).toBeNull();
 });
 
 it("shuts when focus leaves for elsewhere", async () => {
-  const { popup, outside, hide, key } = mount();
+  const { popup, outside, key } = mount();
   await key({ key: "ArrowDown" });
   await act(() => {
-    popup
+    popup()!
       .querySelector("input")!
       .dispatchEvent(
         new FocusEvent("focusout", { bubbles: true, relatedTarget: outside }),
       );
   });
-  expect(hide).toHaveBeenCalledOnce();
+  expect(popup()).toBeNull();
 });
 
 it("keeps undo in its search field, out of a surface around it that steps a history of its own", async () => {
@@ -141,7 +139,7 @@ it("keeps undo in its search field, out of a surface around it that steps a hist
     if (event.key === "z") surface();
   });
   await key({ key: "ArrowDown" });
-  const field = popup.querySelector("input")!;
+  const field = popup()!.querySelector("input")!;
 
   // The Chooser's Scope stands on top and leaves undo alone, so the field's
   // own undo runs and the surface never hears the key.
@@ -170,21 +168,25 @@ it("hides a raw id that repeats the name", async () => {
 
 it("reports a picked row and hands focus back to the trigger", async () => {
   const onChange = vi.fn();
-  const { trigger, popup, hide, key } = mount(onChange);
+  const { trigger, popup, key } = mount(onChange);
   await key({ key: "ArrowDown" });
   await act(() => {
-    popup.querySelector<HTMLElement>('[data-value="volume"]')!.click();
+    popup()!.querySelector<HTMLElement>('[data-value="volume"]')!.click();
   });
   expect(onChange).toHaveBeenCalledWith("volume");
-  expect(hide).toHaveBeenCalled();
+  expect(popup()).toBeNull();
   expect(document.activeElement).toBe(trigger);
 });
 
 it("hands focus back to the trigger when it shuts from its search field", async () => {
   const { trigger, popup, key } = mount();
   await key({ key: "ArrowDown" });
-  expect(document.activeElement).toBe(popup.querySelector("input"));
+  expect(document.activeElement).toBe(popup()!.querySelector("input"));
   // Escape, or a press outside, shuts the popover without a pick.
-  await act(() => popup.hidePopover());
+  await act(() => {
+    document.body.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true }),
+    );
+  });
   expect(document.activeElement).toBe(trigger);
 });

@@ -1658,11 +1658,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const select =
             rows[0]!.querySelector<HTMLButtonElement>("[role=combobox]");
           press(select, "the first select");
-          const popup = await until(
-            "the select opens",
-            () =>
-              select!.popoverTargetElement?.matches(":popover-open") &&
-              select!.popoverTargetElement,
+          const popup = await until("the select opens", () =>
+            el.doc.querySelector<HTMLElement>("[data-select-popup]"),
           );
           const search = await until(
             "focus in its search",
