@@ -1,0 +1,66 @@
+views:
+  - type: table
+    name: "contains, other case: shows Ten Simple Rules for Better Figures"
+    from: items
+    order:
+      - title
+    limit: 20
+    filters:
+      and:
+        - title.icontains("ten simple rules")
+  - type: table
+    name: "contains, match case, same case: shows Ten Simple Rules for Better Figures"
+    from: items
+    order:
+      - title
+    limit: 20
+    filters:
+      and:
+        - title.contains("Ten Simple Rules")
+  - type: table
+    name: "contains, match case, other case: shows no Items"
+    from: items
+    order:
+      - title
+    limit: 20
+    filters:
+      and:
+        - title.contains("ten simple rules")
+  - type: table
+    name: "does not contain, other case: hides Ten Simple Rules for Better Figures"
+    from: items
+    order:
+      - title
+    limit: 200
+    filters:
+      and:
+        - '!title.icontains("TEN SIMPLE RULES")'
+  - type: table
+    name: "does not contain, match case, other case: keeps Ten Simple Rules for Better Figures"
+    from: items
+    order:
+      - title
+    limit: 200
+    filters:
+      and:
+        - '!title.contains("TEN SIMPLE RULES")'
+  - type: table
+    name: "Tag contains, same case: shows the Items tagged research-practice"
+    from: items
+    order:
+      - title
+      - tags
+    limit: 20
+    filters:
+      and:
+        - tags.contains("research-practice")
+  - type: table
+    name: "Tag contains, other case: shows no Items, because a Tag row matches case"
+    from: items
+    order:
+      - title
+      - tags
+    limit: 20
+    filters:
+      and:
+        - tags.contains("RESEARCH-PRACTICE")

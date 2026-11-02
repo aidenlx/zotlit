@@ -7,9 +7,9 @@ import { obRun } from "./obsidian-cli.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
-  it("finds a Zotero field by a common word in the Filter's property list, and stores only the field's name", async () => {
+  it("finds a Zotero field by a common word in the Filter's property list, reads a saved match-case row, and stores the default text row", async () => {
     const path = "query-files/Filter by journal.zotquery";
-    const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - itemType == "journalArticle"\n`;
+    const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n    filters:\n      and:\n        - title.contains("Nature")\n`;
     const result = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }, { path, source }) => {
@@ -47,6 +47,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             '[data-query-popover="filter"]:popover-open',
           )!,
         );
+        const savedOperator = await until("saved match-case operator", () => {
+          const select = popover.querySelector<HTMLSelectElement>(
+            '[data-filter-section="view"] [data-condition-row] select',
+          );
+          return select?.value === "contains-match-case" ? select : null!;
+        });
+        const savedRow = {
+          operator: savedOperator.value,
+          firstOperators: [...savedOperator.options]
+            .slice(0, 4)
+            .map((option) => option.value),
+          value: popover.querySelector<HTMLInputElement>(
+            '[data-filter-section="view"] [data-condition-row] input',
+          )?.value,
+        };
         const kind = await until("property select", () =>
           popover.querySelector<HTMLButtonElement>(
             '[data-filter-section="view"] [data-condition-row] [role=combobox]',
@@ -90,15 +105,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         el.doc.execCommand("insertText", false, "Nature");
         const saved = await until("the file saves", async () => {
           const text = await app.vault.read(file);
-          return text.includes("Nature") && text;
+          return text.includes('publicationTitle.icontains("Nature")') && text;
         });
-        return { offered, saved };
+        return { offered, saved, savedRow };
       },
       { path, source },
     );
+    expect(result.savedRow).toEqual({
+      operator: "contains-match-case",
+      firstOperators: [
+        "contains",
+        "does-not-contain",
+        "contains-match-case",
+        "does-not-contain-match-case",
+      ],
+      value: "Nature",
+    });
     expect(result.offered).toContain("field:journalAbbreviation");
     expect(result.offered).not.toContain("item-title");
-    expect(result.saved).toContain('publicationTitle.contains("Nature")');
+    expect(result.saved).toContain('publicationTitle.icontains("Nature")');
     expect(result.saved).not.toMatch(/journal\b/);
   });
 });

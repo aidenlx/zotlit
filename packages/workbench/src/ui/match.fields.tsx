@@ -76,6 +76,9 @@ const KIND_LABELS: Record<NamedFilterFieldKind, Label> = {
 const OPERATOR_LABELS: Record<FilterOperator, Label> = {
   contains: (m) => m.workbench_filter_op_contains(),
   "does-not-contain": (m) => m.workbench_filter_op_does_not_contain(),
+  "contains-match-case": (m) => m.workbench_filter_op_contains_match_case(),
+  "does-not-contain-match-case": (m) =>
+    m.workbench_filter_op_does_not_contain_match_case(),
   "contains-any": (m) => m.workbench_filter_op_contains_any(),
   "contains-all": (m) => m.workbench_filter_op_contains_all(),
   within: (m) => m.workbench_filter_op_within(),

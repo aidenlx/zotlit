@@ -463,6 +463,15 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         returns: "boolean",
         call: (subject, [text]) => (subject as string).includes(text as string),
       },
+      icontains: {
+        description: "Whether `text` occurs in the text, ignoring letter case.",
+        parameters: [string("text")],
+        returns: "boolean",
+        call: (subject, [text]) =>
+          (subject as string)
+            .toLowerCase()
+            .includes((text as string).toLowerCase()),
+      },
       containsAny: {
         description: "Whether the text contains at least one of `texts`.",
         parameters: NONE,
@@ -581,6 +590,19 @@ const METHODS: Readonly<Record<FilterValueType, Registry<FunctionDefinition>>> =
         returns: "boolean",
         call: (subject, [value = null], clock) =>
           includes(subject as readonly FilterValue[], value, clock),
+      },
+      icontains: {
+        description:
+          "Whether the list has a string element equal to `text`, ignoring letter case.",
+        parameters: [string("text")],
+        returns: "boolean",
+        call: (subject, [text]) => {
+          const needle = (text as string).toLowerCase();
+          return (subject as readonly FilterValue[]).some(
+            (value) =>
+              typeof value === "string" && value.toLowerCase() === needle,
+          );
+        },
       },
       containsAny: {
         description:

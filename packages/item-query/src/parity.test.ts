@@ -316,20 +316,26 @@ const LEAF_INDEXES = ["itemTags_tagID", "itemData_fieldID", "itemData_valueID"];
 
 {
   describe.runIf(highest)("parity of generated filter combinations", () => {
-    const queries: ScenarioQuery[] = [
-      '(key == "ART2FULL") && title.startsWith("Exact")',
-      '(key == "ART2FULL") || title.startsWith("Exact")',
-      '!(key == "ART2FULL")',
-      '(key == "ART2FULL") == title.startsWith("Exact")',
-      'if(key == "ART2FULL", title.startsWith("Exact"))',
-      'if(key == "ART2FULL", title.startsWith("Exact"), tags.contains("methods"))',
-      '((key == "ART2FULL") || tags.contains("methods")) && title.startsWith("Exact")',
-      '((key == "ART2FULL") && tags.contains("methods")) || title.startsWith("Exact")',
-    ].map((filter) => ({
-      name: filter,
-      libraries: ["personal", "group"],
-      request: { filter, fields: [], sort: [] },
-    }));
+    const GENERATED_FILTER_PARTS = [
+      'title.startsWith("Exact")',
+      'title.icontains("exact")',
+    ];
+    const queries: ScenarioQuery[] = GENERATED_FILTER_PARTS.flatMap((part) => [
+      `(key == "ART2FULL") && ${part}`,
+      `(key == "ART2FULL") || ${part}`,
+      `!(${part})`,
+      `(key == "ART2FULL") == ${part}`,
+      `if(key == "ART2FULL", ${part})`,
+      `if(key == "ART2FULL", ${part}, tags.contains("methods"))`,
+      `((key == "ART2FULL") || tags.contains("methods")) && ${part}`,
+      `((key == "ART2FULL") && tags.contains("methods")) || ${part}`,
+    ])
+      .concat('!(key == "ART2FULL")')
+      .map((filter) => ({
+        name: filter,
+        libraries: ["personal", "group"],
+        request: { filter, fields: [], sort: [] },
+      }));
 
     it.each(queries)("$name", async (query) => {
       const oracle = await expectParity(query);
