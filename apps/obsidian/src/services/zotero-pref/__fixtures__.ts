@@ -6,6 +6,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
+import { electronAppData } from "./__fixtures__/electron-app-data";
 import { layerZoteroPref, ZoteroPref, ZoteroPrefFiles } from "./service";
 
 /** The real preference layer over device storage and file-system fakes. */
@@ -17,6 +18,9 @@ export const zoteroPrefFixture = Effect.fn("zoteroPrefFixture")(function* (
   overrides: unknown = { profileDir: "/profile" },
   onSave: () => void = () => undefined,
 ) {
+  yield* Effect.acquireDisposable(
+    Effect.sync(() => electronAppData("/app-data")),
+  );
   let saved: unknown = overrides;
   const app = stubService<App>("App", {
     loadLocalStorage: () => saved,

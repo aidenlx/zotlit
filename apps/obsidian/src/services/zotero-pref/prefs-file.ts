@@ -1,7 +1,10 @@
 import { parse as parseIni } from "@std/ini/parse";
 import { regex } from "arkregex";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { requireElectronRemote } from "@/lib/require";
 
 /** JSON primitives a `user_pref(...)` value can take. */
 export type PrefValue = string | number | boolean;
@@ -17,7 +20,7 @@ export const ZOTERO_HTTP_PORT_PREF = "httpServer.port";
 /** File Gecko persists user prefs to, inside the profile directory. */
 export const PREFS_FILENAME = "prefs.js";
 
-/** File that lists profiles, in the directory above `Profiles/`. */
+/** File that lists profiles in the platform's Zotero profiles root. */
 export const PROFILES_INI_FILENAME = "profiles.ini";
 
 /** File Gecko lists the profile's installed add-ons in, with their state. */
@@ -40,24 +43,40 @@ export function resolveZoteroHttpPort(
 }
 
 /**
- * Platform directory that holds {@link PROFILES_INI_FILENAME} and the
- * `Profiles/` folder. Relative `Path=` entries in `profiles.ini` are resolved
- * against it.
+ * Platform directory that holds {@link PROFILES_INI_FILENAME}. Relative
+ * `Path=` entries in `profiles.ini` are resolved against it.
  *
- * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/profile.js#L88-L90
+ * Zotero sets both vendor and application name to `Zotero`. Gecko appends
+ * both on Windows, only the application on macOS, and lowercase names on
+ * Linux. Electron supplies the corresponding OS application-data base.
+ *
+ * @see https://github.com/mozilla-firefox/firefox/blob/FIREFOX_153_1_0esr_RELEASE/toolkit/xre/nsXREDirProvider.cpp
  */
 export function getZoteroProfilesRoot(): string {
   switch (process.platform) {
     case "win32":
       return join(
-        process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"),
+        requireElectronRemote().app.getPath("appData"),
         "Zotero",
         "Zotero",
       );
     case "darwin":
-      return join(homedir(), "Library", "Application Support", "Zotero");
-    default:
-      return join(homedir(), ".zotero", "zotero");
+      return join(requireElectronRemote().app.getPath("appData"), "Zotero");
+    default: {
+      const legacyRoot = join(homedir(), ".zotero", "zotero");
+      // Directory presence selects Gecko's legacy layout, even before an INI
+      // exists. This check selects the layout rather than validating a read.
+      if (
+        existsSync(legacyRoot) ||
+        process.env.MOZ_LEGACY_HOME?.startsWith("1")
+      )
+        return legacyRoot;
+      return join(
+        requireElectronRemote().app.getPath("appData"),
+        "zotero",
+        "zotero",
+      );
+    }
   }
 }
 
