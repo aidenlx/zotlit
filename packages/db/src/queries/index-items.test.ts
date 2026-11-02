@@ -100,6 +100,32 @@ describe("getIndexedItemCount", () => {
     sqlite.exec("insert into deletedItems (itemID) values (8)");
     expect(getIndexedItemCount(db)).toBe(3);
   });
+
+  it("scans the Item rows once, without the Library key index or a temporary B-tree", () => {
+    sqlite.exec(
+      "create unique index items_library_key on items(libraryID, key)",
+    );
+    const queries: { sql: string; params: unknown[] }[] = [];
+    db = drizzle({
+      client: sqlite,
+      relations,
+      logger: {
+        logQuery(sql, params) {
+          queries.push({ sql, params });
+        },
+      },
+    });
+    getIndexedItemCount(db);
+    const query = queries[0]!;
+    const details = sqlite
+      .prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+      .all(...(query.params as (string | number)[]))
+      .map((row) => row.detail)
+      .join("\n");
+    expect(details).toContain("SCAN items");
+    expect(details).not.toContain("items_library_key");
+    expect(details).not.toContain("TEMP B-TREE");
+  });
 });
 
 describe("getIndexedItemsByLibrary", () => {

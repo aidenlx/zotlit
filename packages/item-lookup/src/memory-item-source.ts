@@ -10,7 +10,9 @@ import { makeGate } from "./make-gate";
 /** How often the Item Index read each part of an {@link ItemSource}. */
 export interface MemoryItemSourceReads {
   pinned: number;
-  itemIDs: number;
+  /** `items` streams opened: one per Library a build reads. */
+  scans: number;
+  /** `items` batches read. */
   items: number;
   signature: number;
   itemsByIndexedKey: number;
@@ -89,7 +91,7 @@ export const makeMemoryItemSource = (
     const libraries = new Map(rows);
     const reads: MemoryItemSourceReads = {
       pinned: 0,
-      itemIDs: 0,
+      scans: 0,
       items: 0,
       signature: 0,
       itemsByIndexedKey: 0,
@@ -122,8 +124,9 @@ export const makeMemoryItemSource = (
           Stream.unwrap(
             check.pipe(
               Effect.map(() => {
-                reads.itemIDs++;
+                reads.scans++;
                 const rows = state.get(libraryID) ?? [];
+                const batchSize = 500;
                 return Stream.unfold(
                   0,
                   Effect.fnUntraced(function* (offset: number) {
@@ -148,9 +151,9 @@ export const makeMemoryItemSource = (
                     yield* check;
                     return [
                       rows
-                        .slice(offset, offset + 500)
+                        .slice(offset, offset + batchSize)
                         .map((row) => row.indexed),
-                      offset + 500,
+                      offset + batchSize,
                     ] as const;
                   }),
                 );

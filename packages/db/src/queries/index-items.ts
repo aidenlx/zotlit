@@ -132,7 +132,10 @@ const indexedItemIDsByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
-/** One bounded rowid window for the Item Source's build stream. */
+/**
+ * One bounded rowid window of a Library scan: the Item Index build and the
+ * whole-Library batch selection both read through it.
+ */
 const indexedItemRowsRangeQuery = defineQuery<{
   libraryID: number;
   from: number;
@@ -153,18 +156,20 @@ const indexedItemRowsRangeQuery = defineQuery<{
   }),
 );
 
-export type IndexedItemScopeRow = QueryRow<typeof indexedItemRowsRangeQuery>;
+export type IndexedItemScanRow = QueryRow<typeof indexedItemRowsRangeQuery>;
 
 /**
  * Lightweight indexed Item rows in a half-open rowid range, in Item ID order. The unary
  * plus on Library membership keeps the scan bounded by the range, including
- * for sparse Libraries and random keys. Ranking belongs to the Item Index.
+ * for sparse Libraries and random keys. Each caller orders the rows as it
+ * needs: the Item Index ranks them, and the batch selection sorts them
+ * newest first.
  */
 export function getIndexedItemRowsRange(
   db: NodeDatabaseClient,
   libraryID: number,
   { from, to }: ItemIDRange,
-): IndexedItemScopeRow[] {
+): IndexedItemScanRow[] {
   return indexedItemRowsRangeQuery.prepared(db).all({ libraryID, from, to });
 }
 
@@ -245,8 +250,9 @@ export function getIndexedItemsByLibrary(
 }
 
 /**
- * Ordered (dateModified desc) item ids for a library — the lightweight first
- * pass of a chunked index build. Hydrate each chunk via {@link getIndexedItemsByID}.
+ * Ordered (dateModified desc) item ids for a library, in one statement. Tests
+ * read it as the reference list; the app scans through
+ * {@link getIndexedItemRowsRange}.
  */
 export function getIndexedItemIDsByLibrary(
   db: NodeDatabaseClient,

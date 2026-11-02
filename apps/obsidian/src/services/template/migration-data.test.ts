@@ -65,32 +65,37 @@ it.effect.each([
         layerRcRef(memoryOpener(() => SEED).open),
         { sliceSize: 1 },
       ).pipe(
-        Effect.map((client): ZoteroReadsClient => ({
-          ...client,
-          DisplayRefs: ((
-            payload: Parameters<ZoteroReadsClient["DisplayRefs"]>[0],
-            options?: Parameters<ZoteroReadsClient["DisplayRefs"]>[1],
-          ) => {
-            if (options?.asQueue)
-              return client.DisplayRefs(payload, { ...options, asQueue: true });
-            return client
-              .DisplayRefs(payload, { ...options, asQueue: false })
-              .pipe(
-                Stream.tap((slice) =>
-                  Effect.sync(() => {
-                    for (const { ref } of slice)
-                      if (ref) events.push(`candidate ${ref.indexedKey}`);
-                  }),
-                ),
-              );
-          }) as ZoteroReadsClient["DisplayRefs"],
-          ItemsByIndexedKeys: ((payload: {
-            readonly indexedKeys: readonly string[];
-          }) => {
-            events.push(`read ${payload.indexedKeys.join()}`);
-            return client.ItemsByIndexedKeys(payload);
-          }) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
-        })),
+        Effect.map(
+          (client): ZoteroReadsClient =>
+            new Proxy(
+              {
+                ...client,
+                ItemsByIndexedKeys: ((payload: {
+                  readonly indexedKeys: readonly string[];
+                }) => {
+                  events.push(`read ${payload.indexedKeys.join()}`);
+                  return client.ItemsByIndexedKeys(payload);
+                }) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+              },
+              {
+                get(target, key, receiver) {
+                  if (key !== "DisplayRefs")
+                    return Reflect.get(target, key, receiver);
+                  return (
+                    payload: Parameters<ZoteroReadsClient["DisplayRefs"]>[0],
+                  ) =>
+                    target.DisplayRefs(payload).pipe(
+                      Stream.tap((slice) =>
+                        Effect.sync(() => {
+                          for (const { ref } of slice)
+                            if (ref) events.push(`candidate ${ref.indexedKey}`);
+                        }),
+                      ),
+                    );
+                },
+              },
+            ),
+        ),
       );
       const reads = yield* Layer.build(layerZoteroReads(client));
       vi.mocked(readTemplateData).mockImplementation((key, root) => {

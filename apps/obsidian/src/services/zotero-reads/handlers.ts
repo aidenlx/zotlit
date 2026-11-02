@@ -61,7 +61,7 @@ import { makeAttachmentFileResolver } from "@/services/item-query/attachment-fil
 import { runQueryJob } from "@/services/item-query/job";
 
 import { CITEKEY_WINDOW, makeCitationLookup } from "./citation-lookup";
-import { Connection, toDbUnavailable } from "./connection";
+import { Connection, read } from "./connection";
 import { readIndexedItemIDs } from "./item-scan";
 import { layerConnectionItemSource } from "./item-source";
 import { itemsByIndexedKeys } from "./items-by-indexed-keys";
@@ -115,14 +115,6 @@ export interface HandlersOptions {
    * logger that forwards its records. Without it the level goes unused.
    */
   applyLogLevel?: (level: ReadsConfig["logLevel"]) => Effect.Effect<void>;
-}
-
-/** Run a synchronous read; a SQLite throw becomes a {@link DbUnavailable}. */
-function read<A>(
-  client: NodeDatabaseClient,
-  f: (client: NodeDatabaseClient) => A,
-): Effect.Effect<A, DbUnavailable> {
-  return Effect.try({ try: () => f(client), catch: toDbUnavailable });
 }
 
 /**

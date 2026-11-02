@@ -1,18 +1,19 @@
+// A merge sort of chunks that arrive one at a time, in Effect steps of bounded size.
 import { Effect } from "effect";
 
 /** Sorted chunks accumulated and merged through bounded Effect steps. */
 export interface SortedRuns<T> {
-  /** Take one chunk of matches. The call owns `rows`. */
+  /** Take one chunk. The call owns `rows` and sorts it in place. */
   add(rows: T[]): void;
-  /** The kept rows in result order. */
+  /** Every added row in `compare` order. */
   ordered(): Effect.Effect<T[]>;
 }
 
 /**
- * Keeps every match; an unlimited query returns them all. Each added chunk
- * becomes one sorted run, and `ordered` merges the runs two at a time. One
- * merge step is one Effect of at most `mergeStepSize` rows, so the
- * scheduler can end a slice, or interrupt the query, between two steps.
+ * Keeps every added row. Each added chunk becomes one sorted run, and
+ * `ordered` merges the runs two at a time. One merge step is one Effect of at
+ * most `mergeStepSize` rows, so the scheduler can yield, or the fiber can be
+ * interrupted, between two steps.
  */
 export function makeSortedRuns<T>(
   compare: (a: T, b: T) => number,

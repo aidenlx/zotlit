@@ -162,7 +162,7 @@ export {
   sumSignatureRanges,
   type IndexedCreator,
   type IndexedItem,
-  type IndexedItemScopeRow,
+  type IndexedItemScanRow,
   type IndexSignature,
 } from "./queries/index-items";
 export { formatItemDate, parseItemDate, type ItemDate } from "./lib/zt-date";

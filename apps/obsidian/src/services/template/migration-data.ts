@@ -1,5 +1,5 @@
 // The real Zotero item a Legacy Template conversion verifies against.
-import { Effect, Option, Stream } from "effect";
+import { Effect, Stream } from "effect";
 
 import type { CiteRef } from "@zotlit/db";
 
@@ -16,6 +16,12 @@ export interface MigrationVerificationData {
   readonly annotation: object | null;
   /** The one-item Citation both Citation Variants of the fold render. */
   readonly citation: readonly CiteRef[];
+}
+
+/** A candidate whose note and filename data build, and its data with an annotation when found. */
+interface Verified {
+  readonly base: MigrationVerificationData;
+  readonly complete: MigrationVerificationData | null;
 }
 
 /** One root's data, failing with what failed to read or build it. */
@@ -59,14 +65,17 @@ export const readMigrationVerificationData = Effect.fn(
             ),
           ),
         ),
-        Stream.flatMap((slice) => Stream.fromIterable(slice, { chunkSize: 1 })),
-        Stream.filter((entry) => entry.ref !== null),
-        Stream.map((entry) => entry.ref!.indexedKey),
+        Stream.flatMap((slice) =>
+          Stream.fromIterable(
+            slice.flatMap(({ ref }) => (ref ? [ref.indexedKey] : [])),
+            { chunkSize: 1 },
+          ),
+        ),
       );
 
-      let verificationBase: MigrationVerificationData | undefined;
-      const found = yield* candidates.pipe(
+      const verified = yield* candidates.pipe(
         Stream.mapEffect(
+          // Untraced: runs once per candidate item until one verifies.
           Effect.fnUntraced(function* (indexedKey) {
             // The Citation is read under the lease before the render, not after.
             const citation = yield* citationVerificationRefs(reads, indexedKey);
@@ -75,36 +84,37 @@ export const readMigrationVerificationData = Effect.fn(
               { concurrency: "unbounded" },
             );
             if (note.kind !== "data" || filename.kind !== "data") return null;
-            if (!options.annotation) {
-              return {
-                note: note.data,
-                filename: filename.data,
-                annotation: null,
-                citation,
-              };
-            }
-            verificationBase ??= {
+            const base: MigrationVerificationData = {
               note: note.data,
               filename: filename.data,
               annotation: null,
               citation,
             };
+            if (!options.annotation) return { base, complete: base };
             const annotationKey = firstAnnotationIndexedKey(note.data);
-            if (!annotationKey) return null;
+            if (!annotationKey) return { base, complete: null };
             const annotation = yield* load(annotationKey, "annotation");
-            if (annotation.kind !== "data") return null;
             return {
-              note: note.data,
-              filename: filename.data,
-              annotation: annotation.data,
-              citation,
+              base,
+              complete:
+                annotation.kind === "data"
+                  ? { ...base, annotation: annotation.data }
+                  : null,
             };
           }),
         ),
-        Stream.filter((data) => data !== null),
-        Stream.runHead,
+        Stream.filter((candidate) => candidate !== null),
+        Stream.takeUntil((candidate) => candidate.complete !== null),
+        // Keep the first base, as the fallback when no candidate completes.
+        Stream.runFold(
+          (): Verified | null => null,
+          (first, candidate): Verified => ({
+            base: (first ?? candidate).base,
+            complete: candidate.complete,
+          }),
+        ),
       );
-      return Option.getOrElse(found, () => verificationBase ?? null);
+      return verified && (verified.complete ?? verified.base);
     }),
   );
 });

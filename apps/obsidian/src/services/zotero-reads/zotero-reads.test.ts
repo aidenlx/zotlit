@@ -857,6 +857,27 @@ describe("ZoteroReads operations", () => {
   );
 
   it.effect(
+    "ScopeItemIDs lists a whole Library newest first across scan spans, by key on a tie",
+    () =>
+      Effect.gen(function* () {
+        // 600 and 700 sit in a later Item ID span than 1 to 3; AAAA2345 ties
+        // RELB2345 (item 2) on dateModified.
+        const { open } = fixtureOpener(
+          () => `
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+          values
+            (600, 1, '2024-01-01 00:00:00', '2024-03-01 00:00:00', 1, 'NEWE2345'),
+            (700, 1, '2024-01-01 00:00:00', '2024-01-02 00:00:00', 1, 'AAAA2345');
+      `,
+        );
+        const items = yield* withReads(open, (reads) =>
+          reads.ScopeItemIDs({ kind: "literature-items", libraryID: 1 }),
+        );
+        expect(items).toEqual([600, 1, 3, 700, 2]);
+      }),
+  );
+
+  it.effect(
     "NoteRefs streams one entry per id, telling a trashed note from a non-note id",
     () =>
       Effect.gen(function* () {
