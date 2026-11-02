@@ -63,6 +63,39 @@ it("accepts a field with editor focus retained and undoes only the completion", 
   expect(controller.source).toBe(before);
 });
 
+// Regression: the list once anchored to the caret, so it slid with each letter.
+it("keeps the list at the start of the word as the word is typed", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const view = new EditorView({
+    state: EditorState.create({
+      doc: "{{ zt.ti }}",
+      extensions: [webCompletion(() => ({ root: "note", partials: [] }))],
+    }),
+    parent: document.body,
+  });
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(async () => {
+    await act(async () => view.destroy());
+  });
+  const placed = vi.spyOn(view, "coordsAtPos");
+  const type = async (at: number, text: string) => {
+    await act(async () => {
+      view.focus();
+      view.dispatch({
+        changes: { from: at, insert: text },
+        selection: { anchor: at + text.length },
+        userEvent: "input.type",
+      });
+    });
+    await vi.waitFor(() => expect(placed).toHaveBeenCalled());
+  };
+  await type("{{ zt.ti".length, "t");
+  await type("{{ zt.tit".length, "l");
+  expect(new Set(placed.mock.calls.map(([pos]) => pos))).toEqual(
+    new Set(["{{ zt.".length]),
+  );
+});
+
 it("pairs typed delimiters, dismisses completion on a closer, and keeps composition Enter", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const read = () => ({
