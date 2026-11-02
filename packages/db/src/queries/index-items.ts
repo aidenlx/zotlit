@@ -297,8 +297,7 @@ const indexedItemCountQuery = defineQuery<void>()((db) =>
     .select({ count: count() })
     .from(items)
     .innerJoin(itemTypes, eq(itemTypes.itemTypeID, items.itemTypeID))
-    // Scan the Item rows once instead of visiting them in random Library-key order.
-    .innerJoin(libraries, sql`+${items.libraryID} = ${libraries.libraryID}`)
+    .innerJoin(libraries, eq(libraries.libraryID, items.libraryID))
     .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
     .where(
       and(
