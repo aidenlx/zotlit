@@ -202,7 +202,8 @@ function CompletionPopup({
   }, [view, result, active]);
   const anchor = {
     getBoundingClientRect: () => {
-      const coords = view.coordsAtPos(view.state.selection.main.head);
+      // The start of the word, which stays put as the word is typed.
+      const coords = view.coordsAtPos(result.from);
       return coords
         ? new DOMRect(coords.left, coords.top, 0, coords.bottom - coords.top)
         : view.dom.getBoundingClientRect();

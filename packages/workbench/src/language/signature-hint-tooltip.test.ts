@@ -51,7 +51,7 @@ function editor(doc: string, extra: Extension = []) {
       const hint = parent.querySelector<HTMLElement>(
         `.${SIGNATURE_HINT_CLASS}`,
       );
-      return hint && !hint.hidden ? hint : null;
+      return hint && hint.style.visibility !== "hidden" ? hint : null;
     },
     [Symbol.dispose]() {
       view.destroy();

@@ -509,7 +509,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               () => {
                 const shown =
                   doc.querySelector<HTMLElement>(".zt-signature-hint")!;
-                return shown && !shown.hidden && shown;
+                return shown && shown.style.visibility !== "hidden" && shown;
               },
               5000,
             );
@@ -550,7 +550,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 r.width > 0 &&
                 r.left >= 0 &&
                 r.top >= 0 &&
-                r.right <= win!.innerWidth &&
+                // CodeMirror leaves a move of a pixel or less undone.
+                r.right <= win!.innerWidth + 1 &&
                 r.bottom <= win!.innerHeight,
               shown: corners.every(([x, y]) => {
                 const hit = doc.elementFromPoint(x, y);
@@ -645,7 +646,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               () => {
                 const shown =
                   doc.querySelector<HTMLElement>(".zt-signature-hint")!;
-                return shown && !shown.hidden && shown;
+                return shown && shown.style.visibility !== "hidden" && shown;
               },
               5000,
             );
@@ -686,7 +687,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 r.width > 0 &&
                 r.left >= 0 &&
                 r.top >= 0 &&
-                r.right <= win!.innerWidth &&
+                // CodeMirror leaves a move of a pixel or less undone.
+                r.right <= win!.innerWidth + 1 &&
                 r.bottom <= win!.innerHeight,
               shown: corners.every(([x, y]) => {
                 const hit = doc.elementFromPoint(x, y);
@@ -739,8 +741,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const expression = 'creators.contains("Lena Collator") != false';
     const steady = await obRun(
       run.vaultId,
-      async ({ app, page: pageHelpers }, { path, fileContent, offsets }) => {
-        const { press, until } = pageHelpers;
+      async (
+        { app, page: pageHelpers },
+        { path, fileContent, offsets, nested },
+      ) => {
+        const { until } = pageHelpers;
         const file = await app.vault.create(path, fileContent);
         const leaf = app.workspace.getLeaf("tab");
         pageHelpers.scratch.zotlitE2EHint = leaf;
@@ -750,16 +755,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           leaf.view as import("@/views/query-view/file-view").QueryFileView;
         await fileView.query.settled;
         const el = fileView.contentEl;
-        const button = await until(
+        await until(
           "Filter button",
           () => el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
           5000,
         );
-        const popover = el.querySelector<HTMLElement>(
-          '[data-query-popover="filter"]',
-        )!;
-        press(button, "Filter");
-        await until("Filter popover", () => popover.matches(":popover-open"));
+        const popover = await pageHelpers.openToolbarPopover(el, "filter");
         try {
           const content = await until(
             "expression field",
@@ -774,42 +775,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const doc = content.ownerDocument;
           const view = content.cmTile.root.view;
           view.dispatch({ selection: { anchor: offsets[0]! } });
-          content.focus();
-          const first = await until(
-            "Signature Hint",
-            () => {
-              const shown =
-                doc.querySelector<HTMLElement>(".zt-signature-hint")!;
-              return (
-                shown &&
-                !shown.hidden &&
-                shown.style.top !== "-10000px" &&
-                shown
-              );
-            },
-            5000,
-          );
-          // CodeMirror measures the hint at its height of 0 while the focus
-          // is on its way, and places it again once it shows.
-          await new Promise((settle) => setTimeout(settle, 200));
-          // Each frame, as the caret crosses the arguments.
+          // Each frame from the first the hint shows in, as the editor takes
+          // the focus and then as the caret crosses the arguments.
           const frames: {
             same: boolean;
             place: string;
           }[] = [];
+          const opened: { hint?: HTMLElement } = {};
           let sampling = true;
           const sample = () => {
-            const shown = doc.querySelector<HTMLElement>(".zt-signature-hint")!;
-            const { left, top, width, height } = (
-              shown ?? first
-            ).getBoundingClientRect();
-            frames.push({
-              same: shown === first && !shown.hidden,
-              place: [left, top, width, height].map(Math.round).join(" "),
-            });
+            const shown = doc.querySelector<HTMLElement>(".zt-signature-hint");
+            const showing =
+              shown !== null &&
+              shown.style.visibility !== "hidden" &&
+              shown.style.top !== "-10000px";
+            if (showing) opened.hint ??= shown;
+            if (opened.hint) {
+              const { left, top, width, height } = (
+                shown ?? opened.hint
+              ).getBoundingClientRect();
+              frames.push({
+                same: showing && shown === opened.hint,
+                place: [left, top, width, height].map(Math.round).join(" "),
+              });
+            }
             if (sampling) doc.defaultView!.requestAnimationFrame(sample);
           };
           doc.defaultView!.requestAnimationFrame(sample);
+          content.focus();
+          const first = await until("Signature Hint", () => opened.hint!, 5000);
           const marks: (string | null)[] = [];
           for (const anchor of offsets.slice(1)) {
             view.dispatch({
@@ -820,15 +814,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             marks.push(first.querySelector("mark")?.textContent ?? null);
           }
           sampling = false;
+          // The same signature at a bracket nearer the popover's edge.
+          const near = first.getBoundingClientRect();
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: nested },
+            selection: { anchor: nested.lastIndexOf('"') },
+          });
+          await new Promise((settle) => setTimeout(settle, 200));
+          const far = first.getBoundingClientRect();
           return {
             frames: frames.length,
             replaced: frames.filter((frame) => !frame.same).length,
             places: [...new Set(frames.map((frame) => frame.place))],
             marks: [...new Set(marks)],
             arrow: first.querySelector(".cm-tooltip-arrow") !== null,
+            near: { left: near.left, width: near.width },
+            far: { left: far.left, width: far.width },
           };
         } finally {
-          popover.hidePopover();
+          await pageHelpers.closeToolbarPopover(el, "filter");
         }
       },
       {
@@ -847,10 +851,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         offsets: ["Lena", "Lena Co", "Le", "Lena Collator", "L"].map(
           (text) => 'creators.contains("'.length + text.length,
         ),
+        nested: 'creators.contains(creators.contains("L")) != false',
       },
     );
     expect(steady.frames).toBeGreaterThan(0);
     expect(steady.places).toHaveLength(1);
+    expect(steady.far.left).toBeGreaterThan(steady.near.left);
+    expect(steady.far.width).toBe(steady.near.width);
     expect(steady).toMatchObject({
       replaced: 0,
       marks: ["value: any"],

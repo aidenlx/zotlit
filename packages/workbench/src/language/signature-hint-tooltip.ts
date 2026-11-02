@@ -72,9 +72,10 @@ export function signatureHint(options: SignatureHintOptions = {}): Extension {
       dom.prepend(...blocks);
     };
     render(view.state.field(hint)!.hint);
-    // The hint shows while the editor has focus, as CodeMirror tells it.
+    // The hint shows while the editor has focus, as CodeMirror tells it. Out
+    // of sight it keeps its size, so CodeMirror places it right from the start.
     const show = (shown: EditorView) => {
-      dom.hidden = !shown.hasFocus;
+      dom.style.visibility = shown.hasFocus ? "" : "hidden";
     };
     return {
       dom,
