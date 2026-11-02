@@ -154,13 +154,15 @@ export {
 } from "./queries/batch-scope";
 export {
   getIndexedItemIDsByLibrary,
+  getIndexedItemRowsRange,
   getIndexedItemsByID,
-  getIndexSignature,
+  getIndexedItemCount,
   getIndexSignatureRange,
   getItemIDBounds,
   sumSignatureRanges,
   type IndexedCreator,
   type IndexedItem,
+  type IndexedItemScopeRow,
   type IndexSignature,
 } from "./queries/index-items";
 export { formatItemDate, parseItemDate, type ItemDate } from "./lib/zt-date";

@@ -18,7 +18,7 @@ import { describe, expect } from "vitest";
 
 import {
   buildNoteContextFromSource,
-  getIndexedItemIDsByLibrary,
+  getIndexedItemRowsRange,
   getIndexSignatureRange,
 } from "@zotlit/db";
 import type { NoteResolvers } from "@zotlit/db";
@@ -1865,8 +1865,10 @@ describe("ZoteroReads SearchItems", () => {
       sqlite.close();
     }
   }
-  /** A build reads each Library's ids once; nothing else runs this. */
-  const ID_READ = sqlOf((client) => getIndexedItemIDsByLibrary(client, 1));
+  /** Each small fixture Library fits one build window; nothing else runs this. */
+  const ID_READ = sqlOf((client) =>
+    getIndexedItemRowsRange(client, 1, { from: 0, to: 500 }),
+  );
   // The Item Index reads the signature one Item ID range at a time.
   const SIGNATURE_READ = sqlOf((client) =>
     getIndexSignatureRange(client, 1, { from: 0, to: 1 }),
@@ -1994,7 +1996,7 @@ describe("ZoteroReads SearchItems", () => {
       );
       expect(keysOf(b)).toEqual(keysOf(a));
       expect(a).toHaveLength(4);
-      // One ids read per Library of one build.
+      // One ID window per fixture Library of one build.
       expect(ran(ID_READ)).toBe(2);
     }),
   );

@@ -12,6 +12,7 @@
     "./log-formatter": "./dist/log-formatter.mjs",
     "./logging": "./dist/logging.mjs",
     "./nanoevents": "./dist/nanoevents.mjs",
+    "./sorted-runs": "./dist/sorted-runs.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {

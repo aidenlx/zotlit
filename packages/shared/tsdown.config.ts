@@ -6,6 +6,7 @@ export default defineLibrary({
       delimited: "./src/delimited.ts",
       logging: "./src/logging.ts",
       "log-formatter": "./src/log-formatter.ts",
+      "sorted-runs": "./src/sorted-runs.ts",
       nanoevents: "./src/nanoevents.ts",
     },
   ],

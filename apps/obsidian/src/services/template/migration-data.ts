@@ -1,5 +1,5 @@
 // The real Zotero item a Legacy Template conversion verifies against.
-import { Effect, Stream } from "effect";
+import { Effect, Option, Stream } from "effect";
 
 import type { CiteRef } from "@zotlit/db";
 
@@ -45,54 +45,66 @@ export const readMigrationVerificationData = Effect.fn(
       const scope = yield* libraryScope.resolveLibraries(
         yield* reads.Libraries({}),
       );
-      const candidates: string[] = [];
-      for (const library of scope.available) {
-        const itemIDs = yield* reads.ScopeItemIDs({
-          kind: "literature-items",
-          libraryID: library.libraryID,
-        });
-        const slices = yield* Stream.runCollect(
-          reads.DisplayRefs({ itemIDs: itemIDs ?? [] }),
-        );
-        for (const { ref } of slices.flat())
-          if (ref) candidates.push(ref.indexedKey);
-      }
+      const candidates = Stream.fromIterable(scope.available, {
+        chunkSize: 1,
+      }).pipe(
+        Stream.flatMap((library) =>
+          Stream.unwrap(
+            Effect.map(
+              reads.ScopeItemIDs({
+                kind: "literature-items",
+                libraryID: library.libraryID,
+              }),
+              (itemIDs) => reads.DisplayRefs({ itemIDs: itemIDs ?? [] }),
+            ),
+          ),
+        ),
+        Stream.flatMap((slice) => Stream.fromIterable(slice, { chunkSize: 1 })),
+        Stream.filter((entry) => entry.ref !== null),
+        Stream.map((entry) => entry.ref!.indexedKey),
+      );
 
       let verificationBase: MigrationVerificationData | undefined;
-      for (const indexedKey of candidates) {
-        // The Citation is read under the lease before the render, not after.
-        const citation = yield* citationVerificationRefs(reads, indexedKey);
-        const [note, filename] = yield* Effect.all(
-          [load(indexedKey, "note"), load(indexedKey, "filename")],
-          { concurrency: "unbounded" },
-        );
-        if (note.kind !== "data" || filename.kind !== "data") continue;
-        if (!options.annotation) {
-          return {
-            note: note.data,
-            filename: filename.data,
-            annotation: null,
-            citation,
-          };
-        }
-        verificationBase ??= {
-          note: note.data,
-          filename: filename.data,
-          annotation: null,
-          citation,
-        };
-        const annotationKey = firstAnnotationIndexedKey(note.data);
-        if (!annotationKey) continue;
-        const annotation = yield* load(annotationKey, "annotation");
-        if (annotation.kind !== "data") continue;
-        return {
-          note: note.data,
-          filename: filename.data,
-          annotation: annotation.data,
-          citation,
-        };
-      }
-      return verificationBase ?? null;
+      const found = yield* candidates.pipe(
+        Stream.mapEffect(
+          Effect.fnUntraced(function* (indexedKey) {
+            // The Citation is read under the lease before the render, not after.
+            const citation = yield* citationVerificationRefs(reads, indexedKey);
+            const [note, filename] = yield* Effect.all(
+              [load(indexedKey, "note"), load(indexedKey, "filename")],
+              { concurrency: "unbounded" },
+            );
+            if (note.kind !== "data" || filename.kind !== "data") return null;
+            if (!options.annotation) {
+              return {
+                note: note.data,
+                filename: filename.data,
+                annotation: null,
+                citation,
+              };
+            }
+            verificationBase ??= {
+              note: note.data,
+              filename: filename.data,
+              annotation: null,
+              citation,
+            };
+            const annotationKey = firstAnnotationIndexedKey(note.data);
+            if (!annotationKey) return null;
+            const annotation = yield* load(annotationKey, "annotation");
+            if (annotation.kind !== "data") return null;
+            return {
+              note: note.data,
+              filename: filename.data,
+              annotation: annotation.data,
+              citation,
+            };
+          }),
+        ),
+        Stream.filter((data) => data !== null),
+        Stream.runHead,
+      );
+      return Option.getOrElse(found, () => verificationBase ?? null);
     }),
   );
 });

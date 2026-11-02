@@ -81,7 +81,7 @@ export interface MemoryItemSource {
   readonly onNextRelease: (run: Effect.Effect<void>) => Effect.Effect<void>;
 }
 
-/** `rows` holds the Items of each Library; ids come back newest first. */
+/** `rows` holds the Items of each Library in source order. */
 export const makeMemoryItemSource = (
   rows: ReadonlyMap<number, readonly MemoryItemRow[]>,
 ): Effect.Effect<MemoryItemSource> =>
@@ -113,47 +113,47 @@ export const makeMemoryItemSource = (
 
     const pinnedTo = (state: ReadonlyMap<number, readonly MemoryItemRow[]>) => {
       const rowsOf = [...state.values()].flat();
-      const byId = new Map(rowsOf.map((row) => [row.indexed.itemID, row]));
       const byIndexedKey = new Map(
         rowsOf.map((row) => [row.indexed.indexedKey, row.item]),
       );
       const source: PinnedItemSource = {
         generation,
-        itemIDs: (libraryID) =>
-          check.pipe(
-            Effect.map(() => {
-              reads.itemIDs++;
-              return newestFirst(state.get(libraryID) ?? []).map(
-                (row) => row.indexed.itemID,
-              );
-            }),
-          ),
-        items: (itemIDs) =>
-          check.pipe(
-            Effect.andThen(
-              Effect.suspend(() => {
-                reads.items++;
-                if (!gate.closed) return Effect.void;
-                waiting++;
-                return gate.pass.pipe(
-                  Effect.onInterrupt(() =>
-                    Effect.sync(() => {
-                      reads.interrupted++;
-                    }),
-                  ),
-                  Effect.ensuring(
-                    Effect.sync(() => {
-                      waiting--;
-                    }),
-                  ),
+        items: (libraryID) =>
+          Stream.unwrap(
+            check.pipe(
+              Effect.map(() => {
+                reads.itemIDs++;
+                const rows = state.get(libraryID) ?? [];
+                return Stream.unfold(
+                  0,
+                  Effect.fnUntraced(function* (offset: number) {
+                    if (offset >= rows.length) return undefined;
+                    yield* check;
+                    reads.items++;
+                    if (gate.closed) {
+                      waiting++;
+                      yield* gate.pass.pipe(
+                        Effect.onInterrupt(() =>
+                          Effect.sync(() => {
+                            reads.interrupted++;
+                          }),
+                        ),
+                        Effect.ensuring(
+                          Effect.sync(() => {
+                            waiting--;
+                          }),
+                        ),
+                      );
+                    }
+                    yield* check;
+                    return [
+                      rows
+                        .slice(offset, offset + 500)
+                        .map((row) => row.indexed),
+                      offset + 500,
+                    ] as const;
+                  }),
                 );
-              }),
-            ),
-            Effect.andThen(check),
-            Effect.map(() =>
-              itemIDs.flatMap((itemID) => {
-                const row = byId.get(itemID);
-                return row ? [row.indexed] : [];
               }),
             ),
           ),
@@ -240,16 +240,6 @@ export const makeMemoryItemSource = (
         }),
     } satisfies MemoryItemSource;
   });
-
-function newestFirst(rows: readonly MemoryItemRow[]): MemoryItemRow[] {
-  return rows.toSorted(
-    (a, b) =>
-      Temporal.Instant.compare(
-        b.indexed.dateModified,
-        a.indexed.dateModified,
-      ) || a.indexed.itemID - b.indexed.itemID,
-  );
-}
 
 /** The same `(count, checksum)` shape the database signature query reads. */
 function signatureOf(rows: readonly MemoryItemRow[]): IndexSignature {

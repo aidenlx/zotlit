@@ -49,6 +49,7 @@ See [Filter the rows](/docs/how-to/use-query-files#filter) and [Profile Match](/
 
 ## Bug Fixes
 
+- After you edit items in Zotero, search could pause while ZotLit refreshed a large library. Search now stays responsive during that refresh and while ZotLit prepares actions for a whole library.
 - When you converted 2.1 templates, a frontmatter field that failed the conversion check stopped the conversion. The Profile editor stayed locked, so the only repair was editing the settings file. Now the conversion finishes, keeps the field as you wrote it, and a notice names it. ZotLit refuses to create notes until you fix the field, and the refusal names it. See [Properties that need a fix](/docs/how-to/migrate-from-2.1-templates#fix-properties).
 - Other conversion failures did nothing visible when you selected <UiLabel name={m.welcome_template_conversion_action()} />. Now a notice says what went wrong. For a problem in a template file, it also offers moving the file out of the template folder to use the built-in templates.
 - A Template Workbench preview with citations and no Pandoc engine showed as broken, with the heading Citation style "undefined". Now the preview stays valid and shows a hint. <UiLabel name={m.workbench_preview_open_settings()} /> takes you to the <UiLabel name={m.settings_citation_engine_name()} /> setting.
