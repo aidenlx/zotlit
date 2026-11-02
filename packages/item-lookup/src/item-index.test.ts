@@ -174,7 +174,7 @@ describe("Item Index", () => {
 
     expect(reads).toEqual({
       pinned: 0,
-      itemIDs: 0,
+      scans: 0,
       items: 0,
       signature: 0,
       itemsByIndexedKey: 0,
@@ -188,13 +188,13 @@ describe("Item Index", () => {
       Effect.gen(function* () {
         const first = yield* search(USER, "");
         const second = yield* search(USER, "transit");
-        return { first, second, itemIDs: source.reads.itemIDs };
+        return { first, second, scans: source.reads.scans };
       }),
     );
 
     expect(result.first).toEqual(["BETA", "ALPHA"]);
     expect(result.second).toEqual(expect.arrayContaining(["ALPHA", "BETA"]));
-    expect(result.itemIDs).toBe(1);
+    expect(result.scans).toBe(1);
   });
 
   it("shares one build between parallel first searches", async () => {
@@ -210,7 +210,7 @@ describe("Item Index", () => {
           // points where the scheduler could split them.
           Effect.provideService(Scheduler.MaxOpsBeforeYield, 4),
         );
-        return { answers, itemIDs: source.reads.itemIDs };
+        return { answers, scans: source.reads.scans };
       }),
     );
 
@@ -218,7 +218,7 @@ describe("Item Index", () => {
       ["BETA", "ALPHA"],
       ["BETA", "ALPHA"],
     ]);
-    expect(result.itemIDs).toBe(1);
+    expect(result.scans).toBe(1);
   });
 
   it("answers from the old index while a new generation rebuilds", async () => {
@@ -235,13 +235,13 @@ describe("Item Index", () => {
           search(USER, ""),
           (keys) => keys.length === 3,
         );
-        return { during, after, itemIDs: source.reads.itemIDs };
+        return { during, after, scans: source.reads.scans };
       }),
     );
 
     expect(result.during).toEqual(["BETA", "ALPHA"]);
     expect(result.after).toEqual(["DELTA", "BETA", "ALPHA"]);
-    expect(result.itemIDs).toBe(2);
+    expect(result.scans).toBe(2);
   });
 
   it("rebuilds on a moved signature", async () => {
@@ -254,25 +254,25 @@ describe("Item Index", () => {
           search(USER, ""),
           (keys) => keys.length === 3,
         );
-        return { after, itemIDs: source.reads.itemIDs };
+        return { after, scans: source.reads.scans };
       }),
     );
 
     expect(result.after).toEqual(["DELTA", "BETA", "ALPHA"]);
-    expect(result.itemIDs).toBe(2);
+    expect(result.scans).toBe(2);
   });
 
   it("rebuilds on a swapped source with equal signatures", async () => {
-    const itemIDs = await withIndex(({ source, search }) =>
+    const scans = await withIndex(({ source, search }) =>
       Effect.gen(function* () {
         yield* search(USER, "");
         yield* source.swap;
         yield* eventually(() => source.reads.released === 1);
-        return source.reads.itemIDs;
+        return source.reads.scans;
       }),
     );
 
-    expect(itemIDs).toBe(2);
+    expect(scans).toBe(2);
   });
 
   it("keeps the index on an equal signature and an unchanged generation", async () => {
@@ -287,7 +287,7 @@ describe("Item Index", () => {
     );
 
     expect(reads.signature).toBe(2);
-    expect(reads.itemIDs).toBe(1);
+    expect(reads.scans).toBe(1);
   });
 
   it("evicts an abandoned list at the next emission and interrupts its build", async () => {
@@ -305,12 +305,12 @@ describe("Item Index", () => {
         yield* eventually(() => source.reads.interrupted === 1);
         yield* source.openGate;
         const answer = yield* Fiber.join(group);
-        const itemIDsBefore = source.reads.itemIDs;
+        const scansBefore = source.reads.scans;
         yield* search(USER, "");
         return {
           answer,
           interrupted: source.reads.interrupted,
-          rebuiltUser: source.reads.itemIDs - itemIDsBefore,
+          rebuiltUser: source.reads.scans - scansBefore,
         };
       }),
     );
@@ -334,14 +334,14 @@ describe("Item Index", () => {
         const answer = yield* Fiber.join(first);
         return {
           answer,
-          itemIDs: source.reads.itemIDs,
+          scans: source.reads.scans,
           interrupted: source.reads.interrupted,
         };
       }),
     );
 
     expect(result.answer).toEqual(["DELTA", "BETA", "ALPHA"]);
-    expect(result.itemIDs).toBe(2);
+    expect(result.scans).toBe(2);
     expect(result.interrupted).toBe(0);
   });
 
@@ -386,14 +386,14 @@ describe("Item Index", () => {
         const answer = yield* search(USER, "");
         return {
           answer,
-          itemIDs: source.reads.itemIDs,
+          scans: source.reads.scans,
           interrupted: source.reads.interrupted,
         };
       }),
     );
 
     expect(result.answer).toEqual(["BETA", "ALPHA"]);
-    expect(result.itemIDs).toBe(1);
+    expect(result.scans).toBe(1);
     expect(result.interrupted).toBe(0);
   });
 
@@ -417,17 +417,17 @@ describe("Item Index", () => {
   });
 
   it("rebuilds every held list on a locale change", async () => {
-    const itemIDs = await withIndex(({ source, search, configure }) =>
+    const scans = await withIndex(({ source, search, configure }) =>
       Effect.gen(function* () {
         yield* search(USER, "");
         yield* search(GROUP, "");
         yield* configure({ locale: "zh", segmenterBinary: null });
         yield* eventually(() => source.reads.released === 2);
-        return source.reads.itemIDs;
+        return source.reads.scans;
       }),
     );
 
-    expect(itemIDs).toBe(4);
+    expect(scans).toBe(4);
   });
 
   it("hydrates the hits on the source the answering index holds, the old one while a rebuild waits", async () => {
@@ -481,13 +481,13 @@ describe("Item Index", () => {
         // No change event: the index still holds the Item.
         yield* source.vanish("ALPHA");
         const after = yield* search(USER, "");
-        return { before, after, itemIDs: source.reads.itemIDs };
+        return { before, after, scans: source.reads.scans };
       }),
     );
 
     expect(result.before).toEqual(["BETA", "ALPHA"]);
     expect(result.after).toEqual(["BETA"]);
-    expect(result.itemIDs).toBe(1);
+    expect(result.scans).toBe(1);
   });
 
   it("holds an index's source until a newer index replaces it and no search holds it", async () => {
@@ -546,15 +546,15 @@ describe("Item Index", () => {
         yield* eventually(() => source.reads.released === 4);
         yield* source.notify;
         yield* eventually(() => source.reads.released === 5);
-        const before = source.reads.itemIDs;
+        const before = source.reads.scans;
         const group = yield* search(GROUP, "");
-        const groupBuilds = source.reads.itemIDs - before;
+        const groupBuilds = source.reads.scans - before;
         const user = yield* search(USER, "");
         return {
           group,
           groupBuilds,
           user,
-          userBuilds: source.reads.itemIDs - before - groupBuilds,
+          userBuilds: source.reads.scans - before - groupBuilds,
         };
       }),
     );
@@ -581,13 +581,13 @@ describe("Item Index", () => {
         yield* source.setUnavailable(false);
         // The recovered source builds again: the failure dropped the index.
         const answer = yield* search(USER, "");
-        return { failure, answer, itemIDs: source.reads.itemIDs };
+        return { failure, answer, scans: source.reads.scans };
       }),
     );
 
     expect(result.failure).toBeInstanceOf(SourceUnavailable);
     expect(result.answer).toEqual(["BETA", "ALPHA"]);
-    expect(result.itemIDs).toBe(2);
+    expect(result.scans).toBe(2);
   });
 });
 
@@ -642,9 +642,9 @@ describe("Item Index with the Chinese Segmenter", () => {
             search(USER, JIEBA_ONLY),
             (keys) => keys.length > 0,
           );
-          yield* eventually(() => source.reads.itemIDs >= 6);
+          yield* eventually(() => source.reads.scans >= 6);
           yield* search(EVERYTHING, "");
-          return { before, after, itemIDs: source.reads.itemIDs };
+          return { before, after, scans: source.reads.scans };
         }),
       rows,
     );
@@ -652,11 +652,11 @@ describe("Item Index with the Chinese Segmenter", () => {
     expect(result.before).toEqual([]);
     expect(result.after).toEqual(["CHINA"]);
     // One ids read per Library per build: [1] and [1, 2], each built twice.
-    expect(result.itemIDs).toBe(6);
+    expect(result.scans).toBe(6);
   });
 
   it("rebuilds every held list once on a configure that changes the locale and installs the binary", async () => {
-    const itemIDs = await withIndex(
+    const scans = await withIndex(
       ({ source, search, configure }) =>
         Effect.gen(function* () {
           yield* search(USER, JIEBA_ONLY);
@@ -669,13 +669,13 @@ describe("Item Index with the Chinese Segmenter", () => {
               (keys) => keys.length > 0,
             );
           }
-          return source.reads.itemIDs;
+          return source.reads.scans;
         }),
       rows,
     );
 
     // One ids read per Library per build: [1] and [1, 2], each built twice.
-    expect(itemIDs).toBe(6);
+    expect(scans).toBe(6);
   });
 
   it("falls back to Intl.Segmenter and still answers on a configure that uninstalls the binary", async () => {
@@ -724,13 +724,13 @@ describe("Item Index with the Chinese Segmenter", () => {
           yield* search(USER, WHOLE_RUN);
           yield* configure({ locale: "en", segmenterBinary: CORRUPT });
           const whole = yield* search(USER, WHOLE_RUN);
-          return { whole, itemIDs: source.reads.itemIDs };
+          return { whole, scans: source.reads.scans };
         }),
       rows,
     );
 
     // The index never left Intl.Segmenter, so nothing rebuilt.
-    expect(result).toEqual({ whole: ["CHINA"], itemIDs: 1 });
+    expect(result).toEqual({ whole: ["CHINA"], scans: 1 });
   });
 
   it("tries the same binary again on a configure after a failed load", async () => {
@@ -803,7 +803,7 @@ describe("Item Index with the Chinese Segmenter", () => {
             yield* eventually(() => source.reads.released === 1);
             yield* search(USER, "");
             return {
-              itemIDs: source.reads.itemIDs,
+              scans: source.reads.scans,
               asked: reader.asked.length,
             };
           }),
@@ -811,7 +811,7 @@ describe("Item Index with the Chinese Segmenter", () => {
       );
 
       // One ids read: the first build. The re-check reads only signatures.
-      expect(result).toEqual({ itemIDs: 1, asked: binary ? 1 : 0 });
+      expect(result).toEqual({ scans: 1, asked: binary ? 1 : 0 });
     },
   );
 });

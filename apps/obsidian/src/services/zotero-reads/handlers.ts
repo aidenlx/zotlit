@@ -34,8 +34,7 @@ import {
   getAllTagNames,
   getCollectionIDByKey,
   getIndexedItemIDsByCollection,
-  getIndexedItemIDsByLibrary,
-  getIndexSignature,
+  getIndexedItemCount,
   getItemDisplayRefsByIDs,
   getItemRefByID,
   getItemsByID,
@@ -62,7 +61,8 @@ import { makeAttachmentFileResolver } from "@/services/item-query/attachment-fil
 import { runQueryJob } from "@/services/item-query/job";
 
 import { CITEKEY_WINDOW, makeCitationLookup } from "./citation-lookup";
-import { Connection, toDbUnavailable } from "./connection";
+import { Connection, read } from "./connection";
+import { readIndexedItemIDs } from "./item-scan";
 import { layerConnectionItemSource } from "./item-source";
 import { itemsByIndexedKeys } from "./items-by-indexed-keys";
 import { listCollectionChoices } from "./membership";
@@ -71,16 +71,10 @@ import type { ReadsConfig, SegmenterBinary, WorkLabelSource } from "./rpc";
 import { layerSegmenterBinaryReader } from "./segmenter";
 import type { ReadSegmenter } from "./segmenter";
 
-/** The id queries {@link ZoteroReads} `ScopeItemIDs` runs, per kind. */
-const SCOPE_QUERIES = {
-  "literature-items": {
-    byLibrary: getIndexedItemIDsByLibrary,
-    byCollection: getIndexedItemIDsByCollection,
-  },
-  notes: {
-    byLibrary: getNoteItemIDsByLibrary,
-    byCollection: getNoteItemIDsByCollection,
-  },
+/** The collection queries `ScopeItemIDs` runs, per kind. */
+const COLLECTION_SCOPE_QUERIES = {
+  "literature-items": getIndexedItemIDsByCollection,
+  notes: getNoteItemIDsByCollection,
 } as const;
 
 /** Items per stream slice: a cancel point about every 300 ms on a large library. */
@@ -121,14 +115,6 @@ export interface HandlersOptions {
    * logger that forwards its records. Without it the level goes unused.
    */
   applyLogLevel?: (level: ReadsConfig["logLevel"]) => Effect.Effect<void>;
-}
-
-/** Run a synchronous read; a SQLite throw becomes a {@link DbUnavailable}. */
-function read<A>(
-  client: NodeDatabaseClient,
-  f: (client: NodeDatabaseClient) => A,
-): Effect.Effect<A, DbUnavailable> {
-  return Effect.try({ try: () => f(client), catch: toDbUnavailable });
 }
 
 /**
@@ -418,11 +404,7 @@ export function handlersLayer(options?: HandlersOptions) {
 
         ConnectionReadout: ({ snapshot }) =>
           withClient(snapshot, (client) => ({
-            itemCount: getLibraries(client).reduce(
-              (total, library) =>
-                total + getIndexSignature(client, library.libraryID).count,
-              0,
-            ),
+            itemCount: getIndexedItemCount(client),
           })),
 
         ItemsByIndexedKeys: ({ indexedKeys, snapshot }) =>
@@ -710,15 +692,24 @@ export function handlersLayer(options?: HandlersOptions) {
           }),
 
         ScopeItemIDs: ({ kind, libraryID, collectionKey, snapshot }) =>
-          withClient(snapshot, (client) => {
-            const queries = SCOPE_QUERIES[kind];
-            if (collectionKey === undefined)
-              return queries.byLibrary(client, libraryID);
-            const collection = { libraryID, collectionKey };
-            if (getCollectionIDByKey(client, collection) === undefined)
-              return null;
-            return queries.byCollection(client, collection);
-          }),
+          Effect.scoped(
+            Effect.gen(function* () {
+              const client = yield* borrow(snapshot);
+              if (collectionKey === undefined) {
+                return kind === "literature-items"
+                  ? yield* readIndexedItemIDs(client, libraryID)
+                  : yield* read(client, (c) =>
+                      getNoteItemIDsByLibrary(c, libraryID),
+                    );
+              }
+              return yield* read(client, (c) => {
+                const collection = { libraryID, collectionKey };
+                if (getCollectionIDByKey(c, collection) === undefined)
+                  return null;
+                return COLLECTION_SCOPE_QUERIES[kind](c, collection);
+              });
+            }),
+          ),
 
         NoteRefs: ({ itemIDs, snapshot }) =>
           withClientStream(snapshot, (client) =>

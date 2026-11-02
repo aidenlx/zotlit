@@ -8,6 +8,8 @@ import { USER_LIBRARY_ID } from "@/lib/constants";
 import { createFixtureSchema } from "@/test-utils";
 
 import {
+  getIndexedItemRowsRange,
+  getIndexedItemCount,
   getIndexedItemsByID,
   getIndexedItemsByLibrary,
   getIndexSignature,
@@ -28,6 +30,102 @@ beforeEach(() => {
 
 afterEach(() => {
   sqlite.close();
+});
+
+describe("getIndexedItemRowsRange", () => {
+  it("bounds the rowid scan while filtering Library, child Items, and trash", () => {
+    sqlite.exec(`
+      insert into libraries (libraryID, type, editable, filesEditable)
+        values (2, 'group', 1, 1);
+      update items set libraryID = 2 where itemID = 2;
+      create unique index items_library_key on items(libraryID, key);
+    `);
+    const queries: { sql: string; params: unknown[] }[] = [];
+    db = drizzle({
+      client: sqlite,
+      relations,
+      logger: {
+        logQuery(sql, params) {
+          queries.push({ sql, params });
+        },
+      },
+    });
+    expect(
+      getIndexedItemRowsRange(db, 1, { from: 1, to: 8 }).map(
+        (row) => row.itemID,
+      ),
+    ).toEqual([1, 7]);
+    expect(
+      getIndexedItemRowsRange(db, 1, { from: 1, to: 7 }).map(
+        (row) => row.itemID,
+      ),
+    ).toEqual([1]);
+    expect(
+      getIndexedItemRowsRange(db, 1, { from: 7, to: 8 }).map(
+        (row) => row.itemID,
+      ),
+    ).toEqual([7]);
+    expect(
+      getIndexedItemRowsRange(db, 2, { from: 1, to: 8 }).map(
+        (row) => row.itemID,
+      ),
+    ).toEqual([2]);
+    expect(
+      getIndexedItemRowsRange(db, 3, { from: 1, to: 8 }).map(
+        (row) => row.itemID,
+      ),
+    ).toEqual([]);
+    const query = queries[0]!;
+    const details = sqlite
+      .prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+      .all(...(query.params as (string | number)[]))
+      .map((row) => row.detail)
+      .join("\n");
+    expect(details).toContain(
+      "SEARCH d0 USING INTEGER PRIMARY KEY (rowid>? AND rowid<?)",
+    );
+    expect(details).not.toContain("TEMP B-TREE");
+  });
+});
+
+describe("getIndexedItemCount", () => {
+  it("counts live top-level Items across user and group Libraries, excluding feeds", () => {
+    sqlite.exec(`
+      insert into libraries (libraryID, type, editable, filesEditable)
+        values (2, 'group', 1, 1), (3, 'feed', 1, 1);
+      insert into items (itemID, itemTypeID, libraryID, key)
+        values (8, 1, 2, 'GROUP'), (9, 1, 3, 'FEED');
+    `);
+    expect(getIndexedItemCount(db)).toBe(4);
+    sqlite.exec("insert into deletedItems (itemID) values (8)");
+    expect(getIndexedItemCount(db)).toBe(3);
+  });
+
+  it("scans the Item rows once, without the Library key index or a temporary B-tree", () => {
+    sqlite.exec(
+      "create unique index items_library_key on items(libraryID, key)",
+    );
+    const queries: { sql: string; params: unknown[] }[] = [];
+    db = drizzle({
+      client: sqlite,
+      relations,
+      logger: {
+        logQuery(sql, params) {
+          queries.push({ sql, params });
+        },
+      },
+    });
+    getIndexedItemCount(db);
+    const query = queries[0]!;
+    const details = sqlite
+      .prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+      .all(...(query.params as (string | number)[]))
+      .map((row) => row.detail)
+      .join("\n");
+    expect(details).toContain("SCAN items");
+    expect(details).not.toContain("items_library_key");
+    expect(details).not.toContain("TEMP B-TREE");
+  });
 });
 
 describe("getIndexedItemsByLibrary", () => {

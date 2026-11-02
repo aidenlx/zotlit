@@ -1,5 +1,15 @@
-import { deletedItems, items, itemTypes } from "@drizzle/schema";
-import { and, count, eq, gte, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { deletedItems, items, itemTypes, libraries } from "@drizzle/schema";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import type { CreatorFieldMode } from "@/lib/zt-creator";
@@ -122,6 +132,47 @@ const indexedItemIDsByLibraryQuery = defineQuery<{ libraryID: number }>()(
     }),
 );
 
+/**
+ * One bounded rowid window of a Library scan: the Item Index build and the
+ * whole-Library batch selection both read through it.
+ */
+const indexedItemRowsRangeQuery = defineQuery<{
+  libraryID: number;
+  from: number;
+  to: number;
+}>()((db, { placeholder }) =>
+  db.query.items.findMany({
+    where: {
+      RAW: (item) =>
+        sql`+${item.libraryID} = ${placeholder("libraryID")}
+          and ${item.itemID} >= ${placeholder("from")}
+          and ${item.itemID} < ${placeholder("to")}`,
+      itemType: { typeName: { notIn: [...CHILD_ITEM_TYPES] } },
+      deletedItem: false,
+    },
+    columns: { itemID: true, key: true },
+    extras: { dateModified: (item) => sql<string>`${item.dateModified}` },
+    orderBy: { itemID: "asc" },
+  }),
+);
+
+export type IndexedItemScanRow = QueryRow<typeof indexedItemRowsRangeQuery>;
+
+/**
+ * Lightweight indexed Item rows in a half-open rowid range, in Item ID order. The unary
+ * plus on Library membership keeps the scan bounded by the range, including
+ * for sparse Libraries and random keys. Each caller orders the rows as it
+ * needs: the Item Index ranks them, and the batch selection sorts them
+ * newest first.
+ */
+export function getIndexedItemRowsRange(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  { from, to }: ItemIDRange,
+): IndexedItemScanRow[] {
+  return indexedItemRowsRangeQuery.prepared(db).all({ libraryID, from, to });
+}
+
 /** Hydration of a chunk of ids, matching {@link indexedItemsQuery}'s projection. */
 const indexedItemsByIdsQuery = defineKeyedQuery<number>()(
   (
@@ -199,8 +250,9 @@ export function getIndexedItemsByLibrary(
 }
 
 /**
- * Ordered (dateModified desc) item ids for a library — the lightweight first
- * pass of a chunked index build. Hydrate each chunk via {@link getIndexedItemsByID}.
+ * Ordered (dateModified desc) item ids for a library, in one statement. Tests
+ * read it as the reference list; the app scans through
+ * {@link getIndexedItemRowsRange}.
  */
 export function getIndexedItemIDsByLibrary(
   db: NodeDatabaseClient,
@@ -237,6 +289,28 @@ export function getIndexedItemsByID(
       table,
     ),
   );
+}
+
+/** Count the live top-level Items in the user and group Libraries. */
+const indexedItemCountQuery = defineQuery<void>()((db) =>
+  db
+    .select({ count: count() })
+    .from(items)
+    .innerJoin(itemTypes, eq(itemTypes.itemTypeID, items.itemTypeID))
+    // Scan the Item rows once instead of visiting them in random Library-key order.
+    .innerJoin(libraries, sql`+${items.libraryID} = ${libraries.libraryID}`)
+    .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
+    .where(
+      and(
+        inArray(libraries.type, ["user", "group"]),
+        notInArray(itemTypes.typeName, [...CHILD_ITEM_TYPES]),
+        isNull(deletedItems.itemID),
+      ),
+    ),
+);
+
+export function getIndexedItemCount(db: NodeDatabaseClient): number {
+  return indexedItemCountQuery.prepared(db).get()?.count ?? 0;
 }
 
 /** Cheap change-detection signature for a library's indexed items. */

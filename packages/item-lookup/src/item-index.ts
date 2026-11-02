@@ -61,14 +61,13 @@ export class SourceUnavailable extends Schema.TaggedError<SourceUnavailable>()(
 export interface PinnedItemSource {
   /** The generation of the source these reads are bound to. */
   readonly generation: number;
-  /** Ids of the indexed Items of one Library, newest `dateModified` first. */
-  readonly itemIDs: (
-    libraryID: number,
-  ) => Effect.Effect<readonly number[], SourceUnavailable>;
-  /** The rows of a slice of ids, in request order; a vanished id is skipped. */
+  /**
+   * All indexed Items of one Library, in bounded batches. The source owns
+   * read scheduling; batches need no ranking order. Empty batches are valid.
+   */
   readonly items: (
-    itemIDs: readonly number[],
-  ) => Effect.Effect<readonly IndexedItem[], SourceUnavailable>;
+    libraryID: number,
+  ) => Stream.Stream<readonly IndexedItem[], SourceUnavailable>;
   /** The change signature of one Library's indexed Items. */
   readonly signature: (
     libraryID: number,
@@ -135,9 +134,6 @@ export class ItemIndex extends Context.Service<
     readonly configure: (settings: IndexSettings) => Effect.Effect<void>;
   }
 >()("zotlit/item-lookup/ItemIndex") {}
-
-/** Ids read per `items` call during a build. */
-const SLICE_SIZE = 500;
 
 const log = (message: string, properties?: Readonly<Record<string, unknown>>) =>
   Effect.logDebug(message).pipe(
@@ -346,11 +342,7 @@ function makeItemIndex(initial: IndexSettings) {
           languageLookup: lookupFor(settings.locale),
         }).pipe(Effect.provideService(Segmenter, segmenter));
         for (const libraryID of entry.libraries) {
-          const ids = yield* pinned.itemIDs(libraryID);
-          for (let start = 0; start < ids.length; start += SLICE_SIZE) {
-            const slice = ids.slice(start, start + SLICE_SIZE);
-            yield* builder.add(yield* pinned.items(slice));
-          }
+          yield* Stream.runForEach(pinned.items(libraryID), builder.add);
         }
         const engine = yield* builder.build;
         yield* holdOnce({

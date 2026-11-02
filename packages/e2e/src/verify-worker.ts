@@ -41,10 +41,10 @@ const result = JSON.parse(await readFile(report, "utf8")) as {
 };
 if (
   !result.success ||
-  result.numPassedTests < 3 ||
+  result.numPassedTests < 4 ||
   result.numPendingTests !== 0
 ) {
   throw new Error(
-    "Worker responsiveness requires all three desktop regression cases to execute and pass.",
+    "Worker responsiveness requires all four desktop regression cases to execute and pass.",
   );
 }

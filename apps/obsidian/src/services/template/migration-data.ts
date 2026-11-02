@@ -18,6 +18,12 @@ export interface MigrationVerificationData {
   readonly citation: readonly CiteRef[];
 }
 
+/** A candidate whose note and filename data build, and its data with an annotation when found. */
+interface Verified {
+  readonly base: MigrationVerificationData;
+  readonly complete: MigrationVerificationData | null;
+}
+
 /** One root's data, failing with what failed to read or build it. */
 const load = (indexedKey: string, root: "note" | "filename" | "annotation") =>
   readTemplateData(indexedKey, root).pipe(
@@ -45,54 +51,70 @@ export const readMigrationVerificationData = Effect.fn(
       const scope = yield* libraryScope.resolveLibraries(
         yield* reads.Libraries({}),
       );
-      const candidates: string[] = [];
-      for (const library of scope.available) {
-        const itemIDs = yield* reads.ScopeItemIDs({
-          kind: "literature-items",
-          libraryID: library.libraryID,
-        });
-        const slices = yield* Stream.runCollect(
-          reads.DisplayRefs({ itemIDs: itemIDs ?? [] }),
-        );
-        for (const { ref } of slices.flat())
-          if (ref) candidates.push(ref.indexedKey);
-      }
+      const candidates = Stream.fromIterable(scope.available, {
+        chunkSize: 1,
+      }).pipe(
+        Stream.flatMap((library) =>
+          Stream.unwrap(
+            Effect.map(
+              reads.ScopeItemIDs({
+                kind: "literature-items",
+                libraryID: library.libraryID,
+              }),
+              (itemIDs) => reads.DisplayRefs({ itemIDs: itemIDs ?? [] }),
+            ),
+          ),
+        ),
+        Stream.flatMap((slice) =>
+          Stream.fromIterable(
+            slice.flatMap(({ ref }) => (ref ? [ref.indexedKey] : [])),
+            { chunkSize: 1 },
+          ),
+        ),
+      );
 
-      let verificationBase: MigrationVerificationData | undefined;
-      for (const indexedKey of candidates) {
-        // The Citation is read under the lease before the render, not after.
-        const citation = yield* citationVerificationRefs(reads, indexedKey);
-        const [note, filename] = yield* Effect.all(
-          [load(indexedKey, "note"), load(indexedKey, "filename")],
-          { concurrency: "unbounded" },
-        );
-        if (note.kind !== "data" || filename.kind !== "data") continue;
-        if (!options.annotation) {
-          return {
-            note: note.data,
-            filename: filename.data,
-            annotation: null,
-            citation,
-          };
-        }
-        verificationBase ??= {
-          note: note.data,
-          filename: filename.data,
-          annotation: null,
-          citation,
-        };
-        const annotationKey = firstAnnotationIndexedKey(note.data);
-        if (!annotationKey) continue;
-        const annotation = yield* load(annotationKey, "annotation");
-        if (annotation.kind !== "data") continue;
-        return {
-          note: note.data,
-          filename: filename.data,
-          annotation: annotation.data,
-          citation,
-        };
-      }
-      return verificationBase ?? null;
+      const verified = yield* candidates.pipe(
+        Stream.mapEffect(
+          // Untraced: runs once per candidate item until one verifies.
+          Effect.fnUntraced(function* (indexedKey) {
+            // The Citation is read under the lease before the render, not after.
+            const citation = yield* citationVerificationRefs(reads, indexedKey);
+            const [note, filename] = yield* Effect.all(
+              [load(indexedKey, "note"), load(indexedKey, "filename")],
+              { concurrency: "unbounded" },
+            );
+            if (note.kind !== "data" || filename.kind !== "data") return null;
+            const base: MigrationVerificationData = {
+              note: note.data,
+              filename: filename.data,
+              annotation: null,
+              citation,
+            };
+            if (!options.annotation) return { base, complete: base };
+            const annotationKey = firstAnnotationIndexedKey(note.data);
+            if (!annotationKey) return { base, complete: null };
+            const annotation = yield* load(annotationKey, "annotation");
+            return {
+              base,
+              complete:
+                annotation.kind === "data"
+                  ? { ...base, annotation: annotation.data }
+                  : null,
+            };
+          }),
+        ),
+        Stream.filter((candidate) => candidate !== null),
+        Stream.takeUntil((candidate) => candidate.complete !== null),
+        // Keep the first base, as the fallback when no candidate completes.
+        Stream.runFold(
+          (): Verified | null => null,
+          (first, candidate): Verified => ({
+            base: (first ?? candidate).base,
+            complete: candidate.complete,
+          }),
+        ),
+      );
+      return verified && (verified.complete ?? verified.base);
     }),
   );
 });

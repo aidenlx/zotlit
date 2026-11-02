@@ -2,7 +2,6 @@
 import { Effect, Layer, Stream } from "effect";
 
 import {
-  getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
   getIndexSignatureRange,
   getItemIDBounds,
@@ -14,6 +13,7 @@ import { ItemSource, SourceUnavailable } from "@zotlit/item-lookup";
 import type { PinnedItemSource } from "@zotlit/item-lookup";
 
 import { Connection, toDbUnavailable } from "./connection";
+import { scanIndexedItems } from "./item-scan";
 import { itemsByIndexedKeys } from "./items-by-indexed-keys";
 
 /** Run a synchronous read; a throw becomes a {@link SourceUnavailable}. */
@@ -61,6 +61,26 @@ const signatureOf = (client: NodeDatabaseClient, libraryID: number) =>
     return step.value;
   });
 
+const itemsOf = (
+  client: NodeDatabaseClient,
+  libraryID: number,
+  memo: GroupIDMemo,
+) =>
+  scanIndexedItems(client, libraryID).pipe(
+    Stream.mapError(
+      (error) => new SourceUnavailable({ message: error.message }),
+    ),
+    Stream.mapEffect((rows) =>
+      read(client, (c) =>
+        getIndexedItemsByID(
+          c,
+          rows.map((row) => row.itemID),
+          { memo },
+        ),
+      ),
+    ),
+  );
+
 /**
  * An {@link ItemSource} over {@link Connection}.
  *
@@ -94,10 +114,7 @@ export const layerConnectionItemSource: Layer.Layer<
         const memo: GroupIDMemo = new Map();
         return {
           generation: connection.databaseGeneration(client),
-          itemIDs: (libraryID) =>
-            read(client, (c) => getIndexedItemIDsByLibrary(c, libraryID)),
-          items: (itemIDs) =>
-            read(client, (c) => getIndexedItemsByID(c, itemIDs, { memo })),
+          items: (libraryID) => itemsOf(client, libraryID, memo),
           signature: (libraryID) => signatureOf(client, libraryID),
           itemsByIndexedKey: (indexedKeys) =>
             read(client, (c) => itemsByIndexedKeys(c, indexedKeys)),
