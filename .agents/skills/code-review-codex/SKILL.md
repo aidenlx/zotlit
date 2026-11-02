@@ -1,7 +1,6 @@
 ---
 name: code-review-codex
 description: Run the two-axis code review through the Codex CLI (GPT) instead of Claude sub-agents.
-disable-model-invocation: true
 ---
 
 Run [`code-review`](../code-review/SKILL.md) as written, with one change in step 4: each axis runs as a `codex exec review` instead of a Claude sub-agent. Launch it as [`codex`](../codex/SKILL.md) → Code review describes, with `-m gpt-6-astra`. Start both axes in the background so they run in parallel.
