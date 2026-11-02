@@ -1496,6 +1496,7 @@
   "workbench_match_add_condition": "添加条件",
   "workbench_match_remove_condition": "移除条件",
   "workbench_match_expression": "表达式",
+  "workbench_match_expression_placeholder": "输入筛选表达式",
   "workbench_match_edit_as_expression": "以表达式编辑",
   "workbench_match_edit_visually": "可视化编辑",
   "workbench_match_conjunction_and": "且",

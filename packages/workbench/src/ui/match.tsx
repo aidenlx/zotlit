@@ -630,6 +630,7 @@ function Row<Row extends LabelledRow>({
               <MatchExpressionInput
                 aria-label={m.workbench_match_expression()}
                 aria-invalid={issue !== null}
+                placeholder={m.workbench_match_expression_placeholder()}
                 value={condition.text}
                 vocabulary={vocabulary.expression}
                 fault={fault}

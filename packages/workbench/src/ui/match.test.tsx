@@ -94,6 +94,20 @@ it("leaves Mod+Z to the expression field, whose own history undoes the typing", 
   expect(controller.source).not.toContain("&& x");
 });
 
+it("shows a hint in the expression field of a row with no value", async () => {
+  using mounted = mount(<Pane />, { source: SOURCE });
+  render(mounted.ui);
+  const edit = await screen.findByRole("button", {
+    name: m.workbench_match_edit_as_expression(),
+  });
+  act(() => edit.click());
+  const view = EditorView.findFromDOM(await screen.findByRole("textbox"))!;
+  expect(view.state.doc.toString()).toBe("");
+  expect(view.dom.textContent).toContain(
+    m.workbench_match_expression_placeholder(),
+  );
+});
+
 it("interrupts its vocabulary, custom-field and Match reads when the pane goes", async () => {
   using mounted = mount(<Pane />, {
     source: SOURCE.replace(
