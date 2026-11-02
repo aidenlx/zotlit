@@ -24,7 +24,7 @@
 //
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
 import type { IconName } from "obsidian";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ButtonHTMLAttributes,
   CSSProperties,
@@ -36,7 +36,7 @@ import type {
 import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
-import { tooltipHostRoot } from "@/components/popover-surface";
+import { raiseTooltips, tooltipHostRoot } from "@/components/popover-surface";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { ToolbarButton } from "./toolbar-button";
@@ -102,6 +102,10 @@ export function ToolbarPopover({
 }: ToolbarPopoverProps) {
   const id = useUniqueId();
   const [open, setOpen] = useState(false);
+  const popover = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open && popover.current) return raiseTooltips(popover.current);
+  }, [open]);
   const anchor = { "--zt-query-popover-anchor": `--${id}` } as CSSProperties;
   return (
     <>
@@ -120,6 +124,7 @@ export function ToolbarPopover({
         style={anchor}
       />
       <div
+        ref={popover}
         id={id}
         popover="auto"
         data-query-popover={hook}
