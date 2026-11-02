@@ -195,7 +195,7 @@
       "title.includes(\"x\")",
       "      ^^^^^^^^",
       "`title` is a string in a filter.",
-      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
+      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, icontains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
     ]
   },
   {
@@ -286,7 +286,7 @@
       "         ^^^^",
       "`creators` is a list of text in a filter.",
       "In a Query Row, each `creators` entry has these Projection Paths: `creators[0].family`, `creators[0].given`, `creators[0].literal`, `creators[0].role`, `creators[0].fullName`.",
-      "Use a method of a list: toString, isType, isTruthy, isEmpty, contains, containsAny, containsAll, flat, join, reverse, slice, sort, unique, filter, map, reduce, within."
+      "Use a method of a list: toString, isType, isTruthy, isEmpty, contains, icontains, containsAny, containsAll, flat, join, reverse, slice, sort, unique, filter, map, reduce, within."
     ]
   },
   {
@@ -387,7 +387,7 @@
       "      ^^^^",
       "`title` is a string in a filter.",
       "`sort` is a method of a list.",
-      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
+      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, icontains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
     ]
   },
   {
@@ -443,7 +443,7 @@
       "`tags` is a list of text in a filter.",
       "In a Query Row, each `tags` entry has these Projection Paths: `tags[0].name`, `tags[0].type`.",
       "`trim` is a method of a string.",
-      "Use a method of a list: toString, isType, isTruthy, isEmpty, contains, containsAny, containsAll, flat, join, reverse, slice, sort, unique, filter, map, reduce, within."
+      "Use a method of a list: toString, isType, isTruthy, isEmpty, contains, icontains, containsAny, containsAll, flat, join, reverse, slice, sort, unique, filter, map, reduce, within."
     ]
   },
   {
@@ -457,7 +457,7 @@
       "      ^^^^^^^",
       "`title` is a string in a filter.",
       "`toFixed` is a method of a number.",
-      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
+      "Use a method of a string: toString, isType, isTruthy, isEmpty, lower, startsWith, endsWith, contains, icontains, containsAny, containsAll, trim, title, repeat, reverse, slice, replace, split."
     ]
   },
   {
@@ -1056,6 +1056,30 @@
       "-title < 0",
       "^^^^^^",
       "- takes a number. Convert a text first with number(), such as number(volume), or with date()."
+    ]
+  },
+  {
+    "name": "icontains takes text",
+    "request": {
+      "filter": "title.icontains(1)"
+    },
+    "report": [
+      "Argument 1 of icontains is a number; icontains takes a string there.",
+      "title.icontains(1)",
+      "                ^",
+      "Call value.icontains(text)."
+    ]
+  },
+  {
+    "name": "list icontains takes text",
+    "request": {
+      "filter": "tags.icontains(1)"
+    },
+    "report": [
+      "Argument 1 of icontains is a number; icontains takes a string there.",
+      "tags.icontains(1)",
+      "               ^",
+      "Call value.icontains(text)."
     ]
   }
 ]

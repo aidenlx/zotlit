@@ -206,7 +206,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     match: {
       "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",
       button: templateWorkbenchButton,
-      "icon-button": "clickable-icon zt:shrink-0",
+      "icon-button":
+        "clickable-icon zt:shrink-0 zt:aria-disabled:cursor-default zt:aria-disabled:opacity-50",
       input:
         "zt:min-h-(--input-height) zt:min-w-0 zt:w-full zt:flex-auto zt:shrink-0",
       "chip-input":

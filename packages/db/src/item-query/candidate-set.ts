@@ -5,7 +5,7 @@ import {
   items,
   itemTags,
 } from "@drizzle/schema";
-import { and, count, eq, gt, or, sql } from "drizzle-orm";
+import { and, count, eq, gt, lte, max, or, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
 import type { TagCandidateLeaf, KeysCandidateLeaf } from "./candidate-leaf";
@@ -36,10 +36,18 @@ export function readLibraryRowCount(
 }
 
 /**
- * One leaf of a Filter Expression that Zotero's own indexes answer. Each kind
- * has one statement in {@link readCandidateSet}.
+ * An Item candidate leaf: an indexed seek or a bounded text sweep.
  */
-export type CandidateLeaf =
+export type CandidateLeaf = SeekCandidateLeaf | TextSweepCandidateLeaf;
+
+export interface TextSweepCandidateLeaf {
+  readonly kind: "text-sweep";
+  readonly fieldIDs: readonly number[];
+  readonly pattern: string;
+}
+
+/** Leaves answered by one indexed statement, including on relation paths. */
+export type SeekCandidateLeaf =
   /** The Items that carry the Tag with this exact name. */
   | TagCandidateLeaf
   /** The Item with this Zotero Key. */
@@ -180,7 +188,7 @@ const statements = (bounded: boolean) =>
         .orderBy(...(bounded ? [] : [items.itemID]))
         .limit(placeholder("limit")),
     ),
-  }) satisfies Record<CandidateLeaf["kind"], unknown>;
+  }) satisfies Record<SeekCandidateLeaf["kind"], unknown>;
 
 const candidateStatements = statements(false);
 const parentStatements = statements(true);
@@ -215,7 +223,7 @@ export function storedIntegerOf(value: string): bigint | null {
 
 /** The rows of one leaf's statement. */
 function leafRows(
-  leaf: CandidateLeaf,
+  leaf: SeekCandidateLeaf,
   scope: CandidateParams,
   statements = candidateStatements,
 ): Effect.Effect<
@@ -260,7 +268,7 @@ function leafRows(
  */
 export function readCandidateSet(candidates: {
   libraryID: number;
-  leaf: CandidateLeaf;
+  leaf: SeekCandidateLeaf;
   limit: number;
   afterItemID?: number;
 }): Effect.Effect<number[], ItemQueryReaderError, ItemQueryDatabase> {
@@ -273,12 +281,75 @@ export function readCandidateSet(candidates: {
 /** Read the parent leaf's matches up to its work budget in index order. */
 export function readBoundedCandidateSet(candidates: {
   libraryID: number;
-  leaf: CandidateLeaf;
+  leaf: SeekCandidateLeaf;
   limit: number;
 }) {
   const { libraryID, leaf, limit } = candidates;
   return Effect.map(
     leafRows(leaf, { libraryID, limit, afterItemID: 0 }, parentStatements),
     (rows) => rows.map((row) => row.itemID),
+  );
+}
+
+/** Item ID span of one statement; independent of the number of matches. */
+export const TEXT_SWEEP_WINDOW_SIZE = 2_000;
+
+const maxItemIDStatement = defineStatement<Record<string, never>>(
+  "max-item-id",
+)((db) => db.select({ itemID: max(items.itemID) }).from(items));
+
+/** Read once for a candidate plan that contains a root text sweep. */
+export const readMaxItemID = Effect.map(
+  maxItemIDStatement.all({}),
+  (rows) => rows[0]?.itemID ?? 0,
+);
+
+const textSweepStatement = defineStatement<{
+  libraryID: number;
+  afterItemID: number;
+  throughItemID: number;
+  fieldIDs: string;
+  pattern: string;
+  limit: number;
+}>("text-sweep-window")((db, { placeholder: p }) =>
+  db
+    .selectDistinct({ itemID: itemData.itemID })
+    .from(itemData)
+    .crossJoin(itemDataValues)
+    .crossJoin(items)
+    .where(
+      and(
+        gt(itemData.itemID, p("afterItemID")),
+        lte(itemData.itemID, p("throughItemID")),
+        sql`${unindexed(itemData.fieldID)} in (select value from json_each(${p("fieldIDs")}))`,
+        eq(itemDataValues.valueID, itemData.valueID),
+        sql`(typeof(${itemDataValues.value}) <> 'text' OR instr(${itemDataValues.value}, char(0)) > 0 OR ${itemDataValues.value} LIKE ${p("pattern")})`,
+        eq(items.itemID, itemData.itemID),
+        eq(unindexed(items.libraryID), p("libraryID")),
+      ),
+    )
+    .orderBy(itemData.itemID)
+    .limit(p("limit")),
+);
+
+/** One window on the itemData primary key, then the stored value and Library. */
+export function readTextSweepWindow({
+  leaf,
+  ...page
+}: {
+  libraryID: number;
+  leaf: TextSweepCandidateLeaf;
+  afterItemID: number;
+  limit: number;
+}) {
+  return Effect.map(
+    textSweepStatement.all({
+      ...page,
+      throughItemID: page.afterItemID + TEXT_SWEEP_WINDOW_SIZE,
+      fieldIDs: JSON.stringify(leaf.fieldIDs),
+      pattern: leaf.pattern,
+    }),
+    // The window bounds exclude null itemData IDs.
+    (rows) => rows.map((row) => row.itemID!),
   );
 }

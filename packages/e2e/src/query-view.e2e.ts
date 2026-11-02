@@ -2101,7 +2101,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // "Edit visually" goes back once the expression fits a row.
     await obRun(
       run.vaultId,
-      async ({ app, page: pageHelpers }, { editButtonLabel }) => {
+      async ({ app, page: pageHelpers }, { editButtonLabel, reasonLabel }) => {
         const { press, until } = pageHelpers;
         const el = (
           app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
@@ -2124,6 +2124,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const row = section("view").querySelector<HTMLElement>(
           "[data-condition-row]",
         )!;
+        // An expression no row reads keeps the button, whose tooltip says why.
+        write(row, "title.length > 3");
+        const blocked = await until("Edit visually blocked", () =>
+          row.querySelector<HTMLElement>(`button[aria-label="${reasonLabel}"]`),
+        );
+        const box = blocked.getBoundingClientRect();
+        const at = {
+          bubbles: true,
+          pointerType: "mouse",
+          clientX: box.x + 2,
+          clientY: box.y + 2,
+        };
+        for (let i = 0; i < 3; i++) {
+          blocked.dispatchEvent(
+            new PointerEvent("pointermove", { ...at, clientX: at.clientX + i }),
+          );
+          blocked.dispatchEvent(
+            new MouseEvent("mousemove", { ...at, clientX: at.clientX + i }),
+          );
+        }
+        blocked.dispatchEvent(new PointerEvent("pointerover", at));
+        await until(
+          "reason tooltip shows",
+          () =>
+            activeDocument.querySelector<HTMLElement>(".tooltip")
+              ?.textContent === reasonLabel,
+          3000,
+        );
         write(row, 'tags.contains("figure")');
         press(
           await until("Edit visually enabled", () => {
@@ -2135,7 +2163,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "Edit visually",
         );
       },
-      { editButtonLabel: run.m.workbench_match_edit_visually() },
+      {
+        editButtonLabel: run.m.workbench_match_edit_visually(),
+        reasonLabel: run.m.workbench_match_edit_visually_unavailable(),
+      },
     );
     const back = await queryKeys(
       '(colorName == "yellow") && (tags.contains("figure"))',

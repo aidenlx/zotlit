@@ -922,7 +922,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async (
         { app, page },
-        { addConditionLabel, removeConditionLabel, editExpressionLabel },
+        {
+          addConditionLabel,
+          removeConditionLabel,
+          editExpressionLabel,
+          expressionPlaceholder,
+        },
       ) => {
         const { press, until } = page;
         await using cleanup = new AsyncDisposableStack();
@@ -983,6 +988,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           section!
             .querySelectorAll<HTMLElement>("[data-condition-row]")
             [before]?.querySelector<CodeMirrorElement>(".cm-content")!,
+        );
+        await until("hint in the empty field", () =>
+          content.textContent.includes(expressionPlaceholder),
         );
         const editor = content.cmTile!.root!.view;
         window.focus();
@@ -1111,6 +1119,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         addConditionLabel: run.m.workbench_match_add_condition(),
         removeConditionLabel: run.m.workbench_match_remove_condition(),
         editExpressionLabel: run.m.workbench_match_edit_as_expression(),
+        expressionPlaceholder: run.m.workbench_match_expression_placeholder(),
       },
     );
     expect(escapes).toEqual({

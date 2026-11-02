@@ -183,6 +183,10 @@ const BOUNDARY_FILTERS = [
   'collections.within("Thesis")',
   'tags.contains("to-read") && tags.contains("methods")',
   'tags.contains("tie") || tags.contains("methods")',
+  'tags.containsAny("tie", "methods")',
+  'tags.containsAll(["to-read", "methods"])',
+  'collections.containsAny("Thesis/Methods", "Teaching/Methods")',
+  'collections.containsAll(["Thesis", "Thesis/Methods"])',
   'tags.contains("eclair") || key == "RPT2NDTE"',
 ];
 const LOWEST_REQUESTS = [
@@ -316,15 +320,49 @@ const LEAF_INDEXES = ["itemTags_tagID", "itemData_fieldID", "itemData_valueID"];
 
 {
   describe.runIf(highest)("parity of generated filter combinations", () => {
+    const GENERATED_FILTER_PARTS = [
+      'title.contains("Exact")',
+      'title.icontains("literature")',
+      'publicationTitle.contains("Handbook")',
+      'publicationTitle.icontains("handbook")',
+      'title.contains("50%_off")',
+      'title.icontains("50%_OFF")',
+      'shortTitle.contains("气候")',
+      'shortTitle.icontains("气候")',
+      'volume.contains("12")',
+      'volume.icontains("12")',
+      'title.icontains("T")',
+      'key == "ART2FULL"',
+      'tags.containsAny("tie", "methods")',
+      'tags.containsAll("to-read", "methods")',
+      'tags.containsAny(["tie", "methods"])',
+      'tags.containsAll(["to-read", "methods"])',
+      'tags.containsAny("methods", "unknown-tag")',
+      'tags.containsAll("methods", "unknown-tag")',
+      "tags.containsAny(title)",
+      'collections.containsAny("Thesis/Methods", "Teaching/Methods")',
+      'collections.containsAll("Thesis", "Thesis/Methods")',
+      'collections.containsAny(["Thesis/Methods", "Teaching/Methods"])',
+      'collections.containsAll(["Thesis", "Thesis/Methods"])',
+    ];
+    const TEXT_FILTER_PARTS = [
+      'title.startsWith("Exact")',
+      'title.icontains("exact")',
+    ];
     const queries: ScenarioQuery[] = [
-      '(key == "ART2FULL") && title.startsWith("Exact")',
-      '(key == "ART2FULL") || title.startsWith("Exact")',
-      '!(key == "ART2FULL")',
-      '(key == "ART2FULL") == title.startsWith("Exact")',
-      'if(key == "ART2FULL", title.startsWith("Exact"))',
-      'if(key == "ART2FULL", title.startsWith("Exact"), tags.contains("methods"))',
-      '((key == "ART2FULL") || tags.contains("methods")) && title.startsWith("Exact")',
-      '((key == "ART2FULL") && tags.contains("methods")) || title.startsWith("Exact")',
+      ...GENERATED_FILTER_PARTS.flatMap((part) => [
+        `!(${part})`,
+        ...TEXT_FILTER_PARTS.flatMap((text) => [
+          `(${part}) && ${text}`,
+          `(${part}) || ${text}`,
+          `(${part}) == ${text}`,
+          `if(${part}, ${text})`,
+          `if(${part}, ${text}, tags.contains("methods"))`,
+          `((${part}) || tags.contains("methods")) && ${text}`,
+          `((${part}) && tags.contains("methods")) || ${text}`,
+        ]),
+      ]),
+      ...TEXT_FILTER_PARTS.map((text) => `!(${text})`),
     ].map((filter) => ({
       name: filter,
       libraries: ["personal", "group"],

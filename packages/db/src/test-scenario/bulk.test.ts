@@ -36,7 +36,7 @@ describe("seedBulkLibrary", () => {
     seedBulkLibrary(scenario.sqlite, 12);
     const { libraryID } = BULK_LIBRARY;
 
-    const page = read(scenario, readScanPage({ libraryID, afterKey: null }));
+    const page = read(scenario, readScanPage({ libraryID, afterItemID: 0 }));
     const tagged = (name: string) =>
       read(
         scenario,

@@ -5,6 +5,7 @@ import {
   formatFilterRow,
   freshFilterRow,
   parseFilterRow,
+  withOperator,
 } from "./fields";
 import type { FilterField, FilterFieldKind } from "./fields";
 
@@ -84,7 +85,7 @@ describe("filterFields", () => {
     const field = fields.find((f) => f.path === "publicationTitle")!;
     const row = { ...freshFilterRow(field), value: "Nature" };
     const text = formatFilterRow(row, fields)!;
-    expect(text).toBe('publicationTitle.contains("Nature")');
+    expect(text).toBe('publicationTitle.icontains("Nature")');
     expect(parseFilterRow(text, fields)).toEqual(row);
   });
 
@@ -130,7 +131,7 @@ describe("formatFilterRow", () => {
         value: "todo",
         values: [],
       },
-      '!comment.contains("todo")',
+      '!comment.icontains("todo")',
     ],
     [
       { kind: "comment", operator: "is-empty", value: "", values: [] },
@@ -174,7 +175,7 @@ describe("formatFilterRow", () => {
         value: "Lovelace",
         values: [],
       },
-      'item.firstAuthor.fullName.contains("Lovelace")',
+      'item.firstAuthor.fullName.icontains("Lovelace")',
     ],
     [
       { kind: "library", operator: "is-not", value: "group:4815", values: [] },
@@ -249,7 +250,7 @@ describe("a field the host adds", () => {
     ],
     [
       { kind: status.kind, operator: "contains", value: "re", values: [] },
-      'vault["reading-status"].contains("re")',
+      'vault["reading-status"].icontains("re")',
     ],
     [
       { kind: status.kind, operator: "is-not-empty", value: "", values: [] },
@@ -296,5 +297,57 @@ describe("a boolean field", () => {
 
   it("reads a comparison with a string as no row of the field", () => {
     expect(parseFilterRow('vault.done == "true"', fields)).toBeNull();
+  });
+});
+
+describe("text containment rows", () => {
+  const vault: FilterField = {
+    kind: "custom:journal",
+    path: 'vault["journal"]',
+    type: "text",
+  };
+  const fields = [...filterFields("items"), vault];
+  const operators = [
+    ["contains", 'icontains("Nature")'],
+    ["does-not-contain", 'icontains("Nature")'],
+    ["contains-match-case", 'contains("Nature")'],
+    ["does-not-contain-match-case", 'contains("Nature")'],
+  ] as const;
+
+  it.each(operators)(
+    "round trips %s on a title and a vault text field",
+    (operator, call) => {
+      for (const field of [
+        fields.find((entry) => entry.path === "title")!,
+        vault,
+      ]) {
+        const row = { ...freshFilterRow(field), operator, value: "Nature" };
+        const text = `${operator.startsWith("does-not") ? "!" : ""}${field.path}.${call}`;
+        expect(formatFilterRow(row, fields)).toBe(text);
+        expect(parseFilterRow(text, fields)).toEqual(row);
+        for (const [next] of operators)
+          expect(withOperator(row, next)).toEqual({ ...row, operator: next });
+      }
+    },
+  );
+
+  it("reads a saved contains expression as a match-case row", () => {
+    expect(parseFilterRow('title.contains("x")', fields)).toEqual({
+      kind: "item-title",
+      operator: "contains-match-case",
+      value: "x",
+      values: [],
+    });
+  });
+
+  it.each(["tags", "collections"])("keeps contains on %s", (path) => {
+    const field = fields.find((entry) => entry.path === path)!;
+    for (const operator of ["contains", "does-not-contain"] as const) {
+      const row = { ...freshFilterRow(field), operator, value: "Nature" };
+      const text = `${operator === "does-not-contain" ? "!" : ""}${path}.contains("Nature")`;
+      expect(formatFilterRow(row, fields)).toBe(text);
+      expect(parseFilterRow(text, fields)).toEqual(row);
+    }
+    expect(parseFilterRow(`${path}.icontains("Nature")`, fields)).toBeNull();
   });
 });
