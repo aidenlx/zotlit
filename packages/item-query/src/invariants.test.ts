@@ -575,6 +575,34 @@ const PLAN_PATHS: readonly {
     },
   },
   {
+    name: "an any membership plan",
+    request: {
+      filter: `tags.containsAny("${BULK_FIFTH_TAG}", "unknown-tag")`,
+      fields: [],
+      limit: 10,
+    },
+    result: { returnedCount: 10, truncated: true },
+    reads: {
+      "candidate-set": [520, 0],
+      "universe-rows": [500, 20],
+      "hydrate-chunk": [250, 250, 20],
+    },
+  },
+  {
+    name: "an all membership plan with one set above the cap",
+    request: {
+      filter: `tags.containsAll(["${BULK_TAG}", "${BULK_FIFTH_TAG}"])`,
+      fields: [],
+      limit: 10,
+    },
+    result: { returnedCount: 10, truncated: true },
+    reads: {
+      "candidate-set": [BULK_CAP + 1, 520],
+      "universe-rows": [500, 20],
+      "hydrate-chunk": [250, 250, 20],
+    },
+  },
+  {
     name: "two candidate sets that && intersects",
     request: {
       filter: `tags.contains("${BULK_FIFTH_TAG}") && key == "BLK22222"`,

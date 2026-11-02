@@ -183,6 +183,10 @@ const BOUNDARY_FILTERS = [
   'collections.within("Thesis")',
   'tags.contains("to-read") && tags.contains("methods")',
   'tags.contains("tie") || tags.contains("methods")',
+  'tags.containsAny("tie", "methods")',
+  'tags.containsAll(["to-read", "methods"])',
+  'collections.containsAny("Thesis/Methods", "Teaching/Methods")',
+  'collections.containsAll(["Thesis", "Thesis/Methods"])',
   'tags.contains("eclair") || key == "RPT2NDTE"',
 ];
 const LOWEST_REQUESTS = [
@@ -317,25 +321,42 @@ const LEAF_INDEXES = ["itemTags_tagID", "itemData_fieldID", "itemData_valueID"];
 {
   describe.runIf(highest)("parity of generated filter combinations", () => {
     const GENERATED_FILTER_PARTS = [
+      'key == "ART2FULL"',
+      'tags.containsAny("tie", "methods")',
+      'tags.containsAll("to-read", "methods")',
+      'tags.containsAny(["tie", "methods"])',
+      'tags.containsAll(["to-read", "methods"])',
+      'tags.containsAny("methods", "unknown-tag")',
+      'tags.containsAll("methods", "unknown-tag")',
+      "tags.containsAny(title)",
+      'collections.containsAny("Thesis/Methods", "Teaching/Methods")',
+      'collections.containsAll("Thesis", "Thesis/Methods")',
+      'collections.containsAny(["Thesis/Methods", "Teaching/Methods"])',
+      'collections.containsAll(["Thesis", "Thesis/Methods"])',
+    ];
+    const TEXT_FILTER_PARTS = [
       'title.startsWith("Exact")',
       'title.icontains("exact")',
     ];
-    const queries: ScenarioQuery[] = GENERATED_FILTER_PARTS.flatMap((part) => [
-      `(key == "ART2FULL") && ${part}`,
-      `(key == "ART2FULL") || ${part}`,
-      `!(${part})`,
-      `(key == "ART2FULL") == ${part}`,
-      `if(key == "ART2FULL", ${part})`,
-      `if(key == "ART2FULL", ${part}, tags.contains("methods"))`,
-      `((key == "ART2FULL") || tags.contains("methods")) && ${part}`,
-      `((key == "ART2FULL") && tags.contains("methods")) || ${part}`,
-    ])
-      .concat('!(key == "ART2FULL")')
-      .map((filter) => ({
-        name: filter,
-        libraries: ["personal", "group"],
-        request: { filter, fields: [], sort: [] },
-      }));
+    const queries: ScenarioQuery[] = [
+      ...GENERATED_FILTER_PARTS.flatMap((part) => [
+        `!(${part})`,
+        ...TEXT_FILTER_PARTS.flatMap((text) => [
+          `(${part}) && ${text}`,
+          `(${part}) || ${text}`,
+          `(${part}) == ${text}`,
+          `if(${part}, ${text})`,
+          `if(${part}, ${text}, tags.contains("methods"))`,
+          `((${part}) || tags.contains("methods")) && ${text}`,
+          `((${part}) && tags.contains("methods")) || ${text}`,
+        ]),
+      ]),
+      ...TEXT_FILTER_PARTS.map((text) => `!(${text})`),
+    ].map((filter) => ({
+      name: filter,
+      libraries: ["personal", "group"],
+      request: { filter, fields: [], sort: [] },
+    }));
 
     it.each(queries)("$name", async (query) => {
       const oracle = await expectParity(query);
