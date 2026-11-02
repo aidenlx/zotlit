@@ -2732,7 +2732,13 @@ export const DEFAULT_STRESS_ITEM_COUNT = 25_000;
 export const STRESS_ITEM_COUNT_CONSTRAINT = "a non-negative safe integer";
 
 function stressItemKey(index: number): string {
-  let value = index;
+  // The multiplier is coprime to 33, so it permutes all seven-character
+  // suffixes without collisions and separates key order from Item ID order.
+  // BigInt keeps the product exact.
+  let value = Number(
+    (BigInt(index) * 26_339_145_517n) %
+      BigInt(STRESS_ITEM_KEY_ALPHABET.length) ** 7n,
+  );
   let suffix = "";
   for (let place = 0; place < 7; place++) {
     suffix =

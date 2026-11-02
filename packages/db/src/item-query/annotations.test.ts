@@ -20,31 +20,35 @@ it("scans only live annotations of live attached Items, across keyset pages", ()
     Effect.runSync(
       Effect.provideService(effect, ItemQueryDatabase, { client: scenario.db }),
     );
-  const rows = run(readAnnotationScanPage({ libraryID: 1, afterKey: null }));
+  const rows = run(readAnnotationScanPage({ libraryID: 1, afterItemID: 0 }));
   expect(rows.map((row) => row.key)).toEqual([
-    "ANL2IMAG",
-    "ANL2INK2",
-    "ANL2TEXT",
-    "ANL2UNDR",
-    "ANN2BAD2",
     "ANN2HGHT",
+    "ANN2UNDR",
+    "ANN2NOTE",
     "ANN2IMAG",
     "ANN2INK2",
-    "ANN2LINK",
-    "ANN2NOTE",
     "ANN2TEXT",
-    "ANN2UNDR",
+    "ANN2LINK",
+    "ANL2IMAG",
+    "ANL2INK2",
+    "ANL2UNDR",
+    "ANL2TEXT",
+    "ANN2BAD2",
   ]);
   expect(
     run(
-      readAnnotationScanPage({ libraryID: 1, afterKey: "ANN2INK2", size: 2 }),
+      readAnnotationScanPage({
+        libraryID: 1,
+        afterItemID: rows[4]!.itemID,
+        size: 2,
+      }),
     ).map((row) => row.key),
-  ).toEqual(["ANN2LINK", "ANN2NOTE"]);
+  ).toEqual(["ANN2TEXT", "ANN2LINK"]);
   expect(
     run(
       readAnnotationScanPage({
         libraryID: SCENARIO_LIBRARIES.group.libraryID,
-        afterKey: null,
+        afterItemID: 0,
       }),
     ).map((row) => row.key),
   ).toEqual(["ANN2GRUP"]);
@@ -97,7 +101,7 @@ it("runs one statement for each load the caller names, and none for an unnamed l
         }),
       ),
     );
-  const rows = run(readAnnotationScanPage({ libraryID: 1, afterKey: null }));
+  const rows = run(readAnnotationScanPage({ libraryID: 1, afterItemID: 0 }));
   readers.length = 0;
   const bare = run(readAnnotationHydrateChunk({ rows }));
   expect(readers).toEqual([]);

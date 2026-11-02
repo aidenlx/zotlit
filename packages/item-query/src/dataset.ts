@@ -174,7 +174,7 @@ export interface QueryDataset<
   readonly rootName: (name: string) => string;
   readonly readScanPage: (page: {
     libraryID: number;
-    afterKey: string | null;
+    afterItemID: number;
     size: number;
   }) => Effect.Effect<
     readonly ScanRow[],
