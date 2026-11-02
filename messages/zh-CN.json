@@ -1499,6 +1499,7 @@
   "workbench_match_expression_placeholder": "输入筛选表达式",
   "workbench_match_edit_as_expression": "以表达式编辑",
   "workbench_match_edit_visually": "可视化编辑",
+  "workbench_match_edit_visually_unavailable": "此表达式只能以文本编辑",
   "workbench_match_conjunction_and": "且",
   "workbench_match_conjunction_or": "或",
   "workbench_match_condition_kind": "条件类型",
