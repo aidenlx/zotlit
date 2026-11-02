@@ -721,6 +721,143 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     120000,
   );
 
+  it("keeps the Signature Hint still, in one place and at one size, as the caret crosses a call's arguments", async () => {
+    const path = "query-files/Steady signature hint.zotquery";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }, { path }) => {
+          pageHelpers.scratch.zotlitE2EHint?.detach();
+          delete pageHelpers.scratch.zotlitE2EHint;
+          const file = app.vault.getFileByPath(path)!;
+          if (file) await app.vault.delete(file);
+        },
+        { path },
+      );
+    });
+    const expression = 'creators.contains("Lena Collator") != false';
+    const steady = await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { path, fileContent, offsets }) => {
+        const { press, until } = pageHelpers;
+        const file = await app.vault.create(path, fileContent);
+        const leaf = app.workspace.getLeaf("tab");
+        pageHelpers.scratch.zotlitE2EHint = leaf;
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        const fileView =
+          leaf.view as import("@/views/query-view/file-view").QueryFileView;
+        await fileView.query.settled;
+        const el = fileView.contentEl;
+        const button = await until(
+          "Filter button",
+          () => el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+          5000,
+        );
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        press(button, "Filter");
+        await until("Filter popover", () => popover.matches(":popover-open"));
+        try {
+          const content = await until(
+            "expression field",
+            () =>
+              popover
+                .querySelector<HTMLElement>(
+                  '[data-filter-section="view"] [data-condition-row]',
+                )
+                ?.querySelector<CodeMirrorContent>(".cm-content")!,
+            5000,
+          );
+          const doc = content.ownerDocument;
+          const view = content.cmTile.root.view;
+          view.dispatch({ selection: { anchor: offsets[0]! } });
+          content.focus();
+          const first = await until(
+            "Signature Hint",
+            () => {
+              const shown =
+                doc.querySelector<HTMLElement>(".zt-signature-hint")!;
+              return (
+                shown &&
+                !shown.hidden &&
+                shown.style.top !== "-10000px" &&
+                shown
+              );
+            },
+            5000,
+          );
+          // CodeMirror measures the hint at its height of 0 while the focus
+          // is on its way, and places it again once it shows.
+          await new Promise((settle) => setTimeout(settle, 200));
+          // Each frame, as the caret crosses the arguments.
+          const frames: {
+            same: boolean;
+            place: string;
+          }[] = [];
+          let sampling = true;
+          const sample = () => {
+            const shown = doc.querySelector<HTMLElement>(".zt-signature-hint")!;
+            const { left, top, width, height } = (
+              shown ?? first
+            ).getBoundingClientRect();
+            frames.push({
+              same: shown === first && !shown.hidden,
+              place: [left, top, width, height].map(Math.round).join(" "),
+            });
+            if (sampling) doc.defaultView!.requestAnimationFrame(sample);
+          };
+          doc.defaultView!.requestAnimationFrame(sample);
+          const marks: (string | null)[] = [];
+          for (const anchor of offsets.slice(1)) {
+            view.dispatch({
+              selection: { anchor },
+              userEvent: "select.pointer",
+            });
+            await new Promise((settle) => setTimeout(settle, 100));
+            marks.push(first.querySelector("mark")?.textContent ?? null);
+          }
+          sampling = false;
+          return {
+            frames: frames.length,
+            replaced: frames.filter((frame) => !frame.same).length,
+            places: [...new Set(frames.map((frame) => frame.place))],
+            marks: [...new Set(marks)],
+            arrow: first.querySelector(".cm-tooltip-arrow") !== null,
+          };
+        } finally {
+          popover.hidePopover();
+        }
+      },
+      {
+        path,
+        fileContent: [
+          "views:",
+          "  - type: table",
+          "    name: Hint",
+          "    from: items",
+          `    filters: '${expression}'`,
+          "    order:",
+          "      - title",
+          "    limit: 10",
+          "",
+        ].join("\n"),
+        offsets: ["Lena", "Lena Co", "Le", "Lena Collator", "L"].map(
+          (text) => 'creators.contains("'.length + text.length,
+        ),
+      },
+    );
+    expect(steady.frames).toBeGreaterThan(0);
+    expect(steady.places).toHaveLength(1);
+    expect(steady).toMatchObject({
+      replaced: 0,
+      marks: ["value: any"],
+      arrow: true,
+    });
+  }, 120000);
+
   it.each(["main", "popout"] as const)(
     "offers Expression Completion in a Formula and a filter condition, above the chooser and the Filter popover, in the %s window",
     async (host) => {

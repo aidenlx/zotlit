@@ -47,6 +47,8 @@ export interface HintSignature {
 
 export interface SignatureHintResult {
   readonly callee: string;
+  /** The offset of the bracket that opens the call's arguments. */
+  readonly open: number;
   /** One per definition; several when the receiver's type is not known. */
   readonly signatures: readonly HintSignature[];
 }
@@ -120,12 +122,17 @@ export function signatureAt(
   let argument = 0;
   for (let child = call.firstChild; child; child = child.nextSibling)
     if (child.name === "," && child.to <= pos) argument++;
+  const open = call.getChild("(")!.from;
   const callee = call.firstChild!;
   if (callee.name === "Identifier") {
     const name = text.slice(callee.from, callee.to);
     const definition = name === "if" ? IF_FUNCTION : GLOBAL_FUNCTIONS.get(name);
     return definition
-      ? { callee: name, signatures: [signature(null, definition, argument)] }
+      ? {
+          callee: name,
+          open,
+          signatures: [signature(null, definition, argument)],
+        }
       : null;
   }
   if (callee.name !== "ObjectAccess") return null;
@@ -146,6 +153,7 @@ export function signatureAt(
   if (chosen.length === 0) return null;
   return {
     callee: method,
+    open,
     signatures: chosen.map(([of, , definition]) =>
       signature(of, definition, argument),
     ),
