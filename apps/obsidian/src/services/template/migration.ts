@@ -1,19 +1,26 @@
 import { Context, Deferred, Effect, Fiber, Layer, Scope } from "effect";
 import { join } from "node:path/posix";
 
-import { CONVERTED_DEFAULT_PROFILE_DOCUMENT } from "@zotlit/templates/facade";
-import type { LegacyTemplateConversionError } from "@zotlit/templates/facade";
+import {
+  CONVERTED_DEFAULT_PROFILE_DOCUMENT,
+  LegacyTemplateConversionError,
+} from "@zotlit/templates/facade";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
-import type {
+import {
+  FileExists,
+  VaultError,
+  VaultFolderBlockedError,
+} from "@/lib/vault-errors";
+import {
+  PluginSettings,
   SettingsMutationError,
   SettingsPersistenceError,
 } from "@/services/settings/service";
-import { PluginSettings } from "@/services/settings/service";
 
 import { templateFileFromPath } from "./defaults";
 import type { MigrationVerificationData } from "./migration-data";
@@ -30,7 +37,7 @@ export type LiteratureNoteTemplateMigrationDiagnostic =
       files: readonly string[];
     }
   | {
-      code: "legacy-frontmatter-inert" | "legacy-frontmatter-evaluation";
+      code: "legacy-frontmatter-inert";
       message: string;
       difference: string;
       hint: string;
@@ -41,7 +48,8 @@ export type LiteratureNoteTemplateMigrationDiagnostic =
         | "no-verification-item"
         | "no-verification-annotation"
         | "converted-document-exists"
-        | "no-legacy-templates";
+        | "no-legacy-templates"
+        | "conversion-failed";
       message: string;
       hint: string;
     };
@@ -58,6 +66,9 @@ export type LiteratureNoteTemplateMigrationResult =
       /** Legacy files left in place and reported: the Eta side of a
        *  mixed-language `cite` / `cite2` pair. */
       kept: readonly string[];
+      /** Managed Frontmatter fields carried over verbatim that failed the dry
+       *  run; the Profile editor repairs them. */
+      frontmatterFailures: readonly string[];
     }
   | {
       outcome: "refused";
@@ -182,7 +193,7 @@ const makeMigrationEngine = Effect.fnUntraced(function* (options: {
     const converted = yield* template
       .convertLegacyTemplateDocuments(data.citation)
       .pipe(
-        Effect.catchTag("LegacyTemplateConversionError", (error) =>
+        Effect.catchIf(isTemplateProblem, (error) =>
           Effect.succeed(
             refusedByConversion(error, [
               ...legacy.citation.map(({ path }) => path),
@@ -195,6 +206,7 @@ const makeMigrationEngine = Effect.fnUntraced(function* (options: {
     const documents = [...converted.documents];
     const legacyFiles = [...converted.trashed];
     const kept = converted.kept;
+    const frontmatterFailures: string[] = [];
     if (profilePath) {
       const profile = yield* template
         .convertLegacyLiteratureNoteTemplates({
@@ -203,13 +215,14 @@ const makeMigrationEngine = Effect.fnUntraced(function* (options: {
           ...(data.annotation ? { annotation: data.annotation } : {}),
         })
         .pipe(
-          Effect.catchTag("LegacyTemplateConversionError", (error) =>
+          Effect.catchIf(isTemplateProblem, (error) =>
             Effect.succeed(refusedByConversion(error, slotFiles)),
           ),
         );
       if ("outcome" in profile) return profile;
       documents.unshift({ path: profilePath, source: profile.source });
       legacyFiles.push(...profile.legacyFiles);
+      frontmatterFailures.push(...profile.frontmatterFailures);
     }
     for (const { path } of documents) {
       if (yield* vault.getFileByPath(path)) {
@@ -243,6 +256,7 @@ const makeMigrationEngine = Effect.fnUntraced(function* (options: {
       trashed,
       pendingCleanup,
       kept,
+      frontmatterFailures,
     });
     return {
       outcome: "converted" as const,
@@ -251,8 +265,23 @@ const makeMigrationEngine = Effect.fnUntraced(function* (options: {
       trashed,
       pendingCleanup,
       kept,
+      frontmatterFailures,
     };
-  }).pipe(Effect.withSpan("TemplateMigration.core.convert"));
+  }).pipe(
+    // Every failure the user can act on reaches the banner as a refusal.
+    Effect.catchIf(isConversionFailure, (error) =>
+      log("warn", "Template conversion failed", { error }).pipe(
+        Effect.as(
+          refused(
+            "conversion-failed",
+            error.message,
+            "Check the Zotero connection and the template folder, then retry conversion.",
+          ),
+        ),
+      ),
+    ),
+    Effect.withSpan("TemplateMigration.core.convert"),
+  );
   const retryCleanup = Effect.gen(function* () {
     const snapshot = yield* settings.current;
     const accepted = snapshot["note.template-conversion-result"];
@@ -280,6 +309,7 @@ const makeMigrationEngine = Effect.fnUntraced(function* (options: {
       trashed,
       pendingCleanup,
       kept: [],
+      frontmatterFailures: [],
     };
   }).pipe(Effect.withSpan("TemplateMigration.core.retryCleanup"));
   const detectTemplates = Effect.fn("TemplateMigration.detectTemplates")(
@@ -358,6 +388,7 @@ function refused(
     | "no-verification-annotation"
     | "converted-document-exists"
     | "no-legacy-templates"
+    | "conversion-failed"
   >,
   message: string,
   hint: string,
@@ -365,20 +396,48 @@ function refused(
   return { outcome: "refused", diagnostic: { code, message, hint } };
 }
 
+/** A failure of the vault or the settings, which no template edit repairs. */
+function isConversionFailure(
+  error: TemplateFailure | SettingsMutationError | SettingsPersistenceError,
+): error is TemplateFailure {
+  return !(
+    error instanceof SettingsMutationError ||
+    error instanceof SettingsPersistenceError
+  );
+}
+
+/** A failure the legacy files caused, so a change to them repairs it. */
+function isTemplateProblem(error: TemplateFailure): boolean {
+  return !(
+    error instanceof VaultError ||
+    error instanceof FileExists ||
+    error instanceof VaultFolderBlockedError
+  );
+}
+
 /** Carry a failed verification out as the refusal the prompt reports. */
 function refusedByConversion(
-  error: LegacyTemplateConversionError,
+  error: TemplateFailure,
   files: readonly string[],
 ): LiteratureNoteTemplateMigrationResult {
+  if (!(error instanceof LegacyTemplateConversionError)) {
+    return {
+      outcome: "refused",
+      diagnostic: {
+        code: "unsupported-legacy-template",
+        message: error.message,
+        difference: "template render",
+        hint: "Fix the template, then retry conversion.",
+        files,
+      },
+    };
+  }
   const detail = {
     difference: error.difference,
     message: error.message,
     hint: error.recovery,
   };
-  if (
-    error.code === "legacy-frontmatter-inert" ||
-    error.code === "legacy-frontmatter-evaluation"
-  ) {
+  if (error.code === "legacy-frontmatter-inert") {
     return {
       outcome: "refused",
       diagnostic: { ...detail, code: error.code, fields: error.fields ?? [] },
@@ -404,7 +463,7 @@ export class TemplateMigration extends Context.Service<
     readonly whenSettled: Effect.Effect<void>;
     readonly convert: Effect.Effect<
       LiteratureNoteTemplateMigrationResult,
-      TemplateFailure | SettingsMutationError | SettingsPersistenceError
+      SettingsMutationError | SettingsPersistenceError
     >;
     readonly retryCleanup: Effect.Effect<
       Extract<LiteratureNoteTemplateMigrationResult, { outcome: "converted" }>,

@@ -173,7 +173,7 @@ Every timing comes from `performance.now()` inside the renderer. The method is s
 
 **With the Live Updates listener off, nothing arrives and nothing says so.** Reproduced deliberately: a Zotero-side comment change never reached the card, the card kept its stale text, and the header still read "8 of 8". This is the documented degradation, not a defect in the data path. The Freshness Signal is the only trigger on the Local API path, so with no Live Updates connection the `zotero-local-api` partition is never invalidated. Only `db.on("changed")` fires, and that drops the `zotero-db` partition. Turning the channel back on recovered the list on the next Zotero-side save.
 
-What is a real finding is that the degradation is silent. The view gives the user no sign that it can no longer hear Zotero. The live-updates state is consumed in one place, the empty state of the `zotero-reader` follow mode in `apps/obsidian/src/views/annot-view/presentation.ts`. Under follow-active-tab or pinned, with a list showing, nothing surfaces it. The [release checklist](release-checklist.md) carries it as a known limitation.
+What is a real finding is that the degradation is silent. The view gives the user no sign that it can no longer hear Zotero. The live-updates state is consumed in one place, the empty state of the `zotero-reader` follow mode in `apps/obsidian/src/views/annot-view/presentation.ts`. Under follow-active-tab or pinned, with a list showing, nothing surfaces it. It stays a known limitation.
 
 Read the Live Updates receiver from `services.localServer.available`. `services.localBridge` is the Workbench bridge and reads falsy on a healthy Paired Run.
 
@@ -210,5 +210,4 @@ A change to the first costs a Landing its Anchor; the link then opens on its pag
 ## See also
 
 - [The Fixture](fixture.md), for the Paired Run and the Zotero Local API trial.
-- [Release checklist](release-checklist.md), for the checks that stay manual.
 - Issues [#1139](https://github.com/aidenlx/zotlit/issues/1139) and [#1152](https://github.com/aidenlx/zotlit/issues/1152), for the specification these probes serve.

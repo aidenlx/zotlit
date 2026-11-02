@@ -346,7 +346,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         await obRunUntil(
           freshId,
-          async ({ app }, { notePath, helpSectionLabel, guideText }) => {
+          async (
+            { app },
+            { notePath, helpSectionLabel, guideText, bannerText },
+          ) => {
             const view = (function () {
               var leaves = app.workspace.getLeavesOfType(
                 "zotlit-template-workbench",
@@ -369,6 +372,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               !!guide &&
               guide.textContent.includes("[!quote]") &&
               guide.textContent.includes(guideText) &&
+              view.contentEl.textContent.includes(bannerText) &&
               guide!.getBoundingClientRect().height > 0 &&
               source!.getBoundingClientRect().height > 0
             );
@@ -376,7 +380,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           {
             notePath: note.path!,
             helpSectionLabel: run.m.workbench_annotation_help_title(),
-            guideText: run.m.template_workbench_update_this_note(),
+            guideText: run.m.workbench_annotation_help_finish_note(),
+            bannerText: run.m.template_workbench_shared_annotation({
+              name: run.m.settings_profile_default_name(),
+            }),
           },
           {
             what: "the Template Workbench guide section to render with its quote callout visible",
@@ -1053,6 +1060,115 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
+  it("offers an update of existing notes alone from the Update notes dialog", async () => {
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById("zotlit:update-notes");
+      },
+      undefined,
+      { tries: 20, what: "the zotlit update-notes command to run" },
+    );
+
+    await clickModalButton(run.vaultId, run.m.modal_update_notes_all());
+    const confirmation = await obRunUntil(
+      run.vaultId,
+      async (_context, { confirmText }) => {
+        const modal = activeDocument.querySelector<HTMLElement>(".modal");
+        const ready = Array.from(modal?.querySelectorAll("button") ?? []).some(
+          (button) => button.textContent.trim() === confirmText,
+        );
+        return ready ? modal!.textContent : "";
+      },
+      { confirmText: run.m.batch_update_confirm_button() },
+      {
+        ready: (text) => text !== "",
+        what: "the batch confirmation of the Update notes dialog",
+      },
+    );
+    await clickModalButton(run.vaultId, run.m.modal_cancel());
+
+    const beforeCount = (text: string) => text.split("…")[0]!;
+    expect(confirmation).toContain(
+      beforeCount(run.m.batch_update_existing_confirm_intro({ count: "…" })),
+    );
+    expect(confirmation).toContain(
+      beforeCount(run.m.batch_update_group_no_note({ count: "…" })),
+    );
+    expect(confirmation).not.toContain(
+      beforeCount(run.m.batch_update_group_create({ count: "…" })),
+    );
+  });
+
+  it("creates missing notes only when the Update notes dialog is asked to", async () => {
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById("zotlit:update-notes");
+      },
+      undefined,
+      { tries: 20, what: "the zotlit update-notes command to run" },
+    );
+    await obRun(
+      run.vaultId,
+      async () => {
+        activeDocument
+          .querySelector<HTMLInputElement>(".modal input[type=checkbox]")
+          ?.click();
+      },
+      undefined,
+    );
+    await clickModalButton(run.vaultId, run.m.modal_update_notes_all());
+    const createGroup = run.m
+      .batch_update_group_create({ count: "…" })
+      .split("…")[0]!;
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { createGroup }) =>
+        activeDocument
+          .querySelector(".modal")
+          ?.textContent.includes(createGroup) ?? false,
+      { createGroup },
+      { what: "the Create group of the batch confirmation" },
+    );
+    await clickModalButton(run.vaultId, run.m.modal_cancel());
+  });
+
+  it("updates the active note from the Update notes dialog", async () => {
+    await clearNotices(run.vaultId);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { booksNotePath }) => {
+        await app.workspace
+          .getLeaf(false)
+          .openFile(app.vault.getFileByPath(booksNotePath)!);
+        return app.commands.executeCommandById("zotlit:update-notes");
+      },
+      { booksNotePath: run.booksNotePath },
+    );
+    await clickModalButton(run.vaultId, run.m.modal_update_notes_active());
+    await obRunUntil(
+      run.vaultId,
+      async ({ page }, { messages }) =>
+        page
+          .windowDocuments()
+          .some((doc) =>
+            Array.from(doc.querySelectorAll<HTMLElement>(".notice")).some(
+              (notice) =>
+                messages.some((text) => notice.textContent.includes(text)),
+            ),
+          ),
+      {
+        messages: [
+          run.m.notice_updated_note(),
+          run.m.notice_updated_note_no_region(),
+          run.m.notice_updated_note_no_managed_block(),
+        ],
+      },
+      { what: "the notice of the active note's update" },
+    );
+  });
+
   // Covers both the "rendered literature note" and "batch operation"
   // acceptance-criteria bullets together — a deliberate simplification, not
   // an oversight: update-all-notes is itself a batch write of Literature
@@ -1542,11 +1658,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const select =
             rows[0]!.querySelector<HTMLButtonElement>("[role=combobox]");
           press(select, "the first select");
-          const popup = await until(
-            "the select opens",
-            () =>
-              select!.popoverTargetElement?.matches(":popover-open") &&
-              select!.popoverTargetElement,
+          const popup = await until("the select opens", () =>
+            el.doc.querySelector<HTMLElement>("[data-select-popup]"),
           );
           const search = await until(
             "focus in its search",

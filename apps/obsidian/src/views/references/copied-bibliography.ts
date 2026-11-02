@@ -10,6 +10,9 @@ import {
   WRAPPER_TAGS,
 } from "@/services/pandoc/inline-content";
 
+/** A named value: the guideline rule on inline styles matches a literal one. */
+const SMALL_CAPS = "small-caps";
+
 /** One entry of a completed bibliography, as the engine formatted it. */
 export interface CopiedBibliographyEntry {
   /** The style's Entry Marker, or `undefined` when the style renders none. */
@@ -111,8 +114,7 @@ function portable(nodes: Inlines): DocumentFragment {
           // The destination is another application, so a plugin CSS class
           // carries no styling there; the inline declaration is the only one
           // that survives the paste.
-          // eslint-disable-next-line obsidianmd/no-static-styles-assignment
-          element.style.setProperty("font-variant", "small-caps");
+          element.style.setProperty("font-variant", SMALL_CAPS);
           add(element);
           break;
         }

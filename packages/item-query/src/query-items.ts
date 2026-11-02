@@ -31,6 +31,7 @@ import { ANNOTATIONS } from "./query-annotations";
 import { ATTACHMENTS } from "./query-attachments";
 import { openRecordLoader } from "./record-loader";
 import type { ItemQueryRequest } from "./request";
+import { lowerTextSweep } from "./text-sweep";
 
 const sortable = (name: string) => {
   const definition = fieldDefinition(name);
@@ -50,6 +51,7 @@ export const ITEMS: QueryDataset<ItemQueryRequest> = {
   tieBreakers: [],
   names: BUILT_IN_NAMES,
   lowerCandidate: lowerItemCandidate,
+  lowerSweep: lowerTextSweep,
   readCandidate: readCandidateSet,
   readRowCount: readLibraryRowCount,
   candidateParents: [],

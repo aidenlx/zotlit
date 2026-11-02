@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { formatFilterRow, freshFilterRow } from "@zotlit/workbench/match";
+import type { FilterField } from "@zotlit/workbench/match";
+
 import * as m from "@/lib/i18n/generated/messages";
 import type { QueryViewRow } from "@/services/item-query/query-view";
 import {
@@ -155,6 +158,28 @@ describe("the condition a fault in the request's filter marks", () => {
 });
 
 describe("the conditions the vault answers", () => {
+  it("plans a contains row on a text vault property when notes hold lists", () => {
+    const field: FilterField = {
+      kind: "custom:status",
+      path: 'vault["status"]',
+      type: "text",
+    };
+    const condition = formatFilterRow(
+      { ...freshFilterRow(field), operator: "contains", value: "read" },
+      [field],
+    )!;
+    const planned = plan(items(`'${condition}'`), 0, {
+      notes: notes({
+        ITEMAAAA: { status: ["Read"] },
+        ITEMBBBB: { status: ["Reading"] },
+        ITEMCCCC: { status: "Reading" },
+      }),
+    });
+
+    expect(planned.fault).toBeNull();
+    expect(planned.keys).toBe('["ITEMAAAA", "ITEMCCCC"].contains(indexedKey)');
+  });
+
   it("takes each one that must hold for every row out of the request, and ZotLit Query reads its Items by key in its place", () => {
     const planned = plan(`filters:
   and:

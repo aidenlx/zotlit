@@ -217,6 +217,7 @@ export function run(): Promise<ChromiumQueueReport> {
         const queue = yield* queueFixture();
         return yield* Effect.promise(async () => {
           const passed: string[] = [];
+          const { userAgent } = navigator;
           const coldBatch = await cold(queue);
           const counts = coldBatch.counts;
           check(
@@ -270,7 +271,7 @@ export function run(): Promise<ChromiumQueueReport> {
 
           return {
             passed,
-            userAgent: navigator.userAgent,
+            userAgent,
             visibility: document.visibilityState,
             cold: counts,
             cacheHitWhileBlocked: cacheHit,

@@ -11,7 +11,7 @@ import {
 } from "effect";
 import type { Cause } from "effect";
 import { dirname, join } from "node:path/posix";
-import { TFile } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 import type { App, TAbstractFile } from "obsidian";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
@@ -73,7 +73,7 @@ import { ObsidianApp } from "@/lib/obsidian-app";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";
-import type { Workspace } from "@/lib/obsidian-workspace";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import {
   FileExists,
@@ -1553,13 +1553,41 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     for (const waiter of state.settledWaiters) waiter.resolve();
     state.settledWaiters.clear();
   }
+  /**
+   * Save the template folder under the case the vault holds it in. The scan
+   * and every reader of the setting compare paths exactly, while a disk that
+   * folds case treats both spellings as one folder.
+   *
+   * @returns Whether it updated, so the change arrives by `onSettingsChanged`.
+   */
+  const adoptFolderCase = Effect.fn("Template.core.adoptFolderCase")(function* (
+    setting: string,
+  ): Effect.fn.Return<boolean, never, Vault | PluginSettings> {
+    const folder = normalizeVaultPath(setting);
+    if (folder === "") return false;
+    const held = yield* (yield* Vault).getAbstractFileByPathInsensitive(folder);
+    if (!(held instanceof TFolder) || held.path === folder) return false;
+    yield* (yield* PluginSettings)
+      .update({ "template.folder": held.path })
+      // The schema accepts any string for this key, so the patch cannot be invalid.
+      .pipe(Effect.orDie);
+    state.log("info", "Adopted the vault's case for the template folder", {
+      folder: held.path,
+    });
+    return true;
+  });
   const onSettingsChanged = Effect.fn("Template.core.onSettingsChanged")(
     function* (
       settings: Readonly<Settings>,
-    ): Effect.fn.Return<void, never, Vault> {
+    ): Effect.fn.Return<void, never, Vault | PluginSettings> {
       if (state.closed) return;
-      state.settings.current = settings;
       const folder = normalizeVaultPath(settings["template.folder"]);
+      if (
+        folder !== state.lastTemplateFolder &&
+        (yield* adoptFolderCase(folder))
+      )
+        return;
+      state.settings.current = settings;
       const autoTrim: [AutoTrim, AutoTrim] = [
         settings["template.auto-trim-leading"],
         settings["template.auto-trim-trailing"],
@@ -2288,6 +2316,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     failStartup,
     close,
     onSettingsChanged,
+    adoptFolderCase,
     onCreateOrModify,
     onRename,
     onDelete,
@@ -2804,6 +2833,16 @@ export const layerTemplate = Layer.effect(
         Effect.forkIn(scope, { startImmediately: true }),
       ),
     ).pipe(Effect.forkScoped({ startImmediately: true }));
+    // At Obsidian startup the vault cache fills after this layer loads, so the
+    // folder's case is known at layout ready. The update reaches the stream above.
+    yield* (yield* Workspace).layoutReady.pipe(
+      Effect.andThen(settings.current),
+      Effect.flatMap((current) =>
+        provide(engine.adoptFolderCase(current["template.folder"])),
+      ),
+      Effect.catchCause(report("Template folder case adoption failed")),
+      Effect.forkScoped({ startImmediately: true }),
+    );
     let closed = false;
     const owned = <A, E>(
       effect: Effect.Effect<A, E>,

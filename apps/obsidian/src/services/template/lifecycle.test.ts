@@ -26,6 +26,53 @@ it.effect("#1705: a built Template exposes its first loaded template", () =>
 );
 
 it.effect(
+  "adopts the vault's case for the template folder at layout ready",
+  () =>
+    Effect.gen(function* () {
+      const host = createTemplateHost({
+        "Templates/zotlit-note.liquid.md": "Loaded {{ zt.title }}",
+      });
+      const context = yield* Layer.build(templateOver(host));
+      yield* TestClock.adjust(500);
+      const settings = yield* Context.get(context, PluginSettings).current;
+      expect(settings["template.folder"]).toBe("Templates");
+      expect(
+        yield* Context.get(context, Template).render("note", {
+          title: "Paper",
+        }),
+      ).toBe("Loaded Paper");
+    }),
+);
+
+it.effect(
+  "adopts the vault's case when the template folder setting changes",
+  () =>
+    Effect.gen(function* () {
+      const host = createTemplateHost({
+        "templates/zotlit-note.liquid.md": "First",
+        "Archive/zotlit-note.liquid.md": "Second",
+      });
+      const context = yield* Layer.build(templateOver(host));
+      const settings = Context.get(context, PluginSettings);
+      const template = Context.get(context, Template);
+      yield* settings.update({ "template.folder": "archive" });
+      yield* TestClock.adjust(500);
+      const current = yield* settings.current;
+      expect(current["template.folder"]).toBe("Archive");
+      expect(yield* template.render("note", { title: "Paper" })).toBe("Second");
+    }),
+);
+
+it.effect("keeps a template folder that the vault does not hold", () =>
+  Effect.gen(function* () {
+    const host = createTemplateHost();
+    const context = yield* Layer.build(templateOver(host));
+    const settings = yield* Context.get(context, PluginSettings).current;
+    expect(settings["template.folder"]).toBe("templates");
+  }),
+);
+
+it.effect(
   "#1705: throwing listeners receive later reconciliations and stop on disposal",
   () =>
     Effect.gen(function* () {
@@ -255,7 +302,8 @@ it.effect(
       const migration = Object.assign(runtime.runSync(TemplateMigration), {
         bridge: effectBridge(runtime),
       });
-      expect(callbacks).toHaveLength(1);
+      // The migration, and the template folder's case.
+      expect(callbacks).toHaveLength(2);
       yield* Effect.promise(() => runtime.dispose());
       host.vault.addFile("templates/zotlit-note.liquid.md", "Late inventory");
       for (const callback of callbacks) callback();
@@ -458,7 +506,7 @@ it.effect(
 );
 
 it.effect(
-  "#1705: TemplateMigration maps external failures with their cause",
+  "#1904: TemplateMigration refuses on an external failure and names its cause",
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost({
@@ -478,9 +526,12 @@ it.effect(
       expectTypeOf<Effect.Error<typeof migration.convert>>().toExtend<{
         readonly _tag: string;
       }>();
-      expect(yield* Effect.flip(migration.convert)).toMatchObject({
-        _tag: "TemplateOperationError",
-        cause,
+      expect(yield* migration.convert).toMatchObject({
+        outcome: "refused",
+        diagnostic: {
+          code: "conversion-failed",
+          message: "verification data unavailable",
+        },
       });
     }),
 );

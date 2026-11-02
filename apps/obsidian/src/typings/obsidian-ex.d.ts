@@ -9,7 +9,7 @@ declare global {
    * (`createDiv()` etc., see `interface Node` in `obsidian.d.ts`), patched
    * onto every window — main and popout alike — so a detached element built
    * from a specific `doc.win` lands in that window's own document instead of
-   * always the main one. Missing from the vendored `obsidian-api` typings.
+   * always the main one. Missing from the `obsidian` typings.
    */
   interface Window {
     createEl<K extends keyof HTMLElementTagNameMap>(
@@ -132,6 +132,12 @@ declare module "obsidian" {
   interface Vault {
     /** Reads an app setting; `readableLineLength` is Settings → Editor → Readable line length. */
     getConfig(key: "readableLineLength"): boolean;
+    /**
+     * The exact path, then the first path that differs only in case. Obsidian's
+     * `FileManager.getOrCreateFolder` resolves folders this way, 74498 and
+     * 93110 in `.ob-rev-1.14.4/app.js`. Verified in Obsidian 1.14.4.
+     */
+    getAbstractFileByPathInsensitive(path: string): TAbstractFile | null;
   }
   interface Workspace {
     /**

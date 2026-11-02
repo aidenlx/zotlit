@@ -1,6 +1,6 @@
 {
   "name": "@zotlit/obsidian",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "private": true,
   "description": "Plugin to integrate with Zotero, create literature notes and insert citations from a Zotero library.",
   "author": "AidenLx",
@@ -100,7 +100,7 @@
     "fake-indexeddb": "6.2.5",
     "happy-dom": "catalog:",
     "jieba-wasm": "catalog:",
-    "obsidian": "workspace:*",
+    "obsidian": "catalog:",
     "oxlint": "catalog:",
     "pandoc-wasm": "^1.1.0",
     "tailwindcss": "catalog:",

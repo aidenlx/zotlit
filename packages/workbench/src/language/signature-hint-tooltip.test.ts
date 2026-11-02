@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
-import { EditorView, ViewPlugin } from "@codemirror/view";
+import { EditorView, ViewPlugin, showTooltip } from "@codemirror/view";
 import { expect, it } from "vitest";
 
 import { filterExpressionLanguage } from "./filter-expression";
@@ -51,7 +51,7 @@ function editor(doc: string, extra: Extension = []) {
       const hint = parent.querySelector<HTMLElement>(
         `.${SIGNATURE_HINT_CLASS}`,
       );
-      return hint && !hint.hidden ? hint : null;
+      return hint && hint.style.visibility !== "hidden" ? hint : null;
     },
     [Symbol.dispose]() {
       view.destroy();
@@ -81,6 +81,37 @@ it("closes on Escape before the host hears it", () => {
 
   field.caret("title.slice(1, ".length);
   expect(field.hint()).not.toBeNull();
+});
+
+// Regression: the hint once followed the caret, rebuilt at each position, so
+// it flashed, slid and wrapped anew as the caret crossed the arguments.
+it("stays in place at the call's bracket while the caret moves through its arguments", () => {
+  using field = editor("title.slice(1, 2)");
+  const anchor = () => field.view.state.facet(showTooltip)[0]?.pos;
+  const marked = () => field.hint()?.querySelector("mark")?.textContent;
+  field.caret("title.slice(1".length);
+  const hint = field.hint();
+  expect(hint).not.toBeNull();
+  expect(anchor()).toBe("title.slice".length);
+  expect(marked()).toBe("start: number");
+
+  field.caret("title.slice(1, ".length);
+  expect(field.hint()).toBe(hint);
+  expect(anchor()).toBe("title.slice".length);
+  expect(marked()).toBe("end?: number");
+  expect(hint!.querySelectorAll("mark")).toHaveLength(1);
+});
+
+it("moves to the bracket of the inner call as the caret enters it", () => {
+  using field = editor("title.slice(title.lower(), 2)");
+  field.caret("title.slice(".length);
+  expect(field.view.state.facet(showTooltip)[0]?.pos).toBe(
+    "title.slice".length,
+  );
+  field.caret("title.slice(title.lower(".length);
+  expect(field.view.state.facet(showTooltip)[0]?.pos).toBe(
+    "title.slice(title.lower".length,
+  );
 });
 
 it("hides when the editor loses focus", async () => {

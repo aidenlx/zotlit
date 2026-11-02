@@ -10,7 +10,7 @@
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { useMemo } from "react";
 
-import { cellProperties } from "@zotlit/item-query";
+import { cellProperties, fieldSearchTerms } from "@zotlit/item-query";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
 import { NON_VAULT_PROPERTY_KEYS } from "@/lib/constants";
@@ -83,6 +83,8 @@ export interface PropertyEntry {
   readonly label: string;
   /** The Display Name the file gives it; else `null`. */
   readonly displayName: string | null;
+  /** Other words the Properties popover finds it by. */
+  readonly searchTerms: readonly string[];
   readonly kind: PropertyKind;
   /**
    * Whether it is part of another field: a member of a field, as `date.year`
@@ -216,6 +218,10 @@ export function viewProperties(
         path,
         label: named ?? fieldLabel(path),
         displayName: named,
+        searchTerms:
+          kind === "field"
+            ? fieldSearchTerms(view.from ?? "annotations", path)
+            : [],
         kind,
         nested: kind === "field" && path.includes("."),
         formula,

@@ -94,6 +94,63 @@ it("leaves Mod+Z to the expression field, whose own history undoes the typing", 
   expect(controller.source).not.toContain("&& x");
 });
 
+it("shows a hint in the expression field of a row with no value", async () => {
+  using mounted = mount(<Pane />, { source: SOURCE });
+  render(mounted.ui);
+  const edit = await screen.findByRole("button", {
+    name: m.workbench_match_edit_as_expression(),
+  });
+  act(() => edit.click());
+  const view = EditorView.findFromDOM(await screen.findByRole("textbox"))!;
+  expect(view.state.doc.toString()).toBe("");
+  expect(view.dom.textContent).toContain(
+    m.workbench_match_expression_placeholder(),
+  );
+});
+
+it("goes back from a blank expression field to a row, and stores nothing", async () => {
+  using mounted = mount(<Pane />, { source: SOURCE });
+  render(mounted.ui);
+  const { controller } = mounted;
+  const before = controller.source;
+  const edit = await screen.findByRole("button", {
+    name: m.workbench_match_edit_as_expression(),
+  });
+  act(() => edit.click());
+  const back = await screen.findByRole("button", {
+    name: m.workbench_match_edit_visually(),
+  });
+  expect(back.getAttribute("aria-disabled")).toBeNull();
+
+  act(() => back.click());
+
+  await screen.findByRole("button", {
+    name: m.workbench_match_edit_as_expression(),
+  });
+  expect(
+    screen.queryByRole("textbox", { name: m.workbench_match_expression() }),
+  ).toBeNull();
+  expect(controller.source).toBe(before);
+});
+
+it("says why an expression that no row reads stays as text", async () => {
+  using mounted = mount(<Pane />, {
+    source: SOURCE.replace(
+      "id: reading",
+      `id: reading\nmatch: 'title.length > 3'`,
+    ),
+  });
+  render(mounted.ui);
+  const blocked = await screen.findByRole("button", {
+    name: m.workbench_match_edit_visually_unavailable(),
+  });
+  expect(blocked.getAttribute("aria-disabled")).toBe("true");
+
+  act(() => blocked.click());
+
+  expect(screen.getByRole("textbox")).toBeDefined();
+});
+
 it("interrupts its vocabulary, custom-field and Match reads when the pane goes", async () => {
   using mounted = mount(<Pane />, {
     source: SOURCE.replace(

@@ -166,7 +166,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             .map((n) => n.dataset.queryProperty);
         await until(
           "Properties popover opens",
-          () => popup()?.matches(":popover-open") && rows().length > 0,
+          () => popup()?.isConnected && rows().length > 0,
         );
         const defaults = selected();
         const leading = rows()
@@ -191,18 +191,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await until(`ticks ${name}`, () => selected().includes(name));
         }
         const kept = paths();
-        popup()!.hidePopover();
-        await until(
-          "Properties popover closes",
-          () => !popup()?.matches(":popover-open"),
-        );
+        pageHelpers.closePopovers(popup()!.ownerDocument);
+        await until("Properties popover closes", () => !popup()?.isConnected);
         press(
           el.querySelector<HTMLElement>("[data-query-properties]")!,
           "Properties",
         );
         await until(
           "Properties popover opens again",
-          () => popup()?.matches(":popover-open") && rows().length > 0,
+          () => popup()?.isConnected && rows().length > 0,
         );
         const shown = rows()
           .slice(0, 3)
@@ -210,7 +207,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             n.dataset.queryProperty,
             n.getAttribute("aria-selected"),
           ]);
-        popup()!.hidePopover();
+        pageHelpers.closePopovers(popup()!.ownerDocument);
         return { defaults, leading, untouched, kept, shown };
       },
       undefined,
@@ -251,7 +248,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         const input = await until("limit field", () =>
           activeDocument.querySelector<HTMLInputElement>(
-            "[data-query-results-popup]:popover-open [data-query-limit]",
+            "[data-query-results-popup] [data-query-limit]",
           )!,
         );
         input.value = "2";
@@ -356,9 +353,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       ({ app, page }, { button, popup: selector, ready }) => {
-        const popup = activeDocument.querySelector<HTMLElement>(
-          `${selector}:popover-open`,
-        )!;
+        const popup = activeDocument.querySelector<HTMLElement>(selector)!;
         if (popup?.querySelector<HTMLElement>(ready)!) return true;
         if (!popup)
           page.press(
@@ -409,7 +404,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return String(true);
       },
       {
-        popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+        popupSelector: `${"[data-query-properties-popup]"}`,
         property,
       },
     );
@@ -427,15 +422,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "More options",
         );
         const item = await until(`menu item ${hook}`, () =>
-          page!.querySelector<HTMLElement>(
-            `[role="menu"]:popover-open [data-chooser-page-menu-item="${hook}"]`,
+          activeDocument.querySelector<HTMLElement>(
+            `[role="menu"] [data-chooser-page-menu-item="${hook}"]`,
           )!,
         );
         press(item, `menu item ${hook}`);
         return String(true);
       },
       {
-        popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+        popupSelector: `${"[data-query-properties-popup]"}`,
         hook,
       },
     );
@@ -454,7 +449,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         return String(true);
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
     );
   /** Opens the results popover and waits for its "Export CSV…" action. */
   const openResults = () =>
@@ -479,11 +474,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // Teardown closes a popover a failed step left open; not a reader's press.
       await obRun(
         run.vaultId,
-        async ({ app }, { layout, notePaths }) => {
-          for (const popup of activeDocument.querySelectorAll<HTMLElement>(
-            "[popover]:popover-open",
-          ))
-            popup.hidePopover();
+        async ({ app, page: pageHelpers }, { layout, notePaths }) => {
+          pageHelpers.closePopovers(activeDocument);
           await app.workspace.changeLayout(JSON.parse(layout));
           for (const path of notePaths) {
             const file = app.vault.getFileByPath(path)!;
@@ -622,7 +614,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       {
-        popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+        popupSelector: `${"[data-query-properties-popup]"}`,
         menuItemLabel: run.m.query_view_formula_add(),
       },
     );
@@ -671,7 +663,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
         },
         {
-          popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+          popupSelector: `${"[data-query-properties-popup]"}`,
           isNameMissing: fields.name === undefined,
           fieldsName: fields.name,
           expression: fields.expression,
@@ -694,7 +686,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             save: save ? !save.disabled : null,
           };
         },
-        { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+        { popupSelector: `${"[data-query-properties-popup]"}` },
       )) as { syntax: string; save: boolean | null };
     };
     /**
@@ -724,7 +716,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           return String(true);
         },
-        { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+        { popupSelector: `${"[data-query-properties-popup]"}` },
       );
     /**
      * The text the Formula field underlines, once the field shows
@@ -767,7 +759,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           };
         },
         {
-          popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+          popupSelector: `${"[data-query-properties-popup]"}`,
           expected: JSON.stringify(expected),
         },
       )) as { marks: string[]; styles: string[]; gutter: boolean };
@@ -778,7 +770,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .querySelector<HTMLElement>(popupSelector)
           ?.querySelector<HTMLElement>("[data-chooser-page]")!;
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
       { what: "the property chooser page to open in the Properties popover" },
     );
     // The Formula field looks and focuses as the text input above it: the
@@ -861,7 +853,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
         };
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
     )) as {
       rest: { input: InputLook; field: InputLook };
       focused: { input: InputLook; field: InputLook };
@@ -1034,7 +1026,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await openProperties();
     const rowIssue = await obRun(
       run.vaultId,
-      async (_context, { popupSelector }) => {
+      async ({ page: pageHelpers }, { popupSelector }) => {
         const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
         const issue =
           popup!
@@ -1042,10 +1034,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               '[data-query-property="formula.year"] [data-query-formula-issue]',
             )
             ?.getAttribute("data-query-formula-issue") ?? null;
-        popup!.hidePopover();
+        pageHelpers.closePopovers(popup!.ownerDocument);
         return String(issue);
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
     );
     expect(rowIssue).toBe(wrong.headerIssue);
 
@@ -1077,7 +1069,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
         ].map((n) => n.className);
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
     )) as string[];
     expect(hovered).toEqual([]);
     // A text other than the saved one shows no underline of the run's Fault.
@@ -1100,17 +1092,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           !!popup.querySelector<HTMLElement>("[data-query-property]")!
         );
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
       {
         what: "the Properties popover to return to its property list after the Formula is added",
       },
     );
     await obRun(
       run.vaultId,
-      async (_context, { popupSelector }) => {
-        activeDocument.querySelector<HTMLElement>(popupSelector)!.hidePopover();
+      ({ page: pageHelpers }) => {
+        pageHelpers.closePopovers(activeDocument);
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      undefined,
     );
     const removed = await tabWhen(
       (tab) =>
@@ -1286,7 +1278,7 @@ views:
       await openProperties();
       return (await obRun(
         run.vaultId,
-        async (_context, { popupSelector }) => {
+        async ({ page: pageHelpers }, { popupSelector }) => {
           const popup =
             activeDocument.querySelector<HTMLElement>(popupSelector)!;
           const issues = Object.fromEntries(
@@ -1299,25 +1291,30 @@ views:
                 ?.getAttribute("data-query-formula-issue") ?? null,
             ]),
           );
-          popup!.hidePopover();
+          pageHelpers.closePopovers(popup!.ownerDocument);
           return issues;
         },
-        { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+        { popupSelector: `${"[data-query-properties-popup]"}` },
       )) as Record<string, string | null>;
     };
     /** The issue at each condition of the view's filters, in the Filter popover. */
     const conditionIssues = async () => {
-      await openToolbarPopup({
-        button: '[data-query-toolbar="filter"]',
-        popup: '[data-query-popover="filter"]',
-        ready: '[data-filter-section="view"] [data-condition-row]',
-      });
       return (await obRun(
         run.vaultId,
-        async (_context, { filterPopoverSelector }) => {
-          const popover = activeDocument.querySelector<HTMLElement>(
-            filterPopoverSelector,
-          )!;
+        async ({ app, page: pageHelpers }) => {
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = await pageHelpers.openToolbarPopover(el, "filter");
+          await pageHelpers.until(
+            "condition rows",
+            () =>
+              popover.querySelector<HTMLElement>(
+                '[data-filter-section="view"] [data-condition-row]',
+              )!,
+            10000,
+          );
           const issues = [
             ...popover!.querySelectorAll<HTMLElement>(
               '[data-filter-section="view"] [data-condition-row]',
@@ -1327,12 +1324,10 @@ views:
               n.querySelector<HTMLElement>('[role="alert"]')?.textContent ??
               null,
           );
-          popover!.hidePopover();
+          await pageHelpers.closeToolbarPopover(el, "filter");
           return issues;
         },
-        {
-          filterPopoverSelector: `${'[data-query-popover="filter"]'}:popover-open`,
-        },
+        undefined,
       )) as (string | null)[];
     };
 
@@ -1651,7 +1646,7 @@ views:
         return copied;
       },
       {
-        resultsPopupSelector: `${"[data-query-results-popup]"}:popover-open`,
+        resultsPopupSelector: `${"[data-query-results-popup]"}`,
       },
     )) as string;
     await openResults();
@@ -1694,7 +1689,7 @@ views:
         };
       },
       {
-        resultsPopupSelector: `${"[data-query-results-popup]"}:popover-open`,
+        resultsPopupSelector: `${"[data-query-results-popup]"}`,
       },
     )) as { name: string | null; type: string | null; text: string | null };
     const written = { copied, ...exportedCsv } as {
@@ -1728,11 +1723,8 @@ views:
       // Teardown closes a popover a failed step left open; not a reader's press.
       await obRun(
         run.vaultId,
-        async ({ app }, { layout, path }) => {
-          for (const popup of activeDocument.querySelectorAll<HTMLElement>(
-            "[popover]:popover-open",
-          ))
-            popup.hidePopover();
+        async ({ app, page: pageHelpers }, { layout, path }) => {
+          pageHelpers.closePopovers(activeDocument);
           await app.workspace.changeLayout(JSON.parse(layout));
           const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
@@ -1767,7 +1759,10 @@ views:
         tab = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app }, { targetPath, popupSelector }) => {
+            async (
+              { app, page: pageHelpers },
+              { targetPath, popupSelector },
+            ) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
@@ -1806,7 +1801,7 @@ views:
                   n!.querySelector<HTMLElement>("[data-query-property-name]")!
                     .textContent,
                 ]);
-              popup.hidePopover();
+              pageHelpers.closePopovers(popup.ownerDocument);
               return JSON.stringify({
                 header,
                 names,
@@ -1820,7 +1815,7 @@ views:
             },
             {
               targetPath: path,
-              popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+              popupSelector: `${"[data-query-properties-popup]"}`,
             },
           ),
         ) as Tab | null;
@@ -1862,7 +1857,7 @@ views:
           }),
         );
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
     );
     await obRunUntil(
       run.vaultId,
@@ -1874,17 +1869,17 @@ views:
           popup.ownerDocument.activeElement?.getAttribute("role") === "combobox"
         );
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
       {
         what: "the Properties popover rename field to take focus as a combobox",
       },
     );
     await obRun(
       run.vaultId,
-      async (_context, { popupSelector }) => {
-        activeDocument.querySelector<HTMLElement>(popupSelector)!.hidePopover();
+      ({ page: pageHelpers }) => {
+        pageHelpers.closePopovers(activeDocument);
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      undefined,
     );
     const field = await tabWhen((tab) => tab.text.includes("displayName"));
     expect(field.text).toBe(
@@ -1911,7 +1906,7 @@ views:
         input!.value = "Year of source";
         input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
     );
     await closePropertyPage();
     const named = await tabWhen((tab) => tab.text.includes("Year of source"));
@@ -1941,19 +1936,19 @@ views:
         input!.value = "Year of source";
         input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
     );
     const found = (await obRun(
       run.vaultId,
-      async (_context, { popupSelector }) => {
+      async ({ page: pageHelpers }, { popupSelector }) => {
         const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
         const rows = [
           ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
         ].map((n) => n.dataset.queryProperty);
-        popup!.hidePopover();
+        pageHelpers.closePopovers(popup!.ownerDocument);
         return rows;
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
     )) as string[];
     expect(found).toContain("formula.year");
     expect(found).not.toContain("title");
@@ -1975,7 +1970,7 @@ views:
           year: rows.includes("formula.year"),
         };
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
       {
         ready: (value) =>
           isDeepStrictEqual(value, { search: "", title: true, year: true }),
@@ -1984,10 +1979,10 @@ views:
     );
     await obRun(
       run.vaultId,
-      async (_context, { popupSelector }) => {
-        activeDocument.querySelector<HTMLElement>(popupSelector)!.hidePopover();
+      ({ page: pageHelpers }) => {
+        pageHelpers.closePopovers(activeDocument);
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      undefined,
     );
 
     // "Export CSV…" names the columns by their Display Names.
@@ -2024,7 +2019,7 @@ views:
         };
       },
       {
-        resultsPopupSelector: `${"[data-query-results-popup]"}:popover-open`,
+        resultsPopupSelector: `${"[data-query-results-popup]"}`,
       },
     )) as { text: string | null };
     expect(exported.text?.split("\r\n")[0]).toBe(
@@ -2044,17 +2039,17 @@ views:
           !!popup.querySelector<HTMLElement>("[data-query-property]")!
         );
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}` },
       {
         what: "the Properties popover to return to its property list after the Formula edit",
       },
     );
     await obRun(
       run.vaultId,
-      async (_context, { popupSelector }) => {
-        activeDocument.querySelector<HTMLElement>(popupSelector)!.hidePopover();
+      ({ page: pageHelpers }) => {
+        pageHelpers.closePopovers(activeDocument);
       },
-      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      undefined,
     );
     const removed = await tabWhen((tab) => !tab.text.includes("formula"));
     expect(removed.text).toBe(
@@ -3227,11 +3222,8 @@ views:
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { layout, path }) => {
-          for (const popup of activeDocument.querySelectorAll<HTMLElement>(
-            "[popover]:popover-open",
-          ))
-            popup.hidePopover();
+        async ({ app, page: pageHelpers }, { layout, path }) => {
+          pageHelpers.closePopovers(activeDocument);
           document.body.classList.remove("is-grabbing");
           await app.workspace.changeLayout(JSON.parse(layout));
           const file = app.vault.getFileByPath(path)!;
@@ -3511,7 +3503,7 @@ views:
 
               const popup = () =>
                 activeDocument.querySelector<HTMLElement>(
-                  "[data-query-properties-popup]:popover-open",
+                  "[data-query-properties-popup]",
                 )!;
               const columns = () =>
                 [
@@ -3546,7 +3538,7 @@ views:
                 const kept = row()?.getAttribute("aria-selected") === "false";
                 press(row(), "Literature Note Property row");
                 await until("shown", () => columns().includes(note));
-                popup()!.hidePopover();
+                pageHelpers.closePopovers(popup()!.ownerDocument);
                 return { label, hidden, hiddenText, kept };
               })();
               await (
@@ -3676,4 +3668,90 @@ views:
       `    order:\n      - title\n      - date\n      - ${note}\n`,
     );
   }, 240000);
+
+  it("paints the Edit property tooltip above the Properties popup, under its button", async () => {
+    const path = "query-files/Properties tooltip.zotquery";
+    const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n`;
+    const result = await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { path, source }) => {
+        const { press, until } = pageHelpers;
+        await using cleanup = new AsyncDisposableStack();
+        const layout = app.workspace.getLayout();
+        cleanup.defer(() => app.workspace.changeLayout(layout));
+        const file = cleanup.adopt(
+          await app.vault.create(path, source),
+          (file) => app.vault.delete(file),
+        );
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        cleanup.defer(() => {
+          pageHelpers.closePopovers(document);
+        });
+        // A tooltip outlives the button it hovers until a pointer comes up.
+        cleanup.defer(() => {
+          document.body.dispatchEvent(new PointerEvent("pointerup"));
+        });
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        await (
+          leaf.view as import("@/views/query-view/file-view").QueryFileView
+        ).query.settled;
+        const el = (leaf.view as import("obsidian").ItemView).contentEl;
+        press(
+          await until("Properties button", () =>
+            el.querySelector<HTMLElement>("[data-query-properties]"),
+          ),
+          "Properties",
+        );
+        const popup = await until("Properties popup", () =>
+          el.doc.querySelector<HTMLElement>("[data-query-properties-popup]"),
+        );
+        const edit = await until("Edit property button", () =>
+          popup.querySelector<HTMLElement>("[data-query-property-more]"),
+        );
+        // Obsidian shows a tooltip for a mouse that has moved: two moves
+        // count as one, and the hover itself is what its listener reads.
+        const hover = { bubbles: true, pointerType: "mouse", view: el.win };
+        edit.dispatchEvent(new PointerEvent("pointermove", hover));
+        edit.dispatchEvent(new PointerEvent("pointermove", hover));
+        edit.dispatchEvent(new PointerEvent("pointerover", hover));
+        const tooltip = await until("tooltip", () =>
+          el.doc.querySelector<HTMLElement>(".tooltip"),
+        );
+        const box = tooltip.getBoundingClientRect();
+        const button = edit.getBoundingClientRect();
+        const shell = popup.getBoundingClientRect();
+        // A tooltip takes no pointer; for this one reading it takes the
+        // point, so the hit test reports what paints there.
+        const x =
+          (Math.max(box.left, shell.left) + Math.min(box.right, shell.right)) /
+          2;
+        const y =
+          (Math.max(box.top, shell.top) + Math.min(box.bottom, shell.bottom)) /
+          2;
+        tooltip.style.pointerEvents = "auto";
+        const painted = el.doc.elementFromPoint(x, y);
+        tooltip.style.pointerEvents = "";
+        const centre = (button.left + button.right) / 2;
+        return {
+          text: tooltip.textContent,
+          onTop: painted === tooltip,
+          coversButtonCentre: box.left <= centre && centre <= box.right,
+          gap: box.top - button.bottom,
+          arrowShown: getComputedStyle(tooltip).overflow === "visible",
+          popupOpen: popup.isConnected,
+        };
+      },
+      { path, source },
+    );
+    expect(result.text).toBe(run.m.query_view_property_edit());
+    expect(result.onTop).toBe(true);
+    expect(result.coversButtonCentre).toBe(true);
+    expect(result.gap).toBeGreaterThanOrEqual(0);
+    expect(result.gap).toBeLessThan(16);
+    expect(result.arrowShown).toBe(true);
+    expect(result.popupOpen).toBe(true);
+  });
 });

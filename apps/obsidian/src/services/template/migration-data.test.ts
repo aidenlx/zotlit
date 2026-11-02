@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Stream } from "effect";
 import { expect, vi } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
@@ -29,7 +29,7 @@ vi.mock("@/services/template-workbench/data", async (original) => ({
 }));
 
 /**
- * My Library holds MAIN2345 (modified last) and RELA2345; the group holds
+ * My Library holds MAIN2345 (modified last), RELA2345, and LATE2345; the group holds
  * GRPITEMS, outside the saved scope.
  */
 const SEED = `
@@ -44,6 +44,7 @@ const SEED = `
     values
       (1, 1, '2024-01-01 00:00:00', '2024-02-01 00:00:00', 1, 'MAIN2345'),
       (3, 1, '2024-01-01 00:00:00', '2024-01-03 00:00:00', 1, 'RELA2345'),
+      (4, 1, '2024-01-01 00:00:00', '2024-01-02 00:00:00', 1, 'LATE2345'),
       (300, 1, '2024-01-01 00:00:00', '2024-03-01 00:00:00', 2, 'GRPITEMS');
   insert into itemDataValues (valueID, value)
     values (1, 'Main Study'), (2, 'Alpha Paper'), (3, 'rela2024');
@@ -51,23 +52,50 @@ const SEED = `
     values (1, 10, 1), (3, 10, 2), (3, 11, 3);
 `;
 
-it.effect(
-  "verifies against the first in-scope item that renders, its Citation read before the render",
-  () =>
+it.effect.each([
+  { name: "note", annotation: false, hasAnnotation: false },
+  { name: "annotation", annotation: true, hasAnnotation: true },
+  { name: "annotation fallback", annotation: true, hasAnnotation: false },
+])(
+  "verifies $name lazily, reading its Citation before rendering",
+  ({ annotation, hasAnnotation }) =>
     Effect.gen(function* () {
       const events: string[] = [];
       const client = inProcessClient(
         layerRcRef(memoryOpener(() => SEED).open),
+        { sliceSize: 1 },
       ).pipe(
-        Effect.map((client): ZoteroReadsClient => ({
-          ...client,
-          ItemsByIndexedKeys: ((payload: {
-            readonly indexedKeys: readonly string[];
-          }) => {
-            events.push(`read ${payload.indexedKeys.join()}`);
-            return client.ItemsByIndexedKeys(payload);
-          }) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
-        })),
+        Effect.map(
+          (client): ZoteroReadsClient =>
+            new Proxy(
+              {
+                ...client,
+                ItemsByIndexedKeys: ((payload: {
+                  readonly indexedKeys: readonly string[];
+                }) => {
+                  events.push(`read ${payload.indexedKeys.join()}`);
+                  return client.ItemsByIndexedKeys(payload);
+                }) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+              },
+              {
+                get(target, key, receiver) {
+                  if (key !== "DisplayRefs")
+                    return Reflect.get(target, key, receiver);
+                  return (
+                    payload: Parameters<ZoteroReadsClient["DisplayRefs"]>[0],
+                  ) =>
+                    target.DisplayRefs(payload).pipe(
+                      Stream.tap((slice) =>
+                        Effect.sync(() => {
+                          for (const { ref } of slice)
+                            if (ref) events.push(`candidate ${ref.indexedKey}`);
+                        }),
+                      ),
+                    );
+                },
+              },
+            ),
+        ),
       );
       const reads = yield* Layer.build(layerZoteroReads(client));
       vi.mocked(readTemplateData).mockImplementation((key, root) => {
@@ -76,12 +104,21 @@ it.effect(
         return Effect.succeed(
           key === "MAIN2345"
             ? { kind: "not-found" as const }
-            : { kind: "data" as const, data: { root, key } },
+            : {
+                kind: "data" as const,
+                data: {
+                  root,
+                  key,
+                  ...(hasAnnotation && key === "RELA2345" && root === "note"
+                    ? { annotations: [{ indexedKey: "ANNOT234" }] }
+                    : {}),
+                },
+              },
         );
       });
 
       const data = yield* readMigrationVerificationData({
-        annotation: false,
+        annotation,
       }).pipe(
         Effect.provideContext(workbenchContext(reads)),
         Effect.provideService(
@@ -98,7 +135,9 @@ it.effect(
       expect(data).toMatchObject({
         note: { root: "note", key: "RELA2345" },
         filename: { root: "filename", key: "RELA2345" },
-        annotation: null,
+        annotation: hasAnnotation
+          ? { root: "annotation", key: "ANNOT234" }
+          : null,
         citation: [
           {
             citationKey: "rela2024",
@@ -107,10 +146,15 @@ it.effect(
         ],
       });
       expect(events).toEqual([
+        "candidate MAIN2345",
         "read MAIN2345",
         "render MAIN2345",
+        "candidate RELA2345",
         "read RELA2345",
         "render RELA2345",
+        ...(annotation && !hasAnnotation
+          ? ["candidate LATE2345", "read LATE2345", "render LATE2345"]
+          : []),
       ]);
     }),
 );

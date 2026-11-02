@@ -152,7 +152,7 @@ export class NoteImporter extends Context.Service<
     ): Effect.Effect<PreparedExplicitImport, NoteImportError>;
     /**
      * Explicitly import a single note (create or overwrite). Used by the batch
-     * runner and the single "Update imported note" command. Holds one write
+     * runner and the single "Overwrite imported note" command. Holds one write
      * permit for the whole write and locates an existing file via the note
      * index; the import folder is minted and ensured only on the create branch.
      */

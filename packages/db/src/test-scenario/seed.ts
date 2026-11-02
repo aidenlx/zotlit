@@ -261,6 +261,7 @@ const BASE_ITEMS = {
       title: "Éclair İstanbul K 50%_off \\ é 🧪",
       date: "2024-02-29 2024-02-29",
       publicationTitle: "Revue d'Études",
+      shortTitle: "气候研究",
       accessDate: "yesterday",
     },
     creators: [{ firstName: "Zoë", lastName: "Ünal", creatorType: "author" }],

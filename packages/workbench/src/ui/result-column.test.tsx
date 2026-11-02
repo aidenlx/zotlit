@@ -32,7 +32,10 @@ const result: TemplateRenderResult = {
 
 afterEach(cleanup);
 
-function column(overrides: Partial<ResultColumnProps> = {}) {
+function column(
+  overrides: Partial<ResultColumnProps> = {},
+  openCitationEngineSettings?: () => void,
+) {
   const props: ResultColumnProps = {
     result,
     mode: "note",
@@ -46,6 +49,8 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
     ...overrides,
   };
   const mounted = mount(<ResultColumn {...props} />);
+  if (openCitationEngineSettings)
+    mounted.host.openCitationEngineSettings = openCitationEngineSettings;
   mounted.host.markdown = ({
     markdown,
     surface,
@@ -135,6 +140,52 @@ it("shows a pending annotation until the selected example has a result", () => {
 it("shows a single annotation with no complete-note properties", () => {
   using _mounted = column({ mode: "annotation", annotationResult: result });
   expect(screen.getByTestId("markdown").textContent).toBe("One highlight");
+});
+
+it("suggests the engine above a preview that stands and opens its setting", () => {
+  const openSettings = vi.fn<() => void>();
+  using _mounted = column(
+    {
+      mode: "annotation",
+      annotationResult: {
+        ...result,
+        previewHints: [
+          {
+            part: "annotation",
+            message: "Install the engine",
+            opensEngineSettings: true,
+          },
+        ],
+      },
+    },
+    openSettings,
+  );
+  const status = screen.getByRole("status").textContent;
+  expect(status).toContain("Install the engine");
+  expect(status).not.toContain(m.workbench_preview_problem());
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_preview_open_settings() }),
+  );
+  expect(openSettings).toHaveBeenCalledOnce();
+});
+
+it("keeps a hint on its own surface and off a host without the setting", () => {
+  const hints = [
+    { part: "note", message: "Downloading", opensEngineSettings: true },
+  ] as const;
+  {
+    using _mounted = column({
+      mode: "annotation",
+      annotationResult: { ...result, previewHints: hints },
+    });
+    expect(screen.queryByText("Downloading")).toBeNull();
+  }
+  cleanup();
+  using _mounted = column({ result: { ...result, previewHints: hints } });
+  expect(screen.getByText("Downloading")).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: m.workbench_preview_open_settings() }),
+  ).toBeNull();
 });
 
 it("names the failure and leads to its explanation", () => {

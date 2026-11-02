@@ -1,0 +1,58 @@
+---
+version: "2.2.1"
+companion: "2.2.1"
+date: "2026-11-02"
+description: "Update notes dialog, every field in the Filter, case-insensitive text filters"
+---
+
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This is a maintenance release after 2.2.0. ZotLit Companion 2.2.1 ships with it and has no changes of its own, so Companion 2.2.0 keeps working.
+
+## What's New
+
+### Update notes
+
+- The new <Command inline name={m.command_update_notes_name()} /> command opens a dialog. <UiLabel name={m.modal_update_notes_all()} /> updates every existing note. <UiLabel name={m.modal_update_notes_active()} /> shows when a literature note is open.
+- The dialog creates no notes unless you ask. The checkbox <UiLabel name={m.modal_update_notes_create()} /> is off by default.
+- After you save a template in the web Template Workbench, the notice action now reads <UiLabel name={m.notice_workbench_profile_saved_action()} />. It changes only the notes you already have. It used to read "Update all notes".
+- When you update a whole library or collection, ZotLit now shows the confirmation even if it holds one item.
+- The older update commands stay available for keyboard shortcuts.
+- "Update imported note from Zotero" is now <Command inline name={m.command_reimport_note_name()} />, so the name says what it does. Your hotkeys keep working.
+
+See [Start with Update notes](/docs/how-to/keep-notes-updated#update-notes) and [Apply a template change to some notes](/docs/how-to/keep-notes-updated#existing-only).
+
+### Every field in the Filter
+
+The Query View Filter used to list 8 fields, so a journal or DOI condition needed an expression. It now lists every Zotero field, with the common ones first. Whole date fields sit beside their parts.
+
+- Everyday words find a field, in English or Chinese. For example, `journal` or `期刊` finds the Publication field.
+- These words also work in the Properties, Sort, and Group lists and in the completion list of filter expressions.
+- A saved expression on such a field now opens as a visual row.
+- Profile Match shares the same list.
+
+See [Filter the rows](/docs/how-to/use-query-files#filter) and [Profile Match](/docs/reference/templates/profile-match).
+
+### Other improvements
+
+- Text filter rows now ignore letter case: <UiLabel name={m.workbench_filter_op_contains()} /> and <UiLabel name={m.workbench_filter_op_does_not_contain()} />. To keep case, use the new rows <UiLabel name={m.workbench_filter_op_contains_match_case()} /> and <UiLabel name={m.workbench_filter_op_does_not_contain_match_case()} />. Saved filters keep their results and open as match case rows. This applies to the Query View Filter and Profile Match.
+- The filter expression field is easier to use in Query View filters, Formulas, and Profile Match:
+  - `(`, `[`, and quotes now close themselves. Typing one wraps selected text.
+  - An empty field shows the hint <UiLabel name={m.workbench_match_expression_placeholder()} />.
+  - <UiLabel name={m.workbench_match_edit_visually()} /> turns a blank
+    expression into an empty condition row.
+  - When an expression has no visual form, the button's tooltip says <UiLabel name={m.workbench_match_edit_visually_unavailable()} />.
+- The Query View is faster in large libraries. On a 100,000-item test library, the first page, sorting, and common title searches came back about 3 to 4 times faster. Filters on Tags or Collections are faster too. Very broad searches take as long as before.
+- The Workbench's <UiLabel name={m.workbench_tab_annotation()} /> tab now says that edits apply to each annotation you insert from now on. Its help names the <UiLabel name={m.workbench_annotation_example()} /> pane.
+
+## Bug Fixes
+
+- In a large library, item search could pause after you edited items in Zotero. This is the search in the Library View, the quick switcher, the citation suggester, and the Template Workbench. Now it stays responsive, also while you update the notes of a whole library.
+- When you converted 2.1 templates, a frontmatter field that failed the conversion check stopped the conversion. The Profile editor stayed locked, so the only repair was editing the settings file. Now the conversion finishes, keeps the field as you wrote it, and a notice names it. ZotLit refuses to create notes until you fix the field, and the refusal names it. See [Properties that need a fix](/docs/how-to/migrate-from-2.1-templates#fix-properties).
+- Other conversion failures did nothing visible when you selected <UiLabel name={m.welcome_template_conversion_action()} />. Now a notice says what went wrong. For a problem in a template file, it also offers moving the file out of the template folder to use the built-in templates.
+- A Template Workbench preview with citations and no Pandoc engine showed as broken, with the heading Citation style "undefined". Now the preview stays valid and shows a hint. <UiLabel name={m.workbench_preview_open_settings()} /> takes you to the <UiLabel name={m.settings_citation_engine_name()} /> setting.
+- Some disks ignore letter case, the usual setup on macOS and Windows. There, a template folder set to `templates` beside a vault folder `Templates` broke template customizing. It failed with "Could not create the template document". Now ZotLit finds the existing folder. Notes also move into such folders correctly.
+- Tooltips on controls inside popups, such as the Query View Filter and Properties popups, appeared behind the popup. Now they show above it.
+- The function argument hint in filter expressions flashed and jumped as the cursor moved. Now it stays in place.

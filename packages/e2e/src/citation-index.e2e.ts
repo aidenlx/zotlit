@@ -498,6 +498,110 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     expect(Math.max(...gaps)).toBeLessThanOrEqual(WORKER_TIMER_MAX_MS);
   }, 240_000);
 
+  it("serves searches while counting and selecting all Items for batch actions", async () => {
+    const expected = (() => {
+      using sqlite = new DatabaseSync(fixture.databasePath, { readOnly: true });
+      const rows = sqlite
+        .prepare(`
+        select items.itemID, items.libraryID from items
+        join itemTypes using (itemTypeID) join libraries using (libraryID)
+        where libraries.type in ('user', 'group')
+          and itemTypes.typeName not in ('note', 'attachment', 'annotation')
+          and items.itemID not in (select itemID from deletedItems)
+        order by items.dateModified desc, items.key
+      `)
+        .all() as { itemID: number; libraryID: number }[];
+      const libraries = new Map<
+        number,
+        { libraryID: number; count: number; checksum: number }
+      >();
+      for (const row of rows) {
+        const library = libraries.get(row.libraryID) ?? {
+          libraryID: row.libraryID,
+          count: 0,
+          checksum: 0,
+        };
+        library.count++;
+        library.checksum = (library.checksum * 33 + row.itemID) >>> 0;
+        libraries.set(row.libraryID, library);
+      }
+      return [...libraries.values()];
+    })();
+    const { value, gaps } = await measureWorkerResponsiveness(vaultId, () =>
+      obRun(
+        vaultId,
+        async ({ zotlit }, { itemKey, expectedItemID, expected }) => {
+          const s = zotlit.services;
+          const rounds = [];
+          for (let round = 0; round < 3; round++) {
+            let done = false;
+            const start = performance.now();
+            const summary = s.bridge
+              .runPromise(s.zoteroReads.reads.ConnectionReadout({}))
+              .then((result) => ({ ...result, ms: performance.now() - start }));
+            const selection = Promise.all(
+              expected.map(async (library) => {
+                const ids = await s.bridge.runPromise(
+                  s.zoteroReads.reads.ScopeItemIDs({
+                    kind: "literature-items",
+                    libraryID: library.libraryID,
+                  }),
+                );
+                let checksum = 0;
+                for (const id of ids ?? [])
+                  checksum = (checksum * 33 + id) >>> 0;
+                return (
+                  ids?.length === library.count && checksum === library.checksum
+                );
+              }),
+            );
+            const settled = Promise.all([summary, selection]).finally(() => {
+              done = true;
+            });
+            let maximum = 0,
+              samples = 0,
+              correct = true;
+            do {
+              const start = performance.now();
+              const hits = await s.itemLookup.search(itemKey, { limit: 1 });
+              maximum = Math.max(maximum, performance.now() - start);
+              samples++;
+              correct &&=
+                hits.length === 1 && hits[0]!.item.itemID === expectedItemID;
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            } while (!done);
+            const [count, selections] = await settled;
+            rounds.push({ maximum, samples, correct, count, selections });
+          }
+          return rounds;
+        },
+        { itemKey: item.key, expectedItemID: item.itemID, expected },
+        { timeoutMs: 120000 },
+      ),
+    );
+    console.info("Batch scope and count, 100,000 Items", {
+      rounds: value,
+      workerTimerMaximum: Math.max(...gaps),
+    });
+    expect(
+      value.every(
+        ({ correct, samples, selections }) =>
+          correct && samples > 0 && selections.every(Boolean),
+      ),
+    ).toBe(true);
+    expect(value.map(({ count }) => count.itemCount)).toEqual([
+      100000, 100000, 100000,
+    ]);
+    expect(
+      Math.max(...value.map(({ maximum }) => maximum)),
+    ).toBeLessThanOrEqual(INTERACTIVE_MAX_MS);
+    expect(Math.max(...value.map(({ count }) => count.ms))).toBeLessThanOrEqual(
+      INTERACTIVE_MAX_MS,
+    );
+    expect(gaps.length).toBeGreaterThan(0);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(WORKER_TIMER_MAX_MS);
+  }, 120_000);
+
   it("keeps the held search index when snapshot integrity validation fails", async () => {
     await using _source = await preserveFixture(vaultId);
     {

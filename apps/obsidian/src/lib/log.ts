@@ -46,13 +46,16 @@ const LOGTAPE_ROOT = Symbol.for("logtape.rootLogger");
  */
 export async function resetLogTape(): Promise<void> {
   await reset();
+  // oxlint-disable-next-line obsidianmd/no-global-this -- LogTape keeps its root on the realm global
   delete (globalThis as Record<symbol, unknown>)[LOGTAPE_ROOT];
 }
 
 /** Remove the listener LogTape's configure just added to the host. */
 function detachHostDisposeHook(): void {
   for (const handler of [dispose, disposeSync]) {
+    // oxlint-disable-next-line obsidianmd/no-global-this -- removes what LogTape added to the realm global
     globalThis.process?.removeListener("exit", handler);
+    // oxlint-disable-next-line obsidianmd/no-global-this -- removes what LogTape added to the realm global
     globalThis.removeEventListener?.("pagehide", handler);
   }
 }

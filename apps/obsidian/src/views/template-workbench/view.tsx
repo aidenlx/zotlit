@@ -690,6 +690,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       {
         run: this.#runner.run,
         render,
+        ...(deps.nativePreview && {
+          openCitationEngineSettings:
+            deps.nativePreview.openCitationEngineSettings,
+        }),
         markdown: (props) => (
           <NativeMarkdown
             {...props}
@@ -2408,6 +2412,7 @@ function EditorContent({
   const controller = view.controller;
   const host = useWorkbenchHost();
   const resultPart = useParts("resultColumn");
+  const tab = useWorkbenchStore((state) => state.tab);
   useDocumentRevision(controller);
   const { result, trigger, attempt, busy, stale } = useRenderState();
   const previewProblems = usePreviewProblems(view);
@@ -2773,7 +2778,9 @@ function EditorContent({
         >
           <div className={originatingNoteNotice.guidance}>
             <p className={originatingNoteNotice.scope}>
-              {m.template_workbench_shared_template({
+              {(tab === "annotation"
+                ? m.template_workbench_shared_annotation
+                : m.template_workbench_shared_template)({
                 name: view.profileLabel ?? m.settings_profile_default_name(),
               })}
             </p>

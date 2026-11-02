@@ -294,35 +294,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           undefined,
         ),
       ).toBe(JSON.stringify({ focusable: 1, titled: 0 }));
-      // The tag Chooser hangs in the browser's top layer, placed by CSS anchor
-      // positioning — which only a running Obsidian has. A popup that collapsed
-      // still holds its rows in the DOM, so what tells is whether its own box
-      // is still around them.
+      // The tag Chooser stands on Obsidian's popover, placed by Obsidian —
+      // which only a running Obsidian does. What tells is whether its own box
+      // is still around its rows.
       //
       // The tag Chooser is named by its trigger's label, never by DOM order:
       // the filter bar draws the colour Chooser first whenever the palette has
       // a colour, and every Fixture Annotation under this attachment carries
-      // one. The popup is then the popover target of that trigger. A closed
-      // popup holds no rows or search field, so neither can name it.
+      // one. A closed popup is not in the document, so the trigger names the
+      // Chooser and the popup is the one standing.
 
       await obRun(
         run.vaultId,
         async ({ app, page }, { tagTriggerLabel, activeTriggerPrefix }) => {
           const { press } = page;
-          const root = (
-            app.workspace.getLeavesOfType(
-              "zotero-annotation-view",
-            ) as AnnotationLeaf[]
-          )[0]?.view.containerEl;
-          const popup = (() => {
+          const trigger = (() => {
             const root = (
               app.workspace.getLeavesOfType(
                 "zotero-annotation-view",
               ) as AnnotationLeaf[]
             )[0]?.view.containerEl;
-            const trigger = Array.from(
+            return Array.from(
               root?.querySelectorAll<HTMLButtonElement>(
-                "button[popovertarget]",
+                "button[aria-expanded]",
               ) ?? [],
             ).find((b) => {
               const label = b.getAttribute("aria-label") ?? "";
@@ -331,20 +325,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 label.startsWith(activeTriggerPrefix)
               );
             });
-            return trigger
-              ? root!.ownerDocument.getElementById(
-                  trigger.getAttribute("popovertarget")!,
-                )!
-              : null;
           })();
-          if (!popup) throw new Error("No tag Chooser in the Annotation View");
-          if (!popup!.matches(":popover-open"))
-            press(
-              root!.querySelector<HTMLElement>(
-                `[popovertarget="${popup!.id}"]`,
-              )!,
-              "tag Chooser",
-            );
+          if (!trigger)
+            throw new Error("No tag Chooser in the Annotation View");
+          if (trigger.getAttribute("aria-expanded") !== "true")
+            press(trigger, "tag Chooser");
         },
         {
           tagTriggerLabel: run.m.annot_view_filter_tag_trigger(),
@@ -384,15 +369,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }, { tagTriggerLabel, activeTriggerPrefix }) => {
           return (() => {
-            const popup = (() => {
+            const trigger = (() => {
               const root = (
                 app.workspace.getLeavesOfType(
                   "zotero-annotation-view",
                 ) as AnnotationLeaf[]
               )[0]?.view.containerEl;
-              const trigger = Array.from(
+              return Array.from(
                 root?.querySelectorAll<HTMLButtonElement>(
-                  "button[popovertarget]",
+                  "button[aria-expanded]",
                 ) ?? [],
               ).find((b) => {
                 const label = b.getAttribute("aria-label") ?? "";
@@ -401,12 +386,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   label.startsWith(activeTriggerPrefix)
                 );
               });
-              return trigger
-                ? root!.ownerDocument.getElementById(
-                    trigger.getAttribute("popovertarget")!,
-                  )!
-                : null;
             })();
+            const popup =
+              trigger?.ownerDocument.querySelector<HTMLElement>(
+                ".zt-chooser",
+              ) ?? null;
             if (!popup)
               return {
                 open: false,
@@ -450,7 +434,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               want.boxShadow !== "none";
             probe.remove();
             return {
-              open: popup!.matches(":popover-open"),
+              open: popup.isConnected,
               rows: rows.map((row) => row.textContent).sort(),
               rowsInsidePopup:
                 rows.length > 0 &&
@@ -487,16 +471,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await obRun(
         run.vaultId,
-        async ({ app }, { tagTriggerLabel, activeTriggerPrefix }) => {
-          const popup = (() => {
+        async ({ app, page }, { tagTriggerLabel, activeTriggerPrefix }) => {
+          const trigger = (() => {
             const root = (
               app.workspace.getLeavesOfType(
                 "zotero-annotation-view",
               ) as AnnotationLeaf[]
             )[0]?.view.containerEl;
-            const trigger = Array.from(
+            return Array.from(
               root?.querySelectorAll<HTMLButtonElement>(
-                "button[popovertarget]",
+                "button[aria-expanded]",
               ) ?? [],
             ).find((b) => {
               const label = b.getAttribute("aria-label") ?? "";
@@ -505,13 +489,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 label.startsWith(activeTriggerPrefix)
               );
             });
-            return trigger
-              ? root!.ownerDocument.getElementById(
-                  trigger.getAttribute("popovertarget")!,
-                )!
-              : null;
           })();
-          popup?.hidePopover();
+          const popup =
+            trigger?.ownerDocument.querySelector<HTMLElement>(".zt-chooser") ??
+            null;
+          if (popup) page.closePopovers(popup.ownerDocument);
         },
         {
           tagTriggerLabel: run.m.annot_view_filter_tag_trigger(),
@@ -520,26 +502,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           }),
         },
       );
-      // A closed popover is hidden by the user-agent rule
-      // `[popover]:not(:popover-open) { display: none }`, which any
-      // unconditional author-origin `display` outranks. The popup then keeps
-      // painting after it closes and the view behind draws over it, which
-      // reads as a popup that will not close and has lost its background.
-      // Only a running Obsidian has that user-agent rule, so this is the one
-      // place the closed state can be proven.
+      // A closed popup leaves the document, so it cannot keep painting over
+      // the view behind it.
       await obRunUntil(
         run.vaultId,
         async ({ app }, { tagTriggerLabel, activeTriggerPrefix }) => {
           return (() => {
-            const popup = (() => {
+            const trigger = (() => {
               const root = (
                 app.workspace.getLeavesOfType(
                   "zotero-annotation-view",
                 ) as AnnotationLeaf[]
               )[0]?.view.containerEl;
-              const trigger = Array.from(
+              return Array.from(
                 root?.querySelectorAll<HTMLButtonElement>(
-                  "button[popovertarget]",
+                  "button[aria-expanded]",
                 ) ?? [],
               ).find((b) => {
                 const label = b.getAttribute("aria-label") ?? "";
@@ -548,19 +525,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   label.startsWith(activeTriggerPrefix)
                 );
               });
-              return trigger
-                ? root!.ownerDocument.getElementById(
-                    trigger.getAttribute("popovertarget")!,
-                  )!
-                : null;
             })();
-            if (!popup) return { open: false, hidden: false };
-            return {
-              open: popup!.matches(":popover-open"),
-              hidden:
-                !popup!.checkVisibility() &&
-                popup!.getBoundingClientRect().height === 0,
-            };
+            const popup =
+              trigger?.ownerDocument.querySelector<HTMLElement>(
+                ".zt-chooser",
+              ) ?? null;
+            return { open: popup !== null, hidden: popup === null };
           })();
         },
         {
@@ -952,7 +922,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async (
         { app, page },
-        { addConditionLabel, removeConditionLabel, editExpressionLabel },
+        {
+          addConditionLabel,
+          removeConditionLabel,
+          editExpressionLabel,
+          expressionPlaceholder,
+        },
       ) => {
         const { press, until } = page;
         await using cleanup = new AsyncDisposableStack();
@@ -1013,6 +988,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           section!
             .querySelectorAll<HTMLElement>("[data-condition-row]")
             [before]?.querySelector<CodeMirrorElement>(".cm-content")!,
+        );
+        await until("hint in the empty field", () =>
+          content.textContent.includes(expressionPlaceholder),
         );
         const editor = content.cmTile!.root!.view;
         window.focus();
@@ -1141,6 +1119,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         addConditionLabel: run.m.workbench_match_add_condition(),
         removeConditionLabel: run.m.workbench_match_remove_condition(),
         editExpressionLabel: run.m.workbench_match_edit_as_expression(),
+        expressionPlaceholder: run.m.workbench_match_expression_placeholder(),
       },
     );
     expect(escapes).toEqual({

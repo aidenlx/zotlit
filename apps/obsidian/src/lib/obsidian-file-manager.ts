@@ -105,9 +105,10 @@ export const makeFileManager = Effect.fnUntraced(function* (
       const held = yield* vault.getAbstractFileByPath(path);
       if (held !== null && held !== file)
         return yield* new FileExists({ path });
+      const target = yield* vault.underHeldParent(path);
       yield* Effect.tryPromise({
         // Obsidian moves `file.path` on success; name the path it had.
-        try: () => source.renameFile(file, newPath),
+        try: () => source.renameFile(file, target),
         catch: vaultError("renameFile", file.path),
       });
     }),

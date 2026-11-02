@@ -1,5 +1,6 @@
 import type {
   CustomFilterFieldKind,
+  DatasetFilterFieldKind,
   FilterDataset,
   FilterField,
   FilterFieldKind,
@@ -30,6 +31,7 @@ import type { WorkbenchIcon } from "./theme";
 import {
   FILTER_OPERATORS,
   filterFields,
+  isDatasetFieldKind,
   formatFilterRow,
   freshFilterRow,
   parseFilterRow,
@@ -47,10 +49,12 @@ export interface FilterValues {
 
 type Label = (m: WorkbenchMessages) => string;
 
-const KIND_LABELS: Record<
-  Exclude<FilterFieldKind, CustomFilterFieldKind>,
-  Label
-> = {
+type NamedFilterFieldKind = Exclude<
+  FilterFieldKind,
+  CustomFilterFieldKind | DatasetFilterFieldKind
+>;
+
+const KIND_LABELS: Record<NamedFilterFieldKind, Label> = {
   color: (m) => m.workbench_filter_field_color(),
   tags: (m) => m.workbench_filter_field_tag(),
   comment: (m) => m.workbench_filter_field_comment(),
@@ -72,6 +76,9 @@ const KIND_LABELS: Record<
 const OPERATOR_LABELS: Record<FilterOperator, Label> = {
   contains: (m) => m.workbench_filter_op_contains(),
   "does-not-contain": (m) => m.workbench_filter_op_does_not_contain(),
+  "contains-match-case": (m) => m.workbench_filter_op_contains_match_case(),
+  "does-not-contain-match-case": (m) =>
+    m.workbench_filter_op_does_not_contain_match_case(),
   "contains-any": (m) => m.workbench_filter_op_contains_any(),
   "contains-all": (m) => m.workbench_filter_op_contains_all(),
   within: (m) => m.workbench_filter_op_within(),
@@ -280,9 +287,10 @@ function FieldIcon({ field }: { field: FilterField }) {
 }
 
 function kindLabel(kind: FilterFieldKind, m: WorkbenchMessages): string {
+  if (isDatasetFieldKind(kind)) return kind.slice("field:".length);
   return kind.startsWith("custom:")
     ? kind.slice("custom:".length)
-    : KIND_LABELS[kind as Exclude<FilterFieldKind, CustomFilterFieldKind>](m);
+    : KIND_LABELS[kind as NamedFilterFieldKind](m);
 }
 
 /**
@@ -317,14 +325,21 @@ export function filterVocabulary(
   },
 ): MatchVocabulary<FilterRow> {
   const fields = [...filterFields(dataset), ...extra];
+  // Every kind tries an expression row's text, and the list has many kinds.
+  let last: { text: string; row: FilterRow | null } | undefined;
+  const parsed = (text: string) => {
+    if (last?.text !== text) last = { text, row: parseFilterRow(text, fields) };
+    return last.row;
+  };
   const kinds = fields.map((field): MatchConditionKind<FilterRow> => ({
     kind: field.kind,
     label: label?.(field) ?? field.label ?? kindLabel(field.kind, m),
     icon: icon ? icon(field) : <FieldIcon field={field} />,
     detail: field.path,
+    ...(field.searchTerms && { searchTerms: field.searchTerms }),
     fresh: () => freshFilterRow(field),
     parse: (text) => {
-      const row = parseFilterRow(text, fields);
+      const row = parsed(text);
       return row?.kind === field.kind ? row : null;
     },
     format: (row) => formatFilterRow(row, fields),

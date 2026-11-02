@@ -5,8 +5,9 @@ import {
   formatFilterRow,
   freshFilterRow,
   parseFilterRow,
+  withOperator,
 } from "./fields";
-import type { FilterFieldKind } from "./fields";
+import type { FilterField, FilterFieldKind } from "./fields";
 
 const ANNOTATION_KINDS: FilterFieldKind[] = [
   "color",
@@ -27,16 +28,70 @@ const ANNOTATION_KINDS: FilterFieldKind[] = [
   "file-type",
 ];
 
+const leading = (fields: readonly FilterField[]) =>
+  fields
+    .map((field) => field.kind)
+    .filter((kind) => !kind.startsWith("field:"));
+
 describe("filterFields", () => {
   it("offers Annotation, Item and Attachment conditions on Annotations", () => {
-    expect(filterFields("annotations").map((field) => field.kind)).toEqual(
-      ANNOTATION_KINDS,
+    expect(leading(filterFields("annotations"))).toEqual(ANNOTATION_KINDS);
+  });
+
+  it("offers every field the dataset's planner can read, after the common ones", () => {
+    const fields = filterFields("items");
+    const at = (path: string) => fields.findIndex((f) => f.path === path);
+    expect(fields.find((f) => f.path === "publicationTitle")).toMatchObject({
+      kind: "field:publicationTitle",
+      type: "text",
+    });
+    expect(fields.find((f) => f.path === "dateAdded")?.type).toBe("date");
+    expect(fields.find((f) => f.path === "date.month")?.type).toBe("number");
+    expect(at("DOI")).toBeGreaterThan(at("tags"));
+    expect(at("date.text")).toBe(-1);
+    expect(fields.filter((f) => f.path === "date.year")).toHaveLength(1);
+  });
+
+  it("offers a whole date field beside its parts", () => {
+    const type = (dataset: "annotations" | "items", path: string) =>
+      filterFields(dataset).find((f) => f.path === path)?.type;
+    expect(type("items", "date")).toBe("date");
+    expect(type("items", "filingDate")).toBe("date");
+    expect(type("annotations", "item.issueDate")).toBe("date");
+    // A record is no condition of its own, though its parts are.
+    expect(type("items", "firstAuthor")).toBeUndefined();
+  });
+
+  it("offers the Item's fields on the datasets below it", () => {
+    expect(
+      filterFields("annotations").find(
+        (f) => f.path === "item.publicationTitle",
+      )?.type,
+    ).toBe("text");
+    expect(
+      filterFields("attachments").find((f) => f.path === "exists")?.type,
+    ).toBe("boolean");
+  });
+
+  it("carries the words a list finds a field by", () => {
+    const journal = filterFields("items").find(
+      (f) => f.path === "publicationTitle",
     );
+    expect(journal?.searchTerms).toContain("journal");
+  });
+
+  it("writes and reads a condition by the field's name alone", () => {
+    const fields = filterFields("items");
+    const field = fields.find((f) => f.path === "publicationTitle")!;
+    const row = { ...freshFilterRow(field), value: "Nature" };
+    const text = formatFilterRow(row, fields)!;
+    expect(text).toBe('publicationTitle.icontains("Nature")');
+    expect(parseFilterRow(text, fields)).toEqual(row);
   });
 
   it("names Item fields without a prefix on Items, and offers the Item's Tags but no Annotation or Attachment conditions", () => {
     const fields = filterFields("items");
-    expect(fields.map((field) => field.kind)).toEqual([
+    expect(leading(fields)).toEqual([
       "item-title",
       "creators",
       "first-author",
@@ -76,7 +131,7 @@ describe("formatFilterRow", () => {
         value: "todo",
         values: [],
       },
-      '!comment.contains("todo")',
+      '!comment.icontains("todo")',
     ],
     [
       { kind: "comment", operator: "is-empty", value: "", values: [] },
@@ -120,7 +175,7 @@ describe("formatFilterRow", () => {
         value: "Lovelace",
         values: [],
       },
-      'item.firstAuthor.fullName.contains("Lovelace")',
+      'item.firstAuthor.fullName.icontains("Lovelace")',
     ],
     [
       { kind: "library", operator: "is-not", value: "group:4815", values: [] },
@@ -141,7 +196,7 @@ describe("formatFilterRow", () => {
   });
 
   it("stores nothing for the starting row of every condition, which has no value", () => {
-    for (const field of fields)
+    for (const field of fields.filter((f) => f.type !== "boolean"))
       expect(formatFilterRow(freshFilterRow(field), fields)).toBeNull();
   });
 
@@ -195,7 +250,7 @@ describe("a field the host adds", () => {
     ],
     [
       { kind: status.kind, operator: "contains", value: "re", values: [] },
-      'vault["reading-status"].contains("re")',
+      'vault["reading-status"].icontains("re")',
     ],
     [
       { kind: status.kind, operator: "is-not-empty", value: "", values: [] },
@@ -242,5 +297,57 @@ describe("a boolean field", () => {
 
   it("reads a comparison with a string as no row of the field", () => {
     expect(parseFilterRow('vault.done == "true"', fields)).toBeNull();
+  });
+});
+
+describe("text containment rows", () => {
+  const vault: FilterField = {
+    kind: "custom:journal",
+    path: 'vault["journal"]',
+    type: "text",
+  };
+  const fields = [...filterFields("items"), vault];
+  const operators = [
+    ["contains", 'icontains("Nature")'],
+    ["does-not-contain", 'icontains("Nature")'],
+    ["contains-match-case", 'contains("Nature")'],
+    ["does-not-contain-match-case", 'contains("Nature")'],
+  ] as const;
+
+  it.each(operators)(
+    "round trips %s on a title and a vault text field",
+    (operator, call) => {
+      for (const field of [
+        fields.find((entry) => entry.path === "title")!,
+        vault,
+      ]) {
+        const row = { ...freshFilterRow(field), operator, value: "Nature" };
+        const text = `${operator.startsWith("does-not") ? "!" : ""}${field.path}.${call}`;
+        expect(formatFilterRow(row, fields)).toBe(text);
+        expect(parseFilterRow(text, fields)).toEqual(row);
+        for (const [next] of operators)
+          expect(withOperator(row, next)).toEqual({ ...row, operator: next });
+      }
+    },
+  );
+
+  it("reads a saved contains expression as a match-case row", () => {
+    expect(parseFilterRow('title.contains("x")', fields)).toEqual({
+      kind: "item-title",
+      operator: "contains-match-case",
+      value: "x",
+      values: [],
+    });
+  });
+
+  it.each(["tags", "collections"])("keeps contains on %s", (path) => {
+    const field = fields.find((entry) => entry.path === path)!;
+    for (const operator of ["contains", "does-not-contain"] as const) {
+      const row = { ...freshFilterRow(field), operator, value: "Nature" };
+      const text = `${operator === "does-not-contain" ? "!" : ""}${path}.contains("Nature")`;
+      expect(formatFilterRow(row, fields)).toBe(text);
+      expect(parseFilterRow(text, fields)).toEqual(row);
+    }
+    expect(parseFilterRow(`${path}.icontains("Nature")`, fields)).toBeNull();
   });
 });

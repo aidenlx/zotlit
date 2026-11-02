@@ -552,8 +552,8 @@ const makeProfileEngine = Effect.fnUntraced(function* (
       if (expected.state === "revision")
         return { state: "refused", reason: "revision-conflict" };
       yield* ensureParent(path);
-      const created = yield* createDocument(path, source);
-      if (!created) return yield* documentExists(path);
+      const held = yield* createDocument(path, source);
+      if (held !== undefined) return yield* documentExists(held);
       return { state: "saved", revision: profileRevision(source) };
     }
     if (expected.state === "absent") return yield* documentExists(path);
@@ -577,14 +577,14 @@ const makeProfileEngine = Effect.fnUntraced(function* (
       };
     return { state: "saved", revision: profileRevision(source) };
   });
-  /** Create `path` with `data`; false when the vault already holds the path. */
+  /** Create `path` with `data`, or answer the path the vault already holds it at. */
   const createDocument = Effect.fn("Profile.createDocument")(function* (
     path: string,
     data: string,
-  ): Effect.fn.Return<boolean, VaultError> {
+  ): Effect.fn.Return<string | undefined, VaultError> {
     return yield* vault.create(path, data).pipe(
-      Effect.as(true),
-      Effect.catchTag("FileExists", () => Effect.succeed(false)),
+      Effect.as(undefined),
+      Effect.catchTag("FileExists", (error) => Effect.succeed(error.path)),
     );
   });
   /** The refusal a document standing where the caller expected none earns. */
@@ -662,6 +662,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
           {
             id: DEFAULT_PROFILE,
             name: m.settings_profile_default_name(),
+            description: m.profile_default_description(),
             managed: false,
             frontmatter: fields ?? DEFAULT_FRONTMATTER_FIELDS,
           },
@@ -849,7 +850,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
       const folder = (yield* settings.current)!["template.folder"];
       let path = join(folder, `zotlit-profile.${profileSlug(label)}.md`);
       yield* ensureParent(path);
-      if (!(yield* createDocument(path, content))) {
+      if ((yield* createDocument(path, content)) !== undefined) {
         path = join(folder, `zotlit-profile.${profileSlug(label)}-${id}.md`);
         yield* vault.create(path, content);
       }
@@ -1116,7 +1117,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
             "FileExists",
             Effect.fnUntraced(function* (error) {
               // A folder at the path is no document to open.
-              const existing = yield* vault.getFileByPath(path);
+              const existing = yield* vault.getFileByPath(error.path);
               return existing
                 ? { file: existing, created: false }
                 : yield* error;

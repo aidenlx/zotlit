@@ -255,6 +255,11 @@ export interface WorkbenchHost {
   tooltip(text: string): HTMLAttributes<HTMLElement>;
   notice(text: string): void;
   /**
+   * Reveals the Pandoc engine's setting. A host that supplies none leaves the
+   * button off a preview hint.
+   */
+  openCitationEngineSettings?: () => void;
+  /**
    * Puts `text` on the system clipboard, failing where the host cannot.
    * Each host has its own clipboard, and a host that supplies none leaves the
    * Problems area's Copy error report out.

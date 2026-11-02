@@ -33,6 +33,7 @@ import {
   overwriteNoteToast,
   reimportNoteToast,
   updateAll,
+  updateNotes,
 } from "./actions-view";
 import type { NoteActionPorts, NoteActionServices } from "./actions-view";
 import { NoteWriteAborted } from "./errors";
@@ -169,6 +170,61 @@ it.effect("logs an update all that failed", () =>
         annotations: expect.objectContaining({ error: failure }),
       },
     ]);
+  }),
+);
+
+const noteFile = () => Object.assign(new TFile(), { path: "Books/Paper.md" });
+
+it.effect("updates nothing when the Update notes dialog closes", () =>
+  Effect.gen(function* () {
+    const update = vi.fn();
+    const harness = actions({ updateNote: update });
+    yield* updateNotes(
+      { ...harness.ports, chooseNotes: () => Effect.succeed(null) },
+      { file: noteFile(), itemKey: "1:ABCD2345" },
+    ).pipe(Effect.provide(harness.layer));
+    expect(update).not.toHaveBeenCalled();
+  }),
+);
+
+it.effect("updates the full active note from the Update notes dialog", () =>
+  Effect.gen(function* () {
+    const update = vi.fn(() =>
+      Effect.succeed({ bodyUpdated: false, duplicateRegionCount: 0 }),
+    );
+    const harness = actions({ updateNote: update });
+    const file = noteFile();
+    yield* updateNotes(
+      {
+        ...harness.ports,
+        chooseNotes: (note) => Effect.succeed({ target: "note", note: note! }),
+      },
+      { file, itemKey: "1:ABCD2345" },
+    ).pipe(Effect.provide(harness.layer));
+    expect(update).toHaveBeenCalledWith(
+      file,
+      expect.objectContaining({ indexedKey: "1:ABCD2345", scope: "full" }),
+    );
+  }),
+);
+
+it.effect("runs the library-wide update from the Update notes dialog", () =>
+  Effect.gen(function* () {
+    const failure = new DbUnavailable({ message: "the read failed" });
+    const harness = actions(
+      {},
+      {
+        state: "ready",
+        reads: readsAnswering({ Libraries: () => Effect.fail(failure) }),
+      },
+    );
+    const errors = yield* errorLogs(
+      updateNotes({
+        ...harness.ports,
+        chooseNotes: () => Effect.succeed({ target: "all", create: false }),
+      }).pipe(Effect.provide(harness.layer)),
+    );
+    expect(errors).toHaveLength(1);
   }),
 );
 

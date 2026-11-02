@@ -130,7 +130,7 @@ export function ResultBody({
 }: ResultBodyProps) {
   const m = useWorkbenchMessages();
   const part = useParts("resultColumn");
-  const Markdown = useWorkbenchHost().markdown;
+  const { markdown: Markdown, openCitationEngineSettings } = useWorkbenchHost();
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
   const showCitation = mode === "citation";
@@ -172,6 +172,9 @@ export function ResultBody({
   // What the region paints: retained output wherever a failure kept some.
   const shown = kept ?? result;
   const annotationShown = kept ?? annotationResult ?? null;
+  const hint = (showAnnotation ? annotationResult : result)?.previewHints?.find(
+    ({ part }) => part === (showAnnotation ? "annotation" : showNote && "note"),
+  );
   const filenameTooltip = useTooltip(shown?.filename ?? "");
   const pending = <p {...part("pending")}>{m.workbench_result_pending()}</p>;
   /** Show problem, which every failure this preview reports offers. */
@@ -257,6 +260,22 @@ export function ResultBody({
                         reports the failure. */}
                     {previewProblem ? null : showProblem(null)}
                   </p>
+                )}
+              </div>
+            )}
+            {hint && !failed && (
+              // A suggestion about output that stands, so it wears the behind
+              // notice rather than a problem's.
+              <div role="status" {...part("behind")}>
+                <span {...part("behind-text")}>{hint.message}</span>
+                {hint.opensEngineSettings && openCitationEngineSettings && (
+                  <button
+                    type="button"
+                    onClick={() => openCitationEngineSettings()}
+                    {...part("run")}
+                  >
+                    {m.workbench_preview_open_settings()}
+                  </button>
                 )}
               </div>
             )}

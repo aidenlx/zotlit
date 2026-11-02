@@ -1887,9 +1887,11 @@ export type FixtureAnnotation = FixtureAnnotationBase &
 /**
  * A reader's Annotations on the demo papers, captured from a Zotero 10 reader
  * session: Zotero drew each one, so its position, text, Sort Index, and page
- * label are Zotero's own. The one External Annotation, `XTPPV7Q3`, is the
- * exception: the Spec writes the row Zotero keeps after it imports a highlight
- * from the PDF file.
+ * label are Zotero's own. Two rows are exceptions. The Spec writes the External
+ * Annotation `XTPPV7Q3` as the row Zotero keeps after it imports a highlight
+ * from the PDF file. `K7MWQ2RD` copies the position and Sort Index of the
+ * configured highlight `PUPR5FG5` on the same PDF, so the template tutorial's
+ * "Identify Your Message" exists in the Demo Vault Case.
  */
 export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
   {
@@ -1982,6 +1984,26 @@ export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
     cacheImageAsset: null,
     dateAdded: "2026-09-26 16:54:25",
     dateModified: "2026-09-26 16:54:25",
+  },
+  {
+    itemID: 917,
+    libraryID: 1,
+    key: "K7MWQ2RD",
+    parentItemID: 901,
+    type: 1,
+    text: "Identify Your Message",
+    comment: null,
+    color: "#2ea8e5",
+    tags: [{ name: "visualization", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|002041|00170",
+    position: {
+      pageIndex: 0,
+      rects: [[265.833, 611.202, 374.503, 620.019]],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:50:30",
+    dateModified: "2026-09-26 16:50:30",
   },
   {
     itemID: 908,
@@ -2710,7 +2732,13 @@ export const DEFAULT_STRESS_ITEM_COUNT = 25_000;
 export const STRESS_ITEM_COUNT_CONSTRAINT = "a non-negative safe integer";
 
 function stressItemKey(index: number): string {
-  let value = index;
+  // The multiplier is coprime to 33, so it permutes all seven-character
+  // suffixes without collisions and separates key order from Item ID order.
+  // BigInt keeps the product exact.
+  let value = Number(
+    (BigInt(index) * 26_339_145_517n) %
+      BigInt(STRESS_ITEM_KEY_ALPHABET.length) ** 7n,
+  );
   let suffix = "";
   for (let place = 0; place < 7; place++) {
     suffix =

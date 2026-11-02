@@ -18,7 +18,7 @@ import { describe, expect } from "vitest";
 
 import {
   buildNoteContextFromSource,
-  getIndexedItemIDsByLibrary,
+  getIndexedItemRowsRange,
   getIndexSignatureRange,
 } from "@zotlit/db";
 import type { NoteResolvers } from "@zotlit/db";
@@ -853,6 +853,27 @@ describe("ZoteroReads operations", () => {
         expect(filed).toEqual([1, 2]);
         expect(notes).toEqual([200]);
         expect(unknown).toBeNull();
+      }),
+  );
+
+  it.effect(
+    "ScopeItemIDs lists a whole Library newest first across scan spans, by key on a tie",
+    () =>
+      Effect.gen(function* () {
+        // 600 and 700 sit in a later Item ID span than 1 to 3; AAAA2345 ties
+        // RELB2345 (item 2) on dateModified.
+        const { open } = fixtureOpener(
+          () => `
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+          values
+            (600, 1, '2024-01-01 00:00:00', '2024-03-01 00:00:00', 1, 'NEWE2345'),
+            (700, 1, '2024-01-01 00:00:00', '2024-01-02 00:00:00', 1, 'AAAA2345');
+      `,
+        );
+        const items = yield* withReads(open, (reads) =>
+          reads.ScopeItemIDs({ kind: "literature-items", libraryID: 1 }),
+        );
+        expect(items).toEqual([600, 1, 3, 700, 2]);
       }),
   );
 
@@ -1865,8 +1886,10 @@ describe("ZoteroReads SearchItems", () => {
       sqlite.close();
     }
   }
-  /** A build reads each Library's ids once; nothing else runs this. */
-  const ID_READ = sqlOf((client) => getIndexedItemIDsByLibrary(client, 1));
+  /** Each small fixture Library fits one build window; nothing else runs this. */
+  const ID_READ = sqlOf((client) =>
+    getIndexedItemRowsRange(client, 1, { from: 0, to: 500 }),
+  );
   // The Item Index reads the signature one Item ID range at a time.
   const SIGNATURE_READ = sqlOf((client) =>
     getIndexSignatureRange(client, 1, { from: 0, to: 1 }),
@@ -1994,7 +2017,7 @@ describe("ZoteroReads SearchItems", () => {
       );
       expect(keysOf(b)).toEqual(keysOf(a));
       expect(a).toHaveLength(4);
-      // One ids read per Library of one build.
+      // One ID window per fixture Library of one build.
       expect(ran(ID_READ)).toBe(2);
     }),
   );

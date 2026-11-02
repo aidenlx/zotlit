@@ -53,6 +53,7 @@ import { useForkedEffect } from "./run";
 import { useParts, useIcon } from "./theme";
 
 import { datasetVocabulary } from "#/language/expression-vocabulary";
+import { isDatasetFieldKind } from "#/match/fields";
 
 export type {
   ConditionControlProps,
@@ -193,6 +194,10 @@ export function MatchPane({
       ...filterVocabulary("items", {
         m,
         values,
+        label: (field) =>
+          isDatasetFieldKind(field.kind)
+            ? FIELD_LABELS[schema][field.path]
+            : undefined,
         issue: (_, path) =>
           faulty &&
           answer?.kind === "problem" &&
@@ -206,7 +211,7 @@ export function MatchPane({
       }),
       expression,
     }),
-    [m, values, faulty, answer, placed, expression],
+    [m, values, schema, faulty, answer, placed, expression],
   );
   function write(next: MatchTree | undefined) {
     const saved = controller.setMatch(next);
@@ -590,9 +595,16 @@ function Row<Row extends LabelledRow>({
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- `place` stands for `stored`, a new array on each render
     [findFault, place],
   );
+  // A blank expression stores nothing, as a placeholder row does.
   const labelled = isExpression(condition)
-    ? asLabelled(condition, vocabulary)
+    ? condition.text.trim() === ""
+      ? placeholderRow(vocabulary)
+      : asLabelled(condition, vocabulary)
     : null;
+  const editVisually =
+    labelled === null
+      ? m.workbench_match_edit_visually_unavailable()
+      : m.workbench_match_edit_visually();
   const kind = isExpression(condition)
     ? undefined
     : vocabulary.kinds.find((entry) => entry.kind === condition.kind);
@@ -611,6 +623,7 @@ function Row<Row extends LabelledRow>({
                   label: entry.label,
                   icon: entry.icon,
                   detail: entry.detail,
+                  searchTerms: entry.searchTerms,
                 }))}
                 onChange={(next) =>
                   onChange(freshRow(vocabulary, next as Row["kind"]))
@@ -624,6 +637,7 @@ function Row<Row extends LabelledRow>({
               <MatchExpressionInput
                 aria-label={m.workbench_match_expression()}
                 aria-invalid={issue !== null}
+                placeholder={m.workbench_match_expression_placeholder()}
                 value={condition.text}
                 vocabulary={vocabulary.expression}
                 fault={fault}
@@ -639,9 +653,10 @@ function Row<Row extends LabelledRow>({
             <button
               {...part("icon-button")}
               type="button"
-              disabled={labelled === null}
-              aria-label={m.workbench_match_edit_visually()}
-              {...host.tooltip(m.workbench_match_edit_visually())}
+              // Stays hoverable and focusable, so its tooltip gives the reason.
+              aria-disabled={labelled === null || undefined}
+              aria-label={editVisually}
+              {...host.tooltip(editVisually)}
               onClick={() => {
                 if (labelled) onChange(labelled);
               }}

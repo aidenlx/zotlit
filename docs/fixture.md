@@ -100,6 +100,8 @@ unrun baseline, not a pass.
 
 `query-files/Reading list.zotquery` is a Query File with one Table view of the Items, sorted by title. Open it to expand an Item into its Attachments and Annotations, and to create a Literature Note from the "Literature note" column.
 
+`query-files/Filter case.zotquery` checks how Filter rows treat case. Each view name states its case and its expected result. Open each view, and then open the Filter to see the row that it shows: a text row reads "contains" for `icontains`, and "contains, match case" for a saved `contains`. The Tag views keep exact matches.
+
 `query-files/Formula lab.zotquery` and `query-files/Annotation formulas.zotquery` are for manual checks of the Filter Expression editor: Expression Colors, Syntax Fault underlines, Expression Completion, and the Signature Hint. Formula lab holds 21 Formulas over the Items, each with a Display Name. They use text methods, regular expressions, dates and durations, number rounding with `min` and `max`, `filter`, `map`, and `reduce` with `value`, `index`, and `acc`, `if`, `firstAuthor` members, and Formulas that read other Formulas. Its six views show the Formulas in groups and test nested `and`, `or`, and `not` groups. These groups mix typed condition rows with expression rows, and some conditions read `formula.*`, `vault.*`, or `vault["…"]`. Annotation formulas shows nine Formulas over the Annotations in the List layout. Every view returns rows, and no Formula has a Fault on the Fixture data. Open the filter or a Formula's property page, then try these checks:
 
 - Type `title.` in a condition to see the text methods, or `firstAuthor.` to see the record members.
@@ -210,7 +212,7 @@ The open and dev commands close an existing Paired Zotero on this Fixture before
 
 Both commands hold a Desktop Slot while they run. They wait while another End-to-end Run or manual session from this worktree holds one, or while every slot is taken; runs in other worktrees take their own slots. Each must state `--for <duration>`, the Lease of that hold, up to 60 min. When the Lease of `dev` ends, it stops both watchers and Paired Zotero and exits 76. Exit 75 means the holders kept the slots past the Admission Deadline; `pnpm desktop-slot status` names them.
 
-These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately. The [release checklist](release-checklist.md) holds the manual checks that a release still needs.
+These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately.
 
 ### Trial the Citation Index scan cases
 
@@ -625,7 +627,7 @@ The `Stress Build` Collection holds the other three Collections and no Items of 
 
 The first synthetic paper of each filled Library has one PDF Attachment. Its Annotations share the `stress-many-marks` Tag. The mark count is three per 100 Items: 300, 1,500, and 3,000 at the measured tiers. This heavy book supplies the concentrated Relation List case. Its parent paper carries `stress-dominant`, which also supplies the dominant Parent Record case.
 
-Stress Build content uses fixed seeds. An ordinary `pnpm fixture` build returns to the committed Fixture Spec size.
+Stress Build content uses fixed seeds. Synthetic Zotero Keys use a multiplicative permutation, so key order differs from Item ID order as it does in a real Library. Keys stay unique across the generated input ranges, and the same seed gives the same keys. Rebuild an existing Stress Build to use this key order; earlier builds used ascending keys and could understate the cost of a scan in key order. An ordinary `pnpm fixture` build returns to the committed Fixture Spec size.
 
 ## Inspect, discard, or change the Fixture
 

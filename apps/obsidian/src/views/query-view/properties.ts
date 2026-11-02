@@ -2,6 +2,8 @@
 // researcher knows them by. Sort offers only Sortable Fields of ZotLit Query;
 // Group offers the group paths the layouts of the view's dataset can gather
 // rows by.
+import { fieldSearchTerms } from "@zotlit/item-query";
+
 import * as m from "@/lib/i18n/generated/messages";
 
 import { datasetSpec } from "./datasets";
@@ -18,6 +20,8 @@ export interface PropertyOption {
   readonly kind: PropertyKind;
   /** The icon of the property's type, as the Bases property picker shows it. */
   readonly icon: string;
+  /** Other words its select finds it by. */
+  readonly searchTerms?: readonly string[];
 }
 
 /**
@@ -40,6 +44,7 @@ export function sortOptions(
       label: labelOf?.(path) ?? label(),
       kind,
       icon: propertyIcon(dataset ?? "annotations", { path, kind: "field" }),
+      searchTerms: fieldSearchTerms(dataset ?? "annotations", path),
     }));
 }
 
@@ -48,16 +53,20 @@ export function groupOptions(
   dataset: QueryFileDataset | undefined,
   labelOf?: OptionLabel,
 ): PropertyOption[] {
-  return datasetSpec(dataset).group.map(({ path, label }) => ({
-    path,
-    // A grouping by a list path names one value of the list.
-    label: labelOf?.(path.replace(/\[\]$/, "")) ?? label(),
-    kind: "text",
-    icon: propertyIcon(dataset ?? "annotations", {
-      path: path.replace(/\[\]$/, ""),
-      kind: "field",
-    }),
-  }));
+  return datasetSpec(dataset).group.map(({ path, label }) => {
+    const field = path.replace(/\[\]$/, "");
+    return {
+      path,
+      // A grouping by a list path names one value of the list.
+      label: labelOf?.(field) ?? label(),
+      kind: "text",
+      icon: propertyIcon(dataset ?? "annotations", {
+        path: field,
+        kind: "field",
+      }),
+      searchTerms: fieldSearchTerms(dataset ?? "annotations", field),
+    };
+  });
 }
 
 /** The name of one direction of a property, as Bases names it. */

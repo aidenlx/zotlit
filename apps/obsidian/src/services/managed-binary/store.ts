@@ -98,6 +98,39 @@ async function openCacheDir(
   return zotlit.getDirectoryHandle(directory, { create: true });
 }
 
+/**
+ * A store of one plugin run, holding nothing on the device. A dev build reads
+ * it when an End-to-end Run asks for a device with no binary cached.
+ */
+export function createMemoryBinaryStore(): BinaryStore {
+  const files = new Map<string, Uint8Array<ArrayBuffer>>();
+  return {
+    list: () => Promise.resolve([...files.keys()]),
+    read: (name) => {
+      const bytes = files.get(name);
+      return Promise.resolve(bytes && new Blob([bytes]));
+    },
+    write: (name, bytes) => {
+      files.set(name, bytes);
+      return Promise.resolve();
+    },
+    rename: (from, to) => {
+      const bytes = files.get(from);
+      if (bytes) files.set(to, bytes);
+      files.delete(from);
+      return Promise.resolve();
+    },
+    remove: (name) => {
+      files.delete(name);
+      return Promise.resolve();
+    },
+    clear: () => {
+      files.clear();
+      return Promise.resolve();
+    },
+  };
+}
+
 function isNotFound(error: unknown): boolean {
   return error instanceof DOMException && error.name === "NotFoundError";
 }

@@ -210,8 +210,7 @@ export interface LegacyLiteratureNoteTemplates {
 export type LegacyTemplateConversionErrorCode =
   | "unsupported-legacy-template"
   | "legacy-render-mismatch"
-  | "legacy-frontmatter-inert"
-  | "legacy-frontmatter-evaluation";
+  | "legacy-frontmatter-inert";
 
 export class LegacyTemplateConversionError extends Error {
   readonly _tag = "LegacyTemplateConversionError";

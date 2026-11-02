@@ -79,6 +79,10 @@ _Avoid_: bucket, facet
 The source-aware description of the three Query Datasets: their fields, Projection Paths, Relation Lists and the dataset each one reaches, functions, value shapes, defaults, and filter, projection, and sort capabilities. A bare name that matches a built-in field, alias, or reserved name always means the built-in; `custom["name"]` reaches every custom field.
 _Avoid_: field list, query metadata, Item Query Schema
 
+**Search Term**:
+A word that finds a field in a list that offers fields, such as "journal" or "期刊" for `publicationTitle`: a researcher's word, a label in another language, or a type-specific name of the same base field. A Search Term is a shortcut for the list alone: accepting the entry writes the field's name, and no query, Query Schema, or Filter Expression holds one.
+_Avoid_: alias (Zotero's base-field aliases do resolve in a query), field alias, synonym
+
 **Target Library**:
 A Library that a query reads. A query has one or more Target Libraries: by default the available Libraries of Library Scope, or the Libraries that the caller names, each as `personal` or `group:<groupID>`. A named Target Library can be outside Library Scope. A key inside a Filter Expression never adds a Target Library; a key that names another Library gives a Query Warning. Target Libraries have the canonical order of Library Scope: My Library first, then groups by ascending group ID.
 _Avoid_: active library, library ID, query scope

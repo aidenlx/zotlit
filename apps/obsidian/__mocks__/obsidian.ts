@@ -1,7 +1,7 @@
 /**
  * Runtime stand-in for the `obsidian` module, used by Vitest via
  * `vitest.config.ts` `resolve.alias`. The real `obsidian` package is
- * types-only (`packages/obsidian-api`), so without this alias any test
+ * types-only, so without this alias any test
  * that imports values from `"obsidian"` fails to resolve.
  *
  * Only the surface area the plugin actually touches in tests is exposed
@@ -365,6 +365,20 @@ export class HoverPopover {
 
   load(): void {
     this.#loaded = true;
+    this.onload();
+  }
+
+  onload(): void {}
+
+  // oxlint-disable-next-line max-params -- Obsidian's own signature
+  registerDomEvent(
+    el: Document | HTMLElement,
+    type: string,
+    callback: EventListener,
+    options?: boolean | AddEventListenerOptions,
+  ): void {
+    el.addEventListener(type, callback, options);
+    this.#unload.push(() => el.removeEventListener(type, callback, options));
   }
 
   registerEvent(ref: EventRef): void {

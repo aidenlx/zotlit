@@ -360,6 +360,8 @@ export interface MatchSelectOption {
    * native select shows the label alone.
    */
   detail?: string;
+  /** Words the search also finds the choice by; they are never shown. */
+  searchTerms?: readonly string[];
 }
 
 /** What a Match editor select hands the control that draws it. */

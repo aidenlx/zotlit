@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// The Chooser mounts the state of one open with its popup. happy-dom has no
-// popover, so these tests send the toggle events the browser sends.
+// The Chooser mounts the state of one open with its popup. The popup is a
+// pinned popover on the document's body, so these tests press the trigger to
+// open it and press outside it to shut it.
 import type { App } from "obsidian";
 import { render } from "preact";
 import { act } from "preact/test-utils";
@@ -11,7 +12,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AppContext } from "@/lib/app-context";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
-import { shimPopover } from "./__fixtures__/popover";
 import { Chooser } from "./chooser";
 import type { ChooserRow } from "./chooser-logic";
 
@@ -65,47 +65,54 @@ function mount(app: App, trigger: { blocked?: boolean } = {}) {
     }),
   });
   render(ui, host);
-  const popup = host.querySelector<HTMLElement>("[popover]")!;
-  const shim = shimPopover(popup);
-  const toggle = (newState: "open" | "closed") =>
-    newState === "open" ? shim.open() : shim.close();
-  const field = () => popup.querySelector("input");
+  const button = host.querySelector<HTMLButtonElement>("button")!;
+  /** The popup stands on the body while it is open. */
+  const popup = () => document.querySelector<HTMLElement>(".zt-chooser");
+  const toggle = async (newState: "open" | "closed") => {
+    if ((popup() !== null) === (newState === "open")) return;
+    // A press on the trigger opens it; a press anywhere else shuts it.
+    await act(() => {
+      if (newState === "open") button.click();
+      else
+        document.body.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true }),
+        );
+    });
+  };
+  const field = () => popup()?.querySelector("input") ?? null;
   const options = () =>
-    [...popup.querySelectorAll<HTMLElement>('[role="option"]')].map(
+    [...(popup()?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])].map(
       (option) => option.textContent,
     );
   const highlighted = () =>
-    popup.querySelector<HTMLElement>("[data-highlighted]")?.textContent ?? null;
-  const button = host.querySelector<HTMLButtonElement>("button")!;
+    popup()?.querySelector<HTMLElement>("[data-highlighted]")?.textContent ??
+    null;
   return { popup, button, toggle, field, options, highlighted };
 }
 
-it("keeps a blocked trigger in the tab order and cancels its press", () => {
-  const { button } = mount(editorApp(), { blocked: true });
+it("keeps a blocked trigger in the tab order and opens nothing on its press", async () => {
+  const { button, popup } = mount(editorApp(), { blocked: true });
   expect(button.getAttribute("aria-disabled")).toBe("true");
   // Native `disabled` would drop it from the tab order and its tooltip.
   expect(button.disabled).toBe(false);
-  // A cancelled click is what keeps the popover invoker from opening.
-  const press = new MouseEvent("click", { bubbles: true, cancelable: true });
-  button.dispatchEvent(press);
-  expect(press.defaultPrevented).toBe(true);
+  await act(() => button.click());
+  expect(popup()).toBeNull();
 });
 
-it("leaves the press of a trigger that is not blocked to the popover", () => {
-  const { button } = mount(editorApp());
+it("opens its popup on the press of a trigger that is not blocked", async () => {
+  const { button, popup } = mount(editorApp());
   expect(button.hasAttribute("aria-disabled")).toBe(false);
-  const press = new MouseEvent("click", { bubbles: true, cancelable: true });
-  button.dispatchEvent(press);
-  expect(press.defaultPrevented).toBe(false);
+  await act(() => button.click());
+  expect(popup()).not.toBeNull();
 });
 
 it("names its list box with no tooltip over the rows", async () => {
   const { popup, toggle } = mount(editorApp());
   await toggle("open");
-  const list = popup.querySelector<HTMLElement>('[role="listbox"]')!;
+  const list = popup()!.querySelector<HTMLElement>('[role="listbox"]')!;
   expect(list.hasAttribute("aria-label")).toBe(false);
   const name = list.getAttribute("aria-labelledby")!;
-  expect(popup.ownerDocument.getElementById(name)?.textContent).toBe("Tags");
+  expect(popup()!.ownerDocument.getElementById(name)?.textContent).toBe("Tags");
 });
 
 it("draws its rows only while the popup is open", async () => {
@@ -115,7 +122,8 @@ it("draws its rows only while the popup is open", async () => {
   expect(app.scopes).toHaveLength(0);
   await toggle("open");
   expect(options()).toEqual(["method", "theory", "review"]);
-  expect(app.scopes).toHaveLength(1);
+  // The popover's scope, and the session's above it.
+  expect(app.scopes).toHaveLength(2);
   await toggle("closed");
   expect(options()).toEqual([]);
   expect(app.scopes).toHaveLength(0);
@@ -139,10 +147,10 @@ it("opens again with an empty search, every row and no highlight", async () => {
   expect(field()!.getAttribute("aria-activedescendant")).toBeNull();
   expect(options()).toEqual(["method", "theory", "review"]);
   expect(highlighted()).toBeNull();
-  expect(app.scopes).toHaveLength(1);
+  expect(app.scopes).toHaveLength(2);
   // The next key starts from the first row, not from the last open's row.
   await act(() => {
-    pressKey(app.scopes[0]!, "ArrowDown");
+    pressKey(app.scopes.at(-1)!, "ArrowDown");
   });
   expect(highlighted()).toBe("method");
 });

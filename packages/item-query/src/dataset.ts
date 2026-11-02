@@ -7,6 +7,7 @@ import type { Effect } from "effect";
 import type { Attachment } from "@zotlit/db";
 import type {
   ParentCandidates,
+  TextSweepCandidateLeaf,
   ParentCandidateLeaf,
   ItemQueryDatabase,
   ItemQueryReaderError,
@@ -105,6 +106,11 @@ export interface CandidateDataset<Leaf = any> {
     node: FilterNode<never>,
     sources: CandidateSources,
   ) => Leaf | null;
+  /** Root-only prefilter; relation and Parent Record paths use lowerCandidate. */
+  readonly lowerSweep?: (
+    node: FilterNode<never>,
+    sources: CandidateSources,
+  ) => TextSweepCandidateLeaf | null;
   readonly readCandidate: (
     page: Parameters<CandidatePageReader>[0] & { leaf: Leaf },
   ) => ReturnType<CandidatePageReader>;
@@ -174,7 +180,7 @@ export interface QueryDataset<
   readonly rootName: (name: string) => string;
   readonly readScanPage: (page: {
     libraryID: number;
-    afterKey: string | null;
+    afterItemID: number;
     size: number;
   }) => Effect.Effect<
     readonly ScanRow[],

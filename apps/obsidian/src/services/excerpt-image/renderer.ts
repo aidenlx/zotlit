@@ -497,7 +497,7 @@ export class ExcerptRenderer {
     box = bounds(scale);
     const canvas = yield* Effect.acquireRelease(
       Effect.sync(() =>
-        // eslint-disable-next-line obsidianmd/prefer-create-el -- renders offscreen, outside any Obsidian window
+        // Renders offscreen, outside any Obsidian window.
         (this.#host.canvas ?? (() => document.createElement("canvas")))(),
       ),
       (canvas) =>

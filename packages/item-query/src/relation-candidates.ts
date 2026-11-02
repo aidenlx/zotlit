@@ -4,9 +4,9 @@ import type {
   ItemQueryDatabase,
   ItemQueryReaderError,
 } from "@zotlit/db/item-query";
-import { SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
+import { readMaxItemID, SCAN_PAGE_SIZE } from "@zotlit/db/item-query";
 
-import { planCandidates, readCandidatePlan } from "./candidate-plan";
+import { hasSweep, planCandidates, readCandidatePlan } from "./candidate-plan";
 import type {
   CandidateFallback,
   CandidatePlan,
@@ -20,9 +20,11 @@ import type {
 import type { FilterNode } from "./filter-plan";
 import type { QuerySources } from "./query-sources";
 import type { TargetLibrary } from "./request";
+import { readTextSweep } from "./text-sweep";
+import type { SweepScope } from "./text-sweep";
 
 type CandidateSetReader = (
-  page: Parameters<CandidatePageReader>[0],
+  page: Parameters<CandidatePageReader>[0] & { sweep?: SweepScope },
 ) => Effect.Effect<
   number[] | CandidateFallback,
   ItemQueryReaderError,
@@ -48,6 +50,7 @@ export function planDatasetCandidates(
   return planRelatedCandidates(node, sources.candidateContext(library), {
     dataset,
     relationPageBudget,
+    root: true,
   });
 }
 
@@ -58,8 +61,10 @@ function planRelatedCandidates(
   {
     dataset,
     parents = [],
+    root = false,
     relationPageBudget,
   }: {
+    readonly root?: boolean;
     readonly relationPageBudget: number;
     readonly dataset: CandidateDataset;
     readonly parents?: readonly CandidateRelation["readParents"][];
@@ -113,6 +118,14 @@ function planRelatedCandidates(
           };
         }
       }
+      const sweep = root ? dataset.lowerSweep?.(node, sources) : null;
+      if (sweep)
+        return {
+          kind: "leaf",
+          sweep: true,
+          leaf: ({ libraryID, limit, sweep: scope }) =>
+            readTextSweep({ libraryID, limit, leaf: sweep, ...scope! }),
+        };
       const leaf = dataset.lowerCandidate(node, sources);
       const read: CandidatePageReader | null =
         leaf === null
@@ -139,16 +152,29 @@ function flattenPlan(
     : { ...plan, plans: plan.plans.map(flattenPlan) };
 }
 
-export const readDatasetCandidates = (
+export const readDatasetCandidates = Effect.fnUntraced(function* (
   plan: CandidatePlan<CandidateSetReader>,
-  libraryID: number,
-  cap: number,
-) =>
-  readCandidatePlan(plan, {
+  {
     libraryID,
     cap,
-    readLeaf: ({ leaf, ...options }) => leaf(options),
+    libraryRows,
+    sparseRatio,
+  }: {
+    libraryID: number;
+    cap: number;
+    libraryRows: number;
+    sparseRatio: number;
+  },
+) {
+  const sweep = hasSweep(plan)
+    ? { maxItemID: yield* readMaxItemID, libraryRows, sparseRatio }
+    : undefined;
+  return yield* readCandidatePlan(plan, {
+    libraryID,
+    cap,
+    readLeaf: ({ leaf, ...options }) => leaf({ ...options, sweep }),
   });
+});
 
 /**
  * Page each leaf and retain only distinct ancestors up to the root's cap.

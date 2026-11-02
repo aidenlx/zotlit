@@ -541,6 +541,7 @@ export class NotePreviewView extends ItemView {
       createTemplateWorkbenchHost(this.app, {
         run: runner.run,
         render,
+        openCitationEngineSettings: deps.openCitationEngineSettings,
         // This view shows no Match.
         matchData: NO_MATCH_DATA,
         insertTarget: () => null,

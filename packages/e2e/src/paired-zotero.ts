@@ -309,7 +309,6 @@ export async function clickAuthorizationDialog(
  * Close the dialog without pressing anything. Dismissal is not a refusal:
  * Gecko records it as the second button, which is Always Allow.
  *
- * @see docs/release-checklist.md § "A dismissed authorization dialog grants Always Allow"
  * @see https://github.com/aidenlx/zotlit/issues/1139
  */
 export async function dismissAuthorizationDialog(

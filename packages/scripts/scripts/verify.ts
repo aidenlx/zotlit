@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 
+import { Effect } from "effect";
 // The one quality gate. GitHub runs no pull-request checks; see ADR 0076.
 //   (no flag)   the packages the branch changed since it left `next` or
-//               `main`, and their dependents. Lefthook runs this on every push.
+//               `main`, and their dependents.
+//   --pre-push  the same, for Lefthook, which pipes the pre-push ref lines to
+//               stdin. A push that only deletes refs checks nothing: it
+//               carries no code.
 //   --release   every package, the desktop End-to-end Run and worker check,
 //               plus the Obsidian guideline review (ADR 0020).
 //               `release.ts` runs it before the version commit and
 //               `release.yml` before it publishes (desktop checks skip there).
 // A branch that changes only agent docs (lib/agent-docs.ts) runs Format only.
 // Format, lint and the generated-artifact checks always cover the whole tree.
-import { Effect } from "effect";
+import { text } from "node:stream/consumers";
 import { $ } from "zx";
 
 import {
@@ -27,9 +31,18 @@ import {
   EXIT_LEASE_ENDED,
 } from "#desktop-slot";
 import { getWorkspaceRoot } from "#package-roots";
+import { onlyDeletesRefs } from "#push-refs";
 
 const release = process.argv.includes("--release");
 const ci = process.env.GITHUB_ACTIONS === "true";
+
+if (
+  process.argv.includes("--pre-push") &&
+  onlyDeletesRefs(await text(process.stdin))
+) {
+  console.log("Only ref deletions to push, so the checks skip.");
+  process.exit(0);
+}
 
 const root = await getWorkspaceRoot(import.meta.dirname);
 const base = release ? undefined : await affectedBase(root);

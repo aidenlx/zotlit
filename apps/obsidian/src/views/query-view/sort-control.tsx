@@ -71,6 +71,7 @@ export function propertySelectOption(option: PropertyOption): SelectOption {
     label: option.label,
     icon: <Icon name={option.icon} />,
     detail: option.path,
+    searchTerms: option.searchTerms,
   };
 }
 

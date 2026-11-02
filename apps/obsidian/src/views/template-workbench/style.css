@@ -189,6 +189,9 @@
    utilities of this plugin; these are the public hook's defaults, which a
    theme overrides on `.zt-signature-hint`. */
 .zt-signature-hint {
+  /* Its text sets the width, so the popover's edge cannot wrap it anew at
+     each call: a tooltip there reaches past that edge. */
+  inline-size: max-content;
   max-inline-size: min(28rem, calc(100vw - 20px));
   padding: var(--size-4-1) var(--size-4-2);
   border-radius: var(--radius-s);

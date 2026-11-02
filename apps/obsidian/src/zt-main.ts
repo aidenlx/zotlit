@@ -10,6 +10,7 @@ import {
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import { revealSetting } from "@/lib/open-settings";
 import { logLateRelease, UnloadAwarePlugin } from "@/lib/plugin-lifecycle";
 
 import { startI18n } from "./lib/i18n";
@@ -294,7 +295,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
     stack.defer(
       registerWorkbenchSavedNotice({
         localBridge: services.localBridge,
-        updateAll: () => services.noteActions.updateAll(),
+        updateAll: () => services.noteActions.updateAll({ create: false }),
       }),
     );
     registerCitationSuggest(this, {
@@ -412,6 +413,9 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       },
     });
 
+    const openCitationEngineSettings = () => {
+      revealSetting(this.app, this.manifest.id, "settings_citation_engine");
+    };
     const templateWorkbenchDeps = {
       registry: services.viewRegistry,
       bridge: services.bridge,
@@ -423,6 +427,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       nativePreview: {
         app: this.app,
         registry: services.viewRegistry,
+        openCitationEngineSettings,
       },
     };
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
@@ -439,6 +444,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
     registerNotePreview(this, {
       app: this.app,
       registry: services.viewRegistry,
+      openCitationEngineSettings,
       bridge: services.bridge,
       context: services.workbenchActionContext,
       itemLookup: services.itemLookup,

@@ -1,3 +1,5 @@
+import { relations } from "@drizzle/relations";
+import { drizzle } from "drizzle-orm/node-sqlite";
 import { Cause, Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -8,6 +10,8 @@ import {
   ItemQueryDatabase,
   ItemQueryDatabaseError,
   readScanPage,
+  readAttachmentScanPage,
+  readAnnotationScanPage,
   readUniverseRows,
   SCAN_PAGE_SIZE,
 } from ".";
@@ -35,29 +39,29 @@ function runOk<A, E>(
 const { personal, group } = SCENARIO_LIBRARIES;
 
 describe("readScanPage", () => {
-  it("reads the live top-level Items of one Library in key order", () => {
+  it("reads the live top-level Items of one Library in Item ID order", () => {
     using scenario = openScenarioDatabase();
     const rows = runOk(
       scenario,
-      readScanPage({ libraryID: personal.libraryID, afterKey: null }),
+      readScanPage({ libraryID: personal.libraryID, afterItemID: 0 }),
     );
 
     expect(rows.map((row) => row.key)).toEqual([
-      "ALS2CNFL",
       "ART2FULL",
       "BK2MNTH2",
       "CHP2YEAR",
       "CNF2TEXT",
       "RPT2NDTE",
+      "ALS2CNFL",
+      "UNI2CDE2",
       "TIE2AAAA",
       "TIE2BBBB",
       "TIE2CCCC",
-      "UNI2CDE2",
     ]);
     expect(
       runOk(
         scenario,
-        readScanPage({ libraryID: group.libraryID, afterKey: null }),
+        readScanPage({ libraryID: group.libraryID, afterItemID: 0 }),
       ).map((row) => row.key),
     ).toEqual(["ART2FULL", "GRP2BK22"]);
   });
@@ -68,7 +72,7 @@ describe("readScanPage", () => {
       scenario,
       readScanPage({
         libraryID: personal.libraryID,
-        afterKey: "ALS2CNFL",
+        afterItemID: 0,
         size: 1,
       }),
     );
@@ -86,31 +90,31 @@ describe("readScanPage", () => {
     ]);
   });
 
-  it("continues after a key, so pages cover the Library without overlap", () => {
+  it("continues after an Item ID, so pages cover the Library without overlap", () => {
     using scenario = openScenarioDatabase();
     const keys: string[] = [];
-    let afterKey: string | null = null;
+    let afterItemID = 0;
     for (;;) {
       const page: ScanRow[] = runOk(
         scenario,
-        readScanPage({ libraryID: personal.libraryID, afterKey, size: 3 }),
+        readScanPage({ libraryID: personal.libraryID, afterItemID, size: 3 }),
       );
       keys.push(...page.map((row) => row.key));
       if (page.length < 3) break;
-      afterKey = page.at(-1)!.key;
+      afterItemID = page.at(-1)!.itemID;
     }
 
     expect(keys).toEqual([
-      "ALS2CNFL",
       "ART2FULL",
       "BK2MNTH2",
       "CHP2YEAR",
       "CNF2TEXT",
       "RPT2NDTE",
+      "ALS2CNFL",
+      "UNI2CDE2",
       "TIE2AAAA",
       "TIE2BBBB",
       "TIE2CCCC",
-      "UNI2CDE2",
     ]);
   });
 
@@ -127,7 +131,7 @@ describe("readScanPage", () => {
     expect(
       runOk(
         scenario,
-        readScanPage({ libraryID: personal.libraryID, afterKey: null }),
+        readScanPage({ libraryID: personal.libraryID, afterItemID: 0 }),
       ),
     ).toHaveLength(500);
     expect(
@@ -135,7 +139,7 @@ describe("readScanPage", () => {
         scenario,
         readScanPage({
           libraryID: personal.libraryID,
-          afterKey: null,
+          afterItemID: 0,
           size: 10_000,
         }),
       ),
@@ -150,7 +154,7 @@ describe("readScanPage", () => {
 
     const exit = run(
       scenario,
-      readScanPage({ libraryID: group.libraryID, afterKey: "ART2FULL" }),
+      readScanPage({ libraryID: group.libraryID, afterItemID: 1 }),
     );
 
     if (!Exit.isFailure(exit)) throw new Error("the read did not fail.");
@@ -160,7 +164,7 @@ describe("readScanPage", () => {
     expect(error).toMatchObject({
       _tag: "ItemQueryDatabaseError",
       query: expect.stringMatching(/^select .+ from "items"/),
-      params: expect.arrayContaining([group.libraryID, "ART2FULL", 500]),
+      params: expect.arrayContaining([group.libraryID, 1, 500]),
       cause: expect.objectContaining({
         message: expect.stringContaining("dateAdded"),
       }),
@@ -182,7 +186,7 @@ describe("readUniverseRows", () => {
     ).itemID;
   }
 
-  it("keeps the IDs that are live top-level Items of the Target Library, as scan rows in key order", () => {
+  it("keeps the IDs that are live top-level Items of the Target Library, as scan rows in Item ID order", () => {
     using scenario = openScenarioDatabase();
     const rows = runOk(
       scenario,
@@ -224,7 +228,7 @@ describe("readUniverseRows", () => {
     using scenario = openScenarioDatabase();
     const scanned = runOk(
       scenario,
-      readScanPage({ libraryID: personal.libraryID, afterKey: null }),
+      readScanPage({ libraryID: personal.libraryID, afterItemID: 0 }),
     );
 
     expect(
@@ -280,4 +284,31 @@ describe("readUniverseRows", () => {
     expect(Cause.hasDies(exit.cause)).toBe(true);
     expect(Cause.squash(exit.cause)).toBeInstanceOf(RangeError);
   });
+});
+
+// Failure mode: the Library index makes each Item ID page sort in a temporary B-tree.
+it.each([
+  ["Items", readScanPage],
+  ["Attachments", readAttachmentScanPage],
+  ["Annotations", readAnnotationScanPage],
+] as const)("scans %s without a temporary ORDER BY B-tree", (_, readPage) => {
+  using scenario = openScenarioDatabase({ annotations: true });
+  const queries: { sql: string; params: unknown[] }[] = [];
+  scenario.db = drizzle({
+    client: scenario.sqlite,
+    relations,
+    logger: {
+      logQuery(sql, params) {
+        queries.push({ sql, params });
+      },
+    },
+  });
+  runOk(scenario, readPage({ libraryID: personal.libraryID, afterItemID: 0 }));
+  const query = queries.at(-1)!;
+  const details = scenario.sqlite
+    .prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+    .all(...(query.params as (string | number)[]))
+    .map((row) => row.detail)
+    .join("\n");
+  expect(details).not.toContain("TEMP B-TREE");
 });

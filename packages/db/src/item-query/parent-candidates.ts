@@ -10,7 +10,7 @@ import { alias } from "drizzle-orm/sqlite-core";
 import { Effect } from "effect";
 
 import { readBoundedCandidateSet } from "./candidate-set";
-import type { CandidateLeaf } from "./candidate-set";
+import type { SeekCandidateLeaf } from "./candidate-set";
 import { defineStatement, idSlots, unindexed } from "./database";
 import type { IdSlot } from "./database";
 import { recordUniverse } from "./record-universe";
@@ -21,7 +21,7 @@ export type ParentCandidateRelation =
   | "annotation-item"
   | "annotation-attachment";
 export type ParentCandidateLeaf =
-  | CandidateLeaf
+  | SeekCandidateLeaf
   | { readonly kind: "key"; readonly value: string };
 
 /** A bounded Parent Record read reports whether matches remain unchecked. */
@@ -119,7 +119,7 @@ export const readParentCandidateSet = Effect.fnUntraced(function* ({
   } satisfies ParentCandidates;
 });
 
-function parentItemLeaf(leaf: ParentCandidateLeaf): CandidateLeaf {
+function parentItemLeaf(leaf: ParentCandidateLeaf): SeekCandidateLeaf {
   if (leaf.kind !== "key") return leaf;
   return { kind: "key", key: "key" in leaf ? leaf.key : leaf.value };
 }

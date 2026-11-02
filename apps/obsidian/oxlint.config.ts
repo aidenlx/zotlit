@@ -130,6 +130,8 @@ export default defineConfig({
     "./scripts/oxlint-plugin-effect-style.ts",
     new URL("../../packages/config/oxlint-plugin-keyboard.ts", import.meta.url)
       .pathname,
+    new URL("../../packages/config/oxlint-plugin-obsidian.ts", import.meta.url)
+      .pathname,
   ],
   rules: {
     "effecttsgo/global-console": "error",
@@ -145,6 +147,67 @@ export default defineConfig({
     "no-restricted-imports": ["error", runtimeImports],
   },
   overrides: [
+    {
+      // Obsidian's guideline rules, on the code that ships. `pnpm review` runs
+      // the type-aware rest.
+      files: ["src/**"],
+      excludeFiles: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.bench.ts",
+        "src/**/*.browser-test.ts",
+        "src/**/__fixtures__/**",
+        "src/**/__fixtures__.ts",
+      ],
+      rules: {
+        "obsidianmd/no-nodejs-modules": "off",
+        "obsidianmd/rule-custom-message": [
+          "error",
+          {
+            "no-console": {
+              messages: {
+                "Unexpected console statement. Only these console methods are allowed: warn, error, debug.":
+                  "Avoid unnecessary logging to console. See https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines#Avoid+unnecessary+logging+to+console",
+              },
+              options: [{ allow: ["warn", "error", "debug"] }],
+            },
+            "no-new-func": {
+              messages: {
+                "The Function constructor is eval":
+                  "Using the `Function` constructor is dangerous because it executes arbitrary code, similar to `eval()`",
+              },
+            },
+          },
+        ],
+        "obsidianmd/commands/no-command-in-command-id": "error",
+        "obsidianmd/commands/no-command-in-command-name": "error",
+        "obsidianmd/commands/no-default-hotkeys": "error",
+        "obsidianmd/commands/no-plugin-id-in-command-id": "error",
+        "obsidianmd/commands/no-plugin-name-in-command-name": "error",
+        "obsidianmd/settings-tab/no-manual-html-headings": "error",
+        "obsidianmd/settings-tab/no-problematic-settings-headings": "error",
+        "obsidianmd/settings-tab/require-display": "error",
+        "obsidianmd/settings-tab/prefer-setting-definitions": "error",
+        "obsidianmd/settings-tab/prefer-update-over-display": "error",
+        "obsidianmd/settings-tab/no-deprecated-display": "error",
+        "obsidianmd/vault/iterate": "error",
+        "obsidianmd/detach-leaves": "error",
+        "obsidianmd/editor-drop-paste": "error",
+        "obsidianmd/hardcoded-config-path": "error",
+        "obsidianmd/no-forbidden-elements": "error",
+        "obsidianmd/no-global-this": "error",
+        "obsidianmd/no-sample-code": "error",
+        "obsidianmd/no-tfile-tfolder-cast": "error",
+        "obsidianmd/no-static-styles-assignment": "error",
+        "obsidianmd/object-assign": "error",
+        "obsidianmd/platform": "error",
+        "obsidianmd/prefer-get-language": "error",
+        "obsidianmd/prefer-abstract-input-suggest": "error",
+        "obsidianmd/prefer-window-timers": "error",
+        "obsidianmd/prefer-active-doc": "off",
+        "obsidianmd/regex-lookbehind": "error",
+        "obsidianmd/sample-names": "error",
+      },
+    },
     {
       files: ["src/services/citekey-editor/decorate.ts"],
       rules: {

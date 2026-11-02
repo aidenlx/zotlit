@@ -173,13 +173,22 @@ export type BatchUpdateResult =
   | { outcome: "collection-not-found" }
   | { outcome: "not-found" }
   | { outcome: "single-update" }
-  /** A metadata-only single update found no note, so it created none. */
+  /** A single update found no note and was not asked to create one. */
   | { outcome: "metadata-no-note" }
   | { outcome: "batch-modal" };
 
 export interface BatchUpdateOptions {
   /** How much of each existing note an update refreshes. */
   scope?: UpdateScope;
+  /**
+   * Whether an item with no note gets one. The `metadata` scope leaves the body
+   * alone, so it never creates one.
+   *
+   * @default true
+   */
+  create?: boolean;
+  /** Confirm a run over one item too. Selections of one item skip the dialog. */
+  confirmOne?: boolean;
   /**
    * Selected Libraries this database holds no Library for. Stated in the
    * confirmation introduction so a partial run is visible before it writes.
@@ -228,6 +237,7 @@ export const batchUpdateItems = Effect.fn("batchUpdateItems")(function* (
   opts: BatchUpdateOptions = {},
 ) {
   const { scope = "full", unavailableLibraries = 0, profile } = opts;
+  const create = scope === "full" && (opts.create ?? true);
   if (!(yield* databaseReady)) {
     yield* Effect.logWarning("Batch update: database not ready").pipe(
       Effect.annotateLogs({ count: itemIDs.length }),
@@ -249,18 +259,19 @@ export const batchUpdateItems = Effect.fn("batchUpdateItems")(function* (
     });
   }
   const profilesEnabled = (yield* profiles.profiles).length > 0;
-  if (restIDs.length === 0 && !profilesEnabled) {
+  if (restIDs.length === 0 && !profilesEnabled && !opts.confirmOne) {
     // Single id: hand the lightweight ref to updateNote, which owns the full
     // item load on the create path — no need to hydrate it here.
     const ref = yield* displayRef(firstID);
     if (!ref) {
       return updateResult({ outcome: "not-found" });
     }
-    return yield* updateNote(ports, ref, { scope, profile });
+    return yield* updateNote(ports, ref, { scope, create, profile });
   }
 
   yield* openBatchUpdateModal(ports, itemIDs, {
     scope,
+    create,
     unavailableLibraries,
     profile,
     profilesEnabled,
@@ -278,8 +289,8 @@ export function batchUpdateResultNotice(
 }
 
 /**
- * {@link batchUpdateItems}, and a notice for a metadata-only single update
- * that found no note. The caller renders the other outcomes.
+ * {@link batchUpdateItems}, and a notice for a single update that found no note
+ * and created none. The caller renders the other outcomes.
  */
 export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
   ports: BatchUpdatePorts,
@@ -296,23 +307,26 @@ export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
  * Update the existing literature note, or create + open one if none exists.
  * `scope` controls how much an existing note is refreshed (see {@link UpdateScope}).
  *
- * A `metadata` scope never creates: the whole point of the narrowing is to leave
- * the body alone, and `createNote` would write a full templated one. A missing
- * note answers `metadata-no-note`, leaving the full-scope action as the way to
- * create.
+ * A run with `create` off leaves a missing note missing and answers
+ * `metadata-no-note`. A `metadata` scope always runs that way: the point of the
+ * narrowing is to leave the body alone, and `createNote` would write a full
+ * templated one.
  */
 const updateNote = Effect.fnUntraced(function* (
   ports: BatchUpdatePorts,
   ref: ItemRef,
-  { scope, profile }: { scope: UpdateScope; profile?: ProfileSelector },
+  {
+    scope,
+    create,
+    profile,
+  }: { scope: UpdateScope; create: boolean; profile?: ProfileSelector },
 ) {
   const file = yield* literatureNoteWithWarning(
     yield* (yield* NoteIndex).getNotesByItemKey(ref.indexedKey),
   );
 
   if (!file) {
-    if (scope === "metadata")
-      return updateResult({ outcome: "metadata-no-note" });
+    if (!create) return updateResult({ outcome: "metadata-no-note" });
     yield* createAndOpen(ports, ref, profile);
     return updateResult({ outcome: "single-update" });
   }
@@ -366,11 +380,13 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
   itemIDs: readonly number[],
   {
     scope,
+    create,
     unavailableLibraries,
     profile,
     profilesEnabled,
   }: {
     scope: UpdateScope;
+    create: boolean;
     unavailableLibraries: number;
     profile: ProfileSelector | undefined;
     profilesEnabled: boolean;
@@ -479,7 +495,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
   ) {
     const classified = yield* classifyActions(itemIDs, {
       controls,
-      scope,
+      createMissing: create,
       profile,
       profilesEnabled,
     });
@@ -531,7 +547,7 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
       // a task group — this keeps them out of the actionable count driving
       // the confirm intro.
       upToDate: classified.skipped,
-      upToDateHeader: m.batch_update_group_skipped,
+      upToDateHeader: m.batch_update_group_no_note,
       kept: classified.kept,
       keptHeader: m.batch_profile_kept_header,
       notFoundHeader: m.batch_update_group_not_found,
@@ -546,11 +562,9 @@ const openBatchUpdateModal = Effect.fnUntraced(function* (
         loadFailed: m.batch_update_load_failed(),
         runFailed: ports.notices.runFailed,
         progressLabel: m.batch_update_progress_label(),
-        confirmIntro: ({ actionable, notFound }) =>
+        confirmIntro: (counts) =>
           withUnavailableLibraries(
-            actionable === 0
-              ? m.batch_update_confirm_none({ count: notFound })
-              : m.batch_update_confirm_intro({ count: actionable }),
+            create ? updateOrCreateIntro(counts) : updateExistingIntro(counts),
             unavailableLibraries,
           ),
         confirmButton: m.batch_update_confirm_button(),
@@ -688,19 +702,18 @@ const displayRef = Effect.fnUntraced(function* (itemID: number) {
  * once the stream ends. Each streamed slice advances the loading bar; an
  * interrupt stops the stream.
  *
- * A `metadata` scope classifies note-less items as skipped rather than create —
- * see {@link updateNote} for why the narrowing never creates.
+ * With `createMissing` off, note-less items classify as skipped rather than create.
  */
 const classifyActions = Effect.fnUntraced(function* (
   itemIDs: readonly number[],
   {
     controls,
-    scope,
+    createMissing,
     profile,
     profilesEnabled,
   }: {
     controls: Pick<BatchClassifyControls, "onProgress">;
-    scope: UpdateScope;
+    createMissing: boolean;
     profile?: ProfileSelector;
     profilesEnabled: boolean;
   },
@@ -768,7 +781,7 @@ const classifyActions = Effect.fnUntraced(function* (
                 : { unknownStamp: stamped.stamped.stamp }),
             });
           }
-        } else if (scope === "metadata") {
+        } else if (!createMissing) {
           skipped.push({ itemID, label });
         } else {
           actions.push({ ...row, kind: "create" });
@@ -1018,16 +1031,18 @@ export function batchCreateOutcome(
  * progress while items are classified, and the user can cancel before the run
  * starts.
  *
- * @param target.groupID names the exact Library the run covers — `0` for
+ * @param options.groupID names the exact Library the run covers — `0` for
  *   My Library, a positive integer for a group. A group this database doesn't
  *   hold returns `unavailable-target` without scanning.
- * @param target.collectionKey narrows the run to that collection of the named
+ * @param options.collectionKey narrows the run to that collection of the named
  *   Library and every collection nested under it. A key that Library doesn't
  *   hold returns `collection-not-found`.
+ * @param options.create whether items with no note get one. Off, the run
+ *   updates the notes that exist.
  */
 export const runBatchUpdateAll = Effect.fn("runBatchUpdateAll")(function* (
   ports: BatchUpdatePorts,
-  target: BatchTarget = {},
+  options: BatchTarget & Pick<BatchUpdateOptions, "create"> = {},
 ) {
   if (!(yield* databaseReady)) {
     yield* Effect.logWarning("Batch update all: database not ready").pipe(
@@ -1036,7 +1051,7 @@ export const runBatchUpdateAll = Effect.fn("runBatchUpdateAll")(function* (
     return updateResult({ outcome: "db-unavailable" });
   }
 
-  const plan = yield* planBatchScope("literature-items", target);
+  const plan = yield* planBatchScope("literature-items", options);
   if (plan.outcome !== "resolved")
     return updateResult({ outcome: plan.outcome });
 
@@ -1044,9 +1059,26 @@ export const runBatchUpdateAll = Effect.fn("runBatchUpdateAll")(function* (
     return updateResult({ outcome: "empty-selection" });
   }
   return yield* runBatchUpdate(ports, plan.itemIDs, {
+    create: options.create,
+    confirmOne: true,
     unavailableLibraries: plan.unavailableLibraries,
   });
 });
+
+function updateOrCreateIntro(counts: {
+  actionable: number;
+  notFound: number;
+}): string {
+  return counts.actionable === 0
+    ? m.batch_update_confirm_none({ count: counts.notFound })
+    : m.batch_update_confirm_intro({ count: counts.actionable });
+}
+
+function updateExistingIntro({ actionable }: { actionable: number }): string {
+  return actionable === 0
+    ? m.batch_update_existing_confirm_none()
+    : m.batch_update_existing_confirm_intro({ count: actionable });
+}
 
 function itemLabel(title: string | null, itemID: number): string {
   return title?.trim() || m.batch_update_untitled({ id: itemID });

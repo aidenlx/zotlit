@@ -31,7 +31,6 @@ import { propertyIcon } from "./property-icon";
 import { NewFormulaPage, PropertyPage } from "./property-page";
 import { LITERATURE_NOTE, vaultName, vaultProperty } from "./query-file";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
-import { popoverFallbacks } from "./toolbar-popover";
 import { useVaultPropertyNames } from "./vault-cell";
 import type { QueryView } from "./view";
 import { isVaultPropertyName, useViewProperties } from "./view-properties";
@@ -79,10 +78,7 @@ export function PropertiesMenu({ view }: { view: QueryView }) {
         <ToolbarButtonContent icon="list" label={m.query_view_properties()} />
       </Chooser.Trigger>
       <Chooser.Popup
-        className={cn(
-          "zt:[max-height:min(--spacing(120),calc(100%_-_--spacing(2)))] zt:min-w-60",
-          popoverFallbacks,
-        )}
+        className="zt:[max-height:min(--spacing(120),calc(100vh_-_--spacing(2)))] zt:min-w-60"
         data-query-properties-popup=""
       >
         <Chooser.Input
@@ -420,8 +416,13 @@ function TypeIcon({
 export function propertyRow({
   path,
   label,
-}: Pick<PropertyEntry, "path" | "label">): ChooserRow {
-  return { value: path, label: label === path ? path : `${label} ${path}` };
+  searchTerms,
+}: Pick<PropertyEntry, "path" | "label" | "searchTerms">): ChooserRow {
+  return {
+    value: path,
+    label: label === path ? path : `${label} ${path}`,
+    searchTerms,
+  };
 }
 
 /**

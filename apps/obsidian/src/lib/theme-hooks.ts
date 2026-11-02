@@ -156,12 +156,11 @@ export const themeHook = {
    * The Chooser popup: the anchored popover a filtering multi-select opens,
    * such as the Annotation View's tag filter. It is no Obsidian menu, so a
    * theme reaching `.menu` never reaches it; it takes the same look from the
-   * `--menu-*` variables instead. `:popover-open` marks it while it stands.
+   * `--menu-*` variables instead. It is in the document only while it stands.
    */
   chooser: "zt-chooser",
   /**
-   * The control a Chooser hangs under, which is a `<button>` because that is
-   * what the popover invoker attribute takes. It carries `aria-expanded` and
+   * The control a Chooser hangs under, which is a `<button>`. It carries `aria-expanded` and
    * `data-open` while its popup stands, and its own Obsidian button styling is
    * reverted, so what draws it is the caller's classes alone.
    */

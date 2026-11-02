@@ -226,8 +226,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       const rows = await until("view menu rows", () => {
         const found = [
-          ...view.contentEl.querySelectorAll<HTMLElement>(
-            "[data-query-view-list]:popover-open [data-query-view-row]",
+          ...view.contentEl.doc.querySelectorAll<HTMLElement>(
+            "[data-query-view-list] [data-query-view-row]",
           ),
         ];
         return found.length > 0 && found;

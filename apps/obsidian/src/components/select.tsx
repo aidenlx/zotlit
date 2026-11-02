@@ -12,7 +12,7 @@
 //
 // @see apps/obsidian/docs/bases-toolbar-menu.md#comboboxes
 
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import type {
   ButtonHTMLAttributes,
   FocusEvent,
@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 import { Chooser, useChooserOpenSearch } from "./chooser";
 import type { ChooserRow } from "./chooser-logic";
+import type { PinnedPopoverHandle } from "./pinned-popover";
 
 export interface SelectOption {
   value: string;
@@ -39,12 +40,14 @@ export interface SelectOption {
   icon?: ReactNode;
   /** Muted text at the end of the row, such as a property's raw id. */
   detail?: string;
+  /** Other words the search finds the option by, which it never shows. */
+  searchTerms?: readonly string[];
   disabled?: boolean;
 }
 
 export interface SelectProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
-  "value" | "onChange" | "children" | "popoverTarget" | "type"
+  "value" | "onChange" | "children" | "type"
 > {
   value: string;
   onChange: (next: string) => void;
@@ -104,7 +107,7 @@ export function Select({
   ref,
   ...rest
 }: SelectProps) {
-  const popup = useRef<HTMLDivElement>(null);
+  const popup = useRef<PinnedPopoverHandle>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const attach = useCallback(
     (node: HTMLButtonElement | null) => {
@@ -121,35 +124,11 @@ export function Select({
   const choose = useCallback(
     (next: string[]) => {
       const picked = next.find((entry) => entry !== value);
-      popup.current?.hidePopover();
+      popup.current?.hide();
       if (picked !== undefined) onChange(picked);
     },
     [value, onChange],
   );
-
-  // A popup that shuts with focus inside it, on a pick or on Escape, hands
-  // focus back to its trigger. The browser restores focus only for the first
-  // popover of a stack, and a Select in the Sort, Group or Filter popover is
-  // the second, whose search field would leave focus nowhere.
-  const shutting = useRef(false);
-  useLayoutEffect(() => {
-    const shell = popup.current;
-    if (!shell) return;
-    const onBeforeToggle = (event: Event) => {
-      if ((event as ToggleEvent).newState !== "closed") return;
-      if (!shell.contains(shell.doc.activeElement)) return;
-      shutting.current = true;
-      trigger.current?.focus({ preventScroll: true });
-      shutting.current = false;
-    };
-    // Captured, so it runs before the Chooser's own listener unmounts the
-    // session, and the search field with it, which drops focus to the body.
-    shell.addEventListener("beforetoggle", onBeforeToggle, { capture: true });
-    return () =>
-      shell.removeEventListener("beforetoggle", onBeforeToggle, {
-        capture: true,
-      });
-  }, []);
 
   return (
     <Chooser value={[value]} onValueChange={choose}>
@@ -164,7 +143,6 @@ export function Select({
         attach={attach}
         popup={popup}
         trigger={trigger}
-        shutting={shutting}
       />
     </Chooser>
   );
@@ -172,10 +150,8 @@ export function Select({
 
 interface SelectBodyProps extends Omit<SelectProps, "onChange" | "ref"> {
   attach: (node: HTMLButtonElement | null) => void;
-  popup: RefObject<HTMLDivElement | null>;
+  popup: RefObject<PinnedPopoverHandle | null>;
   trigger: RefObject<HTMLButtonElement | null>;
-  /** Set while a shutting popup hands focus back to the trigger. */
-  shutting: RefObject<boolean>;
 }
 
 /** The trigger and the popup, inside the Chooser whose search they open. */
@@ -189,7 +165,6 @@ function SelectBody({
   attach,
   popup,
   trigger,
-  shutting,
   ...rest
 }: SelectBodyProps) {
   const openSearch = useChooserOpenSearch();
@@ -201,6 +176,7 @@ function SelectBody({
     label: shownDetail(option)
       ? `${option.label} ${option.detail}`
       : option.label,
+    searchTerms: option.searchTerms,
     disabled: option.disabled,
     option,
   }));
@@ -209,18 +185,14 @@ function SelectBody({
   // native select's list does. A popover shuts on a press outside, not on
   // focus moving out, and an open one goes on holding the keys of the
   // control focus left for, the trigger included. A press on the trigger
-  // moves focus there too, and is left to the popover, which shuts on it.
+  // moves focus there too, and is left to the trigger, which shuts it.
   const pressed = useRef(false);
   const leave = (event: FocusEvent<HTMLElement>) => {
     const next = event.relatedTarget;
     if (!next?.instanceOf(Node) || popup.current?.contains(next)) return;
-    if (
-      trigger.current?.contains(next) &&
-      (pressed.current || shutting.current)
-    )
-      return;
+    if (trigger.current?.contains(next) && pressed.current) return;
     if (trigger.current?.getAttribute("aria-expanded") !== "true") return;
-    popup.current?.hidePopover();
+    popup.current?.hide();
   };
 
   return (
@@ -240,7 +212,7 @@ function SelectBody({
           if (event.defaultPrevented || disabled) return;
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
-            popup.current?.showPopover();
+            popup.current?.show();
             return;
           }
           if (
@@ -287,19 +259,7 @@ function SelectBody({
           className="zt:shrink-0 zt:text-(--icon-color)"
         />
       </Chooser.Trigger>
-      <Chooser.Popup
-        ref={popup}
-        data-select-popup=""
-        // A trigger near the window's end edge opens its popup toward the
-        // start instead, as the Query View's toolbar menus do.
-        className="zt:[position-try-fallbacks:flip-block,flip-inline,flip-block_flip-inline]"
-        // A Select inside a `<label>`, as a page field holds one, would have
-        // the label hand every press in the popup back to the trigger, which
-        // reopens the popup a choice just shut. The label's activation runs
-        // whether or not the click propagates; only a cancelled click stops it.
-        onClick={(event) => event.preventDefault()}
-        onBlur={leave}
-      >
+      <Chooser.Popup handle={popup} data-select-popup="" onBlur={leave}>
         <Chooser.Input
           placeholder={m.select_search()}
           clearLabel={m.select_clear_search()}

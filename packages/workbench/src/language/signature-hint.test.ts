@@ -19,6 +19,7 @@ const typed = { receiver: () => ({ type: "string" as const }) };
 it("names the string slice with its second parameter marked inside title.slice(1, )", () => {
   expect(hintAt("title.slice(1, |)", typed)).toEqual({
     callee: "slice",
+    open: "title.slice".length,
     signatures: [
       {
         receiver: "string",

@@ -141,6 +141,14 @@ export function toDbUnavailable(cause: unknown): DbUnavailable {
   });
 }
 
+/** Run a synchronous read; a SQLite throw becomes a {@link DbUnavailable}. */
+export function read<A>(
+  client: NodeDatabaseClient,
+  f: (client: NodeDatabaseClient) => A,
+): Effect.Effect<A, DbUnavailable> {
+  return Effect.try({ try: () => f(client), catch: toDbUnavailable });
+}
+
 /**
  * The layout check threw for a reason other than a layout gap: the file is not
  * a Zotero database, or a statement failed. `message` is the original's, which

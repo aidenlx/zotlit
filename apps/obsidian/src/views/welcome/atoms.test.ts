@@ -111,6 +111,7 @@ it.effect.each([false, true])(
         trashed: [],
         pendingCleanup: [],
         kept: [],
+        frontmatterFailures: [],
       };
       const host = yield* Effect.acquireDisposable(
         Effect.promise(() =>
