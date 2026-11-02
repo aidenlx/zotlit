@@ -101,7 +101,8 @@ export const TEST_NOW = "2024-07-15T12:00:00Z";
 /**
  * Run an Effect to its `Exit` in the way the Obsidian adapter does, with a
  * fixed clock, a fixed time zone, and a test scheduler that pauses after every
- * operation and counts its pauses.
+ * operation and counts its pauses. A run on the test scheduler fails above
+ * `MAX_TEST_PAUSES` pauses.
  */
 export async function runEffect<A, E>(
   effect: Effect.Effect<A, E, ItemQueryDatabase>,
@@ -154,8 +155,19 @@ export async function runEffect<A, E>(
     signal: options.signal,
   });
   const pauses = events.filter((event) => event.type === "pause").length;
+  if (options.scheduler === undefined && pauses > MAX_TEST_PAUSES) {
+    throw new Error(
+      `The run paused ${pauses} times, above ${MAX_TEST_PAUSES}. Each pause of the test scheduler is one host task, so a slow machine runs this test past its timeout. Pass scheduler: new ItemQueryScheduler() unless the test checks pauses.`,
+    );
+  }
   return { exit, pauses, events };
 }
+
+/**
+ * The most pauses a run on the test scheduler may make. The largest run of the
+ * suite makes about 4,800; a query of 10,000 statements makes about 210,000.
+ */
+const MAX_TEST_PAUSES = 20_000;
 
 /**
  * The production scheduler on a counter in place of a timer: every time read
