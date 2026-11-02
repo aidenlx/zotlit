@@ -21,16 +21,20 @@ it("reads only live Attachments of top-level live Items in the Target Library", 
     Effect.runSync(
       Effect.provideService(effect, ItemQueryDatabase, { client: scenario.db }),
     );
-  const rows = run(readAttachmentScanPage({ libraryID: 1, afterKey: null }));
+  const rows = run(readAttachmentScanPage({ libraryID: 1, afterItemID: 0 }));
   expect(rows.map((row) => row.key)).toEqual([
-    "PDF2LINK",
     "PDF2LIVE",
     "URL2LIVE",
     "WEB2LIVE",
+    "PDF2LINK",
   ]);
   expect(
     run(
-      readAttachmentScanPage({ libraryID: 1, afterKey: "PDF2LINK", size: 1 }),
+      readAttachmentScanPage({
+        libraryID: 1,
+        afterItemID: rows[0]!.itemID,
+        size: 1,
+      }),
     ),
   ).toEqual([rows[1]]);
   expect(run(readAttachmentRowCount(1))).toBe(4);
@@ -38,7 +42,7 @@ it("reads only live Attachments of top-level live Items in the Target Library", 
     run(
       readAttachmentScanPage({
         libraryID: SCENARIO_LIBRARIES.group.libraryID,
-        afterKey: null,
+        afterItemID: 0,
       }),
     ).map((row) => row.key),
   ).toEqual(["PDF2GRUP"]);
@@ -53,7 +57,7 @@ it("reads only live Attachments of top-level live Items in the Target Library", 
   const hydrated = run(
     readAttachmentHydrateChunk({ rows, details: true, tags: true }),
   );
-  expect(hydrated.get(rows[1]!.itemID)).toMatchObject({
+  expect(hydrated.get(rows[0]!.itemID)).toMatchObject({
     details: {
       title: "Full Text PDF",
       contentType: "application/pdf",
@@ -137,14 +141,14 @@ it("reads Tags and parent Collection candidates in one statement per requested c
         ).itemIDs,
       }),
     ).map((row) => row.key),
-  ).toEqual(["PDF2LINK", "PDF2LIVE", "URL2LIVE", "WEB2LIVE"]);
-  const rows = run(readAttachmentScanPage({ libraryID: 1, afterKey: null }));
+  ).toEqual(["PDF2LIVE", "URL2LIVE", "WEB2LIVE", "PDF2LINK"]);
+  const rows = run(readAttachmentScanPage({ libraryID: 1, afterItemID: 0 }));
   readers.length = 0;
   run(readAttachmentHydrateChunk({ rows }));
   expect(readers).toEqual([]);
   const tagged = run(readAttachmentHydrateChunk({ rows, tags: true }));
   expect(readers).toEqual(["attachment-tags"]);
-  expect(tagged.get(rows[0]!.itemID)).toEqual({ tags: ["attachment-method"] });
+  expect(tagged.get(rows[3]!.itemID)).toEqual({ tags: ["attachment-method"] });
   readers.length = 0;
   run(readAttachmentHydrateChunk({ rows, details: true }));
   expect(readers).toEqual(["attachment-details"]);
@@ -202,7 +206,7 @@ it("reads bounded Attachment and parent key lists inside one Library", () => {
         ).itemIDs,
       }),
     ).map((row) => row.key),
-  ).toEqual(["PDF2LINK", "PDF2LIVE", "URL2LIVE", "WEB2LIVE"]);
+  ).toEqual(["PDF2LIVE", "URL2LIVE", "WEB2LIVE", "PDF2LINK"]);
   expect(live(1, { kind: "keys", keys: [] })).toEqual([]);
   expect(
     run(
@@ -253,7 +257,7 @@ it.each([
       );
       expect(rows.map((row) => row.key)).toEqual(
         value === expected
-          ? ["PDF2LINK", "PDF2LIVE", "URL2LIVE", "WEB2LIVE"]
+          ? ["PDF2LIVE", "URL2LIVE", "WEB2LIVE", "PDF2LINK"]
           : [],
       );
     }

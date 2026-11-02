@@ -47,6 +47,19 @@ A Collection path starts with the root Collection and continues to the direct pa
 
 Paths have no escape syntax, so a Collection whose name contains `/` is ambiguous. ZotLit evaluates a path against the item's own Library, and it accepts a path that no Library contains: a positive membership test for an absent path is simply false.
 
+## Text conditions [#text-conditions]
+
+Text conditions in the Match editor ignore letter case by default. For example, `title.icontains("Nature")` matches both `Nature` and `NATURE`.
+
+| Row                                                                    | Expression                   |
+| ---------------------------------------------------------------------- | ---------------------------- |
+| <UiLabel name={m.workbench_filter_op_contains()} />                    | `title.icontains("Nature")`  |
+| <UiLabel name={m.workbench_filter_op_does_not_contain()} />            | `!title.icontains("Nature")` |
+| <UiLabel name={m.workbench_filter_op_contains_match_case()} />         | `title.contains("Nature")`   |
+| <UiLabel name={m.workbench_filter_op_does_not_contain_match_case()} /> | `!title.contains("Nature")`  |
+
+Saved `title.contains("Nature")` expressions open as <UiLabel name={m.workbench_filter_op_contains_match_case()} /> rows and keep their results. Each row keeps the text as you typed it. Tag and Collection conditions use exact, case-sensitive membership tests.
+
 ## Equality tests [#equality]
 
 The text fields `library` and `itemType` take an equality test.

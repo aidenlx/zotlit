@@ -20,6 +20,7 @@ import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
 import { ANNOTATIONS, ATTACHMENTS, collectQuery, ITEMS } from ".";
 import type { ItemQueryRequest, QueryResult } from ".";
+import type { CandidateFallback } from "./candidate-plan";
 import { runEffect } from "./test-helpers";
 import type { Run, RunEvent, RunOptions } from "./test-helpers";
 
@@ -44,7 +45,13 @@ afterAll(() => {
  * (`annotations`); and the scenario with Annotations and no bulk Library
  * (`relations`). No test writes to them.
  */
-type Copy = "items" | "bounded" | "attachments" | "annotations" | "relations";
+type Copy =
+  | "sweep"
+  | "items"
+  | "bounded"
+  | "attachments"
+  | "annotations"
+  | "relations";
 
 const copies = new Map<Copy, Promise<ScenarioDatabase>>();
 
@@ -64,6 +71,16 @@ async function open(copy: Copy): Promise<ScenarioDatabase> {
   const { sqlite } = opened;
   if (copy === "relations") return opened;
   seedBulkLibrary(sqlite, copy === "bounded" ? 4_501 : BULK_ITEMS);
+  if (copy === "sweep") {
+    // Ten windows, still within the sparse ratio. All fifth-Tag matches are
+    // in the first two windows: after five, projection exceeds the cap.
+    sqlite.exec(`update itemDataValues set value = value || ' common'
+      where valueID in (select d.valueID from itemData d
+        join itemTags it on it.itemID = d.itemID
+        join tags t on t.tagID = it.tagID where t.name = 'bulk-fifth');
+      insert into items (itemID, itemTypeID, libraryID, key)
+        select 20000, itemTypeID, 1, 'FAR22222' from items limit 1;`);
+  }
   if (copy === "bounded") seedBulkAnnotations(sqlite, 6_001);
   if (copy === "attachments") seedBulkAttachments(sqlite, BULK_ITEMS);
   if (copy === "annotations") seedBulkAnnotations(sqlite, BULK_ITEMS);
@@ -98,6 +115,7 @@ async function run(
     attachment?: boolean;
     relation?: boolean;
     bound?: boolean;
+    sweep?: boolean;
   } = {},
 ) {
   const {
@@ -106,15 +124,18 @@ async function run(
     attachment = false,
     relation = false,
     bound = false,
+    sweep = false,
     ...rest
   } = options;
-  const copy = bound
-    ? "bounded"
-    : attachment
-      ? "attachments"
-      : annotation
-        ? "annotations"
-        : "items";
+  const copy = sweep
+    ? "sweep"
+    : bound
+      ? "bounded"
+      : attachment
+        ? "attachments"
+        : annotation
+          ? "annotations"
+          : "items";
   return runEffect(
     collectQuery(
       relation
@@ -229,6 +250,7 @@ const LOOKUP_READERS: ReadonlySet<string> = new Set([
   "layout",
   "libraries",
   "library-row-count",
+  "max-item-id",
   "attachment-row-count",
   "annotation-row-count",
   "field-vocabulary",
@@ -239,17 +261,84 @@ const LOOKUP_READERS: ReadonlySet<string> = new Set([
 /** One query for each path of the plan, at the production tuning. */
 const PLAN_PATHS: readonly {
   name: string;
+  category?: "text-sweep";
+  expectedFallback?: CandidateFallback | null;
   request: Request;
   annotation?: boolean;
   attachment?: boolean;
   relation?: boolean;
   bound?: boolean;
+  sweep?: boolean;
   result?: Pick<QueryResult, "returnedCount" | "truncated">;
   /** @default the bulk Library */
   libraries?: ItemQueryRequest["libraries"];
   /** The Items that each statement of a reader reads, in order. */
   reads: Record<string, number[]>;
 }[] = [
+  {
+    name: "a text sweep within the cap",
+    category: "text-sweep",
+    expectedFallback: null,
+    request: {
+      filter: 'title.icontains("02599")',
+      fields: [],
+      sort: [],
+      limit: 10,
+    },
+    result: { returnedCount: 1, truncated: false },
+    reads: {
+      "text-sweep-window": [0, 1],
+      "universe-rows": [1],
+      "hydrate-chunk": [1],
+    },
+  },
+  {
+    name: "a text sweep above the cap",
+    category: "text-sweep",
+    expectedFallback: "candidate-cap-exceeded",
+    request: {
+      filter: 'title.contains("Bulk")',
+      fields: [],
+      sort: [],
+      limit: 10,
+    },
+    reads: {
+      "text-sweep-window": [651],
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      "hydrate-chunk": [250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 100],
+    },
+  },
+  {
+    name: "a stopped common-term sweep",
+    category: "text-sweep",
+    expectedFallback: "candidate-cap-exceeded",
+    sweep: true,
+    request: {
+      filter: 'title.icontains("common")',
+      fields: [],
+      sort: [],
+      limit: 10,
+    },
+    reads: {
+      "text-sweep-window": [397, 123, 0, 0, 0],
+      "scan-page": [500, 500, 500, 500, 500, 100],
+      "hydrate-chunk": [250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 100],
+    },
+  },
+  {
+    name: "a skipped sparse sweep",
+    category: "text-sweep",
+    expectedFallback: "sparse-library",
+    libraries: [SCENARIO_LIBRARIES.personal],
+    request: {
+      filter: 'title.icontains("exact")',
+      fields: [],
+      sort: [],
+      limit: 10,
+    },
+    result: { returnedCount: 1, truncated: false },
+    reads: { "scan-page": [10], "hydrate-chunk": [9] },
+  },
   {
     name: "Item lastRead sort",
     attachment: true,
@@ -521,6 +610,7 @@ const PLAN_PATHS: readonly {
       limit: 300,
     },
     reads: {
+      "text-sweep-window": [651],
       "scan-page": [500, 500, 500, 500, 500, 100],
       "hydrate-chunk": [
         250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 100,
@@ -572,6 +662,34 @@ const PLAN_PATHS: readonly {
       "candidate-set": [BULK_CAP + 1],
       "scan-page": [500, 500, 500, 500, 500, 100],
       "hydrate-chunk": [250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 100],
+    },
+  },
+  {
+    name: "an any membership plan",
+    request: {
+      filter: `tags.containsAny("${BULK_FIFTH_TAG}", "unknown-tag")`,
+      fields: [],
+      limit: 10,
+    },
+    result: { returnedCount: 10, truncated: true },
+    reads: {
+      "candidate-set": [520, 0],
+      "universe-rows": [500, 20],
+      "hydrate-chunk": [250, 250, 20],
+    },
+  },
+  {
+    name: "an all membership plan with one set above the cap",
+    request: {
+      filter: `tags.containsAll(["${BULK_TAG}", "${BULK_FIFTH_TAG}"])`,
+      fields: [],
+      limit: 10,
+    },
+    result: { returnedCount: 10, truncated: true },
+    reads: {
+      "candidate-set": [BULK_CAP + 1, 520],
+      "universe-rows": [500, 20],
+      "hydrate-chunk": [250, 250, 20],
     },
   },
   {
@@ -663,6 +781,7 @@ describe("the Items one statement reads", () => {
       attachment,
       relation,
       bound,
+      sweep,
     }) => {
       const { events, exit } = await run(request, {
         libraries,
@@ -670,6 +789,7 @@ describe("the Items one statement reads", () => {
         attachment,
         relation,
         bound,
+        sweep,
       });
       expect(Exit.isSuccess(exit)).toBe(true);
 
@@ -692,7 +812,7 @@ describe("the Items one statement reads", () => {
         expect(
           Math.max(0, ...itemsRead(events, reader)),
           reader,
-        ).toBeLessThanOrEqual(500);
+        ).toBeLessThanOrEqual(reader === "text-sweep-window" ? 2_000 : 500);
       }
       expect(
         Math.max(
@@ -714,13 +834,22 @@ describe("the Items one statement reads", () => {
 describe("the pauses between two chunks", () => {
   it.each(PLAN_PATHS)(
     "pauses between every two statements of $name",
-    async ({ request, libraries, annotation, attachment, relation, bound }) => {
+    async ({
+      request,
+      libraries,
+      annotation,
+      attachment,
+      relation,
+      bound,
+      sweep,
+    }) => {
       const { events } = await run(request, {
         libraries,
         annotation,
         attachment,
         relation,
         bound,
+        sweep,
       });
 
       const statements = events.filter((event) => event.type === "statement");
@@ -1437,3 +1566,54 @@ it("scans nested Parent Record keys without candidate reads", async () => {
     itemsRead(actual.events, "annotation-scan-page").length,
   ).toBeGreaterThan(0);
 });
+
+describe.each(PLAN_PATHS.filter((path) => path.category === "text-sweep"))(
+  "text sweep fallback and cancellation: $name",
+  ({ request, libraries, sweep, result: expected, expectedFallback }) => {
+    it("keeps the forced-scan result and reports its fallback", async () => {
+      const logs: NonNullable<RunOptions["logs"]> = [];
+      const complete = await run(request, { libraries, sweep, logs });
+      expect(resultOf(complete)).toMatchObject(
+        expected ?? { returnedCount: 10, truncated: true },
+      );
+      expect(resultOf(complete)).toEqual(
+        resultOf(
+          await run(request, { libraries, sweep, tuning: { forceScan: true } }),
+        ),
+      );
+      expect(
+        logs.find((log) => log.properties.dataset === "items")?.properties
+          .reason,
+      ).toBe(expectedFallback);
+      expect(
+        itemsRead(complete.events, "text-sweep-window").reduce(
+          (a, b) => a + b,
+          0,
+        ),
+      ).toBeLessThanOrEqual(sweep ? BULK_CAP - 1 : BULK_CAP + 1);
+    });
+    it("starts no statement after cancellation at a statement or pause", async () => {
+      const complete = await run(request, { libraries, sweep });
+      resultOf(complete);
+      for (const index of [
+        ...statementCheckpoints(complete.events),
+        ...pauseCheckpoints(complete.events),
+      ]) {
+        const cancelled = await run(request, {
+          libraries,
+          sweep,
+          ...cancelAt(index),
+        });
+        expect(
+          Exit.isFailure(cancelled.exit) &&
+            Cause.hasInterruptsOnly(cancelled.exit.cause),
+        ).toBe(true);
+        expect(
+          cancelled.events
+            .slice(index + 1)
+            .filter((event) => event.type === "statement"),
+        ).toEqual([]);
+      }
+    });
+  },
+);

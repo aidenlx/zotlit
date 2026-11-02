@@ -1,3 +1,5 @@
+import { relations } from "@drizzle/relations";
+import { drizzle } from "drizzle-orm/node-sqlite";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -7,6 +9,7 @@ import type { ScenarioDatabase } from "@/test-scenario";
 import {
   ItemQueryDatabase,
   readCandidateSet,
+  readTextSweepWindow,
   readCollectionPaths,
   readFieldVocabulary,
   readLibraryRowCount,
@@ -24,6 +27,13 @@ function runOk<A, E>(
 }
 
 const { personal, group } = SCENARIO_LIBRARIES;
+
+it("rejects a 60,000-character LIKE pattern on the real database", () => {
+  using scenario = openScenarioDatabase();
+  expect(() =>
+    scenario.sqlite.prepare("select 'value' LIKE ?").get("a".repeat(60_000)),
+  ).toThrow("LIKE or GLOB pattern too complex");
+});
 
 /** The keys of the `items` rows with these IDs, in key order. */
 function keysOf(
@@ -368,4 +378,51 @@ describe("readCandidateSet for Collections", () => {
       ),
     ).toEqual([]);
   });
+});
+
+it("reads a text window on the itemData primary key without a temporary B-tree", () => {
+  using scenario = openScenarioDatabase();
+  const queries: { sql: string; params: unknown[] }[] = [];
+  scenario.db = drizzle({
+    client: scenario.sqlite,
+    relations,
+    logger: {
+      logQuery(sql, params) {
+        queries.push({ sql, params });
+      },
+    },
+  });
+  const vocabulary = runOk(scenario, readFieldVocabulary());
+  const ids = runOk(
+    scenario,
+    readTextSweepWindow({
+      libraryID: personal.libraryID,
+      leaf: {
+        kind: "text-sweep",
+        fieldIDs: vocabulary.fieldIDsOf("title"),
+        pattern: "%exact%",
+      },
+      afterItemID: 0,
+      limit: 100,
+    }),
+  );
+  expect(keysOf(scenario, ids)).toEqual(["ART2FULL"]);
+  const query = queries.at(-1)!;
+  const details = scenario.sqlite
+    .prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+    .all(...(query.params as (string | number)[]))
+    .map((row) => String(row.detail));
+  expect(details.join("\n")).not.toContain("TEMP B-TREE");
+  const primary = scenario.sqlite
+    .prepare("PRAGMA index_list(itemData)")
+    .all()
+    .find((row) => row.origin === "pk")!;
+  expect(details[0]).toBe(
+    `SEARCH itemData USING INDEX ${String(primary.name)} (itemID>? AND itemID<?)`,
+  );
+  const tables = details.filter((detail) => detail.startsWith("SEARCH "));
+  expect(tables[1]).toContain(
+    "SEARCH itemDataValues USING INTEGER PRIMARY KEY",
+  );
+  expect(tables[2]).toContain("SEARCH items USING INTEGER PRIMARY KEY");
 });

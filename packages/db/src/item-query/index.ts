@@ -2,6 +2,11 @@
 // `@zotlit/db` that loads `effect`.
 export {
   type CandidateLeaf,
+  type SeekCandidateLeaf,
+  type TextSweepCandidateLeaf,
+  TEXT_SWEEP_WINDOW_SIZE,
+  readMaxItemID,
+  readTextSweepWindow,
   readCandidateSet,
   readLibraryRowCount,
 } from "./candidate-set";

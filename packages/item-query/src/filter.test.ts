@@ -533,6 +533,14 @@ describe("string methods", () => {
     ['title.contains("Ecology")', true],
     // Exact: `contains` does not ignore case.
     ['title.contains("ecology")', false],
+    ['title.icontains("ecology")', true],
+    ['title.icontains("éclairs")', true],
+    ['title.icontains("ÉCLAIRS")', true],
+    ['title.icontains("eclairs")', false],
+    ['"气候变化".icontains("气候")', true],
+    ['title.icontains("")', true],
+    ['publisher.icontains("ecology")', null],
+    ["title.icontains([1][0])", error("wrong-argument-type")],
     ['title.lower().contains("ecology")', true],
     ['title.contains("Éclairs")', true],
     ['title.contains("Eclairs")', false],
@@ -806,6 +814,12 @@ describe("number methods", () => {
 
 describe("list methods", () => {
   vectors([
+    ['["Read"].icontains("read")', true],
+    ['["read"].icontains("READ")', true],
+    ['["Reading"].icontains("read")', false],
+    ['[1].icontains("1")', false],
+    ['[null].icontains("null")', false],
+    ['[].icontains("read")', false],
     ['tags.contains("to-read")', true],
     ['tags.contains("To-Read")', true],
     ['tags.contains("TO-READ")', false],
@@ -1842,6 +1856,7 @@ describe("validation", () => {
     ["tags[0].lower(1)", "wrong-argument-count", [0, 16]],
     ["title.startsWith(1)", "wrong-argument-type", [17, 18]],
     ["title.contains(true)", "wrong-argument-type", [15, 19]],
+    ["title.icontains(1)", "wrong-argument-type", [16, 17]],
     ['title.containsAny("a", 2)', "wrong-argument-type", [23, 24]],
     ['title.endsWith(["a"])', "wrong-argument-type", [15, 20]],
     ['min(1, "2")', "wrong-argument-type", [7, 10]],
