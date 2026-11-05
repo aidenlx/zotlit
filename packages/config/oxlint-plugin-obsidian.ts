@@ -41,4 +41,99 @@ for (const [name, rule] of Object.entries(obsidianmd.rules)) {
 // `window` is undefined in a worker, so `oxlint --fix` must leave this alone.
 rules["no-global-this"] = reportOnly(rules["no-global-this"]!);
 
+// The scanner's `no-restricted-globals` and `no-restricted-imports` entries
+// (eslint-plugin-obsidianmd ruleOptions). They are rules of their own here, so
+// they sit beside the repository's `Date` rule instead of replacing its options.
+const restrictedGlobals: Record<string, string> = {
+  app: "Avoid using the global app object. Instead use the reference provided by your plugin instance.",
+  fetch:
+    "Use the built-in `requestUrl` function instead of `fetch` for network requests in Obsidian.",
+  localStorage:
+    "Prefer `App#saveLocalStorage` / `App#loadLocalStorage` functions to write / read localStorage data that's unique to a vault.",
+};
+
+const restrictedImports: Record<string, string> = Object.fromEntries([
+  ...["axios", "superagent", "got", "ofetch", "ky", "node-fetch"].map(
+    (name) => [
+      name,
+      `Use the built-in \`requestUrl\` function instead of \`${name}\`.`,
+    ],
+  ),
+  [
+    "moment",
+    "The 'moment' package is bundled with Obsidian. Import the `moment` value from 'obsidian' instead. For the `Moment` type, rely on the global `moment` namespace or add `type Moment = moment.Moment;` (type-only imports from 'moment' are allowed).",
+  ],
+]);
+
+/** Names that are not references to a global: property keys, member names, type positions. */
+function isReference(node: any): boolean {
+  const parent = node.parent;
+  if (!parent) return true;
+  if (parent.type === "MemberExpression")
+    return parent.property !== node || parent.computed;
+  if (
+    parent.type === "Property" ||
+    parent.type === "PropertyDefinition" ||
+    parent.type === "MethodDefinition"
+  )
+    return (
+      parent.key !== node ||
+      parent.computed ||
+      (parent.shorthand && parent.value === node)
+    );
+  return !parent.type.startsWith("TS");
+}
+
+function isDeclared(scope: any, name: string): boolean {
+  for (let current = scope; current; current = current.upper) {
+    const variable = current.variables.find((v: any) => v.name === name);
+    if (variable && variable.defs.length > 0) return true;
+  }
+  return false;
+}
+
+rules["no-restricted-globals"] = {
+  meta: {
+    type: "suggestion",
+    schema: [],
+    messages: { restricted: "Unexpected use of '{{name}}'. {{message}}" },
+  },
+  create: (context: any) => ({
+    Identifier(node: any) {
+      const message = restrictedGlobals[node.name];
+      if (message === undefined || !isReference(node)) return;
+      if (isDeclared(context.sourceCode.getScope(node), node.name)) return;
+      context.report({
+        node,
+        messageId: "restricted",
+        data: { name: node.name, message },
+      });
+    },
+  }),
+} as unknown as Rule;
+
+rules["no-restricted-imports"] = {
+  meta: {
+    type: "suggestion",
+    schema: [],
+    messages: { restricted: "'{{name}}' import is restricted. {{message}}" },
+  },
+  create: (context: any) => ({
+    ImportDeclaration(node: any) {
+      const name = node.source.value;
+      const message = restrictedImports[name];
+      if (
+        message === undefined ||
+        (name === "moment" && node.importKind === "type")
+      )
+        return;
+      context.report({
+        node,
+        messageId: "restricted",
+        data: { name, message },
+      });
+    },
+  }),
+} as unknown as Rule;
+
 export default { meta: { name: "obsidianmd" }, rules };
