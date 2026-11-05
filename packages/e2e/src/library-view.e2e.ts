@@ -1683,7 +1683,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     );
     expect(kept!.sort).toEqual({ set: true, text: "Sort1" });
-    expect(kept!.rows.map((key) => activity.get(key!))).toEqual(
+    expect(kept!.rows.map((key) => activity.get(key))).toEqual(
       filed
         .map((item) => activity.get(indexedKey(item))!)
         .toSorted((a, b) => a - b),
@@ -1755,7 +1755,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The heading draws the Sort control in a React root of its own; the
     // property Select's popup opens its Chooser there, with its search and
     // rows, and a pick shuts it.
-    const picked = (await obRun(
+    const picked = await obRun(
       run.vaultId,
       async ({ app, page }) => {
         const { until, pick } = page;
@@ -1790,7 +1790,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return { triggers };
       },
       undefined,
-    )) as { triggers: number };
+    );
     expect(picked).toEqual({ triggers: 1 });
     await obRunUntil(
       run.vaultId,
@@ -2754,7 +2754,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(first!.open).not.toContain(parentKey);
 
     // Open the Collection, select the last paper, and ask for the banner.
-    const last = (await obRun(
+    const last = await obRun(
       run.vaultId,
       async ({ app, page }, { parentkey, value }) => {
         const { press, until } = page;
@@ -2802,7 +2802,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         parentkey: parentKey,
         value: `.view-actions .view-action[aria-label="${help}"]`,
       },
-    )) as string;
+    );
     const before = await obRunUntil(
       run.vaultId,
       async ({ app }, { value }) => {
@@ -4427,7 +4427,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     /** Whether the card shows, its width, the list's, and what plugin data keeps. */
 
     const rowKey = async (index: number) =>
-      (await obRun(
+      await obRun(
         run.vaultId,
         async ({ app }, { index }) => {
           return [
@@ -4437,11 +4437,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) as (WorkspaceLeaf & { view: LibraryView })[]
             )[0]!.view.contentEl.querySelectorAll<HTMLElement>(
               "[data-query-item-row]",
-            )!,
+            ),
           ][index]!.getAttribute("data-query-item-row")!;
         },
         { index: index },
-      )) as string;
+      );
 
     /**
      * Drag the edge: press it, then move the pointer by each of `steps`
@@ -5388,9 +5388,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           attachment,
           note,
         }))
-        .toSorted((a, b) => a.key!.localeCompare(b.key!)),
+        .toSorted((a, b) => a.key.localeCompare(b.key)),
     ).toEqual(
-      personal.map(expected).toSorted((a, b) => a.key.localeCompare(b.key!)),
+      personal.map(expected).toSorted((a, b) => a.key.localeCompare(b.key)),
     );
     // Each paper takes two lines at most, with no reading-state line.
     expect(opened!.papers.every(({ lines }) => lines <= 2)).toBe(true);
@@ -5970,8 +5970,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       };
     }
     /** Lay the tab out `width` px wide, scroll its list, and move the selection with the arrow keys. */
-    const measure = async (width: number) =>
-      (await obRun(
+    const measure = async (width: number): Promise<Pane> =>
+      await obRun(
         run.vaultId,
         async ({ app, page }, { widthInput }) => {
           const { until } = page;
@@ -6089,7 +6089,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           }
         },
         { widthInput: width },
-      )) as Pane;
+      );
 
     for (const width of [1600, 528]) {
       const pane = await measure(width);
@@ -6195,7 +6195,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { view, rowSelector, item }: Target,
       delay: number,
     ) => {
-      const expansion = (await obRun(
+      const expansion = await obRun(
         run.vaultId,
         async ({ app, page }, { viewInput, rowselector, item, delay }) => {
           const { press, until, stands } = page;
@@ -6208,7 +6208,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   .find(
                     (leaf) =>
                       (leaf.view as QueryFileView).file?.path ===
-                      (viewInput as { kind: "query"; path: string }).path,
+                      viewInput.path,
                   )!.view as QueryFileView);
           await app.workspace.revealLeaf(view.leaf);
           await (view as QueryFileView).query.settled;
@@ -6331,7 +6331,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           item: item,
           delay: delay,
         },
-      )) as Expansion;
+      );
       expect(
         expansion.delayedReads > 0,
         "the expansion attachment read crosses the delayed worker boundary when requested",

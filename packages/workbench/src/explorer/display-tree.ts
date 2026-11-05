@@ -273,7 +273,10 @@ const LINK_HELPER_SIGNATURE_HINTS: ReadonlySet<string> = new Set([
   "imgLink",
 ]);
 
-function describeSignature(fn: Function, label: string): string {
+function describeSignature(
+  fn: (...args: never[]) => unknown,
+  label: string,
+): string {
   if (LINK_HELPER_SIGNATURE_HINTS.has(label)) return "ƒ(alias?, subpath?)";
   const n = fn.length;
   return n === 0 ? "ƒ()" : `ƒ(${Array(n).fill("·").join(", ")})`;

@@ -1,10 +1,11 @@
 import { defineConfig } from "oxlint";
 
-import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig, {
   datePattern,
   itemQuerySchemaPaths,
   parentImportPattern,
+  scannerRules,
+  testBaselineOverrides,
 } from "@zotlit/config/oxlint";
 
 export default defineConfig({
@@ -56,6 +57,12 @@ export default defineConfig({
       rules: { "zotlit-design/workbench-chrome": "error" },
     },
     ...testBaselineOverrides("apps/docs"),
+    {
+      // The scanner skips docs/ directories, and a glob in the shared base
+      // resolves against this package, not the repository root.
+      files: ["**"],
+      rules: Object.fromEntries(scannerRules.map(([rule]) => [rule, "off"])),
+    },
     {
       // workerd ships no Temporal: the publication-date schema, its date
       // helpers, the Date the feed library takes, and the git date that

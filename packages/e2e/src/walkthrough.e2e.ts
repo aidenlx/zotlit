@@ -592,6 +592,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const engine = await services.pandocEngine.runPromise(
           services.pandocEngine.binary.getEngine,
         );
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const original = engine!.renderCitations;
         cleanup.defer(() => {
           engine!.renderCitations = original;
@@ -798,6 +799,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const service = zotlit.services.citekeyEditor;
         const tab = app.plugins.plugins.zotlit.settingTab;
         const previous = tab.getControlValue("citation.open-as-links");
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const original = service.openCitekey,
           requests: Parameters<typeof service.openCitekey>[] = [];
         await using restore = new AsyncDisposableStack();
@@ -1170,8 +1172,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             (suggest) => suggest.constructor.name === "CitationEditorSuggest",
           ) as WalkthroughCitationSuggest,
           manager = app.workspace.editorSuggest;
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const originalTrigger = manager.trigger,
+          // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
           originalShow = suggest.showSuggestions,
+          // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
           originalClose = suggest.close;
         const updated = Promise.withResolvers<void>();
         using hooks = new DisposableStack();
@@ -1953,7 +1958,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       vaultId,
       async ({ zotlit, page }) => {
         return (
-          page
+          (page
             .leavesOfType("zotlit-note-preview")
             .find(
               (leaf) =>
@@ -1969,8 +1974,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                   )?.view?.contentEl?.ownerDocument,
             )
             ?.view.contentEl?.querySelectorAll<HTMLElement>(".callout")
-            .length! > 0 &&
-          !(page
+            .length ?? 0) > 0 &&
+          !page
             .leavesOfType("zotlit-note-preview")
             .find(
               (leaf) =>
@@ -1984,9 +1989,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                         zotlit.services.profile.defaultDocumentPath,
                       ),
                   )?.view?.contentEl?.ownerDocument,
-            )?.view.contentEl)!.querySelector<HTMLElement>(
-            "[data-zotlit-preview-pending]",
-          )
+            )!
+            .view.contentEl.querySelector<HTMLElement>(
+              "[data-zotlit-preview-pending]",
+            )
         );
       },
       undefined,
@@ -1999,7 +2005,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         vaultId,
         async ({ zotlit, page }) => {
           return Array.from(
-            (page
+            page
               .leavesOfType("zotlit-note-preview")
               .find(
                 (leaf) =>
@@ -2013,7 +2019,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                           zotlit.services.profile.defaultDocumentPath,
                         ),
                     )?.view?.contentEl?.ownerDocument,
-              )?.view.contentEl)!.querySelectorAll<HTMLElement>(".callout p"),
+              )!
+              .view.contentEl.querySelectorAll<HTMLElement>(".callout p"),
           ).some((p) => p.classList.contains("zt:bg-accent"));
         },
         undefined,
@@ -2416,8 +2423,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const { press } = page;
         press(
           Array.from(
-            (page.leavesOfType("zotlit-template-workbench")[0]
-              ?.view)!.contentEl.querySelectorAll<HTMLElement>('[role="tab"]'),
+            page
+              .leavesOfType("zotlit-template-workbench")[0]!
+              .view.contentEl.querySelectorAll<HTMLElement>('[role="tab"]'),
           ).find((tab) => tab.textContent === "Annotation"),
           "Annotation",
         );
@@ -2437,10 +2445,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return (
           JSON.stringify(
             (() => ({
-              tab: (page.leavesOfType("zotlit-template-workbench")[0]
-                ?.view)!.store.getState().tab,
-              editor: (page.leavesOfType("zotlit-template-workbench")[0]
-                ?.view)!.store.getState().root,
+              tab: page
+                .leavesOfType("zotlit-template-workbench")[0]!
+                .view.store.getState().tab,
+              editor: page
+                .leavesOfType("zotlit-template-workbench")[0]!
+                .view.store.getState().root,
               preview: page
                 .leavesOfType("zotlit-note-preview")[0]
                 ?.view.getState().root,
@@ -2479,7 +2489,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
         return (
           app.workspace.activeLeaf ===
-          (page.leavesOfType("zotlit-template-workbench")[0]?.view)!.leaf
+          page.leavesOfType("zotlit-template-workbench")[0]!.view.leaf
         );
       },
       undefined,
@@ -2492,10 +2502,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           async ({ page }) => {
             return JSON.stringify(
               (() => ({
-                tab: (page.leavesOfType("zotlit-template-workbench")[0]
-                  ?.view)!.store.getState().tab,
-                editor: (page.leavesOfType("zotlit-template-workbench")[0]
-                  ?.view)!.store.getState().root,
+                tab: page
+                  .leavesOfType("zotlit-template-workbench")[0]!
+                  .view.store.getState().tab,
+                editor: page
+                  .leavesOfType("zotlit-template-workbench")[0]!
+                  .view.store.getState().root,
                 preview: page
                   .leavesOfType("zotlit-note-preview")[0]
                   ?.view.getState().root,
@@ -2611,8 +2623,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         vaultId,
         async ({ page }) => {
           const tab = Array.from(
-            (page.leavesOfType("zotlit-template-workbench")[0]
-              ?.view)!.contentEl.querySelectorAll<HTMLElement>('[role="tab"]'),
+            page
+              .leavesOfType("zotlit-template-workbench")[0]!
+              .view.contentEl.querySelectorAll<HTMLElement>('[role="tab"]'),
           ).find((candidate) => candidate.textContent === "Annotation");
           if (tab) page.press(tab, "Annotation");
           return !!tab;
@@ -2651,8 +2664,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const app = host as WalkthroughApp;
         app.vault.setConfig("settingsPopoutWindow", false);
         const button = Array.from(
-          (page.leavesOfType("zotlit-note-preview")[0]
-            ?.view)!.contentEl.querySelectorAll<HTMLElement>("button"),
+          page
+            .leavesOfType("zotlit-note-preview")[0]!
+            .view.contentEl.querySelectorAll<HTMLElement>("button"),
         ).find((candidate) => candidate.textContent === "Open settings");
         page.press(button, "Open settings");
         const tab = app.setting.activeTab;
@@ -3003,17 +3017,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       await obRun(
         vaultId,
         async (_context, { addProfileLabel }) => {
-          return (Array.from(
+          return Array.from(
             activeDocument.querySelectorAll<HTMLElement>(".modal"),
           )
             .find(
               (el) =>
                 el.querySelector<HTMLElement>(".modal-title")?.textContent ===
                 addProfileLabel,
-            )
-            ?.querySelector<HTMLElement>(
-              'p[role="status"]',
-            ))!.classList.contains("zt:text-(--text-error)");
+            )!
+            .querySelector<HTMLElement>('p[role="status"]')!
+            .classList.contains("zt:text-(--text-error)");
         },
         { addProfileLabel: m.settings_profile_add() },
       ),

@@ -400,6 +400,7 @@ export function createPageHelpers(app: PageApp) {
     ) as PreparationService;
     if (!trial.preparation)
       throw new Error("ExcerptPreparation service missing");
+    // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
     trial.originalPreparation = trial.preparation.forCard;
     trial.preparation.forCard = (options) =>
       Effect.gen(function* () {
@@ -466,7 +467,7 @@ export function createPageHelpers(app: PageApp) {
         timers.adopt(setTimeout(resolve, 25), clearTimeout),
       );
     }
-    throw lastError;
+    throw lastError!;
   }
   async function pressKey(
     debugger_: {

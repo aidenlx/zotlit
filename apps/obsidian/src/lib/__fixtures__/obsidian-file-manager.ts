@@ -16,7 +16,7 @@ export class MemoryFileManager implements FileManagerSource {
   /** Every rename, in call order. */
   readonly renames: { from: string; to: string }[] = [];
   /** The next `processFrontMatter`, `renameFile` or `trashFile` rejects with this. */
-  failNext: unknown = undefined;
+  failNext: Error | undefined = undefined;
 
   #reject(): Promise<never> | undefined {
     if (this.failNext === undefined) return;

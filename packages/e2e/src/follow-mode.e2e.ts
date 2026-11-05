@@ -23,8 +23,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }) => {
         app.setting.close();
-        var type = "zotero-annotation-view";
-        var leaf = app.workspace.getLeavesOfType(type)[0];
+        const type = "zotero-annotation-view";
+        let leaf = app.workspace.getLeavesOfType(type)[0];
         if (!leaf) {
           leaf = app.workspace.getRightLeaf(false)!;
           await leaf.setViewState({ type: type, active: true });
@@ -78,26 +78,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const report = await obRun(
       run.vaultId,
       async ({ app }) => {
-        var popup = (
+        const popup = (
           app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
             | AnnotationView
             | undefined
-        )?.contentEl.doc.querySelector<HTMLElement>(".menu")!;
-        var box = popup.getBoundingClientRect();
-        var anchor = (
+        )?.contentEl.doc.querySelector<HTMLElement>(".menu");
+        if (!popup) throw new Error("no menu popup");
+        const box = popup.getBoundingClientRect();
+        const anchor = (
           app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
             | AnnotationView
             | undefined
         )?.contentEl
           .querySelector<HTMLElement>("button.zt-annot-header")!
-          .getBoundingClientRect()!;
-        var items = Array.from(popup.querySelectorAll(".menu-item"));
+          .getBoundingClientRect();
+        if (!anchor) throw new Error("no menu trigger");
+        const items = Array.from(popup.querySelectorAll(".menu-item"));
         return {
           labels: items.map(function (item) {
             return item.textContent.trim();
           }),
           covered: items.filter(function (item) {
-            var rect = item.getBoundingClientRect();
+            const rect = item.getBoundingClientRect();
             return (
               rect.height > 0 &&
               rect.top >= box.top - 1 &&
@@ -168,11 +170,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ app }) => {
-        var doc = (
+        const doc = (
           app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
             | AnnotationView
             | undefined
-        )?.contentEl.doc!;
+        )?.contentEl.doc;
+        if (!doc) throw new Error("no annotation view document");
         doc.dispatchEvent(
           new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
         );

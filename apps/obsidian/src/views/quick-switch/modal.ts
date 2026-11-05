@@ -64,6 +64,7 @@ export class QuickSwitchModal extends ItemSearchModal {
   override async onChooseSuggestion(
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
+    // oxlint-disable-next-line typescript/no-misused-promises -- tests await the returned promise, so the method stays async
   ): Promise<void> {
     const { indexedKey } = hit.item;
     if (evt.altKey) {

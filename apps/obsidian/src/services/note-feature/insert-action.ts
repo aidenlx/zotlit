@@ -24,7 +24,7 @@ export interface AnnotationSnapshot {
   sourceScope: string | null;
 }
 interface AnnotationInsertTarget {
-  valid(): boolean;
+  valid: () => boolean;
   commit(text: string, placement?: Placement): boolean;
 }
 /**

@@ -4,7 +4,7 @@
 // hands this branch every input it reads.
 import { Effect, Schema } from "effect";
 
-import type { CitationTemplateData, CitationVariant } from "@zotlit/db";
+import type { CitationTemplateData } from "@zotlit/db";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
 import { serializeTemplateData } from "@zotlit/workbench/explorer";
 import { isCitationExampleId } from "@zotlit/workbench/render";
@@ -203,7 +203,7 @@ export const checkPlainDocument = Effect.fn(
               isCitationExampleId(params.example)
               ? { example: params.example }
               : { key: params.key as string },
-            (params.variant ?? "main") as CitationVariant,
+            params.variant ?? "main",
           )
         : readTemplateData(
             params.key as string,

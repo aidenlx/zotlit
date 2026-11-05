@@ -193,7 +193,7 @@ export async function verifyExternalAnnotationLock({
           `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
             annotationKey,
           )}]`,
-        )!;
+        );
         if (!card) return "no card";
         if (!card.hasAttribute("data-alone")) card.click();
         return card.hasAttribute("data-alone");
@@ -217,7 +217,7 @@ export async function verifyExternalAnnotationLock({
               annotationKey,
             )}]`,
           )!
-          .querySelector<HTMLElement>(nodeSelector)!;
+          .querySelector<HTMLElement>(nodeSelector);
         return node ? String(node.hasAttribute("data-blocked")) : "absent";
       },
       { annotationKey, nodeSelector: node },
@@ -235,7 +235,7 @@ export async function verifyExternalAnnotationLock({
             annotationKey,
           )}]`,
         )
-        ?.querySelector<HTMLElement>(".zt-annot-lock")!;
+        ?.querySelector<HTMLElement>(".zt-annot-lock");
     },
     { annotationKey },
     { what: "the lock icon on the annotation card in the Annotation View" },
@@ -252,7 +252,7 @@ export async function verifyExternalAnnotationLock({
           `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
             annotationKey,
           )}]`,
-        )!;
+        ) as HTMLElement;
         return {
           quote:
             card.querySelector<HTMLElement>("blockquote")?.textContent.trim() ??
@@ -342,13 +342,15 @@ export async function verifyExternalAnnotationLock({
     await obRun(
       vaultId,
       async ({ app }, { annotationKey }) => {
-        return !!(app.workspace
+        const card = app.workspace
           .getLeavesOfType("zotero-annotation-view")[0]
           ?.view?.containerEl.querySelector<HTMLElement>(
             `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
               annotationKey,
             )}]`,
-          )!).querySelector<HTMLElement>(".cm-content, input")!;
+          );
+        if (!card) throw new Error("no annotation card");
+        return !!card.querySelector<HTMLElement>(".cm-content, input");
       },
       { annotationKey },
     ),
@@ -361,16 +363,18 @@ export async function verifyExternalAnnotationLock({
     vaultId,
     async ({ app, page }, { annotationKey }) => {
       const { press } = page;
+      const card = (
+        app.workspace.getLeavesOfType(
+          "zotero-annotation-view",
+        ) as AnnotationLeaf[]
+      )[0]?.view?.containerEl.querySelector<HTMLElement>(
+        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
+          annotationKey,
+        )}]`,
+      );
+      if (!card) throw new Error("no annotation card");
       press(
-        ((
-          app.workspace.getLeavesOfType(
-            "zotero-annotation-view",
-          ) as AnnotationLeaf[]
-        )[0]?.view?.containerEl.querySelector<HTMLElement>(
-          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-            annotationKey,
-          )}]`,
-        )!).querySelector<HTMLElement>(
+        card.querySelector<HTMLElement>(
           ".clickable-icon:has(svg.lucide-more-horizontal)",
         ),
         "card menu",
@@ -481,13 +485,15 @@ export async function verifyExternalAnnotationLock({
     vaultId,
     async ({ page }, { attachmentPath, annotationKey }) => {
       const { tap } = page;
-      const rect = (page
+      const mark = page
         .pdfView(attachmentPath)
         ?.containerEl.querySelector<HTMLElement>(
           `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
             annotationKey,
           )}]`,
-        )!).getBoundingClientRect();
+        );
+      if (!mark) throw new Error("no PDF annotation mark");
+      const rect = mark.getBoundingClientRect();
       tap(rect.left + rect.width / 2, rect.top + rect.height / 2);
     },
     { attachmentPath, annotationKey },
@@ -495,15 +501,17 @@ export async function verifyExternalAnnotationLock({
   await obRunUntil(
     vaultId,
     async ({ page }, { attachmentPath, annotationKey }) => {
+      const mark = page
+        .pdfView(attachmentPath)
+        ?.containerEl.querySelector<HTMLElement>(
+          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
+            annotationKey,
+          )}]`,
+        );
+      if (!mark) throw new Error("no PDF annotation mark");
       return (
         !!document.querySelector<HTMLElement>(".zt-pdf-mark-popup")! &&
-        (page
-          .pdfView(attachmentPath)
-          ?.containerEl.querySelector<HTMLElement>(
-            `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
-              annotationKey,
-            )}]`,
-          )!).classList.contains("is-selected")
+        mark.classList.contains("is-selected")
       );
     },
     { attachmentPath, annotationKey },
@@ -639,7 +647,7 @@ export async function verifyExternalAnnotationLock({
         `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
           annotationKey,
         )}]`,
-      )!;
+      );
       return (
         !!card &&
         card.win !== window &&
@@ -653,13 +661,15 @@ export async function verifyExternalAnnotationLock({
     await obRun(
       vaultId,
       async ({ app }, { annotationKey }) => {
-        return (app.workspace
+        const card = app.workspace
           .getLeavesOfType("zotero-annotation-view")[0]
           ?.view?.containerEl.querySelector<HTMLElement>(
             `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
               annotationKey,
             )}]`,
-          )!)
+          );
+        if (!card) throw new Error("no annotation card");
+        return card
           .querySelector<HTMLElement>(".zt-annot-lock")!
           .getAttribute("aria-label");
       },

@@ -59,9 +59,11 @@ export function TagSelector({ tree }: { tree: LibraryTree }) {
     else if (step) {
       const to = step(index, shown.length - 1);
       setCurrent(shown[to]!);
-      event.currentTarget.parentElement
-        ?.querySelectorAll<HTMLElement>("[data-library-tag]")
-        [to]?.focus();
+      const tags =
+        event.currentTarget.parentElement?.querySelectorAll<HTMLElement>(
+          "[data-library-tag]",
+        );
+      tags?.[to]?.focus();
     } else return;
     event.preventDefault();
   };

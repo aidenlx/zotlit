@@ -228,6 +228,7 @@ export async function verifyRecentUses(
           (input as HTMLInputElement).value = "Alpha of the personal library";
           input.dispatchEvent(new Event("input", { bubbles: true }));
         } else {
+          // Declining the choice leaves the prompt input as typed.
         }
         const row = await until("Alpha suggestion", () =>
           [
@@ -444,7 +445,7 @@ export async function verifyRecentUses(
     "utf8",
   );
   expect(pluginData).not.toContain("zotlit-use-ledger");
-  for (const use of Object.values(JSON.parse(ledger)) as { instant: string }[])
+  for (const use of Object.values<{ instant: string }>(JSON.parse(ledger)))
     expect(pluginData).not.toContain(use.instant);
   await cli([`vault=${vaultId}`, "plugin:reload", "id=zotlit"]);
   await obRunUntil(

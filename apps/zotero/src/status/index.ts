@@ -184,14 +184,18 @@ function injectControl(checkpoint: WalCheckpoint, window: Window): void {
   sidenav.insertBefore(wrapper, popupset);
   paintControl(checkpoint, window);
 
-  button.addEventListener("mousedown", async (event) => {
-    const mouseEvent = event as MouseEvent;
-    if (mouseEvent.button !== 0) return;
-    if (button.open) return;
-    event.preventDefault();
-    await buildMenu(popup, checkpoint, window);
-    button.open = true;
-  });
+  button.addEventListener(
+    "mousedown",
+    (event) =>
+      void (async () => {
+        const mouseEvent = event as MouseEvent;
+        if (mouseEvent.button !== 0) return;
+        if (button.open) return;
+        event.preventDefault();
+        await buildMenu(popup, checkpoint, window);
+        button.open = true;
+      })(),
+  );
   logger.debug("attached database status control", {
     href: window.location.href,
   });

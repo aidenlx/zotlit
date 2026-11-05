@@ -55,10 +55,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ page: pageHelpers }) => {
-        var Original = window.Worker;
-        var record: QueryWorkerRecord = {
+        const Original = window.Worker;
+        const record: QueryWorkerRecord = {
           spawned: [],
           Original: Original,
+          // oxlint-disable-next-line typescript/unbound-method -- the original method is wrapped in a Proxy and restored by identity
           terminate: Original.prototype.terminate,
           ended: new WeakSet(),
         };
@@ -86,12 +87,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ page: pageHelpers }) => {
-          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          const record = pageHelpers.scratch.zotlitE2EWorkers;
           return (function () {
             if (record!.held) {
               record!.held.worker.postMessage = record!.held.post;
               if (!record!.ended.has(record!.held.worker))
-                for (var args of record!.held.pending)
+                for (let args of record!.held.pending)
                   record!.held.post.apply(record!.held.worker, args);
             }
             window.Worker = record!.Original;
@@ -184,7 +185,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ page: pageHelpers }) => {
-            var record = pageHelpers.scratch.zotlitE2EWorkers;
+            const record = pageHelpers.scratch.zotlitE2EWorkers;
             return record!.spawned.filter(function (entry) {
               return entry.name === "zotlit-zotero-reads";
             }).length;
@@ -228,7 +229,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ page: pageHelpers }) => {
-          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          const record = pageHelpers.scratch.zotlitE2EWorkers;
           return (
             record!.spawned
               .find(function (entry) {
@@ -338,12 +339,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit, page: pageHelpers }) => {
-          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          const record = pageHelpers.scratch.zotlitE2EWorkers;
           return await (function () {
-            var entry = record!.spawned.findLast(function (entry) {
+            const entry = record!.spawned.findLast(function (entry) {
               return entry.name === "zotlit-zotero-reads";
             });
-            var post = entry!.worker.postMessage;
+            // oxlint-disable-next-line typescript/unbound-method -- the original method is wrapped in a Proxy and restored by identity
+            const post = entry!.worker.postMessage;
             record!.held = { worker: entry!.worker, post: post, pending: [] };
             entry!.worker.postMessage = new Proxy(post, {
               apply(target, receiver, args) {
@@ -369,7 +371,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRunUntil(
         run.vaultId,
         async ({ page: pageHelpers }) => {
-          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          const record = pageHelpers.scratch.zotlitE2EWorkers;
           return record!.heldSnapshot;
         },
         undefined,
@@ -389,7 +391,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRunUntil(
           run.vaultId,
           async ({ page: pageHelpers }) => {
-            var record = pageHelpers.scratch.zotlitE2EWorkers;
+            const record = pageHelpers.scratch.zotlitE2EWorkers;
             return record!.spawned
               .filter(function (entry) {
                 return entry.name === "zotlit-zotero-reads";
@@ -408,7 +410,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const workers = await obRun(
           run.vaultId,
           async ({ page: pageHelpers }) => {
-            var record = pageHelpers.scratch.zotlitE2EWorkers;
+            const record = pageHelpers.scratch.zotlitE2EWorkers;
             return JSON.stringify(
               record!.spawned.map(function (entry) {
                 return {

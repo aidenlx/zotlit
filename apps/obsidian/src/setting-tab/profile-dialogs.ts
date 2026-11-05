@@ -133,9 +133,14 @@ function runDialog<A, R = DialogServices>(
         new Promise((resolve, reject) =>
           runFork(effect).addObserver((exit) => {
             if (Exit.isSuccess(exit)) resolve(exit.value);
-            else if (!Cause.hasInterruptsOnly(exit.cause))
-              reject(Cause.squash(exit.cause));
-            else if (answered) reject(new UserCancelled());
+            else if (!Cause.hasInterruptsOnly(exit.cause)) {
+              const failure = Cause.squash(exit.cause);
+              reject(
+                failure instanceof Error
+                  ? failure
+                  : new Error(String(failure), { cause: failure }),
+              );
+            } else if (answered) reject(new UserCancelled());
             else reject(new AbortError());
           }),
         );

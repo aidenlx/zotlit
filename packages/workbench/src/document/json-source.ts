@@ -27,7 +27,7 @@ export function jsonLayout(source: string, pretty: boolean) {
     const scanner = createScanner(source);
     edits = [];
     for (
-      let token = scanner.scan();
+      let token: number = scanner.scan();
       token !== tokenKind.eof;
       token = scanner.scan()
     ) {

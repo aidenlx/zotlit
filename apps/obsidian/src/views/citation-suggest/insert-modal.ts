@@ -71,6 +71,7 @@ export class InsertCitationModal extends ItemSearchModal {
   override async onChooseSuggestion(
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
+    // oxlint-disable-next-line typescript/no-misused-promises -- tests await the returned promise, so the method stays async
   ): Promise<void> {
     const before = this.#editor.getValue();
     const from = this.#editor.getCursor("from");

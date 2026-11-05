@@ -187,7 +187,10 @@ export function expressionOption(
   return optionOf.get(completion);
 }
 
-type ApplyCompletion = Extract<Completion["apply"], Function>;
+type ApplyCompletion = Extract<
+  Completion["apply"],
+  (...args: never[]) => unknown
+>;
 
 function completionAt(
   context: CompletionContext,

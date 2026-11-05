@@ -185,7 +185,7 @@ export class MockVault implements VaultSource {
     delete: new Set(),
   };
   readonly #held = new Map<string, PromiseWithResolvers<void>>();
-  readonly #failures = new Map<string, unknown>();
+  readonly #failures = new Map<string, Error>();
 
   constructor(readonly metadataCache: MockMetadataCache) {
     metadataCache.vault = this;
@@ -263,7 +263,7 @@ export class MockVault implements VaultSource {
     return () => gate.resolve();
   }
 
-  fail(path: string, error: unknown = new Error("read failed")): void {
+  fail(path: string, error: Error = new Error("read failed")): void {
     this.#failures.set(path, error);
   }
 

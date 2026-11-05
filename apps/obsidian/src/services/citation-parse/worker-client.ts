@@ -2,7 +2,7 @@
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
 import { Cause, Context, Effect, Layer, Schema } from "effect";
 import { RpcClient, RpcClientError } from "effect/rpc";
-import type { RpcMessage, RpcSerialization } from "effect/rpc";
+import type { RpcMessage } from "effect/rpc";
 import { Worker } from "effect/workers";
 
 import { CitationParseRpc } from "./rpc";
@@ -51,7 +51,7 @@ const singleWorkerProtocol = RpcClient.Protocol.make(
       supportsAck: true,
       // Parse carries strings and numbers; no request transfers an owned object.
       supportsTransferables: false,
-      codecFor: Schema.toCodecJson as RpcSerialization.CodecFor,
+      codecFor: Schema.toCodecJson,
     };
   }),
 );

@@ -896,9 +896,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   ),
                 ].find((entry) => entry.textContent === menuLabel)
               : part === "td"
-                ? cell?.closest<HTMLElement>("td")!
+                ? cell?.closest<HTMLElement>("td")
                 : part
-                  ? cell?.querySelector<HTMLElement>(part)!
+                  ? cell?.querySelector<HTMLElement>(part)
                   : cell;
             if (!target) return "missing";
             target.scrollIntoView({

@@ -1730,9 +1730,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * Obsidian's close. It waits for the write a running flow has started, such
    * as a save or the originating note's write, and interrupts the rest.
    */
-  protected override onClose(): Promise<void> {
+  protected override async onClose(): Promise<void> {
     this.#closed = true;
-    return super.onClose().finally(() => {
+    try {
+      await super.onClose();
+    } finally {
       this.#root?.unmount();
       this.#root = null;
       this.#cleanup.dispose();
@@ -1745,8 +1747,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#unsubscribe = null;
       this.#release?.();
       this.#release = null;
-      return stopped;
-    });
+      await stopped;
+    }
   }
 
   templateDataTarget(): TemplateDataExportTarget | null {

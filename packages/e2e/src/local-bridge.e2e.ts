@@ -98,19 +98,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ page }, { rememberLabel }) => {
           const { press } = page;
-          var radio = document.querySelector<HTMLInputElement>(
+          const radio = document.querySelector<HTMLInputElement>(
             'input[name="zotlit-customize-destination"][value="native"]',
           );
           if (!radio) return false;
           press(radio.closest("label") ?? radio, "Native destination");
-          var row = Array.from(
+          const row = Array.from(
             document.querySelectorAll(".modal .setting-item"),
           ).find(
             (el) =>
               el.querySelector(".setting-item-name")?.textContent ===
               rememberLabel,
           );
-          var toggle = row?.querySelector<HTMLElement>(".checkbox-container");
+          const toggle = row?.querySelector<HTMLElement>(".checkbox-container");
           if (!toggle) return false;
           press(toggle, "Remember");
           return true;
@@ -356,7 +356,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRunUntil(
         run.vaultId,
         async (_context, { documentName, restoreButtonLabel }) => {
-          var row = Array.from(document.querySelectorAll(".setting-item")).find(
+          const row = Array.from(
+            document.querySelectorAll(".setting-item"),
+          ).find(
             (el) =>
               el.querySelector(".setting-item-name")?.textContent ===
               documentName,
@@ -420,13 +422,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ page }, { connectionName, host, disconnectButtonText }) => {
           const { press } = page;
-          var row = Array.from(document.querySelectorAll(".setting-item")).find(
+          const row = Array.from(
+            document.querySelectorAll(".setting-item"),
+          ).find(
             (el) =>
               el.querySelector(".setting-item-name")?.textContent ===
               connectionName,
           );
           if (!row || !row.textContent.includes(host)) return false;
-          var button = Array.from(row.querySelectorAll("button")).find(
+          const button = Array.from(row.querySelectorAll("button")).find(
             (el) => el.textContent === disconnectButtonText,
           );
           if (!button) return false;

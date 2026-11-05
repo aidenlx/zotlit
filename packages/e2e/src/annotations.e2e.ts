@@ -564,7 +564,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )?.view;
             const pdfPage = pdfView?.containerEl.querySelector<HTMLElement>(
               `.page[data-page-number="${JSON.stringify(pageNumber)}"]`,
-            )!;
+            );
             pdfPage?.scrollIntoView({ block: "center" });
             const marks = Array.from(
               pdfView?.containerEl.querySelectorAll<HTMLElement>(
@@ -969,13 +969,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ],
         );
         cleanup.defer(() => {
-          const remove = modal()
-            ?.querySelectorAll<HTMLElement>(
-              '[data-filter-section="view"] [data-condition-row]',
-            )
-            [before]?.querySelector<HTMLElement>(
-              `button[aria-label=${JSON.stringify(removeConditionLabel)}]`,
-            )!;
+          const rows = modal()?.querySelectorAll<HTMLElement>(
+            '[data-filter-section="view"] [data-condition-row]',
+          );
+          const remove = rows?.[before]?.querySelector<HTMLElement>(
+            `button[aria-label=${JSON.stringify(removeConditionLabel)}]`,
+          );
           if (remove) press(remove, "Remove condition");
         });
         press(
@@ -984,11 +983,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Edit as expression",
         );
-        const content = await until("expression field", () =>
-          section
-            .querySelectorAll<HTMLElement>("[data-condition-row]")
-            [before]?.querySelector<CodeMirrorElement>(".cm-content")!,
-        );
+        const content = await until("expression field", () => {
+          const rows = section.querySelectorAll<HTMLElement>(
+            "[data-condition-row]",
+          );
+          return rows[before]?.querySelector<CodeMirrorElement>(".cm-content");
+        });
         await until("hint in the empty field", () =>
           content.textContent.includes(expressionPlaceholder),
         );

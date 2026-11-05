@@ -150,7 +150,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
         ).contentEl;
         press(
-          el.querySelector<HTMLElement>("[data-query-properties]")!,
+          el.querySelector<HTMLElement>("[data-query-properties]"),
           "Properties",
         );
         const popup = () =>
@@ -158,7 +158,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "[data-query-properties-popup]",
           )!;
         const rows = () => [
-          ...popup()!.querySelectorAll<HTMLElement>("[data-query-property]"),
+          ...popup().querySelectorAll<HTMLElement>("[data-query-property]"),
         ];
         const selected = () =>
           rows()
@@ -173,9 +173,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .slice(0, defaults.length)
           .map((n) => n.dataset.queryProperty);
         press(
-          popup()!.querySelector<HTMLElement>(
+          popup().querySelector<HTMLElement>(
             '[data-query-properties-action="hide-all"]',
-          )!,
+          ),
           "Hide all",
         );
         await until("Hide all clears the ticks", () => selected().length === 0);
@@ -183,18 +183,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const untouched = paths();
         for (const name of ["pageLabel", "colorName"]) {
           press(
-            popup()!.querySelector<HTMLElement>(
+            popup().querySelector<HTMLElement>(
               `[data-query-property="${name}"]`,
-            )!,
+            ),
             `property ${name}`,
           );
           await until(`ticks ${name}`, () => selected().includes(name));
         }
         const kept = paths();
-        pageHelpers.closePopovers(popup()!.ownerDocument);
+        pageHelpers.closePopovers(popup().ownerDocument);
         await until("Properties popover closes", () => !popup()?.isConnected);
         press(
-          el.querySelector<HTMLElement>("[data-query-properties]")!,
+          el.querySelector<HTMLElement>("[data-query-properties]"),
           "Properties",
         );
         await until(
@@ -207,7 +207,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             n.dataset.queryProperty,
             n.getAttribute("aria-selected"),
           ]);
-        pageHelpers.closePopovers(popup()!.ownerDocument);
+        pageHelpers.closePopovers(popup().ownerDocument);
         return { defaults, leading, untouched, kept, shown };
       },
       undefined,
@@ -242,10 +242,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const el = (
           app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
         ).contentEl;
-        press(
-          el.querySelector<HTMLElement>("[data-query-results]")!,
-          "Results",
-        );
+        press(el.querySelector<HTMLElement>("[data-query-results]"), "Results");
         const input = await until("limit field", () =>
           activeDocument.querySelector<HTMLInputElement>(
             "[data-query-results-popup] [data-query-limit]",
@@ -271,7 +268,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ page: pageHelpers }) => {
         const { press } = pageHelpers;
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const create = URL.createObjectURL;
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const click = HTMLAnchorElement.prototype.click;
         let blob: Blob | null = null,
           name: string | null = null;
@@ -288,7 +287,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           press(
             activeDocument.querySelector<HTMLElement>(
               "[data-query-results-popup] [data-query-export]",
-            )!,
+            ),
             "Export CSV",
           );
         } finally {
@@ -309,10 +308,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     )) as { name: string | null; type: string | null; text: string | null };
     const rows = await queryRows("pageLabel,colorName", "2");
     const cell = (value: unknown) => {
-      const text =
-        value === null || value === undefined
-          ? ""
-          : String(value as string | number | boolean);
+      const text = value === null || value === undefined ? "" : String(value);
       return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     };
     expect(exported).toEqual({
@@ -354,13 +350,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       ({ app, page }, { button, popup: selector, ready }) => {
         const popup = activeDocument.querySelector<HTMLElement>(selector)!;
-        if (popup?.querySelector<HTMLElement>(ready)!) return true;
+        if (popup?.querySelector<HTMLElement>(ready)) return true;
         if (!popup)
           page.press(
             (
               app.workspace.getMostRecentLeaf()!
                 .view as import("obsidian").ItemView
-            ).contentEl.querySelector<HTMLElement>(button)!,
+            ).contentEl.querySelector<HTMLElement>(button),
             button,
           );
         return false;
@@ -391,13 +387,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const { press, until } = pageHelpers;
         const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
         press(
-          popup!.querySelector<HTMLElement>(
+          popup.querySelector<HTMLElement>(
             `[data-query-property-more="${property}"]`,
-          )!,
+          ),
           `page of property ${property}`,
         );
         await until(`page of property ${property}`, () =>
-          popup!.querySelector<HTMLElement>(
+          popup.querySelector<HTMLElement>(
             `[data-query-property-page="${property}"]`,
           )!,
         );
@@ -415,10 +411,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ page: pageHelpers }, { popupSelector, hook }) => {
         const { press, until } = pageHelpers;
         const page = activeDocument
-          .querySelector<HTMLElement>(popupSelector)
-          ?.querySelector<HTMLElement>("[data-chooser-page]")!;
+          .querySelector<HTMLElement>(popupSelector)!
+          .querySelector<HTMLElement>("[data-chooser-page]")!;
         press(
-          page!.querySelector<HTMLElement>("[data-chooser-page-menu]")!,
+          page.querySelector<HTMLElement>("[data-chooser-page-menu]"),
           "More options",
         );
         const item = await until(`menu item ${hook}`, () =>
@@ -442,9 +438,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const { press } = pageHelpers;
         press(
           activeDocument
-            .querySelector<HTMLElement>(popupSelector)
-            ?.querySelector<HTMLElement>("[data-chooser-page]")!
-            .querySelector<HTMLElement>("[data-chooser-page-close]")!,
+            .querySelector<HTMLElement>(popupSelector)!
+            .querySelector<HTMLElement>("[data-chooser-page]")!
+            .querySelector<HTMLElement>("[data-chooser-page-close]"),
           "Close",
         );
         return String(true);
@@ -635,22 +631,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           { popupSelector, isNameMissing, fieldsName, expression },
         ) => {
           const page = activeDocument
-            .querySelector<HTMLElement>(popupSelector)
-            ?.querySelector<HTMLElement>("[data-chooser-page]")!;
+            .querySelector<HTMLElement>(popupSelector)!
+            .querySelector<HTMLElement>("[data-chooser-page]")!;
           const set = (el: HTMLInputElement, value: string) => {
             el.value = value;
             el.dispatchEvent(new InputEvent("input", { bubbles: true }));
           };
           if (isNameMissing) {
+            // The name stays blank so the missing-name case is exercised.
           } else {
             set(
-              page!.querySelector<HTMLInputElement>(
+              page.querySelector<HTMLInputElement>(
                 "[data-query-formula-name]",
               )!,
               fieldsName!,
             );
           }
-          const view = page!.querySelector<CodeMirrorContent>(
+          const view = page.querySelector<CodeMirrorContent>(
             "[data-query-formula-expression] .cm-content",
           )!.cmTile.root.view;
           view.dispatch({
@@ -673,14 +670,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async (_context, { popupSelector }) => {
           const page = activeDocument
-            .querySelector<HTMLElement>(popupSelector)
-            ?.querySelector<HTMLElement>("[data-chooser-page]")!;
-          const save = page!.querySelector<HTMLButtonElement>(
+            .querySelector<HTMLElement>(popupSelector)!
+            .querySelector<HTMLElement>("[data-chooser-page]")!;
+          const save = page.querySelector<HTMLButtonElement>(
             "[data-query-formula-save]",
           )!;
           return {
             syntax:
-              page!
+              page
                 .querySelector<HTMLElement>("[data-query-formula-syntax]")
                 ?.getAttribute("data-query-formula-syntax") ?? null,
             save: save ? !save.disabled : null,
@@ -701,17 +698,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const { press, until } = pageHelpers;
           const popup =
             activeDocument.querySelector<HTMLElement>(popupSelector)!;
-          const save = popup!.querySelector<HTMLButtonElement>(
+          const save = popup.querySelector<HTMLButtonElement>(
             "[data-chooser-page] [data-query-formula-save]",
           )!;
           if (save) {
             press(save, "Save");
             await until("page of the Formula", () =>
-              popup!.querySelector<HTMLElement>("[data-query-property-page]")!,
+              popup.querySelector<HTMLElement>("[data-query-property-page]")!,
             );
           }
           press(
-            popup!.querySelector<HTMLElement>("[data-chooser-page-close]")!,
+            popup.querySelector<HTMLElement>("[data-chooser-page-close]"),
             "Close",
           );
           return String(true);
@@ -728,19 +725,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * of the text can come after that.
      */
     const formulaUnderlines = async (expected: string[]) =>
-      (await obRun(
+      await obRun(
         run.vaultId,
         async ({ page: pageHelpers }, { popupSelector, expected }) => {
           const { until } = pageHelpers;
           const field = activeDocument
             .querySelector<HTMLElement>(popupSelector)
             ?.querySelector<HTMLElement>("[data-chooser-page]")
-            ?.querySelector<HTMLElement>("[data-query-formula-expression]")!;
+            ?.querySelector<HTMLElement>("[data-query-formula-expression]");
           const content =
-            field?.querySelector<CodeMirrorContent>(".cm-content")!;
-          if (!content) throw new Error("Missing: the Formula field");
+            field?.querySelector<CodeMirrorContent>(".cm-content");
+          if (!field || !content) throw new Error("Missing: the Formula field");
           const marks = () => [
-            ...field!.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
+            ...field.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
           ];
           const texts = () => JSON.stringify(marks().map((n) => n.textContent));
           await until("underlines", () =>
@@ -755,20 +752,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return {
             marks: marks().map((n) => n.textContent),
             styles: marks().map((n) => getComputedStyle(n).textDecorationStyle),
-            gutter: field!.querySelector<HTMLElement>(".cm-gutters")! != null,
+            gutter: field.querySelector<HTMLElement>(".cm-gutters")! != null,
           };
         },
         {
           popupSelector: `${"[data-query-properties-popup]"}`,
           expected: JSON.stringify(expected),
         },
-      )) as { marks: string[]; styles: string[]; gutter: boolean };
+      );
     await obRunUntil(
       run.vaultId,
       async (_context, { popupSelector }) => {
         return !!activeDocument
           .querySelector<HTMLElement>(popupSelector)
-          ?.querySelector<HTMLElement>("[data-chooser-page]")!;
+          ?.querySelector<HTMLElement>("[data-chooser-page]");
       },
       { popupSelector: `${"[data-query-properties-popup]"}` },
       { what: "the property chooser page to open in the Properties popover" },
@@ -776,27 +773,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The Formula field looks and focuses as the text input above it: the
     // same border, radius, fill and focus ring, its text at the same inset,
     // and no focus outline of the editor's own.
-    interface InputLook {
-      border: string;
-      radius: string;
-      fill: string;
-      ring: string;
-    }
-    const fieldLook = (await obRun(
+    const fieldLook = await obRun(
       run.vaultId,
       async ({ page: pageHelpers }, { popupSelector }) => {
         const { until } = pageHelpers;
         const page = activeDocument
-          .querySelector<HTMLElement>(popupSelector)
-          ?.querySelector<HTMLElement>("[data-chooser-page]")!;
-        const input = page!.querySelector<HTMLInputElement>(
+          .querySelector<HTMLElement>(popupSelector)!
+          .querySelector<HTMLElement>("[data-chooser-page]")!;
+        const input = page.querySelector<HTMLInputElement>(
           "[data-query-formula-name]",
         )!;
-        const field = page!.querySelector<HTMLElement>(
+        const field = page.querySelector<HTMLElement>(
           "[data-query-formula-expression]",
         )!;
-        const editor = field!.querySelector<HTMLElement>(".cm-editor")!;
-        const line = field!.querySelector<HTMLElement>(".cm-line")!;
+        const editor = field.querySelector<HTMLElement>(".cm-editor")!;
+        const line = field.querySelector<HTMLElement>(".cm-line")!;
         // The box and focus ring that show: the shadows that have a spread.
         const ringOf = (shadow: string) =>
           shadow
@@ -814,52 +805,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ring: ringOf(c.boxShadow),
           };
         };
-        const inputStyle = getComputedStyle(input!);
+        const inputStyle = getComputedStyle(input);
         const inset = {
           input:
             Number.parseFloat(inputStyle.borderLeftWidth) +
             Number.parseFloat(inputStyle.paddingLeft),
           field:
-            line!.getBoundingClientRect().left +
-            Number.parseFloat(getComputedStyle(line!).paddingLeft) -
-            field!.getBoundingClientRect().left,
+            line.getBoundingClientRect().left +
+            Number.parseFloat(getComputedStyle(line).paddingLeft) -
+            field.getBoundingClientRect().left,
         };
         // The page focuses the Name input when it opens; rest is the look with no focus.
         (activeDocument.activeElement as HTMLElement | null)?.blur();
         await until(
           "no focus on the page",
           () =>
-            !editor!.classList.contains("cm-focused") &&
+            !editor.classList.contains("cm-focused") &&
             activeDocument.activeElement !== input,
         );
         const rest = { input: look(input), field: look(field) };
-        input!.focus();
+        input.focus();
         await until(
           "focus on the Name input",
           () => activeDocument.activeElement === input,
         );
         const inputFocused = look(input);
-        field!.querySelector<CodeMirrorContent>(".cm-content")!.focus();
+        field.querySelector<CodeMirrorContent>(".cm-content")!.focus();
         await until("focus in the Formula field", () =>
-          editor!.classList.contains("cm-focused"),
+          editor.classList.contains("cm-focused"),
         );
         return {
           rest,
           focused: { input: inputFocused, field: look(field) },
           inset,
           editor: {
-            focused: editor!.classList.contains("cm-focused"),
-            outline: getComputedStyle(editor!).outlineStyle,
+            focused: editor.classList.contains("cm-focused"),
+            outline: getComputedStyle(editor).outlineStyle,
           },
         };
       },
       { popupSelector: `${"[data-query-properties-popup]"}` },
-    )) as {
-      rest: { input: InputLook; field: InputLook };
-      focused: { input: InputLook; field: InputLook };
-      inset: { input: number; field: number };
-      editor: { focused: boolean; outline: string };
-    };
+    );
     expect(fieldLook.rest.field).toEqual(fieldLook.rest.input);
     expect(fieldLook.focused.field).toEqual(fieldLook.focused.input);
     expect(fieldLook.inset.field).toBeCloseTo(fieldLook.inset.input);
@@ -1029,12 +1015,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ page: pageHelpers }, { popupSelector }) => {
         const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
         const issue =
-          popup!
+          popup
             .querySelector<HTMLElement>(
               '[data-query-property="formula.year"] [data-query-formula-issue]',
             )
             ?.getAttribute("data-query-formula-issue") ?? null;
-        pageHelpers.closePopovers(popup!.ownerDocument);
+        pageHelpers.closePopovers(popup.ownerDocument);
         return String(issue);
       },
       { popupSelector: `${"[data-query-properties-popup]"}` },
@@ -1046,16 +1032,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // hover delay.
     await editFormula();
     expect((await formulaUnderlines(["nope"])).marks).toEqual(["nope"]);
-    const hovered = (await obRun(
+    const hovered = await obRun(
       run.vaultId,
       async (_context, { popupSelector }) => {
         const field = activeDocument
-          .querySelector<HTMLElement>(popupSelector)
-          ?.querySelector<HTMLElement>("[data-chooser-page]")!
+          .querySelector<HTMLElement>(popupSelector)!
+          .querySelector<HTMLElement>("[data-chooser-page]")!
           .querySelector<HTMLElement>("[data-query-formula-expression]")!;
-        const mark = field!.querySelector<HTMLElement>(".cm-lintRange-error")!;
-        const r = mark!.getBoundingClientRect();
-        mark!.dispatchEvent(
+        const mark = field.querySelector<HTMLElement>(".cm-lintRange-error")!;
+        const r = mark.getBoundingClientRect();
+        mark.dispatchEvent(
           new MouseEvent("mousemove", {
             bubbles: true,
             clientX: r.left + r.width / 2,
@@ -1064,13 +1050,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         await new Promise((r) => setTimeout(r, 800));
         return [
-          ...mark!.ownerDocument.querySelectorAll<HTMLElement>(
+          ...mark.ownerDocument.querySelectorAll<HTMLElement>(
             ".cm-tooltip-hover, .cm-tooltip-lint",
           ),
         ].map((n) => n.className);
       },
       { popupSelector: `${"[data-query-properties-popup]"}` },
-    )) as string[];
+    );
     expect(hovered).toEqual([]);
     // A text other than the saved one shows no underline of the run's Fault.
     await typeFormula({ expression: "title.nope( )" });
@@ -1284,14 +1270,14 @@ views:
           const issues = Object.fromEntries(
             ["year", "next", "recent"].map((name) => [
               name,
-              popup!
+              popup
                 .querySelector<HTMLElement>(
                   `[data-query-property="formula.${name}"] [data-query-formula-issue]`,
                 )
                 ?.getAttribute("data-query-formula-issue") ?? null,
             ]),
           );
-          pageHelpers.closePopovers(popup!.ownerDocument);
+          pageHelpers.closePopovers(popup.ownerDocument);
           return issues;
         },
         { popupSelector: `${"[data-query-properties-popup]"}` },
@@ -1299,7 +1285,7 @@ views:
     };
     /** The issue at each condition of the view's filters, in the Filter popover. */
     const conditionIssues = async () => {
-      return (await obRun(
+      return await obRun(
         run.vaultId,
         async ({ app, page: pageHelpers }) => {
           const el = (
@@ -1316,7 +1302,7 @@ views:
             10000,
           );
           const issues = [
-            ...popover!.querySelectorAll<HTMLElement>(
+            ...popover.querySelectorAll<HTMLElement>(
               '[data-filter-section="view"] [data-condition-row]',
             ),
           ].map(
@@ -1328,7 +1314,7 @@ views:
           return issues;
         },
         undefined,
-      )) as (string | null)[];
+      );
     };
 
     // The view shows the rows ZotLit Query gives for the same filter, and a
@@ -1525,21 +1511,20 @@ views:
             async ({ app }, { notePath, name, selector }) => {
               const leaf = app.workspace.getMostRecentLeaf()!;
               if (
-                leaf!.view.getViewType() !== "zotlit-query-file" ||
-                (leaf!.view as import("obsidian").FileView).file?.path !==
+                leaf.view.getViewType() !== "zotlit-query-file" ||
+                (leaf.view as import("obsidian").FileView).file?.path !==
                   notePath
               )
                 return "null";
-              if (leaf!.getViewState().state!.view !== name)
-                await leaf!.setViewState({
-                  ...leaf!.getViewState(),
-                  state: { ...leaf!.getViewState().state, view: name },
+              if (leaf.getViewState().state!.view !== name)
+                await leaf.setViewState({
+                  ...leaf.getViewState(),
+                  state: { ...leaf.getViewState().state, view: name },
                 });
               await (
-                leaf!
-                  .view as import("@/views/query-view/file-view").QueryFileView
+                leaf.view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
-              const el = (leaf!.view as import("obsidian").ItemView).contentEl;
+              const el = (leaf.view as import("obsidian").ItemView).contentEl;
               return JSON.stringify(
                 [...el.querySelectorAll<HTMLElement>(selector)].map((row) => ({
                   key:
@@ -1599,7 +1584,7 @@ views:
           ? ""
           : typeof value === "object"
             ? `Error: ${(value as { message: string }).message}`
-            : String(value as string | number);
+            : String(value);
       return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     };
     const lines = (separator: string, newline: string) =>
@@ -1624,6 +1609,7 @@ views:
       async ({ page: pageHelpers }, { resultsPopupSelector }) => {
         const { press, until } = pageHelpers;
         let copied: string | null = null;
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const write = navigator.clipboard.write;
         navigator.clipboard.write = async (items) => {
           copied = await (await items[0]!.getType("text/plain")).text();
@@ -1632,7 +1618,7 @@ views:
           press(
             activeDocument
               .querySelector<HTMLElement>(resultsPopupSelector)!
-              .querySelector<HTMLElement>("[data-query-copy]")!,
+              .querySelector<HTMLElement>("[data-query-copy]"),
             "Copy to clipboard",
           );
           await until("clipboard write", () => copied !== null, 5000).catch(
@@ -1654,7 +1640,9 @@ views:
       run.vaultId,
       async ({ page: pageHelpers }, { resultsPopupSelector }) => {
         const { press } = pageHelpers;
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const create = URL.createObjectURL;
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const click = HTMLAnchorElement.prototype.click;
         let blob: Blob | null = null,
           name: string | null = null;
@@ -1671,7 +1659,7 @@ views:
           press(
             activeDocument
               .querySelector<HTMLElement>(resultsPopupSelector)!
-              .querySelector<HTMLElement>("[data-query-export]")!,
+              .querySelector<HTMLElement>("[data-query-export]"),
             "Export CSV",
           );
         } finally {
@@ -1794,11 +1782,11 @@ views:
                   )!,
                 )
                 .filter((n) =>
-                  n?.querySelector<HTMLElement>("[data-query-property-name]")!,
+                  n?.querySelector<HTMLElement>("[data-query-property-name]"),
                 )
                 .map((n) => [
-                  n!.dataset.queryProperty,
-                  n!.querySelector<HTMLElement>("[data-query-property-name]")!
+                  n.dataset.queryProperty,
+                  n.querySelector<HTMLElement>("[data-query-property-name]")!
                     .textContent,
                 ]);
               pageHelpers.closePopovers(popup.ownerDocument);
@@ -1844,12 +1832,12 @@ views:
       run.vaultId,
       async (_context, { popupSelector }) => {
         const input = activeDocument
-          .querySelector<HTMLElement>(popupSelector)
-          ?.querySelector<HTMLElement>("[data-chooser-page]")!
+          .querySelector<HTMLElement>(popupSelector)!
+          .querySelector<HTMLElement>("[data-chooser-page]")!
           .querySelector<HTMLInputElement>("[data-query-display-name]")!;
-        input!.value = "Work";
-        input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
-        input!.dispatchEvent(
+        input.value = "Work";
+        input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        input.dispatchEvent(
           new KeyboardEvent("keydown", {
             key: "Escape",
             bubbles: true,
@@ -1900,11 +1888,11 @@ views:
       run.vaultId,
       async (_context, { popupSelector }) => {
         const input = activeDocument
-          .querySelector<HTMLElement>(popupSelector)
-          ?.querySelector<HTMLElement>("[data-chooser-page]")!
+          .querySelector<HTMLElement>(popupSelector)!
+          .querySelector<HTMLElement>("[data-chooser-page]")!
           .querySelector<HTMLInputElement>("[data-query-display-name]")!;
-        input!.value = "Year of source";
-        input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        input.value = "Year of source";
+        input.dispatchEvent(new InputEvent("input", { bubbles: true }));
       },
       { popupSelector: `${"[data-query-properties-popup]"}` },
     );
@@ -1933,8 +1921,8 @@ views:
         const input = activeDocument
           .querySelector<HTMLElement>(popupSelector)!
           .querySelector<HTMLInputElement>('input[role="combobox"]')!;
-        input!.value = "Year of source";
-        input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        input.value = "Year of source";
+        input.dispatchEvent(new InputEvent("input", { bubbles: true }));
       },
       { popupSelector: `${"[data-query-properties-popup]"}` },
     );
@@ -1943,9 +1931,9 @@ views:
       async ({ page: pageHelpers }, { popupSelector }) => {
         const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
         const rows = [
-          ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
+          ...popup.querySelectorAll<HTMLElement>("[data-query-property]"),
         ].map((n) => n.dataset.queryProperty);
-        pageHelpers.closePopovers(popup!.ownerDocument);
+        pageHelpers.closePopovers(popup.ownerDocument);
         return rows;
       },
       { popupSelector: `${"[data-query-properties-popup]"}` },
@@ -1960,10 +1948,10 @@ views:
       async (_context, { popupSelector }) => {
         const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
         const rows = [
-          ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
+          ...popup.querySelectorAll<HTMLElement>("[data-query-property]"),
         ].map((n) => n.dataset.queryProperty);
         return {
-          search: popup!.querySelector<HTMLInputElement>(
+          search: popup.querySelector<HTMLInputElement>(
             'input[role="combobox"]',
           )!.value,
           title: rows.includes("title"),
@@ -1987,11 +1975,13 @@ views:
 
     // "Export CSV…" names the columns by their Display Names.
     await openResults();
-    const exported = (await obRun(
+    const exported = await obRun(
       run.vaultId,
       async ({ page: pageHelpers }, { resultsPopupSelector }) => {
         const { press } = pageHelpers;
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const create = URL.createObjectURL;
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const click = HTMLAnchorElement.prototype.click;
         let blob: Blob | null = null;
         URL.createObjectURL = (b) => {
@@ -2003,7 +1993,7 @@ views:
           press(
             activeDocument
               .querySelector<HTMLElement>(resultsPopupSelector)!
-              .querySelector<HTMLElement>("[data-query-export]")!,
+              .querySelector<HTMLElement>("[data-query-export]"),
             "Export CSV",
           );
         } finally {
@@ -2021,7 +2011,7 @@ views:
       {
         resultsPopupSelector: `${"[data-query-results-popup]"}`,
       },
-    )) as { text: string | null };
+    );
     expect(exported.text?.split("\r\n")[0]).toBe(
       `${BYTE_ORDER_MARK}Work,Year of source`,
     );
@@ -2155,11 +2145,11 @@ views:
                 new Promise<void>((r) => requestAnimationFrame(() => r()));
 
               const out = await (async () => {
-                const date = th("date")!.getBoundingClientRect();
+                const date = th("date").getBoundingClientRect();
                 fire(
                   th("title"),
                   "dragstart",
-                  th("title")!.getBoundingClientRect().left + 5,
+                  th("title").getBoundingClientRect().left + 5,
                 );
                 fire(th("date"), "dragover", date.left + 5);
                 const line = el.querySelector<HTMLElement>(
@@ -2169,7 +2159,7 @@ views:
                   ? Math.round(line.getBoundingClientRect().left)
                   : null;
                 const layer = line ? getComputedStyle(line).zIndex : null;
-                const header = getComputedStyle(th("title")!).zIndex;
+                const header = getComputedStyle(th("title")).zIndex;
                 fire(th("date"), "drop", date.left + 5);
                 fire(th("title"), "dragend", 0);
                 await frame();
@@ -2251,7 +2241,7 @@ views:
               )
                 return "null";
               const edge = (p: string) =>
-                th(p)!.querySelector<HTMLElement>(
+                th(p).querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
                 )!;
 
@@ -2277,17 +2267,17 @@ views:
               const frame = () =>
                 new Promise<void>((r) => requestAnimationFrame(() => r()));
               const width = (p: string) =>
-                Math.round(th(p)!.getBoundingClientRect().width);
+                Math.round(th(p).getBoundingClientRect().width);
               const out = await (async () => {
                 const before = width("date");
-                const x = edge("date")!.getBoundingClientRect().left + 2;
+                const x = edge("date").getBoundingClientRect().left + 2;
                 pointer(edge("date"), "pointerdown", x);
                 pointer(el, "pointermove", x + 80);
                 await until("live width", () => width("date") !== before);
                 const live = width("date");
-                const cursor = getComputedStyle(th("title")!).cursor;
+                const cursor = getComputedStyle(th("title")).cursor;
                 pointer(th("date"), "pointerup", x + 80);
-                th("date")!.dispatchEvent(
+                th("date").dispatchEvent(
                   new MouseEvent("click", { bubbles: true, cancelable: true }),
                 );
                 await frame();
@@ -2298,7 +2288,7 @@ views:
                   live,
                   after: width("date"),
                   cursor,
-                  cursorAfter: getComputedStyle(th("title")!).cursor,
+                  cursorAfter: getComputedStyle(th("title")).cursor,
                   menu,
                 };
               })();
@@ -2375,7 +2365,7 @@ views:
               )
                 return "null";
               const edge = (p: string) =>
-                th(p)!.querySelector<HTMLElement>(
+                th(p).querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
                 )!;
 
@@ -2401,10 +2391,10 @@ views:
               const frame = () =>
                 new Promise<void>((r) => requestAnimationFrame(() => r()));
               const width = (p: string) =>
-                Math.round(th(p)!.getBoundingClientRect().width);
+                Math.round(th(p).getBoundingClientRect().width);
               const out = await (async () => {
                 const before = width("title");
-                const x = edge("title")!.getBoundingClientRect().left + 2;
+                const x = edge("title").getBoundingClientRect().left + 2;
                 pointer(edge("title"), "pointerdown", x);
                 pointer(el, "pointermove", x + 60);
                 await until("live width", () => width("title") !== before);
@@ -2485,14 +2475,14 @@ views:
               )
                 return "null";
               const edge = (p: string) =>
-                th(p)!.querySelector<HTMLElement>(
+                th(p).querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
                 )!;
 
               const width = (p: string) =>
-                Math.round(th(p)!.getBoundingClientRect().width);
+                Math.round(th(p).getBoundingClientRect().width);
               const out = await (async () => {
-                edge("date")!.dispatchEvent(
+                edge("date").dispatchEvent(
                   new MouseEvent("dblclick", {
                     bubbles: true,
                     cancelable: true,
@@ -2500,7 +2490,7 @@ views:
                 );
                 await until(
                   "auto width",
-                  () => !("sized" in th("date")!.dataset),
+                  () => !("sized" in th("date").dataset),
                 );
                 return { after: width("date") };
               })();
@@ -2568,7 +2558,7 @@ views:
               )
                 return "null";
               const edge = (p: string) =>
-                th(p)!.querySelector<HTMLElement>(
+                th(p).querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
                 )!;
 
@@ -2593,27 +2583,27 @@ views:
               };
 
               const width = (p: string) =>
-                Math.round(th(p)!.getBoundingClientRect().width);
+                Math.round(th(p).getBoundingClientRect().width);
               const out = await (async () => {
                 const min = Number.parseFloat(
-                  getComputedStyle(th("firstAuthor")!).getPropertyValue(
+                  getComputedStyle(th("firstAuthor")).getPropertyValue(
                     "--bases-table-column-min-width",
                   ),
                 );
                 const before = width("firstAuthor");
-                const x = edge("firstAuthor")!.getBoundingClientRect().left + 2;
+                const x = edge("firstAuthor").getBoundingClientRect().left + 2;
                 pointer(edge("firstAuthor"), "pointerdown", x);
                 pointer(el, "pointermove", x - before);
                 pointer(el, "pointerup", x - before);
                 await until("narrow width", () => width("firstAuthor") === min);
-                const at = th("firstAuthor")!.cellIndex;
+                const at = th("firstAuthor").cellIndex;
                 const cells = [
                   ...el.querySelectorAll<HTMLTableRowElement>(
                     '[data-query-table-row="item"]',
                   ),
                 ].map((row) => row.cells[at]);
                 const label =
-                  th("firstAuthor")!.firstElementChild!.lastElementChild;
+                  th("firstAuthor").firstElementChild!.lastElementChild;
                 return {
                   min,
                   auto: before,
@@ -2698,7 +2688,7 @@ views:
                 return "null";
 
               const width = (p: string) =>
-                Math.round(th(p)!.getBoundingClientRect().width);
+                Math.round(th(p).getBoundingClientRect().width);
               const out = await (async () => {
                 const items = () =>
                   [...activeDocument.querySelectorAll<HTMLElement>(".menu")]
@@ -2713,8 +2703,8 @@ views:
                         : ""),
                   );
                 const open = async (p: string) => {
-                  const r = th(p)!.getBoundingClientRect();
-                  th(p)!.dispatchEvent(
+                  const r = th(p).getBoundingClientRect();
+                  th(p).dispatchEvent(
                     new MouseEvent("contextmenu", {
                       bubbles: true,
                       cancelable: true,
@@ -2751,7 +2741,7 @@ views:
                 );
                 await until(
                   "auto width",
-                  () => !("sized" in th("firstAuthor")!.dataset),
+                  () => !("sized" in th("firstAuthor").dataset),
                 );
                 await until(
                   "second menu closes",
@@ -2833,7 +2823,7 @@ views:
               )
                 return "null";
               const edge = (p: string) =>
-                th(p)!.querySelector<HTMLElement>(
+                th(p).querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
                 )!;
 
@@ -2859,10 +2849,10 @@ views:
               const frame = () =>
                 new Promise<void>((r) => requestAnimationFrame(() => r()));
               const width = (p: string) =>
-                Math.round(th(p)!.getBoundingClientRect().width);
+                Math.round(th(p).getBoundingClientRect().width);
               const out = await (async () => {
                 const before = width("date");
-                const x = edge("date")!.getBoundingClientRect().left + 2;
+                const x = edge("date").getBoundingClientRect().left + 2;
                 pointer(edge("date"), "pointerdown", x);
                 pointer(el, "pointermove", x + 50);
                 await until("live width", () => width("date") !== before);
@@ -2960,17 +2950,17 @@ views:
               };
 
               const out = await (async () => {
-                const date = th("date")!.getBoundingClientRect();
+                const date = th("date").getBoundingClientRect();
                 fire(
                   th("title"),
                   "dragstart",
-                  th("title")!.getBoundingClientRect().left + 5,
+                  th("title").getBoundingClientRect().left + 5,
                 );
                 fire(th("date"), "dragover", date.left + 5);
                 const away =
                   view.containerEl.querySelector<HTMLElement>(".view-header")!;
-                fire(away, "dragover", away!.getBoundingClientRect().left + 5);
-                fire(away, "drop", away!.getBoundingClientRect().left + 5);
+                fire(away, "dragover", away.getBoundingClientRect().left + 5);
+                fire(away, "drop", away.getBoundingClientRect().left + 5);
                 fire(th("title"), "dragend", 0);
                 return {
                   line: !!activeDocument.querySelector<HTMLElement>(
@@ -3065,7 +3055,7 @@ views:
                 fire(
                   th("firstAuthor"),
                   "dragstart",
-                  th("firstAuthor")!.getBoundingClientRect().left + 5,
+                  th("firstAuthor").getBoundingClientRect().left + 5,
                 );
                 (
                   view as import("@/views/query-view/file-view").QueryFileView
@@ -3086,7 +3076,7 @@ views:
                       .map((n) => n.getAttribute("data-query-column"))
                       .join() === "date,title,firstAuthor",
                 );
-                const date = th("date")!.getBoundingClientRect();
+                const date = th("date").getBoundingClientRect();
                 fire(th("date"), "dragover", date.left + 5);
                 fire(th("date"), "drop", date.left + 5);
                 fire(th("firstAuthor"), "dragend", 0);
@@ -3133,12 +3123,12 @@ views:
 
     // A tab that closes mid-drag ends the drag: no drop line, no grabbing
     // cursor, the width as it was, and a later drop saves nothing.
-    const closed = (await obRun(
+    const closed = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }) => {
         const { until } = pageHelpers;
         const leaf = app.workspace.getMostRecentLeaf()!;
-        const view = leaf!.view;
+        const view = leaf.view;
         const el = (view as import("obsidian").ItemView).contentEl;
         const th = (p: string) =>
           el.querySelector<HTMLTableCellElement>(
@@ -3161,11 +3151,11 @@ views:
           (view as import("obsidian").FileView).file!,
         );
         const file = (view as import("obsidian").FileView).file;
-        const date = th("date")!.getBoundingClientRect();
+        const date = th("date").getBoundingClientRect();
         fire(
           th("title"),
           "dragstart",
-          th("title")!.getBoundingClientRect().left + 5,
+          th("title").getBoundingClientRect().left + 5,
         );
         fire(th("date"), "dragover", date.left + 5);
         const during = {
@@ -3180,7 +3170,7 @@ views:
         const left = () =>
           !activeDocument.querySelector<HTMLElement>(".table-drag-target")! &&
           !activeDocument.body.classList.contains("is-grabbing");
-        leaf!.detach();
+        leaf.detach();
         if ((layout as typeof layout & { _loaded: boolean })._loaded)
           throw new Error("the Table stays mounted");
         await until("drag ends", left).catch(() => {});
@@ -3199,11 +3189,7 @@ views:
         };
       },
       undefined,
-    )) as {
-      during: { line: boolean; grabbing: boolean };
-      after: { line: boolean; grabbing: boolean };
-      same: boolean;
-    };
+    );
     expect(closed.during).toEqual({ line: true, grabbing: true });
     expect(closed.after).toEqual({ line: false, grabbing: false });
     expect(closed.same).toBe(true);
@@ -3312,17 +3298,17 @@ views:
                 ].map((n) => n.getAttribute("data-query-column"));
 
               const out = await (async () => {
-                const title = th("title")!.getBoundingClientRect();
+                const title = th("title").getBoundingClientRect();
                 fire(
                   th(note),
                   "dragstart",
-                  th(note)!.getBoundingClientRect().left + 5,
+                  th(note).getBoundingClientRect().left + 5,
                 );
                 fire(th("title"), "dragover", title.left + 5);
                 fire(th("title"), "drop", title.left + 5);
                 fire(th(note), "dragend", 0);
                 await until("moved", () => columns()[0] === note);
-                const at = th(note)!.cellIndex;
+                const at = th(note).cellIndex;
                 return {
                   cells: [
                     ...el.querySelectorAll<HTMLTableRowElement>(
@@ -3397,7 +3383,7 @@ views:
               )
                 return "null";
               const edge = (p: string) =>
-                th(p)!.querySelector<HTMLElement>(
+                th(p).querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
                 )!;
 
@@ -3428,15 +3414,15 @@ views:
                   ),
                 ].map((n) => n.getAttribute("data-query-column"));
               const width = (p: string) =>
-                Math.round(th(p)!.getBoundingClientRect().width);
+                Math.round(th(p).getBoundingClientRect().width);
               const out = await (async () => {
                 const before = width(note);
-                const x = edge(note)!.getBoundingClientRect().left + 2;
+                const x = edge(note).getBoundingClientRect().left + 2;
                 pointer(edge(note), "pointerdown", x);
                 pointer(el, "pointermove", x + 80);
                 await until("live width", () => width(note) !== before);
                 pointer(th(note), "pointerup", x + 80);
-                await until("saved width", () => "sized" in th(note)!.dataset);
+                await until("saved width", () => "sized" in th(note).dataset);
                 return { before, after: width(note) };
               })();
               await (
@@ -3515,17 +3501,17 @@ views:
               const out = await (async () => {
                 if (!popup())
                   press(
-                    el.querySelector<HTMLElement>("[data-query-properties]")!,
+                    el.querySelector<HTMLElement>("[data-query-properties]"),
                     "Properties",
                   );
                 await until("Properties popover opens", () =>
-                  popup()?.querySelector<HTMLElement>("[data-query-property]")!,
+                  popup()?.querySelector<HTMLElement>("[data-query-property]"),
                 );
                 const row = () =>
-                  popup()!.querySelector<HTMLElement>(
+                  popup().querySelector<HTMLElement>(
                     `[data-query-property=${JSON.stringify(note)}]`,
                   )!;
-                const label = row()!.textContent;
+                const label = row().textContent;
                 press(row(), "Literature Note Property row");
                 await until("hidden", () => !columns().includes(note));
                 await (
@@ -3538,7 +3524,7 @@ views:
                 const kept = row()?.getAttribute("aria-selected") === "false";
                 press(row(), "Literature Note Property row");
                 await until("shown", () => columns().includes(note));
-                pageHelpers.closePopovers(popup()!.ownerDocument);
+                pageHelpers.closePopovers(popup().ownerDocument);
                 return { label, hidden, hiddenText, kept };
               })();
               await (

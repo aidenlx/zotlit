@@ -90,18 +90,18 @@ const makeMigrationEngine = Effect.fnUntraced(function* (options: {
     level: "debug" | "info" | "warn" | "error",
     message: string,
     fields?: Record<string, unknown>,
-  ) =>
-    ({
+  ) => {
+    const logByLevel = {
       debug: Effect.logDebug,
       info: Effect.logInfo,
       warn: Effect.logWarning,
       error: Effect.logError,
-    })
-      [level](message)
-      .pipe(
-        Effect.annotateLogs(fields ?? {}),
-        withLogCategory("template", "migration"),
-      );
+    };
+    return logByLevel[level](message).pipe(
+      Effect.annotateLogs(fields ?? {}),
+      withLogCategory("template", "migration"),
+    );
+  };
   const openPrompt = Effect.tryPromise({
     try: async () => options.openPrompt(),
     catch: templateFailure,

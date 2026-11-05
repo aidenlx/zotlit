@@ -43,12 +43,12 @@ declare module "virtual:citation-parse-worker" {
   export default source;
 }
 
-var __DEV__: boolean;
-var __WEB_WORKBENCH_ENABLED__: boolean;
-var __ANNOTATION_SUGGESTER_ENABLED__: boolean;
-var __DOCS_SITE_URL__: string;
-var __MIN_ELECTRON_VERSION__: string;
-var __LANGUAGE_PACK_DEV_SERVER__: string | undefined;
-var __PANDOC_ENGINE__: import("@/services/pandoc/pinned-engine").PinnedPandocEngine;
+let __DEV__: boolean;
+let __WEB_WORKBENCH_ENABLED__: boolean;
+let __ANNOTATION_SUGGESTER_ENABLED__: boolean;
+let __DOCS_SITE_URL__: string;
+let __MIN_ELECTRON_VERSION__: string;
+let __LANGUAGE_PACK_DEV_SERVER__: string | undefined;
+let __PANDOC_ENGINE__: import("@/services/pandoc/pinned-engine").PinnedPandocEngine;
 /** The Chinese Segmenter download this build pinned; see `scripts/chinese-segmenter.ts`. */
-var __CHINESE_SEGMENTER__: import("@/services/managed-binary/service").BinaryPin;
+let __CHINESE_SEGMENTER__: import("@/services/managed-binary/service").BinaryPin;

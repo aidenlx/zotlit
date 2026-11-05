@@ -140,6 +140,7 @@ export async function prepareRunWindow(vaultId: string): Promise<void> {
         if (!raised.has(win) && activeWindow === win)
           window.dispatchEvent(new FocusEvent("focus"));
       };
+      // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
       raised.set(win, { focus, shown, osFocus: shown?.focus, strayFocus });
       if (win !== window) win.addEventListener("focus", strayFocus);
       win.focus = () => void emulateFocus(win);

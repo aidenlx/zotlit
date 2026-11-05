@@ -2,7 +2,6 @@ import { recommended } from "@effect/tsgo/oxlint-presets";
 import { join } from "node:path";
 import { defineConfig } from "oxlint";
 
-import scannerBaseline from "./oxlint-scanner-baseline.json" with { type: "json" };
 import testBaseline from "./oxlint-tests-baseline.json" with { type: "json" };
 
 export const parentImportPattern = {
@@ -69,19 +68,11 @@ export const datePattern = {
  * lint config in `directory`, or to the repository root when it is omitted.
  */
 export function testBaselineOverrides(directory?: string) {
-  return [
-    ...baselineOverrides(testBaseline, directory),
-    ...baselineOverrides(scannerBaseline, directory),
-  ];
-}
-
-function baselineOverrides(
-  baseline: Record<string, string[]>,
-  directory?: string,
-) {
   const prefix = directory ? `${directory}/` : "";
   const filesByRule = new Map<string, string[]>();
-  for (const [file, rules] of Object.entries(baseline)) {
+  for (const [file, rules] of Object.entries(
+    testBaseline as Record<string, string[]>,
+  )) {
     if (!file.startsWith(prefix)) continue;
     for (const rule of rules) {
       // Only apps/obsidian loads the zotlit-effect-tests plugin; any other
@@ -166,6 +157,7 @@ export const scannerRules = [
   "typescript/unbound-method",
   "typescript/no-non-null-asserted-optional-chain",
   "eslint/no-fallthrough",
+  "eslint/no-var",
   "eslint/no-unexpected-multiline",
   "eslint/no-self-compare",
   "eslint/no-empty",

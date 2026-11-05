@@ -94,11 +94,11 @@ function codeRequest(
   const request =
     "query" in job && job.query
       ? code(DecodedQuery)(job.query).pipe(
-          Effect.map((query) => ({ ...job, query }) as QueryJob),
+          Effect.map((query): QueryJob => ({ ...job, query })),
         )
       : "values" in job && job.values
         ? code(DecodedValues)(job.values).pipe(
-            Effect.map((values) => ({ ...job, values }) as QueryJob),
+            Effect.map((values): QueryJob => ({ ...job, values })),
           )
         : Effect.succeed(job);
   return Effect.mapError(request, (error) => error.issue);
