@@ -195,6 +195,7 @@ export default defineConfig({
         "obsidianmd/hardcoded-config-path": "error",
         "obsidianmd/no-forbidden-elements": "error",
         "obsidianmd/no-global-this": "error",
+        "obsidianmd/no-restricted-globals": "error",
         "obsidianmd/no-sample-code": "error",
         "obsidianmd/no-tfile-tfolder-cast": "error",
         "obsidianmd/no-static-styles-assignment": "error",
