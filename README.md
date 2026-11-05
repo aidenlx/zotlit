@@ -5,8 +5,8 @@
   <img alt="ZotLit" src="assets/logo/zotlit-wordmark.svg" width="320">
 </picture>
 
-<p><strong>Your Zotero library, written into your vault.</strong></p>
-<p>Literature notes, citations, and annotations from Zotero in Obsidian.</p>
+<p><strong>A desk for getting research done with Zotero.</strong></p>
+<p>Browse and query your library, read and annotate PDFs, take notes, cite as you write, and export to Word, all in Obsidian.</p>
 
 <p>
   <a href="https://zotlit.aidenlx.site">🌐 Website</a>
@@ -30,7 +30,7 @@
 </div>
 
 > [!WARNING]
-> **Update the Obsidian installer first.** ZotLit needs Obsidian 1.13.4 or newer, and the **installer version** must also be 1.13.4 or newer. Obsidian's in-app update does not replace the installer. Check yours in **Settings → About**.
+> **Update the Obsidian installer first.** ZotLit needs Obsidian 1.14.5 or newer, and the **installer version** must also be 1.14.5 or newer. Obsidian's in-app update does not replace the installer. Check yours in **Settings → About**.
 >
 > If the installer is older, ZotLit does not load. Obsidian shows _Failed to load plugin "zotlit"_, and the developer console shows a `SyntaxError`.
 >
@@ -41,26 +41,32 @@
 
 ## Overview
 
-ZotLit connects your Zotero library to Obsidian. One command turns a Zotero item into a Markdown literature note shaped by your template. You can search the library and insert citations without leaving the editor, and read your Zotero annotations in a sidebar that follows the active reader. Everything stays as plain Markdown in your vault.
+ZotLit lets Zotero manage your papers, PDFs, and annotations, and keeps Obsidian for your thinking and writing. Browse your library in an Obsidian tab and query its items, annotations, and attachments, read and annotate a paper's PDF beside your draft, turn what you read into literature notes and citations, and export the finished note to Word with a bibliography. Your notes stay as plain Markdown in your vault.
 
 ## Features
 
 | Feature | Description |
 | --- | --- |
-| **Literature notes** | One command turns a Zotero item into a Markdown note, shaped by your template. |
-| **Citations** | Search your library and insert citations without leaving the editor. |
-| **Annotation view** | A sidebar of highlights and notes that follows your active Zotero reader. |
-| **Note import** | Bring Zotero child and standalone notes into your vault as Markdown. |
-| **Keep notes updated** | Re-render notes and refresh their metadata as items change in Zotero. |
-| **Live updates** | Push changes from Zotero to Obsidian as they happen. *Requires the [companion](https://zotlit.aidenlx.site/docs/install-companion).* |
-| **Templates** | Customize note, citation, and filename output with Liquid or Eta templates. |
-| **Agent-assisted templates** | [Describe the note you want](https://zotlit.aidenlx.site/docs/install-skill). Your agent edits and tests its templates against your Zotero library. |
+| **Library View** | Browse your Zotero collections and tags in an Obsidian tab. Select a paper to see its abstract, its PDF, and how many highlights you made in each color. |
+| **ZotLit Query** | Ask questions of your Zotero library without leaving Obsidian: every highlight in a collection, the papers from one journal, the papers tagged for a chapter. See the answers as tables, cards, or lists, and add columns of your own. |
+| **PDF reader** | Read a paper beside your draft. With Zotero 10, the highlights and comments you make in Obsidian save to Zotero and sync to your other devices. |
+| **Annotation view** | See all of a paper's highlights in one list beside the PDF. Drag one into your note, and it becomes a quote that links back to its page. |
+| **Literature notes** | Create a note for a paper in one step, with its details, your highlights, and a link back to Zotero. |
+| **Citations** | Cite as you type, and see the reference list in your citation style, such as APA or Chicago, as you write. |
+| **Export** | Export your draft to Word with its citations and reference list already formatted. |
+| **Citation graph** | See in Obsidian's graph view which papers each note cites, and which papers your notes have in common. |
+| **Note import** | Bring the notes you wrote in Zotero into your vault. |
+| **Keep notes updated** | When you correct a paper's details in Zotero, update its note with one command. |
+| **Templates** | Choose what each note contains and where it goes. Use a different layout for books, articles, or a project, and see a live preview as you edit. |
+| **Agent-assisted templates** | [Describe the note you want](https://zotlit.aidenlx.site/docs/install-skill) in plain words, and your AI assistant builds and tests the template for you. |
 
 Full guides live in the [documentation](https://zotlit.aidenlx.site/docs).
 
 ## Quick start
 
-With ZotLit [installed](https://zotlit.aidenlx.site/docs/install-zotlit), open the command palette and run the [create-note command](https://zotlit.aidenlx.site/docs/how-to/create-and-open-notes). Pick an item from your Zotero library, and ZotLit writes a Markdown note shaped by your template: frontmatter, headings, highlights, and your own notes, ready to link.
+With ZotLit [installed](https://zotlit.aidenlx.site/docs/install-zotlit), open the command palette and run **ZotLit: Open Zotero library**. The [Library View](https://zotlit.aidenlx.site/docs/how-to/use-library-view) shows your collections and papers. Select a paper to see its abstract and annotations, double-click it to [read its PDF in Obsidian](https://zotlit.aidenlx.site/docs/how-to/open-pdf-in-obsidian), or drag it into a note to cite it.
+
+When you have something to say about a paper, run the [create-note command](https://zotlit.aidenlx.site/docs/how-to/create-and-open-notes). ZotLit writes a Markdown note shaped by your template: frontmatter, headings, highlights, and your own notes, ready to link.
 
 New here? Follow the [first-note tutorial →](https://zotlit.aidenlx.site/docs/tutorial/first-note)
 
@@ -68,7 +74,7 @@ New here? Follow the [first-note tutorial →](https://zotlit.aidenlx.site/docs/
 
 > [!IMPORTANT]
 > **Zotero database access**
-> ZotLit reads your Zotero database directly, including files stored outside your Obsidian vault (Zotero's data directory, attachments on external drives or cloud storage). It reads only and does not write to your Zotero database. When your Zotero data directory sits on a different drive than your system temp folder, ZotLit keeps its short-lived database snapshots in a `.zotlit-db-reads` folder inside that data directory, which you can delete at any time.
+> ZotLit reads your Zotero database directly, including files stored outside your Obsidian vault (Zotero's data directory, attachments on external drives or cloud storage). It never writes to the database file. Changes you make from Obsidian, such as PDF annotations, go through Zotero's local API, and only after you grant permission in Zotero. When your Zotero data directory sits on a different drive than your system temp folder, ZotLit keeps its short-lived database snapshots in a `.zotlit-db-reads` folder inside that data directory, which you can delete at any time.
 
 > [!IMPORTANT]
 > **Network use**

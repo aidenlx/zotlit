@@ -26,6 +26,30 @@ export const Route = createFileRoute("/_home/")({
 
 const features = () => [
   {
+    term: m.docs_home_feature_library(),
+    href: "/docs/how-to/use-library-view",
+    ref: m.docs_home_how_to_link(),
+    description: m.docs_home_feature_library_description(),
+  },
+  {
+    term: m.docs_home_feature_query(),
+    href: "/docs/how-to/track-reading-status",
+    ref: m.docs_home_how_to_link(),
+    description: m.docs_home_feature_query_description(),
+  },
+  {
+    term: m.docs_home_feature_pdf(),
+    href: "/docs/how-to/open-pdf-in-obsidian",
+    ref: m.docs_home_how_to_link(),
+    description: m.docs_home_feature_pdf_description(),
+  },
+  {
+    term: m.docs_home_feature_annotations(),
+    href: "/docs/how-to/use-annotation-view",
+    ref: m.docs_home_how_to_link(),
+    description: m.docs_home_feature_annotations_description(),
+  },
+  {
     term: m.docs_home_feature_notes(),
     href: "/docs/tutorial/first-note",
     ref: m.docs_home_tutorial_link(),
@@ -38,16 +62,16 @@ const features = () => [
     description: m.docs_home_feature_citations_description(),
   },
   {
-    term: m.docs_home_feature_annotations(),
-    href: "/docs/how-to/use-annotation-view",
+    term: m.docs_home_feature_export(),
+    href: "/docs/how-to/export-note-with-citations",
     ref: m.docs_home_how_to_link(),
-    description: m.docs_home_feature_annotations_description(),
+    description: m.docs_home_feature_export_description(),
   },
   {
-    term: m.docs_home_feature_import(),
-    href: "/docs/how-to/import-zotero-notes",
+    term: m.docs_home_feature_graph(),
+    href: "/docs/how-to/explore-citations-in-graph",
     ref: m.docs_home_how_to_link(),
-    description: m.docs_home_feature_import_description(),
+    description: m.docs_home_feature_graph_description(),
   },
   {
     term: m.docs_home_feature_templates(),
