@@ -48,23 +48,6 @@ tester.run("no-restricted-globals", rule("no-restricted-globals"), {
   ],
 });
 
-tester.run("no-restricted-imports", rule("no-restricted-imports"), {
-  valid: [
-    "import { requestUrl } from 'obsidian';",
-    "import type { Moment } from 'moment';",
-  ],
-  invalid: [
-    {
-      code: "import axios from 'axios';",
-      errors: [{ messageId: "restricted" }],
-    },
-    {
-      code: "import moment from 'moment';",
-      errors: [{ messageId: "restricted" }],
-    },
-  ],
-});
-
 describe("oxlint-plugin-obsidian", () => {
   it("leaves the type-aware rules to ESLint", () => {
     assert.equal(plugin.rules["prefer-create-el"], undefined);

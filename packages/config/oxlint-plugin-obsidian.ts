@@ -41,9 +41,9 @@ for (const [name, rule] of Object.entries(obsidianmd.rules)) {
 // `window` is undefined in a worker, so `oxlint --fix` must leave this alone.
 rules["no-global-this"] = reportOnly(rules["no-global-this"]!);
 
-// The scanner's `no-restricted-globals` and `no-restricted-imports` entries
-// (eslint-plugin-obsidianmd ruleOptions). They are rules of their own here, so
-// they sit beside the repository's `Date` rule instead of replacing its options.
+// The scanner's `no-restricted-globals` entry (eslint-plugin-obsidianmd
+// ruleOptions). It is a rule of its own here, so it sits beside the
+// repository's `Date` rule instead of replacing its options.
 const restrictedGlobals: Record<string, string> = {
   app: "Avoid using the global app object. Instead use the reference provided by your plugin instance.",
   fetch:
@@ -51,19 +51,6 @@ const restrictedGlobals: Record<string, string> = {
   localStorage:
     "Prefer `App#saveLocalStorage` / `App#loadLocalStorage` functions to write / read localStorage data that's unique to a vault.",
 };
-
-const restrictedImports: Record<string, string> = Object.fromEntries([
-  ...["axios", "superagent", "got", "ofetch", "ky", "node-fetch"].map(
-    (name) => [
-      name,
-      `Use the built-in \`requestUrl\` function instead of \`${name}\`.`,
-    ],
-  ),
-  [
-    "moment",
-    "The 'moment' package is bundled with Obsidian. Import the `moment` value from 'obsidian' instead. For the `Moment` type, rely on the global `moment` namespace or add `type Moment = moment.Moment;` (type-only imports from 'moment' are allowed).",
-  ],
-]);
 
 /** Names that are not references to a global: property keys, member names, type positions. */
 function isReference(node: any): boolean {
@@ -107,30 +94,6 @@ rules["no-restricted-globals"] = {
         node,
         messageId: "restricted",
         data: { name: node.name, message },
-      });
-    },
-  }),
-} as unknown as Rule;
-
-rules["no-restricted-imports"] = {
-  meta: {
-    type: "suggestion",
-    schema: [],
-    messages: { restricted: "'{{name}}' import is restricted. {{message}}" },
-  },
-  create: (context: any) => ({
-    ImportDeclaration(node: any) {
-      const name = node.source.value;
-      const message = restrictedImports[name];
-      if (
-        message === undefined ||
-        (name === "moment" && node.importKind === "type")
-      )
-        return;
-      context.report({
-        node,
-        messageId: "restricted",
-        data: { name, message },
       });
     },
   }),
