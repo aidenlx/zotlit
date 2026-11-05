@@ -58,7 +58,7 @@ function Tags({
 }
 
 const input = () => screen.getByLabelText<HTMLInputElement>("Tag");
-const names = () => JSON.parse(screen.getByRole("status").textContent!);
+const names = () => JSON.parse(screen.getByRole("status").textContent);
 
 function type(text: string, key?: string) {
   fireEvent.input(input(), { target: { value: text } });

@@ -2,7 +2,6 @@ import { expect, it } from "vitest";
 
 import { parseAnnotationPosition } from "@zotlit/db";
 import type {
-  AnnotationPositionRaw,
   PdfInkPosition,
   PdfRectsPosition,
   PdfTextPosition,
@@ -44,7 +43,7 @@ const IMAGE = rects([[100, 300, 300, 500]]);
 
 function rects(value: number[][]): PdfRectsPosition {
   return parseAnnotationPosition(
-    { pageIndex: 1, rects: value } as unknown as AnnotationPositionRaw,
+    { pageIndex: 1, rects: value },
     "application/pdf",
   ) as PdfRectsPosition;
 }
@@ -157,7 +156,7 @@ it("lays no handle on a mark this build cannot yet adjust", () => {
 /** An ink position on page index 1, from flat `[x, y, x, y, …]` strokes. */
 function ink(paths: number[][], width = 2): PdfInkPosition {
   return parseAnnotationPosition(
-    { pageIndex: 1, width, paths } as unknown as AnnotationPositionRaw,
+    { pageIndex: 1, width, paths },
     "application/pdf",
   ) as PdfInkPosition;
 }
@@ -368,7 +367,7 @@ const STAIRCASE = parseAnnotationPosition(
       [72, 686, 300, 698],
     ],
     nextPageRects: [[72, 740, 150, 752]],
-  } as unknown as AnnotationPositionRaw,
+  },
   "application/pdf",
 ) as PdfRectsPosition;
 
@@ -642,7 +641,7 @@ function textAt(rotation = 0, rect = [100, 700, 200, 720]): PdfTextPosition {
       rects: [rect],
       fontSize: 10,
       rotation,
-    } as unknown as AnnotationPositionRaw,
+    },
     "application/pdf",
   ) as PdfTextPosition;
 }

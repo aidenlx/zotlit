@@ -808,7 +808,7 @@ Annotation`,
       await source.bridge.runPromise(source.profile.getSource("default")),
     ).toContain("Custom Default body.");
     await using test = await setup({
-      resolveProfile: source.profile.resolveProfile,
+      resolveProfile: (selector) => source.profile.resolveProfile(selector),
       getBuiltInSource: source.profile.getBuiltInSource,
       profiles: source.profile.profiles,
     });
@@ -1606,7 +1606,7 @@ Annotation`,
     const area = problemsArea(test.editor);
     const report = () =>
       area.querySelector<HTMLElement>('[data-part="problems-report"]')!
-        .textContent!;
+        .textContent;
     // Technical details shows the report; it is still collapsed, and copying
     // does not wait for the reader to open it.
     const details = area.querySelector("details")!;
@@ -1772,7 +1772,7 @@ Annotation`,
       const area = problemsArea(test.editor);
       const report = () =>
         area.querySelector<HTMLElement>('[data-part="problems-report"]')!
-          .textContent!;
+          .textContent;
       expect(reportFields(report())["Selection"]).toContain("item=MAIN2345");
 
       if (action === "Run") {
@@ -1808,7 +1808,7 @@ Annotation`,
     );
     const report = () =>
       area.querySelector<HTMLElement>('[data-part="problems-report"]')!
-        .textContent!;
+        .textContent;
     // Hand-derived: the problem points at the manifest's partials list, which
     // runs through its last line break.
     const at = BUNDLED_SOURCE.indexOf("- name: venue");
@@ -1873,7 +1873,7 @@ Annotation`,
     const area = problemsArea(test.editor);
     const report = () =>
       area.querySelector<HTMLElement>('[data-part="problems-report"]')!
-        .textContent!;
+        .textContent;
     expect(report()).toContain("Flow sequence in block collection");
     expect(report()).toContain("\n^\n");
 
@@ -2630,7 +2630,7 @@ After
     const report = reportFields(
       problemsArea(test.editor).querySelector<HTMLElement>(
         '[data-part="problems-report"]',
-      )!.textContent!,
+      )!.textContent,
     );
     expect(report["Engine location"]).toMatch(/authors:\d+/);
     expect(report["Source excerpt"]).toContain("^");

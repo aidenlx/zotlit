@@ -420,7 +420,7 @@ function createFixture(extraSeed?: string): {
   [Symbol.dispose](): void;
 } {
   const client = createClient(":memory:");
-  const sqlite = client.$client as DatabaseSync;
+  const sqlite = client.$client;
   try {
     seed(sqlite);
     if (extraSeed) sqlite.exec(extraSeed);

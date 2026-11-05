@@ -1128,7 +1128,7 @@ describe("Excerpt Image resolution", () => {
             () => {
               aborted = true;
               released.resolve();
-              reject(signal.reason);
+              reject(signal.reason as Error);
             },
             { once: true },
           ),
@@ -1315,7 +1315,7 @@ describe("Excerpt Image resolution", () => {
                 "abort",
                 () => {
                   released.resolve();
-                  reject(signal.reason);
+                  reject(signal.reason as Error);
                 },
                 { once: true },
               ),
@@ -1352,7 +1352,7 @@ describe("Excerpt Image resolution", () => {
               "abort",
               () => {
                 released = true;
-                reject(signal.reason);
+                reject(signal.reason as Error);
               },
               { once: true },
             ),

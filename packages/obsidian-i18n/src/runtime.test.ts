@@ -465,7 +465,7 @@ describe("Target-Locale Messages", () => {
     const messages: string[] = [];
     targeted.setLogger({
       ...noopLogger,
-      debug: (message) => messages.push(message as string),
+      debug: (message) => messages.push(message),
     });
     targeted.setTargetLocale("zh-CN");
 

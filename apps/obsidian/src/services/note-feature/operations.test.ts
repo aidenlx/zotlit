@@ -2324,10 +2324,8 @@ describe("overwriteNote", () => {
       frontmatter: { [FIELD_ZOTERO_KEY]: "RTKEY234" },
     });
     seedItem(harness.deps.db.client, item);
-    harness.deps.template.render = ((name: string) =>
-      name === "note"
-        ? "New body content"
-        : "") as typeof harness.deps.template.render;
+    harness.deps.template.render = (name: string) =>
+      name === "note" ? "New body content" : "";
 
     const result = await createNoteFeature(harness.deps).overwriteNote(
       harness.file("Literature/Root.md"),
@@ -2392,10 +2390,8 @@ describe("overwriteNote", () => {
 
     const harness = makeUpdateHarness({ content: "" });
     seedItem(harness.deps.db.client, item);
-    harness.deps.template.render = ((name: string) =>
-      name === "note"
-        ? "New body content"
-        : "") as typeof harness.deps.template.render;
+    harness.deps.template.render = (name: string) =>
+      name === "note" ? "New body content" : "";
     harness.host.vault.createFile(
       "Literature/Root.md",
       "---\r\nzotero-key: RTKEY234\r\n---\r\nOld body content",
@@ -5138,7 +5134,7 @@ function makeCreateGateItem(): Item {
       itemType: "journalArticle",
       title: "Root",
       citationKey: "root",
-    } as ItemFields,
+    },
     baseFields: {
       publicationTitle: null,
       publisher: null,

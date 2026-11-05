@@ -4,8 +4,12 @@ import { RuleTester } from "oxlint/plugins-dev";
 
 import plugin from "./oxlint-plugin-obsidian.ts";
 
-RuleTester.describe = describe;
-RuleTester.it = it;
+RuleTester.describe = (name, fn) => {
+  void describe(name, fn);
+};
+RuleTester.it = (name, fn) => {
+  void it(name, fn);
+};
 
 const tester = new RuleTester({
   languageOptions: { parserOptions: { lang: "ts" } },

@@ -135,7 +135,7 @@ it("shuts when focus leaves for elsewhere", async () => {
 it("keeps undo in its search field, out of a surface around it that steps a history of its own", async () => {
   const { app, host, trigger, popup, key } = mount();
   const surface = vi.fn();
-  host!.addEventListener("keydown", (event) => {
+  host.addEventListener("keydown", (event) => {
     if (event.key === "z") surface();
   });
   await key({ key: "ArrowDown" });

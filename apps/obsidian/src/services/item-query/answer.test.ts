@@ -995,9 +995,7 @@ describe("zotlit:query cancellation", () => {
       const events: string[] = [];
       read.mockImplementation(function (this: StatementSync, ...values) {
         if (events.push("read") === 3) interrupt();
-        return Reflect.apply(readRows, this, values) as ReturnType<
-          StatementSync["all"]
-        >;
+        return Reflect.apply(readRows, this, values);
       });
 
       const exit = yield* exitOf(query({ fields: '["title"]' }), interrupt);

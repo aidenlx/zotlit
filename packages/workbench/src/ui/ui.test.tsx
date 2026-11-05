@@ -1101,7 +1101,7 @@ describe("the error report", () => {
     );
     const { ui, host } = mounted;
     render(ui);
-    const options = screen.getAllByRole("option") as HTMLOptionElement[];
+    const options = screen.getAllByRole<HTMLOptionElement>("option");
     expect(options).toHaveLength(2);
     expect(options[0]!.value).not.toBe(options[1]!.value);
     expect(reportBlock().textContent).toContain("FIRST234");

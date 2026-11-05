@@ -26,11 +26,15 @@ import type { NativeWorkbenchSuggesterRequest } from "./host";
 /** How `fiber` ended: its value, or its failure as a rejection. */
 function settled<A, E>(fiber: Fiber.Fiber<A, E>): Promise<A> {
   return new Promise((resolve, reject) =>
-    fiber.addObserver((exit) =>
-      Exit.isSuccess(exit)
-        ? resolve(exit.value)
-        : reject(Cause.squash(exit.cause)),
-    ),
+    fiber.addObserver((exit) => {
+      if (Exit.isSuccess(exit)) return resolve(exit.value);
+      const failure = Cause.squash(exit.cause);
+      return reject(
+        failure instanceof Error
+          ? failure
+          : new Error(String(failure), { cause: failure }),
+      );
+    }),
   );
 }
 

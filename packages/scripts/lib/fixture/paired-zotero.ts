@@ -403,7 +403,7 @@ async function installCompanionProxy(
   try {
     const parsed: unknown = JSON.parse(rawManifest);
     if (typeof parsed === "object" && parsed !== null) {
-      manifest = parsed as CompanionManifest;
+      manifest = parsed;
     }
   } catch (error) {
     throw new Error(`the companion manifest at ${manifestPath} is not JSON.`, {

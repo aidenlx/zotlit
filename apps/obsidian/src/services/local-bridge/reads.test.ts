@@ -156,9 +156,9 @@ async function harness(
   await installStyles(dataDir);
 
   const sqlite = stack.adopt(createClient(":memory:"), (client) => {
-    (client.$client as DatabaseSync).close();
+    client.$client.close();
   });
-  seed(sqlite.$client as DatabaseSync);
+  seed(sqlite.$client);
 
   const vaultFiles = new Set(
     options.vaultFiles ?? [ITEM_NOTE_PATH, CHILD_NOTE_PATH, IMAGE_PATH],

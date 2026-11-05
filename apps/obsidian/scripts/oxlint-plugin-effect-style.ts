@@ -400,11 +400,7 @@ export const noTacit: Rule = {
     return {
       ImportDeclaration(node) {
         if (node.importKind === "type") return;
-        collectNames(
-          node.source.value,
-          node.specifiers as readonly ImportSpecifier[],
-          names,
-        );
+        collectNames(node.source.value, node.specifiers, names);
       },
       CallExpression(node) {
         const callee = node.callee as AstNode;
@@ -420,10 +416,7 @@ export const noTacit: Rule = {
         if (!name) return;
         const [module, member] = name.split(".") as [string, string];
         if (!CALLBACK_LAST[module]?.has(member)) return;
-        const argument = callbackArgument(
-          name,
-          node.arguments as unknown as readonly AstNode[],
-        );
+        const argument = callbackArgument(name, node.arguments);
         if (!argument || !isReference(argument)) return;
         context.report({
           node: argument as never,

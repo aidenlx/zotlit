@@ -33,7 +33,6 @@ import {
   selectAdjust,
   setCommenting,
 } from "./reader-surface-state";
-import type { OverlayPageView } from "./render";
 import { geometryFailureMessage } from "./selection";
 
 /**
@@ -108,7 +107,7 @@ async function setup(
   );
   const reader = await readerOverZotero(stack, {
     containerEl,
-    page: page as unknown as OverlayPageView,
+    page,
     records,
     capability,
     sortIndex,
@@ -1741,7 +1740,7 @@ it("refuses a Geometry Edit the lock takes on during the drag, on release", asyn
   click(h.page.div, ON_FIGURE);
   /** What the repository answers each Geometry Edit with. */
   const answered: MutationState[] = [];
-  const patch = h.service.patchGeometry;
+  const patch = h.service.patchGeometry.bind(h.service);
   vi.spyOn(h.service, "patchGeometry").mockImplementation((...args) =>
     patch(...args).pipe(
       Effect.tap((state) => Effect.sync(() => answered.push(state))),

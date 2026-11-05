@@ -103,7 +103,7 @@ function harness(
     command: commands.find(({ id }) => id === "customize-note-template")!,
     menu: () => {
       const menu = new Menu();
-      fileMenu(menu as never, file! as never, "more-options");
+      fileMenu(menu as never, file!, "more-options");
       return menu;
     },
     customize,

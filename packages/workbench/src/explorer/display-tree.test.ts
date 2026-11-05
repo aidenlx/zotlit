@@ -496,7 +496,7 @@ describe("copyValue", () => {
       value: "",
       expandable: false,
       ...overrides,
-    } as DisplayNode;
+    };
   }
 
   it("returns a string value verbatim", () => {

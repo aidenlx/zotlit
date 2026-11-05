@@ -940,7 +940,10 @@ async function remove(vaultPath: string, purge: boolean): Promise<void> {
   // folder has gone at its next start, so removing the folder lets a stranded
   // entry heal itself instead of outliving the worktree.
   if (purge) await purgeVault(abs);
-  if (failure) throw failure;
+  if (failure)
+    throw failure instanceof Error
+      ? failure
+      : new Error("Vault command failed", { cause: failure });
 }
 
 const vaultPathPosition = {

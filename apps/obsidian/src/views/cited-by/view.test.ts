@@ -440,9 +440,9 @@ async function makeHarness() {
 
 /** Type one query into the open search field and let its debounce elapse. */
 async function typeSearch(root: HTMLElement, query: string): Promise<void> {
-  const input = root.querySelector(
+  const input = root.querySelector<HTMLInputElement>(
     "[data-cited-by-search] input",
-  ) as HTMLInputElement | null;
+  );
   if (!input) throw new Error("the search field is out of view");
   vi.useFakeTimers();
   await act(() => {

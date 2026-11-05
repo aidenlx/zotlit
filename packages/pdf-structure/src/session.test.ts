@@ -68,7 +68,7 @@ describe("a Reader Session's Structured Characters", () => {
 
     expect(textCalls).toEqual([1]);
     expect(first).toBe(second);
-    expect(first!.chars.map(({ c }) => c)).toEqual(["7"]);
+    expect(first.chars.map(({ c }) => c)).toEqual(["7"]);
   });
 });
 

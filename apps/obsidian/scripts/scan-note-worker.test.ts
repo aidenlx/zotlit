@@ -65,7 +65,7 @@ it("includes codec and postMessage time in the measured posting cost (#1705)", a
   let now = 0;
   const clock = vi.spyOn(performance, "now").mockImplementation(() => now++);
   stack.defer(() => clock.mockRestore());
-  // oxlint-disable-next-line typescript(unbound-method) -- The spy calls this method with its original worker receiver below.
+  // oxlint-disable-next-line typescript/unbound-method -- The spy calls this method with its original worker receiver below.
   const post = Worker.prototype.postMessage;
   const posting = vi.spyOn(Worker.prototype, "postMessage");
   posting.mockImplementation(function (this: Worker, value, transfers) {
