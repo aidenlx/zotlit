@@ -95,7 +95,7 @@ export async function openResolver(
             failures += 1;
             return Stream.fail(
               new DbUnavailable({ message: "the read failed" }),
-            ) as Stream.Stream<unknown, unknown>;
+            );
           }
           return client.AttachmentPathIndex(...args) as Stream.Stream<
             unknown,

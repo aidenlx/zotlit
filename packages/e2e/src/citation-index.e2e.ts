@@ -88,8 +88,8 @@ async function preserveFixture(vaultId: string): Promise<AsyncDisposableStack> {
                 .then((hits) =>
                   String(
                     (hits[0] && "title" in hits[0].item.fields
-                      ? "title" in hits[0]!.item.fields
-                        ? hits[0]!.item.fields.title
+                      ? "title" in hits[0].item.fields
+                        ? hits[0].item.fields.title
                         : undefined
                       : undefined) === itemTitle,
                   ),
@@ -457,8 +457,8 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                     hits[0]!.item.itemID === expectedItemId;
                   fresh =
                     (hits[0] && "title" in hits[0].item.fields
-                      ? "title" in hits[0]!.item.fields
-                        ? hits[0]!.item.fields.title
+                      ? "title" in hits[0].item.fields
+                        ? hits[0].item.fields.title
                         : undefined
                       : undefined) === expectedTitle;
                   // Sampling cadence: each pass measures one search during the refresh.

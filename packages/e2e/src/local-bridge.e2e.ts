@@ -84,7 +84,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ) => {
               const url = String(args[0]);
               if (!url.startsWith("http:") && !url.startsWith("https:"))
-                return Reflect.apply(target, receiver, args) as Window | null;
+                return Reflect.apply(target, receiver, args);
               page.scratch.workbenchLaunch = args[0];
               return null;
             },

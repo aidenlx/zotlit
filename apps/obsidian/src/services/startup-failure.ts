@@ -27,7 +27,7 @@ export function startingAs(service: string) {
         Layer.effectContext<A, never, never>(
           Cause.hasInterruptsOnly(cause) ||
             Cause.squash(cause) instanceof ServiceStartupFailed
-            ? Effect.failCause(cause as Cause.Cause<never>)
+            ? Effect.failCause(cause)
             : Effect.die(new ServiceStartupFailed(service, cause)),
         ),
       ),

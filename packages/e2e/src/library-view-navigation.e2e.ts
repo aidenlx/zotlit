@@ -417,7 +417,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
 
     /** The keys of the first rows of the list, and the row of the paper with Annotations. */
-    const { rows, listed } = (await obRun(
+    const { rows, listed } = await obRun(
       run.vaultId,
       async ({ app, page }, { annotationItemKey }) => {
         const { until } = page;
@@ -440,11 +440,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ].map((n) => n.getAttribute("data-query-item-row")!);
         return {
           rows: keys.slice(0, 7),
-          listed: keys.find((k) => k!.endsWith(annotationItemKey)) ?? null,
+          listed: keys.find((k) => k.endsWith(annotationItemKey)) ?? null,
         };
       },
       { annotationItemKey: annotationItem.key },
-    )) as { rows: string[]; listed: string | null };
+    );
     expect(listed).not.toBeNull();
 
     const switches = async (where: string, how: "click" | "show") => {
@@ -648,7 +648,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       title: string | null;
       delay: number;
     }) =>
-      (await obRun(
+      await obRun(
         run.vaultId,
         async ({ app, page }, { mode, from, titleInput, to, delay }) => {
           const { until } = page;
@@ -806,7 +806,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return { frames, mutations, delayedReads };
         },
         { mode: mode, from: from, titleInput: title, to: to, delay: delay },
-      )) as Step;
+      );
 
     /**
      * The view goes from one Item to the next in one step: the last Item's
@@ -1812,7 +1812,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A search keeps to the facets: in the Collection, then in every
     // Library, each in the quick switcher's rank.
     const lookup = async (query: string, everywhere: boolean) =>
-      (await obRun(
+      await obRun(
         run.vaultId,
         async ({ zotlit }, { everywhere, query }) => {
           const s = zotlit.services;
@@ -1826,7 +1826,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).map((h) => h.item.indexedKey);
         },
         { everywhere: everywhere, query: query },
-      )) as string[];
+      );
     /**
      * Type `text` into the search box as a researcher does: the press into
      * the box, on its part the tree leaves uncovered, puts away the tree a
@@ -2404,7 +2404,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     /** The Indexed Keys the quick switcher's search answers, best first. */
     const lookup = async (query: string, everywhere: boolean) =>
-      (await obRun(
+      await obRun(
         run.vaultId,
         async ({ zotlit }, { everywhere, query }) => {
           const s = zotlit.services;
@@ -2418,7 +2418,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).map((h) => h.item.indexedKey);
         },
         { everywhere: everywhere, query: query },
-      )) as string[];
+      );
 
     interface Shown {
       phase: string;
@@ -3418,7 +3418,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { notepath: notePath },
     );
-    const menu = (await obRun(
+    const menu = await obRun(
       run.vaultId,
       async ({ app, page }, { unwrittenkey }) => {
         const { until } = page;
@@ -3463,7 +3463,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         }
       },
       { unwrittenkey: unwrittenKey },
-    )) as string[];
+    );
     expect(menu).toEqual([
       run.m.library_view_menu_open_note(),
       run.m.library_view_menu_insert_citation(),
@@ -3542,7 +3542,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A row dragged over the view is refused; dropped into the note, it
     // inserts its citation where it lands.
-    const drag = (await obRun(
+    const drag = await obRun(
       run.vaultId,
       async ({ app }, { notepath, unwrittenkey }) => {
         const leaf = (
@@ -3595,7 +3595,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return { refused, types: [...transfer.types] };
       },
       { notepath: notePath, unwrittenkey: unwrittenKey },
-    )) as { refused: boolean; types: string[] };
+    );
     expect(drag).toEqual({
       refused: true,
       types: ["text/plain", "application/x-zotlit-item"],
@@ -3928,7 +3928,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ) as (WorkspaceLeaf & { view: LibraryView })[]
               )[0]!.view.contentEl
                 .querySelector<HTMLElement>("[data-welcome-banner]")!
-                .querySelectorAll<HTMLElement>("button")!,
+                .querySelectorAll<HTMLElement>("button"),
             ].find((n) => n.textContent === welcomeActionSearchLabel),
             "Search your library",
           );
@@ -4522,7 +4522,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "welcome.dismissed": true,
     };
     // The researcher has a note open in the active leaf.
-    const note = (await obRun(
+    const note = await obRun(
       run.vaultId,
       async ({ app }) => {
         (
@@ -4537,7 +4537,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return { id: leaf.id, path: file!.path };
       },
       undefined,
-    )) as { id: string; path: string };
+    );
     await clearNotices(run.vaultId);
     await obRun(
       run.vaultId,
@@ -4672,7 +4672,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   ) as (WorkspaceLeaf & { view: LibraryView })[]
                 )[0]!.view.contentEl
                   .querySelector<HTMLElement>("[data-welcome-banner]")!
-                  .querySelectorAll<HTMLElement>("button")!,
+                  .querySelectorAll<HTMLElement>("button"),
               ].find((n) => n.textContent === welcomeUpdateActionLabel),
               "What's new",
             );
@@ -5128,7 +5128,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           { width: width },
         );
         const label = `${name}-${size}`;
-        results[label] = (await obRun(
+        results[label] = await obRun(
           run.vaultId,
           async (
             { app, page },
@@ -5242,7 +5242,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             sectionsDone: sections.done,
             sectionsCallouts: sections.callouts,
           },
-        )) as Layout;
+        );
         await cli([
           `vault=${run.vaultId}`,
           "dev:screenshot",

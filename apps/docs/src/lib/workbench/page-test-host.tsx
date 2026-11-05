@@ -300,7 +300,7 @@ export function sourceView(host: HTMLElement): EditorView {
 /** The pane tab the page reads as chosen. */
 export function chosenTab(host: HTMLElement): string {
   const tabs = host.querySelector('[role="tablist"]')!;
-  return tabs.querySelector('[aria-selected="true"]')!.textContent!;
+  return tabs.querySelector('[aria-selected="true"]')!.textContent;
 }
 
 /** Hands `source` to the page as the file a reader picked. */
@@ -341,7 +341,7 @@ export function chosenView(host: HTMLElement): string {
   const tabs = host.querySelector(
     `[role="group"][aria-label="${m.workbench_view_label()}"]`,
   )!;
-  return tabs.querySelector('[aria-pressed="true"]')!.textContent!;
+  return tabs.querySelector('[aria-pressed="true"]')!.textContent;
 }
 
 /** Every source a render was started over. */
@@ -534,7 +534,7 @@ export function bridgeFetch(
     return new Response(JSON.stringify(payload), {
       headers: { "Content-Type": "application/json" },
     });
-  } as typeof fetch;
+  };
 }
 
 export function bridgeResponse({

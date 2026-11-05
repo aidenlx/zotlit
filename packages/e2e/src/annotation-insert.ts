@@ -315,13 +315,13 @@ export async function verifyAnnotationInsert(
               },
               undefined,
             )
-          : ((await obRun(
+          : await obRun(
               vaultId,
               async ({ page }) => {
                 return page.scratch.__zotlitInsertTrial!.editor.getValue();
               },
               undefined,
-            )) as string);
+            );
       if (mode === "escape" || mode === "switch" || mode === "close") {
         expect(text).toBe("before TARGET after");
       } else if (mode === "disabled") {

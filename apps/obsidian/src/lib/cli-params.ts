@@ -521,7 +521,7 @@ function firstFault(
     case "Pointer":
       return firstFault(issue.issue, [...path, ...issue.path], check);
     case "Composite":
-      return firstFault(issue.issues[0]!, path, check);
+      return firstFault(issue.issues[0], path, check);
     case "Encoding":
       return firstFault(issue.issue, path, check);
     case "Filter":
@@ -546,9 +546,7 @@ function firstFault(
   return {
     path,
     message,
-    expected:
-      (annotations?.expected as string | undefined) ??
-      (check ? message : leaf.expected),
+    expected: annotations?.expected ?? (check ? message : leaf.expected),
     received: leaf.received,
     input,
     ...(allowed === undefined ? {} : { allowed }),
@@ -598,8 +596,7 @@ function leafFault(
       const message = SchemaIssue.defaultLeafHook(issue);
       return {
         message,
-        expected:
-          (issue.annotations?.expected as string | undefined) ?? message,
+        expected: issue.annotations?.expected ?? message,
         received: receivedText(input),
       };
     }

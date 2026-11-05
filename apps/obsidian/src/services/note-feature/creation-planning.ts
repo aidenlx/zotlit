@@ -252,7 +252,7 @@ const planCreations = Effect.fnUntraced(function* (
           previews: (item && previews.get(item.itemID)) ?? [],
         });
       }
-      return plans as ReadonlyMap<string, PlannedCreation>;
+      return plans;
     }),
   );
 });
@@ -354,7 +354,7 @@ const prepareCreationPreviews = Effect.fnUntraced(function* (
     Effect.annotateLogs({ count: items.length }),
     logged,
   );
-  return previews as ReadonlyMap<number, readonly PlannedCreationProfile[]>;
+  return previews;
 });
 
 /** The Default and each registered Profile that resolves now. */

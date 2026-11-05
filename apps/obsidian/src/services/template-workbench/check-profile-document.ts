@@ -249,10 +249,7 @@ export const checkProfileDocument = Effect.fn(
     const load = (key: string, root: "note" | "filename" | "annotation") =>
       loadRoot(key, root).pipe(withSettings(profile.settings), selectedNote);
     const [note, filename] = yield* Effect.all(
-      [
-        load(params.key as string, "note"),
-        load(params.key as string, "filename"),
-      ],
+      [load(params.key, "note"), load(params.key, "filename")],
       { concurrency: "unbounded" },
     );
     if (note.kind !== "data" || filename.kind !== "data")

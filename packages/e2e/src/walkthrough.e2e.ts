@@ -462,8 +462,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const app = host as WalkthroughApp;
 
           for (const leaf of page.leavesOfType("markdown"))
-            if ((leaf.view as MarkdownView).file?.path === notePath)
-              leaf.detach();
+            if (leaf.view.file?.path === notePath) leaf.detach();
           const file = app.vault.getFileByPath(notePath)!;
           if (file) await app.vault.delete(file);
         },
@@ -988,7 +987,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const suggest = app.workspace.editorSuggest.suggests.find(
           (s) => s.constructor.name === "CitationEditorSuggest",
         ) as WalkthroughCitationSuggest;
-        cleanup.defer(() => suggest!.close());
+        cleanup.defer(() => suggest.close());
         const editor = (leaf.view as MarkdownView).editor,
           results = [];
         for (const query of ["researc", "research", "finding", "findings"]) {
@@ -1007,9 +1006,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           });
           await waitFor(
             () =>
-              suggest!.isOpen &&
-              suggest!.context?.query === query &&
-              suggest!.suggestEl.textContent.includes(
+              suggest.isOpen &&
+              suggest.context?.query === query &&
+              suggest.suggestEl.textContent.includes(
                 "Why Most Published Research Findings Are False",
               ),
             true,
@@ -1025,7 +1024,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         ).find((hit) => hit.item.key === "DMIANART")!.item.fields;
         const key = "citationKey" in fields ? fields.citationKey : null;
         const row = [
-          ...suggest!.suggestEl.querySelectorAll<HTMLElement>(
+          ...suggest.suggestEl.querySelectorAll<HTMLElement>(
             ".suggestion-item",
           ),
         ].find((el) =>
@@ -1107,9 +1106,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const app = host as WalkthroughApp;
 
         return (
-          (app.workspace.editorSuggest.suggests.find(
-            (suggest) => suggest.constructor.name === "CitationEditorSuggest",
-          ) as WalkthroughCitationSuggest)!.isOpen &&
+          (
+            app.workspace.editorSuggest.suggests.find(
+              (suggest) => suggest.constructor.name === "CitationEditorSuggest",
+            ) as WalkthroughCitationSuggest
+          ).isOpen &&
           app.workspace.editorSuggest.suggests
             .find(
               (suggest) => suggest.constructor.name === "CitationEditorSuggest",
@@ -1170,14 +1171,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           ) as WalkthroughCitationSuggest,
           manager = app.workspace.editorSuggest;
         const originalTrigger = manager.trigger,
-          originalShow = suggest!.showSuggestions,
-          originalClose = suggest!.close;
+          originalShow = suggest.showSuggestions,
+          originalClose = suggest.close;
         const updated = Promise.withResolvers<void>();
         using hooks = new DisposableStack();
         hooks.defer(() => {
           manager.trigger = originalTrigger;
-          suggest!.showSuggestions = originalShow;
-          suggest!.close = originalClose;
+          suggest.showSuggestions = originalShow;
+          suggest.close = originalClose;
         });
         hooks.adopt(
           setTimeout(
@@ -1205,12 +1206,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             const result = Reflect.apply(target, receiver, args);
             if (relevant) {
               triggering = false;
-              if (suggest!.context === null || shown) updated.resolve();
+              if (suggest.context === null || shown) updated.resolve();
             }
             return result;
           },
         });
-        suggest!.close = new Proxy(originalClose, {
+        suggest.close = new Proxy(originalClose, {
           apply(
             target,
             receiver: NonNullable<typeof suggest>,
@@ -1221,14 +1222,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             return result;
           },
         });
-        suggest!.showSuggestions = new Proxy(originalShow, {
+        suggest.showSuggestions = new Proxy(originalShow, {
           apply(
             target,
             receiver: NonNullable<typeof suggest>,
             args: Parameters<typeof originalShow>,
           ) {
             const result = Reflect.apply(target, receiver, args);
-            if (entered() && suggest!.context?.query === "rougier2014, p") {
+            if (entered() && suggest.context?.query === "rougier2014, p") {
               shown = true;
               if (!triggering) updated.resolve();
             }
@@ -1238,7 +1239,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         await pressKey(debugger_, "ArrowLeft", 37);
         await debugger_.sendCommand("Input.insertText", { text: ", p" });
         await updated.promise;
-        const open = suggest!.isOpen,
+        const open = suggest.isOpen,
           before = editor.getValue();
         await pressKey(debugger_, "Enter", 13);
         return { open, before, after: editor.getValue() };
@@ -1263,7 +1264,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           ["Pandoc citations", "citation.pandoc-citations"],
           ["Wikilink citations", "citation.wikilink-citations"],
         ] as const;
-        const previous = controls.map(([, key]) => tab.getControlValue(key!));
+        const previous = controls.map(([, key]) => tab.getControlValue(key));
         const popout = app.vault.getConfig("settingsPopoutWindow");
         const originalError = console.error;
         const errors: string[] = [];
@@ -1272,7 +1273,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           app.setting.close();
           console.error = originalError;
           for (let i = 0; i < controls.length; i++)
-            await tab.setControlValue(controls[i]![1]!, previous[i]);
+            await tab.setControlValue(controls[i]![1], previous[i]);
           app.vault.setConfig("settingsPopoutWindow", popout);
         });
         console.error = (...args) => {
@@ -1304,18 +1305,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         )?.querySelector<HTMLButtonElement>("button");
         const changed = [];
         for (const [name, key] of controls) {
-          const initial = tab.getControlValue(key!);
+          const initial = tab.getControlValue(key);
           for (const expected of [!initial, initial]) {
             const tutorialButton = row(
               "Pandoc citation tutorial",
             )!.querySelector<HTMLButtonElement>("button");
             press(
               row(name)!.querySelector<HTMLElement>(".checkbox-container"),
-              name!,
+              name,
             );
             await waitFor(
               () => ({
-                value: tab.getControlValue(key!),
+                value: tab.getControlValue(key),
                 refreshed:
                   row(
                     "Pandoc citation tutorial",
@@ -1325,7 +1326,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               { value: expected, refreshed: true },
               "Citation settings refresh",
             );
-            changed.push(tab.getControlValue(key!) === expected);
+            changed.push(tab.getControlValue(key) === expected);
           }
         }
         app.setting.close();
@@ -1379,7 +1380,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
           const { waitFor } = page;
           const view = app.workspace.getActiveFileView() as MarkdownView,
-            editor = view!.editor;
+            editor = view.editor;
           editor.setValue(
             editor
               .getValue()
@@ -1388,7 +1389,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                 "%%zt-managed%%\nFOCUS_UPDATE_SENTINEL",
               ),
           );
-          const target = view!.containerEl.querySelector<HTMLElement>(selector);
+          const target = view.containerEl.querySelector<HTMLElement>(selector);
           if (!target) throw Error("Missing focus target");
           target.focus();
           const focused = target === target.ownerDocument.activeElement;
@@ -2299,15 +2300,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const folder = el.ownerDocument.getElementById(
           label!.htmlFor,
         ) as HTMLInputElement;
-        folder!.focus();
-        folder!.value = "Reading list";
-        folder!.dispatchEvent(
-          new folder!.ownerDocument.defaultView!.Event("input", {
+        folder.focus();
+        folder.value = "Reading list";
+        folder.dispatchEvent(
+          new folder.ownerDocument.defaultView!.Event("input", {
             bubbles: true,
           }),
         );
-        folder!.dispatchEvent(
-          new folder!.ownerDocument.defaultView!.FocusEvent("focusout", {
+        folder.dispatchEvent(
+          new folder.ownerDocument.defaultView!.FocusEvent("focusout", {
             bubbles: true,
           }),
         );
@@ -2333,7 +2334,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const path = created.file.path;
         cleanup.defer(async () => {
           for (const leaf of page.leavesOfType("markdown"))
-            if ((leaf.view as MarkdownView).file?.path === path) leaf.detach();
+            if (leaf.view.file?.path === path) leaf.detach();
           const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
         });

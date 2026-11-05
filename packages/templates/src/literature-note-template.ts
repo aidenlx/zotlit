@@ -439,7 +439,7 @@ export function parseLiteratureNoteTemplate(
   try {
     const result = v.safeParse(manifestSchema, rawManifest);
     if (!result.success) {
-      const issue = result.issues[0]!;
+      const issue = result.issues[0];
       const frontmatter = frontmatterIssueContext(rawManifest, issue);
       throw new LiteratureNoteTemplateError(
         "invalid-manifest",
@@ -509,7 +509,7 @@ function manifestNodePath(issue: {
   const path = issue.path?.map(({ key }) => key) ?? [];
   return path.length > 0 &&
     path.every((key) => typeof key === "string" || typeof key === "number")
-    ? (path as readonly (string | number)[])
+    ? path
     : undefined;
 }
 

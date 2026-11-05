@@ -938,11 +938,10 @@ function renderText(
   const element = page.document.createElementNS(SVG_NS, "text");
   const { baseline, turns } = layoutOf(page, position);
   const [left, , right] = position.rects[0]!;
-  const lines = freeTextLines(
-    freeTextOf(annotation),
-    Math.abs(right! - left!),
-    { fontSize: position.fontSize, measure },
-  );
+  const lines = freeTextLines(freeTextOf(annotation), Math.abs(right - left), {
+    fontSize: position.fontSize,
+    measure,
+  });
   element.setAttribute("x", String(baseline[0]));
   element.setAttribute("y", String(baseline[1]));
   element.setAttribute("fill", darken(colorOf(annotation)));

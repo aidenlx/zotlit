@@ -85,7 +85,7 @@ async function recordFrames(vaultId: string): Promise<
   );
   return {
     async read() {
-      return (await obRun(
+      return await obRun(
         vaultId,
         async ({ page }) => {
           var r = page.scratch.frames!;
@@ -97,12 +97,7 @@ async function recordFrames(vaultId: string): Promise<
           };
         },
         undefined,
-      )) as {
-        frames: number;
-        maxFrameGapMs: number;
-        longTasks: number;
-        longestTaskMs: number;
-      };
+      );
     },
     async [Symbol.asyncDispose]() {
       await obRun(
@@ -366,13 +361,13 @@ async function observeNotices(vaultId: string) {
   );
   return {
     async read(): Promise<string[]> {
-      return (await obRun(
+      return await obRun(
         vaultId,
         async ({ page }) => {
           return [...page.scratch.notices!.values.values()];
         },
         undefined,
-      )) as string[];
+      );
     },
     async [Symbol.asyncDispose]() {
       await obRun(

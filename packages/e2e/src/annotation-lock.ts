@@ -195,8 +195,8 @@ export async function verifyExternalAnnotationLock({
           )}]`,
         )!;
         if (!card) return "no card";
-        if (!card!.hasAttribute("data-alone")) card!.click();
-        return card!.hasAttribute("data-alone");
+        if (!card.hasAttribute("data-alone")) card.click();
+        return card.hasAttribute("data-alone");
       },
       { annotationKey },
       { what: "the annotation card to be marked alone in the Annotation View" },
@@ -255,10 +255,9 @@ export async function verifyExternalAnnotationLock({
         )!;
         return {
           quote:
-            card!
-              .querySelector<HTMLElement>("blockquote")
-              ?.textContent.trim() ?? "",
-          lock: card!
+            card.querySelector<HTMLElement>("blockquote")?.textContent.trim() ??
+            "",
+          lock: card
             .querySelector<HTMLElement>(".zt-annot-lock")!
             .getAttribute("aria-label"),
         };
@@ -301,7 +300,7 @@ export async function verifyExternalAnnotationLock({
                 annotationKey,
               )}]`,
             )!
-            .querySelector<HTMLElement>(node)!,
+            .querySelector<HTMLElement>(node),
           verb,
         );
       },
@@ -373,7 +372,7 @@ export async function verifyExternalAnnotationLock({
           )}]`,
         )!).querySelector<HTMLElement>(
           ".clickable-icon:has(svg.lucide-more-horizontal)",
-        )!,
+        ),
         "card menu",
       );
     },
@@ -521,7 +520,7 @@ export async function verifyExternalAnnotationLock({
           { dimmed: boolean; tooltip: string | null }
         > = {};
         for (const id of ["color", "tags", "delete"]) {
-          const node = popup!.querySelector<HTMLElement>(
+          const node = popup.querySelector<HTMLElement>(
             `[data-zt-verb=${id}]`,
           )!;
           verbs[id] = {
@@ -564,7 +563,7 @@ export async function verifyExternalAnnotationLock({
         press(
           document.querySelector<HTMLElement>(
             `.zt-pdf-mark-popup [data-zt-verb=${JSON.stringify(verb)}]`,
-          )!,
+          ),
           `popup ${verb}`,
         );
       },
@@ -643,8 +642,8 @@ export async function verifyExternalAnnotationLock({
       )!;
       return (
         !!card &&
-        card!.win !== window &&
-        !!card!.querySelector<HTMLElement>(".zt-annot-lock")!
+        card.win !== window &&
+        !!card.querySelector<HTMLElement>(".zt-annot-lock")!
       );
     },
     { annotationKey },
@@ -688,7 +687,7 @@ export async function verifyExternalAnnotationLock({
               annotationKey,
             )}]`,
           )!
-          .querySelector<HTMLElement>(colour)!,
+          .querySelector<HTMLElement>(colour),
         "colour",
       );
     },

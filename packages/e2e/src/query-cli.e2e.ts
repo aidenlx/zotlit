@@ -1980,7 +1980,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           for (var leaf of app.workspace.getLeavesOfType("markdown"))
             if ((leaf.view as import("obsidian").FileView).file === file)
               leaf.detach();
-          await app.fileManager.trashFile(file!);
+          await app.fileManager.trashFile(file);
         },
         { source },
       );
@@ -2080,13 +2080,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )
           .at(-1)!
           .querySelector<HTMLElement>(".suggestion-item")!;
-        row!.dispatchEvent(
+        row.dispatchEvent(
           new (activeWindow as Window & typeof globalThis).MouseEvent(
             "mousemove",
             { bubbles: true },
           ),
         );
-        row!.dispatchEvent(
+        row.dispatchEvent(
           new (activeWindow as Window & typeof globalThis).MouseEvent("click", {
             bubbles: true,
           }),
@@ -2495,7 +2495,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             await new Promise((r) => setTimeout(r, 20));
           }
           return left.map(
-            ([name, entry]) => `${name}: ${String(entry!.fn).slice(0, 120)}`,
+            ([name, entry]) => `${name}: ${String(entry.fn).slice(0, 120)}`,
           );
         } finally {
           if (!app.plugins.plugins.zotlit)

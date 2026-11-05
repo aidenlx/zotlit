@@ -268,7 +268,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           view?.contentEl
             .querySelector("[role=tab][aria-selected=true]")
             ?.textContent.trim() === tabTitleText &&
-          Array.from(view!.contentEl.querySelectorAll("input")).some(
+          Array.from(view.contentEl.querySelectorAll("input")).some(
             (el) => el.value === "books",
           )
         );

@@ -29,7 +29,7 @@ export function formatValue<I extends FluentMessageId>(
   id: I,
   ...[args]: FluentMessageArgs<I>
 ): Promise<string | null> {
-  return l10n.formatValue(id, args as L10nArgs | undefined);
+  return l10n.formatValue(id, args);
 }
 
 /**
@@ -109,7 +109,5 @@ export type TypedMenuOptions<T extends ValidTarget> = Omit<
 export function registerMenu<T extends ValidTarget>(
   options: TypedMenuOptions<T>,
 ): string | false {
-  return Zotero.MenuManager.registerMenu(
-    options as _ZoteroTypes.MenuManager.MenuOptions<T>,
-  );
+  return Zotero.MenuManager.registerMenu(options);
 }

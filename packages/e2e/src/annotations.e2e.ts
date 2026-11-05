@@ -209,8 +209,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await until(
             "excerpt height settles",
             () => {
-              if (card!.offsetHeight !== height) {
-                height = card!.offsetHeight;
+              if (card.offsetHeight !== height) {
+                height = card.offsetHeight;
                 since = Temporal.Now.instant().epochMilliseconds;
               }
               return Temporal.Now.instant().epochMilliseconds - since >= 300;
@@ -219,9 +219,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           const probe = (on: boolean) => {
             const start = read();
-            card!.toggleAttribute("data-selected", on);
+            card.toggleAttribute("data-selected", on);
             read();
-            const transitions = card!
+            const transitions = card
               .getAnimations()
               .filter((animation): animation is CSSTransition =>
                 ["background-color", "box-shadow"].includes(
@@ -285,7 +285,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                       ).length
                     : -1,
                   titled: root
-                    ? root!.querySelectorAll<HTMLElement>("[title]").length
+                    ? root.querySelectorAll<HTMLElement>("[title]").length
                     : -1,
                 };
               })(),
@@ -398,11 +398,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 rowsInsidePopup: false,
                 menuChrome: false,
               };
-            const box = popup!.getBoundingClientRect();
+            const box = popup.getBoundingClientRect();
             const rows = Array.from(
-              popup!.querySelectorAll<HTMLElement>('[role="option"]'),
+              popup.querySelectorAll<HTMLElement>('[role="option"]'),
             );
-            const probe = popup!.parentElement!.appendChild(
+            const probe = popup.parentElement!.appendChild(
               document.createElement("div"),
             );
             probe.style.cssText =
@@ -413,7 +413,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               want = getComputedStyle(probe) as CSSStyleDeclaration & {
                 cornerShape: string;
               };
-            const list = popup!.querySelector<HTMLElement>('[role="listbox"]')!;
+            const list = popup.querySelector<HTMLElement>('[role="listbox"]')!;
             const reads = [
               "backgroundColor",
               "borderTopWidth",
@@ -740,7 +740,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ) as AnnotationLeaf[]
           )[0]?.view.contentEl.querySelector<HTMLElement>(
             "[data-annot-view-more-options]",
-          )!,
+          ),
           "More options",
         );
       },
@@ -754,8 +754,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
-            item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === groupByLabel,
+            item.querySelector<HTMLElement>(".menu-item-title")?.textContent ===
+            groupByLabel,
         );
       },
       { groupByLabel: run.m.annot_view_group_by() },
@@ -769,8 +769,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
-            item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === groupByLabel,
+            item.querySelector<HTMLElement>(".menu-item-title")?.textContent ===
+            groupByLabel,
         );
         item!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
         press(item, "Group by");
@@ -784,8 +784,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
-            item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === propertyColorLabel,
+            item.querySelector<HTMLElement>(".menu-item-title")?.textContent ===
+            propertyColorLabel,
         );
       },
       { propertyColorLabel: run.m.query_view_property_color() },
@@ -800,7 +800,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             document.querySelectorAll<HTMLElement>(".menu .menu-item"),
           ).find(
             (item) =>
-              item!.querySelector<HTMLElement>(".menu-item-title")
+              item.querySelector<HTMLElement>(".menu-item-title")
                 ?.textContent === propertyColorLabel,
           ),
           "Color",
@@ -840,7 +840,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) as AnnotationLeaf[]
             )[0]?.view.contentEl.querySelector<HTMLElement>(
               "[data-annot-view-more-options]",
-            )!,
+            ),
             "More options",
           );
           return "true";
@@ -855,8 +855,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
-            item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === filterLabel,
+            item.querySelector<HTMLElement>(".menu-item-title")?.textContent ===
+            filterLabel,
         );
       },
       { filterLabel: run.m.annot_view_filter() },
@@ -871,7 +871,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             document.querySelectorAll<HTMLElement>(".menu .menu-item"),
           ).find(
             (item) =>
-              item!.querySelector<HTMLElement>(".menu-item-title")
+              item.querySelector<HTMLElement>(".menu-item-title")
                 ?.textContent === filterLabel,
           ),
           "Filter",
@@ -889,13 +889,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return modal
           ? {
               title:
-                modal!.querySelector<HTMLElement>(".modal-title")
-                  ?.textContent ?? null,
+                modal.querySelector<HTMLElement>(".modal-title")?.textContent ??
+                null,
               sections: Array.from(
-                modal!.querySelectorAll<HTMLElement>("[data-filter-section]"),
+                modal.querySelectorAll<HTMLElement>("[data-filter-section]"),
                 (el) => el.getAttribute("data-filter-section"),
               ),
-              text: modal!.textContent.includes("this.attachment"),
+              text: modal.textContent.includes("this.attachment"),
             }
           : null;
       },
@@ -949,14 +949,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         const modal = () =>
           document.querySelector<HTMLElement>(".modal.zt-annot-filter-modal")!;
-        const section = modal()!.querySelector<HTMLElement>(
+        const section = modal().querySelector<HTMLElement>(
           '[data-filter-section="view"]',
         )!;
-        const before = section!.querySelectorAll<HTMLElement>(
+        const before = section.querySelectorAll<HTMLElement>(
           "[data-condition-row]",
         ).length;
         press(
-          [...section!.querySelectorAll<HTMLButtonElement>("button")].find(
+          [...section.querySelectorAll<HTMLButtonElement>("button")].find(
             (button) => button.textContent.trim() === addConditionLabel,
           ),
           "Add condition",
@@ -964,7 +964,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const row = await until(
           "new row",
           () =>
-            section!.querySelectorAll<HTMLElement>("[data-condition-row]")[
+            section.querySelectorAll<HTMLElement>("[data-condition-row]")[
               before
             ],
         );
@@ -981,18 +981,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         press(
           row.querySelector<HTMLElement>(
             `button[aria-label=${JSON.stringify(editExpressionLabel)}]`,
-          )!,
+          ),
           "Edit as expression",
         );
         const content = await until("expression field", () =>
-          section!
+          section
             .querySelectorAll<HTMLElement>("[data-condition-row]")
             [before]?.querySelector<CodeMirrorElement>(".cm-content")!,
         );
         await until("hint in the empty field", () =>
           content.textContent.includes(expressionPlaceholder),
         );
-        const editor = content.cmTile!.root!.view;
+        const editor = content.cmTile!.root.view;
         window.focus();
         editor.focus();
         await until(
@@ -1358,7 +1358,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) as AnnotationLeaf[]
             )[0]?.view.contentEl.querySelector<HTMLElement>(
               "[data-annot-view-more-options]",
-            )!,
+            ),
             "More options",
           );
           return {
@@ -1376,8 +1376,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
-            item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === saveQueryLabel,
+            item.querySelector<HTMLElement>(".menu-item-title")?.textContent ===
+            saveQueryLabel,
         );
       },
       { saveQueryLabel: run.m.annot_view_save_as_query_file() },
@@ -1392,7 +1392,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             document.querySelectorAll<HTMLElement>(".menu .menu-item"),
           ).find(
             (item) =>
-              item!.querySelector<HTMLElement>(".menu-item-title")
+              item.querySelector<HTMLElement>(".menu-item-title")
                 ?.textContent === saveQueryLabel,
           ),
           "Save as query file",
@@ -1412,13 +1412,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return modal
           ? {
               title:
-                modal!.querySelector<HTMLElement>(".modal-title")
-                  ?.textContent ?? null,
+                modal.querySelector<HTMLElement>(".modal-title")?.textContent ??
+                null,
               fields: [
-                ...modal!.querySelectorAll<HTMLElement>("[data-save-field]"),
+                ...modal.querySelectorAll<HTMLElement>("[data-save-field]"),
               ].map((n) => n.getAttribute("data-save-field")),
               records: [
-                ...modal!.querySelectorAll<HTMLInputElement>(
+                ...modal.querySelectorAll<HTMLInputElement>(
                   "[data-save-records]",
                 ),
               ].map((n) => ({
@@ -1461,24 +1461,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ".modal.zt-save-query-file-modal",
         )!;
         const set = (field: string, value: string) => {
-          const input = modal!.querySelector<HTMLInputElement>(
+          const input = modal.querySelector<HTMLInputElement>(
             `[data-save-field="${field}"]`,
           )!;
-          input!.value = value;
-          input!.dispatchEvent(new Event("input", { bubbles: true }));
+          input.value = value;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
         };
         set("name", "Saved colour");
         set("folder", "query-files");
         press(
-          modal!
+          modal
             .querySelector<HTMLInputElement>('[data-save-records="note-item"]')!
-            .closest("label")!,
+            .closest("label"),
           "note-item records",
         );
         press(
-          modal!.querySelector<HTMLElement>(
+          modal.querySelector<HTMLElement>(
             ".modal-button-container button.mod-cta",
-          )!,
+          ),
           "Save",
         );
       },

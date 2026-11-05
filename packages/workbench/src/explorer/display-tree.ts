@@ -468,5 +468,5 @@ function filterNode(
 function stringifyPrimitive(value: unknown): string {
   if (value === null) return "null";
   if (value === undefined) return "undefined";
-  return String(value as string | number | boolean);
+  return String(value);
 }

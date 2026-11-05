@@ -85,7 +85,7 @@ export function layoutRows(
         sign *
         // The string order of ZotLit Query, so groups order as its sort does.
         (compareStrings(groups.get(a)!.label, groups.get(b)!.label) ||
-          compareStrings(a!, b!)),
+          compareStrings(a, b)),
     );
   if (groups.has(null)) order.push(null);
   let hidden: QueryFileGroupValue[] = [];

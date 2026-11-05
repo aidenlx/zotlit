@@ -84,7 +84,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         page: run.m.annot_view_page({ page: pageLabel }),
         comment,
       }))
-      .toSorted((a, b) => a.key.localeCompare(b.key!));
+      .toSorted((a, b) => a.key.localeCompare(b.key));
     const authors = paper.creators
       .filter(({ creatorType }) => creatorType === "author")
       .map(({ firstName, lastName }) => `${firstName} ${lastName}`);
@@ -171,7 +171,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ].map((stat) => stat.getAttribute("data-library-card-stat")),
           counts: [
             ...stats.querySelectorAll<HTMLElement>("[data-library-card-stat]"),
-          ].map((stat) => Number(stat.textContent!.match(/\d+$/)?.[0])),
+          ].map((stat) => Number(stat.textContent.match(/\d+$/)?.[0])),
           selected: el.querySelector("[data-query-item-row][data-selected]")
             ? "row"
             : null,
@@ -310,7 +310,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                       ?.textContent ?? null,
                   text: n.textContent,
                 }))
-                .toSorted((a, b) => a.key!.localeCompare(b.key!)),
+                .toSorted((a, b) => a.key.localeCompare(b.key)),
             }
           : null;
       },
@@ -969,7 +969,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await pdfOpened(run.vaultId, annotationAttachment.path!);
     // The keyboard that enters the list at its first row selects it, and
     // the card shows it. Selecting the node again lets go of the selection.
-    const entered = (await obRun(
+    const entered = await obRun(
       run.vaultId,
       async ({ app, page }) => {
         const { press, until } = page;
@@ -1026,12 +1026,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
       },
       undefined,
-    )) as {
-      card: boolean;
-      selected: string;
-      focused: string | null;
-      first: string;
-    };
+    );
     expect(entered).toEqual({
       card: true,
       selected: entered.first,

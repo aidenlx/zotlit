@@ -242,14 +242,10 @@ export class TemplateFacade {
     // untouched. `renderAsync`/`includeAsync` are deliberately not
     // intercepted: the facade's public surface is sync-only `render()`, so
     // there's no async entry point that could reach them.
-    this.#eta.render = ((template, data, meta) =>
+    this.#eta.render = (template, data, meta) =>
       typeof template === "string"
         ? this.#renderByName(template, data)
-        : this.#etaBaseRender(
-            template,
-            data,
-            meta,
-          )) as TemplateEngine["render"];
+        : this.#etaBaseRender(template, data, meta);
 
     this.#liquid.registerTag(BRIDGE_TAG_NAME, this.#createBridgeTag());
   }

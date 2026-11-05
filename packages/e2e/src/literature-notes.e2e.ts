@@ -308,10 +308,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
             if (!help) return false;
             view.leaf.getContainer().focus();
-            help!.focus();
+            help.focus();
             return (
               help === view.contentEl.ownerDocument.activeElement &&
-              help!.getAttribute("aria-expanded") === "false"
+              help.getAttribute("aria-expanded") === "false"
             );
           },
           { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
@@ -373,7 +373,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               guide.textContent.includes("[!quote]") &&
               guide.textContent.includes(guideText) &&
               view.contentEl.textContent.includes(bannerText) &&
-              guide!.getBoundingClientRect().height > 0 &&
+              guide.getBoundingClientRect().height > 0 &&
               source!.getBoundingClientRect().height > 0
             );
           },
@@ -1560,7 +1560,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     let rows: (string | null)[] = [];
     expect(
       await waitFor(async () => {
-        rows = (await obRun(
+        rows = await obRun(
           run.vaultId,
           async ({ page }) => {
             return Array.from(
@@ -1576,7 +1576,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           },
           undefined,
-        )) as (string | null)[];
+        );
         return rows.length === 2 && rows[1] !== null;
       }),
     ).toBe(true);
@@ -1590,7 +1590,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const underlines = async (expected: string) => {
       let marks: string[][] = [];
       await waitFor(async () => {
-        marks = (await obRun(
+        marks = await obRun(
           run.vaultId,
           async ({ page }) => {
             return Array.from(
@@ -1606,7 +1606,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           },
           undefined,
-        )) as string[][];
+        );
         return marks[1]?.join() === expected;
       });
       return marks;
@@ -1704,7 +1704,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const item of creating) {
       const note = await indexedNote(run.vaultId, item.itemID);
       if (note.path)
-        await cli([`vault=${run.vaultId}`, "delete", `path=${note.path!}`]);
+        await cli([`vault=${run.vaultId}`, "delete", `path=${note.path}`]);
       await waitForIndexedNotes(run.vaultId, note.indexedKey, 0);
     }
     const articlesSource = (
@@ -2112,7 +2112,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         var button =
           row &&
           (Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find(
-            (button) => button!.getAttribute("aria-label") === moreActionsLabel,
+            (button) => button.getAttribute("aria-label") === moreActionsLabel,
           ) ??
             row.querySelector<HTMLElement>(".extra-setting-button"));
         if (!button) return false;
@@ -2182,7 +2182,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "input[type=checkbox]",
           );
           if (!checkbox || checkbox.checked) return false;
-          press(label!, "Move files");
+          press(label, "Move files");
           return checkbox.checked;
         },
         {

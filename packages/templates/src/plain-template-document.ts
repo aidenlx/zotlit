@@ -114,7 +114,7 @@ export function parsePlainTemplateDocument(
     ) ?? {},
   );
   if (!result.success) {
-    const issue = result.issues[0]!;
+    const issue = result.issues[0];
     throw new PlainTemplateDocumentError(
       "invalid-manifest",
       `Invalid template document manifest: ${issue.message}`,

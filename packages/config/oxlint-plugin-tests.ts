@@ -197,8 +197,7 @@ export const noMarkupAssertion: Rule = {
             .some((variable) =>
               variable.references.some(
                 (reference) =>
-                  !reference.init &&
-                  asserted(reference.identifier as AnyNode, seen),
+                  !reference.init && asserted(reference.identifier, seen),
               ),
             );
         } else if (
@@ -607,8 +606,8 @@ export const noPollAdapter: Rule = {
           callee.type === "MemberExpression" &&
           staticName(callee) === "then" &&
           node.arguments.length === 2 &&
-          returnsLiteral(node.arguments[0] as AnyNode, true) &&
-          returnsLiteral(node.arguments[1] as AnyNode, false)
+          returnsLiteral(node.arguments[0], true) &&
+          returnsLiteral(node.arguments[1], false)
         )
           context.report({ node, messageId: "adapter" });
       },
@@ -756,7 +755,7 @@ export const noStringTransport: Rule = {
       node.arguments.length === 1;
     return {
       CallExpression(node) {
-        if (isString(node) && isString(node.arguments[0] as AnyNode))
+        if (isString(node) && isString(node.arguments[0]))
           context.report({ node, messageId: "nested" });
         if (!pollCalls.has(calledName(node) ?? "")) return;
         const options = node.arguments[3];
@@ -764,7 +763,7 @@ export const noStringTransport: Rule = {
         // A callback that reads a "true"/"false" DOM attribute compares text on
         // purpose; only a callback that turns its own result into text moves
         // the boolean through a string.
-        if (!stringifies(node.arguments[1] as AnyNode)) return;
+        if (!stringifies(node.arguments[1])) return;
         for (const option of options.properties) {
           if (
             option.type !== "Property" ||
@@ -791,7 +790,7 @@ export const noStringTransport: Rule = {
                   seek(part as AnyNode);
             }
           };
-          seek(option.value as AnyNode);
+          seek(option.value);
         }
       },
     };

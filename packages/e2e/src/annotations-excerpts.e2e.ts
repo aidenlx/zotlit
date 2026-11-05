@@ -271,9 +271,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             args: Parameters<typeof read>,
           ) => {
             afterClose.reads++;
-            return Reflect.apply(target, receiver, args) as ReturnType<
-              typeof read
-            >;
+            return Reflect.apply(target, receiver, args);
           },
         });
         release();

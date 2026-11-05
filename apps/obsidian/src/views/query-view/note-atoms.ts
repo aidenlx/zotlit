@@ -25,7 +25,7 @@ export const replacedKeysAtom = Atom.family((path: string) =>
     get(templateRevisionAtom);
     return Effect.gen(function* () {
       const file = yield* (yield* Vault).getFileByPath(path);
-      if (!file) return new Set<string>() as ReadonlySet<string>;
+      if (!file) return new Set<string>();
       return yield* (yield* NoteFeature).replacedKeys(file);
     });
   }),

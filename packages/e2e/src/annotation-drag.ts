@@ -345,13 +345,13 @@ export async function verifyAnnotationDrag(
       undefined,
       { what: "the editor to contain a zotlit-excerpt embed after the drop" },
     );
-    const text = (await obRun(
+    const text = await obRun(
       vaultId,
       async ({ page }) => {
         return page.scratch.__zotlitDragTrial!.editor.getValue();
       },
       undefined,
-    )) as string;
+    );
     expect(text).toContain("![[zotlit-excerpt-");
     expect(text.split("FDRFQ7C2")).toHaveLength(2);
     // The one mention of the Annotation is its Durable Annotation Link.
