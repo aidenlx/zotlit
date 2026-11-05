@@ -4,6 +4,7 @@ import baseConfig, {
   datePattern,
   itemQuerySchemaPaths,
   parentImportPattern,
+  testBaselineOverrides,
   uniqueIdPaths,
 } from "@zotlit/config/oxlint";
 
@@ -46,6 +47,7 @@ export default defineConfig({
     ],
   },
   overrides: [
+    ...testBaselineOverrides("packages/item-query"),
     {
       // Static vocabulary generation and its direct tests own these values.
       files: [

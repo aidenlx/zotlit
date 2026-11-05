@@ -1,0 +1,353 @@
+{
+  "apps/docs/src/components/banner.tsx": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/docs/src/components/docs-page.tsx": ["typescript/only-throw-error"],
+  "apps/docs/src/lib/release-data.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/docs/src/lib/use-baked-then-fresh.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/docs/src/lib/workbench/page-test-host.tsx": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/docs/src/routes/_home/blog/$slug.tsx": ["typescript/only-throw-error"],
+  "apps/docs/src/routes/_home/changelog/$version.tsx": [
+    "typescript/only-throw-error"
+  ],
+  "apps/docs/src/routes/_home/changelog/index.tsx": [
+    "typescript/only-throw-error"
+  ],
+  "apps/obsidian/src/lib/__fixtures__/obsidian-file-manager.ts": [
+    "typescript/prefer-promise-reject-errors"
+  ],
+  "apps/obsidian/src/lib/cli-params.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/lib/effect-log.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/lib/toast.ts": ["typescript/prefer-promise-reject-errors"],
+  "apps/obsidian/src/lib/turndown/index.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/annotation-repository/capability.ts": [
+    "eslint/no-fallthrough"
+  ],
+  "apps/obsidian/src/services/attachment-open/open-target.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/attachment-resolver/__fixtures__.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/citation-index/test-harness.ts": [
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/prefer-promise-reject-errors"
+  ],
+  "apps/obsidian/src/services/citation-parse/worker-client.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/citation-popover/__fixtures__.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/citation-popover/actions.ts": [
+    "typescript/unbound-method"
+  ],
+  "apps/obsidian/src/services/database/read-source.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/excerpt-image/prepare.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/excerpt-image/store.browser-test.ts": [
+    "typescript/prefer-promise-reject-errors"
+  ],
+  "apps/obsidian/src/services/graph-citations/work-labels.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/item-query/answer.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/note-feature/creation-planning.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/note-feature/insert-action.ts": [
+    "typescript/unbound-method"
+  ],
+  "apps/obsidian/src/services/note-feature/write-pipeline.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/pdf-annotation-editor/render.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/profile/service.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/protocol/outcome.ts": [
+    "typescript/no-empty-object-type"
+  ],
+  "apps/obsidian/src/services/settings/migrate.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/settings/service.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/startup-failure.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/template-workbench/check-plain-document.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/template-workbench/check-profile-document.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/template-workbench/check.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/template/migration.ts": [
+    "eslint/no-unexpected-multiline"
+  ],
+  "apps/obsidian/src/services/template/service.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/services/zotero-reads/rpc.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/setting-tab/advanced.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/setting-tab/controls.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/setting-tab/create-profile-modal.ts": [
+    "typescript/no-misused-promises"
+  ],
+  "apps/obsidian/src/setting-tab/import-profile-modal.ts": [
+    "typescript/no-misused-promises"
+  ],
+  "apps/obsidian/src/setting-tab/profile-destination-modal.ts": [
+    "typescript/no-misused-promises"
+  ],
+  "apps/obsidian/src/setting-tab/profile-dialogs.ts": [
+    "typescript/prefer-promise-reject-errors"
+  ],
+  "apps/obsidian/src/setting-tab/share-profile-modal.ts": [
+    "typescript/no-misused-promises"
+  ],
+  "apps/obsidian/src/views/citation-suggest/insert-modal.ts": [
+    "typescript/no-misused-promises"
+  ],
+  "apps/obsidian/src/views/library/search.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/views/library/tag-selector.tsx": [
+    "eslint/no-unexpected-multiline"
+  ],
+  "apps/obsidian/src/views/note-preview/__fixtures__/render.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/views/note-preview/check-profile.ts": [
+    "typescript/only-throw-error"
+  ],
+  "apps/obsidian/src/views/query-view/note-atoms.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/views/query-view/rows.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/views/query-view/vault-cell.tsx": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/views/query-view/vault-editors.tsx": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/views/query-view/vault-sort.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/views/quick-switch/modal.ts": [
+    "typescript/no-misused-promises"
+  ],
+  "apps/obsidian/src/views/template-data-explorer/model.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "apps/obsidian/src/views/template-workbench/view.tsx": [
+    "typescript/no-misused-promises"
+  ],
+  "apps/zotero/src/lib/l10n.ts": ["typescript/no-unnecessary-type-assertion"],
+  "apps/zotero/src/status/index.ts": ["typescript/no-misused-promises"],
+  "packages/config/oxlint-plugin-obsidian.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/config/oxlint-plugin-tests.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/db/src/item-query/hydrate-chunk.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/annotation-citations.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/annotation-drag.ts": [
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/unbound-method"
+  ],
+  "packages/e2e/src/annotation-insert.ts": [
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/unbound-method"
+  ],
+  "packages/e2e/src/annotation-lock.ts": [
+    "eslint/no-unsafe-optional-chaining",
+    "typescript/no-non-null-asserted-optional-chain",
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/annotations-excerpts.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/unbound-method"
+  ],
+  "packages/e2e/src/annotations.e2e.ts": [
+    "eslint/no-unexpected-multiline",
+    "typescript/no-non-null-asserted-optional-chain",
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/background-throttling.ts": [
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/unbound-method"
+  ],
+  "packages/e2e/src/citation-index.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/citation-scan-measure.ts": [
+    "typescript/prefer-promise-reject-errors"
+  ],
+  "packages/e2e/src/citation-scan.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/e2e-run-fixture.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/e2e-run-helpers.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/e2e-run-note-helpers.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/e2e-run-suite-helpers.ts": [
+    "eslint/no-unexpected-multiline"
+  ],
+  "packages/e2e/src/excerpt-acceptance.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/excerpt-refresh.ts": ["typescript/unbound-method"],
+  "packages/e2e/src/excerpt-rendering.ts": [
+    "typescript/no-misused-promises",
+    "typescript/unbound-method"
+  ],
+  "packages/e2e/src/follow-mode.e2e.ts": [
+    "typescript/no-non-null-asserted-optional-chain",
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/fresh-destination.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/library-view-navigation.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/library-view-reading.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/library-view.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/literature-notes.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/local-bridge.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/page-helpers.ts": [
+    "typescript/only-throw-error",
+    "typescript/unbound-method"
+  ],
+  "packages/e2e/src/paired-run.e2e.ts": [
+    "eslint/no-self-compare",
+    "eslint/no-unsafe-finally",
+    "eslint/no-unsafe-optional-chaining",
+    "typescript/no-non-null-asserted-optional-chain",
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/only-throw-error",
+    "typescript/unbound-method"
+  ],
+  "packages/e2e/src/query-cli-scope.e2e.ts": ["typescript/unbound-method"],
+  "packages/e2e/src/query-cli.e2e.ts": [
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/unbound-method"
+  ],
+  "packages/e2e/src/query-view-properties.e2e.ts": [
+    "eslint/no-empty",
+    "typescript/no-non-null-asserted-optional-chain",
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/unbound-method"
+  ],
+  "packages/e2e/src/query-view-table.e2e.ts": [
+    "typescript/no-non-null-asserted-optional-chain",
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/query-view.e2e.ts": [
+    "eslint/no-constant-binary-expression",
+    "eslint/no-empty",
+    "eslint/no-self-compare",
+    "eslint/no-shadow-restricted-names",
+    "typescript/no-non-null-asserted-optional-chain",
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/recent-uses.ts": [
+    "eslint/no-empty",
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/e2e/src/walkthrough.e2e.ts": [
+    "eslint/no-unsafe-optional-chaining",
+    "typescript/no-non-null-asserted-optional-chain",
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/unbound-method"
+  ],
+  "packages/item-lookup/src/item-index.ts": ["typescript/unbound-method"],
+  "packages/item-query/src/describe-item-query.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/obsidian-i18n/src/lifecycle.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/obsidian-i18n/src/runtime.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/templates/src/facade.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/templates/src/index.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/templates/src/literature-note-template-manifest-edit.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/templates/src/literature-note-template.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/templates/src/plain-template-document.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ],
+  "packages/workbench/src/bridge/client.ts": ["eslint/no-empty"],
+  "packages/workbench/src/document/json-source.ts": [
+    "typescript/no-unsafe-enum-comparison"
+  ],
+  "packages/workbench/src/explorer/display-tree.ts": [
+    "typescript/no-unnecessary-type-assertion",
+    "typescript/no-unsafe-function-type"
+  ],
+  "packages/workbench/src/language/filter-expression-completion.ts": [
+    "typescript/no-unsafe-function-type"
+  ],
+  "packages/workbench/src/snapshot/descriptors.ts": [
+    "typescript/no-unnecessary-type-assertion"
+  ]
+}
