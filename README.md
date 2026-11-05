@@ -5,8 +5,8 @@
   <img alt="ZotLit" src="assets/logo/zotlit-wordmark.svg" width="320">
 </picture>
 
-<p><strong>A desk for getting research done with Zotero.</strong></p>
-<p>Browse and query your library, read and annotate PDFs, take notes, cite as you write, and export to Word, all in Obsidian.</p>
+<p><strong>Your Zotero research desk in Obsidian.</strong></p>
+<p>Read and annotate papers beside your draft, find any highlight in your library, and cite as you write. Zotero keeps your PDFs; Obsidian keeps your thinking.</p>
 
 <p>
   <a href="https://zotlit.aidenlx.site">🌐 Website</a>
