@@ -134,7 +134,7 @@ describe("serialized forms", () => {
   it("appends the inert branch only for an inert-capable helper", () => {
     const imgLink =
       annotationSchema.$defs.AnnotationTemplateContext.properties.imgLink
-        .anyOf![0]!;
+        .anyOf[0]!;
     expect(imgLink.oneOf![0]!.properties.$helper).toEqual({
       const: "imgLink",
     });

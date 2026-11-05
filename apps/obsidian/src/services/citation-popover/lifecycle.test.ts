@@ -108,7 +108,9 @@ function harness() {
       read: (_path: string, { signal }: { signal: AbortSignal }) => {
         textReads.push(signal);
         return new Promise<never>((_resolve, reject) => {
-          signal.addEventListener("abort", () => reject(signal.reason));
+          signal.addEventListener("abort", () =>
+            reject(new Error("aborted", { cause: signal.reason })),
+          );
         });
       },
     },
@@ -379,7 +381,9 @@ describe("Citation Popover visits", () => {
       (_items, { signal }) =>
         new Promise((_resolve, reject) => {
           signals.push(signal);
-          signal.addEventListener("abort", () => reject(signal.reason));
+          signal.addEventListener("abort", () =>
+            reject(new Error("aborted", { cause: signal.reason })),
+          );
         }),
     );
     const showing = run.show({ kind: "item", indexedKey: "ABCD2345" });

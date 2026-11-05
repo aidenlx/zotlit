@@ -136,25 +136,29 @@ async function run(
     slot.release();
     process.exit(127);
   });
-  child.on("exit", async (code, signal) => {
-    if (leaseOver) {
-      // Give the rest of the group the same grace, then end it.
-      const until = Temporal.Now.instant().add({ milliseconds: KILL_AFTER_MS });
-      while (
-        posix &&
-        groupAlive(child.pid!) &&
-        Temporal.Instant.compare(Temporal.Now.instant(), until) < 0
-      ) {
-        await delay(100);
+  child.on("exit", (code, signal) => {
+    void (async () => {
+      if (leaseOver) {
+        // Give the rest of the group the same grace, then end it.
+        const until = Temporal.Now.instant().add({
+          milliseconds: KILL_AFTER_MS,
+        });
+        while (
+          posix &&
+          groupAlive(child.pid!) &&
+          Temporal.Instant.compare(Temporal.Now.instant(), until) < 0
+        ) {
+          await delay(100);
+        }
+        signalGroup("SIGKILL");
       }
-      signalGroup("SIGKILL");
-    }
-    slot.release();
-    process.exit(
-      leaseOver
-        ? EXIT_LEASE_ENDED
-        : (code ?? 128 + (signal ? constants.signals[signal] : 0)),
-    );
+      slot.release();
+      process.exit(
+        leaseOver
+          ? EXIT_LEASE_ENDED
+          : (code ?? 128 + (signal ? constants.signals[signal] : 0)),
+      );
+    })();
   });
   // After the listeners: a command that exits during this write still reports
   // its exit code.

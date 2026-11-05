@@ -671,9 +671,11 @@ function IndependentPreview({
 }: {
   scheduler: import("./scheduler").RenderScheduler;
 }) {
+  const initialPreview: { mode: import("./store").PreviewMode; live: boolean } =
+    { mode: "create", live: true };
   const [store] = useState(() =>
     createStore(() => ({
-      preview: { mode: "create" as import("./store").PreviewMode, live: true },
+      preview: initialPreview,
       showMarkdown: false,
       showManaged: false,
     })),
@@ -779,18 +781,15 @@ it("mounts independent Previews without an editor and keeps choices and late res
   });
   expect(firstUI.getByRole("document").textContent).toBe("First managed");
   expect(
-    (secondUI.getByLabelText(m.workbench_preview_mode()) as HTMLSelectElement)
+    secondUI.getByLabelText<HTMLSelectElement>(m.workbench_preview_mode())
       .value,
   ).toBe("create");
   expect(
-    (
-      secondUI.getByLabelText(
-        m.workbench_preview_refresh(),
-      ) as HTMLSelectElement
-    ).value,
+    secondUI.getByLabelText<HTMLSelectElement>(m.workbench_preview_refresh())
+      .value,
   ).toBe("live");
   expect(
-    (secondUI.getByLabelText(m.workbench_preview_format()) as HTMLSelectElement)
+    secondUI.getByLabelText<HTMLSelectElement>(m.workbench_preview_format())
       .value,
   ).toBe("reading");
   expect(secondUI.getByRole("document").textContent).toBe("Second output");

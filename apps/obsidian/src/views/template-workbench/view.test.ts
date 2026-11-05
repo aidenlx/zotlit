@@ -407,8 +407,8 @@ describe("TemplateWorkbenchView", () => {
       name: "Original",
       result: { bodyUpdated: false, noManagedBlock: true },
     });
-    expect(originatingNoteUpdateNotice(h.app, result!)).toContain("Original");
-    expect(originatingNoteUpdateNotice(h.app, result!)).toContain(
+    expect(originatingNoteUpdateNotice(h.app, result)).toContain("Original");
+    expect(originatingNoteUpdateNotice(h.app, result)).toContain(
       m.notice_updated_note_no_managed_block(),
     );
     const error = new Error("write failed");
@@ -491,7 +491,7 @@ describe("TemplateWorkbenchView", () => {
     h.updateNote.mockResolvedValueOnce(result);
     const outcome = await run(h.view.updateOriginatingNote());
     expect(outcome).toEqual({ outcome: "refused", name: "Original", result });
-    expect(originatingNoteUpdateNotice(h.app, outcome!)).toBe(
+    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
       m.notice_literature_note_template_missing({ document: "missing.md" }),
     );
   });
@@ -540,7 +540,7 @@ describe("TemplateWorkbenchView", () => {
     });
     const outcome = await run(h.view.updateOriginatingNote());
     expect(outcome).toEqual({ outcome: "unavailable", name: "Original" });
-    expect(originatingNoteUpdateNotice(h.app, outcome!)).toBe(
+    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
       m.template_workbench_update_unavailable({ name: "Original" }),
     );
   });
@@ -1744,17 +1744,17 @@ function sharedWorkspace() {
     name: "quick-preview",
     callback: (file: TFile, source: string) => unknown,
     ctx?: unknown,
-  ): {};
+  ): object;
   function on(
     name: string,
     callback: (...data: never[]) => unknown,
     ctx?: unknown,
-  ): {};
+  ): object;
   function on(
     name: string,
     callback: (...data: never[]) => unknown,
     _ctx?: unknown,
-  ): {} {
+  ): object {
     if (name === "quick-preview")
       listeners.add(callback as (file: TFile, source: string) => void);
     return {};

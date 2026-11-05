@@ -1199,7 +1199,7 @@ async function selectOptions(
     ...popup.querySelectorAll<HTMLElement>('[role="option"]'),
   ].map((option) => ({
     value: option.dataset.value!,
-    label: option.querySelector("[data-select-label]")!.textContent!,
+    label: option.querySelector("[data-select-label]")!.textContent,
   }));
   // A press beside the trigger shuts the Select's popup and leaves the popover
   // that holds the trigger open.

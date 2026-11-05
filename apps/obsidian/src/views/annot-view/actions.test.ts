@@ -123,21 +123,22 @@ function setup(
 ) {
   const selectAlone = vi.fn();
   const openEditor = vi.fn();
+  const spies = {
+    editTextField: vi.fn(() =>
+      Effect.succeed(stubService<TextFieldDraft>("TextFieldDraft", {})),
+    ),
+    deleteAnnotation: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
+    deleteAnnotations: vi.fn((keys: readonly string[]) =>
+      Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
+    ),
+    patchColor: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
+    patchColors: vi.fn((keys: readonly string[]) =>
+      Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
+    ),
+  };
   const annotations = stubService<AnnotActionDeps["annotations"]>(
     "AnnotationRepository",
-    {
-      editTextField: vi.fn(() =>
-        Effect.succeed(stubService<TextFieldDraft>("TextFieldDraft", {})),
-      ),
-      deleteAnnotation: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
-      deleteAnnotations: vi.fn((keys: readonly string[]) =>
-        Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
-      ),
-      patchColor: vi.fn(() => Effect.succeed({ kind: "idle" as const })),
-      patchColors: vi.fn((keys: readonly string[]) =>
-        Effect.succeed(keys.map(() => ({ kind: "idle" as const }))),
-      ),
-    },
+    spies,
   );
   const controls: CardControls = {
     color: control,
@@ -173,7 +174,7 @@ function setup(
     actions: testActions(deps),
     selectAlone,
     openEditor,
-    annotations,
+    annotations: spies,
   };
 }
 

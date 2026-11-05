@@ -4,8 +4,12 @@ import { RuleTester } from "oxlint/plugins-dev";
 
 import { annotationDesign, workbenchChrome } from "./oxlint-plugin-design.ts";
 
-RuleTester.describe = describe;
-RuleTester.it = it;
+RuleTester.describe = (name, fn) => {
+  void describe(name, fn);
+};
+RuleTester.it = (name, fn) => {
+  void it(name, fn);
+};
 const tester = new RuleTester({
   languageOptions: { parserOptions: { lang: "tsx" } },
 });

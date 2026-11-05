@@ -142,17 +142,10 @@ export const noEffectRunInTest: Rule = {
     return {
       ImportDeclaration(node) {
         if (node.importKind === "type") return;
-        collectRunNames(
-          node.source.value,
-          node.specifiers as readonly ImportSpecifier[],
-          names,
-        );
+        collectRunNames(node.source.value, node.specifiers, names);
       },
       CallExpression(node) {
-        if (
-          isEffectRun(node.callee as AstNode, names) &&
-          enclosingCase(node as unknown as AstNode) === "plain"
-        )
+        if (isEffectRun(node.callee, names) && enclosingCase(node) === "plain")
           context.report({ node, messageId: "run" });
       },
     };
@@ -188,10 +181,7 @@ export const noRealTimerInEffectTest: Rule = {
   create(context) {
     return {
       CallExpression(node) {
-        if (
-          isRealTimer(node.callee as AstNode) &&
-          enclosingCase(node as unknown as AstNode) === "effect"
-        )
+        if (isRealTimer(node.callee) && enclosingCase(node) === "effect")
           context.report({ node, messageId: "timer" });
       },
     };
@@ -471,7 +461,7 @@ export const noNoticeMock: Rule = {
         const source = node.arguments?.[0] as AstNode | undefined;
         if (
           isMemberOf(
-            node.callee as AstNode,
+            node.callee,
             VI,
             (name) => name === "mock" || name === "doMock",
           ) &&

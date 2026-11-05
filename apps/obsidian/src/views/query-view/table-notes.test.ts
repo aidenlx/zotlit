@@ -356,7 +356,7 @@ describe("literatureNotes vault property writes", () => {
     } = {},
   ) {
     const host = createObsidianHost(files);
-    const noteIndex = buildNoteIndex(host.app as unknown as App, owned);
+    const noteIndex = buildNoteIndex(host.app, owned);
     await noteIndex.bridge.runPromise(noteIndex.whenIndexed);
     const replacedKeys = vi.fn(
       async (file: TFile) => new Set(replaced[file.path] ?? []),
@@ -368,10 +368,10 @@ describe("literatureNotes vault property writes", () => {
     >(async (item) =>
       cancelled
         ? null
-        : (host.vault.createFile(
+        : host.vault.createFile(
             `${item.indexedKey}.md`,
             `---\nzotero-key: ${item.indexedKey}\n---\n`,
-          ) as unknown as TFile),
+          ),
     );
     const app = stubService<LiteratureNotesDeps["app"]>("App", {
       vault: host.vault as unknown as LiteratureNotesDeps["app"]["vault"],

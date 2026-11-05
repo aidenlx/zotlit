@@ -38,7 +38,7 @@ function setup() {
     },
     offref: (ref: { off: () => void }) => ref.off(),
   });
-  const insertCitation = vi.fn(() => Promise.resolve());
+  const insertCitation = vi.fn(() => undefined);
   const drag = createItemDrag({
     app: stubService<App>("App", { workspace }),
     actions: { insertCitation },

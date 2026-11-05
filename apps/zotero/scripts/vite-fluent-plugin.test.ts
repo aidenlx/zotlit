@@ -2,7 +2,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Plugin } from "vite";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { fluentPlugin } from "./vite-fluent-plugin.js";
@@ -71,8 +70,12 @@ async function runPlugin(root: string): Promise<{
     },
     meta: { watchMode: true },
   };
-  const buildStart = plugin.buildStart as Plugin["buildStart"] & Function;
-  const writeBundle = plugin.writeBundle as Plugin["writeBundle"] & Function;
+  const buildStart = plugin.buildStart as unknown as (
+    this: typeof context,
+  ) => unknown;
+  const writeBundle = plugin.writeBundle as unknown as (
+    this: typeof context,
+  ) => unknown;
   await buildStart.call(context);
   await writeBundle.call(context);
   return {

@@ -4,7 +4,6 @@ import baseConfig, {
   datePattern,
   itemQuerySchemaPaths,
   parentImportPattern,
-  scannerRules,
   testBaselineOverrides,
 } from "@zotlit/config/oxlint";
 
@@ -58,10 +57,10 @@ export default defineConfig({
     },
     ...testBaselineOverrides("apps/docs"),
     {
-      // The scanner skips docs/ directories, and a glob in the shared base
-      // resolves against this package, not the repository root.
-      files: ["**"],
-      rules: Object.fromEntries(scannerRules.map(([rule]) => [rule, "off"])),
+      // TanStack Router signals `notFound()` and `redirect()` by throwing
+      // objects that are not Errors.
+      files: ["src/**"],
+      rules: { "typescript/only-throw-error": "off" },
     },
     {
       // workerd ships no Temporal: the publication-date schema, its date

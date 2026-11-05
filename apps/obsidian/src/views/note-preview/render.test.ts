@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
@@ -596,7 +595,7 @@ describe("native Citation rendering", () => {
     // The snapshot was taken above; the reader then edits the Item in Zotero.
     // The Data Explorer's citation root reads the change at once, so the
     // preview beside it has to read the same Item.
-    (fixture.client.$client as DatabaseSync).exec(
+    fixture.client.$client.exec(
       "update itemDataValues set value = 'Readable figures' where valueID = 1;",
     );
 

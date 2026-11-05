@@ -268,7 +268,7 @@ it.each([
       expected.code === "invalid-formula-name"
         ? JSON.stringify(expected.location.path)
         : expected.location.path.startsWith("fields")
-          ? request.fields!.at(-1)!
+          ? request.fields.at(-1)!
           : `formula.${expected.location.path}`;
     expect(error.diagnostic.report.join("\n")).toContain(name);
   },

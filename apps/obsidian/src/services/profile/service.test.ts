@@ -1240,7 +1240,7 @@ describe("Profile", () => {
           .map(({ created }) => created)
           .sort((a, b) => Number(a) - Number(b)),
       ).toEqual([false, true]);
-      expect(results[0]!.file).toBe(results[1]!.file);
+      expect(results[0].file).toBe(results[1].file);
       expect(vault.contents.get("templates/zotlit-profile.default.md")).toBe(
         source,
       );

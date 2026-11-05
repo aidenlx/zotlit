@@ -27,6 +27,7 @@ export const Route = createFileRoute("/docs")({
 });
 
 function DocsShell() {
+  // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- the loader type is `object` to tsc; the cast narrows it to the page tree
   const tree = Route.useLoaderData() as Root;
 
   return (

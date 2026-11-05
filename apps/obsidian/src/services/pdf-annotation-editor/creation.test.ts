@@ -906,7 +906,7 @@ async function imageReader(
   const surfaces = await readerOverZotero(stack, {
     containerEl,
     colors,
-    page: page as unknown as OverlayPageView,
+    page: page,
     records: [MARK],
     capability,
     structure: closed ? null : (given ?? (structure as never)),
@@ -1155,7 +1155,7 @@ function secondInkView(open: ImageReader) {
   page.div.getBoundingClientRect = () => LETTER_AT_ORIGIN;
   const surfaces = readerSurfaces({
     containerEl,
-    page: page as unknown as OverlayPageView,
+    page: page,
     records: open.store.getState().records,
     structure: open.structure as never,
     annotations: open.service,

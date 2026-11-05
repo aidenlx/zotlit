@@ -411,24 +411,28 @@ it("switches annotation data locally through the annotation chooser", async () =
             recentItems: Effect.succeed([]),
             onSelectItem: (item) => session.setTarget(item, "note"),
             onSearchItem: () => {},
-            onChooseAnnotation: async () => {
-              const state = session.state();
-              const chooser = stubService<WorkbenchHost>("WorkbenchHost", {
-                suggester,
-                run,
-              });
-              const id = await answerOf(
-                chooser.run(
-                  workbenchAnnotationChoice(
-                    chooser,
-                    state.annotations ?? [],
-                    annotationIndexedKey(state.item!.id, state.annotationId) ??
-                      state.annotationId,
+            onChooseAnnotation: () => {
+              void (async () => {
+                const state = session.state();
+                const chooser = stubService<WorkbenchHost>("WorkbenchHost", {
+                  suggester,
+                  run,
+                });
+                const id = await answerOf(
+                  chooser.run(
+                    workbenchAnnotationChoice(
+                      chooser,
+                      state.annotations ?? [],
+                      annotationIndexedKey(
+                        state.item!.id,
+                        state.annotationId,
+                      ) ?? state.annotationId,
+                    ),
                   ),
-                ),
-                null,
-              );
-              if (id) session.setTarget(state.item, "annotation", id);
+                  null,
+                );
+                if (id) session.setTarget(state.item, "annotation", id);
+              })();
             },
             onSelectAnnotation: (id) =>
               session.setTarget(session.state().item, "annotation", id),

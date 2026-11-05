@@ -51,14 +51,14 @@ export const noMessageMatch: Rule = {
         const member = node as unknown as AstNode;
         if (!isMessage(member)) return;
         const self = outer(member);
-        const parent = self.parent as
+        const parent:
           | (AstNode & {
               operator?: string;
               left?: AstNode;
               right?: AstNode;
             })
           | null
-          | undefined;
+          | undefined = self.parent;
         if (!parent) return;
         // `error.message === "…"`
         if (

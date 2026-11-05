@@ -129,47 +129,6 @@ const effectOffRules = ["any-unknown-in-error-context"].map(
   (rule) => [`effecttsgo/${rule}`, "off"] as const,
 );
 
-/**
- * The rules behind the warnings of the community directory scanner
- * (obsidianmd/obsidian-workflows runs typescript-eslint's type-checked
- * recommended set and ESLint's recommended set over the whole repository).
- * The scanner reports each as a warning; here each is an error, so the
- * finding stops at lint before a release scan sees it. `no-explicit-any`
- * stays off: generic constraints need it. The scanner skips tests, scripts,
- * docs and mocks, and `scannerIgnoredFiles` skips them here too.
- */
-export const scannerIgnoredFiles = [
-  "**/*.{test,tests,spec,specs}.*",
-  "**/{test,tests,__tests__,mocks,__mocks__,scripts,docs,i18n,locale,locales,l10n,translations}/**",
-  "**/*.{cjs,mjs,cts,mts}",
-  "**/vite*",
-];
-
-export const scannerRules = [
-  "typescript/prefer-promise-reject-errors",
-  "typescript/only-throw-error",
-  "typescript/no-unnecessary-type-assertion",
-  "typescript/no-misused-promises",
-  "typescript/no-unsafe-enum-comparison",
-  "typescript/no-unsafe-function-type",
-  "typescript/no-this-alias",
-  "typescript/no-empty-object-type",
-  "typescript/unbound-method",
-  "typescript/no-non-null-asserted-optional-chain",
-  "eslint/no-fallthrough",
-  "eslint/no-var",
-  "eslint/no-unexpected-multiline",
-  "eslint/no-self-compare",
-  "eslint/no-empty",
-  "eslint/require-yield",
-  "eslint/no-misleading-character-class",
-  "eslint/no-irregular-whitespace",
-  "eslint/no-unsafe-optional-chaining",
-  "eslint/no-unsafe-finally",
-  "eslint/no-shadow-restricted-names",
-  "eslint/no-constant-binary-expression",
-].map((rule) => [rule, "error"] as const);
-
 export default defineConfig({
   extends: [recommended],
   options: {
@@ -195,7 +154,28 @@ export default defineConfig({
     ...Object.fromEntries(effectOptInRules),
     ...Object.fromEntries(effectV3OnlyRules),
     ...Object.fromEntries(effectOffRules),
-    ...Object.fromEntries(scannerRules),
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-this-alias": "error",
+    "typescript/no-empty-object-type": "error",
+    "typescript/unbound-method": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "eslint/no-fallthrough": "error",
+    "eslint/no-var": "error",
+    "eslint/no-unexpected-multiline": "error",
+    "eslint/no-self-compare": "error",
+    "eslint/no-empty": "error",
+    "eslint/require-yield": "error",
+    "eslint/no-misleading-character-class": "error",
+    "eslint/no-irregular-whitespace": "error",
+    "eslint/no-unsafe-optional-chaining": "error",
+    "eslint/no-unsafe-finally": "error",
+    "eslint/no-shadow-restricted-names": "error",
+    "eslint/no-constant-binary-expression": "error",
     "typescript/no-non-null-assertion": "off",
     "typescript/no-explicit-any": "off",
     "typescript/ban-ts-comment": "off",
@@ -248,10 +228,6 @@ export default defineConfig({
     "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
   },
   overrides: [
-    {
-      files: scannerIgnoredFiles,
-      rules: Object.fromEntries(scannerRules.map(([rule]) => [rule, "off"])),
-    },
     {
       // Nested package configs share the test policy enabled by the root.
       files: ["**/*.test.{ts,tsx,mts,mjs,js}"],

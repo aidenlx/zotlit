@@ -138,24 +138,26 @@ function machineAssets(): Plugin {
         return { type: "image/webp", body: await renderCard(card) };
       }
 
-      server.middlewares.use(async (req, res, next) => {
-        const path = req.url?.split("?")[0];
-        if (!path) {
-          next();
-          return;
-        }
-
-        try {
-          const asset = await resolveAsset(path);
-          if (!asset) {
+      server.middlewares.use((req, res, next) => {
+        void (async () => {
+          const path = req.url?.split("?")[0];
+          if (!path) {
             next();
             return;
           }
-          res.setHeader("content-type", asset.type);
-          res.end(Buffer.from(asset.body));
-        } catch (error) {
-          next(error as Error);
-        }
+
+          try {
+            const asset = await resolveAsset(path);
+            if (!asset) {
+              next();
+              return;
+            }
+            res.setHeader("content-type", asset.type);
+            res.end(Buffer.from(asset.body));
+          } catch (error) {
+            next(error);
+          }
+        })();
       });
     },
   };

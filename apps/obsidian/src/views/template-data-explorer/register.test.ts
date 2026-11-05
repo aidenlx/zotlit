@@ -85,20 +85,23 @@ it.effect(
     Effect.gen(function* () {
       const editor = {} as TemplateWorkbenchView;
       vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
+      const groupedSetViewState = vi.fn();
+      const pinnedSetViewState = vi.fn();
+      const standaloneSetViewState = vi.fn(async () => {});
       const grouped = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
         group: "other-workbench",
         pinned: false,
-        setViewState: vi.fn(),
+        setViewState: groupedSetViewState,
       });
       const pinned = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
         group: null,
         pinned: true,
-        setViewState: vi.fn(),
+        setViewState: pinnedSetViewState,
       });
       const standalone = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
         group: null,
         pinned: false,
-        setViewState: vi.fn(async () => {}),
+        setViewState: standaloneSetViewState,
       });
       const revealLeaf = vi.fn();
       const getRightLeaf = vi.fn(() => null);
@@ -109,13 +112,13 @@ it.effect(
           revealLeaf,
         }),
       );
-      expect(standalone.setViewState).toHaveBeenCalledWith({
+      expect(standaloneSetViewState).toHaveBeenCalledWith({
         type: "zotlit-template-data-explorer",
         active: true,
         state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
       });
-      expect(grouped.setViewState).not.toHaveBeenCalled();
-      expect(pinned.setViewState).not.toHaveBeenCalled();
+      expect(groupedSetViewState).not.toHaveBeenCalled();
+      expect(pinnedSetViewState).not.toHaveBeenCalled();
       expect(getRightLeaf).not.toHaveBeenCalled();
       expect(revealLeaf).toHaveBeenCalledWith(standalone);
     }),
@@ -126,13 +129,15 @@ it.effect(
   () =>
     Effect.gen(function* () {
       vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
+      const existingSetViewState = vi.fn();
+      const createdSetViewState = vi.fn(async () => {});
       const existing = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
         group: "saved-group",
         pinned: true,
-        setViewState: vi.fn(),
+        setViewState: existingSetViewState,
       });
       const created = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-        setViewState: vi.fn(async () => {}),
+        setViewState: createdSetViewState,
       });
       const getRightLeaf = vi.fn(() => created);
       yield* openTemplateDataExplorer(app, { itemIndexedKey: "PAPER002" }).pipe(
@@ -143,8 +148,8 @@ it.effect(
         }),
       );
       expect(getRightLeaf).toHaveBeenCalledWith(true);
-      expect(existing.setViewState).not.toHaveBeenCalled();
-      expect(created.setViewState).toHaveBeenCalledWith(
+      expect(existingSetViewState).not.toHaveBeenCalled();
+      expect(createdSetViewState).toHaveBeenCalledWith(
         expect.objectContaining({
           state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
         }),
@@ -192,13 +197,15 @@ it.effect.each(["tab"] as const)(
   (paneType) =>
     Effect.gen(function* () {
       vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
+      const sidebarSetViewState = vi.fn();
+      const createdSetViewState = vi.fn(async () => {});
       const sidebar = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
         group: null,
         pinned: false,
-        setViewState: vi.fn(),
+        setViewState: sidebarSetViewState,
       });
       const created = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-        setViewState: vi.fn(async () => {}),
+        setViewState: createdSetViewState,
       });
       const getLeaf = vi.fn(() => created);
       const getRightLeaf = vi.fn(() => null);
@@ -217,8 +224,8 @@ it.effect.each(["tab"] as const)(
       );
       expect(getLeaf).toHaveBeenCalledExactlyOnceWith(paneType);
       expect(getRightLeaf).not.toHaveBeenCalled();
-      expect(sidebar.setViewState).not.toHaveBeenCalled();
-      expect(created.setViewState).toHaveBeenCalledWith({
+      expect(sidebarSetViewState).not.toHaveBeenCalled();
+      expect(createdSetViewState).toHaveBeenCalledWith({
         type: "zotlit-template-data-explorer",
         active: true,
         state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
