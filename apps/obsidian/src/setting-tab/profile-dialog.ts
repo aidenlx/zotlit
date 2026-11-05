@@ -43,7 +43,7 @@ export function dialogFooter(modal: Modal): HTMLElement {
 export function footerButton(
   footer: HTMLElement,
   text: string,
-  onClick: () => void,
+  onClick: () => unknown,
 ): ButtonComponent {
   return new ButtonComponent(footer).setButtonText(text).onClick(onClick);
 }

@@ -112,7 +112,8 @@ export function runProcess(
       clearTimeout(escalation);
       clearTimeout(forceFinish);
       signal?.removeEventListener("abort", onAbort);
-      if (error) reject(error);
+      if (error)
+        reject(error instanceof Error ? error : new Error(String(error)));
       else {
         const bytes = Buffer.concat(stdout);
         resolve({

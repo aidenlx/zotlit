@@ -161,13 +161,14 @@ async function shapeCondition(
   await obRun(
     run.vaultId,
     async ({ page }, { row, kind, labels }) => {
-      const control = (label: string) =>
-        page
+      const control = (label: string) => {
+        const rows = page
           .workbench()!
-          .contentEl.querySelectorAll("[data-condition-row]")
-          [row]!.querySelector<HTMLButtonElement | HTMLSelectElement>(
-            `:is(select,button)[aria-label="${CSS.escape(label)}"]`,
-          );
+          .contentEl.querySelectorAll("[data-condition-row]");
+        return rows[row]!.querySelector<HTMLButtonElement | HTMLSelectElement>(
+          `:is(select,button)[aria-label="${CSS.escape(label)}"]`,
+        );
+      };
       const type = control(labels.kind);
       if (page.valueOf(type) === kind) return;
       await page.pick(type, kind, "Condition type");
@@ -183,13 +184,13 @@ async function shapeCondition(
   await obRun(
     run.vaultId,
     async ({ page }, { row, value, labels }) => {
+      const rows = page
+        .workbench()!
+        .contentEl.querySelectorAll("[data-condition-row]");
       await page.pick(
-        page
-          .workbench()!
-          .contentEl.querySelectorAll("[data-condition-row]")
-          [row]!.querySelector<HTMLButtonElement | HTMLSelectElement>(
-            `:is(select,button)[aria-label="${CSS.escape(labels.value)}"]`,
-          ),
+        rows[row]!.querySelector<HTMLButtonElement | HTMLSelectElement>(
+          `:is(select,button)[aria-label="${CSS.escape(labels.value)}"]`,
+        ),
         value,
         "Value",
       );
@@ -205,7 +206,7 @@ async function addLibraryCondition(selector: string): Promise<void> {
     run.vaultId,
     async ({ page }, { addConditionLabel }) => {
       const { press } = page;
-      var editor = page.workbench()?.contentEl;
+      const editor = page.workbench()?.contentEl;
       press(
         Array.from(editor!.querySelectorAll("button")).find(
           (button) => button.textContent.trim() === addConditionLabel,
@@ -224,13 +225,13 @@ async function openMatchEditor(): Promise<void> {
     run.vaultId,
     async ({ app, page }, { booksProfileLabel, editButtonLabel }) => {
       const { press } = page;
-      var settings = app.setting.containerEl;
-      var row = Array.from(settings.querySelectorAll(".setting-item")).find(
+      const settings = app.setting.containerEl;
+      const row = Array.from(settings.querySelectorAll(".setting-item")).find(
         (el) =>
           el.querySelector(".setting-item-name")?.textContent ===
           booksProfileLabel,
       );
-      var button =
+      const button =
         row &&
         Array.from(row.querySelectorAll("button")).find(
           (button) => button.getAttribute("aria-label") === editButtonLabel,
@@ -253,8 +254,8 @@ async function openMatchEditor(): Promise<void> {
       run.vaultId,
       async ({ page }, { tabLabel }) => {
         const { press } = page;
-        var editor = page.workbench()?.contentEl;
-        var tab = Array.from(
+        const editor = page.workbench()?.contentEl;
+        const tab = Array.from(
           editor?.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
         ).find((tab) => tab.textContent.trim() === tabLabel);
         press(tab, "Match tab");
@@ -309,12 +310,12 @@ function clickTemplateCustomize() {
     run.vaultId,
     async ({ app, page }, { settingName, editButtonLabel }) => {
       const { press } = page;
-      var settings = app.setting.containerEl;
-      var row = Array.from(settings.querySelectorAll(".setting-item")).find(
+      const settings = app.setting.containerEl;
+      const row = Array.from(settings.querySelectorAll(".setting-item")).find(
         (el) =>
           el.querySelector(".setting-item-name")?.textContent === settingName,
       );
-      var button =
+      const button =
         row &&
         Array.from(row.querySelectorAll("button")).find(
           (el) => el.getAttribute("aria-label") === editButtonLabel,
@@ -467,7 +468,7 @@ async function quickSwitchCreate(
       targetVaultId,
       async ({ app }) => {
         app.commands.commands["zotlit:note-quick-switcher"]!.callback!();
-        var modal = Array.from(
+        const modal = Array.from(
           activeDocument.querySelectorAll(".modal-container"),
         ).at(-1)!;
         return activeWindow.getComputedStyle(modal).opacity === "0";
@@ -478,7 +479,7 @@ async function quickSwitchCreate(
   await obRunUntil(
     targetVaultId,
     async (_context) => {
-      var modal = Array.from(
+      const modal = Array.from(
         activeDocument.querySelectorAll(".modal-container"),
       ).at(-1)!;
       return (

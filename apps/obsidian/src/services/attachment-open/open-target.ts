@@ -209,10 +209,11 @@ export function layerTargetOpener<R>({
         const outcome = yield* portCall("open-reader", () =>
           reader.open(attachment, pane),
         );
-        if (outcome === "opened") return { kind: "reader" } as OpenOutcome;
+        if (outcome === "opened")
+          return { kind: "reader" } satisfies OpenOutcome;
         if (fallback === null) {
           yield* notifier.show(m.notice_pdf_file_missing());
-          return { kind: "file-missing" } as OpenOutcome;
+          return { kind: "file-missing" } satisfies OpenOutcome;
         }
         yield* Effect.logDebug(
           "Target handed to Zotero: the reader found no file",
@@ -251,7 +252,7 @@ export function layerTargetOpener<R>({
           yield* Effect.logDebug("Target gave up on the Attachment index").pipe(
             Effect.annotateLogs({ attachmentKey }),
           );
-          return { kind: "pending" } as AttachmentLookup;
+          return { kind: "pending" } satisfies AttachmentLookup;
         }
         return yield* attachments.lookup(attachmentKey);
       });
@@ -350,7 +351,7 @@ export function layerTargetOpener<R>({
             yield* Effect.logWarning("Target names no Zotero object").pipe(
               Effect.annotateLogs({ attachmentKey: target.attachmentKey }),
             );
-            return { kind: "unknown" } as OpenOutcome;
+            return { kind: "unknown" } satisfies OpenOutcome;
           }
           const attachment = yield* lookup(target.attachmentKey);
           if (attachment.kind !== "resolved" || !attachment.openable) {

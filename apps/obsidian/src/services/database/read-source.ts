@@ -589,11 +589,12 @@ const cloneAttempt = Effect.fnUntraced(function* (
   const uriOptions: SqliteUriOptions = immutable
     ? { mode: "ro", immutable: true }
     : { mode: "ro" };
+  const effectiveMode: EffectiveReadMode = immutable ? "immutable" : mode;
   return {
     read: {
       path,
       uriOptions,
-      effectiveMode: (immutable ? "immutable" : mode) as EffectiveReadMode,
+      effectiveMode,
     },
     release: removeReadDir(dir).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),

@@ -10,11 +10,6 @@ import {
 } from "@/text-selection";
 import type { TextLayerSelection } from "@/text-selection";
 
-type Flags = Pick<
-  StructuredChar,
-  "ignorable" | "lineBreakAfter" | "paragraphBreakAfter" | "spaceAfter"
->;
-
 /**
  * One line of Structured Characters as the line grouping leaves them: glyphs
  * 5 pt wide from `x`, a word break at every space of `text`, and a line break
@@ -22,7 +17,7 @@ type Flags = Pick<
  */
 function line(
   text: string,
-  { x = 100, y = 700, last = {} as Flags } = {},
+  { x = 100, y = 700, last = {} } = {},
 ): Partial<StructuredChar>[] {
   const chars: Partial<StructuredChar>[] = [];
   let at = x;
@@ -61,7 +56,7 @@ function page(
 
 /** A hyphen the line grouping marked as a discretionary line-end one. */
 const hyphenated = (text: string, y: number) =>
-  line(text, { y, last: { ignorable: true } as Flags });
+  line(text, { y, last: { ignorable: true } });
 
 function layer(
   pageIndex: number,

@@ -9,17 +9,17 @@ import type { BatchImportResult } from "@/services/note-import/batch-import";
 
 export type ProtocolOutcome = Data.TaggedEnum<{
   /** The link's query does not parse. */
-  InvalidLink: {};
+  InvalidLink: object;
   /** The link names another Zotero, so the handler leaves it. */
-  ForeignSource: {};
+  ForeignSource: object;
   /** The Zotero database is not ready for the item the link names. */
-  DatabaseUnavailable: {};
+  DatabaseUnavailable: object;
   /** The link names an id with no live item. */
-  ItemNotFound: {};
+  ItemNotFound: object;
   /** The `profileId` text names neither `default` nor a Profile ID. */
   UnknownProfile: { readonly text: string };
   /** The note, the explorer or the Attachment picker the link names opened. */
-  Opened: {};
+  Opened: object;
   /** The batch update of an `update-many` link or a pushed update ended. */
   UpdateMany: { readonly exit: Exit.Exit<BatchUpdateResult, unknown> };
   /** The library-wide update of an `update-all` link ended. */
@@ -29,11 +29,11 @@ export type ProtocolOutcome = Data.TaggedEnum<{
   /** The library-wide import of an `import-all-notes` link ended. */
   ImportAllNotes: { readonly exit: Exit.Exit<BatchImportResult, unknown> };
   /** The clipboard Profile opened in the workbench. */
-  ProfileOpened: {};
+  ProfileOpened: object;
   /** The user closed the Profile import without a document. */
-  ProfileImportCancelled: {};
+  ProfileImportCancelled: object;
   /** The clipboard Profile import or its open failed. */
-  ProfileImportFailed: {};
+  ProfileImportFailed: object;
 }>;
 
 export const ProtocolOutcome = Data.taggedEnum<ProtocolOutcome>();

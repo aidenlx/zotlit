@@ -307,7 +307,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   ): Effect.fn.Return<ResolvedProfile | undefined, ProfileOperationError> {
     if (!(yield* Ref.get(registry)).loaded)
       return yield* operationError(new Error("ProfileService is not ready"));
-    const saved = (yield* settings.current)!;
+    const saved = yield* settings.current;
     if (selector === DEFAULT_PROFILE) {
       return (yield* Ref.get(registry)).defaultExcluded
         ? undefined
@@ -397,7 +397,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     const content = yield* attempt(() =>
       profileSource(source, { id, label, bindings }),
     );
-    const folder = (yield* settings.current)!["template.folder"];
+    const folder = (yield* settings.current)["template.folder"];
     const plainDocument = `zotlit-profile.${profileSlug(label)}.md`;
     const document = (yield* vault.getAbstractFileByPath(
       join(folder, plainDocument),
@@ -421,7 +421,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     if (bindings.folder === undefined) inherited.push("folder");
     if (bindings.citationStyle === undefined) inherited.push("citationStyle");
     if (!differs) inherited.push("look");
-    const profile = bindProfile((yield* settings.current)!, {
+    const profile = bindProfile(yield* settings.current, {
       selector: id,
       document: entry.document,
       entry,
@@ -529,7 +529,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     profile: ResolvedProfile,
   ): Effect.fn.Return<string, never> {
     return profile.document
-      ? join((yield* settings.current)!["template.folder"], profile.document)
+      ? join((yield* settings.current)["template.folder"], profile.document)
       : yield* defaultDocumentPath();
   });
   /**
@@ -847,7 +847,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
       | TemplateFailure
     > {
       yield* validateLabel(label);
-      const folder = (yield* settings.current)!["template.folder"];
+      const folder = (yield* settings.current)["template.folder"];
       let path = join(folder, `zotlit-profile.${profileSlug(label)}.md`);
       yield* ensureParent(path);
       if ((yield* createDocument(path, content)) !== undefined) {
@@ -905,7 +905,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     const { manifest } = yield* attempt(() =>
       new TemplateFacade().parseLiteratureNoteTemplate(content),
     );
-    const folder = (yield* settings.current)!["template.folder"];
+    const folder = (yield* settings.current)["template.folder"];
     const slug = profileSlug(manifest.name);
     const plain = `zotlit-profile.${slug}.md`;
     const document =
@@ -975,7 +975,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
       source: content,
       path,
       partials,
-      profile: bindProfile((yield* settings.current)!, {
+      profile: bindProfile(yield* settings.current, {
         selector: id,
         document,
         entry,

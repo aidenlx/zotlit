@@ -591,7 +591,7 @@ class CitationIndexStub {
     for (const [path, occurrences] of this.wikilinks) {
       byPath.set(path, [...(byPath.get(path) ?? []), ...occurrences]);
     }
-    return byPath as ReadonlyMap<string, readonly CitationOccurrence[]>;
+    return byPath;
   });
   /** Answers every key `null`, as the index does until its snapshot is warm. */
   cold = false;
@@ -1007,13 +1007,13 @@ describe("GraphCitations installation", () => {
           ),
         });
         const engine = fixture.addLeaf("graph");
-        const nativeRender = engine.render;
+        const nativeRender: unknown = Reflect.get(engine, "render");
         yield* fixture.layoutReady;
         yield* Deferred.await(entered);
 
         yield* fixture.unload;
 
-        expect(engine.render).toBe(nativeRender);
+        expect(Reflect.get(engine, "render")).toBe(nativeRender);
       }),
   );
 

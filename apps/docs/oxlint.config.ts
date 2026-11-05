@@ -1,10 +1,10 @@
 import { defineConfig } from "oxlint";
 
-import { testBaselineOverrides } from "@zotlit/config/oxlint";
 import baseConfig, {
   datePattern,
   itemQuerySchemaPaths,
   parentImportPattern,
+  testBaselineOverrides,
 } from "@zotlit/config/oxlint";
 
 export default defineConfig({
@@ -56,6 +56,12 @@ export default defineConfig({
       rules: { "zotlit-design/workbench-chrome": "error" },
     },
     ...testBaselineOverrides("apps/docs"),
+    {
+      // TanStack Router signals `notFound()` and `redirect()` by throwing
+      // objects that are not Errors.
+      files: ["src/**"],
+      rules: { "typescript/only-throw-error": "off" },
+    },
     {
       // workerd ships no Temporal: the publication-date schema, its date
       // helpers, the Date the feed library takes, and the git date that

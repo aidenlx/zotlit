@@ -237,7 +237,7 @@ describe("Effect log port", () => {
       ] as const;
       let attempt = 0;
       const postMessage = vi.fn(() => {
-        throw failures[attempt++];
+        throw failures[attempt++] as Error;
       });
       const consoleError = vi
         .spyOn(console, "error")

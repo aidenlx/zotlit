@@ -76,7 +76,7 @@ function editManifestKey(source: string, key: string, value: unknown): string {
     }
   } else if (value !== undefined) {
     if (doc.contents.flow) {
-      const end = doc.contents.range![1] - 1;
+      const end = doc.contents.range[1] - 1;
       const token = doc.contents.srcToken;
       const trailingComma =
         token?.type === "flow-collection" &&

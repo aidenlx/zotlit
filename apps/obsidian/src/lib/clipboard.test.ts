@@ -15,7 +15,7 @@ let writeText: MockInstance<Clipboard["writeText"]>;
 /** What the one clipboard item carries, as a paste-time reader would find it. */
 async function written(): Promise<Record<string, string>> {
   const [items] = write.mock.calls[0]!;
-  const [item] = items as ClipboardItem[];
+  const [item] = items;
   const parts = await Promise.all(
     item!.types.map(
       async (type) => [type, await (await item!.getType(type)).text()] as const,

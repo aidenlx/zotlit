@@ -312,7 +312,7 @@ describe("CitationIndex", () => {
             await index.bridge.runPromise(index.getDocumentCitationSet(draft))
           ).occurrences.map(({ kind }) => kind),
         ).toEqual(["citekey"]);
-        settings.bridge!.runSync(
+        settings.bridge.runSync(
           settings.update({
             "citation.pandoc-citations": false,
             "citation.wikilink-citations": true,
@@ -345,7 +345,7 @@ describe("CitationIndex", () => {
         ).occurrences.map(({ kind }) => kind),
       ).toEqual(["citekey"]);
 
-      settings.bridge!.runSync(
+      settings.bridge.runSync(
         settings.update({ "citation.wikilink-citations": true }),
       );
       expect(
@@ -354,7 +354,7 @@ describe("CitationIndex", () => {
         ).occurrences.map(({ kind }) => kind),
       ).toEqual(["citekey", "wikilink"]);
 
-      settings.bridge!.runSync(
+      settings.bridge.runSync(
         settings.update({ "citation.pandoc-citations": false }),
       );
       expect(
@@ -363,7 +363,7 @@ describe("CitationIndex", () => {
         ).occurrences.map(({ kind }) => kind),
       ).toEqual(["wikilink"]);
 
-      settings.bridge!.runSync(
+      settings.bridge.runSync(
         settings.update({ "citation.wikilink-citations": false }),
       );
       expect(
@@ -388,7 +388,7 @@ describe("CitationIndex", () => {
           annotation: "excluded",
         });
 
-        settings.bridge!.runSync(
+        settings.bridge.runSync(
           settings.update({
             "citation.pandoc-citations": false,
             "citation.wikilink-citations": true,
@@ -445,14 +445,14 @@ describe("CitationIndex", () => {
           ["draft.md", ["citekey:doe2024", "citekey:doe2024"]],
         ]);
 
-        settings.bridge!.runSync(
+        settings.bridge.runSync(
           settings.update({ "citation.wikilink-citations": false }),
         );
         expect(summary()).toEqual([
           ["draft.md", ["citekey:doe2024", "citekey:doe2024"]],
         ]);
 
-        settings.bridge!.runSync(
+        settings.bridge.runSync(
           settings.update({
             "citation.pandoc-citations": false,
             "citation.wikilink-citations": true,
@@ -747,7 +747,7 @@ describe("CitationIndex", () => {
       });
 
       metadataCache.change(draft, "As @roe2025 wrote.");
-      settings.bridge!.runSync(
+      settings.bridge.runSync(
         settings.update({ "citation.pandoc-citations": true }),
       );
       expect(await citationsOf(index, draft)).toMatchObject([
@@ -758,7 +758,7 @@ describe("CitationIndex", () => {
         },
       ]);
 
-      settings.bridge!.runSync(
+      settings.bridge.runSync(
         settings.update({ "citation.pandoc-citations": false }),
       );
       workspace.layoutReady();
@@ -1171,7 +1171,7 @@ describe("CitationIndex resolution", () => {
       await index.bridge.runPromise(index.whenIndexed);
       await expect.poll(() => snapshots.at(-1)).toMatchObject({ groups: [] });
 
-      settings.bridge!.runSync(
+      settings.bridge.runSync(
         settings.update({ "citation.pandoc-citations": true }),
       );
 
@@ -1385,7 +1385,7 @@ describe("CitationIndex resolution", () => {
               ],
             },
           ]);
-        settings.bridge!.runSync(
+        settings.bridge.runSync(
           settings.update({
             "citation.pandoc-citations": false,
             "citation.wikilink-citations": false,

@@ -106,7 +106,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       await obRun(
         vaultId,
         async ({ app }, { firstPath }) => {
-          var leaf = app.workspace
+          const leaf = app.workspace
             .getLeavesOfType("markdown")
             .find(
               (leaf) =>
@@ -123,8 +123,8 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         vaultId,
         async ({ app, page }, { addButtonLabel }) => {
           const { press } = page;
-          var settings = app.setting.containerEl;
-          var button = Array.from(
+          const settings = app.setting.containerEl;
+          const button = Array.from(
             settings.querySelectorAll<HTMLButtonElement>("[aria-label],button"),
           ).find(
             (el) =>
@@ -177,12 +177,12 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       await obRun(
         vaultId,
         async (_context, { nameLabel, folderLabel }) => {
-          var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
-          var labels = Array.from(modal.querySelectorAll("label"));
-          var name = labels
+          const modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
+          const labels = Array.from(modal.querySelectorAll("label"));
+          const name = labels
             .find((el) => el.textContent === nameLabel)
             ?.querySelector("input");
-          var folder = labels
+          const folder = labels
             .find((el) => el.textContent === folderLabel)
             ?.querySelector("input");
           return (
@@ -203,7 +203,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       await obRun(
         vaultId,
         async (_context, { values }) => {
-          var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
+          const modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
           Array.from(modal.querySelectorAll("input")).forEach((input, i) => {
             input.value = values[i]!;
             input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -216,9 +216,9 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     await obRunUntil(
       vaultId,
       async (_context, { addButtonText, invalidStatusText }) => {
-        var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
-        var status = modal?.querySelector("[role=status]");
-        var button = Array.from(modal?.querySelectorAll("button") ?? []).find(
+        const modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
+        const status = modal?.querySelector("[role=status]");
+        const button = Array.from(modal?.querySelectorAll("button") ?? []).find(
           (el) => el.textContent === addButtonText,
         );
         return (
@@ -263,12 +263,12 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     await obRunUntil(
       vaultId,
       async ({ page }, { booksPath, tabTitleText }) => {
-        var view = page.workbench({ path: booksPath });
+        const view = page.workbench({ path: booksPath });
         return (
           view?.contentEl
             .querySelector("[role=tab][aria-selected=true]")
             ?.textContent.trim() === tabTitleText &&
-          Array.from(view!.contentEl.querySelectorAll("input")).some(
+          Array.from(view.contentEl.querySelectorAll("input")).some(
             (el) => el.value === "books",
           )
         );
@@ -285,7 +285,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     await obRun(
       vaultId,
       async ({ app }, { firstPath }) => {
-        var leaf = app.workspace
+        const leaf = app.workspace
           .getLeavesOfType("markdown")
           .find(
             (leaf) =>

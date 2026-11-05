@@ -217,37 +217,37 @@ export const createNote = Effect.fnUntraced(function* (
   if (!profile) {
     return refusedUnknownProfile(requestedProfile, {
       indexedKey: item.indexedKey,
-    }) satisfies CreateNoteResult as CreateNoteResult;
+    }) satisfies CreateNoteResult;
   }
   if (conversionRequired(settings, requestedProfile)) {
     return refusedTemplateConversion(requestedProfile, {
       indexedKey: item.indexedKey,
-    }) satisfies CreateNoteResult as CreateNoteResult;
+    }) satisfies CreateNoteResult;
   }
   const existing = yield* noteIndex.getNotesByItemKey(item.indexedKey);
   if (existing.length > 0) {
     if (existing.length === 1 && options.profile !== undefined) {
-      const result = yield* profiles.profileOf(existing[0]!);
+      const result = yield* profiles.profileOf(existing[0]);
       if (!result.ok) {
         return refusedUnknownProfile(result.stamped.stamp, {
           indexedKey: item.indexedKey,
           path: existing[0]!.path,
-        }) satisfies CreateNoteResult as CreateNoteResult;
+        }) satisfies CreateNoteResult;
       }
       if (result.profile.selector !== requestedProfile) {
         return refusedProfileConflict(item.indexedKey, existing[0]!, {
           existingProfile: result.profile.selector,
           requestedProfile,
-        }) as CreateNoteResult;
+        });
       }
     }
-    return refusedCreate(item.indexedKey, existing) as CreateNoteResult;
+    return refusedCreate(item.indexedKey, existing);
   }
   const document = yield* resolveProfileDocument(profile);
   if (document === null) {
     return refusedMissingDocument(profile.document!, {
       indexedKey: item.indexedKey,
-    }) satisfies CreateNoteResult as CreateNoteResult;
+    }) satisfies CreateNoteResult;
   }
   // One Snapshot across the render and the vault write: every read of this
   // create sees one database state. A batch hands in its own.
@@ -520,7 +520,7 @@ const readReplacedKeys = Effect.fnUntraced(function* (
     const fields = yield* (yield* Template).frontmatterFields;
     return new Set(
       fields.flatMap(({ key, merge }) => (merge === "replace" ? [key] : [])),
-    ) as ReadonlySet<string>;
+    );
   }
   const entries = document.frontmatter?.compiled ?? [];
   const keys = new Set(
@@ -532,7 +532,7 @@ const readReplacedKeys = Effect.fnUntraced(function* (
     ({ key, merge }) => key === undefined && merge === "replace",
   );
   const indexedKey = itemKeyFromFrontmatter(cache);
-  if (spreads.length === 0 || !indexedKey) return keys as ReadonlySet<string>;
+  if (spreads.length === 0 || !indexedKey) return keys;
   // A Spread Entry names its keys as it runs for the Item, as the update
   // runs it; nothing it queues is imported.
   const attachmentImport = yield* (yield* AttachmentImport).prepare(file.path);
@@ -553,7 +553,7 @@ const readReplacedKeys = Effect.fnUntraced(function* (
       for (const { key } of evaluation.values) keys.add(key);
     }),
   ).pipe(Effect.ensuring(attachmentImport.discard));
-  return keys as ReadonlySet<string>;
+  return keys;
 });
 
 /**

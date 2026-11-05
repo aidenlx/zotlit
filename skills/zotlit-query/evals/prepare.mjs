@@ -28,7 +28,13 @@ async function safePath(path, mustExist) {
   for (const part of relative(scratch, path).split(sep)) {
     current = join(current, part);
     const info = await lstat(current).catch((error) =>
-      error.code === "ENOENT" ? null : Promise.reject(error),
+      error.code === "ENOENT"
+        ? null
+        : Promise.reject(
+            error instanceof Error
+              ? error
+              : new Error(String(error), { cause: error }),
+          ),
     );
     if (info?.isSymbolicLink())
       fail(`symbolic link is not allowed: ${current}`);

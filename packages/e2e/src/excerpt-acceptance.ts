@@ -340,7 +340,7 @@ export async function verifyReaderBackedExcerpts(
       await obRun(
         vaultId,
         async ({ app }, { layout }) => {
-          await app.workspace.changeLayout(JSON.parse(layout!));
+          await app.workspace.changeLayout(JSON.parse(layout));
         },
         { layout },
       );
@@ -660,7 +660,7 @@ export async function verifyReaderBackedExcerpts(
       await obRun(
         vaultId,
         async ({ app }, { importedNotePath, source }) => {
-          const file = app.vault.getFileByPath(importedNotePath!);
+          const file = app.vault.getFileByPath(importedNotePath);
           if (file) await app.vault.modify(file, source);
         },
         { importedNotePath: importedNote.path, source: importedNote.source },

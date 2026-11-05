@@ -143,7 +143,9 @@ export const layerTabStorage = Layer.sync(LocalBridgeStorage, () => {
   try {
     const storage = globalThis.sessionStorage;
     if (storage) return storage;
-  } catch {}
+  } catch {
+    // Reading sessionStorage can throw when the tab blocks storage; fall back to the in-memory storage below.
+  }
   return LocalBridgeStorage.of({
     getItem: () => null,
     setItem: () => {},

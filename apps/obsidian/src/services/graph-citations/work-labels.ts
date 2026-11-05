@@ -138,7 +138,7 @@ export class WorkLabelGraphics implements Disposable {
             });
           }
           return workLabelTitleAlpha(
-            renderer.scale!,
+            renderer.scale,
             fade,
             renderer.getHighlightNode!() === node,
           );

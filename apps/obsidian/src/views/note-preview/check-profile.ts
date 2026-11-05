@@ -146,9 +146,33 @@ export function checkNativeProfile(
     check: ProfileCheck;
     citation?: unknown;
   }[] = [];
+  const pushFailure = (
+    annotation: (typeof input.annotations)[number],
+    error: unknown,
+  ) => {
+    annotations.push({
+      key: annotation.key,
+      check: {
+        status: "failed",
+        diagnostics: [
+          {
+            ...checkDiagnostic(error, caller),
+            part: "annotation",
+            annotation: {
+              key: annotation.key,
+              revision: annotation.revision,
+            },
+          },
+        ],
+      },
+    });
+  };
   for (const annotation of input.annotations) {
+    if (annotation.error !== undefined) {
+      pushFailure(annotation, annotation.error);
+      continue;
+    }
     try {
-      if (annotation.error !== undefined) throw annotation.error;
       if (annotation.data === undefined)
         throw new Error("The selected annotation is unavailable.");
       const output = document.renderAnnotation(annotation.data);
@@ -164,22 +188,7 @@ export function checkNativeProfile(
         },
       });
     } catch (error) {
-      annotations.push({
-        key: annotation.key,
-        check: {
-          status: "failed",
-          diagnostics: [
-            {
-              ...checkDiagnostic(error, caller),
-              part: "annotation",
-              annotation: {
-                key: annotation.key,
-                revision: annotation.revision,
-              },
-            },
-          ],
-        },
-      });
+      pushFailure(annotation, error);
     }
   }
   checks.annotations = {

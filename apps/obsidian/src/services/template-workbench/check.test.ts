@@ -2,7 +2,6 @@ import { it } from "@effect/vitest";
 import { Context, Deferred, Effect, Exit, Fiber } from "effect";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { DatabaseSync } from "node:sqlite";
 import { apiVersion } from "obsidian";
 import type { CliData } from "obsidian";
 import { beforeEach, describe, expect, vi } from "vitest";
@@ -1194,9 +1193,9 @@ My conclusion.
       Effect.gen(function* () {
         using stack = new DisposableStack();
         const client = stack.adopt(createClient(":memory:"), (value) =>
-          (value.$client as DatabaseSync).close(),
+          value.$client.close(),
         );
-        const sqlite = client.$client as DatabaseSync;
+        const sqlite = client.$client;
         createFixtureSchema(sqlite);
         sqlite.exec(`
       insert into libraries (libraryID, type) values (1, 'user');
@@ -1262,9 +1261,9 @@ My conclusion.
       Effect.gen(function* () {
         using stack = new DisposableStack();
         const client = stack.adopt(createClient(":memory:"), (value) =>
-          (value.$client as DatabaseSync).close(),
+          value.$client.close(),
         );
-        const sqlite = client.$client as DatabaseSync;
+        const sqlite = client.$client;
         createFixtureSchema(sqlite);
         sqlite.exec(`
       insert into libraries (libraryID, type) values (1, 'user');

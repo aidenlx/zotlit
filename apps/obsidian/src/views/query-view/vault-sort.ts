@@ -87,12 +87,7 @@ export function sortByVault<R extends QueryViewRow>(
     ranks.set(
       row,
       fields.map(({ property }, i) => {
-        prefix.push(
-          projectedSortKey(
-            property,
-            (row.values[property] ?? null) as ProjectionJson,
-          ),
-        );
+        prefix.push(projectedSortKey(property, row.values[property] ?? null));
         const key = JSON.stringify(prefix);
         if (!firsts[i]!.has(key)) firsts[i]!.set(key, index);
         return firsts[i]!.get(key)!;

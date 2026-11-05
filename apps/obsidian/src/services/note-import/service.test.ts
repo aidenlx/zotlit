@@ -274,7 +274,7 @@ const makeService = Effect.fnUntraced(function* (
       importOptions: Parameters<typeof importer.importNote>[1],
     ) =>
       Effect.suspend(() => {
-        current = importOptions.settings as Settings;
+        current = importOptions.settings;
         return importer.importNote(note, importOptions);
       }),
     prepareExplicitImport: (
@@ -851,7 +851,7 @@ describe("NoteImporter", () => {
           ),
         ).toBe("created");
 
-        const content = create.mock.calls[0]![1] as string;
+        const content = create.mock.calls[0]![1];
         expect(content).toContain("![image.png](file:///elsewhere/one.png)");
         expect(content).toContain("![image.png](file:///elsewhere/two.png)");
         // No embed claims a vault file that was never written.

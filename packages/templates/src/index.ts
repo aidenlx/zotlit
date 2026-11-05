@@ -67,29 +67,29 @@ export class TemplateEngine extends Eta {
     });
 
     const compileBase = this.compile;
-    this.compile = ((template, options) => {
+    this.compile = (template, options) => {
       this.#assertExpressionSyntax(template);
       return compileBase.call(this, template, options);
-    }) as typeof this.compile;
+    };
 
     // `template` is a name string for render()/include(), a compiled function
     // for renderString() — only named renders carry a name to transform.
     if (transformRender) {
       const renderBase = this.render;
-      this.render = ((template, data, meta) => {
+      this.render = (template, data, meta) => {
         const out = renderBase.call(this, template, data, meta);
         return typeof template === "string"
           ? transformRender(template, out)
           : out;
-      }) as typeof this.render;
+      };
 
       const renderAsyncBase = this.renderAsync;
-      this.renderAsync = ((template, data, meta) =>
+      this.renderAsync = (template, data, meta) =>
         renderAsyncBase
           .call(this, template, data, meta)
           .then((out) =>
             typeof template === "string" ? transformRender(template, out) : out,
-          )) as typeof this.renderAsync;
+          );
     }
   }
 

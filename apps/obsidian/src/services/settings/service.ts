@@ -285,7 +285,7 @@ const makePluginSettings = Effect.fn("PluginSettings.make")(function* (
     migrateV9,
     migrateV10,
   } = { ...settingsMigrations, ...options };
-  const handoff = options.handoff as Handoff | undefined;
+  const handoff: Handoff | undefined = options.handoff;
   const state = yield* Effect.acquireRelease(
     SubscriptionRef.make<Readonly<Settings>>(defaults),
     (state) => PubSub.shutdown(state.pubsub),

@@ -103,9 +103,9 @@ export function capabilityOfFailure(
   now: DateTime.Utc,
 ): EditingCapability {
   switch (failure.kind) {
-    case "unreachable":
     // A request that left and lost its answer has told this source nothing;
     // what a surface can say is that Zotero is not answering.
+    case "unreachable":
     case "unknown-outcome":
       return { kind: "read-only", reason: "zotero-unavailable" };
     case "local-api-disabled":
@@ -116,10 +116,10 @@ export function capabilityOfFailure(
       return { kind: "read-only", reason: "server-changed" };
     case "library-read-only":
       return { kind: "read-only", reason: "library-read-only" };
-    case "unauthorized":
-    case "denied":
     // Zotero granted a key that ZotLit discarded, which leaves the session as
     // a Deny does (ADR 0062).
+    case "unauthorized":
+    case "denied":
     case "not-remembered":
     case "not-saved":
       return { kind: "authorization-required" };
@@ -128,11 +128,11 @@ export function capabilityOfFailure(
         kind: "cooldown",
         retryAfter: DateTime.addDuration(now, failure.retryAfter),
       };
-    case "invalid-response":
     // A read sends no version and no write token, and the list route answers an
     // empty list rather than a `404`, so all three answer a question this client
     // never asked. The write path owns them as per-annotation mutation state
     // (aidenlx/zotlit#1145), never as capability.
+    case "invalid-response":
     case "conflict":
     case "write-token-used":
     case "not-found":

@@ -69,7 +69,7 @@ const MY_LIBRARY_DOCUMENT = {
 const createTargetItem = ITEMS.find((item) => item.itemID === 2)!;
 const defaultProfileTargetItem = ITEMS.find((item) => item.itemID === 6)!;
 const booksProfileTargetItem = ITEMS.find((item) => item.itemID === 7)!;
-const booksProfile = LITERATURE_NOTE_PROFILES[0]!;
+const booksProfile = LITERATURE_NOTE_PROFILES[0];
 const annotationAttachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
 const attachmentAnnotations = ANNOTATIONS.filter(
   ({ parentItemID }) => parentItemID === annotationAttachment.itemID,

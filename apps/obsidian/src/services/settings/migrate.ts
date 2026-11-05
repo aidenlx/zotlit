@@ -125,7 +125,7 @@ export function migrateLegacyV0(raw: unknown): Partial<Settings> {
   }
 
   dropLegacyDefaultValues(out);
-  return out as Partial<Settings>;
+  return out;
 }
 
 /**

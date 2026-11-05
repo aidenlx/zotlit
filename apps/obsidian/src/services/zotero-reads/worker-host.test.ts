@@ -126,10 +126,10 @@ function fakeWorkers(
             answering.Changes(...args) as Stream.Stream<ChangeEvent, unknown>,
             Deferred.await(cut),
           )) as typeof answering.Changes,
-        Ping: ((...args: Parameters<typeof answering.Ping>) =>
+        Ping: (...args: Parameters<typeof answering.Ping>) =>
           missed++ < (options.unanswered?.(n) ?? 0)
             ? Effect.never
-            : answering.Ping(...args)) as typeof answering.Ping,
+            : answering.Ping(...args),
       };
       const died = yield* Deferred.make<DbUnavailable>();
       deaths.set(n, died);

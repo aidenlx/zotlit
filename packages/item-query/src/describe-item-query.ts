@@ -265,7 +265,7 @@ function describeFields(dataset: QueryDataset): SchemaField[] {
       if (!fields.has(name))
         fields.set(name, {
           path: name,
-          type: jsonTypeOf(filter!),
+          type: jsonTypeOf(filter),
           filter,
           projection: false,
           group: false,

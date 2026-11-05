@@ -83,7 +83,7 @@ function observeButtons() {
         labels.mock.instances[
           labels.mock.calls.findLastIndex(([text]) => text === label)
         ];
-      const index = disabled.mock.instances.lastIndexOf(instance!);
+      const index = disabled.mock.instances.lastIndexOf(instance);
       return disabled.mock.calls[index]?.[0] ?? false;
     },
     labels: () => labels.mock.calls.map(([label]) => label),

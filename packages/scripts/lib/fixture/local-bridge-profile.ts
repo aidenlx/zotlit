@@ -363,7 +363,7 @@ function profileDescriptor(
       builtInSource: DEFAULT_PROFILE_SOURCE,
     };
   }
-  const profile = LITERATURE_NOTE_PROFILES[0]!;
+  const profile = LITERATURE_NOTE_PROFILES[0];
   return { id: profile.id, name: profile.label, filename: profile.document };
 }
 

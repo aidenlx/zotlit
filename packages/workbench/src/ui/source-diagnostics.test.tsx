@@ -231,7 +231,7 @@ it("leaves a property failure unmarked in another row's editor", () => {
 
 it("underlines the failing text in the note-name editor", () => {
   const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
-  const source = controller.document!.manifest.filename!;
+  const source = controller.document!.manifest.filename;
   const diagnoses = workbenchDiagnoses(
     [],
     [
@@ -271,7 +271,7 @@ it("underlines the failing text in the note-name editor", () => {
 
 it("leaves the note editor unmarked for a note-name failure", () => {
   const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
-  const source = controller.document!.manifest.filename!;
+  const source = controller.document!.manifest.filename;
   const diagnoses = workbenchDiagnoses(
     [],
     [

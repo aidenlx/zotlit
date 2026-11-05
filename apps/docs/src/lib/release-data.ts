@@ -80,7 +80,7 @@ async function fetchJson<T>(url: string): Promise<T | null> {
       },
       cf: { cacheTtl: CACHE_SECONDS, cacheEverything: true },
     });
-    return response.ok ? ((await response.json()) as T) : null;
+    return response.ok ? await response.json() : null;
   } catch {
     return null;
   }

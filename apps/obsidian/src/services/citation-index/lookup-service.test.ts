@@ -187,7 +187,7 @@ it.effect(
       const source = await fixture({
         wrap: (client) => ({
           ...client,
-          CitationLookup: ((payload, options) =>
+          CitationLookup: (payload, options) =>
             !payload.citekeys?.length
               ? client.CitationLookup(payload, options)
               : Effect.sync(() => {
@@ -200,7 +200,7 @@ it.effect(
                       ended += 1;
                     }),
                   ),
-                )) as typeof client.CitationLookup,
+                ),
         }),
       });
       const reads = source.reads;
@@ -850,10 +850,10 @@ it.live(
       const source = await fixture({
         wrap: (client) => ({
           ...client,
-          CitationLookup: ((payload, options) => {
+          CitationLookup: (payload, options) => {
             if (payload.citekeys?.length) requested += 1;
             return client.CitationLookup(payload, options);
-          }) as typeof client.CitationLookup,
+          },
         }),
       });
       await using lookup = source.reads;

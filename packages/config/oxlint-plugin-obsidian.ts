@@ -31,7 +31,7 @@ function reportOnly(rule: Rule): Rule {
               : Reflect.get(context, key, context),
         }),
       ),
-  } as Rule;
+  };
 }
 
 const rules: Record<string, Rule> = {};

@@ -118,7 +118,7 @@ export class MockMetadataCache implements MetadataCacheSource {
 
   on(name: string, callback: Callback): EventRef {
     this.#listeners[name]!.add(callback);
-    return { e: this, name, callback } as unknown as EventRef;
+    return { e: this, name, callback };
   }
 
   offref(ref: EventRef): void {
@@ -185,7 +185,7 @@ export class MockVault implements VaultSource {
     delete: new Set(),
   };
   readonly #held = new Map<string, PromiseWithResolvers<void>>();
-  readonly #failures = new Map<string, unknown>();
+  readonly #failures = new Map<string, Error>();
 
   constructor(readonly metadataCache: MockMetadataCache) {
     metadataCache.vault = this;
@@ -263,7 +263,7 @@ export class MockVault implements VaultSource {
     return () => gate.resolve();
   }
 
-  fail(path: string, error: unknown = new Error("read failed")): void {
+  fail(path: string, error: Error = new Error("read failed")): void {
     this.#failures.set(path, error);
   }
 
@@ -274,7 +274,7 @@ export class MockVault implements VaultSource {
 
   on(name: VaultEventName, callback: Callback): EventRef {
     this.#listeners[name].add(callback);
-    return { e: this, name, callback } as unknown as EventRef;
+    return { e: this, name, callback };
   }
 
   offref(ref: EventRef): void {
@@ -758,12 +758,12 @@ export async function createCitationIndexHarness(
           [FIELD_ZOTERO_KEY]: indexedKey,
           [FIELD_CITEKEY]: citekey,
         },
-      } as CachedMetadata);
+      });
     }
   }
   for (const [path, body] of Object.entries(documents)) {
     addFile(path, body);
-    metadataCache.fileCache.set(path, { links: [] } as CachedMetadata);
+    metadataCache.fileCache.set(path, { links: [] });
   }
 
   const host = { metadataCache, vault, workspace };

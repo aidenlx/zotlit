@@ -435,7 +435,7 @@ const annotationChoices = (
         )
           return [];
         const id = annotationIndexedKey(itemId, value.key);
-        return id ? [{ id, root: value as Record<string, unknown> }] : [];
+        return id ? [{ id, root: value }] : [];
       })
     : [];
 };

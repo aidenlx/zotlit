@@ -1683,7 +1683,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       obRunUntil(
         run.vaultId,
         async ({ zotlit }, { query, targetItemId }) => {
-          var hits = await zotlit.services.itemLookup.search(query);
+          const hits = await zotlit.services.itemLookup.search(query);
           return hits.some(function (hit) {
             return hit.item.itemID === targetItemId;
           });
@@ -1734,7 +1734,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }, { searchQuery, annotationItemId }) => {
-          var hits = await zotlit.services.itemLookup.search(searchQuery);
+          const hits = await zotlit.services.itemLookup.search(searchQuery);
           return hits.some(function (hit) {
             return hit.item.itemID === annotationItemId;
           });
@@ -1761,7 +1761,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRunUntil(
         run.vaultId,
         async ({ zotlit }, { lastTitleQuery, lastItemID }) => {
-          var hits = await zotlit.services.itemLookup.search(lastTitleQuery);
+          const hits = await zotlit.services.itemLookup.search(lastTitleQuery);
           return hits.some(function (hit) {
             return hit.item.itemID === lastItemID;
           });
@@ -1780,8 +1780,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const rebuild = (await obRun(
       run.vaultId,
       async ({ zotlit }, { lastTitleQuery, lastItemID, annotationItemId }) => {
-        var lookup = zotlit.services.itemLookup;
-        var has = function (
+        const lookup = zotlit.services.itemLookup;
+        const has = function (
           hits: Awaited<ReturnType<typeof lookup.search>>,
           id: number,
         ) {
@@ -1789,9 +1789,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             return hit.item.itemID === id;
           });
         };
-        var start = performance.now();
-        var waits = [];
-        var staleMisses = 0;
+        const start = performance.now();
+        const waits = [];
+        let staleMisses = 0;
         while (performance.now() - start < 60000) {
           if (has(await lookup.search(lastTitleQuery), lastItemID))
             return {
@@ -1803,7 +1803,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               })[waits.length >> 1],
               waitMaxMs: waits.at(-1),
             };
-          var t0 = performance.now();
+          const t0 = performance.now();
           if (!has(await lookup.search("simple rules"), annotationItemId))
             staleMisses++;
           waits.push(Math.round((performance.now() - t0) * 10) / 10);
@@ -1855,16 +1855,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const timings = (await obRun(
       run.vaultId,
       async ({ zotlit }, { queries }) => {
-        var lookup = zotlit.services.itemLookup;
-        var out: Record<
+        const lookup = zotlit.services.itemLookup;
+        const out: Record<
           string,
           { hits: number; medianMs: number; p95Ms: number }
         > = {};
-        for (var query of queries) {
-          var times = [];
-          var hits = 0;
-          for (var i = 0; i < 21; i++) {
-            var t0 = performance.now();
+        for (let query of queries) {
+          const times = [];
+          let hits = 0;
+          for (let i = 0; i < 21; i++) {
+            const t0 = performance.now();
             hits = (await lookup.search(query)).length;
             times.push(performance.now() - t0);
           }
@@ -1891,6 +1891,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ page: pageHelpers }) => {
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is wrapped in a Proxy and restored by identity
         const original = Worker.prototype.postMessage;
         const requests: { count: number; snapshot: string }[] = [];
         Worker.prototype.postMessage = new Proxy(original, {
@@ -1965,8 +1966,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ app }, { notePath }) => {
-        var file = await app.vault.create(notePath, "");
-        var leaf = app.workspace.getLeaf(true);
+        const file = await app.vault.create(notePath, "");
+        const leaf = app.workspace.getLeaf(true);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
         (leaf.view as import("obsidian").MarkdownView).editor.focus();
       },
@@ -1976,11 +1977,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { source }) => {
-          var file = app.vault.getAbstractFileByPath(source)!;
-          for (var leaf of app.workspace.getLeavesOfType("markdown"))
+          const file = app.vault.getAbstractFileByPath(source)!;
+          for (let leaf of app.workspace.getLeavesOfType("markdown"))
             if ((leaf.view as import("obsidian").FileView).file === file)
               leaf.detach();
-          await app.fileManager.trashFile(file!);
+          await app.fileManager.trashFile(file);
         },
         { source },
       );
@@ -1993,24 +1994,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { source, typedKeys }) => {
-          var cm = (
+          const cm = (
             app.workspace.getLeavesOfType("markdown").find(function (leaf) {
               return (
                 (leaf.view as import("obsidian").FileView).file?.path === source
               );
             })!.view as import("obsidian").MarkdownView
           ).editor.cm;
-          var watch = { opened: false, closed: false };
-          var observer = new MutationObserver(function (records) {
-            for (var record of records)
-              for (var node of record.removedNodes)
+          const watch = { opened: false, closed: false };
+          const observer = new MutationObserver(function (records) {
+            for (const record of records)
+              for (const node of record.removedNodes)
                 if (
                   (node as Element).classList?.contains("suggestion-container")
                 )
                   watch.closed = true;
           });
           try {
-            for (var ch of typedKeys) {
+            for (let ch of typedKeys) {
               cm.dispatch(cm.state.replaceSelection(ch), {
                 userEvent: "input.type",
               });
@@ -2075,18 +2076,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async (_context) => {
-        var row = Array.from(
+        const row = Array.from(
           activeDocument.querySelectorAll<HTMLElement>(".suggestion-container"),
         )
           .at(-1)!
           .querySelector<HTMLElement>(".suggestion-item")!;
-        row!.dispatchEvent(
+        row.dispatchEvent(
           new (activeWindow as Window & typeof globalThis).MouseEvent(
             "mousemove",
             { bubbles: true },
           ),
         );
-        row!.dispatchEvent(
+        row.dispatchEvent(
           new (activeWindow as Window & typeof globalThis).MouseEvent("click", {
             bubbles: true,
           }),
@@ -2120,14 +2121,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ page: pageHelpers }, { SEGMENTER_CACHE_DIR }) => {
-        var saved = [];
+        const saved = [];
         try {
-          var dir = await (
+          const dir = await (
             await (
               await navigator.storage.getDirectory()
             ).getDirectoryHandle("zotlit")
           ).getDirectoryHandle(SEGMENTER_CACHE_DIR);
-          for await (var [name, handle] of dir.entries())
+          for await (let [name, handle] of dir.entries())
             if (handle.kind === "file")
               saved.push({
                 name: name,
@@ -2146,7 +2147,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ page: pageHelpers }, { SEGMENTER_CACHE_DIR }) => {
-          var root = await (
+          const root = await (
             await navigator.storage.getDirectory()
           ).getDirectoryHandle("zotlit", { create: true });
           await root
@@ -2154,13 +2155,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             .catch(function (error) {
               if ((error as Error).name !== "NotFoundError") throw error;
             });
-          var saved = pageHelpers.scratch.zotlitE2ESegmenterCache;
+          const saved = pageHelpers.scratch.zotlitE2ESegmenterCache;
           if (saved!.length > 0) {
-            var dir = await root.getDirectoryHandle(SEGMENTER_CACHE_DIR, {
+            const dir = await root.getDirectoryHandle(SEGMENTER_CACHE_DIR, {
               create: true,
             });
-            for (var entry of saved!) {
-              var writable = await (
+            for (let entry of saved!) {
+              const writable = await (
                 await dir.getFileHandle(entry.name, { create: true })
               ).createWritable();
               await writable.write(entry.bytes);
@@ -2196,7 +2197,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       async ({ zotlit }, { searchTerm, firstItemID }) => {
-        var hits = await zotlit.services.itemLookup.search(searchTerm);
+        const hits = await zotlit.services.itemLookup.search(searchTerm);
         return hits.some(function (hit) {
           return hit.item.itemID === firstItemID;
         });
@@ -2211,7 +2212,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }, { searchTerm, firstItemID }) => {
-          var hits = await zotlit.services.itemLookup.search(searchTerm);
+          const hits = await zotlit.services.itemLookup.search(searchTerm);
           return hits.some(function (hit) {
             return hit.item.itemID === firstItemID;
           });
@@ -2255,7 +2256,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       async ({ zotlit }, { searchTerm, firstItemID }) => {
-        var hits = await zotlit.services.itemLookup.search(searchTerm);
+        const hits = await zotlit.services.itemLookup.search(searchTerm);
         return hits.some(function (hit) {
           return hit.item.itemID === firstItemID;
         });
@@ -2280,7 +2281,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       async ({ zotlit }, { searchTerm, firstItemID }) => {
-        var hits = await zotlit.services.itemLookup.search(searchTerm);
+        const hits = await zotlit.services.itemLookup.search(searchTerm);
         return hits.some(function (hit) {
           return hit.item.itemID === firstItemID;
         });
@@ -2295,7 +2296,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }, { searchTerm, firstItemID }) => {
-          var hits = await zotlit.services.itemLookup.search(searchTerm);
+          const hits = await zotlit.services.itemLookup.search(searchTerm);
           return hits.some(function (hit) {
             return hit.item.itemID === firstItemID;
           });
@@ -2346,7 +2347,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         count = await obRun(
           run.vaultId,
           async ({ app, page: pageHelpers }) => {
-            var added = (
+            const added = (
               await app.vault.adapter.read(
                 `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
               )
@@ -2495,7 +2496,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             await new Promise((r) => setTimeout(r, 20));
           }
           return left.map(
-            ([name, entry]) => `${name}: ${String(entry!.fn).slice(0, 120)}`,
+            ([name, entry]) => `${name}: ${String(entry.fn).slice(0, 120)}`,
           );
         } finally {
           if (!app.plugins.plugins.zotlit)

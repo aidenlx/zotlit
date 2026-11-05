@@ -405,8 +405,7 @@ it("changes preview mode, runs on demand, and pauses future work", () => {
     target: { value: "update" },
   });
   expect(
-    (screen.getByLabelText(m.workbench_preview_mode()) as HTMLSelectElement)
-      .value,
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_mode()).value,
   ).toBe("update");
   expect(
     screen.queryByRole("button", { name: m.workbench_preview_run() }),
@@ -415,7 +414,7 @@ it("changes preview mode, runs on demand, and pauses future work", () => {
     target: { value: "demand" },
   });
   expect(
-    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_refresh())
       .value,
   ).toBe("demand");
   fireEvent.click(
@@ -423,21 +422,21 @@ it("changes preview mode, runs on demand, and pauses future work", () => {
   );
   expect(onRun).toHaveBeenCalledOnce();
   expect(
-    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_refresh())
       .value,
   ).toBe("demand");
   fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
     target: { value: "live" },
   });
   expect(
-    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_refresh())
       .value,
   ).toBe("live");
   fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
     target: { value: "demand" },
   });
   expect(
-    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_refresh())
       .value,
   ).toBe("demand");
 });

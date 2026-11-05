@@ -5,10 +5,7 @@ import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { annotationSamples } from "@zotlit/workbench/ui";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import type {
-  CitationDataLoadResult,
-  TemplateDataLoadResult,
-} from "@/services/template-workbench/data";
+import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
 import {
   getSampleItem,
   SAMPLE_ITEM_CHOICES,
@@ -265,7 +262,7 @@ describe("the citation root", () => {
     readCitation.mockResolvedValue({
       kind: "data",
       data: { variant: "main", items: [], citations: [] },
-    } as CitationDataLoadResult);
+    });
     using session = host.openSession();
     session.setTarget(real, "citation");
     await session.ready();
@@ -313,7 +310,7 @@ describe("the citation root", () => {
     read.mockResolvedValue({
       kind: "data",
       data: { text: "Read me", type: "highlight" },
-    } as TemplateDataLoadResult);
+    });
     const context: TemplateAuthoringContext = {
       leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
       path: "templates/zotlit-partial.authors.md",
@@ -350,7 +347,7 @@ describe("the citation root", () => {
     readCitation.mockResolvedValue({
       kind: "data",
       data: { variant: "alt", items: [], citations: [] },
-    } as CitationDataLoadResult);
+    });
     using session = host.openSession();
     session.setContext({
       leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),

@@ -4,8 +4,12 @@ import { RuleTester } from "oxlint/plugins-dev";
 
 import { undeclaredEnvRule } from "./oxlint-plugin-build.ts";
 
-RuleTester.describe = describe;
-RuleTester.it = it;
+RuleTester.describe = (name, fn) => {
+  void describe(name, fn);
+};
+RuleTester.it = (name, fn) => {
+  void it(name, fn);
+};
 const filename = join(import.meta.dirname, "__fixtures__/build/config.ts");
 const tester = new RuleTester({
   languageOptions: { parserOptions: { lang: "ts" } },

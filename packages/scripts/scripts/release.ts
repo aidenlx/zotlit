@@ -105,7 +105,7 @@ const targets: AppMeta[] = interactive
 
 const bumps: Bump[] = [];
 for (const app of targets) {
-  const current = (await readPackageJson(app.pkgPath)).version as string;
+  const current = (await readPackageJson(app.pkgPath)).version;
   const spec = requested[app.name];
   const next =
     spec === undefined

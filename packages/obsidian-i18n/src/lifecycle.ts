@@ -62,8 +62,5 @@ export function resolveLocale<
   ) {
     return language as LocaleKeys<BaseLocale, Packs>;
   }
-  return (aliases[language] ?? catalog.baseLocale) as LocaleKeys<
-    BaseLocale,
-    Packs
-  >;
+  return aliases[language] ?? catalog.baseLocale;
 }

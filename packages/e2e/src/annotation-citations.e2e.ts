@@ -12,7 +12,6 @@ import {
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { obRun } from "./obsidian-cli.ts";
-import type { LinkMarkdownView } from "./page-links-types.ts";
 
 const NOTE = "Annotation citations.md";
 
@@ -105,7 +104,7 @@ async function look({
           `The link did not render: ${shownLine()?.outerHTML.slice(0, 300)}`,
       );
       const shown = shownLine()!.textContent ?? "";
-      cleanup.defer(() => (view as LinkMarkdownView).hoverPopover?.hide());
+      cleanup.defer(() => view.hoverPopover?.hide());
       const box = target.getBoundingClientRect();
       target.dispatchEvent(
         new MouseEvent("mouseover", {
@@ -117,9 +116,7 @@ async function look({
       );
       const content = await until(
         () =>
-          (
-            view as LinkMarkdownView
-          ).hoverPopover?.hoverEl.querySelector<HTMLElement>(
+          view.hoverPopover?.hoverEl.querySelector<HTMLElement>(
             ".zt-citation-popover-content",
           ),
         () => "No popover opened over the link",

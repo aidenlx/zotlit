@@ -190,7 +190,7 @@ describe("applyManagedFrontmatter", () => {
       makeContext({
         customList: ["a", "b"],
         customYear: 2024,
-      } as Partial<NoteTemplateContext>),
+      }),
       {
         compiled: compileFrontmatter(
           [

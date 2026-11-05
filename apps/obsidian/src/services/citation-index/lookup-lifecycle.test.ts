@@ -47,8 +47,7 @@ it.effect(
             Effect.orDie,
             Effect.as({
               ...client,
-              CitationLookup: (() =>
-                Effect.never) as typeof client.CitationLookup,
+              CitationLookup: () => Effect.never,
             }),
           ),
       );

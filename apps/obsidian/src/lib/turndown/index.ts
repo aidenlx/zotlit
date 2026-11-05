@@ -113,7 +113,7 @@ function addZoteroRules(
       node.nodeName === "SPAN" &&
       !!(node.style.color || node.style.backgroundColor),
     replacement: (content, node) => {
-      const { color, backgroundColor } = (node as HTMLElement).style;
+      const { color, backgroundColor } = node.style;
       return backgroundColor
         ? renderHighlight(
             content,

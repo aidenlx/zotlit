@@ -63,7 +63,7 @@ describe("validateLanguagePack", () => {
     [
       "a missing required top-level key",
       (() => {
-        const pack = languagePack() as Record<string, unknown>;
+        const pack = languagePack();
         delete pack.locale;
         return pack;
       })(),

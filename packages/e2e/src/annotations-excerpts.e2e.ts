@@ -64,6 +64,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ) as typeof import("@/lib/effect");
         const repository = zotlit.services.annotationRepository;
         page.scratch.__zotlitCapabilitySubjects = [];
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         page.scratch.__zotlitCapabilityFor = repository.capabilityFor;
         repository.capabilityFor = (key) => {
           page.scratch.__zotlitCapabilitySubjects!.push(key);
@@ -197,6 +198,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await using cleanup = new AsyncDisposableStack();
         const pending: [Worker, Parameters<Worker["postMessage"]>][] = [];
         const started = Promise.withResolvers<void>();
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const post = Worker.prototype.postMessage;
         const release = () => {
           Worker.prototype.postMessage = post;
@@ -250,6 +252,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ) as PropertyDescriptor & {
             value: typeof repository.annotationsChanged;
           },
+          // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
           read = repository.read;
         const afterClose = { subscriptions: 0, reads: 0 };
         cleanup.defer(() => {
@@ -271,9 +274,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             args: Parameters<typeof read>,
           ) => {
             afterClose.reads++;
-            return Reflect.apply(target, receiver, args) as ReturnType<
-              typeof read
-            >;
+            return Reflect.apply(target, receiver, args);
           },
         });
         release();
@@ -327,6 +328,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           const clipboard = (require("electron") as typeof import("electron"))
             .clipboard;
+          // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
           const write = navigator.clipboard.writeText;
           cleanup.defer(() => {
             navigator.clipboard.writeText = write;

@@ -494,7 +494,7 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
     winners: new Map<string, TemplateWinner>(),
     shadowed: new Map<string, string>(),
     inertEta: new Map<string, string>(),
-    pending: emptyTemplateWork() as TemplateWork,
+    pending: emptyTemplateWork(),
     partials: new Map<string, RegisteredPartial>(),
     inertPartials: new Map<string, LiteratureNoteTemplatePartial>(),
     partialNames: new Set<string>(),

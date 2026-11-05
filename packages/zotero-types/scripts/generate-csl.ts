@@ -27,7 +27,7 @@ const ZT_FIELD_RENAMES: Readonly<Record<string, string>> = {
 
 const outputFile = join("src", "csl.ts");
 
-await writeFile(outputFile, render(schema as ZoteroCslSchema));
+await writeFile(outputFile, render(schema));
 
 /** Object-literal body, one `"key": value,` line per entry. */
 function renderEntries(entries: Iterable<readonly [string, unknown]>): string {

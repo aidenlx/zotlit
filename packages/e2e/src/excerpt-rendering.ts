@@ -337,6 +337,7 @@ async function startRenderProbe(
       const state: ExcerptProbeState = {
         settled: false,
         outcome: null,
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         originalToBlob: HTMLCanvasElement.prototype.toBlob,
         controller: new AbortController(),
         diagnostics,
@@ -360,7 +361,7 @@ async function startRenderProbe(
             state.outcome = { name: error?.name ?? String(error) };
           },
         )
-        .finally(async () => {
+        .then(async () => {
           state.after = await process
             .getProcessMemoryInfo()
             .catch(() => process.getProcessMemoryInfo())

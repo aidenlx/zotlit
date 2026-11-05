@@ -943,8 +943,7 @@ function ListEditor({
                   // focus that leaves it is the cell's to end.
                   onBlur={(event) => {
                     if (chipEnded.current) return;
-                    if (!root.current?.contains(event.relatedTarget as Node))
-                      return;
+                    if (!root.current?.contains(event.relatedTarget)) return;
                     chipEnded.current = true;
                     onDraft(withChip(latest.current));
                   }}

@@ -57,7 +57,6 @@ import { buildSettings } from "@/services/settings/__fixtures__";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
-import type { DatabaseSync } from "node:sqlite";
 import type { App, Events } from "obsidian";
 import { Effect } from "effect";
 import { expect, vi } from "vitest";
@@ -128,7 +127,7 @@ Personal conclusion.
 
 export async function createRenderFixture(options: { existing?: string; javascript?: boolean; wikilinks?: boolean; defaultStyle?: string; partials?: Record<string, string> } = {}) {
   const client = createClient(":memory:");
-  const sqlite = client.$client as DatabaseSync;
+  const sqlite = client.$client;
   createFixtureSchema(sqlite);
   sqlite.exec(`
     insert into libraries (libraryID, type, editable, filesEditable) values (1, 'user', 1, 1);
@@ -245,8 +244,8 @@ export async function createRenderFixture(options: { existing?: string; javascri
         Object.fromEntries(indexedKeys.map((key) => [key, key === "MAIN2345" ? "figures2014" : null])),
       ),
     },
-    bibliographyRender: { changed: Stream.empty, settled: Stream.empty, invalidated: Stream.empty, "style-missing": Stream.empty, renderCitations, readCitations, readBibliography: (async () => null) as PreviewHostDeps["bibliographyRender"]["readBibliography"], vaultPresentation: { styleId: null, locale: null } },
-    pandocEngine: { status: { kind: "absent" } as PandocEngineStatus },
+    bibliographyRender: { changed: Stream.empty, settled: Stream.empty, invalidated: Stream.empty, "style-missing": Stream.empty, renderCitations, readCitations, readBibliography: async (..._args: Parameters<PreviewHostDeps["bibliographyRender"]["readBibliography"]>) => null, vaultPresentation: { styleId: null, locale: null } },
+    pandocEngine: { status: ((): PandocEngineStatus => ({ kind: "absent" }))() },
     openCitationEngineSettings: vi.fn<() => void>(),
   } satisfies PreviewHostDeps;
   const cancelled: number[] = [];

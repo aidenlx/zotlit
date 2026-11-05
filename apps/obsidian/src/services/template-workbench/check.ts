@@ -5,7 +5,6 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
 import type { CliData, CliFlag } from "obsidian";
 
-import type { CitationVariant } from "@zotlit/db";
 import { renderDiagnostic } from "@zotlit/item-query";
 import {
   captureRenderReport,
@@ -629,8 +628,7 @@ export function createCheckHandler(
             }),
             ...(context.root === "citation"
               ? {
-                  citationVariant: (params.variant ??
-                    "main") as CitationVariant,
+                  citationVariant: params.variant ?? "main",
                   ...(typeof params.example === "string" &&
                   isCitationExampleId(params.example)
                     ? { citationExample: params.example }
@@ -805,8 +803,8 @@ export function createCheckHandler(
           };
           const selected = yield* selectCheckBaseline({
             key: sourceContext.itemKey,
-            note: params.note as string | undefined,
-            existing: params.existing as string | undefined,
+            note: params.note,
+            existing: params.existing,
           });
           if (!selected.ok) return finish(sourceContext, selected);
           sourceContext = { ...sourceContext, baseline: selected };

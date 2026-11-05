@@ -26,11 +26,9 @@ export function useBakedThenFresh<T>(
     if (!carriesFact) return;
     const controller = new AbortController();
     fetch(endpoint, { signal: controller.signal })
-      .then((response) =>
-        response.ok ? (response.json() as Promise<T>) : null,
-      )
+      .then((response) => (response.ok ? response.json() : null))
       .then((latest) => {
-        if (latest) setFresh(latest);
+        if (latest) setFresh(latest as T);
       })
       .catch(() => {});
     return () => controller.abort();

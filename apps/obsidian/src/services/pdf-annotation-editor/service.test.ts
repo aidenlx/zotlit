@@ -105,7 +105,7 @@ function workspace(views: { view: unknown }[]) {
       getLeavesOfType: () =>
         views.map(({ view }) =>
           stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-            view: view as unknown as View,
+            view: view as View,
           }),
         ),
       offref,

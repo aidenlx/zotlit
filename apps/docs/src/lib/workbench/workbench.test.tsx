@@ -80,7 +80,7 @@ it("keeps independent Preview and Explorer choices when a new document opens", a
   const section = () =>
     page.host.querySelector<HTMLButtonElement>('[data-part="section-header"]')!;
   expect(section().getAttribute("aria-expanded")).toBe("true");
-  page.press(section().textContent!);
+  page.press(section().textContent);
   importFile(page.host, KEPT);
   await page.waitFor(() =>
     expect(page.host.querySelector("h1")?.textContent).toBe("Kept work"),
