@@ -27,13 +27,12 @@ import {
   viewport,
 } from "./__fixtures__";
 import type { readerSurfaces } from "./__fixtures__";
+import { current, update } from "./reader-surface-model";
 import {
-  current,
   ingestCapability,
   selectAdjust,
   selectMarkHandles,
   setCommenting,
-  update,
 } from "./reader-surface-state";
 import { geometryFailureMessage } from "./selection";
 

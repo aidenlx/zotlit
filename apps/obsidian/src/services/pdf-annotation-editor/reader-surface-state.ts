@@ -9,7 +9,6 @@
 import type { SelectedText } from "@zotlit/pdf-structure";
 
 import { offeredSwatches } from "@/lib/annotation-colors";
-import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   capabilityReason,
   sameDeadline,
@@ -20,7 +19,6 @@ import type { CapabilityAffordance } from "@/services/annotation-repository/capa
 import { lockBlock } from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
-  AnnotationRepository,
   TextFieldDraft,
   AnnotationState,
   TagDraft,
@@ -60,12 +58,8 @@ import type {
 } from "./geometry-edit";
 import { markPopupRow } from "./mark-popup";
 import type { MarkPopupRowInput, MarkPopupVerb } from "./mark-popup";
-import type {
-  ReaderSurfaceModel,
-  ReaderSurfaceRegistry,
-} from "./reader-surface-model";
 import { gestureOf } from "./tools";
-import type { AnnotationTool, MarkTool, ToolColorStore } from "./tools";
+import type { AnnotationTool, MarkTool } from "./tools";
 
 /** Where the create popup hangs, as a fraction of its page box, so a zoom keeps it. */
 export interface AnchorAt {
@@ -290,39 +284,6 @@ export function initialReaderSurfaceState({
 }
 
 /**
- * The surface a reader's gestures write: the registry that holds the Reader
- * Surface Model, and the model.
- */
-export interface ReaderSurface {
-  readonly registry: ReaderSurfaceRegistry;
-  readonly model: ReaderSurfaceModel;
-}
-
-/** Applies `transition` to the surface's state, and tells its watchers. */
-export function update(
-  { registry, model }: ReaderSurface,
-  transition: Transition,
-): void {
-  registry.update(model.state, transition);
-}
-
-/** Applies `step` to the surface's state, and answers its result. */
-export function modify<A>(
-  { registry, model }: ReaderSurface,
-  step: Step<A>,
-): A {
-  return registry.modify(model.state, step);
-}
-
-/** The surface's state as it stands now. */
-export function current({
-  registry,
-  model,
-}: ReaderSurface): ReaderSurfaceState {
-  return registry.get(model.state);
-}
-
-/**
  * Arms a tool, or stands the armed one down for `null`. Arming a tool that
  * takes a click or a stroke clears the floating surface, so no Mark Handle
  * stands to take a press meant to place a mark or to draw. A Text Draft stays:
@@ -341,33 +302,6 @@ export const arm =
       ? state
       : { ...state, armed: tool, floating };
   };
-
-/**
- * Writes a tool's colour to the settings-backed store and to this view. The
- * choice is a use of that colour too.
- */
-export function setToolColor(
-  surface: ReaderSurface,
-  toolColors: ToolColorStore,
-  { tool, color }: { tool: AnnotationTool; color: string },
-): void {
-  toolColors.set(tool, color);
-  update(surface, (state) => ({ ...state, colors: toolColors.current() }));
-  recordColorUse(surface, toolColors, color);
-}
-
-/**
- * Puts a colour first in the recent list every tool shares: a tool coloured,
- * a mark created, or a mark recoloured.
- */
-export function recordColorUse(
-  surface: ReaderSurface,
-  toolColors: ToolColorStore,
-  color: string,
-): void {
-  toolColors.use(color);
-  update(surface, (state) => ({ ...state, recentColors: toolColors.recent() }));
-}
 
 export const toggleMarks: Transition = (state) => ({
   ...state,
@@ -955,72 +889,12 @@ export const dropRecord =
     };
   };
 
-/** What the per-Annotation facts are read and announced through. */
-export type AnnotationFacts = Pick<
-  AnnotationRepository["Service"],
-  "annotationState" | "annotationChanged"
->;
-
-/**
- * Takes a read's records, with the write state and the draft each one already
- * holds, in one update: those stood before this view could hear them
- * announced.
- */
-export function ingestAnnotations(
-  surface: ReaderSurface,
-  records: readonly AnnotationRecord[],
-  {
-    annotations,
-    bridge,
-  }: {
-    annotations: Pick<AnnotationRepository["Service"], "annotationState">;
-    bridge: Pick<EffectBridge, "runSync">;
-  },
-): void {
-  const states = records.map(
-    ({ key }) =>
-      [key, bridge.runSync(annotations.annotationState(key))] as const,
-  );
-  update(surface, (state) =>
-    states.reduce(
-      (next, [key, annotation]) => ingestAnnotationState(key, annotation)(next),
-      ingestRecords(records)(state),
-    ),
-  );
-}
-
-/**
- * Takes what the repository announces about one Annotation — what a write left
- * on it, its drafts, and its deletion — into the state.
- *
- * @returns what stops the listening.
- */
-export function listenAnnotationEvents(
-  surface: ReaderSurface,
-  annotations: AnnotationFacts,
-  bridge: Pick<EffectBridge, "runSync" | "subscribe">,
-): DisposableStack {
-  const listening = new DisposableStack();
-  listening.defer(
-    bridge.subscribe(annotations.annotationChanged, (key) =>
-      update(
-        surface,
-        ingestAnnotationState(
-          key,
-          bridge.runSync(annotations.annotationState(key)),
-        ),
-      ),
-    ),
-  );
-  return listening;
-}
-
 /**
  * Takes one Annotation's whole state. A gone Annotation leaves with all it
  * held; a draft a database switch hid closes its editor, where a draft that
  * ended with its save leaves the editor as it stands.
  */
-const ingestAnnotationState =
+export const ingestAnnotationState =
   (key: string, annotation: AnnotationState): Transition =>
   (state) => {
     if (annotation.gone) return dropRecord(key)(state);

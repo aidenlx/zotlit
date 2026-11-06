@@ -8,14 +8,13 @@ import type { SelectedText } from "@zotlit/pdf-structure";
 import { annotation, readerSurface, toolColors } from "./__fixtures__";
 import type { Point } from "./hit-test";
 import { MarkPopupHost } from "./mark-popup-host";
+import { current, update } from "./reader-surface-model";
 import {
   captureSelection,
-  current,
   ingestCommentDraft,
   ingestRecords,
   selectMark,
   setCommenting,
-  update,
 } from "./reader-surface-state";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");

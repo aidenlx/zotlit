@@ -72,26 +72,27 @@ import {
 } from "./operations";
 import type { BindingWrites, WriteRun } from "./operations";
 import { mountReaderKeymap } from "./reader-keymap";
-import { makeReaderSurfaceModel } from "./reader-surface-model";
-import type { ReaderSurfaceRegistry } from "./reader-surface-model";
 import {
   current,
   ingestAnnotations,
+  listenAnnotationEvents,
+  makeReaderSurfaceModel,
+  update,
+} from "./reader-surface-model";
+import type {
+  ReaderSurface,
+  ReaderSurfaceRegistry,
+} from "./reader-surface-model";
+import {
   ingestCapability,
   initialReaderSurfaceState,
-  listenAnnotationEvents,
   selectAdjust,
   selectCapture,
   selectMarkHandles,
   selectSelectedKey,
   selectTextDraft,
-  update,
 } from "./reader-surface-state";
-import type {
-  Adjustment,
-  ReaderSurface,
-  ReaderSurfaceState,
-} from "./reader-surface-state";
+import type { Adjustment, ReaderSurfaceState } from "./reader-surface-state";
 import type { PdfReads } from "./reads";
 import {
   groupAnnotationsByPage,
@@ -250,10 +251,7 @@ export interface PdfViewBindingDeps {
   openedAt?: Temporal.Instant | null;
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
-  /**
-   * The atom registry this view's Reader Surface Model lives in, held on the
-   * view's own Scope past the writes it starts.
-   */
+  /** The atom registry this view's Reader Surface Model lives in. */
   registry: ReaderSurfaceRegistry;
 }
 

@@ -83,6 +83,14 @@ import {
 } from "./operations";
 import type { BindingWrites, CreateWrite, WriteRun } from "./operations";
 import {
+  current,
+  modify,
+  recordColorUse,
+  setToolColor,
+  update,
+} from "./reader-surface-model";
+import type { ReaderSurface } from "./reader-surface-model";
+import {
   appendPendingStroke,
   arm,
   beginCapture,
@@ -95,9 +103,6 @@ import {
   finishTextDraft,
   moveCapture,
   openTextDraft,
-  current,
-  modify,
-  recordColorUse,
   refitTextDraft,
   selectCapture,
   selectCreateRowInput,
@@ -106,17 +111,14 @@ import {
   selectTextDraft,
   settlePendingStroke,
   settleTextDraft,
-  setToolColor,
   textDraftPosition,
   toggleMarks,
-  update,
 } from "./reader-surface-state";
 import type {
   AnchorAt,
   Floating,
   PendingStroke,
   ReaderSurfaceState,
-  ReaderSurface,
   TextDraft,
 } from "./reader-surface-state";
 import { interfaceFont } from "./render";

@@ -3,12 +3,9 @@
 import type { ReaderPage } from "./creation";
 import type { Point } from "./hit-test";
 import { clampToViewBox, StrokeSamples } from "./ink-path";
-import {
-  clearLiveStroke,
-  publishLiveStroke,
-  update,
-} from "./reader-surface-state";
-import type { ReaderSurface } from "./reader-surface-state";
+import { update } from "./reader-surface-model";
+import type { ReaderSurface } from "./reader-surface-model";
+import { clearLiveStroke, publishLiveStroke } from "./reader-surface-state";
 import { pdfPointAt } from "./surface";
 
 export interface InkStrokeOptions {

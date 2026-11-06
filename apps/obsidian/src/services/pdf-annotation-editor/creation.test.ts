@@ -38,13 +38,8 @@ import {
   readerSurfaces,
   toolColors,
 } from "./__fixtures__";
-import {
-  arm,
-  current,
-  ingestCapability,
-  selectTextDraft,
-  update,
-} from "./reader-surface-state";
+import { current, update } from "./reader-surface-model";
+import { arm, ingestCapability, selectTextDraft } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 import type { ToolColorStore } from "./tools";
 

@@ -24,6 +24,14 @@ import type { CreationToolbarControl } from "./creation-toolbar";
 import { freeTextLines } from "./free-text-layout";
 import type { EditablePosition } from "./geometry-edit";
 import {
+  current,
+  ingestAnnotations,
+  listenAnnotationEvents,
+  modify,
+  setToolColor,
+  update,
+} from "./reader-surface-model";
+import {
   appendPendingStroke,
   arm,
   beginAdjust,
@@ -33,7 +41,6 @@ import {
   captureSelection,
   clearFloating,
   clearLiveStroke,
-  current,
   dropPendingStroke,
   dropRecord,
   dropTextDraft,
@@ -41,13 +48,10 @@ import {
   endCapture,
   finishTextDraft,
   hideCommentDraft,
-  ingestAnnotations,
   ingestCapability,
   ingestCommentDraft,
   ingestMutation,
   ingestRecords,
-  listenAnnotationEvents,
-  modify,
   moveAdjust,
   moveCapture,
   openTextDraft,
@@ -68,10 +72,8 @@ import {
   setTagging,
   settlePendingStroke,
   settleTextDraft,
-  setToolColor,
   stepStack,
   tick,
-  update,
 } from "./reader-surface-state";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");

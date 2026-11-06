@@ -16,16 +16,10 @@ import { watch } from "@/lib/view-atoms";
 
 import type { Point } from "./hit-test";
 import { MarkPopup } from "./mark-popup";
-import {
-  current,
-  drawsNoPopup,
-  selectFloatingHead,
-} from "./reader-surface-state";
-import type {
-  Floating,
-  PopuplessFloating,
-  ReaderSurface,
-} from "./reader-surface-state";
+import { current } from "./reader-surface-model";
+import type { ReaderSurface } from "./reader-surface-model";
+import { drawsNoPopup, selectFloatingHead } from "./reader-surface-state";
+import type { Floating, PopuplessFloating } from "./reader-surface-state";
 
 const logger = getLogger("pdf-annotation-editor");
 

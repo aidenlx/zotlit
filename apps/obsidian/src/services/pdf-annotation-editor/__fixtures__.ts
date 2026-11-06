@@ -57,18 +57,15 @@ import { MarkPopupHost } from "./mark-popup-host";
 import { bindingResources } from "./operations";
 import { mountReaderKeymap } from "./reader-keymap";
 import type { HistoryVerb } from "./reader-keymap";
-import { makeReaderSurfaceModel } from "./reader-surface-model";
 import {
   current,
   ingestAnnotations,
-  initialReaderSurfaceState,
   listenAnnotationEvents,
-} from "./reader-surface-state";
-import type {
-  AnnotationFacts,
-  ReaderSurface,
-  ReaderSurfaceState,
-} from "./reader-surface-state";
+  makeReaderSurfaceModel,
+} from "./reader-surface-model";
+import type { AnnotationFacts, ReaderSurface } from "./reader-surface-model";
+import { initialReaderSurfaceState } from "./reader-surface-state";
+import type { ReaderSurfaceState } from "./reader-surface-state";
 import { groupAnnotationsByPage } from "./render";
 import type { OverlayPageView } from "./render";
 import { MarkSelection } from "./selection";

@@ -130,11 +130,16 @@ import {
 } from "./operations";
 import type { BindingWrites } from "./operations";
 import {
+  current,
+  modify,
+  recordColorUse,
+  update,
+} from "./reader-surface-model";
+import type { ReaderSurface } from "./reader-surface-model";
+import {
   beginAdjust,
   cancelAdjust,
   endAdjust,
-  current,
-  modify,
   moveAdjust,
   selectAdjust,
   selectSelectedRowInput,
@@ -146,15 +151,12 @@ import {
   selectSelectedKey,
   selectSelectedKeys,
   selectSelectedTagDraft,
-  recordColorUse,
   setCommenting,
   setTagging,
   stepStack,
-  update,
 } from "./reader-surface-state";
 import type {
   ReaderSurfaceState,
-  ReaderSurface,
   SelectedRowInput,
 } from "./reader-surface-state";
 import { readingOrder, stepReadingOrder } from "./reading-order";

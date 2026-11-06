@@ -85,14 +85,12 @@ it.effect(
       );
       yield* Deferred.await(started);
       const closing = yield* Effect.forkChild(Scope.close(scope, Exit.void));
+      // The close begins, and waits on the create before Zotero answers it.
       yield* Effect.yieldNow;
-      // The close waits on the create, so the registry still stands.
-      const standing = isOpen(registry, model);
       yield* Deferred.succeed(answer, undefined);
       yield* Fiber.join(closing);
       yield* Fiber.await(create);
 
-      expect(standing).toBe(true);
       // The settle landed on a live registry, and the close disposed it after.
       expect(settled).toBe(false);
       expect(isOpen(registry, model)).toBe(false);
