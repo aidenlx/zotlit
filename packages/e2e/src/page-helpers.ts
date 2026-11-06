@@ -277,7 +277,7 @@ export function createPageHelpers(app: PageApp) {
     });
     return [...docs];
   }
-  /** The Template Workbench leaves, their panels and companions, and the focus they sit under. */
+  /** The Template Workbench leaves and their panels, the standalone explorers, and the focus they sit under. */
   function workbenchSurfaces() {
     const surfaces = (type: keyof WalkthroughViews) =>
       leavesOfType(type).map((leaf) => {
@@ -550,6 +550,12 @@ export function createPageHelpers(app: PageApp) {
       : undefined;
   }
   /** The Preview panel `view` shows, or null while it hides the panel. */
+  function fieldsPanel(view: TemplateWorkbenchView | undefined) {
+    return (
+      view?.contentEl.querySelector<HTMLElement>('[data-panel="fields"]') ??
+      null
+    );
+  }
   function previewPanel(view: TemplateWorkbenchView | undefined) {
     return (
       view?.contentEl.querySelector<HTMLElement>('[data-panel="preview"]') ??
@@ -970,6 +976,7 @@ export function createPageHelpers(app: PageApp) {
     restoreAnnotationPreparation,
     annotationOpenSubpath,
     workbench,
+    fieldsPanel,
     previewPanel,
     workbenchSurfaces,
     pdfView,

@@ -3,9 +3,11 @@ title: Template workbench panels
 ---
 # Template workbench panels
 
-This page checks the Preview panel of the Template Workbench View. The
-Preview sits on the right of the editor in the same tab. It shows the note
-that the editor's own render makes for the chosen Item.
+This page checks the two side panels of the Template Workbench View, and the
+standalone Template Data Explorer. The Fields panel sits on the left of the
+editor and lists the template fields of the chosen Item. The Preview sits on
+the right and shows the note that the editor's own render makes for that Item.
+Both are in the same tab as the editor.
 
 Use the Scope Case `all`. Open `templates/zotlit-profile.books.md` and run
 **Switch to template workbench view**. Close any other Template Workbench tab
@@ -15,9 +17,9 @@ before each case.
 
 1. Open the Books Profile as above.
 
-Expected: the editor fills the tab. The **Show preview** view action is not
-pressed. The pane menu shows **Show preview** without a check mark and has no
-Preview settings.
+Expected: the editor fills the tab. The **Show preview** and **Show fields**
+view actions are not pressed. The pane menu shows **Show preview** and **Show
+fields** without a check mark and has no Preview settings.
 
 ## Show and hide the Preview
 
@@ -30,18 +32,54 @@ action is pressed. The pane menu shows **Show preview** checked, followed by
 section only**, **Automatically refresh preview** and **Show Markdown**.
 After step 2, the region closes, and the chosen Item stays chosen.
 
+## Show and hide the Fields
+
+1. Select the **Show fields** view action.
+2. Select it again.
+
+Expected: after step 1, a region named "Fields" opens on the left and the
+action is pressed; the pane menu shows **Show fields** checked. After step 2,
+the region closes, and the chosen Item stays chosen.
+
 ## One Item in every surface
 
-1. Show the Preview.
+1. Show the Preview and the Fields.
 2. Select **Choose item** in the view header, and choose "Alpha of the
    personal library".
 3. Select **Choose item** in the Preview panel, and choose "Beta of the
    shared reading group".
+4. Select **Choose item** in the Fields panel, and choose "Alpha of the
+   personal library".
 
 Expected: after each choice, the editor header, the Properties tab
 (`fixture-title`), the Name and folder tab (`books-personalAlpha2024`, then
-`books-sharedReadingBeta2022`) and the Preview panel ("Book profile: …") all
-name the same Item.
+`books-sharedReadingBeta2022`), the Fields panel caption and the Preview panel
+("Book profile: …") all name the same Item.
+
+## The Fields follow the editor
+
+1. Show the Fields, and choose "Alpha of the personal library".
+2. Open the Annotation tab.
+3. In the Fields panel, select **Back to note root**.
+4. Open the Name and folder tab, then the Annotation tab again.
+
+Expected: after step 2, the Fields panel shows the Annotation root of the
+chosen annotation. After step 3, it shows the Note root, and the editor stays
+on the Annotation tab. After step 4, the Fields panel follows the editor back
+to the Annotation root. A filter typed in the panel and the sections closed in
+it stay while the Item stays.
+
+## Insert a field from the Fields
+
+1. Show the Fields, and choose "Alpha of the personal library".
+2. Select **Source**, and place the cursor in the note body.
+3. In the Fields panel, open the row menu of `title`. Select **Insert field**.
+4. Open the row menu of `title` again.
+
+Expected: step 3 writes `{{ zt.title }}` at the cursor and gives the editor
+the focus. In step 4, the menu also offers **Copy path**, **Copy value** and
+the Template Snippets, each of which copies to the clipboard. The pane menu's
+**Save template data as JSON** saves the Item's data as a JSON file.
 
 ## Resize the Preview
 
@@ -107,6 +145,22 @@ offers the example set and the two citation variants. The Shared Partial shows
 
 1. Show nothing; run **Open template workbench** from the pane menu.
 
-Expected: the editor moves to a window of its own with the Preview shown. A
-second **Open template workbench** reveals that window and opens no second
-one.
+Expected: the editor moves to a window of its own with the Fields and the
+Preview shown, and no Template Data Explorer tab opens beside it. A second
+**Open template workbench** reveals that window and opens no second one.
+
+## The standalone Template Data Explorer
+
+1. Open the Books Profile, show the Fields, and choose "Alpha of the personal
+   library".
+2. Run **Open template data explorer** from the command palette, and choose
+   "Beta of the shared reading group" in it.
+3. In the editor, choose "Within-library duplicate, first item".
+4. Switch between the editor tab and a normal note.
+
+Expected: step 2 opens the explorer in the right sidebar on its own Item; the
+editor and its Fields panel keep "Alpha of the personal library". Step 3
+leaves the explorer on "Beta of the shared reading group". In step 4 the
+explorer stays where it is. Its rows offer copy and Template Snippets, and no
+**Insert field**. **Explore template data** on a Literature Note's file menu,
+and the Zotero `explore` action, open the same standalone explorer.

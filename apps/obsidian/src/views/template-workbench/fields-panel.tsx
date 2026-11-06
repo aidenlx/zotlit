@@ -242,6 +242,7 @@ export function FieldsPanel({ view }: { view: TemplateWorkbenchView }) {
     <ExplorerModelContext value={fields}>
       <ExplorerActionsContext value={actions}>
         <Explorer
+          placement="panel"
           onSelectAnnotation={chooseExample}
           onChooseAnnotation={() => view.startAnnotationChoice()}
           onSelectItem={(item) => view.pickItem(item)}

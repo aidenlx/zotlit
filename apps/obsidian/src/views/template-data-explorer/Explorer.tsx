@@ -38,6 +38,8 @@ import {
 } from "./model";
 
 const sidebarBar = selectionBar({ placement: "sidebar" });
+/** In an editor's panel no view header names the Item, so the row always shows. */
+const panelBar = selectionBar();
 
 export function Explorer({
   explorer,
@@ -45,7 +47,10 @@ export function Explorer({
   onChooseAnnotation,
   onSelectItem,
   onSearchItem,
+  placement = "sidebar",
 }: {
+  /** A standalone Explorer's own leaf, or an editor's Fields panel. */
+  placement?: "sidebar" | "panel";
   onSelectAnnotation: (id: string) => void;
   onChooseAnnotation: () => void;
   onSelectItem: (item: WorkbenchItemChoice) => void;
@@ -66,6 +71,7 @@ export function Explorer({
   const state = useAtomValue(model.state);
   const { root, status, error, data, navigation, collapsedSections } = state;
   const host = useWorkbenchHost();
+  const bar = placement === "panel" ? panelBar : sidebarBar;
   const shownSections = visibleSectionIds(data, {
     m: host.messages,
     root,
@@ -140,13 +146,18 @@ export function Explorer({
             className={
               anchor
                 ? "zt:flex zt:shrink-0 zt:flex-col zt:gap-3 zt:border-b zt:border-border zt:px-3 zt:py-2"
-                : "zt-workbench-sidebar-control zt:shrink-0 zt:justify-end zt:px-3 zt:py-2"
+                : cn(
+                    placement === "panel"
+                      ? "zt:flex"
+                      : "zt-workbench-sidebar-control",
+                    "zt:shrink-0 zt:justify-end zt:px-3 zt:py-2",
+                  )
             }
           >
-            <div className={sidebarBar.row({ className: "zt:flex-1" })}>
-              {name && <p className={sidebarBar.caption()}>{name}</p>}
+            <div className={bar.row({ className: "zt:flex-1" })}>
+              {name && <p className={bar.caption()}>{name}</p>}
               <button
-                className={sidebarBar.trigger()}
+                className={bar.trigger()}
                 aria-label={
                   root === "annotation"
                     ? m.workbench_choose_annotation()
