@@ -119,7 +119,7 @@ it("keeps Name and Properties examples when only Annotation fails", async () => 
   expect(screen.queryByText(m.workbench_example_failed())).toBeNull();
 });
 
-it("marks a held live result as stale while rendering cannot run", async () => {
+it("says a held result is the last preview, as the Preview does, since Run cannot help", async () => {
   using mounted = mount(<Configuration />, {
     state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
   });
@@ -144,9 +144,35 @@ it("marks a held live result as stale while rendering cannot run", async () => {
   });
   expect(mounted.host.renders).toHaveLength(1);
   expect(screen.queryByText(m.workbench_loading_item())).toBeNull();
-  expect(screen.getAllByText(m.workbench_example_awaiting_run())).toHaveLength(
-    2,
+  expect(screen.getAllByText(m.workbench_preview_stale())).toHaveLength(2);
+  expect(screen.queryByText(m.workbench_example_awaiting_run())).toBeNull();
+});
+
+it("keeps the last output of a draft the parser refuses, as the Preview does", async () => {
+  using mounted = mount(<Configuration />, {
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  render(mounted.ui);
+  act(() => {
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]! });
+    pressRun(mounted);
+  });
+  await act(async () =>
+    mounted.host.renders[0]!.answer({
+      filename: "Research",
+      notePath: "Research",
+    }),
   );
+  act(() =>
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]!, hold: "invalid" }),
+  );
+  expect(schedulerState(mounted).staleReason).toBe("invalid");
+  expect(screen.queryByText(m.workbench_example_awaiting_run())).toBeNull();
+  expect(
+    screen.getAllByText(m.workbench_preview_retained()).length,
+  ).toBeGreaterThan(0);
+  // The last note name stands beside the notice.
+  expect(screen.getAllByText(/Research/).length).toBeGreaterThan(0);
 });
 
 it("offers local item actions and shows retry only after evaluation fails", async () => {

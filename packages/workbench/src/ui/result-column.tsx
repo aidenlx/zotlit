@@ -7,6 +7,7 @@ import type { ReactNode, Ref } from "react";
 import { useContainerName, useWorkbenchHost, useTooltip } from "./host";
 import type { WorkbenchMarkdownProps } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { pendingView } from "./pending-view";
 import { diagnosticText } from "./problems";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { useParts } from "./theme";
@@ -155,10 +156,15 @@ export function ResultBody({
             ? source?.managedRegion
             : source?.creationBody) ?? null;
   const output = outputOf(showAnnotation ? annotationResult : result);
+  // What stands while a render is pending, under the examples' own rule.
+  const pendingState = pendingView(
+    { staleReason, result, retained },
+    (source) => outputOf(source) !== null,
+  );
   // A document the parser refuses never reached a render, and its explanation
   // is the editor's; the result on screen is as far behind as a failed one.
   const failed =
-    staleReason === "invalid" ||
+    pendingState.notice === "failed" ||
     (showNote &&
       result?.diagnostics.some(({ code }) => code === "property-error")) ||
     (previewProblem !== undefined && output === null);
@@ -190,15 +196,15 @@ export function ResultBody({
     );
   // "Rendering…" is honest only while a render is on its way: on demand the
   // notice below says Run starts one, and a hold shows its own problem.
-  const showPending = staleReason === "live";
+  const showPending = pendingState.notice === "rendering";
   return (
     <>
-      {staleReason === "hold" && result && (
+      {pendingState.notice === "held" && (
         <p role="status" {...part("stale")}>
           {m.workbench_preview_stale()}
         </p>
       )}
-      {staleReason === "demand" && (
+      {pendingState.notice === "behind" && (
         <div role="status" {...part("behind")}>
           <span {...part("behind-text")}>
             {result ? m.workbench_preview_behind() : m.workbench_preview_none()}
