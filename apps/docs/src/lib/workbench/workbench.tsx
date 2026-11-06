@@ -16,14 +16,13 @@ import {
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { entryPosition, entrySlice } from "@zotlit/workbench/document";
+import { entrySlice } from "@zotlit/workbench/document";
 import type {
-  WorkbenchProblem,
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
-import { currentCallSite, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { RenderDiagnostic } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
 import {
@@ -43,8 +42,9 @@ import {
   diagnosticText,
   entryDiagnostics,
   fieldSnippet,
-  isProfileProblem,
   renderDiagnosis,
+  routeDiagnosis,
+  routeProblem,
   useParts,
   useWorkbenchProblems,
   workbenchDiagnoses,
@@ -62,6 +62,7 @@ import type {
   WorkbenchDiagnosis,
   WorkbenchHost,
   WorkbenchInsertTarget,
+  WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
@@ -210,8 +211,6 @@ function WorkbenchSession({
   const setOpenRow = (selected: number | null) => present({ selected });
   const setReveal = (next: WorkbenchSliceRange | null) =>
     present({ reveal: next });
-  const setFocusField = (fieldFocus: { field: string } | null) =>
-    present({ fieldFocus });
   const setCaret = (range: WorkbenchSliceRange) =>
     present({ selection: { slice, range } });
   const importFileCommand = useAtomSet(workbench.importFile);
@@ -334,49 +333,10 @@ function WorkbenchSession({
     ({ part }) => part === "annotation",
   );
 
-  /** Opens the row a diagnostic named, wherever the reader was. */
-  function goToEntry(position: number, range?: WorkbenchSliceRange) {
-    setAdvanced(false);
-    setTab("properties");
-    setOpenRow(position);
-    // A fresh object every time, so selecting the same problem twice reveals it
-    // again.
-    setReveal(range ? { ...range } : null);
-  }
-
-  /**
-   * Opens the pane a problem is repaired in — the row, the note name, the note
-   * body, or Advanced — and reveals the text the parser pointed at.
-   */
-  function goToProblem(problem: WorkbenchProblem) {
-    const { slice: id, range } = problem;
-    const position = entryPosition(id);
-    if (position !== null) {
-      goToEntry(position, range);
-      return;
-    }
-    setAdvanced(id === "advanced");
-    if (id === "note") {
-      setTab("note");
-    }
-    if (id === "annotation" || problem.code === "missing-annotation-section") {
-      openAnnotation();
-      return;
-    }
-    if (id === "filename" || id === "details") {
-      setTab(isProfileProblem(problem) ? "profile" : "name");
-    }
-    // A fresh object every time, so selecting the same problem twice reveals it
-    // again. The Name and folder form writes its manifest fields through
-    // controls rather than an editor, so a problem it owns opens the control
-    // holding the field the parser named instead of revealing text.
-    setReveal(range && id !== "details" ? { ...range } : null);
-    setFocusField(
-      id === "details" && problem.params?.field !== undefined
-        ? { field: problem.params.field }
-        : null,
-    );
-  }
+  /** Opens the pane a routing transition names, in the model's view state. */
+  const route = (
+    transition: (state: WorkbenchViewState) => WorkbenchViewState,
+  ) => registry.update(model.view, transition);
 
   /** Reads one problem the result named, in the editor's Problems area. */
   function showProblem(id: string | null) {
@@ -395,62 +355,17 @@ function WorkbenchSession({
 
   /** The pane one selected problem is repaired in, whichever kind it is. */
   function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
-    if (diagnosis.kind === "document") {
-      goToProblem(diagnosis.problem);
-      return;
-    }
-    const { part, position, callSite, sourceSite } = diagnosis.diagnostic;
-    // A verified call outranks the part the engine reported the failure under:
-    // a failure inside a called template is repaired where it was called.
-    if (callSite || sourceSite) {
-      const current = currentCallSite(diagnosis.diagnostic, controller);
-      if (current === undefined) {
-        toast.add({
-          title: m.workbench_problems_location_unknown(),
-          type: "info",
-        });
-        return;
-      }
-      // The pane whose own region holds the call; Advanced holds whatever no
-      // editing pane covers.
-      const slice =
-        (["note", "annotation", "filename"] as const).find((id) => {
-          const region = controller.sliceRange(id);
-          return region.from <= current.from && current.from < region.to;
-        }) ?? "advanced";
-      setAdvanced(slice === "advanced");
-      if (slice !== "advanced") setTab(slice === "filename" ? "name" : slice);
-      setReveal({ ...current });
-      return;
-    }
-    if (position !== undefined) {
-      goToEntry(position);
-      return;
-    }
-    if (part === "annotation") {
-      openAnnotation();
-      return;
-    }
-    // The note name is repaired in its own tab, whether or not the failure
-    // named a place inside it. The pane takes the caret with the reveal, so
-    // the reader goes on typing where the Problems area left them.
-    if (part === "filename") {
-      setAdvanced(false);
-      setTab("name");
-      const slice = controller.sliceRange("filename");
-      setReveal({ from: slice.from, to: slice.from });
-      return;
-    }
-    setAdvanced(true);
+    const transition = routeDiagnosis(diagnosis, controller);
+    if (transition) route(transition);
+    else
+      toast.add({
+        title: m.workbench_problems_location_unknown(),
+        type: "info",
+      });
   }
 
   function openAnnotation() {
-    setAdvanced(false);
-    setTab("annotation");
-    const section = controller.annotationSection;
-    setReveal(
-      section ? { from: section.source.from, to: section.source.from } : null,
-    );
+    route(routeProblem({ slice: "annotation" }, controller));
   }
 
   function insertAnnotations() {

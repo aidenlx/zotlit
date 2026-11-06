@@ -2289,7 +2289,7 @@ language: liquid
     expect(editor.contentDOM).toBe(document.activeElement);
   });
 
-  it("reclaims the reading space before navigating to a source problem", async () => {
+  it("reclaims the reading space and opens the Annotation tab for a missing section", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
@@ -2312,13 +2312,15 @@ language: liquid
 
     await press('[data-part="problems-open"]');
     expect(area.dataset.state).toBe("compact");
-    expect(viewState(view).advanced).toBe(true);
-    const editor = EditorView.findFromDOM(
-      view.contentEl.querySelector<HTMLElement>(
-        '[data-workbench-mode="source"] .cm-editor',
-      )!,
-    )!;
-    expect(editor.contentDOM).toBe(document.activeElement);
+    // The section is added from the Annotation tab, as on the web.
+    expect(viewState(view)).toMatchObject({
+      advanced: false,
+      tab: "annotation",
+      root: "annotation",
+    });
+    expect(
+      view.contentEl.querySelector('[data-part="section-bar"]'),
+    ).not.toBeNull();
   });
 
   it("keeps a Profile document on its six tabs, titled by its name", async () => {

@@ -35,7 +35,6 @@ import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
   CITATION_EXAMPLE_IDS,
   DEFAULT_PARTIAL_CONTEXT,
-  currentCallSite,
   failedRender,
   isPartialContext,
   renderIdentity,
@@ -54,7 +53,8 @@ import {
   citationExampleLabel,
   entryDiagnostics,
   fieldSnippet,
-  isProfileProblem,
+  routeDiagnosis,
+  routeProblem,
   setAdvanced,
   setPreview,
   setRoot,
@@ -2622,8 +2622,6 @@ function EditorContent({
     view.setPresentation({ selected });
   const setReveal = (reveal: WorkbenchViewState["presentation"]["reveal"]) =>
     view.setPresentation({ reveal });
-  const setFieldFocus = (fieldFocus: { field: string } | null) =>
-    view.setPresentation({ fieldFocus });
   const previewStatus = useAtomValue(view.model.read).status;
   useEffect(
     () => view.restoreScroll(),
@@ -2825,87 +2823,20 @@ function EditorContent({
     kind,
   ]);
   const state = view.change;
+  /** Opens the pane a routing transition names, in the leaf's view state. */
+  const route = (
+    transition: (state: WorkbenchViewState) => WorkbenchViewState,
+  ) => view.registry.update(view.model.view, transition);
   function openProblem(
     problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
   ) {
-    if (kind !== "profile" || problem.slice === "source") {
-      // A plain document's every problem is in the one editor it opens with,
-      // so every reveal target lands there and its tabs stay as they are.
-      setReveal(problem.range ?? null);
-      return;
-    }
-    const entry = entryPosition(problem.slice);
-    state.setAdvanced(problem.slice === "advanced");
-    state.setTab(
-      entry !== null
-        ? "properties"
-        : isProfileProblem(problem)
-          ? "profile"
-          : problem.slice === "filename" || problem.slice === "details"
-            ? "name"
-            : problem.slice === "annotation"
-              ? "annotation"
-              : "note",
-    );
-    state.setRoot(
-      problem.slice === "annotation"
-        ? "annotation"
-        : problem.slice === "filename"
-          ? "filename"
-          : "note",
-    );
-    if (entry !== null) setSelected(entry);
-    setReveal(problem.range ?? null);
-    setFieldFocus(
-      problem.slice === "details" && problem.params?.field
-        ? { field: problem.params.field }
-        : null,
-    );
-  }
-  /**
-   * The pane whose own region holds `from`, which is where a verified call is
-   * repaired. Advanced holds whatever no editing pane covers.
-   */
-  function sliceHolding(from: number): WorkbenchProblem["slice"] {
-    if (kind !== "profile") return "source";
-    for (const slice of ["note", "annotation", "filename"] as const) {
-      const region = controller.sliceRange(slice);
-      if (region.from <= from && from < region.to) return slice;
-    }
-    return "advanced";
+    route(routeProblem(problem, controller));
   }
   /** The pane one selected problem is repaired in, whichever kind it is. */
   function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
-    if (diagnosis.kind === "document") {
-      openProblem(diagnosis.problem);
-      return;
-    }
-    const { part, position, callSite, sourceSite } = diagnosis.diagnostic;
-    // A verified call outranks the part the engine reported the failure under:
-    // a failure inside a called template is repaired where it was called.
-    if (callSite || sourceSite) {
-      const current = currentCallSite(diagnosis.diagnostic, controller);
-      if (current === undefined) {
-        new BaseNotice(m.workbench_problems_location_unknown());
-        return;
-      }
-      openProblem({ slice: sliceHolding(current.from), range: current });
-      return;
-    }
-    const slice: WorkbenchProblem["slice"] =
-      position === undefined
-        ? part === "annotation"
-          ? "annotation"
-          : // The note name is repaired in its own tab, whether or not the
-            // failure named a place inside it.
-            part === "filename" && kind === "profile"
-            ? "filename"
-            : kind === "profile"
-              ? "advanced"
-              : "source"
-        : `entry:${position}`;
-    const range = controller.sliceRange(slice);
-    openProblem({ slice, ...(range ? { range } : {}) });
+    const transition = routeDiagnosis(diagnosis, controller);
+    if (transition) route(transition);
+    else new BaseNotice(m.workbench_problems_location_unknown());
   }
   /**
    * Hands the reader the template back where they left it. The selection each
