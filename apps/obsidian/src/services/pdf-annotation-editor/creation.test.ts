@@ -1628,6 +1628,8 @@ it("creates a Text Draft finished as the view closes, from the page it read at t
   await using open = await toolReader("text", undefined, {
     structure: document_.structure,
   });
+  // The text tool's colour, read while the view's state stands.
+  const { text: color } = current(open.surface).colors;
   {
     // The view's own surfaces close; the repository outlives them.
     using _closing = open;
@@ -1642,7 +1644,7 @@ it("creates a Text Draft finished as the view closes, from the page it read at t
   expect(open.drafts).toEqual([
     {
       type: "text",
-      color: current(open.surface).colors.text,
+      color,
       comment: "Typed",
       pageLabel: "1",
       sortIndex: expect.stringMatching(/^00000\|/),

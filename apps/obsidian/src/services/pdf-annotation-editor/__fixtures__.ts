@@ -54,7 +54,7 @@ import type { AttachmentReads } from "./binding";
 import { MarkCreation } from "./creation";
 import type { AnnotationCreates } from "./creation";
 import { MarkPopupHost } from "./mark-popup-host";
-import { bindingWrites } from "./operations";
+import { bindingResources } from "./operations";
 import { mountReaderKeymap } from "./reader-keymap";
 import type { HistoryVerb } from "./reader-keymap";
 import { makeReaderSurfaceModel } from "./reader-surface-model";
@@ -719,20 +719,29 @@ export function readerSurfaces({
   notifier = testNotifier(),
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
-  const surface = readerSurface({
-    colors: colors.current(),
-    capability,
-    now: READER_NOW,
-  });
+  // The view's own Scope, which holds its registry and its writes, as the
+  // editor's does, and which the disposal closes.
+  const scope = EffectScope.makeUnsafe();
+  let closed = false;
+  const { registry, writes } = Effect.runSync(
+    bindingResources.pipe(EffectScope.provide(scope)),
+  );
+  const surface: ReaderSurface = {
+    registry,
+    model: makeReaderSurfaceModel(
+      initialReaderSurfaceState({
+        colors: colors.current(),
+        capability,
+        now: READER_NOW,
+      }),
+    ),
+  };
   // The view holds its Attachment's list while it is open, as the binding
   // does.
   const viewHold = bridge.runSync(annotations.hold(["RGRPDF24"]));
   let held = records;
   ingestAnnotations(surface, held, { annotations, bridge });
   const listening = listenAnnotationEvents(surface, annotations, bridge);
-  // The view's own Scope, which the writes run on and the disposal closes.
-  const scope = EffectScope.makeUnsafe();
-  const writes = Effect.runSync(bindingWrites.pipe(EffectScope.provide(scope)));
   const gestures = {
     revealAnnotation: vi.fn(),
     blockedPress: vi.fn(),
@@ -862,14 +871,22 @@ export function readerSurfaces({
     revealed,
     revealedWith,
     stepped,
-    /** What a refresh does once the read answers: the records, replaced. */
+    /** The records the last read answered, kept past the reader's close. */
+    drawn: (): readonly AnnotationRecord[] => held,
+    /**
+     * What a refresh does once the read answers: the records, replaced. A
+     * closed reader takes them into no state, as the binding's does.
+     */
     replace(next: readonly AnnotationRecord[]) {
       held = next;
-      ingestAnnotations(surface, next, { annotations, bridge });
+      if (!closed) ingestAnnotations(surface, next, { annotations, bridge });
     },
-    /** What the binding does once a page re-rendered. */
+    /**
+     * What the binding does once a page re-rendered. A closed reader hears no
+     * page, as the binding's does.
+     */
     sync() {
-      host.sync();
+      if (!closed) host.sync();
     },
     /**
      * One keystroke as Obsidian delivers it: the view's Scope hears it first,
@@ -880,7 +897,11 @@ export function readerSurfaces({
     key(init: KeyboardEventInit, target: EventTarget = containerEl) {
       return dispatchKey(view.scope!, init, target);
     },
+    // Once, as the binding's own disposer runs: the Scope it closes takes
+    // the registry with it.
     [Symbol.dispose]() {
+      if (closed) return;
+      closed = true;
       unmountKeymap();
       selection[Symbol.dispose]();
       creation[Symbol.dispose]();

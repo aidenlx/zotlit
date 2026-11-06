@@ -172,8 +172,8 @@ async function settled(h: Harness, annotationKey: string): Promise<void> {
  * after it, so call this right after the announcement.
  */
 async function reread(h: Harness): Promise<void> {
-  const drawn = current(h.surface).records;
-  await vi.waitFor(() => expect(current(h.surface).records).not.toBe(drawn));
+  const drawn = h.drawn();
+  await vi.waitFor(() => expect(h.drawn()).not.toBe(drawn));
 }
 
 /** One whole gesture: press and release at the same point unless told otherwise. */
