@@ -1,11 +1,11 @@
 import type { RenderRequest } from "#/render/request";
 import type { TemplateRenderResult } from "#/render/result";
-import { Effect } from "effect";
+import { Deferred, Effect, Exit, Queue } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { TestClock } from "effect/testing";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { WorkbenchHostError } from "./host";
 import type { RenderSchedulerInput } from "./scheduler";
@@ -41,15 +41,22 @@ interface PendingRender {
   reject(error: unknown): void;
   /** Whether the scheduler interrupted the render before it was answered. */
   readonly interrupted: boolean;
+  /** Completes once the scheduler interrupts the render. */
+  readonly interruption: Deferred.Deferred<void>;
 }
 
-/** A host render held open until the test answers it, recording interrupts. */
+/**
+ * A host render held open until the test answers it. It offers each request
+ * to `started` and completes each render's `interruption`.
+ */
 function fakeRender() {
   const renders: PendingRender[] = [];
+  const started = Effect.runSync(Queue.unbounded<PendingRender>());
   const render = (request: RenderRequest) =>
     Effect.callback<TemplateRenderResult, WorkbenchHostError>((resume) => {
       let interrupted = false;
-      renders.push({
+      const interruption = Deferred.makeUnsafe<void>();
+      const pending: PendingRender = {
         request,
         answer: (result) =>
           resume(
@@ -66,16 +73,17 @@ function fakeRender() {
         get interrupted() {
           return interrupted;
         },
-      });
+        interruption,
+      };
+      renders.push(pending);
+      Queue.offerUnsafe(started, pending);
       return Effect.sync(() => {
         interrupted = true;
+        Deferred.doneUnsafe(interruption, Exit.void);
       });
     });
-  return { renders, render };
+  return { renders, started, render };
 }
-
-/** Lets every continuation a resumed render or an elapsed sleep queued run. */
-const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /**
  * One scheduler in a registry of its own, over a writable input the test
@@ -110,10 +118,33 @@ function open(
   });
   const release = registry.mount(scheduler.state);
   const context = AsyncResult.getOrThrow(registry.get(runtime));
+  const state = () => registry.get(scheduler.state);
+  let taken = 0;
+  /** Takes the start signal of every render up to the `count`th, then checks no other started. */
+  const rendered = async (count: number) => {
+    while (taken < count) {
+      await Effect.runPromise(Queue.take(host.started));
+      taken++;
+    }
+    expect(host.renders).toHaveLength(count);
+  };
+  /** Answers a render, then waits for its result to land. */
+  const settled = async (
+    index: number,
+    answer: (render: PendingRender) => void,
+  ) => {
+    await rendered(Math.max(taken, index + 1));
+    const { attempt } = state();
+    answer(host.renders[index]!);
+    await vi.waitFor(() => expect(state().attempt).toBe(attempt + 1));
+  };
   return {
     host,
     registry,
-    state: () => registry.get(scheduler.state),
+    state,
+    rendered,
+    interrupted: (index: number) =>
+      Effect.runPromise(Deferred.await(host.renders[index]!.interruption)),
     set: (next: Partial<RenderSchedulerInput>) =>
       registry.update(input, (current) => ({ ...current, ...next })),
     run: () => registry.set(scheduler.run, undefined),
@@ -121,21 +152,12 @@ function open(
     invalidate: () => registry.set(scheduler.invalidate, undefined),
     fail: (message: string) =>
       registry.set(scheduler.fail, { code: "render-error", message }),
-    /** Moves the test clock on, then lets what it woke run. */
-    advance: async (ms: number) => {
-      await Effect.runPromise(
-        Effect.provideContext(TestClock.adjust(ms), context),
-      );
-      await settle();
-    },
-    answer: async (index: number, result?: Partial<TemplateRenderResult>) => {
-      host.renders[index]!.answer(result);
-      await settle();
-    },
-    reject: async (index: number, error: unknown) => {
-      host.renders[index]!.reject(error);
-      await settle();
-    },
+    advance: (ms: number) =>
+      Effect.runPromise(Effect.provideContext(TestClock.adjust(ms), context)),
+    answer: (index: number, result?: Partial<TemplateRenderResult>) =>
+      settled(index, (render) => render.answer(result)),
+    reject: (index: number, error: unknown) =>
+      settled(index, (render) => render.reject(error)),
     [Symbol.dispose]() {
       release();
       registry.dispose();
@@ -163,7 +185,7 @@ it("renders after the quiet time and no sooner, and at once on Run", async () =>
   expect(host.renders).toHaveLength(0);
   expect(scheduler.state().staleReason).toBe("live");
   await scheduler.advance(1);
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   expect(host.renders[0]!.request.source).toBe("Revised");
   expect(scheduler.state().busy).toBe(true);
   await scheduler.answer(0, { creationBody: "First" });
@@ -173,14 +195,14 @@ it("renders after the quiet time and no sooner, and at once on Run", async () =>
   expect(scheduler.state().staleReason).toBeNull();
   scheduler.set({ live: false });
   scheduler.run();
-  expect(host.renders).toHaveLength(2);
+  await scheduler.rendered(2);
 });
 
 it("lets the render in flight finish after selecting On demand and starts no other", async () => {
   using scheduler = open();
   const { host } = scheduler;
   await scheduler.advance(300);
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   scheduler.set({ live: false });
   // On demand pauses live rendering; the render already running is still running.
   expect(scheduler.state().busy).toBe(true);
@@ -191,7 +213,7 @@ it("lets the render in flight finish after selecting On demand and starts no oth
   expect(scheduler.state().busy).toBe(false);
   scheduler.set({ source: "Typed while paused" });
   await scheduler.advance(1000);
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   expect(scheduler.state().stale).toBe(true);
   // On demand and behind an edit no render has started for.
   expect(scheduler.state().staleReason).toBe("demand");
@@ -201,11 +223,11 @@ it("interrupts the render in flight once the reader types past it", async () => 
   using scheduler = open();
   const { host } = scheduler;
   await scheduler.advance(300);
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   scheduler.set({ source: "Typed past" });
-  expect(host.renders[0]!.interrupted).toBe(true);
+  await scheduler.interrupted(0);
   await scheduler.advance(300);
-  expect(host.renders).toHaveLength(2);
+  await scheduler.rendered(2);
   expect(host.renders[1]!.interrupted).toBe(false);
 });
 
@@ -243,7 +265,7 @@ it("drops the quiet time on Stop and starts no render", async () => {
   // The next edit starts the quiet time over.
   scheduler.set({ source: "Edited" });
   await scheduler.advance(300);
-  expect(scheduler.host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
 });
 
 it("interrupts a pending render when the registry is disposed", async () => {
@@ -251,7 +273,7 @@ it("interrupts a pending render when the registry is disposed", async () => {
   await scheduler.advance(300);
   const [pending] = scheduler.host.renders;
   scheduler[Symbol.dispose]();
-  expect(pending!.interrupted).toBe(true);
+  await Effect.runPromise(Deferred.await(pending!.interruption));
 });
 
 it("interrupts the quiet time when the registry is disposed", async () => {
@@ -264,7 +286,6 @@ it("interrupts the quiet time when the registry is disposed", async () => {
 
 it("drops a queued render on selecting On demand and reports the result as behind", async () => {
   using scheduler = open();
-  const { host } = scheduler;
   await scheduler.advance(300);
   await scheduler.answer(0, { creationBody: "First" });
   expect(scheduler.state().staleReason).toBeNull();
@@ -274,7 +295,7 @@ it("drops a queued render on selecting On demand and reports the result as behin
   expect(scheduler.state().staleReason).toBe("live");
   scheduler.set({ live: false });
   await scheduler.advance(1000);
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   expect(scheduler.state().result?.creationBody).toBe("First");
   expect(scheduler.state().staleReason).toBe("demand");
 });
@@ -286,22 +307,21 @@ it("renders only on Run while the refresh setting is On demand", async () => {
   await scheduler.advance(1000);
   expect(host.renders).toHaveLength(0);
   scheduler.run();
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   expect(host.renders[0]!.request.source).toBe("Held back");
 });
 
 it("drops a render in flight and starts the quiet time over when Live is chosen again", async () => {
   using scheduler = open({ live: false });
-  const { host } = scheduler;
   scheduler.run();
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   scheduler.set({ live: true });
-  expect(host.renders[0]!.interrupted).toBe(true);
+  await scheduler.interrupted(0);
   expect(scheduler.state().busy).toBe(false);
   await scheduler.advance(299);
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   await scheduler.advance(1);
-  expect(host.renders).toHaveLength(2);
+  await scheduler.rendered(2);
 });
 
 it("reads a fresh scheduler in on-demand mode as behind before any render starts", () => {
@@ -312,23 +332,21 @@ it("reads a fresh scheduler in on-demand mode as behind before any render starts
 
 it("drops the render in flight on invalidate and renders again after the quiet time", async () => {
   using scheduler = open();
-  const { host } = scheduler;
   await scheduler.advance(300);
   scheduler.invalidate();
-  expect(host.renders[0]!.interrupted).toBe(true);
+  await scheduler.interrupted(0);
   await scheduler.advance(300);
-  expect(host.renders).toHaveLength(2);
+  await scheduler.rendered(2);
 });
 
 it("drops the render in flight on invalidate in on-demand mode and schedules nothing", async () => {
   using scheduler = open({ live: false });
-  const { host } = scheduler;
   scheduler.run();
   scheduler.invalidate();
-  expect(host.renders[0]!.interrupted).toBe(true);
+  await scheduler.interrupted(0);
   expect(scheduler.state().busy).toBe(false);
   await scheduler.advance(1000);
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
 });
 
 const SUPERSEDED: readonly {
@@ -377,17 +395,18 @@ it.each(
   async ({ live, start, supersede }) => {
     using scheduler = open({ live, ...start });
     await startRender(scheduler, live);
-    expect(scheduler.host.renders).toHaveLength(1);
+    await scheduler.rendered(1);
     scheduler.set(supersede);
     // The render it was waiting on is dropped, so nothing is running any more.
     expect(scheduler.state().busy).toBe(false);
-    expect(scheduler.host.renders[0]!.interrupted).toBe(true);
-    await scheduler.answer(0, { creationBody: "Superseded" });
-    expect(scheduler.state().result).toBeNull();
+    await scheduler.interrupted(0);
+    // No signal follows an answer to a dropped render; the landing below shows it never landed.
+    scheduler.host.renders[0]!.answer({ creationBody: "Superseded" });
     await startRender(scheduler, live);
-    expect(scheduler.host.renders).toHaveLength(2);
+    await scheduler.rendered(2);
     await scheduler.answer(1, { creationBody: "Current" });
     expect(scheduler.state().result?.creationBody).toBe("Current");
+    expect(scheduler.state().attempt).toBe(1);
   },
 );
 
@@ -404,7 +423,7 @@ it("reads a selection by reference, so an equal new object is a new choice", asy
   using scheduler = open({ citation: CITATION });
   await scheduler.advance(300);
   scheduler.set({ citation: { ...CITATION } });
-  expect(scheduler.host.renders[0]!.interrupted).toBe(true);
+  await scheduler.interrupted(0);
 });
 
 it.each([
@@ -431,12 +450,12 @@ it("clears the result once the host takes the paper away, and keeps it cleared",
   scheduler.set({ snapshot: null });
   expect(scheduler.state().result).toBeNull();
   await scheduler.advance(1000);
-  expect(scheduler.host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   scheduler.set({ snapshot: PAPER });
   // The result that stood before describes a paper the host had let go.
   expect(scheduler.state().result).toBeNull();
   await scheduler.advance(300);
-  expect(scheduler.host.renders).toHaveLength(2);
+  await scheduler.rendered(2);
 });
 
 it("starts no render while the host has no paper", async () => {
@@ -615,7 +634,7 @@ it("names every selection on a failure the host reports", async () => {
   await scheduler.advance(300);
   scheduler.fail("No citation data");
   // The failure drops the render it stands in for.
-  expect(scheduler.host.renders[0]!.interrupted).toBe(true);
+  await scheduler.interrupted(0);
   const { result, busy, stale, trigger, attempt } = scheduler.state();
   expect(
     result?.diagnostics.map(({ code, message }) => `${code}: ${message}`),
@@ -661,21 +680,19 @@ it("names the attempt behind each result and counts the attempts apart", async (
 
 it("replaces the render in flight on Run and drops the quiet time", async () => {
   using scheduler = open();
-  const { host } = scheduler;
   await scheduler.advance(100);
   scheduler.run();
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   await scheduler.advance(1000);
   // Run ended the quiet time it overtook.
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   scheduler.run();
-  expect(host.renders[0]!.interrupted).toBe(true);
-  expect(host.renders).toHaveLength(2);
+  await scheduler.interrupted(0);
+  await scheduler.rendered(2);
 });
 
 it("holds rendering on the host's word while the last result stands", async () => {
   using scheduler = open();
-  const { host } = scheduler;
   await scheduler.advance(300);
   await scheduler.answer(0, { creationBody: "Good" });
   scheduler.set({ hold: true });
@@ -687,10 +704,10 @@ it("holds rendering on the host's word while the last result stands", async () =
   scheduler.set({ source: "Held" });
   await scheduler.advance(1000);
   scheduler.run();
-  expect(host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
   scheduler.set({ hold: false });
   await scheduler.advance(300);
-  expect(host.renders).toHaveLength(2);
+  await scheduler.rendered(2);
 });
 
 it("tells a document the parser refuses from a hold that is only a wait", async () => {
@@ -707,7 +724,7 @@ it("tells a document the parser refuses from a hold that is only a wait", async 
   // The parser refused the draft, so the output on screen is what worked last.
   expect(scheduler.state().staleReason).toBe("invalid");
   expect(scheduler.state().retained?.creationBody).toBe("Good");
-  expect(scheduler.host.renders).toHaveLength(1);
+  await scheduler.rendered(1);
 
   scheduler.set({ annotation: OTHER_EXAMPLE });
   expect(scheduler.state().retained).toBeNull();
@@ -722,14 +739,15 @@ it("keeps choices and late results local to each scheduler", async () => {
   await second.answer(0, { creationBody: "Second output" });
   first.set({ live: false, mode: "update", source: "Current unsaved draft" });
   first.run();
+  await first.rendered(2);
   expect(first.host.renders[1]!.request).toMatchObject({
     source: "Current unsaved draft",
     mode: "update",
   });
   expect(second.state().staleReason).toBeNull();
-  expect(second.host.renders).toHaveLength(1);
+  await second.rendered(1);
   first[Symbol.dispose]();
-  await first.answer(1, { creationBody: "Closed result" });
+  first.host.renders[1]!.answer({ creationBody: "Closed result" });
   expect(second.state().result?.creationBody).toBe("Second output");
 });
 
@@ -749,14 +767,15 @@ it("reports the attempt a failure came from, not the draft the reader moved on t
   // abandoned: its late failure reports nothing and shows nothing.
   scheduler.set({ source: "Draft two" });
   await scheduler.advance(300);
-  await scheduler.reject(0, new Error("Abandoned failure"));
-  expect(scheduler.state().result).toBeNull();
+  scheduler.host.renders[0]!.reject(new Error("Abandoned failure"));
 
   const context = "1| {{ zt.title\n         ^";
   await scheduler.reject(
     1,
     Object.assign(new Error("Unclosed tag"), { context }),
   );
+  // The abandoned failure never landed: this is the first attempt.
+  expect(scheduler.state().attempt).toBe(1);
   const captured = scheduler.state().result!.diagnostics[0]!.report!;
   expect(captured.trigger).toBe("automatic");
   expect(captured.identity.sourceRevision).toBe(

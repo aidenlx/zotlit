@@ -1,8 +1,6 @@
+// The render scheduler as atoms: a sleep a newer input interrupts, then the host's render Effect.
+
 import type { WorkbenchReportContext } from "#/render/report";
-// The render scheduler as atoms: the host's input is an atom, the quiet time
-// after an edit is a sleep a newer input interrupts, and the state a preview
-// reads is an atom. The host supplies the render Effect alone; the registry's
-// runtime runs it, so disposing the registry interrupts the scheduler's work.
 import type { RenderRequest } from "#/render/request";
 import type {
   TemplateRenderResult,
@@ -14,6 +12,7 @@ import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
 import { WorkbenchHostError } from "./host";
+import { held, staleReasonFor } from "./scheduler";
 import type {
   RenderSchedulerInput,
   RenderSchedulerState,
@@ -54,7 +53,6 @@ export interface RenderSchedulerAtomsOptions<
    * failure reads like every other result the host publishes.
    */
   readonly failed: (result: TemplateRenderResult) => R;
-  /** Retain outputs together with the host metadata that describes them. */
   readonly retain?: (kept: R, result: R) => R;
   /**
    * What names this Workbench in the report a failed attempt is copied as,
@@ -81,7 +79,7 @@ export interface RenderSchedulerAtoms<
 }
 
 /** Each input change the scheduler answers by dropping its work, counted. */
-interface Track {
+interface InputGeneration {
   readonly input: RenderSchedulerInput;
   readonly epoch: number;
   /** Counts the changes that drop queued and running work. */
@@ -97,8 +95,7 @@ interface Job {
   readonly trigger: RenderTrigger;
 }
 
-/** What the landed results add up to. */
-interface Ledger<R extends TemplateRenderResult> {
+interface Landed<R extends TemplateRenderResult> {
   readonly result: R | null;
   readonly trigger: RenderTrigger | null;
   readonly attempt: number;
@@ -106,31 +103,28 @@ interface Ledger<R extends TemplateRenderResult> {
   readonly produced: R | null;
   /** The Template Document `produced` was rendered from. */
   readonly producedDocument: string | undefined;
-  /** `Track.cleared` when `result` landed; a later clear hides it. */
+  /** `InputGeneration.cleared` when `result` landed; a later clear hides it. */
   readonly cleared: number;
 }
 
-/** Whether `next` asks for the same render as `previous`; `live` aside. */
+/** Every input field a render reads: all but `live`, which never drops a render on its own. */
+const RENDER_FIELDS = [
+  "source",
+  "document",
+  "mode",
+  "snapshot",
+  "annotation",
+  "citation",
+  "partial",
+  "resources",
+  "hold",
+] as const satisfies readonly (keyof RenderSchedulerInput)[];
+
 function sameRenderInput(
   previous: RenderSchedulerInput,
   next: RenderSchedulerInput,
 ): boolean {
-  return (
-    next.source === previous.source &&
-    next.document === previous.document &&
-    next.mode === previous.mode &&
-    next.snapshot === previous.snapshot &&
-    next.annotation === previous.annotation &&
-    next.citation === previous.citation &&
-    next.partial === previous.partial &&
-    next.resources === previous.resources &&
-    next.hold === previous.hold
-  );
-}
-
-/** Whether nothing may render, for either reason a host gives. */
-function held(input: Pick<RenderSchedulerInput, "hold">): boolean {
-  return input.hold === true || input.hold === "invalid";
+  return RENDER_FIELDS.every((field) => next[field] === previous[field]);
 }
 
 /** What a render would be asked for now, or `null` while nothing may run. */
@@ -146,17 +140,6 @@ function nextRequest(input: RenderSchedulerInput): RenderRequest | null {
     ...(partial ? { partial } : {}),
     ...(resources ? { resources } : {}),
   };
-}
-
-/** Why the shown result is stale; `current` says it matches the input. */
-function staleReasonFor(
-  input: Pick<RenderSchedulerInput, "hold" | "live">,
-  current: boolean,
-): RenderSchedulerState["staleReason"] {
-  if (input.hold === "invalid") return "invalid";
-  if (input.hold === true) return "hold";
-  if (current) return null;
-  return input.live ? "live" : "demand";
 }
 
 /**
@@ -216,12 +199,11 @@ export function makeRenderSchedulerAtoms<
   Services,
   RuntimeError
 >): RenderSchedulerAtoms<R> {
-  /** Bumped by `invalidate`: a change outside the input. */
   const epoch = Atom.make(0);
-  const track = Atom.make((get): Track => {
+  const inputGeneration = Atom.make((get): InputGeneration => {
     const next = get(input);
     const at = get(epoch);
-    const previous = Option.getOrUndefined(get.self<Track>());
+    const previous = Option.getOrUndefined(get.self<InputGeneration>());
     if (previous === undefined) {
       return { input: next, epoch: at, generation: 0, cleared: 0 };
     }
@@ -243,13 +225,13 @@ export function makeRenderSchedulerAtoms<
       cleared: previous.cleared + (cleared ? 1 : 0),
     };
   });
-  const generation = Atom.map(track, ({ generation }) => generation);
-  const cleared = Atom.map(track, ({ cleared }) => cleared);
+  const generation = Atom.map(inputGeneration, ({ generation }) => generation);
+  const cleared = Atom.map(inputGeneration, ({ cleared }) => cleared);
   const live = Atom.map(input, ({ live }) => live);
   /** The generation whose quiet time Run, Stop, or a host failure ended. */
   const cancelled = Atom.make(-1);
   const job = Atom.make<Job | null>(null);
-  const ledger = Atom.make<Ledger<R>>({
+  const landed = Atom.make<Landed<R>>({
     result: null,
     trigger: null,
     attempt: 0,
@@ -290,7 +272,7 @@ export function makeRenderSchedulerAtoms<
 
   /** Adds one landed result to `previous`, read against the input it landed on. */
   function land(
-    previous: Ledger<R>,
+    previous: Landed<R>,
     {
       published,
       trigger,
@@ -302,7 +284,7 @@ export function makeRenderSchedulerAtoms<
       readonly now: RenderSchedulerInput;
       readonly clearedNow: number;
     },
-  ): Ledger<R> {
+  ): Landed<R> {
     const attempt = previous.attempt + 1;
     const result = stamp(published, trigger, attempt);
     // A Property failure makes the note surface unsuccessful even when the
@@ -379,7 +361,7 @@ export function makeRenderSchedulerAtoms<
         Effect.gen(function* () {
           const now = yield* Atom.get(input);
           const clearedNow = yield* Atom.get(cleared);
-          yield* Atom.update(ledger, (previous) =>
+          yield* Atom.update(landed, (previous) =>
             land(previous, { published: result, trigger, now, clearedNow }),
           );
         }),
@@ -391,9 +373,9 @@ export function makeRenderSchedulerAtoms<
     get(quiet);
     const now = get(input);
     const busy = AsyncResult.isWaiting(get(rendering));
-    const landed = get(ledger);
-    const result = landed.cleared === get(cleared) ? landed.result : null;
-    const { produced, producedDocument } = landed;
+    const last = get(landed);
+    const result = last.cleared === get(cleared) ? last.result : null;
+    const { produced, producedDocument } = last;
     // Only a failure sends the reader back to working output, and only where
     // that output still answers for the document and the selection they are
     // reading now.
@@ -417,8 +399,8 @@ export function makeRenderSchedulerAtoms<
       busy,
       stale: held(now) || identityMismatch,
       staleReason: staleReasonFor(now, result !== null && !identityMismatch),
-      trigger: landed.trigger,
-      attempt: landed.attempt,
+      trigger: last.trigger,
+      attempt: last.attempt,
     };
   }).pipe(Atom.withEquality(sameState<R>));
 
@@ -444,8 +426,8 @@ export function makeRenderSchedulerAtoms<
       // The failure names every selection a render reads, so a Citation or
       // Shared Partial preview matches it against its own input.
       ctx.set(
-        ledger,
-        land(ctx.get(ledger), {
+        landed,
+        land(ctx.get(landed), {
           published: failed(failedRender(renderIdentity(now), diagnostic)),
           trigger: "automatic",
           now,

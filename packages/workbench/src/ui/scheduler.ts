@@ -146,7 +146,7 @@ export interface RenderScheduler<
 }
 
 /** Why the shown result is stale; `current` says it matches the input. */
-function staleReasonFor(
+export function staleReasonFor(
   input: Pick<RenderSchedulerInput, "hold" | "live">,
   current: boolean,
 ): RenderSchedulerState["staleReason"] {
@@ -157,7 +157,7 @@ function staleReasonFor(
 }
 
 /** Whether nothing may render, for either reason a host gives. */
-function held(input: Pick<RenderSchedulerInput, "hold">): boolean {
+export function held(input: Pick<RenderSchedulerInput, "hold">): boolean {
   return input.hold === true || input.hold === "invalid";
 }
 
