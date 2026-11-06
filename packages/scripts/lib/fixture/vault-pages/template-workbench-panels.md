@@ -21,8 +21,8 @@ before each case.
 1. Open the Books Profile as above.
 
 Expected: the editor fills the tab. The **Show preview** and **Show fields**
-view actions are not pressed. The pane menu shows **Show preview** and **Show
-fields** without a check mark and has no Preview settings.
+view actions are not pressed. The pane menu shows **Show fields** and, below
+it, **Show preview**, both without a check mark, and has no Preview settings.
 
 ## Show and hide the Preview
 
@@ -31,7 +31,7 @@ fields** without a check mark and has no Preview settings.
 
 Expected: after step 1, a region named "Preview" opens on the right and the
 action is pressed. The pane menu shows **Show preview** checked, followed by
-**Preview as new note**, **Preview as updated note**, **Preview updated
+**Resize preview**, **Preview as new note**, **Preview as updated note**, **Preview updated
 section only**, **Automatically refresh preview** and **Show Markdown**.
 After step 2, the region closes, and the chosen Item stays chosen.
 
@@ -111,8 +111,10 @@ editor's own root.
 Expected: the drag widens the Preview. With the keyboard, `ArrowLeft` widens
 it by 16 pixels and `Shift+ArrowLeft` by 64 pixels; `Home` makes it as narrow
 as it can be (240 pixels), and `End` as wide as the tab allows: 960 pixels, or
-40% of the tab when that is less. The Preview never takes more than 40% of the
-tab, and a screen reader reads the width the panel has.
+40% of the tab when that is less, or the width that keeps the editor 360
+pixels wide beside the columns when that is less again. The Preview never
+takes more than 40% of the tab, and a screen reader reads the width the panel
+has and the largest width it can take.
 
 ## The panels survive a restart
 
@@ -238,6 +240,64 @@ height: the toolbar, the tabs, the tab's one-line task and at least five
 lines of the note body show above the Preview. Scroll the editor to reach
 **Include annotations in the note** and its **Add to template** button; no
 part of the editor is cut off. In step 4, the Preview gets shorter first.
+
+## Size the panels from the pane menu
+
+1. Show the Preview and the Fields in a tab about 1600 pixels wide.
+2. Open the pane menu. Point to **Resize fields** and select **Make
+   narrower**. Point to **Resize preview** and select **Make wider**.
+3. Open the pane menu again, point to **Resize fields**, and select **Reset
+   width**.
+4. Make the tab narrower than 600 pixels. Open the pane menu, point to
+   **Resize preview**, and select **Make taller**.
+5. Reload Obsidian (**Reload app without saving**).
+
+Expected: in step 1, **Resize fields** and **Resize preview** sit below
+**Show preview**, and each submenu offers **Make wider**, **Make narrower** and
+**Reset width**; **Reset width** is unavailable while the panel has its
+default width of 400 pixels. In step 2, the Fields panel gets 64 pixels
+narrower and the Preview 64 pixels wider. In step 3, the Fields panel returns
+to 400 pixels. **Make wider** is unavailable when the panel is as wide as the
+tab allows, and **Make narrower** when it is 240 pixels wide. In step 4, the
+menu has no **Resize fields**, as the Fields panel has no column, and
+**Resize preview** offers **Make taller**, **Make shorter** and **Reset
+height**. **Make taller** makes the Preview 10% of the tab's height taller.
+After step 5, the Preview is under the editor at 50% of the tab's height;
+widen the tab, and the Preview returns at the width step 2 gave it.
+
+## A column keeps its place however wide it gets
+
+1. Show the Preview and the Fields in a tab about 1200 pixels wide.
+2. Open the pane menu, point to **Resize fields**, and select **Make wider**
+   five times.
+3. Point to **Resize preview** and look at **Make wider**.
+4. Give the Fields edge the focus and press `End`.
+5. Make the tab short, less than 600 pixels high, with the Preview under the
+   editor. Select **Make taller** under **Resize preview** until it is
+   unavailable.
+
+Expected: in step 2, the Fields panel stops at 440 pixels, the width that
+keeps the editor 360 pixels wide beside both columns, and **Make wider**
+becomes unavailable. The Fields panel stays a column, and **Resize fields**
+stays in the menu. In step 3, **Make wider** is unavailable, as a wider
+Preview would push the Fields panel out of its column. In step 4, the Fields
+panel keeps its width, and a screen reader reads 440 as the largest width. A
+drag stops at the same width. In step 5, **Make taller** becomes unavailable
+once the Preview stops growing, when the editor keeps 320 pixels of height,
+and **Make shorter** makes it shorter at once.
+
+## Reset a panel with a double-click
+
+1. Show the Preview, and widen it with its edge.
+2. Double-click the edge.
+3. Make the tab narrower than 600 pixels, and drag the handle above the
+   Preview up.
+4. Double-click the handle.
+
+Expected: step 2 returns the Preview to its default width of 400 pixels, or
+less when the tab cannot keep the editor 360 pixels wide beside it. Step 4 returns the Preview to 40% of the
+tab's height. A double-click on the Fields edge returns the Fields panel to
+400 pixels.
 
 ## The Preview height survives a restart
 

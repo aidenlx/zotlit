@@ -144,3 +144,70 @@ it("leaves the Fields picker closed as the frame narrows, and shows the column a
   page.resizeFrame({ width: 1200, height: 700 });
   expect(region(page.host, m.workbench_view_fields())).not.toBeNull();
 });
+
+// #1956: the View menu sizes every handle without a drag, as the Obsidian
+// view's pane menu does.
+it("shows, sizes and resets each panel from the View menu", async () => {
+  await using page = await open({ frame: { width: 1200, height: 700 } });
+  await page.settle();
+  const menuItem = (label: string) => {
+    const item = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="menu"] [role^="menuitem"]',
+      ),
+    ].find((element) => element.textContent === label);
+    if (!item) throw new Error(`No menu entry reads '${label}'.`);
+    return item;
+  };
+  /** The entry `label` in the group of the View menu named `group`. */
+  const sizeItem = (group: string, label: string) => {
+    const named = [
+      ...document.querySelectorAll<HTMLElement>('[role="menu"] [role="group"]'),
+    ].find(
+      (element) =>
+        document.getElementById(element.getAttribute("aria-labelledby")!)
+          ?.textContent === group,
+    );
+    const item = [
+      ...(named?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []),
+    ].find((element) => element.textContent === label);
+    if (!item) throw new Error(`No entry '${label}' under '${group}'.`);
+    return item;
+  };
+  const openView = async () => {
+    page.press(m.workbench_view_menu());
+    await page.waitFor(() =>
+      expect(document.querySelector('[role="menu"]')).not.toBeNull(),
+    );
+  };
+  await openView();
+  expect(menuItem(m.workbench_show_fields()).getAttribute("aria-checked")).toBe(
+    "true",
+  );
+  const fields = (label: string) =>
+    sizeItem(m.workbench_fields_resize(), label);
+  // A new page draws the Fields Panel at its default 288 px.
+  expect(fields(m.workbench_panel_reset_width()).dataset.disabled).toBe("");
+  act(() => fields(m.workbench_panel_wider()).click());
+  const edge = handle(page.host, m.workbench_fields_resize())!;
+  expect(edge.getAttribute("aria-valuenow")).toBe("352");
+  // The menu stays open, so the reader can pick the next step.
+  act(() => fields(m.workbench_panel_reset_width()).click());
+  expect(edge.getAttribute("aria-valuenow")).toBe("288");
+  page.resizeFrame({ width: 560, height: 700 });
+  await page.waitFor(() =>
+    expect(
+      sizeItem(m.workbench_preview_resize(), m.workbench_panel_shorter()),
+    ).toBeTruthy(),
+  );
+  act(() =>
+    sizeItem(m.workbench_preview_resize(), m.workbench_panel_shorter()).click(),
+  );
+  expect(
+    handle(page.host, m.workbench_preview_resize())!.getAttribute(
+      "aria-valuenow",
+    ),
+  ).toBe("30");
+  act(() => menuItem(m.workbench_show_preview()).click());
+  expect(region(page.host, m.workbench_view_preview())).toBeNull();
+});

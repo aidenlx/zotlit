@@ -99,6 +99,7 @@ export type {
   WorkbenchPanel,
   WorkbenchPanels,
 } from "./panel-layout";
+export { panelSizeMenus } from "./panel-menu";
 export { SidePanels } from "./panels";
 export { FieldPicker } from "./field-picker";
 export type { FieldPickerProps } from "./field-picker";

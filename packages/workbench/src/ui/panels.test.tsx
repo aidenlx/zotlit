@@ -96,12 +96,47 @@ describe("the side panels", () => {
     expect(page.registry.get(page.model.panels).preview.height).toBe(50);
   });
 
+  it("resets a panel's size when the reader double-clicks its handle", () => {
+    // The browser's own event: Preact's testing library names it otherwise.
+    const doubleClick = (handle: HTMLElement) =>
+      act(() => {
+        handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      });
+    using page = open({ width: 560, height: 800 });
+    const split = screen.getByRole("separator", { name: "Resize preview" });
+    fireEvent.keyDown(split, { key: "End" });
+    doubleClick(split);
+    expect(page.registry.get(page.model.panels).preview.height).toBe(40);
+    page.resize({ width: 1200, height: 800 });
+    const edge = screen.getByRole("separator", { name: "Resize fields" });
+    fireEvent.keyDown(edge, { key: "Home" });
+    doubleClick(edge);
+    expect(page.registry.get(page.model.panels).fields.width).toBe(400);
+  });
+
   it("describes a column's edge at the width the view draws it", () => {
     using page = open({ width: 1200, height: 800 });
     const edge = screen.getByRole("separator", { name: "Resize fields" });
-    expect(edge.getAttribute("aria-valuemax")).toBe("480");
+    // 1200 px less the 400 px Preview and the editor's 360 px.
+    expect(edge.getAttribute("aria-valuemax")).toBe("440");
     expect(edge.getAttribute("aria-valuenow")).toBe("400");
     fireEvent.keyDown(edge, { key: "ArrowRight" });
     expect(page.registry.get(page.model.panels).fields.width).toBe(416);
+  });
+
+  it("keeps a column beside the editor however far its edge moves", () => {
+    using page = open({ width: 1200, height: 800 });
+    const edge = screen.getByRole("separator", { name: "Resize fields" });
+    fireEvent.keyDown(edge, { key: "End" });
+    expect(page.registry.get(page.model.panels).fields.width).toBe(440);
+    expect(page.registry.get(page.model.placement).fields).toBe("column");
+    // The Preview's edge now has no room to grow into.
+    const preview = screen.getByRole("separator", { name: "Resize preview" });
+    expect(preview.getAttribute("aria-valuemax")).toBe("400");
+    fireEvent.keyDown(preview, { key: "End" });
+    expect(page.registry.get(page.model.panels).preview.width).toBe(400);
+    expect(
+      screen.getByRole("separator", { name: "Resize fields" }),
+    ).toBeTruthy();
   });
 });
