@@ -380,7 +380,7 @@ it("shows, sizes and resets each panel from the View menu", async () => {
 // View menu lists; the menu closes rather than move its entries under the
 // pointer.
 it("closes the View menu when a size step changes where the panels go", async () => {
-  await using page = await open({ frame: { width: 1000, height: 700 } });
+  await using page = await open({ frame: { width: 1024, height: 700 } });
   await page.settle();
   // The Preview leaves no room for the Fields column beside the editor.
   expect(region(page.host, m.workbench_view_fields())).toBeNull();
@@ -472,6 +472,11 @@ it.each([
     expect(page.host.textContent).toContain(m.workbench_problems_heading());
     expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
     expect(selectedInNote(page.host)).toBe(MISSING_CALL);
+    // Focus is on the call, so the Problems area's status says why it fails.
+    expect(
+      page.host.querySelector('[data-part="problems-announcement"]')
+        ?.textContent,
+    ).toContain("missing-details");
     expect(region(page.host, m.workbench_view_preview())).toBe(shown);
     expect(
       handle(page.host, m.workbench_preview_resize())!.getAttribute(

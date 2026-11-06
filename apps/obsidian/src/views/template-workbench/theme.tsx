@@ -62,6 +62,12 @@ export const templateWorkbenchButton =
  * below it with the action. Template and note names come from the vault, so
  * each one wraps anywhere.
  */
+/**
+ * The width each column's handle takes between the column and the editor,
+ * in pixels: the `zt:w-1` of the `edge` part below. The placement counts it.
+ */
+export const PANEL_HANDLE_WIDTH = 4;
+
 export const originatingNoteNotice = {
   root: "zt:mx-3 zt:mb-2 zt:flex zt:min-w-0 zt:flex-col zt:gap-2 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal",
   guidance: "zt:min-w-0 zt:space-y-0.5",
@@ -628,6 +634,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "problems-heading": "zt:font-semibold",
       // A value that changes as problems are repaired, so its digits hold
       // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-announcement": "zt:sr-only",
       "problems-count":
         "zt:shrink-0 zt:rounded-sm zt:bg-(--background-modifier-error)/10 zt:text-foreground zt:px-1.5 zt:font-medium zt:tabular-nums zt:whitespace-nowrap",
       "problems-text":
@@ -650,7 +657,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       // clears the outline every focus ring would otherwise draw, so the ring
       // is drawn inside.
       "problems-scroll": cn(
-        "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-1 zt:overflow-y-auto zt:overscroll-contain",
+        "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-1 zt:overflow-y-auto zt:overscroll-contain zt:pb-1",
         "zt:focus-visible:shadow-[inset_0_0_0_2px_var(--background-modifier-border-focus)]",
       ),
       // The chooser leads the explanation where the object line otherwise
@@ -675,9 +682,11 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:mt-1 zt:max-h-56 zt:overflow-auto zt:rounded-md zt:border zt:border-border zt:bg-(--background-secondary) zt:p-2 zt:font-mono zt:whitespace-pre zt:select-text",
       "problems-copy-failed": "zt:mt-1 zt:text-pretty zt:text-(--text-error)",
       // Under the scroll, never inside it: every one of these stays put while
-      // a long explanation and an open disclosure move past above them.
+      // a long explanation and an open disclosure move past above them. The
+      // rule over them marks where the explanation scrolls out of view, so a
+      // line cut at that edge reads as more to scroll, not as covered.
       "problems-controls":
-        "zt:mt-2 zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
+        "zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:border-t zt:border-border zt:pt-2 zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
       "problems-copy": templateWorkbenchButton,
       // Help, not an action: it reads as the link it is, aligned with the
       // buttons it shares the row with.

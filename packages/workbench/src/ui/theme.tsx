@@ -272,6 +272,7 @@ export interface WorkbenchParts {
     | "problems-summary"
     | "problems-heading"
     | "problems-count"
+    | "problems-announcement"
     | "problems-text"
     | "problems-space"
     | "problems-resize"

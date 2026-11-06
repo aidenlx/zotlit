@@ -214,6 +214,7 @@ import { selectionName } from "./selection";
 import { getSampleItem } from "./selection-data";
 import {
   originatingNoteNotice,
+  PANEL_HANDLE_WIDTH,
   templateWorkbenchButton,
   templateWorkbenchTheme,
   selectionBar,
@@ -973,7 +974,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (width === 0 || height === 0) return;
     const current = this.registry.get(this.viewSize);
     if (current?.width !== width || current.height !== height)
-      this.registry.set(this.viewSize, { width, height });
+      this.registry.set(this.viewSize, {
+        width,
+        height,
+        handle: PANEL_HANDLE_WIDTH,
+      });
   }
   override onResize(): void {
     super.onResize();

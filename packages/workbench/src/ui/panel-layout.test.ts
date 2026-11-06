@@ -323,3 +323,30 @@ describe("sizing a panel without its handle", () => {
     expect(canResizePanel("fields", "reset", web)(page)).toBe(false);
   });
 });
+
+// The web draws a 12 px handle beside each column. Without counting them, two
+// columns at 288 and 400 px in a 1048 px view left the editor 336 px.
+describe("panel placement with handles", () => {
+  const panels: WorkbenchPanels = {
+    fields: { shown: true, width: 288 },
+    preview: { ...INITIAL_PANELS.preview, shown: true, width: 400 },
+  };
+  it("keeps the editor 360 px beside the columns and their handles", () => {
+    expect(placePanels(panels, { width: 1048, height: 800 })).toEqual({
+      preview: "side",
+      fields: "column",
+    });
+    expect(
+      placePanels(panels, { width: 1048, height: 800, handle: 12 }),
+    ).toEqual({ preview: "side", fields: "popover" });
+    expect(
+      placePanels(panels, { width: 1072, height: 800, handle: 12 }),
+    ).toEqual({ preview: "side", fields: "column" });
+  });
+
+  it("holds a column to the width that leaves the editor 360 px past both handles", () => {
+    expect(
+      columnLimit(panels, "fields", { width: 1072, height: 800, handle: 12 }),
+    ).toBe(288);
+  });
+});

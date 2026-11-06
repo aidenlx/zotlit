@@ -91,6 +91,12 @@ export const setPreviewHeight = (share: number) =>
 export interface ViewSize {
   readonly width: number;
   readonly height: number;
+  /**
+   * The width the host draws each column's handle at, between the column and
+   * the editor; a column takes it from the editor's room too. None where the
+   * host draws its handles over the panels.
+   */
+  readonly handle?: number;
 }
 
 /**
@@ -133,10 +139,12 @@ export function placePanels(
     };
   const drawn = (panel: WorkbenchPanel) =>
     clampPanelWidth(panel.width, panelLimit(size.width));
+  // Each column takes its handle's width with its own.
+  const taken = (panel: WorkbenchPanel) => drawn(panel) + (size.handle ?? 0);
   let room = size.width;
   let preview: PanelPlacement["preview"] = "hidden";
   if (panels.preview.shown) {
-    const width = drawn(panels.preview);
+    const width = taken(panels.preview);
     if (room - width >= EDITOR_MIN.width) {
       preview = "side";
       room -= width;
@@ -145,7 +153,7 @@ export function placePanels(
   return {
     preview,
     fields:
-      room - drawn(panels.fields) >= EDITOR_MIN.width ? "column" : "popover",
+      room - taken(panels.fields) >= EDITOR_MIN.width ? "column" : "popover",
   };
 }
 
@@ -228,10 +236,12 @@ export function columnLimit(
     side === "fields"
       ? placement.preview === "side"
       : panels.fields.shown && placement.fields === "column";
+  const handle = size.handle ?? 0;
   const room =
     size.width -
     EDITOR_MIN.width -
-    (otherIsColumn ? clampPanelWidth(other.width, limit) : 0);
+    handle -
+    (otherIsColumn ? clampPanelWidth(other.width, limit) + handle : 0);
   return clampPanelWidth(room, limit);
 }
 

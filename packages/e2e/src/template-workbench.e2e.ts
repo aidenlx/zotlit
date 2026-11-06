@@ -597,10 +597,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(preview.max).toBe(String(limit(preview.container)));
     expect(preview.drawn).toBe(limit(preview.container));
     // The Fields column grows only as far as keeps it a column beside the
-    // Preview and an editor of 360 px (#1956).
+    // Preview and an editor of 360 px, past both columns' 4 px handles
+    // (#1956, #1952).
     const { container } = first.edges.fields;
     expect(first.edges.fields.max).toBe(
-      String(Math.min(limit(container), container - preview.drawn - 360)),
+      String(
+        Math.min(limit(container), container - preview.drawn - 360 - 2 * 4),
+      ),
     );
     // The saved state of that leaf restores both panels in a new leaf.
     const saved = await obRun(
@@ -1454,7 +1457,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "the call selected in the editor",
               () => selected() === call,
             );
+            // The reveal scrolls the call into the edit region's view, at the
+            // editor's height floor too (#1952).
+            const region = el.querySelector<HTMLElement>(
+              '[data-workbench-scroll="editor"]',
+            )!;
+            const inView = await until("the call in view", () => {
+              const at = editor.coordsAtPos(editor.state.selection.main.from);
+              const box = region.getBoundingClientRect();
+              return (
+                at !== null && at.top >= box.top && at.bottom <= box.bottom
+              );
+            });
+            // Focus is on the call, so the area's status says why it fails.
+            const announced =
+              el.querySelector('[data-part="problems-announcement"]')
+                ?.textContent ?? "";
             return JSON.stringify({
+              inView,
+              announced: announced.includes("missing-partial"),
               popover,
               picker: search() !== null,
               problems:
@@ -1472,6 +1493,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A narrow leaf: the Preview under the editor, the Fields picker open.
     await open(30);
     expect(await showProblem()).toEqual({
+      inView: true,
+      announced: true,
       popover: true,
       picker: false,
       problems: true,
@@ -1481,6 +1504,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A wide leaf: three columns, the same round trip.
     await open(null);
     expect(await showProblem()).toEqual({
+      inView: true,
+      announced: true,
       popover: false,
       picker: false,
       problems: true,

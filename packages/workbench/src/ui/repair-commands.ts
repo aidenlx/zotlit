@@ -9,6 +9,7 @@ import type { WorkbenchModel, WorkbenchViewState } from "./model";
 import { routeDiagnosis, routeProblem } from "./problem-route";
 import type { ProblemTarget, RoutedDocument } from "./problem-route";
 import {
+  diagnosisExplanation,
   diagnosisForOccurrence,
   diagnosisLocated,
   renderDiagnosis,
@@ -63,7 +64,7 @@ export interface RepairCommandsInput {
   readonly host: Pick<WorkbenchHost, "notice" | "messages">;
   readonly problems: Pick<
     WorkbenchProblemsState,
-    "diagnoses" | "select" | "setOpen"
+    "diagnoses" | "select" | "setOpen" | "announce"
   >;
 }
 
@@ -119,8 +120,10 @@ export function repairCommands({
     },
     showProblem(diagnostic) {
       closePicker();
+      const unknown = host.messages.workbench_problems_location_unknown();
       if (diagnostic === null) {
         problems.setOpen(true);
+        problems.announce(unknown);
         return;
       }
       const id = renderDiagnosis(diagnostic).id;
@@ -134,6 +137,10 @@ export function repairCommands({
       const transition = diagnosisLocated(shown)
         ? routeDiagnosis(shown, controller)
         : null;
+      // Focus goes to the call in the editor, away from the explanation, so
+      // the area's status says why the call fails.
+      const { condition } = diagnosisExplanation(host.messages, shown);
+      problems.announce(transition ? condition : `${condition} ${unknown}`);
       if (transition) route(transition);
     },
     openAnnotationBox: () => goToProblem({ slice: "annotation" }),

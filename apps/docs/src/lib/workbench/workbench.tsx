@@ -107,7 +107,7 @@ import { WebPreview } from "./preview";
 import { PageRuntime, usePageBridge } from "./runtime";
 import type { PageServices } from "./runtime";
 import { SampleBar } from "./sample-bar";
-import { WEB_THEME } from "./theme";
+import { PANEL_HANDLE_WIDTH, WEB_THEME } from "./theme";
 import {
   downloadProfile,
   profileFileName,
@@ -252,6 +252,7 @@ function WorkbenchSession({
           registry.set(viewSize, {
             width: Math.round(width),
             height: Math.round(height),
+            handle: PANEL_HANDLE_WIDTH,
           });
       });
       observer.observe(main);
@@ -782,10 +783,12 @@ function WorkbenchSession({
       editor={
         <>
           <EditToolbar onModeChange={changeMode} />
-          {/* Everything the reader edits, as one region. When the pane is too
-              short for the tabs and five source lines, as under a tall
-              Problems area or Preview, the region scrolls: no control is cut
-              off, and nothing spills over the explanation. */}
+          {/* Everything the reader edits, as one region and its one
+              scroller: the source grows to its text, as the Obsidian view's
+              does. When the pane is too short, as under a tall Problems area
+              or Preview, the region scrolls: no control is cut off, nothing
+              spills over the explanation, and a reveal scrolls the text it
+              selects into view. */}
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
             {advanced && (
               <>
@@ -828,7 +831,7 @@ function WorkbenchSession({
             )}
             <div
               hidden={advanced}
-              className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
+              className="flex flex-1 flex-col [&[hidden]]:hidden"
             >
               <div className="mb-2 flex shrink-0 items-center gap-1">
                 <TabBar onTabChange={openTab} />

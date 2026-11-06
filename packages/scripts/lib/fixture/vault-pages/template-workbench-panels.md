@@ -112,7 +112,7 @@ Expected: the drag widens the Preview. With the keyboard, `ArrowLeft` widens
 it by 16 pixels and `Shift+ArrowLeft` by 64 pixels; `Home` makes it as narrow
 as it can be (240 pixels), and `End` as wide as the tab allows: 960 pixels, or
 40% of the tab when that is less, or the width that keeps the editor 360
-pixels wide beside the columns when that is less again. The Preview never
+pixels wide beside the columns and their edges when that is less again. The Preview never
 takes more than 40% of the tab, and a screen reader reads the width the panel
 has and the largest width it can take.
 
@@ -163,7 +163,7 @@ Expected: at about 1000 pixels the Preview is at the right, and the Fields
 column goes away: the editor keeps at least 360 pixels of width.
 **Show fields** is not pressed now; it opens the Fields picker (see **Insert
 a field from the Fields picker**). At about 1200 pixels all three columns fit
-with the editor 400 pixels wide, and **Show fields** is pressed again. In a
+with the editor about 390 pixels wide beside the two 4-pixel edges, and **Show fields** is pressed again. In a
 tab of 560 pixels, the Preview is under the editor and the Fields column goes
 away.
 
@@ -328,12 +328,13 @@ preview**.
    editor. Select **Make taller** under **Resize preview** until it is
    unavailable.
 
-Expected: in step 2, the Fields panel stops at 440 pixels, the width that
-keeps the editor 360 pixels wide beside both columns, and **Make wider**
+Expected: in step 2, the Fields panel stops at 432 pixels, the width that
+keeps the editor 360 pixels wide beside both columns and their 4-pixel
+edges, and **Make wider**
 becomes unavailable. The Fields panel stays a column, and **Resize fields**
 stays in the menu. In step 3, **Make wider** is unavailable, as a wider
 Preview would push the Fields panel out of its column. In step 4, the Fields
-panel keeps its width, and a screen reader reads 440 as the largest width. A
+panel keeps its width, and a screen reader reads 432 as the largest width. A
 drag stops at the same width. In step 5, **Make taller** becomes unavailable
 once the Preview stops growing, when the editor keeps 320 pixels of height,
 and **Make shorter** makes it shorter at once.
@@ -403,7 +404,13 @@ partial once. **Show problem** in the Preview panel opens that problem.
 
 Expected: in step 2 the Fields picker closes, the Problems area opens on the
 missing partial, and the editor selects `{% render "missing-partial" %}` in
-the note body with the focus on it. The Preview stays under the editor at
+the note body with the focus on it. The selected call is in view above the
+Problems area, even when the call is on line 4 and the tab is short: the
+editor area scrolls to it. A screen reader reads the call and then why it
+fails: "The partial 'missing-partial' isn't in your template folder." Under
+the explanation, a rule separates it from **Go to the call** and the other
+buttons; a long explanation scrolls under that rule, and no line of it
+stands behind the buttons. The Preview stays under the editor at
 its height, and **Show preview** stays pressed. In step 3 the editor selects
 the call again, and the Preview stays at the right of the editor at its
 width.
@@ -418,7 +425,8 @@ width.
 
 Expected: the Problems area opens on the unknown filter and offers **Go to
 error**. The editor selects `{{ zt.title | no_such_filter }}`, and the Note
-tab stays chosen.
+tab stays chosen. A screen reader reads why the call fails after the
+selected call.
 
 ## Repair commands close the Fields picker
 
