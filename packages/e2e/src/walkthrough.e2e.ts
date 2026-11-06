@@ -1596,7 +1596,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       await leaf.setViewState({
         type: "zotlit-template-data-explorer",
         active: true,
-        state: { itemIndexedKey: "DMRGRART", root: "note", zotlitLaunch: true },
+        state: { itemIndexedKey: "DMRGRART", root: "note" },
       });
       const element = (leaf.view as unknown as { contentEl: HTMLElement })
         .contentEl;
@@ -2424,16 +2424,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                     page.leavesOfType("zotlit-template-workbench")[0]!.view,
                   )
                   ?.querySelector("h2")?.textContent ?? null,
-              fields: page
-                .leavesOfType("zotlit-template-data-explorer")[0]
-                ?.view.getState().root,
+              fields: ((view) => view.registry.get(view.fields.state).root)(
+                page.leavesOfType("zotlit-template-workbench")[0]!.view,
+              ),
             }))(),
           ) === expectedJson
         );
       },
       { expectedJson: JSON.stringify(expected) },
       {
-        what: "the workbench, its Preview panel and the field explorer to match the expected snapshot",
+        what: "the workbench, its Preview panel and its Fields panel to match the expected snapshot",
       },
     );
     await obRun(
@@ -2484,9 +2484,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                       page.leavesOfType("zotlit-template-workbench")[0]!.view,
                     )
                     ?.querySelector("h2")?.textContent ?? null,
-                fields: page
-                  .leavesOfType("zotlit-template-data-explorer")[0]
-                  ?.view.getState().root,
+                fields: ((view) => view.registry.get(view.fields.state).root)(
+                  page.leavesOfType("zotlit-template-workbench")[0]!.view,
+                ),
               }))(),
             );
           },

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   booksProfile,
   booksProfileTargetItem,
+  createTargetItem,
   e2eVaultPath,
   reachable,
   targetItem,
@@ -162,10 +163,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await rowsShown()).toEqual([second, title, ...rest]);
   });
 
-  // #1945: the Preview is a panel of the one view, so the Item the editor's
-  // tabs read and the Item the Preview renders are one choice, whichever
-  // chooser made it.
-  it("names one Item in the Properties rows, the Name tab, and the Preview panel after a choice from the editor or the panel", async () => {
+  // #1945, #1943: Fields and Preview are panels of the one view, so the Item
+  // the editor's tabs read, the Item the Fields panel lists and the Item the
+  // Preview renders are one choice, whichever of the three choosers made it.
+  it("names one Item in every surface after a choice from each of the three choosers", async () => {
     const path = `templates/${booksProfile.document}`;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(() =>
@@ -183,7 +184,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await obRun(
       run.vaultId,
-      async ({ app }, { path, showPreview }) => {
+      async ({ app }, { path, showPreview, showFields }) => {
         const leaf = app.workspace.createLeafInParent(
           app.workspace.rootSplit,
           0,
@@ -194,18 +195,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           active: true,
         });
         await app.workspace.revealLeaf(leaf);
-        // The reader shows the Preview from its view action.
-        leaf.view.containerEl
-          .querySelector<HTMLElement>(
-            `.view-action[aria-label="${showPreview}"]`,
-          )
-          ?.click();
+        // The reader shows both panels from their view actions.
+        for (const label of [showPreview, showFields])
+          leaf.view.containerEl
+            .querySelector<HTMLElement>(`.view-action[aria-label="${label}"]`)
+            ?.click();
       },
-      { path, showPreview: run.m.workbench_show_preview() },
+      {
+        path,
+        showPreview: run.m.workbench_show_preview(),
+        showFields: run.m.workbench_show_fields(),
+      },
     );
 
     /** Opens a chooser from `from`, searches `query`, and picks `title`. */
-    const choose = async (from: "editor" | "panel", title: string) => {
+    const choose = async (
+      from: "editor" | "preview" | "fields",
+      title: string,
+    ) => {
       await obRunUntil(
         run.vaultId,
         ({ page }, { path, from, label }) => {
@@ -216,7 +223,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   `.view-actions .view-action[aria-label="${label}"]`,
                 )
               : Array.from(
-                  page.previewPanel(view)?.querySelectorAll("button") ?? [],
+                  (from === "preview"
+                    ? page.previewPanel(view)
+                    : page.fieldsPanel(view)
+                  )?.querySelectorAll("button") ?? [],
                 ).find((button) => button.textContent.trim() === label);
           if (!trigger) return false;
           page.press(trigger, `Choose item in the ${from}`);
@@ -259,11 +269,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         obRunUntil(
           run.vaultId,
-          ({ page }, { path, where, text, preview }) => {
+          ({ page }, { path, where, text, preview, fields }) => {
             const view = page.workbench({ path });
             if (!view) return false;
             if (where === preview)
               return !!page.previewPanel(view)?.innerText.includes(text);
+            if (where === fields)
+              return !!page.fieldsPanel(view)?.innerText.includes(text);
             const tab = Array.from(
               view.contentEl.querySelectorAll<HTMLElement>("[role=tab]"),
             ).find((tab) => tab.textContent.trim() === where);
@@ -276,18 +288,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .querySelector<HTMLElement>("[role=tabpanel]:not([hidden])")
               ?.innerText.includes(text);
           },
-          { path, where, text, preview: "Preview" },
+          { path, where, text, preview: "Preview", fields: "Fields" },
           { what: `${where} to name "${text}"` },
         ),
       );
 
     for (const [from, item] of [
       ["editor", targetItem],
-      ["panel", booksProfileTargetItem],
-      ["editor", targetItem],
+      ["preview", booksProfileTargetItem],
+      ["fields", targetItem],
     ] as const) {
       await choose(from, item.title);
       await names("Preview", `Book profile: ${item.title}`);
+      await names("Fields", item.title);
       await names(run.m.workbench_tab_properties(), item.title);
       await names(
         run.m.workbench_tab_name_and_folder(),
@@ -295,6 +308,121 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await names("Preview", `Book profile: ${item.title}`);
     }
+  });
+
+  // #1943: the standalone Template Data Explorer keeps its own Item. The
+  // `explore` action opens it beside an editor on another Item, and a choice
+  // in either one leaves the other where it was.
+  it("opens the standalone explorer from the explore action, independent of an open editor", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) => {
+          for (const type of [
+            "zotlit-template-workbench",
+            "zotlit-template-data-explorer",
+          ])
+            app.workspace.detachLeavesOfType(type);
+        },
+        undefined,
+      ),
+    );
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, item }) => {
+        const leaf = app.workspace.createLeafInParent(
+          app.workspace.rootSplit,
+          0,
+        );
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: {
+            file: path,
+            itemIndexedKey: item,
+            panels: { fields: { shown: true, width: 400 } },
+          },
+          active: true,
+        });
+        await app.workspace.revealLeaf(leaf);
+      },
+      { path, item: targetItem.key },
+    );
+    const fieldsName = (title: string) =>
+      obRunUntil(
+        run.vaultId,
+        ({ page }, { path, title }) =>
+          !!page
+            .fieldsPanel(page.workbench({ path }))
+            ?.innerText.includes(title),
+        { path, title },
+        { what: `the Fields panel to name "${title}"` },
+      );
+    await fieldsName(targetItem.title);
+
+    // The Companion's `explore` link, as Obsidian hands it to the plugin.
+    await obRun(
+      run.vaultId,
+      ({ app, zotlit }, { item }) => {
+        const services = zotlit.services;
+        const sourceId = services.bridge.runSync(
+          services.zoteroPref.current,
+        ).sourceId;
+        (
+          app.workspace as unknown as {
+            protocolHandler: { dispatch(data: Record<string, string>): void };
+          }
+        ).protocolHandler.dispatch({
+          action: "zotlit/explore",
+          item,
+          "source-id": sourceId ?? "",
+        });
+      },
+      { item: String(booksProfileTargetItem.itemID) },
+    );
+    const explorer = () =>
+      obRunUntil(
+        run.vaultId,
+        ({ page }, { title }) => {
+          const leaf = page.leavesOfType("zotlit-template-data-explorer")[0];
+          if (!leaf?.view.contentEl.innerText.includes(title)) return null;
+          return JSON.stringify(leaf.view.getState());
+        },
+        { title: booksProfileTargetItem.title },
+        {
+          what: `the standalone explorer to show "${booksProfileTargetItem.title}"`,
+          ready: (value) => value !== null,
+        },
+      );
+    const opened = JSON.parse((await explorer())!) as Record<string, unknown>;
+    expect(opened.itemIndexedKey).toEqual(
+      expect.stringContaining(booksProfileTargetItem.key),
+    );
+    // The editor keeps its own Item.
+    await fieldsName(targetItem.title);
+    expect(
+      await obRun(
+        run.vaultId,
+        ({ page }, { path }) =>
+          page
+            .workbench({ path })!
+            .registry.get(page.workbench({ path })!.model.view).item?.id ??
+          null,
+        { path },
+      ),
+    ).toBe(targetItem.key);
+
+    // A new choice in the editor leaves the explorer on its Item.
+    await obRun(
+      run.vaultId,
+      ({ page }, { path, item, title }) => {
+        page.workbench({ path })!.setItem({ id: item, title });
+      },
+      { path, item: createTargetItem.key, title: createTargetItem.title },
+    );
+    await fieldsName(createTargetItem.title);
+    expect(JSON.parse((await explorer())!)).toEqual(opened);
   });
 
   // #1945: the panels are part of the view's saved state.

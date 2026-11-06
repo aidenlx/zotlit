@@ -1,16 +1,11 @@
-// Native selection shares examples, search, and labels across independent views.
+// Shared selection UI: Item and annotation lists, search, and labels.
 import "./selection.css";
-import type { ItemView, WorkspaceLeaf } from "obsidian";
+import type { ItemView } from "obsidian";
 
 import { isPageNumber } from "@zotlit/db";
-import type { CitationVariant } from "@zotlit/db";
 import { useUniqueId } from "@zotlit/ui";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
-import type {
-  AnnotationExample,
-  CitationExampleId,
-  PartialChoice,
-} from "@zotlit/workbench/render";
+import type { AnnotationExample } from "@zotlit/workbench/render";
 import { annotationOption } from "@zotlit/workbench/ui";
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
@@ -39,54 +34,7 @@ import {
 
 type AnnotationChoice = Pick<AnnotationExample, "id" | "root">;
 
-export type WorkbenchSelection =
-  | { kind: "item"; item: WorkbenchItemChoice }
-  | { kind: "annotation"; annotationId: string }
-  /** The Citation set and Variant a Citation Template preview renders under. */
-  | {
-      kind: "citation";
-      variant: CitationVariant;
-      example: CitationExampleId | null;
-    }
-  /** The caller and the Profile a Shared Partial preview renders under. */
-  | ({ kind: "partial" } & PartialChoice);
-export type WorkbenchSelectionEvent = WorkbenchSelection & {
-  leaf: WorkspaceLeaf;
-  editor: WorkspaceLeaf | null;
-};
-
 const selectionOption = selectionControl({ kind: "option" });
-
-/** Native association scopes user choices; receivers never echo a selection. */
-export function subscribeWorkbenchSelection(
-  view: ItemView,
-  options: {
-    editor: () => WorkspaceLeaf | null;
-    apply: (selection: WorkbenchSelection) => void;
-  },
-): () => void {
-  const ref = view.app.workspace.on("zotlit:workbench-selection", (event) => {
-    if (event.leaf === view.leaf || view.leaf.pinned) return;
-    const follows = view.leaf.group
-      ? view.leaf.group === event.leaf.group
-      : event.editor !== null &&
-        (view.leaf === event.editor || options.editor() === event.editor);
-    if (follows) options.apply(event);
-  });
-  return () => view.app.workspace.offref(ref);
-}
-
-export function publishWorkbenchSelection(
-  view: ItemView,
-  selection: WorkbenchSelection,
-  editor: WorkspaceLeaf | null,
-): void {
-  view.app.workspace.trigger("zotlit:workbench-selection", {
-    ...selection,
-    leaf: view.leaf,
-    editor,
-  });
-}
 
 export function sampleTypeLabel(id: string): string {
   switch (getSampleItemType(id)) {

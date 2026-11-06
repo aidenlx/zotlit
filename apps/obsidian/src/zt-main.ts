@@ -494,7 +494,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
         showInLibraryFileMenu((indexedKey) =>
           services.bridge.runAndForget(services.showInLibrary.show(indexedKey)),
         ),
-        explorerFileMenu(this.app, {
+        explorerFileMenu({
           bridge: services.bridge,
           context: services.workbenchActionContext,
         }),

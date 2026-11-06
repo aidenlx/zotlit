@@ -1,18 +1,13 @@
 import { it } from "@effect/vitest";
 import { Effect, Fiber } from "effect";
-import type { App, WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Workspace } from "@/lib/obsidian-workspace";
-import type { TemplateWorkbenchView } from "@/views/template-workbench/view";
 
-import { activeTemplateWorkbench } from "./companion";
 import { openTemplateDataExplorer } from "./register";
 
-vi.mock("./companion", () => ({
-  activeTemplateWorkbench: vi.fn(),
-}));
 vi.mock("@/views/template-workbench/view", () => ({
   TEMPLATE_WORKBENCH_VIEW_TYPE: "zotlit-template-workbench",
   TemplateWorkbenchView: class {},
@@ -22,11 +17,9 @@ vi.mock("./view", () => ({
   TemplateDataExplorerView: class {},
 }));
 
-const app = stubService<App>("App", {});
-
 /** The Workspace tag over `members`, each one a plain Obsidian call. */
 function workspace(members: {
-  leaves?: () => WorkspaceLeaf[];
+  leaves?: (type: string) => WorkspaceLeaf[];
   getLeaf?: (pane: unknown) => WorkspaceLeaf;
   getRightLeaf?: (split: boolean) => WorkspaceLeaf | null;
   revealLeaf?: (leaf: WorkspaceLeaf) => void;
@@ -34,7 +27,7 @@ function workspace(members: {
   return Effect.provideService(
     Workspace,
     stubService<Workspace["Service"]>("Workspace", {
-      leavesOfType: () => Effect.sync(() => members.leaves?.() ?? []),
+      leavesOfType: (type) => Effect.sync(() => members.leaves?.(type) ?? []),
       ...(members.getLeaf && {
         getLeaf: (pane) => Effect.sync(() => members.getLeaf!(pane)),
       }),
@@ -51,34 +44,39 @@ function workspace(members: {
 
 describe("Explorer entry point", () => {
   it.effect(
-    "reopens fields beside the active workbench editor instead of selecting another window",
+    "opens the standalone Explorer in the sidebar, never an editor's panel",
     () =>
       Effect.gen(function* () {
-        const editor = {
-          leaf: { group: "native-group" },
-        } as TemplateWorkbenchView;
-        vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
-        const focus = vi.fn();
-        const fields = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+        // An editor is open and active, linked with a tab group.
+        const editorSetViewState = vi.fn();
+        const editor = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
           group: "native-group",
-          getContainer: () =>
-            stubService<ReturnType<WorkspaceLeaf["getContainer"]>>(
-              "WorkspaceContainer",
-              { focus },
-            ),
+          pinned: false,
+          setViewState: editorSetViewState,
         });
-        const unlinked = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-          group: null,
+        const setViewState = vi.fn(async () => {});
+        const created = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+          setViewState,
         });
-        const leaves = vi.fn(() => [unlinked, fields]);
-        const getRightLeaf = vi.fn(() => null);
+        const getRightLeaf = vi.fn(() => created);
         const revealLeaf = vi.fn();
-        yield* openTemplateDataExplorer(app).pipe(
-          workspace({ leaves, getRightLeaf, revealLeaf }),
+        yield* openTemplateDataExplorer().pipe(
+          workspace({
+            leaves: (type) =>
+              type === "zotlit-template-workbench" ? [editor] : [],
+            getRightLeaf,
+            revealLeaf,
+          }),
         );
-        expect(revealLeaf).toHaveBeenCalledExactlyOnceWith(fields);
-        expect(focus).toHaveBeenCalled();
-        expect(getRightLeaf).not.toHaveBeenCalled();
+        expect(editorSetViewState).not.toHaveBeenCalled();
+        expect(revealLeaf).not.toHaveBeenCalledWith(editor);
+        expect(getRightLeaf).toHaveBeenCalledWith(true);
+        expect(setViewState).toHaveBeenCalledWith({
+          type: "zotlit-template-data-explorer",
+          active: true,
+          state: undefined,
+        });
+        expect(revealLeaf).toHaveBeenCalledWith(created);
       }),
   );
 });
@@ -87,8 +85,6 @@ it.effect(
   "opens an explicit Item in an unlinked unpinned Explorer and preserves other groups",
   () =>
     Effect.gen(function* () {
-      const editor = {} as TemplateWorkbenchView;
-      vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
       const groupedSetViewState = vi.fn();
       const pinnedSetViewState = vi.fn();
       const standaloneSetViewState = vi.fn(async () => {});
@@ -109,7 +105,7 @@ it.effect(
       });
       const revealLeaf = vi.fn();
       const getRightLeaf = vi.fn(() => null);
-      yield* openTemplateDataExplorer(app, { itemIndexedKey: "PAPER002" }).pipe(
+      yield* openTemplateDataExplorer({ itemIndexedKey: "PAPER002" }).pipe(
         workspace({
           leaves: () => [grouped, pinned, standalone],
           getRightLeaf,
@@ -119,7 +115,7 @@ it.effect(
       expect(standaloneSetViewState).toHaveBeenCalledWith({
         type: "zotlit-template-data-explorer",
         active: true,
-        state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
+        state: { itemIndexedKey: "PAPER002" },
       });
       expect(groupedSetViewState).not.toHaveBeenCalled();
       expect(pinnedSetViewState).not.toHaveBeenCalled();
@@ -132,7 +128,6 @@ it.effect(
   "creates an explicit Explorer instead of replacing a pinned or grouped pane",
   () =>
     Effect.gen(function* () {
-      vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
       const existingSetViewState = vi.fn();
       const createdSetViewState = vi.fn(async () => {});
       const existing = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
@@ -144,7 +139,7 @@ it.effect(
         setViewState: createdSetViewState,
       });
       const getRightLeaf = vi.fn(() => created);
-      yield* openTemplateDataExplorer(app, { itemIndexedKey: "PAPER002" }).pipe(
+      yield* openTemplateDataExplorer({ itemIndexedKey: "PAPER002" }).pipe(
         workspace({
           leaves: () => [existing],
           getRightLeaf,
@@ -155,7 +150,7 @@ it.effect(
       expect(existingSetViewState).not.toHaveBeenCalled();
       expect(createdSetViewState).toHaveBeenCalledWith(
         expect.objectContaining({
-          state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
+          state: { itemIndexedKey: "PAPER002" },
         }),
       );
     }),
@@ -163,7 +158,6 @@ it.effect(
 
 it.effect("opens one Explorer when two opens run at once", () =>
   Effect.gen(function* () {
-    vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
     const leaves: WorkspaceLeaf[] = [];
     // The new pane takes its view only once Obsidian has loaded it.
     const loaded = Promise.withResolvers<void>();
@@ -179,10 +173,9 @@ it.effect("opens one Explorer when two opens run at once", () =>
       return leaf;
     });
     const opens = yield* Effect.forkChild(
-      Effect.all(
-        [openTemplateDataExplorer(app), openTemplateDataExplorer(app)],
-        { concurrency: "unbounded" },
-      ).pipe(
+      Effect.all([openTemplateDataExplorer(), openTemplateDataExplorer()], {
+        concurrency: "unbounded",
+      }).pipe(
         workspace({ leaves: () => leaves, getRightLeaf, revealLeaf: vi.fn() }),
       ),
     );
@@ -200,7 +193,6 @@ it.effect.each(["tab"] as const)(
   "puts the Explorer in a new %s the link names, leaving the sidebar one alone",
   (paneType) =>
     Effect.gen(function* () {
-      vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
       const sidebarSetViewState = vi.fn();
       const createdSetViewState = vi.fn(async () => {});
       const sidebar = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
@@ -215,7 +207,6 @@ it.effect.each(["tab"] as const)(
       const getRightLeaf = vi.fn(() => null);
       const revealLeaf = vi.fn();
       yield* openTemplateDataExplorer(
-        app,
         { itemIndexedKey: "PAPER002" },
         { paneType },
       ).pipe(
@@ -232,7 +223,7 @@ it.effect.each(["tab"] as const)(
       expect(createdSetViewState).toHaveBeenCalledWith({
         type: "zotlit-template-data-explorer",
         active: true,
-        state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
+        state: { itemIndexedKey: "PAPER002" },
       });
       expect(revealLeaf).toHaveBeenCalledWith(created);
     }),

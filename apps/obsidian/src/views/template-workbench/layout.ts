@@ -1,13 +1,12 @@
 // The dedicated workbench window, as Effects over the Workspace tag: "Open
 // template workbench" and Customize show the editor with both side panels, in
-// a window of its own, beside its linked Template data explorer. A leaf stays
-// outside the tag: its view state is set through the leaf itself.
+// a window of its own. A leaf stays outside the tag: its view state is set
+// through the leaf itself.
 import { Deferred, Effect, Semaphore } from "effect";
 import type { Cause } from "effect";
 import type { ViewState, WorkspaceLeaf } from "obsidian";
 
 import { Workspace } from "@/lib/obsidian-workspace";
-import { openExplorerBeside } from "@/views/template-data-explorer/register";
 
 import { showPanel } from "./model";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
@@ -134,8 +133,6 @@ const arrangeWorkbench = Effect.fn("TemplateWorkbench.arrangeWorkbench")(
       yield* workspace.moveLeafToPopout(editor.leaf, WORKBENCH_WINDOW);
       editor.onResize();
     }
-    // Fields stay a linked explorer until the Fields panel takes their place.
-    yield* openExplorerBeside(editor);
     yield* showWorkbench(editor);
   },
 );

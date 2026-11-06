@@ -209,6 +209,8 @@
   "template_workbench_docs_data": "模板数据参考",
   "template_data_explorer_docs": "模板数据指南",
   "workbench_fields_heading": "模板字段",
+  "workbench_show_fields": "显示字段",
+  "workbench_fields_resize": "调整字段宽度",
   "workbench_fields_root_note": "笔记",
   "workbench_fields_root_annotation": "标注",
   "workbench_fields_root_filename": "笔记名称",

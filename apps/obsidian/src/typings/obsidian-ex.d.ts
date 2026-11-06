@@ -147,13 +147,6 @@ declare module "obsidian" {
     hoverLinkSources: Record<string, HoverLinkSource>;
     /** Flushes deferred file-open/active-leaf events. Verified in Obsidian 1.14.4. */
     requestActiveLeafEvents: { run(): void };
-    on(
-      name: "zotlit:workbench-selection",
-      callback: (
-        selection: import("../views/template-workbench/selection").WorkbenchSelectionEvent,
-      ) => void,
-      ctx?: any,
-    ): EventRef;
     /** Active/recent navigating FileView, also used by native Outline. */
     getActiveFileView(): FileView | null;
     /**
@@ -165,24 +158,8 @@ declare module "obsidian" {
     readWorkspaceFile?(): Promise<unknown>;
 
     on(
-      name: "zotlit:insert-template-field",
-      callback: (request: {
-        leaf: WorkspaceLeaf;
-        node: import("@zotlit/workbench/explorer").DisplayNode;
-      }) => void,
-      ctx?: any,
-    ): EventRef;
-
-    on(
       name: "quick-preview",
       callback: (file: TFile, source: string) => void,
-      ctx?: any,
-    ): EventRef;
-    on(
-      name: "zotlit:authoring-context",
-      callback: (
-        context: import("@/views/template-workbench/view").TemplateAuthoringContext,
-      ) => void,
       ctx?: any,
     ): EventRef;
 

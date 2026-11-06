@@ -113,7 +113,7 @@ function setup() {
 
 describe("the dedicated workbench window", () => {
   it.effect(
-    "moves an editor out of the main window once when two opens run at once, and shows both panels",
+    "moves an editor out of the main window once when two opens run at once, and shows both panels with no explorer beside it",
     () =>
       Effect.gen(function* () {
         const test = setup();
@@ -124,7 +124,8 @@ describe("the dedicated workbench window", () => {
           }),
         );
         expect(test.moveLeafToPopout).toHaveBeenCalledOnce();
-        expect(test.createLeafBySplit).toHaveBeenCalledOnce();
+        // Fields is a panel of the editor's own leaf.
+        expect(test.createLeafBySplit).not.toHaveBeenCalled();
         expect(view.leaf.getContainer()).not.toBe(test.rootSplit);
         expect(test.panels(view)).toMatchObject({
           fields: { shown: true },
