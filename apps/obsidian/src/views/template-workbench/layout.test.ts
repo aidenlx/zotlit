@@ -7,7 +7,8 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { WorkspaceLeaf } from "obsidian";
 import { vi } from "vitest";
 
-import type { WorkbenchPanels } from "@zotlit/workbench/ui";
+import { INITIAL_PANELS } from "@zotlit/workbench/ui";
+import type { WorkbenchModel } from "@zotlit/workbench/ui";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -51,18 +52,17 @@ function setup() {
     const view = Object.create(
       TemplateWorkbenchView.prototype,
     ) as TemplateWorkbenchView;
-    // The Workbench model's panels, which a new editor shows neither of.
-    const panels = Atom.make<WorkbenchPanels>({
-      fields: { shown: false, width: 400 },
-      preview: { shown: false, width: 400 },
-    });
+    // The part of the Workbench model the layout reads: a new editor's panels.
+    const workbench: Pick<WorkbenchModel, "panels"> = {
+      panels: Atom.make(INITIAL_PANELS),
+    };
     const made = leaf(at, view);
     Object.defineProperties(view, {
       leaf: { value: made },
       file: { value: file === null ? null : { path: file } },
       isDefaultProfile: { value: defaultProfile },
       registry: { value: registry },
-      workbench: { value: { panels } },
+      workbench: { value: workbench },
       onResize: { value: vi.fn() },
     });
     editors.push(made);

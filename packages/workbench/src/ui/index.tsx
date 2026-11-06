@@ -50,6 +50,7 @@ export {
   choosePartialProfile,
   clampPanelWidth,
   INITIAL_CHOICES,
+  INITIAL_PANELS,
   INITIAL_VIEW,
   makeWorkbenchModel,
   PANEL_WIDTH,

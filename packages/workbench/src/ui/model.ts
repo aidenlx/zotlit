@@ -1,6 +1,7 @@
 // The Workbench model: what one editor shows, as atoms that pure transitions change.
 // The document controller stays the authority on the document's text; the model
-// holds the controller in use, the reader's choices, and the render scheduler.
+// holds the controller in use, the reader's choices, the side panels, and the
+// render scheduler.
 
 import type { WorkbenchDocumentAtoms } from "#/document/atoms";
 import type { WorkbenchDocumentController } from "#/document/controller";
@@ -224,14 +225,15 @@ export type WorkbenchPanels = Readonly<Record<PanelSide, WorkbenchPanel>>;
 export const PANEL_WIDTH = { min: 240, initial: 400, max: 960 } as const;
 
 /** A new editor shows neither panel. */
-const INITIAL_PANELS: WorkbenchPanels = {
+export const INITIAL_PANELS: WorkbenchPanels = {
   fields: { shown: false, width: PANEL_WIDTH.initial },
   preview: { shown: false, width: PANEL_WIDTH.initial },
 };
 
 /**
  * The share of the panels' container one panel takes at most, so the source
- * stays in view.
+ * stays in view. A host draws the same share in CSS, such as Obsidian's
+ * `zt:max-w-2/5`.
  */
 const PANEL_SHARE = 0.4;
 

@@ -192,21 +192,38 @@ describe("the side panels", () => {
     });
   });
 
-  it("shows a panel and sets its width within the limits", () => {
+  it("shows one panel and leaves the other hidden", () => {
     using opened = open();
     const { registry, model } = opened;
     registry.update(model.panels, showPanel("preview", true));
-    registry.update(model.panels, setPanelWidth("preview", 520.4));
-    expect(registry.get(model.panels).preview).toEqual({
-      shown: true,
-      width: 520,
+    expect(registry.get(model.panels)).toEqual({
+      fields: { shown: false, width: 400 },
+      preview: { shown: true, width: 400 },
     });
+  });
+
+  it("sets a panel's width in whole pixels", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    registry.update(model.panels, setPanelWidth("preview", 520.4));
+    expect(registry.get(model.panels).preview.width).toBe(520);
+  });
+
+  it("holds a panel's width within the limits", () => {
+    using opened = open();
+    const { registry, model } = opened;
     registry.update(model.panels, setPanelWidth("fields", 5000));
-    expect(registry.get(model.panels).fields.width).toBe(960);
+    expect(registry.get(model.panels).fields.width).toBe(PANEL_WIDTH.max);
     registry.update(model.panels, setPanelWidth("fields", 10));
-    expect(registry.get(model.panels).fields.width).toBe(240);
+    expect(registry.get(model.panels).fields.width).toBe(PANEL_WIDTH.min);
+  });
+
+  it("keeps the panels when a transition changes nothing", () => {
+    using opened = open();
+    const { registry, model } = opened;
     const panels = registry.get(model.panels);
-    registry.update(model.panels, showPanel("preview", true));
+    registry.update(model.panels, showPanel("preview", false));
+    registry.update(model.panels, setPanelWidth("fields", 400));
     expect(registry.get(model.panels)).toBe(panels);
   });
 

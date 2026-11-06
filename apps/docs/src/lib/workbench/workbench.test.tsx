@@ -3,11 +3,7 @@ import { act } from "react";
 import { expect, it, vi } from "vitest";
 
 import { renderProfile } from "@zotlit/workbench/render";
-import {
-  createWorkbenchEditor,
-  setPanelWidth,
-  showPanel,
-} from "@zotlit/workbench/ui";
+import { createWorkbenchEditor } from "@zotlit/workbench/ui";
 import type { WorkbenchHostError } from "@zotlit/workbench/ui";
 
 // @vitest-environment happy-dom
@@ -77,26 +73,6 @@ it("keeps one editor, and renders its examples and Preview, after StrictMode rep
       page.host.querySelector('[data-part="summary"]')?.textContent,
     ).toContain("Thinking, fast and slow"),
   );
-});
-
-it("holds the side panels through the Workbench model", async () => {
-  vi.mocked(createWorkbenchEditor).mockClear();
-  await using page = await open();
-  await page.settle();
-  const { model, registry } = vi.mocked(createWorkbenchEditor).mock.results[0]!
-    .value as ReturnType<typeof createWorkbenchEditor>;
-  expect(registry.get(model.panels)).toEqual({
-    fields: { shown: false, width: 400 },
-    preview: { shown: false, width: 400 },
-  });
-  act(() => {
-    registry.update(model.panels, showPanel("fields", true));
-    registry.update(model.panels, setPanelWidth("fields", 300));
-  });
-  expect(registry.get(model.panels).fields).toEqual({
-    shown: true,
-    width: 300,
-  });
 });
 
 it("keeps independent Preview and Explorer choices when a new document opens", async () => {
