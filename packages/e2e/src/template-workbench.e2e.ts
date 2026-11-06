@@ -1355,6 +1355,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ),
             );
           if (!view || !editor) return false;
+          // The edit is made once, on the poll that first finds the editor.
           const text = editor.state.doc.toString();
           const from = text.indexOf('{% render "book-details"');
           if (from >= 0)
@@ -1367,13 +1368,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               userEvent: "input.type",
             });
           editor.dispatch({ selection: { anchor: 0 } });
-          return (
-            page
-              .previewPanel(view)
-              ?.querySelector('[data-part="problem-open"]') != null
-          );
+          return true;
         },
         { path, call },
+        { what: "the note editor, with the call to a missing partial" },
+      );
+      await obRunUntil(
+        run.vaultId,
+        ({ page }, { path }) =>
+          page
+            .previewPanel(page.workbench({ path }))
+            ?.querySelector('[data-part="problem-open"]') != null,
+        { path },
         { what: "the Preview's Show problem on the missing partial" },
       );
     };

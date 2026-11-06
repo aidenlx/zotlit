@@ -374,9 +374,16 @@ tab stays chosen.
    body as in **A problem reaches the editor**.
 2. Select **Show fields** so the Fields picker opens.
 3. In the Problems area, select the button that names where the problem is.
+4. Place the cursor at the end of the first line of the note body. Select
+   **Show problem** at the bottom of the editor, then select **Show fields**
+   so the Fields picker opens again.
+5. Select **Return to template** at the top of the Problems area.
 
-Expected: the Fields picker closes and the editor selects the call. The
-Preview and **Show preview** stay as they were.
+Expected: in step 3 the Fields picker closes and the editor selects the
+call. In step 5 the picker closes, the Problems area goes back to its
+one-line summary, and the cursor is again at the end of the first line of
+the note body. The Preview and **Show preview** stay as they were in both
+steps.
 
 ## Open the annotation box and add the annotation loop
 
