@@ -15,7 +15,7 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { cn } from "@/lib/utils";
 
-import { PANEL_WIDTH, setPanelWidth } from "./model";
+import { clampPanelWidth, PANEL_WIDTH, setPanelWidth } from "./model";
 import type { PanelSide, TemplateWorkbenchModel } from "./model";
 
 /** What one side panel shows, and what names it to a screen reader. */
@@ -27,6 +27,8 @@ export interface SidePanel {
   readonly content: ReactNode;
 }
 
+/** The share of the panels' container one panel takes at most; `max-w-2/5`. */
+const PANEL_SHARE = 0.4;
 /** How far one arrow press moves a panel's edge, in pixels; Shift moves more. */
 const STEP = 16;
 const LARGE_STEP = 64;
@@ -53,9 +55,9 @@ export function WorkbenchPanels({
   };
   return (
     <div className="zt:@container/workbench-panels zt:h-full zt:min-w-0">
-      <div className="zt:flex zt:h-full zt:min-w-0 zt:@max-[40rem]/workbench-panels:flex-col">
+      <div className="zt:flex zt:h-full zt:min-w-0 zt:@max-workbench-stack/workbench-panels:flex-col">
         {panel("fields")}
-        <div className="zt:order-2 zt:min-h-0 zt:min-w-0 zt:flex-1 zt:@max-[40rem]/workbench-panels:order-1">
+        <div className="zt:order-2 zt:min-h-0 zt:min-w-0 zt:flex-1 zt:@max-workbench-stack/workbench-panels:order-1">
           {children}
         </div>
         {panel("preview")}
@@ -82,9 +84,20 @@ function Panel({
   const drag = useRef<{ x: number; width: number } | null>(null);
   // The Preview sits on the right, so moving its edge left widens it.
   const direction = side === "preview" ? -1 : 1;
-  const commit = (next: number) => update(setPanelWidth(side, next));
-  const held = (next: number) =>
-    Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, next));
+  /**
+   * The widest the view draws this panel now: the panel takes at most
+   * {@link PANEL_SHARE} of the panels' container, so the source stays in view.
+   */
+  const drawnMax = () => {
+    const container = region.current?.parentElement?.clientWidth;
+    return container
+      ? Math.min(PANEL_WIDTH.max, Math.floor(container * PANEL_SHARE))
+      : PANEL_WIDTH.max;
+  };
+  const held = (next: number) => clampPanelWidth(next, drawnMax());
+  const commit = (next: number) => update(setPanelWidth(side, held(next)));
+  // A window splitter's Home and End set the panel's smallest and largest
+  // width; the arrows move its edge the way they point.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? LARGE_STEP : STEP;
     const next =
@@ -93,13 +106,9 @@ function Panel({
         : event.key === "ArrowRight"
           ? width + direction * step
           : event.key === "Home"
-            ? direction < 0
-              ? PANEL_WIDTH.max
-              : PANEL_WIDTH.min
+            ? PANEL_WIDTH.min
             : event.key === "End"
-              ? direction < 0
-                ? PANEL_WIDTH.min
-                : PANEL_WIDTH.max
+              ? PANEL_WIDTH.max
               : null;
     if (next === null) return;
     event.preventDefault();
@@ -144,7 +153,7 @@ function Panel({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      className="zt:w-1 zt:shrink-0 zt:cursor-col-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent) zt:@max-[40rem]/workbench-panels:hidden"
+      className="zt:w-1 zt:shrink-0 zt:cursor-col-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent) zt:@max-workbench-stack/workbench-panels:hidden"
     />
   );
   return (
@@ -159,7 +168,7 @@ function Panel({
         style={{ "--zt-panel-width": `${width}px` } as CSSProperties}
         className={cn(
           side === "preview" ? "zt:order-3" : "zt:order-1",
-          "zt:flex zt:min-h-0 zt:w-(--zt-panel-width) zt:max-w-[40cqi] zt:shrink-0 zt:flex-col zt:overflow-auto zt:@max-[40rem]/workbench-panels:order-2 zt:@max-[40rem]/workbench-panels:h-2/5 zt:@max-[40rem]/workbench-panels:w-full zt:@max-[40rem]/workbench-panels:max-w-none zt:@max-[40rem]/workbench-panels:border-t-(length:--border-width) zt:@max-[40rem]/workbench-panels:border-(--divider-color)",
+          "zt:flex zt:min-h-0 zt:w-(--zt-panel-width) zt:max-w-2/5 zt:shrink-0 zt:flex-col zt:overflow-auto zt:@max-workbench-stack/workbench-panels:order-2 zt:@max-workbench-stack/workbench-panels:h-2/5 zt:@max-workbench-stack/workbench-panels:w-full zt:@max-workbench-stack/workbench-panels:max-w-none zt:@max-workbench-stack/workbench-panels:border-t-(length:--border-width) zt:@max-workbench-stack/workbench-panels:border-(--divider-color)",
         )}
       >
         {content}

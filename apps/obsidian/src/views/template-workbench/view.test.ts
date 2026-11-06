@@ -1494,6 +1494,8 @@ An annotation.
       advanced: true,
       itemIndexedKey: null,
       annotationId: null,
+      variant: "main",
+      citationExample: "one-item",
       panels: {
         fields: { shown: false, width: 400 },
         preview: { shown: false, width: 400 },
@@ -2066,6 +2068,8 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     advanced: false,
     itemIndexedKey: null,
     annotationId: null,
+    variant: "main",
+    citationExample: "one-item",
     panels: {
       fields: { shown: false, width: 400 },
       preview: { shown: false, width: 400 },
@@ -3347,9 +3351,10 @@ describe("the side panels of the Template Workbench View", () => {
     // The Preview sits on the right, so moving its edge left widens it.
     await press(handle, "ArrowLeft");
     expect(width()).toBeGreaterThan(initial);
-    await press(handle, "End");
-    expect(width()).toBe(Number(handle.getAttribute("aria-valuemin")));
+    // A window splitter's Home is the smallest panel and End the largest.
     await press(handle, "Home");
+    expect(width()).toBe(Number(handle.getAttribute("aria-valuemin")));
+    await press(handle, "End");
     expect(width()).toBe(Number(handle.getAttribute("aria-valuemax")));
     await act(async () => view.close());
   });
@@ -3469,6 +3474,51 @@ describe("the side panels of the Template Workbench View", () => {
       showMarkdown: false,
       showManaged: false,
     });
+  });
+
+  // Story 17: what the Preview's render finds is the editor's own problem.
+  it("opens the editor's Problems area on a failed Run from the Preview panel", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          diagnostics: [
+            {
+              code: "missing-partial",
+              part: "render",
+              params: { name: "venue-line" },
+            },
+          ],
+        }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const toggle = () =>
+      [...view.contentEl.querySelectorAll<HTMLElement>("[aria-expanded]")].find(
+        (button) =>
+          button.getAttribute("aria-label") === m.workbench_problem_show() ||
+          button.getAttribute("aria-label") === m.workbench_problems_return(),
+      )!;
+    const run = [
+      ...region(view, m.workbench_view_preview())!.querySelectorAll("button"),
+    ].find((button) => button.textContent === m.workbench_preview_run())!;
+    const attempt = renderState(view).attempt;
+    await act(async () => {
+      run.click();
+      await vi.waitFor(() =>
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
+      );
+    });
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
   });
 });
 

@@ -1,6 +1,6 @@
 /* Obsidian's unlayered heading rules outrank utility layers. Keep preview
    chrome in the interface type scale while Markdown uses the note theme. */
-.zt-note-preview-heading {
+.zt-workbench-preview-heading {
   margin: 0;
   font-family: var(--font-interface);
   font-size: var(--font-ui-small);
@@ -14,7 +14,7 @@
    to its content, and leaves the panel as the only scroller. A rule marks its
    top edge under the file name, and the inset below that rule is the panel's
    own step rather than a full file margin. */
-.zt-template-workbench [data-panel="preview"] .zt-note-preview-sheet {
+.zt-template-workbench [data-panel="preview"] .zt-workbench-preview-sheet {
   width: auto;
   height: auto;
   overflow: visible;

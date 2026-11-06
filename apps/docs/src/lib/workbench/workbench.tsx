@@ -26,11 +26,7 @@ import type {
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
-import {
-  currentCallSite,
-  DEFAULT_PROFILE_SOURCE,
-  SAMPLE_ITEMS,
-} from "@zotlit/workbench/render";
+import { currentCallSite, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type {
   RenderDiagnostic,
   WorkbenchReportContext,
@@ -47,6 +43,7 @@ import {
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
+  patch,
   setAdvanced as setViewAdvanced,
   setTab as setViewTab,
   diagnosticText,
@@ -60,7 +57,6 @@ import {
   AnnotationPointer,
   AnnotationSampleBar,
   AnnotationSectionBar,
-  annotationSamples,
   NameFolderPane,
   NotePane,
   PropertiesPane,
@@ -104,7 +100,12 @@ import {
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
 import { makeWebPage } from "./page-model";
-import type { WebPage, WebWorkbench } from "./page-model";
+import type {
+  PageLayout,
+  Replacement,
+  WebPage,
+  WebWorkbench,
+} from "./page-model";
 import { WebPreview } from "./preview";
 import { PageRuntime, usePageBridge } from "./runtime";
 import type { PageServices } from "./runtime";
@@ -117,8 +118,6 @@ import {
 } from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
-import { useWorkbenchDraft } from "./use-workbench-draft";
-import type { ProfileHydration } from "./workbench-connection";
 
 /** The result becomes a column once both reading and editing have room. */
 const WIDE_LAYOUT = "(min-width: 780px)";
@@ -182,7 +181,6 @@ function WorkbenchSession({
   const { editor, model, show, chooseAnnotation } = workbench;
   const registry = editor.registry;
   const controller = useAtomValue(model.controller);
-  const revision = useAtomValue(model.document.revision);
   const sample = useAtomValue(page.chosen);
   const read = useAtomValue(page.read);
   const retained = useAtomValue(page.retained);
@@ -210,7 +208,6 @@ function WorkbenchSession({
   const openInObsidianCommand = useAtomSet(workbench.openInObsidian);
   const loadSelectedItem = useAtomSet(workbench.loadItem);
   const fileMessage = useAtomValue(workbench.notice);
-  const setFileMessage = workbench.say;
   const shownManifest = useAtomValue(workbench.manifest);
   const { present } = workbench;
   // What the editor reveals, which row is open, and where the caret is: the
@@ -230,25 +227,35 @@ function WorkbenchSession({
     present({ fieldFocus });
   const setCaret = (range: WorkbenchSliceRange) =>
     present({ selection: { slice, range } });
-  const importFileCommand = useAtomSet(page.importFile);
+  const importFileCommand = useAtomSet(workbench.importFile);
+  const save = useAtomSet(workbench.save);
+  const { drafts, layout: layoutAtom } = workbench;
+  const dirty = useAtomValue(drafts.dirty);
+  const restorable = useAtomValue(drafts.restorable);
+  const location = useAtomValue(page.location);
   // Which of the two the narrow screen is showing, and whether the field list
   // is open over it. Both are the narrow layout's alone: a wide screen shows
   // the pane, the result, and the field list at once.
-  const [view, setView] = useState<"edit" | "result">("edit");
-  const [sheet, setSheet] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{
-    label: string;
-    run: () => void;
-  } | null>(null);
+  const layout = useAtomValue(layoutAtom);
+  const { view, sheet, pending } = layout;
+  const arrange = (changes: Partial<PageLayout>) =>
+    registry.update(layoutAtom, patch<PageLayout>(changes));
+  const setView = (next: "edit" | "result") => arrange({ view: next });
+  const setSheet = (open: boolean) => arrange({ sheet: open });
+  const noteCaret = {
+    get current() {
+      return registry.get(layoutAtom).noteCaret;
+    },
+    set current(range: WorkbenchSliceRange) {
+      arrange({ noteCaret: range });
+    },
+  };
   const [handoffSource] = useState(createProfileHandoffSource);
-  const replaceConnected = useRef(false);
-  const noteCaret = useRef(caret);
   const {
     connection,
     saveTarget,
     resources,
     citationStyles,
-    saveAgainst,
     connectionBusy,
     resumable,
     itemBusy,
@@ -256,25 +263,11 @@ function WorkbenchSession({
     message: connectionMessage,
     reconnect,
     disconnect,
-    reloadProfile,
-    save,
-  } = useWorkbenchConnection({
-    page,
-    onHydrate: openSelectedProfile,
-    onSaved: ({ reference, source }) => drafts.rebase({ reference, source }),
-  });
-  const drafts = useWorkbenchDraft({
-    location: page.location,
-    controller,
-    revision,
-    sample,
-    annotationSelection: selectedAnnotation.id,
-    saveTarget,
-  });
+  } = useWorkbenchConnection(page);
   /** The document, language, and paper behind whatever attempt fails next. */
   const reportContext = useCallback(
     (root: string): WorkbenchReportContext => ({
-      document: drafts.location.reference,
+      document: location.reference,
       language: controller.language,
       root,
       selection: sample.item.indexedKey,
@@ -282,55 +275,9 @@ function WorkbenchSession({
         ? { zotlitVersion: connection.pluginVersion }
         : {}),
     }),
-    [connection, drafts.location.reference, controller, sample],
+    [connection, location.reference, controller, sample],
   );
   reads.insertTarget = () => ({ slice, range: caret });
-
-  /** Opens the Profile a connection hydrated, with what it kept beside it. */
-  function openSelectedProfile({
-    selected,
-    installationId,
-    kept,
-    retainedExpected,
-    snapshot,
-  }: ProfileHydration) {
-    const opened = {
-      reference: selected.document.reference,
-      source: selected.source,
-      installationId,
-      ...(snapshot
-        ? {
-            snapshot,
-            annotationSelection: annotationSamples(
-              snapshot,
-              selectedAnnotation.id,
-            ).example.id,
-          }
-        : {}),
-    };
-    // A connection that comes back to the document already open leaves the text
-    // and its undo history where they are: the connection was lost, the work
-    // was not. The vault counts as part of that identity, so the same reference
-    // read out of another vault is another document and opens as one. The
-    // vault's own bytes become the saved state the draft is measured against,
-    // so an unsaved edit stays an unsaved edit.
-    if (
-      drafts.location.reference === opened.reference &&
-      drafts.location.installationId === opened.installationId &&
-      !replaceConnected.current
-    ) {
-      drafts.rebase(opened);
-      if (snapshot) show(snapshot);
-      // The text on screen still descends from the revision it was read at, so
-      // Save answers for that one: the vault moved, this draft did not.
-      if (retainedExpected) saveAgainst(retainedExpected);
-      return;
-    }
-    drafts.adopt(opened, replaceConnected.current ? null : kept);
-    replaceConnected.current = false;
-    loadDocument(selected.source);
-    if (snapshot) show(snapshot);
-  }
 
   // The Editor and Result tabs stand under 780 px alone, so a window that grows
   // past them leaves the reader in the pane rather than on a result no tab
@@ -702,20 +649,6 @@ function WorkbenchSession({
     setCaret(selection);
   }
 
-  /** Opens `source` as the document being edited, with a history of its own. */
-  function loadDocument(source: string) {
-    workbench.load(source);
-    setFileMessage(null);
-    setAdvanced(false);
-    setView("edit");
-    setSheet(false);
-    setTab("note");
-    setOpenRow(null);
-    setReveal(null);
-    noteCaret.current = { from: 0, to: 0 };
-    setCaret(noteCaret.current);
-  }
-
   function openInObsidian() {
     openInObsidianCommand(handoffSource(controller.source));
   }
@@ -727,28 +660,12 @@ function WorkbenchSession({
       profileFileName(manifest?.id, { draft: controller.document === null }),
     );
     if (!canSaveToVault)
-      drafts.rebase({ ...drafts.location, source: controller.source });
+      drafts.rebase({ ...location, source: controller.source });
     toast.add({ title: m.workbench_download_complete(), type: "success" });
   }
 
-  function replaceProfile(label: string, run: () => void) {
-    if (drafts.dirty) setPendingAction({ label, run });
-    else run();
-  }
-
-  function openStandalone(source: string) {
-    drafts.adopt({ reference: "standalone", source }, null);
-    loadDocument(source);
-  }
-
   function importFile(file: File | undefined) {
-    if (!file) return;
-    importFileCommand({
-      file,
-      read: (source) =>
-        replaceProfile(m.workbench_import(), () => openStandalone(source)),
-      failed: () => setFileMessage(m.workbench_import_failed()),
-    });
+    if (file) importFileCommand(file);
   }
 
   function openTab(id: WorkbenchTab) {
@@ -766,7 +683,7 @@ function WorkbenchSession({
   const connected = connection.state === "connected";
   const canSaveToVault =
     connected &&
-    saveTarget?.reference === drafts.location.reference &&
+    saveTarget?.reference === location.reference &&
     connection.capabilities.includes("selected-profile:save");
   // One input serves both screens, because the handoff is where a reader who
   // cannot edit this Profile reaches for another one.
@@ -788,9 +705,9 @@ function WorkbenchSession({
 
   const replacementDialog = (
     <Dialog
-      open={pendingAction !== null}
+      open={pending !== null}
       onOpenChange={(open) => {
-        if (!open) setPendingAction(null);
+        if (!open) workbench.settle(false);
       }}
     >
       <DialogContent>
@@ -805,9 +722,7 @@ function WorkbenchSession({
             size="xs"
             onClick={() => {
               download();
-              const next = pendingAction;
-              setPendingAction(null);
-              next?.run();
+              workbench.settle(true);
             }}
           >
             {m.workbench_replace_download()}
@@ -815,13 +730,9 @@ function WorkbenchSession({
           <Button
             variant="outline"
             size="xs"
-            onClick={() => {
-              const next = pendingAction;
-              setPendingAction(null);
-              next?.run();
-            }}
+            onClick={() => workbench.settle(true)}
           >
-            {pendingAction?.label}
+            {pending && replacementLabel(pending)}
           </Button>
           <DialogClose render={<Button variant="ghost" size="xs" />}>
             {m.workbench_keep_editing()}
@@ -866,23 +777,14 @@ function WorkbenchSession({
                 {m.workbench_import()}
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() =>
-                  replaceProfile(m.workbench_start_default(), () =>
-                    openStandalone(DEFAULT_PROFILE_SOURCE),
-                  )
-                }
+                onClick={() => workbench.replace({ kind: "default" })}
               >
                 <FilePlus2 aria-hidden />
                 {m.workbench_start_default()}
               </DropdownMenuItem>
               {connected && (
                 <DropdownMenuItem
-                  onClick={() =>
-                    replaceProfile(m.workbench_reload_profile(), () => {
-                      replaceConnected.current = true;
-                      reloadProfile();
-                    })
-                  }
+                  onClick={() => workbench.replace({ kind: "reload" })}
                 >
                   <FolderOpen aria-hidden />
                   {m.workbench_reload_profile()}
@@ -924,9 +826,8 @@ function WorkbenchSession({
           editingConnectedProfile={canSaveToVault}
           onReconnect={() => {
             // Reconnecting the current vault document preserves its draft and history.
-            if (saveTarget?.reference === drafts.location.reference)
-              reconnect();
-            else replaceProfile(m.workbench_connection_reconnect(), reconnect);
+            if (saveTarget?.reference === location.reference) reconnect();
+            else workbench.replace({ kind: "reconnect" });
           }}
           onDisconnect={disconnect}
         />
@@ -943,7 +844,7 @@ function WorkbenchSession({
               over that page alone: a standalone reader has no vault to send a
               template to. */}
 
-          {drafts.restorable && (
+          {restorable && (
             <section
               aria-label={m.workbench_restore_heading()}
               className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-s-2 border-b border-s-fd-primary border-b-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal"
@@ -956,17 +857,7 @@ function WorkbenchSession({
                 <Button
                   variant="outline"
                   size="xs"
-                  onClick={() => {
-                    const kept = drafts.restore();
-                    if (!kept) return;
-                    loadDocument(kept.source);
-                    // A tab that closed on a vault paper comes back to the
-                    // text alone, so the paper on screen stands.
-                    if (kept.snapshot) show(kept.snapshot);
-                    if (kept.annotationSelection)
-                      chooseAnnotation(kept.annotationSelection);
-                    if (kept.expected) saveAgainst(kept.expected);
-                  }}
+                  onClick={workbench.restoreDraft}
                 >
                   {m.workbench_restore_accept()}
                 </Button>
@@ -986,7 +877,7 @@ function WorkbenchSession({
         canSaveToVault
           ? draft
             ? m.workbench_save_fix()
-            : drafts.dirty
+            : dirty
               ? m.workbench_unsaved()
               : m.workbench_saved_profile()
           : m.workbench_browser_draft()
@@ -1282,4 +1173,18 @@ function AnnotationProblemMarker({
       {m.workbench_problem_show()}
     </button>
   );
+}
+
+/** The action a held replacement runs, as the dialog's button names it. */
+function replacementLabel(next: Replacement): string {
+  switch (next.kind) {
+    case "import":
+      return m.workbench_import();
+    case "default":
+      return m.workbench_start_default();
+    case "reload":
+      return m.workbench_reload_profile();
+    case "reconnect":
+      return m.workbench_connection_reconnect();
+  }
 }

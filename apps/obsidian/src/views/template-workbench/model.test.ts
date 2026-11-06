@@ -227,7 +227,12 @@ it("round-trips the saved and ephemeral state through Schema", () => {
       savedWorkbench({
         defaultDraft: false,
         view,
-        picks: { ...INITIAL_PICKS, annotationId: "note-1" },
+        picks: {
+          ...INITIAL_PICKS,
+          annotationId: "note-1",
+          variant: "alt",
+          citationExample: null,
+        },
         panels: {
           fields: { shown: false, width: 400 },
           preview: { shown: true, width: 520 },
@@ -261,7 +266,13 @@ it("round-trips the saved and ephemeral state through Schema", () => {
       showMarkdown: true,
       showManaged: false,
     },
+    citation: { variant: "alt", citationExample: null },
   });
+  // A Citation pick the state does not name, or names badly, is left out.
+  expect(
+    readSavedWorkbench({ variant: "sideways", citationExample: "two-items" })
+      ?.citation,
+  ).toEqual({ citationExample: "two-items" });
   // A bad setting leaves the others.
   expect(
     readSavedWorkbench({ preview: { mode: "draft", live: false } })?.preview,

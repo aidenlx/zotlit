@@ -33,14 +33,40 @@ import { selectionName } from "./selection";
 import { selectionBar, selectionHint, templateWorkbenchButton } from "./theme";
 import type { TemplateWorkbenchView } from "./view";
 
-/** Which result the preview shows for the document kind and root. */
-export function resultMode(
+/**
+ * What the Preview renders for the document kind and root: which result, the
+ * caller a Shared Partial is rendered as called from, and whether the render
+ * reads a Citation set or an annotation. The panel and its pane-menu settings
+ * both read it.
+ */
+export function previewTarget(
   kind: WorkbenchDocumentKind,
   root: TemplateRoot,
-): ResultMode {
-  if (kind === "citation") return "citation";
-  if (kind === "partial") return "partial";
-  return root === "annotation" ? "annotation" : "note";
+): {
+  readonly mode: ResultMode;
+  readonly caller: PartialContext;
+  readonly citationSet: boolean;
+  readonly annotationMode: boolean;
+} {
+  const mode: ResultMode =
+    kind === "citation"
+      ? "citation"
+      : kind === "partial"
+        ? "partial"
+        : root === "annotation"
+          ? "annotation"
+          : "note";
+  const caller = isPartialContext(root) ? root : DEFAULT_PARTIAL_CONTEXT;
+  // A partial reads the root its chosen caller reads, so the set it is shown
+  // against and the chooser it offers are that caller's, not the document's.
+  return {
+    mode,
+    caller,
+    citationSet:
+      mode === "citation" || (mode === "partial" && caller === "citation"),
+    annotationMode:
+      mode === "annotation" || (mode === "partial" && caller === "annotation"),
+  };
 }
 
 /**
@@ -104,18 +130,12 @@ export function PreviewPanel({
   const { example } = useAtomValue(model.examples);
   const { variant, citationExample } = useAtomValue(model.picks);
   const preview = useAtomValue(model.preview);
-  const mode = resultMode(kind, root);
-  const partialContext: PartialContext = isPartialContext(root)
-    ? root
-    : DEFAULT_PARTIAL_CONTEXT;
-  // A partial reads the root its chosen caller reads, so the set it is shown
-  // against and the chooser it offers are that caller's, not the document's.
-  const citationSet =
-    mode === "citation" ||
-    (mode === "partial" && partialContext === "citation");
-  const annotationMode =
-    mode === "annotation" ||
-    (mode === "partial" && partialContext === "annotation");
+  const {
+    mode,
+    caller: partialContext,
+    citationSet,
+    annotationMode,
+  } = previewTarget(kind, root);
   // A Citation example carries its own data, so its preview is ready the moment
   // the reader has one selected — no Item Snapshot to wait on.
   const ready =
@@ -219,7 +239,7 @@ export function PreviewPanel({
       {ready && (
         <>
           <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:justify-between zt:gap-x-3 zt:gap-y-1">
-            <h2 className="zt-note-preview-heading">{heading}</h2>
+            <h2 className="zt-workbench-preview-heading">{heading}</h2>
             {caption && <p className={selectionHint}>{caption}</p>}
           </div>
           <ResultBody
