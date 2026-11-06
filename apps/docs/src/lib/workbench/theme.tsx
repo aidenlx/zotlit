@@ -436,10 +436,11 @@ export const WEB_THEME: WorkbenchTheme = {
     // down its middle that turns the primary color while it is used.
     panels: {
       panels: "flex min-h-0 min-w-0 flex-1",
-      stack: "flex min-h-0 min-w-0 flex-1 flex-col",
+      stack: "flex min-h-0 min-w-0 flex-1 data-[state=below]:flex-col",
+      status: "sr-only",
       editor: "flex min-h-0 min-w-0 flex-1 flex-col",
       panel:
-        "flex min-h-0 min-w-0 shrink-0 flex-col data-[state=fields]:w-(--workbench-panel-width) data-[state=fields]:max-w-2/5 data-[state=preview]:w-(--workbench-panel-width) data-[state=preview]:max-w-2/5 data-[state=below]:h-(--workbench-panel-height)",
+        "flex min-h-0 min-w-0 shrink-0 flex-col data-[state=fields]:w-(--workbench-panel-width) data-[state=preview]:w-(--workbench-panel-width) data-[state=below]:h-(--workbench-panel-height)",
       edge: "relative w-3 shrink-0 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:start-1/2 after:w-px after:bg-fd-muted-foreground hover:after:w-0.5 hover:after:bg-fd-primary focus-visible:after:w-0.5 focus-visible:after:bg-fd-primary",
       split:
         "relative h-3 shrink-0 cursor-row-resize touch-none outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-fd-muted-foreground hover:after:h-0.5 hover:after:bg-fd-primary focus-visible:after:h-0.5 focus-visible:after:bg-fd-primary",

@@ -53,6 +53,7 @@ export {
   makeWorkbenchModel,
   patch,
   patchAt,
+  pressFieldsAction,
   setAdvanced,
   setPreview,
   setRoot,
@@ -100,9 +101,15 @@ export type {
   WorkbenchPanel,
   WorkbenchPanels,
 } from "./panel-layout";
-export { panelSizeMenus } from "./panel-menu";
+export { panelSizeMenus, pickPanelSize } from "./panel-menu";
 export { SidePanels } from "./panels";
-export { FieldPicker, fieldsActionKey } from "./field-picker";
+export {
+  FieldPicker,
+  fieldsActionAttributes,
+  fieldsActionKey,
+  holdPickerFocus,
+  PICKER_MOVE_KEYS,
+} from "./field-picker";
 export type { FieldPickerProps } from "./field-picker";
 export type { SidePanel } from "./panels";
 export {

@@ -50,8 +50,9 @@ export const INITIAL_PANELS: WorkbenchPanels = {
 
 /**
  * The share of the panels' container one panel takes at most, so the source
- * stays in view. A host draws the same share in CSS, such as a `max-w-2/5`
- * class on the panel.
+ * stays in view. The panels draw each column at the width this share leaves
+ * it, through the host's width custom property, so the hosts' CSS holds no
+ * share of its own.
  */
 const PANEL_SHARE = 0.4;
 
@@ -171,10 +172,19 @@ export type PanelHandle = "fields" | "preview" | "split";
 export type PanelResize = "grow" | "shrink" | "reset";
 
 /**
+ * How far one key press moves a handle: an edge by `width` pixels, or by
+ * `wideWidth` with Shift, and the split by `height` percent of the view.
+ */
+export const KEY_STEP = { width: 16, wideWidth: 64, height: 5 } as const;
+
+/**
  * How far one menu entry moves a handle: the Shift+arrow step of an edge,
  * and two arrow steps of the split.
  */
-const MENU_STEP = { width: 64, height: 10 } as const;
+const MENU_STEP = {
+  width: KEY_STEP.wideWidth,
+  height: KEY_STEP.height * 2,
+} as const;
 
 /** The handles a view of `size` draws for `panels`, in document order. */
 export function panelHandles(
@@ -249,7 +259,7 @@ const storedSize = (handle: PanelHandle, panels: WorkbenchPanels) =>
  * The Preview's share as drawn: a short view draws a saved share less
  * than it asks for, and a step starts from what the reader sees.
  */
-const drawnShare = (panels: WorkbenchPanels, size: ViewSize | null) =>
+export const drawnShare = (panels: WorkbenchPanels, size: ViewSize | null) =>
   size && size.height > 0
     ? Math.min(
         panels.preview.height,

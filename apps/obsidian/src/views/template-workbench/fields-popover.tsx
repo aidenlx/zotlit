@@ -8,9 +8,9 @@
 import { Scope } from "obsidian";
 import type { Modifier } from "obsidian";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { FocusEvent, RefObject } from "react";
+import type { RefObject } from "react";
 
-import { useUniqueId } from "@zotlit/ui";
+import { PICKER_MOVE_KEYS } from "@zotlit/workbench/ui";
 import type {
   WorkbenchFieldsAction,
   WorkbenchFieldsPopoverProps,
@@ -24,25 +24,25 @@ import { registerKeymap } from "@/lib/disposables";
 import { composing } from "@/lib/ime";
 
 /**
- * The keys the picker moves its active row with, as every Obsidian list and
- * the Chooser do. The web Workbench binds the same moves, Ctrl+N and Ctrl+P
- * aside.
+ * The keys the picker moves its active row with: the shared keys, and Ctrl+N
+ * and Ctrl+P, as every Obsidian list and the Chooser have them.
  */
 const MOVES: readonly [Modifier[], string, WorkbenchPickerMove][] = [
-  [[], "ArrowDown", "next"],
-  [[], "ArrowUp", "previous"],
+  ...Object.entries(PICKER_MOVE_KEYS).map(
+    ([key, move]): [Modifier[], string, WorkbenchPickerMove] => [[], key, move],
+  ),
   [["Ctrl"], "n", "next"],
   [["Ctrl"], "p", "previous"],
-  [[], "PageDown", "page-down"],
-  [[], "PageUp", "page-up"],
-  [[], "Home", "first"],
-  [[], "End", "last"],
 ];
+
+/** Each leaf's picker surface gets an id of its own. */
+let surfaces = 0;
 
 /** The Fields action of one leaf: the view action element, and the popover under it. */
 export function fieldsActionHost(
   anchor: RefObject<HTMLElement | null>,
 ): WorkbenchFieldsAction {
+  const popoverId = `zt-fields-picker-${++surfaces}`;
   function FieldsPopover({
     open,
     onClose,
@@ -52,11 +52,10 @@ export function fieldsActionHost(
     children,
   }: WorkbenchFieldsPopoverProps) {
     const app = useObsidianApp();
-    const id = useUniqueId();
     const handle = useRef<PinnedPopoverHandle>(null);
-    const latest = useRef({ keys, onClose, returnFocus });
+    const latest = useRef({ keys, onClose, returnFocus, open });
     useLayoutEffect(() => {
-      latest.current = { keys, onClose, returnFocus };
+      latest.current = { keys, onClose, returnFocus, open };
     });
     // Whether the popover stands. The contents mount once it does, so the
     // search field they focus is in the document.
@@ -81,26 +80,42 @@ export function fieldsActionHost(
     // that focus is the insertion's, not the reader leaving the picker. The
     // first focus to land outside the popover and the action settles it.
     const insertionFocus = useRef(false);
-    const kept = useRef<HTMLElement | null>(null);
+    // Focus that lands outside the open popover closes it and goes to the
+    // action: its Scope would go on taking the arrows and Enter. Only the
+    // keyboard moves focus out while it stands: a press on the action keeps
+    // focus in it, and a press elsewhere closes it first. Tab past the end of
+    // the window lands at its start with no blur that names where it went,
+    // so the landing, not the leaving, is what closes it.
     useLayoutEffect(() => {
       const doc = anchor.current?.doc;
       if (!doc) return;
-      const settle = (event: Event) => {
-        if (!insertionFocus.current) return;
+      const land = (event: FocusEvent) => {
         const target = event.target as Node | null;
-        if (
-          !target?.instanceOf(Node) ||
-          handle.current?.contains(target) ||
-          anchor.current?.contains(target)
-        )
+        if (!target?.instanceOf(Node) || handle.current?.contains(target))
           return;
-        insertionFocus.current = false;
-        const back = kept.current;
-        kept.current = null;
-        back?.focus({ preventScroll: true });
+        const { open } = latest.current;
+        if (anchor.current?.contains(target)) {
+          // Shift+Tab onto the action: focus is already where it goes.
+          if (open && !insertionFocus.current) handle.current?.hide();
+          return;
+        }
+        if (insertionFocus.current) {
+          insertionFocus.current = false;
+          const from = event.relatedTarget as Node | null;
+          if (
+            open &&
+            from?.instanceOf(HTMLElement) &&
+            handle.current?.contains(from)
+          )
+            from.focus({ preventScroll: true });
+          return;
+        }
+        if (!open) return;
+        handle.current?.hide();
+        anchor.current?.focus({ preventScroll: true });
       };
-      doc.addEventListener("focusin", settle, true);
-      return () => doc.removeEventListener("focusin", settle, true);
+      doc.addEventListener("focusin", land, true);
+      return () => doc.removeEventListener("focusin", land, true);
     }, []);
 
     const wasOpen = useRef(false);
@@ -112,33 +127,20 @@ export function fieldsActionHost(
       }
       if (!wasOpen.current) return;
       wasOpen.current = false;
-      const doc = anchor.current?.doc;
-      const active = doc?.activeElement;
       if (!latest.current.returnFocus) {
         // An insertion gives the editor focus at the inserted text; the
         // popover lets go of focus rather than hand it to the action.
+        const active = anchor.current?.doc.activeElement;
         if (active?.instanceOf(HTMLElement) && handle.current?.contains(active))
           active.blur();
         handle.current?.hide();
         insertionFocus.current = true;
         return;
       }
-      // A press on the action closes the popover and leaves focus on
-      // nothing; it goes to the action, as an Escape's does.
-      const lost = !active || active === doc?.body;
+      // Focus the popover holds goes back to the action as it hides: a
+      // press on the action keeps focus in the popover until then.
       handle.current?.hide();
-      if (lost) anchor.current?.focus({ preventScroll: true });
     }, [open]);
-
-    // The action names the popover it controls while the popover stands.
-    useLayoutEffect(() => {
-      const action = anchor.current;
-      if (!shown || !action) return;
-      action.setAttribute("aria-controls", id);
-      return () => {
-        action.removeAttribute("aria-controls");
-      };
-    }, [shown, id]);
 
     // One Scope while the popover stands, over the popover's own: the keys it
     // registers stop here, and every other key reaches Obsidian's hotkeys.
@@ -176,29 +178,11 @@ export function fieldsActionHost(
       return () => stack.dispose();
     }, [app, shown]);
 
-    // Focus that leaves the popover by keyboard, Shift+Tab onto the action
-    // included, shuts it: its Scope would go on taking the arrows and Enter.
-    const leave = (event: FocusEvent<HTMLDivElement>) => {
-      const next = event.relatedTarget as Node | null;
-      if (!next?.instanceOf(Node)) return;
-      // A press on the action is its own toggle.
-      const pressed =
-        anchor.current?.contains(next) === true &&
-        anchor.current.matches(":active");
-      if (handle.current?.contains(next) || pressed) return;
-      // The editor taking the focus an insertion asked for.
-      if (insertionFocus.current) {
-        kept.current = event.target;
-        return;
-      }
-      handle.current?.hide();
-    };
-
     return (
       <PinnedPopover
         anchor={anchor}
         handle={handle}
-        id={id}
+        id={popoverId}
         role="dialog"
         aria-labelledby={labelledBy}
         onOpenChange={(next) => {
@@ -206,7 +190,6 @@ export function fieldsActionHost(
           setShown(next);
           if (!next) latest.current.onClose();
         }}
-        onBlur={leave}
         className="zt:flex zt:max-h-[min(--spacing(110),calc(100vh_-_--spacing(4)))] zt:w-[min(--spacing(100),calc(100vw_-_--spacing(4)))] zt:flex-col zt:rounded-(--menu-radius) zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow) zt:[corner-shape:var(--menu-corner-shape)]"
       >
         {shown && children}
@@ -215,6 +198,7 @@ export function fieldsActionHost(
   }
   return {
     popover: FieldsPopover,
+    popoverId,
     focus: () => anchor.current?.focus({ preventScroll: true }),
   };
 }

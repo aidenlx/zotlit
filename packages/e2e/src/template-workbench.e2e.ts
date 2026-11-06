@@ -1032,7 +1032,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   // #1955: where the Fields column does not fit, Fields opens its picker.
-  it("inserts a field from the Fields picker of a narrow leaf with the keyboard, and closes it on Escape", async () => {
+  it("inserts a field from the Fields picker of a narrow leaf with the keyboard, and closes it on Escape, Tab and a press on the action", async () => {
     const path = `templates/${booksProfile.document}`;
     const documentPath = join(e2eVaultPath, path);
     const original = await readFile(documentPath, "utf-8");
@@ -1217,6 +1217,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await until("the DOI again", () =>
           (activeRow()?.textContent ?? "").startsWith("DOI"),
         );
+        let editorFocused = false;
+        content.addEventListener("focusin", () => (editorFocused = true), {
+          once: true,
+        });
         await input.key("Enter");
         await until(
           "the picker closed by the insertion",
@@ -1230,12 +1234,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await until(
           "the editor took the inserted text's focus and handed it back",
           () =>
-            editor.state.doc.toString().endsWith("{{ zt.DOI }}{{ zt.DOI }}"),
+            editorFocused &&
+            editor.state.doc.toString().endsWith("{{ zt.DOI }}{{ zt.DOI }}") &&
+            el.doc.activeElement === search(),
         );
-        await new Promise((resolve) => setTimeout(resolve, 500));
         const reopened = el.doc.activeElement === search();
-        await input.key("Escape");
-        await until("the picker closed", () => search() === null);
+        // Tab leaves the picker: it closes, and focus goes to the action with
+        // the picker's keys gone, so Enter no longer inserts a field (#1952).
+        const kept = editor.state.doc.toString();
+        await input.key("Tab");
+        await until("the picker closed by Tab", () => search() === null);
+        const tabbed = el.doc.activeElement === action;
+        // The key reaches the action, whose keys handle it as it goes down.
+        await input.key("Enter");
+        const untouched =
+          search() === null && editor.state.doc.toString() === kept;
+        // A press on the action while the picker stands closes it and hands
+        // focus to the action.
+        await input.click(action);
+        await until(
+          "the picker opened by the press",
+          () => el.doc.activeElement === search(),
+        );
+        await input.click(action);
+        await until("the picker closed by the press", () => search() === null);
+        const pressed = el.doc.activeElement === action;
         return JSON.stringify({
           opened,
           moved,
@@ -1246,6 +1269,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           end,
           home,
           reopened,
+          tabbed,
+          untouched,
+          pressed,
         });
       },
       { path, label: run.m.workbench_show_fields() },
@@ -1264,6 +1290,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       end: true,
       home: true,
       reopened: true,
+      tabbed: true,
+      untouched: true,
+      pressed: true,
     });
 
     // Widening the leaf shows the column again.

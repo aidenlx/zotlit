@@ -3,38 +3,22 @@
 // rows; Base UI places the surface and dismisses it on Escape and a press
 // outside; this module closes it when focus leaves it by keyboard, and
 // returns focus to the action.
-import { useId, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 
+import { PICKER_MOVE_KEYS } from "@zotlit/workbench/ui";
 import type {
   WorkbenchFieldsAction,
   WorkbenchFieldsPopoverProps,
-  WorkbenchPickerMove,
 } from "@zotlit/workbench/ui";
 
 import { Popover, PopoverContent } from "@/components/ui/popover";
 
-/**
- * The keys the picker moves its active row with: the moves the Obsidian
- * view binds, Ctrl+N and Ctrl+P aside.
- */
-const MOVES: Partial<Record<string, WorkbenchPickerMove>> = {
-  ArrowDown: "next",
-  ArrowUp: "previous",
-  PageDown: "page-down",
-  PageUp: "page-up",
-  Home: "first",
-  End: "last",
-};
-
 /** The header's Fields action, and the popover the picker opens in under it. */
 export function webFieldsAction(
   anchor: RefObject<HTMLElement | null>,
+  popoverId: string,
 ): WorkbenchFieldsAction {
-  /** Whether `node` is the action under a press, which toggles the popover itself. */
-  const pressed = (node: Node) =>
-    anchor.current?.contains(node) === true &&
-    anchor.current.matches(":active");
   function FieldsPopover({
     open,
     onClose,
@@ -43,21 +27,15 @@ export function webFieldsAction(
     returnFocus,
     children,
   }: WorkbenchFieldsPopoverProps) {
-    const id = useId();
     /** Whether the popover holds focus, read as it closes. */
     const held = useRef(false);
-    // The action names the popover it controls while the popover stands.
+    const standing = useRef(open);
     useLayoutEffect(() => {
-      const action = anchor.current;
-      if (!open || !action) return;
-      action.setAttribute("aria-controls", id);
-      return () => {
-        action.removeAttribute("aria-controls");
-      };
-    }, [open, id]);
+      standing.current = open;
+    });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.nativeEvent.isComposing) return;
-      const move = MOVES[event.key];
+      const move = PICKER_MOVE_KEYS[event.key];
       if (move) keys.move(move);
       else if (event.key === "Enter") keys.choose();
       else return;
@@ -76,7 +54,7 @@ export function webFieldsAction(
         }}
       >
         <PopoverContent
-          id={id}
+          id={popoverId}
           anchor={anchor}
           align="start"
           aria-labelledby={labelledBy}
@@ -99,10 +77,17 @@ export function webFieldsAction(
             const next = event.relatedTarget;
             if (event.currentTarget.contains(next)) return;
             held.current = false;
-            // Focus that leaves by keyboard, Tab or Shift+Tab onto the action
-            // included, shuts the popover. A press on the action is its own
-            // toggle.
-            if (next instanceof Node && !pressed(next)) onClose();
+            // Focus that leaves the open popover for another element closes
+            // it and goes to the action. Only the keyboard moves focus out
+            // while it stands: a press on the action keeps focus in it, and
+            // a press elsewhere closes it first.
+            if (!standing.current || !(next instanceof Node)) return;
+            onClose();
+            // The focus that is leaving lands first; a move made inside its
+            // blur would race it.
+            queueMicrotask(() =>
+              anchor.current?.focus({ preventScroll: true }),
+            );
           }}
           onKeyDown={onKeyDown}
           className="flex max-h-[min(28rem,var(--available-height))] w-[min(26rem,calc(100vw-2rem))] flex-col overflow-hidden p-0"
@@ -114,6 +99,7 @@ export function webFieldsAction(
   }
   return {
     popover: FieldsPopover,
+    popoverId,
     focus: () => anchor.current?.focus({ preventScroll: true }),
   };
 }

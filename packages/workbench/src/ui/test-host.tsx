@@ -10,6 +10,7 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { ReactNode } from "react";
 
 import { createWorkbenchEditor, WorkbenchEditorProvider } from "./editor";
+import { PICKER_MOVE_KEYS } from "./field-picker";
 import {
   WorkbenchClipboardError,
   WorkbenchHostError,
@@ -19,7 +20,6 @@ import type {
   WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchMenuRequest,
-  WorkbenchPickerMove,
   WorkbenchPreferenceScope,
   WorkbenchSuggesterRequest,
 } from "./host";
@@ -229,6 +229,7 @@ export function fakeHost(): FakeHost {
     insertTarget: () => null,
     fieldsAction: {
       popover: FakeFieldsPopover,
+      popoverId: "fake-fields-picker",
       focus: () => void host.calls.actionFocuses++,
     },
     persistence: {
@@ -253,20 +254,13 @@ function FakeFieldsPopover({
 }: WorkbenchFieldsPopoverProps) {
   // A closed surface says whether its focus went back to the action.
   if (!open) return <span hidden data-return-focus={String(returnFocus)} />;
-  const moves: Record<string, WorkbenchPickerMove> = {
-    ArrowDown: "next",
-    ArrowUp: "previous",
-    Home: "first",
-    End: "last",
-    PageDown: "page-down",
-    PageUp: "page-up",
-  };
   return (
     <div
+      id="fake-fields-picker"
       role="dialog"
       aria-labelledby={labelledBy}
       onKeyDown={(event) => {
-        const move = moves[event.key];
+        const move = PICKER_MOVE_KEYS[event.key];
         if (move) keys.move(move);
         else if (event.key === "Enter") keys.choose();
         else if (event.key === "Escape") onClose();

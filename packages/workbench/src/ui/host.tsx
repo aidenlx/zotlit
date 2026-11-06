@@ -263,6 +263,8 @@ export interface WorkbenchFieldsPopoverProps {
 /** The host's Fields action, which opens the Fields Panel or its picker. */
 export interface WorkbenchFieldsAction {
   readonly popover: ComponentType<WorkbenchFieldsPopoverProps>;
+  /** The id of the surface `popover` draws, which the action names while it stands. */
+  readonly popoverId: string;
   /** Moves focus to the action, as when a resize takes away the column that held it. */
   focus(): void;
 }

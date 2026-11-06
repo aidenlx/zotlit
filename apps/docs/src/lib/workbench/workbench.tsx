@@ -43,7 +43,10 @@ import {
   diagnosticText,
   entryDiagnostics,
   fieldSnippet,
+  fieldsActionAttributes,
   fieldsActionKey,
+  holdPickerFocus,
+  pressFieldsAction,
   renderDiagnosis,
   insertionTarget,
   repairCommands,
@@ -651,22 +654,19 @@ function WorkbenchSession({
             ref={fieldsAnchor}
             variant="ghost"
             size="xs"
-            aria-pressed={
-              fieldsAction.opens === "column" ? fieldsAction.open : undefined
-            }
-            aria-haspopup={
-              fieldsAction.opens === "popover" ? "dialog" : undefined
-            }
-            aria-expanded={
-              fieldsAction.opens === "popover" ? fieldsAction.open : undefined
-            }
+            // A toggle for the column; a disclosure for the picker.
+            {...fieldsActionAttributes(
+              fieldsAction,
+              host.fieldsAction?.popoverId ?? "",
+            )}
             className={cn(PRESSED_TOGGLE, EXPANDED_TOGGLE)}
-            onClick={() => registry.set(model.fieldsAction, undefined)}
+            onClick={() => pressFieldsAction(registry, model)}
+            onPointerDown={(event) => holdPickerFocus(fieldsAction, event)}
+            onMouseDown={(event) => holdPickerFocus(fieldsAction, event)}
             // Where it opens the picker, an arrow opens it and a printable
             // key opens it searching for that key.
             onKeyDown={(event) => {
-              if (fieldsAction.opens !== "popover" || fieldsAction.open) return;
-              const query = fieldsActionKey(event);
+              const query = fieldsActionKey(fieldsAction, event);
               if (query === null) return;
               event.preventDefault();
               registry.set(model.fieldsPicker, { query });

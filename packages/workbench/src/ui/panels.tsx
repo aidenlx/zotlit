@@ -11,18 +11,26 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
 import { useOptionalHost } from "./host";
+import { useWorkbenchMessages } from "./messages";
 import {
   clampPanelWidth,
   clampPreviewHeight,
   PANEL_WIDTH,
   columnLimit,
+  drawnShare,
+  KEY_STEP,
   PREVIEW_HEIGHT,
   previewBelowHeight,
   resizePanel,
   setPanelWidth,
   setPreviewHeight,
 } from "./panel-layout";
-import type { PanelHandle, PanelSide, WorkbenchPanels } from "./panel-layout";
+import type {
+  PanelHandle,
+  PanelSide,
+  ViewSize,
+  WorkbenchPanels,
+} from "./panel-layout";
 import { usePanelProperties, useParts } from "./theme";
 
 /** What one side panel shows, and what names it to a screen reader. */
@@ -57,6 +65,11 @@ export function SidePanels({
   const placement = useAtomValue(model.placement);
   const fields = panels.fields && state.fields.shown ? panels.fields : null;
   const preview = panels.preview && state.preview.shown ? panels.preview : null;
+  // The Preview stands at one place in the tree, after the editor, whether
+  // it is a column beside it or under it: the stack lays the two out in a
+  // row or a column, so a resize across the boundary moves the region
+  // without mounting it again, and what the reader was doing in it stays.
+  const below = placement.preview === "below";
   return (
     <div {...part("panels")}>
       {/* Where the column does not fit, the Fields action opens the picker
@@ -64,17 +77,27 @@ export function SidePanels({
       {placement.fields === "popover"
         ? panels.fields?.picker
         : fields && (
-            <Column side="fields" width={state.fields.width} {...fields} />
+            <Panel
+              side="fields"
+              below={false}
+              width={state.fields.width}
+              share={state.preview.height}
+              {...fields}
+            />
           )}
-      <div {...part("stack")}>
+      <div {...part("stack", below ? "below" : "side")}>
         <div {...part("editor")}>{children}</div>
-        {preview && placement.preview === "below" && (
-          <Below share={state.preview.height} {...preview} />
+        {preview && (
+          <Panel
+            side="preview"
+            below={below}
+            width={state.preview.width}
+            share={state.preview.height}
+            {...preview}
+          />
         )}
       </div>
-      {preview && placement.preview === "side" && (
-        <Column side="preview" width={state.preview.width} {...preview} />
-      )}
+      <SizeStatus />
     </div>
   );
 }
@@ -121,7 +144,12 @@ interface Sizing {
  */
 function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
   const { model, registry } = useWorkbenchEditor();
-  const update = useAtomSet(model.panels);
+  const panelsUpdate = useAtomSet(model.panels);
+  // The handle's own value is what a screen reader reads now.
+  const update = (change: (panels: WorkbenchPanels) => WorkbenchPanels) => {
+    registry.set(model.sizedFromMenu, null);
+    panelsUpdate(change);
+  };
   const drag = useRef<{ from: PointerEvent; size: number } | null>(null);
   const dragged = (event: PointerEvent<HTMLDivElement>) => {
     const start = drag.current;
@@ -182,13 +210,26 @@ function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
   };
 }
 
-function Column({
+/**
+ * One side panel and its handle: a column beside the editor, or the Preview
+ * under it. The Preview is the same component in either place, so moving it
+ * across the boundary keeps the region and its contents mounted.
+ */
+function Panel({
   side,
+  below,
   width,
+  share,
   label,
   resizeLabel,
   content,
-}: { side: PanelSide; width: number } & SidePanel) {
+}: {
+  side: PanelSide;
+  /** The Preview stands under the editor rather than beside it. */
+  below: boolean;
+  width: number;
+  share: number;
+} & SidePanel) {
   const model = useWorkbenchModel();
   const part = useParts("panels");
   const properties = usePanelProperties();
@@ -217,26 +258,44 @@ function Column({
   // toward the trailing side, the Preview edge toward the leading side.
   const outward = (handle: Element) =>
     (side === "fields" ? 1 : -1) * (rightToLeft(handle) ? -1 : 1);
-  const handlers = useSizing(
-    {
-      handle: side,
-      read: (panels) => held(panels[side].width),
-      write: (next) => setPanelWidth(side, held(next)),
-      keys: (handle) =>
-        outward(handle) > 0
-          ? { grow: "ArrowRight", shrink: "ArrowLeft" }
-          : { grow: "ArrowLeft", shrink: "ArrowRight" },
-      step: (event) => (event.shiftKey ? 64 : 16),
-      min: PANEL_WIDTH.min,
-      max,
-      dragged: (handle, from, to) =>
-        outward(handle) * (to.clientX - from.clientX),
-      drawn: held,
-      property: properties.width,
-    },
-    region,
-  );
-  // The edge describes the panel as drawn: the view holds a saved width
+  // Below is placed only in a measured view.
+  const viewHeight = size?.height ?? 0;
+  const column: Sizing = {
+    handle: side,
+    read: (panels) => held(panels[side].width),
+    write: (next) => setPanelWidth(side, held(next)),
+    keys: (handle) =>
+      outward(handle) > 0
+        ? { grow: "ArrowRight", shrink: "ArrowLeft" }
+        : { grow: "ArrowLeft", shrink: "ArrowRight" },
+    step: (event) => (event.shiftKey ? KEY_STEP.wideWidth : KEY_STEP.width),
+    min: PANEL_WIDTH.min,
+    max,
+    dragged: (handle, from, to) =>
+      outward(handle) * (to.clientX - from.clientX),
+    drawn: held,
+    property: properties.width,
+  };
+  const split: Sizing = {
+    handle: "split",
+    // A short view draws less than the saved share; a step starts from
+    // what the reader sees, as the menu's does.
+    read: (panels) => drawnShare(panels, size),
+    write: setPreviewHeight,
+    // Up gives the Preview more height.
+    keys: () => ({ grow: "ArrowUp", shrink: "ArrowDown" }),
+    step: () => KEY_STEP.height,
+    min: PREVIEW_HEIGHT.min,
+    max: PREVIEW_HEIGHT.max,
+    dragged: (_handle, from, to) =>
+      viewHeight > 0 ? ((from.clientY - to.clientY) / viewHeight) * 100 : 0,
+    drawn: (next) => previewBelowHeight(clampPreviewHeight(next), viewHeight),
+    property: properties.height,
+  };
+  const handlers = useSizing(below ? split : column, region);
+  const shown = drawnShare(panels, size);
+  const sizeText = useSizeText();
+  // The handle describes the panel as drawn: the view holds a saved width
   // within its own share.
   const handle = (
     <div
@@ -245,12 +304,28 @@ function Column({
       tabIndex={0}
       aria-label={resizeLabel}
       aria-controls={id}
-      aria-orientation="vertical"
-      aria-valuemin={PANEL_WIDTH.min}
-      aria-valuemax={max}
-      aria-valuenow={held(width)}
+      {...(below
+        ? {
+            "aria-orientation": "horizontal",
+            "aria-valuemin": PREVIEW_HEIGHT.min,
+            "aria-valuemax": drawnShare(
+              setPreviewHeight(PREVIEW_HEIGHT.max)(panels),
+              size,
+            ),
+            // The share as drawn: a short view draws less than the saved
+            // share to keep the editor's height.
+            "aria-valuenow": shown,
+            "aria-valuetext": sizeText("split", panels, size),
+          }
+        : {
+            "aria-orientation": "vertical",
+            "aria-valuemin": PANEL_WIDTH.min,
+            "aria-valuemax": max,
+            "aria-valuenow": held(width),
+            "aria-valuetext": sizeText(side, panels, size),
+          })}
       {...handlers}
-      {...part("edge", side)}
+      {...(below ? part("split") : part("edge", side))}
     />
   );
   return (
@@ -262,8 +337,14 @@ function Column({
         role="region"
         aria-label={label}
         data-panel={side}
-        style={{ [properties.width]: `${width}px` }}
-        {...part("panel", side)}
+        style={
+          below
+            ? {
+                [properties.height]: `${previewBelowHeight(share, viewHeight)}px`,
+              }
+            : { [properties.width]: `${held(width)}px` }
+        }
+        {...part("panel", below ? "below" : side)}
       >
         {content}
       </section>
@@ -272,71 +353,51 @@ function Column({
   );
 }
 
-/** The Preview under the editor, at its share of the view height. */
-function Below({
-  share,
-  label,
-  resizeLabel,
-  content,
-}: { share: number } & SidePanel) {
-  const model = useWorkbenchModel();
-  const part = useParts("panels");
-  const properties = usePanelProperties();
+/** What a handle's panel measures as drawn, in words a screen reader reads. */
+function useSizeText(): (
+  handle: PanelHandle,
+  panels: WorkbenchPanels,
+  size: ViewSize | null,
+) => string {
+  const m = useWorkbenchMessages();
   const host = useOptionalHost();
-  const size = useAtomValue(model.viewSize);
-  const id = useUniqueId();
-  const region = useRef<HTMLElement>(null);
-  // Below is placed only in a measured view.
-  const viewHeight = size?.height ?? 0;
-  const handlers = useSizing(
-    {
-      handle: "split",
-      read: (panels) => panels.preview.height,
-      write: setPreviewHeight,
-      // Up gives the Preview more height.
-      keys: () => ({ grow: "ArrowUp", shrink: "ArrowDown" }),
-      step: () => 5,
-      min: PREVIEW_HEIGHT.min,
-      max: PREVIEW_HEIGHT.max,
-      dragged: (_handle, from, to) =>
-        viewHeight > 0 ? ((from.clientY - to.clientY) / viewHeight) * 100 : 0,
-      drawn: (next) => previewBelowHeight(clampPreviewHeight(next), viewHeight),
-      property: properties.height,
-    },
-    region,
-  );
   const percent = new Intl.NumberFormat(host?.getLocale(), {
     style: "percent",
   });
+  return (handle, panels, size) =>
+    handle === "split"
+      ? percent.format(drawnShare(panels, size) / 100)
+      : m.workbench_panel_width_value({
+          width: clampPanelWidth(
+            panels[handle].width,
+            columnLimit(panels, handle, size),
+          ),
+        });
+}
+
+/**
+ * The polite status that says the size a menu entry gave, such as
+ * "Preview: 50%": a menu entry moves no focus to the handle, whose own value
+ * a screen reader would read. It stands empty otherwise.
+ */
+function SizeStatus() {
+  const model = useWorkbenchModel();
+  const m = useWorkbenchMessages();
+  const part = useParts("panels");
+  const sized = useAtomValue(model.sizedFromMenu);
+  const panels = useAtomValue(model.panels);
+  const size = useAtomValue(model.viewSize);
+  const sizeText = useSizeText();
   return (
-    <>
-      <div
-        role="separator"
-        tabIndex={0}
-        aria-label={resizeLabel}
-        aria-controls={id}
-        aria-orientation="horizontal"
-        aria-valuemin={PREVIEW_HEIGHT.min}
-        aria-valuemax={PREVIEW_HEIGHT.max}
-        // The reader's share; a short view draws less to keep the editor's.
-        aria-valuenow={share}
-        aria-valuetext={percent.format(share / 100)}
-        {...handlers}
-        {...part("split")}
-      />
-      <section
-        ref={region}
-        id={id}
-        role="region"
-        aria-label={label}
-        data-panel="preview"
-        style={{
-          [properties.height]: `${previewBelowHeight(share, viewHeight)}px`,
-        }}
-        {...part("panel", "below")}
-      >
-        {content}
-      </section>
-    </>
+    <div role="status" {...part("status")}>
+      {sized &&
+        m.workbench_panel_size_status({
+          panel:
+            sized === "fields"
+              ? m.workbench_view_fields()
+              : m.workbench_view_preview(),
+          size: sizeText(sized, panels, size),
+        })}
+    </div>
   );
 }

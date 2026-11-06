@@ -422,10 +422,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     // Preview under the editor takes the height the model computes.
     panels: {
       panels: "zt:flex zt:h-full zt:min-w-0",
-      stack: "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col",
+      stack:
+        "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:data-[state=below]:flex-col",
+      status: "zt:sr-only",
       editor: "zt:min-h-0 zt:min-w-0 zt:flex-1",
       panel:
-        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--zt-panel-width) zt:data-[state=fields]:max-w-2/5 zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=preview]:max-w-2/5 zt:data-[state=below]:h-(--zt-panel-height)",
+        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--zt-panel-width) zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=below]:h-(--zt-panel-height)",
       edge: "zt:w-1 zt:shrink-0 zt:cursor-col-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
       split:
         "zt:h-1 zt:shrink-0 zt:cursor-row-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",

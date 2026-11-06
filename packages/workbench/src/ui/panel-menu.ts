@@ -3,7 +3,10 @@
 // shrink and reset its panel. Each host draws them in its own menu: the
 // Obsidian view's pane menu, the web Workbench's View menu.
 
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
+
 import type { WorkbenchMessages } from "./generated/messages";
+import type { WorkbenchModel } from "./model";
 import { canResizePanel, panelHandles, resizePanel } from "./panel-layout";
 import type {
   PanelBounds,
@@ -13,6 +16,8 @@ import type {
 } from "./panel-layout";
 
 export interface PanelSizeItem {
+  /** The handle whose panel the entry sizes. */
+  readonly handle: PanelHandle;
   readonly resize: PanelResize;
   readonly label: string;
   /** The entry would change nothing: the panel is at its limit or default. */
@@ -59,6 +64,7 @@ export function panelSizeMenus(
           ? m.workbench_fields_resize()
           : m.workbench_preview_resize(),
       items: RESIZES.map((resize) => ({
+        handle,
         resize,
         label: labels[resize],
         disabled: !canResizePanel(handle, resize, bounds)(panels),
@@ -66,4 +72,17 @@ export function panelSizeMenus(
       })),
     };
   });
+}
+
+/**
+ * Applies a size menu entry, and has the panels announce the size it gives,
+ * as the handle's own value is read while the reader moves it.
+ */
+export function pickPanelSize(
+  registry: AtomRegistry.AtomRegistry,
+  model: Pick<WorkbenchModel, "panels" | "sizedFromMenu">,
+  item: PanelSizeItem,
+): void {
+  registry.update(model.panels, item.apply);
+  registry.set(model.sizedFromMenu, item.handle);
 }

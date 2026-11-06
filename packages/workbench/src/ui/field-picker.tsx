@@ -23,6 +23,7 @@ import type { WorkbenchPickerKeys, WorkbenchPickerMove } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchMessageLabel } from "./messages";
 import type { TemplateRoot } from "./model";
+import type { FieldsAction } from "./panel-layout";
 import { useParts } from "./theme";
 
 import {
@@ -110,17 +111,75 @@ function pickerSections(
 }
 
 /**
+ * The keys that move the picker's active row in every host, by the key's
+ * name. The Obsidian view adds Ctrl+N and Ctrl+P, as its lists do.
+ */
+export const PICKER_MOVE_KEYS: Readonly<Record<string, WorkbenchPickerMove>> = {
+  ArrowDown: "next",
+  ArrowUp: "previous",
+  PageDown: "page-down",
+  PageUp: "page-up",
+  Home: "first",
+  End: "last",
+};
+
+/**
  * What a key on the Fields action opens the picker on, where the action
- * opens the picker: an empty search for ArrowDown and ArrowUp, the key
- * itself for a printable one, as a Bases combobox opens. Null for every
+ * opens the closed picker: an empty search for ArrowDown and ArrowUp, the
+ * key itself for a printable one, as a Bases combobox opens. Null for every
  * other key, Enter and Space among them, which press the action.
  */
 export function fieldsActionKey(
+  action: FieldsAction,
   event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey">,
 ): string | null {
+  if (action.opens !== "popover" || action.open) return null;
   if (event.key === "ArrowDown" || event.key === "ArrowUp") return "";
   if (event.ctrlKey || event.metaKey || event.altKey) return null;
   return [...event.key].length === 1 && event.key !== " " ? event.key : null;
+}
+
+/**
+ * The Fields action's ARIA state: a toggle where it shows the column, and a
+ * disclosure of the picker `popoverId` names where it opens the picker. An
+ * attribute the action does not carry is undefined.
+ */
+export function fieldsActionAttributes(
+  action: FieldsAction,
+  popoverId: string,
+): {
+  readonly "aria-pressed": "true" | "false" | undefined;
+  readonly "aria-haspopup": "dialog" | undefined;
+  readonly "aria-expanded": "true" | "false" | undefined;
+  readonly "aria-controls": string | undefined;
+} {
+  const open = action.open ? "true" : "false";
+  return action.opens === "column"
+    ? {
+        "aria-pressed": open,
+        "aria-haspopup": undefined,
+        "aria-expanded": undefined,
+        "aria-controls": undefined,
+      }
+    : {
+        "aria-pressed": undefined,
+        "aria-haspopup": "dialog",
+        "aria-expanded": open,
+        "aria-controls": action.open ? popoverId : undefined,
+      };
+}
+
+/**
+ * Keeps focus where it is when the pointer presses the Fields action while
+ * the picker stands, so the press closes the picker from inside it and
+ * focus goes back to the action, as Escape's does. Hosts call it on the
+ * action's `pointerdown` and `mousedown`.
+ */
+export function holdPickerFocus(
+  action: FieldsAction,
+  event: Pick<Event, "preventDefault">,
+): void {
+  if (action.opens === "popover" && action.open) event.preventDefault();
 }
 
 /** The active row after `step` among `count` rows; the arrows wrap. */

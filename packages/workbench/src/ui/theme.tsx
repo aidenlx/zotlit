@@ -242,7 +242,7 @@ export interface WorkbenchParts {
     | "text"
     | "checkbox";
 
-  panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split";
+  panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split" | "status";
   fieldPicker:
     | "status"
     | "picker"
