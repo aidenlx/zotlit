@@ -20,7 +20,7 @@ import { BaseNotice } from "@/lib/notice";
 import { writeBlockAt, writeBlockCode } from "./block-write";
 import { NoteQueryHost } from "./note-host";
 import { inPreview, renderPreviewPlaceholder } from "./preview-placeholder";
-import { QUERY_FILE_EXTENSION } from "./query-file";
+import { parseQueryFile, QUERY_FILE_EXTENSION } from "./query-file";
 import type { QueryViewDeps } from "./view";
 
 /** A Query View: a block in one of its cards' comments shows its text only. */
@@ -76,7 +76,10 @@ class QueryBlock extends MarkdownRenderChild {
       return;
     }
     if (inPreview(this.containerEl)) {
-      renderPreviewPlaceholder(this.containerEl, null);
+      renderPreviewPlaceholder(this.containerEl, {
+        name: null,
+        file: parseQueryFile(this.#source),
+      });
       return;
     }
     const sourcePath = this.#ctx.sourcePath;
