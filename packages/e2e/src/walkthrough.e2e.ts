@@ -1764,7 +1764,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         mainSamples: 0,
         customized: true,
       });
-      // The template's Query Block shows a placeholder in the note preview.
+      // The template's Query Block shows a placeholder in the note preview,
+      // which lists its view and finds no problem in its text.
       await obRunUntil(
         vaultId,
         async ({ page }) => {
@@ -1772,7 +1773,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             .contentEl;
           return (
             !!el?.querySelector<HTMLElement>(
-              "[data-zotlit-draft] [data-query-placeholder]",
+              "[data-zotlit-draft] [data-query-placeholder] [data-query-placeholder-view]",
+            ) &&
+            !el.querySelector<HTMLElement>(
+              "[data-zotlit-draft] [data-query-placeholder-problem]",
             ) &&
             !el.querySelector<HTMLElement>(
               '[data-zotlit-draft] [role="toolbar"]',
@@ -1781,7 +1785,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         },
         undefined,
         {
-          what: "the note preview to show the Query Block placeholder and no draft toolbar",
+          what: "the note preview to show the Query Block placeholder with its view, no problem, and no draft toolbar",
         },
       );
     },

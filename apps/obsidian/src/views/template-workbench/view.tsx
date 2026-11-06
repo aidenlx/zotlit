@@ -2514,7 +2514,7 @@ function EditorContent({
   const { workbench } = view;
   const tab = useAtomValue(workbench.tab);
   useAtomValue(workbench.document.revision);
-  const { result, trigger, attempt, busy, stale } = useAtomValue(
+  const { result, trigger, attempt, busy, staleReason } = useAtomValue(
     workbench.scheduler.state,
   );
   const previewProblems = usePreviewProblems(view);
@@ -2688,7 +2688,7 @@ function EditorContent({
       !arrival ||
       attempt <= arrivalAttempt.current ||
       busy ||
-      stale ||
+      staleReason !== null ||
       !result ||
       documentProblems.length > 0
     )
@@ -2745,7 +2745,7 @@ function EditorContent({
     arrival,
     attempt,
     busy,
-    stale,
+    staleReason,
     result,
     documentProblems.length,
     view,

@@ -2,6 +2,8 @@
 
 The Mark Popup's renderer is superseded by [ADR 0065](0065-the-mark-popup-is-one-preact-root-on-obsidians-popover.md): it is one Preact root that the Mark Popup Host renders from this store. The store stays vanilla, and the Creation Toolbar stays vanilla DOM.
 
+The zustand store is superseded by the amendment "The Reader Surface Model" below: the state is a writable Effect atom, and each renderer watches a derived atom of it. The rest of this record stands.
+
 The surfaces ZotLit puts inside Obsidian's PDF reader draw from one Reader Surface State per bound PDF view: a zustand vanilla store with `subscribeWithSelector`, created by the binding and disposed with it. It holds plain data: the armed tool, mark visibility, every tool's colour, the Editing Capability, and the clock a cooldown is read against. The renderers stay vanilla DOM on Obsidian's primitives, and [ADR 0042](0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md) stays in force: the store is state, not a rendering framework, and no Preact root enters the reader.
 
 A press on a Creation Toolbar button moved focus into the PDF view, the focus refresh probed Zotero, and the probe announced a capability change. The Creation Toolbar, Mark Creation, Mark Selection, and the binding each heard that announcement on their own subscription, and each redrew in full. The node under the pointer was gone before the pointer came up, so the click never fired.
@@ -28,3 +30,15 @@ The Reader Surface State now also holds the floating surface as one discriminate
 ## Amendment: the Live Stroke and the Pending Strokes
 
 The Reader Surface State also holds the Live Stroke (its page, its smoothed path, its width, and its colour, published once per animation frame) and the Pending Strokes (one entry per ink create in flight, with its rounded paths). These are PDF-space model data that the gesture produced, not client-space anchors, so the rule that anchors stay out of the store still holds. The Live Stroke is not a floating-surface variant: a stroke opens no popup and dismisses none. A Pending Stroke leaves the store in the same update that ingests its record, so no frame shows the stroke twice and no frame shows it missing; a failed create removes it. See [ADR 0057](0057-ink-is-stored-as-zotero-smooths-it-and-one-stroke-is-one-annotation.md).
+
+## Amendment: the Reader Surface Model
+
+The Reader Surface State lives in the Reader Surface Model (`reader-surface-model.ts`), the per-leaf model shape of [ADR 0082](0082-obsidian-views-read-effect-services-through-view-atoms.md) under the reader's vanilla-DOM surfaces. The state is one kept-alive writable atom. Each thing a surface draws is one derived atom with the equality the store's selector carried: the Creation Toolbar, the capability affordance, the capability, the floating head, the selected keys, the Geometry Edit, the capture, the Text Draft, the Live Stroke, the Pending Strokes, the armed tool, and the Mark Popup's floating surface with its row. A renderer watches its atom through `watch` (`src/lib/view-atoms.ts`), which hears a change in the update that made it, as the store did.
+
+- Each binding holds its model in its own atom registry. `bindingResources` (`operations.ts`) acquires the registry on the binding's Scope before the binding's writes, so the registry closes after them, and a create that settles as the view closes still writes its state; `operations.test.ts` closes a Scope on a create in flight to hold that order.
+- The reducers are pure transitions in `reader-surface-state.ts`: each takes the state and answers the next one, or the same state when nothing changes, and a caller runs it with `update`. A gesture that acts on what the transition decided (the end of a Geometry Edit, of a capture, of a Text Draft) runs a step with `modify`, which answers that result. A same-state transition notifies no renderer.
+- `reader-surface-state.ts` holds the state, the transitions, and the selectors: pure code that keeps `Temporal`. `reader-surface-model.ts` holds the atoms, the registry, `update` and `modify`, and the edge functions that take the tool colour store's and the repository's facts into the state.
+- `apps/obsidian` imports zustand only in the Workbench view tests, which keep it as a dev dependency until the Workbench leaves it.
+- The per-Annotation facts a refresh reads are ingested in one update.
+- Watchers of one derived atom hear a change together, in the order its node was first built; the Mark Popup Host watches its own atom and is built after the owners, so an editor that closes is still let go before the host redraws.
+

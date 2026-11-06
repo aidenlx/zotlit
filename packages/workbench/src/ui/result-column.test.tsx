@@ -39,7 +39,6 @@ function column(
   const props: ResultColumnProps = {
     result,
     mode: "note",
-    stale: false,
     staleReason: null,
     showMarkdown: false,
     onShowMarkdown: vi.fn<(show: boolean) => void>(),
@@ -92,7 +91,7 @@ it.each(["note", "annotation"] as const)(
 );
 
 it("passes the complete note and folded properties to the host renderer", () => {
-  using mounted = column({ stale: true, staleReason: "hold" });
+  using mounted = column({ staleReason: "hold" });
   const { props } = mounted;
   expect(
     screen
@@ -344,7 +343,7 @@ it("keeps Annotation output successful beside a failed Note Property", () => {
 });
 
 it("keeps the hold notice its own sentence while the last result stands", () => {
-  using _mounted = column({ stale: true, staleReason: "hold" });
+  using _mounted = column({ staleReason: "hold" });
   expect(screen.getByRole("status").textContent).toBe(
     m.workbench_preview_stale(),
   );
@@ -353,7 +352,6 @@ it("keeps the hold notice its own sentence while the last result stands", () => 
 
 it("reads a document the parser refuses as a failure, not as a wait", () => {
   using mounted = column({
-    stale: true,
     staleReason: "invalid",
     retained: result,
   });
@@ -375,7 +373,7 @@ it("reads a document the parser refuses as a failure, not as a wait", () => {
 it("names no preview for a refused document with nothing kept", () => {
   // Nothing successful stands for this selection, so the preview says so even
   // before any attempt has run.
-  using _none = column({ result: null, stale: true, staleReason: "invalid" });
+  using _none = column({ result: null, staleReason: "invalid" });
   expect(screen.getByRole("status").textContent).toContain(
     m.workbench_preview_unavailable(),
   );
@@ -464,12 +462,12 @@ it("shows the behind notice with no Run button when none is given", () => {
 });
 
 it("shows no status while a live render is on its way", () => {
-  using _mounted = column({ stale: true, staleReason: "live" });
+  using _mounted = column({ staleReason: "live" });
   expect(screen.queryByRole("status")).toBeNull();
 });
 
 it("shows no status once the shown result is current", () => {
-  using _mounted = column({ stale: false, staleReason: null });
+  using _mounted = column({ staleReason: null });
   expect(screen.queryByRole("status")).toBeNull();
 });
 
@@ -478,7 +476,6 @@ it("renders ResultBody with no heading", () => {
     <ResultBody
       result={result}
       mode="note"
-      stale={false}
       staleReason={null}
       showMarkdown={false}
       showManaged={false}

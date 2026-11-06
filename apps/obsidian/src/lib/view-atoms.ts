@@ -189,3 +189,23 @@ export function ViewRegistryProvider(props: {
     props.children,
   );
 }
+
+/**
+ * Calls `listener` with an atom's value and the one before it each time the
+ * value changes, in the update that changed it. The node is built before the
+ * subscription, so the first change after it is heard.
+ *
+ * @returns what stops the listening.
+ */
+export function watch<A>(
+  registry: AtomRegistry.AtomRegistry,
+  atom: Atom.Atom<A>,
+  listener: (value: A, previous: A) => void,
+): () => void {
+  let previous = registry.get(atom);
+  return registry.subscribe(atom, (value) => {
+    const before = previous;
+    previous = value;
+    listener(value, before);
+  });
+}

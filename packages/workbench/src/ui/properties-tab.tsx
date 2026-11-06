@@ -137,7 +137,18 @@ export function PropertiesPane({
   const part = useParts("properties");
   const example = useExampleState("properties");
   const exampleMessage = example.message;
-  const produced = byEntry(exampleMessage ? [] : properties);
+  // The output the rows read: this attempt's own, or the output that stands
+  // beside the example's condition. Without either, each row shows its rule.
+  const standing =
+    exampleMessage === null
+      ? { properties, fold }
+      : example.retained
+        ? {
+            properties: example.retained.properties,
+            fold: example.retained.fold,
+          }
+        : null;
+  const produced = byEntry(standing?.properties ?? []);
   const icon = useIcon();
   const instanceId = useUniqueId();
   const host = useOptionalHost();
@@ -231,11 +242,11 @@ export function PropertiesPane({
             !open && raised.length > 0 ? raised[0]!.message : null;
           const summary =
             failure ??
-            (exampleMessage
+            (standing === null
               ? entry.language === "expr"
                 ? sliceShownText(controller, entrySlice(entry.position))
                 : controller.sliceText(entrySlice(entry.position))
-              : summarize(m, { entry, produced: fields, fold }));
+              : summarize(m, { entry, produced: fields, fold: standing.fold }));
           return (
             <li key={entry.position} {...part("row")}>
               <div {...part("row-header")}>
@@ -264,7 +275,7 @@ export function PropertiesPane({
                       )}
                       {...tooltip(summary)}
                     >
-                      {exampleMessage && !failure ? (
+                      {standing === null && !failure ? (
                         <code>{summary}</code>
                       ) : (
                         summary
@@ -361,7 +372,7 @@ export function PropertiesPane({
                   instanceId={instanceId}
                   entry={entry}
                   produced={fields}
-                  showResult={!exampleMessage}
+                  showResult={standing !== null}
                   diagnostics={raised}
                   focusName={newRow === entry.position}
                   onOpenSource={onOpenSource}

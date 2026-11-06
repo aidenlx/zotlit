@@ -234,6 +234,60 @@ export function managedFrontmatterEntries(
 }
 
 /**
+ * Where each Managed Frontmatter entry of `from` stands in `to`, by 1-based
+ * position. Output rendered from one draft names its entries by position, and
+ * an edit that moves, adds, or removes an entry shifts every position after
+ * it, so output that stands across the edit is read through this map. An
+ * entry whose whole text survives is found wherever it went, the first copy
+ * before a second; an entry the reader is typing in keeps the position it had
+ * when that position's entry is gone as well. An entry the edit removed maps
+ * to nothing.
+ * @returns null when every entry keeps its position, or either draft names no
+ *   list to compare.
+ */
+export function followEntries(
+  from: string,
+  to: string,
+): ((position: number) => number | undefined) | null {
+  if (from === to) return null;
+  const before = managedFrontmatterEntries(from);
+  const after = managedFrontmatterEntries(to);
+  if (before.status !== "rows" || after.status !== "rows") return null;
+  const text = (source: string, { block }: ManagedEntrySource) =>
+    source.slice(block.from, block.to);
+  const unclaimed = Map.groupBy(
+    after.entries.map((entry, index) => ({ text: text(to, entry), index })),
+    (entry) => entry.text,
+  );
+  const target = before.entries.map(
+    (entry) => unclaimed.get(text(from, entry))?.shift()?.index,
+  );
+  // An entry whose text changed is one the reader edited in place. When as
+  // many entries changed as are left over, they pair in list order; otherwise
+  // only a leftover still at its own position is known to be the same entry.
+  const claimed = new Set(target);
+  const left = target.flatMap((found, index) =>
+    found === undefined ? [index] : [],
+  );
+  const open = after.entries.flatMap((_, index) =>
+    claimed.has(index) ? [] : [index],
+  );
+  for (const [order, index] of left.entries()) {
+    if (left.length === open.length) target[index] = open[order];
+    else if (open.includes(index)) target[index] = index;
+  }
+  if (
+    before.entries.length === after.entries.length &&
+    target.every((found, index) => found === index)
+  )
+    return null;
+  return (position) => {
+    const found = target[position - 1];
+    return found === undefined ? undefined : found + 1;
+  };
+}
+
+/**
  * The document change one Properties action makes. Every action rewrites whole
  * lines of the entry it names and leaves every other byte — comments, key
  * order, quoting — where the author put it.
