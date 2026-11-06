@@ -1,6 +1,6 @@
 // The side panels of the Template Workbench View: Fields on the left and
 // Preview on the right of the editor, each a labelled region the reader shows
-// with a view action and widens with its edge. The leaf's host model holds
+// with a view action and widens with its edge. The Workbench model holds
 // which panels show and how wide; CSS alone lays them out at every width.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useLayoutEffect, useRef } from "react";
@@ -12,16 +12,15 @@ import type {
 } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
-
-import { cn } from "@/lib/utils";
-
 import {
   clampPanelWidth,
   PANEL_WIDTH,
   panelLimit,
   setPanelWidth,
-} from "./model";
-import type { PanelSide, TemplateWorkbenchModel } from "./model";
+} from "@zotlit/workbench/ui";
+import type { PanelSide, WorkbenchModel } from "@zotlit/workbench/ui";
+
+import { cn } from "@/lib/utils";
 
 /** What one side panel shows, and what names it to a screen reader. */
 export interface SidePanel {
@@ -45,7 +44,7 @@ export function WorkbenchPanels({
   panels,
   children,
 }: {
-  model: TemplateWorkbenchModel;
+  model: WorkbenchModel;
   panels: Partial<Record<PanelSide, SidePanel>>;
   children: ReactNode;
 }) {
@@ -77,7 +76,7 @@ function Panel({
   resizeLabel,
   content,
 }: {
-  model: TemplateWorkbenchModel;
+  model: WorkbenchModel;
   side: PanelSide;
   width: number;
 } & SidePanel) {

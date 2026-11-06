@@ -11,10 +11,14 @@ import {
   chooseItem,
   choosePartialProfile,
   INITIAL_VIEW,
+  panelLimit,
+  PANEL_WIDTH,
   setAdvanced,
+  setPanelWidth,
   setPreview,
   setRoot,
   setTab,
+  showPanel,
 } from "./model";
 import type { WorkbenchItemData, WorkbenchViewState } from "./model";
 import { fakeHost, TEST_RUNTIME } from "./test-host";
@@ -175,6 +179,41 @@ describe("the Workbench model", () => {
       snapshot: CITATION_EXAMPLE_ITEM,
       citation: { variant: "alt", example: "one-item" },
     });
+  });
+});
+
+describe("the side panels", () => {
+  it("starts with both panels hidden at their initial width", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    expect(registry.get(model.panels)).toEqual({
+      fields: { shown: false, width: 400 },
+      preview: { shown: false, width: 400 },
+    });
+  });
+
+  it("shows a panel and sets its width within the limits", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    registry.update(model.panels, showPanel("preview", true));
+    registry.update(model.panels, setPanelWidth("preview", 520.4));
+    expect(registry.get(model.panels).preview).toEqual({
+      shown: true,
+      width: 520,
+    });
+    registry.update(model.panels, setPanelWidth("fields", 5000));
+    expect(registry.get(model.panels).fields.width).toBe(960);
+    registry.update(model.panels, setPanelWidth("fields", 10));
+    expect(registry.get(model.panels).fields.width).toBe(240);
+    const panels = registry.get(model.panels);
+    registry.update(model.panels, showPanel("preview", true));
+    expect(registry.get(model.panels)).toBe(panels);
+  });
+
+  it("draws a panel at most two fifths of its container, within the limits", () => {
+    expect(panelLimit(1000)).toBe(400);
+    expect(panelLimit(400)).toBe(PANEL_WIDTH.min);
+    expect(panelLimit(4000)).toBe(PANEL_WIDTH.max);
   });
 });
 

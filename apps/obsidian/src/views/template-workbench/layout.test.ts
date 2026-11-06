@@ -2,16 +2,18 @@
 // the one editor with both side panels in a window of its own (#1945).
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { WorkspaceLeaf } from "obsidian";
 import { vi } from "vitest";
+
+import type { WorkbenchPanels } from "@zotlit/workbench/ui";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
 
 import { findWorkbenchLayout, openWorkbenchLayout } from "./layout";
-import { makeTemplateWorkbenchModel } from "./model";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
 type Container = ReturnType<WorkspaceLeaf["getContainer"]>;
@@ -49,14 +51,18 @@ function setup() {
     const view = Object.create(
       TemplateWorkbenchView.prototype,
     ) as TemplateWorkbenchView;
-    const model = makeTemplateWorkbenchModel();
+    // The Workbench model's panels, which a new editor shows neither of.
+    const panels = Atom.make<WorkbenchPanels>({
+      fields: { shown: false, width: 400 },
+      preview: { shown: false, width: 400 },
+    });
     const made = leaf(at, view);
     Object.defineProperties(view, {
       leaf: { value: made },
       file: { value: file === null ? null : { path: file } },
       isDefaultProfile: { value: defaultProfile },
       registry: { value: registry },
-      model: { value: model },
+      workbench: { value: { panels } },
       onResize: { value: vi.fn() },
     });
     editors.push(made);
@@ -98,7 +104,7 @@ function setup() {
   const run = <A, E>(effect: Effect.Effect<A, E, Workspace>) =>
     Effect.provideService(effect, Workspace, workspace);
   const panels = (view: TemplateWorkbenchView) =>
-    registry.get(view.model.panels);
+    registry.get(view.workbench.panels);
   return {
     rootSplit,
     editor,

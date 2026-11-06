@@ -211,6 +211,52 @@ export const choosePartialProfile = (partialProfile: string | null) =>
 export const setPreview = (settings: Partial<WorkbenchPreviewSettings>) =>
   patchAt<WorkbenchChoices, "preview">("preview", settings);
 
+/** The side panels beside the editor: Fields on the left, Preview on the right. */
+export type PanelSide = "fields" | "preview";
+export interface WorkbenchPanel {
+  readonly shown: boolean;
+  /** The panel's width in pixels, which the reader sets with its edge. */
+  readonly width: number;
+}
+export type WorkbenchPanels = Readonly<Record<PanelSide, WorkbenchPanel>>;
+
+/** The widths a panel can take, in pixels. */
+export const PANEL_WIDTH = { min: 240, initial: 400, max: 960 } as const;
+
+/** A new editor shows neither panel. */
+const INITIAL_PANELS: WorkbenchPanels = {
+  fields: { shown: false, width: PANEL_WIDTH.initial },
+  preview: { shown: false, width: PANEL_WIDTH.initial },
+};
+
+/**
+ * The share of the panels' container one panel takes at most, so the source
+ * stays in view.
+ */
+const PANEL_SHARE = 0.4;
+
+/**
+ * `width` held within {@link PANEL_WIDTH}, and within `max` where the host
+ * draws the panel narrower than that.
+ */
+export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
+  Math.round(
+    Math.min(Math.max(PANEL_WIDTH.min, max), Math.max(PANEL_WIDTH.min, width)),
+  );
+
+/**
+ * The widest a host draws a panel in a container `container` pixels wide:
+ * {@link PANEL_SHARE} of it, and never past {@link PANEL_WIDTH}.
+ */
+export const panelLimit = (container: number) =>
+  clampPanelWidth(container * PANEL_SHARE);
+
+export const showPanel = (side: PanelSide, shown: boolean) =>
+  patchAt<WorkbenchPanels, PanelSide>(side, { shown });
+/** Sets a panel's width, held within {@link PANEL_WIDTH}. */
+export const setPanelWidth = (side: PanelSide, width: number) =>
+  patchAt<WorkbenchPanels, PanelSide>(side, { width: clampPanelWidth(width) });
+
 /** Whether two flat selections name the same thing, so a re-derived one keeps its readers still. */
 function sameFields<A extends object>(a: A | null, b: A | null): boolean {
   if (a === b) return true;
@@ -298,6 +344,8 @@ export interface WorkbenchModel<
   readonly runtime: WorkbenchRuntime;
   readonly view: Atom.Writable<WorkbenchViewState>;
   readonly choices: Atom.Writable<WorkbenchChoices>;
+  /** Which side panels the editor shows, and how wide; the host saves them. */
+  readonly panels: Atom.Writable<WorkbenchPanels>;
   /**
    * Makes an Item the choice. An Item the reader picked is the Citation set
    * they asked to see, so the built-in example that outranks it stands down.
@@ -470,6 +518,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     runtime,
     view,
     choices,
+    panels: Atom.make(INITIAL_PANELS),
     pick: Atom.writable(
       (get) => get(item),
       (ctx, choice: WorkbenchItemChoice) => {
@@ -592,6 +641,7 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
   const releases = [
     model.view,
     model.choices,
+    model.panels,
     model.itemData,
     model.controller,
     model.document.source,
