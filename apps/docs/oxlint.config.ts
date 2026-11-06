@@ -7,7 +7,6 @@ import baseConfig, {
   testBaselineOverrides,
 } from "@zotlit/config/oxlint";
 
-// The web Workbench keeps its state in the Workbench model of atoms.
 const workbenchStorePaths = [
   "zustand",
   "zustand/vanilla",

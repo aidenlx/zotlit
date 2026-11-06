@@ -68,7 +68,7 @@ interface Pending<Request, Answer> {
 }
 
 /** The names the snapshot's note root carries, as the Match tab needs them. */
-function matchData(
+export function matchData(
   snapshot: RenderRequest["snapshot"],
   bridge: Pick<PageBridge, "provide">,
 ): WorkbenchHost["matchData"] {

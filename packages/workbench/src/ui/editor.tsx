@@ -72,7 +72,8 @@ export interface WorkbenchEditorInstance<
 
 interface WorkbenchEditorOptions {
   controller: WorkbenchDocumentController;
-  host: WorkbenchHost;
+  /** The host members the model reads: its render and its Match data. */
+  host: Pick<WorkbenchHost, "render" | "matchData">;
   state?: Partial<WorkbenchViewState>;
   /**
    * The registry to keep the model in, which the host disposes. Without one

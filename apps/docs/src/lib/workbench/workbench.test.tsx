@@ -34,15 +34,15 @@ vi.mock("@zotlit/workbench/ui", async (original) => {
   };
 });
 
-it("renders editor examples and independent Preview after StrictMode replays effects", async () => {
+it("keeps one editor, and renders its examples and Preview, after StrictMode replays effects", async () => {
   vi.mocked(createWorkbenchEditor).mockClear();
   await using page = await open({ strict: true });
   const owners = vi
     .mocked(createWorkbenchEditor)
     .mock.results.map((result) => result.value);
-  expect(owners).toHaveLength(2);
-  expect(owners[0]![Symbol.dispose]).toHaveBeenCalledOnce();
-  expect(owners[1]![Symbol.dispose]).not.toHaveBeenCalled();
+  // The page makes its one editor once; the replay neither drops nor rebuilds it.
+  expect(owners).toHaveLength(1);
+  expect(owners[0]![Symbol.dispose]).not.toHaveBeenCalled();
   page.press(m.workbench_tab_name_and_folder());
   await page.waitFor(() => {
     expect(
@@ -141,10 +141,7 @@ it("shows one chosen Item on every surface, from one render", async () => {
   await page.settle();
   renderInThread.mockClear();
   await page.show("NW2CPDTC");
-  await page.settle();
-  // The editor's examples and the Preview read the same result.
-  expect(renderInThread).toHaveBeenCalledTimes(1);
-  expect(renderInThread.mock.lastCall![0].snapshot.item.key).toBe("NW2CPDTC");
+  // The new paper's result has landed once the Preview shows it.
   await page.waitFor(() => {
     expect(shownItem(page.host)).toBe("Thinking, fast and slow");
     expect(fieldText(page.host)).toContain("Thinking, fast and slow");
@@ -152,6 +149,9 @@ it("shows one chosen Item on every surface, from one render", async () => {
       "Thinking, fast and slow",
     );
   });
+  // The editor's examples and the Preview read the same result.
+  expect(renderInThread).toHaveBeenCalledTimes(1);
+  expect(renderInThread.mock.lastCall![0].snapshot.item.key).toBe("NW2CPDTC");
   page.press(m.workbench_tab_name_and_folder());
   expect(
     page.host.querySelector('[data-part="filename-output"]')?.textContent,

@@ -95,6 +95,27 @@ interface Job {
   readonly trigger: RenderTrigger;
 }
 
+/** What a render or a host failure hands the scheduler to land. */
+interface Arrival<R extends TemplateRenderResult> {
+  readonly published: R;
+  /** The draft `published` was rendered from. */
+  readonly source: string;
+  readonly trigger: RenderTrigger;
+}
+
+/** A failure the host reported, with the input it was reported against. */
+interface Failure<R extends TemplateRenderResult> extends Arrival<R> {
+  readonly now: RenderSchedulerInput;
+  readonly clearedNow: number;
+}
+
+/** The landed state, and the arrivals already added to it. */
+interface Landing<R extends TemplateRenderResult> {
+  readonly landed: Landed<R>;
+  readonly rendered: Arrival<R> | undefined;
+  readonly failure: Failure<R> | null;
+}
+
 interface Landed<R extends TemplateRenderResult> {
   readonly result: R | null;
   /** The draft `result` was rendered from. */
@@ -237,18 +258,8 @@ export function makeRenderSchedulerAtoms<
   /** The generation whose quiet time Run, Stop, or a host failure ended. */
   const cancelled = Atom.make(-1);
   const job = Atom.make<Job | null>(null);
-  // Each source is read only beside the result it names, so neither matters
-  // before one lands.
-  const landed = Atom.make<Landed<R>>({
-    result: null,
-    source: "",
-    trigger: null,
-    attempt: 0,
-    produced: null,
-    producedSource: "",
-    producedDocument: undefined,
-    cleared: 0,
-  });
+  /** The newest failure the host reported. */
+  const failure = Atom.make<Failure<R> | null>(null);
 
   /**
    * Pairs each of a landed result's diagnostics with the attempt behind it,
@@ -283,17 +294,11 @@ export function makeRenderSchedulerAtoms<
   /** Adds one landed result to `previous`, read against the input it landed on. */
   function land(
     previous: Landed<R>,
+    { published, source, trigger }: Arrival<R>,
     {
-      published,
-      source,
-      trigger,
       now,
       clearedNow,
     }: {
-      readonly published: R;
-      /** The draft `published` was rendered from. */
-      readonly source: string;
-      readonly trigger: RenderTrigger;
       readonly now: RenderSchedulerInput;
       readonly clearedNow: number;
     },
@@ -357,7 +362,8 @@ export function makeRenderSchedulerAtoms<
   const rendering = runtime.atom((get) => {
     const at = get(generation);
     const current = get(job);
-    if (current === null || current.generation !== at) return Effect.void;
+    if (current === null || current.generation !== at)
+      return Effect.succeed<Arrival<R> | undefined>(undefined);
     const { request, trigger } = current;
     return render(request).pipe(
       Effect.catchCause((cause) => {
@@ -377,26 +383,51 @@ export function makeRenderSchedulerAtoms<
           ),
         );
       }),
-      Effect.flatMap((result) =>
-        Effect.gen(function* () {
-          // A render that answers at once lands after this atom is built:
-          // landing inside the build would rebuild it and render again.
-          yield* Effect.promise(() => Promise.resolve());
-          const now = yield* Atom.get(input);
-          const clearedNow = yield* Atom.get(cleared);
-          yield* Atom.update(landed, (previous) =>
-            land(previous, {
-              published: result,
-              source: request.source,
-              trigger,
-              now,
-              clearedNow,
-            }),
-          );
-        }),
-      ),
+      Effect.map((published): Arrival<R> => ({
+        published,
+        source: request.source,
+        trigger,
+      })),
     );
   });
+
+  // What has landed: each render's result and each host failure, added once,
+  // in the order they arrive. The render answers through its own value, so a
+  // render that answers at once writes no atom while it is being built.
+  // Each source is read only beside the result it names, so neither matters
+  // before one lands.
+  const landing = Atom.make((get): Landing<R> => {
+    const previous = Option.getOrElse(
+      get.self<Landing<R>>(),
+      (): Landing<R> => ({
+        landed: {
+          result: null,
+          source: "",
+          trigger: null,
+          attempt: 0,
+          produced: null,
+          producedSource: "",
+          producedDocument: undefined,
+          cleared: 0,
+        },
+        rendered: undefined,
+        failure: null,
+      }),
+    );
+    // An interrupted render keeps the value of the last one that answered.
+    const rendered = Option.getOrUndefined(AsyncResult.value(get(rendering)));
+    const reported = get(failure);
+    let { landed } = previous;
+    if (rendered !== undefined && rendered !== previous.rendered)
+      landed = land(landed, rendered, {
+        now: get.once(input),
+        clearedNow: get.once(cleared),
+      });
+    if (reported !== null && reported !== previous.failure)
+      landed = land(landed, reported, reported);
+    return { landed, rendered, failure: reported };
+  });
+  const landed = Atom.map(landing, (state) => state.landed);
 
   // A result stands across an edit until the next one lands, so each is read
   // against the draft on screen; the same pair answers with the same object.
@@ -457,16 +488,13 @@ export function makeRenderSchedulerAtoms<
       ctx.set(job, null);
       // The failure names every selection a render reads, so a Citation or
       // Shared Partial preview matches it against its own input.
-      ctx.set(
-        landed,
-        land(ctx.get(landed), {
-          published: failed(failedRender(renderIdentity(now), diagnostic)),
-          source: now.source,
-          trigger: "automatic",
-          now,
-          clearedNow: ctx.get(cleared),
-        }),
-      );
+      ctx.set(failure, {
+        published: failed(failedRender(renderIdentity(now), diagnostic)),
+        source: now.source,
+        trigger: "automatic",
+        now,
+        clearedNow: ctx.get(cleared),
+      });
     }),
   };
 }

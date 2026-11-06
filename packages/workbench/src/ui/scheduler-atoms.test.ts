@@ -818,10 +818,17 @@ it("renders once for a host whose render answers at once", async () => {
     defaultIdleTTL: 0,
     timeoutResolution: 1,
   });
-  const release = registry.mount(scheduler.state);
+  const landings = Effect.runSync(Queue.unbounded<number>());
+  const release = registry.subscribe(
+    scheduler.state,
+    ({ attempt }) => Queue.offerUnsafe(landings, attempt),
+    { immediate: true },
+  );
   registry.set(scheduler.run, undefined);
-  await vi.waitFor(() => expect(registry.get(scheduler.state).attempt).toBe(1));
+  // Every attempt the state lands on, up to the first result.
+  while ((await Effect.runPromise(Queue.take(landings))) < 1);
   expect(requests).toHaveLength(1);
+  expect(registry.get(scheduler.state).attempt).toBe(1);
   release();
   registry.dispose();
 });

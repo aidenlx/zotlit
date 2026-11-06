@@ -99,12 +99,11 @@ import {
   AddFieldButton,
   ProfileMenuLabel,
   WorkbenchFrame,
-  WorkbenchSkeleton,
   WorkbenchHelp,
 } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
-import { makeWebPage, openWebWorkbench } from "./page-model";
+import { makeWebPage } from "./page-model";
 import type { WebPage, WebWorkbench } from "./page-model";
 import { WebPreview } from "./preview";
 import { PageRuntime, usePageBridge } from "./runtime";
@@ -138,10 +137,9 @@ export function Workbench({
   );
 }
 
-/** What the host reads of the editor at the moment it asks. */
+/** Where the host inserts, read from the editor at the moment it asks. */
 interface EditorReads {
   insertTarget: () => WorkbenchInsertTarget | null;
-  reportContext: () => WorkbenchReportContext;
 }
 
 /** The page's atoms, its host, and the one editor they serve. */
@@ -149,30 +147,14 @@ function WorkbenchPage() {
   const bridge = usePageBridge();
   const [page] = useState(() => makeWebPage(bridge));
   const sample = useAtomValue(page.chosen);
-  // The editor's caret and report names, read when the host asks for them.
-  const reads = useRef<EditorReads>({
-    insertTarget: () => null,
-    reportContext: () => ({}),
-  });
+  // The editor's caret, read when the host asks for it.
+  const reads = useRef<EditorReads>({ insertTarget: () => null });
   const { host, overlays } = useWebHost({
     snapshot: sample,
     notice: (text) => toast.add({ title: text, type: "info" }),
     insertTarget: () => reads.current.insertTarget(),
   });
-  const [workbench, setWorkbench] = useState<WebWorkbench | null>(null);
-  // The editor's resources follow the host; a replacement document attaches
-  // to the editor in hand.
-  useEffect(() => {
-    const owner = openWebWorkbench({
-      bridge,
-      page,
-      host,
-      reportContext: () => reads.current.reportContext(),
-    });
-    setWorkbench(owner);
-    return () => owner[Symbol.dispose]();
-  }, [bridge, page, host]);
-  if (!workbench) return <WorkbenchSkeleton />;
+  const workbench = useAtomValue(page.workbench);
   return (
     <WorkbenchSession
       page={page}
@@ -225,26 +207,41 @@ function WorkbenchSession({
     registry.update(model.view, setViewTab(next));
   const setAdvanced = (next: boolean) =>
     registry.update(model.view, setViewAdvanced(next));
-  const openInObsidianCommand = useAtomSet(page.openInObsidian);
+  const openInObsidianCommand = useAtomSet(workbench.openInObsidian);
+  const loadSelectedItem = useAtomSet(workbench.loadItem);
+  const fileMessage = useAtomValue(workbench.notice);
+  const setFileMessage = workbench.say;
+  const shownManifest = useAtomValue(workbench.manifest);
+  const { present } = workbench;
+  // What the editor reveals, which row is open, and where the caret is: the
+  // model's presentation, so every pane reads one place.
+  const presentation = useAtomValue(model.view, (state) => state.presentation);
+  const openRow = presentation.selected;
+  const reveal = presentation.reveal;
+  const focusField = presentation.fieldFocus;
+  const caret: WorkbenchSliceRange = presentation.selection?.range ?? {
+    from: 0,
+    to: 0,
+  };
+  const setOpenRow = (selected: number | null) => present({ selected });
+  const setReveal = (next: WorkbenchSliceRange | null) =>
+    present({ reveal: next });
+  const setFocusField = (fieldFocus: { field: string } | null) =>
+    present({ fieldFocus });
+  const setCaret = (range: WorkbenchSliceRange) =>
+    present({ selection: { slice, range } });
   const importFileCommand = useAtomSet(page.importFile);
   // Which of the two the narrow screen is showing, and whether the field list
   // is open over it. Both are the narrow layout's alone: a wide screen shows
   // the pane, the result, and the field list at once.
   const [view, setView] = useState<"edit" | "result">("edit");
   const [sheet, setSheet] = useState(false);
-  const [openRow, setOpenRow] = useState<number | null>(null);
-  const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
   const [pendingAction, setPendingAction] = useState<{
     label: string;
     run: () => void;
   } | null>(null);
   const [handoffSource] = useState(createProfileHandoffSource);
-  const [fileMessage, setFileMessage] = useState<string | null>(null);
   const replaceConnected = useRef(false);
-  // The Name and folder control a manifest problem opens, as a fresh object
-  // every time, so selecting the same problem twice opens it again.
-  const [focusField, setFocusField] = useState<{ field: string } | null>(null);
-  const [caret, setCaret] = useState<WorkbenchSliceRange>({ from: 0, to: 0 });
   const noteCaret = useRef(caret);
   const {
     connection,
@@ -260,12 +257,10 @@ function WorkbenchSession({
     reconnect,
     disconnect,
     reloadProfile,
-    loadSelectedItem,
     save,
   } = useWorkbenchConnection({
     page,
     onHydrate: openSelectedProfile,
-    onItemLoaded: show,
     onSaved: ({ reference, source }) => drafts.rebase({ reference, source }),
   });
   const drafts = useWorkbenchDraft({
@@ -289,10 +284,6 @@ function WorkbenchSession({
     }),
     [connection, drafts.location.reference, controller, sample],
   );
-  // The result column shows the Annotation tab's example while that tab is
-  // open, so a failure there is reported against the annotation root.
-  reads.reportContext = () =>
-    reportContext(showAnnotation ? "annotation" : "note");
   reads.insertTarget = () => ({ slice, range: caret });
 
   /** Opens the Profile a connection hydrated, with what it kept beside it. */
@@ -341,7 +332,6 @@ function WorkbenchSession({
     if (snapshot) show(snapshot);
   }
 
-  useEffect(() => setFileMessage(null), [revision]);
   // The Editor and Result tabs stand under 780 px alone, so a window that grows
   // past them leaves the reader in the pane rather than on a result no tab
   // reads as chosen.
@@ -364,33 +354,19 @@ function WorkbenchSession({
     ...unsupportedDependencies(resources?.dependencies),
   ];
 
-  // The last manifest the document parsed with. The header and the Name and
-  // folder form read it, so repairing an invalid draft blanks neither.
   const manifest = controller.document?.manifest;
-  const [shownManifest, setShownManifest] = useState(manifest ?? null);
-  useEffect(() => {
-    if (manifest) setShownManifest(manifest);
-  }, [manifest]);
   const profile = {
     name: shownManifest?.name ?? m.workbench_title(),
     description: shownManifest?.description ?? "",
   };
 
-  // The paper this Profile is written for: the bundled Item carrying its sample
-  // item type. A type no bundled Item carries leaves the paper on screen, and
-  // the header says which type went unanswered.
+  // The paper this Profile is written for is the model's to choose; a type no
+  // bundled Item carries leaves the paper on screen, and the header says which
+  // type went unanswered.
   const sampleItemType = shownManifest?.sampleItemType;
   const bundledForType = SAMPLE_ITEMS.find(
     (item) => item.item.itemType === sampleItemType,
   );
-  useEffect(() => {
-    if (
-      bundledForType &&
-      registry.get(page.chosen).provenance.kind !== "connected"
-    )
-      show(bundledForType);
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- one selection per named type, not per parse of the same manifest
-  }, [sampleItemType]);
 
   // What the editors complete and explain against: every partial this Profile
   // can call, whether the manifest carries it or a connected bundle answers it.
@@ -730,7 +706,6 @@ function WorkbenchSession({
   function loadDocument(source: string) {
     workbench.load(source);
     setFileMessage(null);
-    setShownManifest(null);
     setAdvanced(false);
     setView("edit");
     setSheet(false);
@@ -742,16 +717,7 @@ function WorkbenchSession({
   }
 
   function openInObsidian() {
-    const source = handoffSource(controller.source);
-    openInObsidianCommand({
-      source,
-      done: (copied) =>
-        setFileMessage(
-          copied
-            ? m.workbench_open_obsidian_copied()
-            : m.workbench_open_obsidian_failed(),
-        ),
-    });
+    openInObsidianCommand(handoffSource(controller.source));
   }
 
   /** Download always returns the exact source, including an unfinished draft. */

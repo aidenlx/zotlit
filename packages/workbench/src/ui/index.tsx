@@ -67,6 +67,7 @@ export type {
   CreatePartialJob,
   WorkbenchChoices,
   WorkbenchItemData,
+  WorkbenchItemDataInput,
   WorkbenchModel,
   WorkbenchModelOptions,
   WorkbenchMatchVocabulary,

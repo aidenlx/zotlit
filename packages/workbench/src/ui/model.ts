@@ -68,6 +68,12 @@ export interface WorkbenchItemData {
   readonly hold?: boolean | "invalid" | undefined;
 }
 
+/** The document in use, which a host's derived Item data reads beside its own read. */
+export interface WorkbenchItemDataInput {
+  readonly controller: Atom.Atom<WorkbenchDocumentController>;
+  readonly document: WorkbenchDocumentAtoms;
+}
+
 export const INITIAL_VIEW: WorkbenchViewState = {
   presentation: {
     restoreVersion: 0,
@@ -140,10 +146,9 @@ export interface WorkbenchModelOptions<R extends TemplateRenderResult> {
    * The chosen Item's data, when the host derives it from its own read and
    * from the document in use.
    */
-  readonly itemData?: (document: {
-    readonly controller: Atom.Atom<WorkbenchDocumentController>;
-    readonly document: WorkbenchDocumentAtoms;
-  }) => Atom.Atom<WorkbenchItemData>;
+  readonly itemData?: (
+    input: WorkbenchItemDataInput,
+  ) => Atom.Atom<WorkbenchItemData>;
   /** The host's one runtime; a host never builds one per editor. */
   readonly runtime: WorkbenchRuntime;
   /** The host whose Match reads the model runs, read at each read. */
