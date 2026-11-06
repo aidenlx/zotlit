@@ -37,7 +37,7 @@ One module owns each surface, and each says what it owns at its head:
 
 | Module | Owns |
 | --- | --- |
-| [`workbench.tsx`](workbench.tsx) | Page layout, header menu, what a tab or mode change does beyond the Workbench model, slice routing, the `{{` popup and the narrow sheet, problem navigation |
+| [`workbench.tsx`](workbench.tsx) | Page layout, header menu, what a tab or mode change does beyond the Workbench model, slice routing, the `{{` popup, problem navigation |
 | [`page-model.ts`](page-model.ts) | The web Workbench on the Workbench model: the chosen Item's one read, the connection's state, the page layout and the replacement a dirty draft holds back, hydration opening, the dependency and citation-style re-reads, and the page's commands |
 | [`runtime.tsx`](runtime.tsx) | The page runtime: one atom runtime over every service below and the Local Bridge client (`@zotlit/workbench/bridge`) in the page's one atom registry, created with the page and disposed when it closes, and the one bridge React and CodeMirror reach the services through |
 | [`workbench-connection.ts`](workbench-connection.ts) | The Workbench Connection service: the launch-fragment code exchange, hydration, the dependency and citation-style re-reads, Save with revision reconciliation, disconnect, and the connection Scope that Disconnect closes |
@@ -62,10 +62,8 @@ One module owns each surface, and each says what it owns at its head:
   and the one render the editor and the result share; a new choice interrupts the read it
   replaces. A read that belongs to one connection runs in that connection's Scope, so
   Disconnect stops it; closing the page disposes the registry and stops everything.
-- The layout folds twice — under 780 px the pane fills the screen with the result on a tab of
-  its own, and under 1180 px the field column becomes the sheet the pane's **Add a field**
-  button opens, because three columns inside that width leave the editing pane too narrow to
-  write in (#958).
+- The page shows the field column, the pane, and the result in three columns at every width,
+  as the Template Workbench View in Obsidian does, so both hosts share one layout.
 - [`reading-view.tsx`](reading-view.tsx) is the only module that reads the parser packages'
   node types, each pinned to an exact version, so a package swap stays inside that file.
 - `@zotlit/workbench` names a problem by code while the shared tree's `problemText` and

@@ -26,7 +26,7 @@ import {
   chosenTab,
   importFile,
   openMenu,
-  openSheet,
+  openDialog,
   rendered,
   keep,
   title,
@@ -373,21 +373,21 @@ describe("the simplified editing flow", () => {
 
     importFile(page.host, KEPT);
     await page.waitFor(() =>
-      expect(openSheet(page.host).textContent).toContain(
+      expect(openDialog(page.host).textContent).toContain(
         m.workbench_replace_heading(),
       ),
     );
     expect(title(page.host)).toBe("Default");
-    press(openSheet(page.host), m.workbench_keep_editing());
+    press(openDialog(page.host), m.workbench_keep_editing());
     expect(sourceView(page.host).state.doc.toString()).toBe(edited);
 
     importFile(page.host, KEPT);
     await page.waitFor(() =>
-      expect(openSheet(page.host).textContent).toContain(
+      expect(openDialog(page.host).textContent).toContain(
         m.workbench_replace_heading(),
       ),
     );
-    press(openSheet(page.host), m.workbench_import());
+    press(openDialog(page.host), m.workbench_import());
     await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
   });
 
@@ -417,11 +417,11 @@ describe("the simplified editing flow", () => {
     editLanguage();
     importFile(page.host, KEPT);
     await page.waitFor(() =>
-      expect(openSheet(page.host).textContent).toContain(
+      expect(openDialog(page.host).textContent).toContain(
         m.workbench_replace_heading(),
       ),
     );
-    press(openSheet(page.host), m.workbench_import());
+    press(openDialog(page.host), m.workbench_import());
     await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
   });
 

@@ -362,20 +362,12 @@ export function resize(width: number): void {
   act(() => happyDOM.setViewport({ width }));
 }
 
-/** The field list the narrow layout's "Add a field" opened. */
-export function openSheet(host: HTMLElement): HTMLElement {
-  const sheet =
+/** The dialog open over the page. */
+export function openDialog(host: HTMLElement): HTMLElement {
+  const dialog =
     host.ownerDocument.querySelector<HTMLElement>('[role="dialog"]');
-  if (!sheet) throw new Error("No field sheet is open.");
-  return sheet;
-}
-
-/** The tab the narrow layout reads as chosen: the pane, or the result. */
-export function chosenView(host: HTMLElement): string {
-  const tabs = host.querySelector(
-    `[role="group"][aria-label="${m.workbench_view_label()}"]`,
-  )!;
-  return tabs.querySelector('[aria-pressed="true"]')!.textContent;
+  if (!dialog) throw new Error("No dialog is open.");
+  return dialog;
 }
 
 /** Every source a render was started over. */

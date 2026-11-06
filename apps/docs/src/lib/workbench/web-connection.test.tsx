@@ -21,7 +21,6 @@ import {
   press,
   fieldRow,
   sourceView,
-  openSheet,
   rendered,
   keep,
   title,
@@ -837,11 +836,9 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_add_field());
-    const sheet = openSheet(page.host);
     const snippet = "{{ zt.title }}";
     press(
-      fieldRow(sheet, m.workbench_field_title()),
+      fieldRow(page.host, m.workbench_field_title()),
       m.workbench_fields_put_in_note(),
     );
     await page.settle();

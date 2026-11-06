@@ -85,10 +85,6 @@ export type Replacement =
 
 /** The page's own layout around the editor. */
 export interface PageLayout {
-  /** What the narrow screen shows: the pane, or the result. */
-  readonly view: "edit" | "result";
-  /** Whether the field list stands over the narrow pane. */
-  readonly sheet: boolean;
   /** A replacement waiting on the reader, while the draft has unsaved work. */
   readonly pending: Replacement | null;
   /** Where the caret last stood in the note, which the Note tab returns to. */
@@ -410,8 +406,6 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
       patchAt<WorkbenchViewState, "presentation">("presentation", changes),
     );
   const layout = Atom.make<PageLayout>({
-    view: "edit",
-    sheet: false,
     pending: null,
     noteCaret: { from: 0, to: 0 },
   });
@@ -453,8 +447,6 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
       }));
       registry.update(layout, (state): PageLayout => ({
         ...state,
-        view: "edit",
-        sheet: false,
         noteCaret: { from: 0, to: 0 },
       }));
     });
