@@ -9,7 +9,12 @@ import { vi } from "vitest";
 
 import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
-import { INITIAL_VIEW } from "@zotlit/workbench/ui";
+import {
+  chooseItem,
+  INITIAL_VIEW,
+  setAdvanced,
+  setTab,
+} from "@zotlit/workbench/ui";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -28,14 +33,11 @@ import type { WorkbenchHostDeps } from "./__fixtures__";
 import {
   INITIAL_PICKS,
   chooseAnnotation,
-  chooseItem,
   holdTemplateWorkbenchModel,
   makeTemplateWorkbenchModel,
   readEphemeralWorkbench,
   readSavedWorkbench,
   savedWorkbench,
-  setAdvanced,
-  setTab,
 } from "./model";
 
 const FIRST = "FIRST234";

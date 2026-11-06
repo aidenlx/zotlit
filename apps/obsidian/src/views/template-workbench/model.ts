@@ -33,7 +33,10 @@ import {
   INITIAL_VIEW,
   TABS,
   annotationSamples,
+  chooseItem,
   patch,
+  patchAt,
+  setRoot,
 } from "@zotlit/workbench/ui";
 import type {
   TemplateRoot,
@@ -143,17 +146,11 @@ export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
     Math.min(Math.max(PANEL_WIDTH.min, max), Math.max(PANEL_WIDTH.min, width)),
   );
 
-const patchPanel =
-  (side: PanelSide, value: Partial<WorkbenchPanel>) =>
-  (state: WorkbenchPanels): WorkbenchPanels => {
-    const panel = patch(value)(state[side]);
-    return panel === state[side] ? state : { ...state, [side]: panel };
-  };
 export const showPanel = (side: PanelSide, shown: boolean) =>
-  patchPanel(side, { shown });
+  patchAt<WorkbenchPanels, PanelSide>(side, { shown });
 /** Sets a panel's width, held within {@link PANEL_WIDTH}. */
 export const setPanelWidth = (side: PanelSide, width: number) =>
-  patchPanel(side, { width: clampPanelWidth(width) });
+  patchAt<WorkbenchPanels, PanelSide>(side, { width: clampPanelWidth(width) });
 
 const NO_DOCUMENT: WorkbenchDocumentFacts = {
   path: null,
@@ -161,25 +158,12 @@ const NO_DOCUMENT: WorkbenchDocumentFacts = {
   partialName: null,
 };
 
-export const chooseItem = (item: WorkbenchItemChoice | null) =>
-  patch<WorkbenchViewState>({ item });
-export const setTab = (tab: WorkbenchViewState["tab"]) =>
-  patch<WorkbenchViewState>({ tab });
-export const setRoot = (root: TemplateRoot) =>
-  patch<WorkbenchViewState>({ root });
-export const setAdvanced = (advanced: boolean) =>
-  patch<WorkbenchViewState>({ advanced });
 export const setCustomization = (
   customization: WorkbenchViewState["customization"],
 ) => patch<WorkbenchViewState>({ customization });
-export const setPresentation =
-  (value: Partial<WorkbenchViewState["presentation"]>) =>
-  (state: WorkbenchViewState): WorkbenchViewState => {
-    const presentation = patch(value)(state.presentation);
-    return presentation === state.presentation
-      ? state
-      : { ...state, presentation };
-  };
+export const setPresentation = (
+  value: Partial<WorkbenchViewState["presentation"]>,
+) => patchAt<WorkbenchViewState, "presentation">("presentation", value);
 export const chooseAnnotation = (annotationId: string | null) =>
   patch<WorkbenchPicks>({ annotationId });
 export const chooseCitation = (
