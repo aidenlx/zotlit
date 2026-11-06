@@ -4,6 +4,7 @@
 import { Cause, Effect, Option, Schema } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
+import type { TFile } from "obsidian";
 
 import { CITATION_VARIANTS } from "@zotlit/db";
 import {
@@ -18,8 +19,11 @@ import type {
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import { INITIAL_VIEW, TABS, patchAt } from "@zotlit/workbench/ui";
 import type {
+  BUILT_IN_BINDING_DEFAULTS,
+  NameFolderPaneProps,
   TemplateRoot,
   WorkbenchChoices,
+  WorkbenchInsertTarget,
   WorkbenchItemChoice,
   WorkbenchItemData,
   WorkbenchItemDataInput,
@@ -28,10 +32,16 @@ import type {
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
+import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import { viewRuntime } from "@/lib/view-atoms";
+import { defaultBindingsAtom } from "@/services/settings/atoms";
 import { templateRevisionAtom } from "@/services/template/atoms";
-import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
+import {
+  zoteroRevisionAtom,
+  zoteroStateAtom,
+} from "@/services/zotero-reads/atoms";
 
 import { readChosenItem } from "./atoms";
 import { PartialPreviewFailed, PreviewItemMissing } from "./errors";
@@ -44,6 +54,20 @@ export interface WorkbenchDocumentFacts {
   readonly path: string | null;
   /** The Shared Partial's own name, or null for any other document. */
   readonly partialName: string | null;
+}
+
+/** The note the leaf was opened from, which Update writes. */
+export interface OriginatingNote {
+  readonly file: TFile;
+  readonly indexedKey: string;
+  readonly template: TFile | null;
+  readonly profile: ProfileSelector;
+}
+
+/** The installed citation styles, and whether the last read of them failed. */
+export interface CitationStyles {
+  readonly list: NameFolderPaneProps["citationStyles"];
+  readonly unavailable: boolean;
 }
 
 /**
@@ -174,6 +198,39 @@ export function makeTemplateWorkbenchModel() {
   const panels = Atom.make(INITIAL_PANELS);
   /** Progress of Customize, which creates the built-in Profile document. */
   const customization = Atom.make<Customization>("idle");
+  /** Whether the leaf shows the built-in Default Profile rather than a file. */
+  const defaultDraft = Atom.make(false);
+  /** The note the leaf was opened from, which Update writes. */
+  const origin = Atom.make<OriginatingNote | null>(null);
+  /** Whether the originating note's update runs. */
+  const updating = Atom.make(false);
+  /** The place a field insertion asks the editor to reveal. */
+  const insertRequest = Atom.make<WorkbenchInsertTarget | null>(null);
+  const styles = Atom.make<CitationStyles>({ list: [], unavailable: false });
+  /**
+   * The Default Profile's bindings, which Name and folder shows where a
+   * Profile binds none.
+   */
+  const bindingDefaults = Atom.map(
+    defaultBindingsAtom,
+    (bindings): typeof BUILT_IN_BINDING_DEFAULTS => ({
+      folder: bindings["note.literature-folder"],
+      citationStyle: bindings["citation.references-style"],
+      importFolder: bindings["note.import-folder"],
+      importColoredHighlights: bindings["note.import-colored-highlights"],
+      importAnnotationsAsTemplate:
+        bindings["note.import-annotations-as-template"],
+    }),
+  );
+  /** What the leaf cannot read now, which the editor names. */
+  const unavailable = Atom.make((get): readonly string[] => [
+    ...(get(zoteroStateAtom).state === "degraded"
+      ? [m.template_workbench_database_unavailable()]
+      : []),
+    ...(get(styles).unavailable
+      ? [m.template_workbench_styles_unavailable()]
+      : []),
+  ]);
   /** Counts the reader's refreshes; each one reads the chosen Item again. */
   const refresh = Atom.make(0);
   const item = Atom.map(view, (state) => state.item);
@@ -245,6 +302,13 @@ export function makeTemplateWorkbenchModel() {
     document,
     panels,
     customization,
+    defaultDraft,
+    origin,
+    updating,
+    insertRequest,
+    styles,
+    bindingDefaults,
+    unavailable,
     refresh,
     item,
     chosen,
@@ -330,6 +394,11 @@ export function holdTemplateWorkbenchModel(
     model.document,
     model.panels,
     model.customization,
+    model.defaultDraft,
+    model.origin,
+    model.updating,
+    model.insertRequest,
+    model.styles,
     model.refresh,
     model.read,
     model.chooseItem,

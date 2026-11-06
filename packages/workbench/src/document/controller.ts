@@ -165,7 +165,7 @@ export class WorkbenchDocumentController {
   #readOnly: boolean;
   readonly #runtime: "web" | "native";
   readonly #kind: WorkbenchDocumentKind;
-  #context: PartialContext = DEFAULT_PARTIAL_CONTEXT;
+  readonly #context: () => PartialContext;
   #document: LiteratureNoteTemplateDocument | null = null;
   #manifest: LiteratureNoteTemplateDocument["manifest"] | null = null;
   #plain: PlainTemplateDocument | null = null;
@@ -190,13 +190,16 @@ export class WorkbenchDocumentController {
       runtime?: "web" | "native";
       readOnly?: boolean;
       kind?: WorkbenchDocumentKind;
-      /** The caller a Shared Partial opens as called from. @default "note" */
-      context?: PartialContext;
+      /**
+       * Reads the caller a Shared Partial is shown as called from, which the
+       * host's view state owns. @default "note"
+       */
+      context?: () => PartialContext;
     } = {},
   ) {
     this.#runtime = options.runtime ?? "web";
     this.#kind = options.kind ?? "profile";
-    if (options.context) this.#context = options.context;
+    this.#context = options.context ?? (() => DEFAULT_PARTIAL_CONTEXT);
     this.#readOnly = options.readOnly ?? false;
     this.#state = EditorState.create({
       doc: source,
@@ -259,11 +262,7 @@ export class WorkbenchDocumentController {
    * @see {@link PartialContext} for whose choice it is.
    */
   get partialContext(): PartialContext {
-    return this.#context;
-  }
-
-  setPartialContext(context: PartialContext): void {
-    this.#context = context;
+    return this.#context();
   }
 
   #language: "liquid" | "eta" = "liquid";
@@ -416,7 +415,7 @@ export class WorkbenchDocumentController {
       return [
         {
           ...this.sliceRange("source"),
-          root: this.#kind === "citation" ? "citation" : this.#context,
+          root: this.#kind === "citation" ? "citation" : this.#context(),
           expression: false,
         },
       ];

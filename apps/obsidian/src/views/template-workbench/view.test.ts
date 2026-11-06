@@ -322,11 +322,11 @@ describe("TemplateWorkbenchView", () => {
     // A second press while the update runs joins it.
     const again = run(h.view.updateOriginatingNote());
     await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
-    expect(h.view.updatingNote).toBe(true);
+    expect(h.view.registry.get(h.view.model.updating)).toBe(true);
     expect(h.updateNote).not.toHaveBeenCalled();
     saved.resolve();
     expect(await again).toBe(await updating);
-    expect(h.view.updatingNote).toBe(false);
+    expect(h.view.registry.get(h.view.model.updating)).toBe(false);
     expect(await updating).toMatchObject({
       outcome: "updated",
       name: "Original",
@@ -437,7 +437,7 @@ describe("TemplateWorkbenchView", () => {
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
       true,
     );
-    expect(h.view.updatingNote).toBe(false);
+    expect(h.view.registry.get(h.view.model.updating)).toBe(false);
     expect(h.updateNote).not.toHaveBeenCalled();
   });
 
@@ -1339,7 +1339,7 @@ An annotation.
       ),
     ).resolves.toBeUndefined();
     expect(viewState(view).advanced).toBe(true);
-    expect(view.unavailableDependencies).toHaveLength(1);
+    expect(view.registry.get(view.model.unavailable)).toHaveLength(1);
     view.controller.setManifestKey("name", "Offline edit");
     expect(view.getViewData()).toContain("Offline edit");
     expect(requestSave).toHaveBeenCalledOnce();
@@ -1360,12 +1360,12 @@ An annotation.
       ),
     });
     await expect(run(view.refreshStyles())).resolves.toBeUndefined();
-    expect(view.unavailableDependencies).toHaveLength(1);
+    expect(view.registry.get(view.model.unavailable)).toHaveLength(1);
     expect(view.getViewData()).toBe(SOURCE);
-    expect(view.citationStyles).toEqual([]);
+    expect(view.registry.get(view.model.styles).list).toEqual([]);
     failed = false;
     await run(view.refreshStyles());
-    expect(view.unavailableDependencies).toEqual([]);
+    expect(view.registry.get(view.model.unavailable)).toEqual([]);
   });
 
   it("routes the view shortcut to shared history while leaving text inputs their own shortcut", () => {
