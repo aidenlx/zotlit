@@ -8,6 +8,12 @@
       "skillPath": "skills/engineering/ask-matt/SKILL.md",
       "computedHash": "16554b785353aabf3880228755d317a3193a8359772f25ecb5f2a1f762d6e12d"
     },
+    "be-ambitious": {
+      "source": "robonuggets/be-ambitious",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "f173604729fc164b7462f54df751ff846554fd0abae3ca2370110371d10e3ddf"
+    },
     "better-accessibility": {
       "source": "jakubkrehel/skills",
       "sourceType": "github",
