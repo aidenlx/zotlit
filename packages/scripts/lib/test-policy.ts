@@ -49,6 +49,24 @@ function parseBaseline(source: string): Baseline {
     : parsed;
 }
 
+/** Each file the branch moved since `base`, mapped to the path it had there. */
+async function renamesSince(
+  root: string,
+  base: string,
+): Promise<Map<string, string>> {
+  const diff = await $({
+    cwd: root,
+    quiet: true,
+    nothrow: true,
+  })`git diff --name-status --find-renames --diff-filter=R ${base}`;
+  const moved = new Map<string, string>();
+  for (const line of diff.stdout.split("\n")) {
+    const [status, from, to] = line.split("\t");
+    if (status?.startsWith("R") && from && to) moved.set(to, from);
+  }
+  return moved;
+}
+
 /** Check the shrinking baseline and the places that can bypass the test rules. */
 export async function checkTestPolicy(
   root: string,
@@ -68,12 +86,17 @@ export async function checkTestPolicy(
     : undefined;
   if (previous?.exitCode === 0) {
     const allowed = parseBaseline(previous.stdout);
+    const movedFrom = await renamesSince(root, base!);
     const knownRules = new Set(Object.values(allowed).flat());
     const newRules = new Set<string>();
     for (const [file, rules] of Object.entries(baseline))
       for (const exempt of rules)
         if (!knownRules.has(exempt)) newRules.add(exempt);
-        else if (!allowed[file]?.includes(exempt))
+        // A file that moved keeps the exemptions it had at the base.
+        else if (
+          !allowed[file]?.includes(exempt) &&
+          !allowed[movedFrom.get(file) ?? ""]?.includes(exempt)
+        )
           errors.push(
             `${baselineFile}: added baseline entry ${file} (${exempt})`,
           );
