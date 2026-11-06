@@ -11,6 +11,7 @@ import {
   targetItem,
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
+import * as suite from "./e2e-run-suite-helpers.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import { withWorkbenchSurfaces } from "./workbench-surfaces.ts";
 
@@ -310,6 +311,69 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
   });
 
+  // #1937: Obsidian opens a modal in the window that last took focus, and a
+  // pop-out the reader works in can leave that on the main window. A chooser
+  // opens in the window of the view that asked for it.
+  it("opens Choose item in the pop-out window of its workbench", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) =>
+          app.workspace.detachLeavesOfType("zotlit-template-workbench"),
+        undefined,
+      ),
+    );
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        const leaf = app.workspace.openPopoutLeaf();
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: { file: path },
+          active: true,
+        });
+        // Focus last named the main window.
+        activeWindow = window;
+        activeDocument = document;
+      },
+      { path },
+    );
+    await obRunUntil(
+      run.vaultId,
+      ({ page }, { path, label }) => {
+        const trigger = page
+          .workbench({ path })
+          ?.containerEl.querySelector<HTMLElement>(
+            `.view-actions .view-action[aria-label="${label}"]`,
+          );
+        if (!trigger || trigger.doc === document) return false;
+        page.press(trigger, "Choose item in the pop-out");
+        return true;
+      },
+      { path, label: run.m.workbench_choose_item() },
+      { what: "the pop-out workbench's Choose item action" },
+    );
+    const opened = await obRunUntil(
+      run.vaultId,
+      ({ page }, { path }) => {
+        const own = page.workbench({ path })?.containerEl.doc;
+        const doc = page
+          .windowDocuments()
+          .find((doc) => doc.querySelector(".prompt"));
+        if (!own || !doc) return null;
+        return doc === own ? "its own window" : "another window";
+      },
+      { path },
+      {
+        what: "the Choose item chooser",
+        ready: (where) => where !== null,
+      },
+    );
+    expect(opened).toBe("its own window");
+  });
+
   // #1943: the standalone Template Data Explorer keeps its own Item. The
   // `explore` action opens it beside an editor on another Item, and a choice
   // in either one leaves the other where it was.
@@ -439,6 +503,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       ),
     );
+    // Wide enough that the panels stand beside the editor, not under it.
+    await suite.wideWindow(cleanup);
     interface Edge {
       readonly drawn: number;
       readonly container: number;
@@ -478,8 +544,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ).find((element) => element.getAttribute("aria-label") === label);
             if (!panel?.parentElement || !handle) return null;
             const now = handle.getAttribute("aria-valuenow");
-            // The edge has described the panel once it names its drawn width.
-            if (now !== String(panel.offsetWidth)) return null;
             edges[side] = {
               drawn: panel.offsetWidth,
               container: panel.parentElement.clientWidth,
@@ -498,7 +562,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         {
           what: "both panels restored, each edge naming its drawn width",
-          ready: (value) => value !== null,
+          // The edge has described its panel once it names the drawn width.
+          ready: (value) =>
+            value !== null &&
+            Object.values(
+              (JSON.parse(value) as { edges: Record<string, Edge> }).edges,
+            ).every(({ now, drawn }) => now === String(drawn)),
         },
       );
       return JSON.parse(read!) as {
