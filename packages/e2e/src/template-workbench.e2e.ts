@@ -656,7 +656,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           type Sized = { setDimension(share: number): void };
           (leaf.parent as unknown as Sized).setDimension(share);
           (other.parent as unknown as Sized).setDimension(100 - share);
-          app.workspace.trigger("resize");
         },
         { path, state, share },
       );

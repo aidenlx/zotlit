@@ -1,19 +1,16 @@
 // The side panels around the editor, headless: the Fields Panel at the
 // leading edge, the Preview Panel at the trailing edge or under the editor,
 // each a labelled region the reader sizes with its handle. The model says
-// which panels show and where they go; the host's theme draws the parts.
+// which panels show and where they go; the host's theme draws the parts and
+// names the custom properties that carry each drawn size.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useRef } from "react";
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  PointerEvent,
-  ReactNode,
-} from "react";
+import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
-import { useWorkbenchModel } from "./editor";
+import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
+import { useOptionalHost } from "./host";
 import {
   clampPanelWidth,
   clampPreviewHeight,
@@ -24,8 +21,8 @@ import {
   setPanelWidth,
   setPreviewHeight,
 } from "./panel-layout";
-import type { PanelSide } from "./panel-layout";
-import { useParts } from "./theme";
+import type { PanelSide, WorkbenchPanels } from "./panel-layout";
+import { usePanelProperties, useParts } from "./theme";
 
 /** What one side panel shows, and what names it to a screen reader. */
 export interface SidePanel {
@@ -35,17 +32,6 @@ export interface SidePanel {
   readonly resizeLabel: string;
   readonly content: ReactNode;
 }
-
-/** How far one arrow press moves a panel's edge, in pixels; Shift moves more. */
-const STEP = 16;
-const LARGE_STEP = 64;
-/** How far one arrow press moves the Preview's split, in percent of the view height. */
-const HEIGHT_STEP = 5;
-
-/** The width a column panel is drawn at, which a drag sets while it moves. */
-const WIDTH_VAR = "--workbench-panel-width";
-/** The height the Preview is drawn at under the editor. */
-const HEIGHT_VAR = "--workbench-panel-height";
 
 /**
  * The editor between the panels the reader shows. Document order is Fields
@@ -90,6 +76,93 @@ const rightToLeft = (element: Element) =>
   element.ownerDocument.defaultView?.getComputedStyle(element).direction ===
   "rtl";
 
+/** How one handle sizes its panel, from the keyboard and the pointer. */
+interface Sizing {
+  /** The size as the reader sees it, from the panels as they are now. */
+  readonly read: (panels: WorkbenchPanels) => number;
+  /** Writes `size`; the transition holds it within its limits. */
+  readonly write: (
+    size: number,
+  ) => (panels: WorkbenchPanels) => WorkbenchPanels;
+  /** The keys that grow and shrink the panel, for the handle's direction. */
+  readonly keys: (handle: Element) => { grow: string; shrink: string };
+  readonly step: (event: KeyboardEvent) => number;
+  readonly min: number;
+  readonly max: number;
+  /** How far a drag from `from` to `to` grows the panel, in the size's unit. */
+  readonly dragged: (
+    handle: Element,
+    from: PointerEvent,
+    to: PointerEvent,
+  ) => number;
+  /** The size held within its limits and as the region draws it, in pixels. */
+  readonly drawn: (size: number) => number;
+  /** The custom property the region draws its size from. */
+  readonly property: string;
+}
+
+/**
+ * The handlers of one window splitter. The arrows grow and shrink the panel
+ * the way they point; Home and End set its smallest and largest size. Each
+ * press reads the panels as they are, so presses faster than a render each
+ * count. A drag writes the size to the region's own style while it moves,
+ * and to the model once, where the reader lets go.
+ */
+function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
+  const { model, registry } = useWorkbenchEditor();
+  const update = useAtomSet(model.panels);
+  const drag = useRef<{ from: PointerEvent; size: number } | null>(null);
+  const dragged = (event: PointerEvent<HTMLDivElement>) => {
+    const start = drag.current;
+    return start
+      ? start.size + sizing.dragged(event.currentTarget, start.from, event)
+      : null;
+  };
+  const end = (event: PointerEvent<HTMLDivElement>) => {
+    const next = dragged(event);
+    drag.current = null;
+    if (next !== null) update(sizing.write(next));
+  };
+  return {
+    onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+      const { grow, shrink } = sizing.keys(event.currentTarget);
+      const step = sizing.step(event);
+      const move =
+        event.key === grow
+          ? (size: number) => size + step
+          : event.key === shrink
+            ? (size: number) => size - step
+            : event.key === "Home"
+              ? () => sizing.min
+              : event.key === "End"
+                ? () => sizing.max
+                : null;
+      if (move === null) return;
+      event.preventDefault();
+      update((panels) => sizing.write(move(sizing.read(panels)))(panels));
+    },
+    onPointerDown(event: PointerEvent<HTMLDivElement>) {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      drag.current = {
+        from: event,
+        size: sizing.read(registry.get(model.panels)),
+      };
+    },
+    onPointerMove(event: PointerEvent<HTMLDivElement>) {
+      const next = dragged(event);
+      if (next !== null)
+        region.current?.style.setProperty(
+          sizing.property,
+          `${sizing.drawn(next)}px`,
+        );
+    },
+    onPointerUp: end,
+    onPointerCancel: end,
+  };
+}
+
 function Column({
   side,
   width,
@@ -99,70 +172,35 @@ function Column({
 }: { side: PanelSide; width: number } & SidePanel) {
   const model = useWorkbenchModel();
   const part = useParts("panels");
-  const update = useAtomSet(model.panels);
+  const properties = usePanelProperties();
   const size = useAtomValue(model.viewSize);
   const id = useUniqueId();
   const region = useRef<HTMLElement>(null);
-  const drag = useRef<{ x: number; width: number; sign: number } | null>(null);
   /** The widest the view draws this panel now. */
   const max = size ? panelLimit(size.width) : PANEL_WIDTH.max;
   const held = (next: number) => clampPanelWidth(next, max);
   // Moving the edge away from the editor widens the panel: the Fields edge
   // toward the trailing side, the Preview edge toward the leading side.
-  const sign = (element: Element) =>
-    (side === "fields" ? 1 : -1) * (rightToLeft(element) ? -1 : 1);
-  const commit = (next: number) => update(setPanelWidth(side, held(next)));
-  // A window splitter's Home and End set the panel's smallest and largest
-  // width; the arrows move its edge the way they point, from the width the
-  // panel is drawn at. Each press reads the panels as they are, so presses
-  // faster than a render each count.
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step =
-      (event.shiftKey ? LARGE_STEP : STEP) * sign(event.currentTarget);
-    const move =
-      event.key === "ArrowLeft"
-        ? (drawn: number) => drawn - step
-        : event.key === "ArrowRight"
-          ? (drawn: number) => drawn + step
-          : event.key === "Home"
-            ? () => PANEL_WIDTH.min
-            : event.key === "End"
-              ? () => PANEL_WIDTH.max
-              : null;
-    if (move === null) return;
-    event.preventDefault();
-    update((panels) =>
-      setPanelWidth(side, held(move(held(panels[side].width))))(panels),
-    );
-  };
-  // A drag writes the width to the region's own style while it moves, and to
-  // the model once, where the reader lets go.
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = {
-      x: event.clientX,
-      width: clampPanelWidth(width, max),
-      sign: sign(event.currentTarget),
-    };
-  };
-  const dragged = (event: PointerEvent<HTMLDivElement>) => {
-    const start = drag.current;
-    return start
-      ? held(start.width + start.sign * (event.clientX - start.x))
-      : null;
-  };
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const next = dragged(event);
-    if (next !== null)
-      region.current?.style.setProperty(WIDTH_VAR, `${next}px`);
-  };
-  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    const next = dragged(event);
-    drag.current = null;
-    if (next !== null) commit(next);
-  };
+  const outward = (handle: Element) =>
+    (side === "fields" ? 1 : -1) * (rightToLeft(handle) ? -1 : 1);
+  const handlers = useSizing(
+    {
+      read: (panels) => held(panels[side].width),
+      write: (next) => setPanelWidth(side, held(next)),
+      keys: (handle) =>
+        outward(handle) > 0
+          ? { grow: "ArrowRight", shrink: "ArrowLeft" }
+          : { grow: "ArrowLeft", shrink: "ArrowRight" },
+      step: (event) => (event.shiftKey ? 64 : 16),
+      min: PANEL_WIDTH.min,
+      max: PANEL_WIDTH.max,
+      dragged: (handle, from, to) =>
+        outward(handle) * (to.clientX - from.clientX),
+      drawn: held,
+      property: properties.width,
+    },
+    region,
+  );
   // The edge describes the panel as drawn: the view holds a saved width
   // within its own share.
   const handle = (
@@ -174,12 +212,8 @@ function Column({
       aria-orientation="vertical"
       aria-valuemin={PANEL_WIDTH.min}
       aria-valuemax={max}
-      aria-valuenow={clampPanelWidth(width, max)}
-      onKeyDown={onKeyDown}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      aria-valuenow={held(width)}
+      {...handlers}
       {...part("edge", side)}
     />
   );
@@ -192,7 +226,7 @@ function Column({
         role="region"
         aria-label={label}
         data-panel={side}
-        style={{ [WIDTH_VAR]: `${width}px` } as CSSProperties}
+        style={{ [properties.width]: `${width}px` }}
         {...part("panel", side)}
       >
         {content}
@@ -211,59 +245,32 @@ function Below({
 }: { share: number } & SidePanel) {
   const model = useWorkbenchModel();
   const part = useParts("panels");
-  const update = useAtomSet(model.panels);
+  const properties = usePanelProperties();
+  const host = useOptionalHost();
   const size = useAtomValue(model.viewSize);
   const id = useUniqueId();
   const region = useRef<HTMLElement>(null);
-  const drag = useRef<{ y: number; share: number } | null>(null);
   // Below is placed only in a measured view.
-  const height = size?.height ?? 0;
-  const drawn = previewBelowHeight(share, height);
-  const commit = (next: number) => update(setPreviewHeight(next));
-  // The arrows move the split the way they point: up gives the Preview more
-  // height. Home and End set its smallest and largest share.
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const move =
-      event.key === "ArrowUp"
-        ? (current: number) => current + HEIGHT_STEP
-        : event.key === "ArrowDown"
-          ? (current: number) => current - HEIGHT_STEP
-          : event.key === "Home"
-            ? () => PREVIEW_HEIGHT.min
-            : event.key === "End"
-              ? () => PREVIEW_HEIGHT.max
-              : null;
-    if (move === null) return;
-    event.preventDefault();
-    update((panels) => setPreviewHeight(move(panels.preview.height))(panels));
-  };
-  const dragged = (event: PointerEvent<HTMLDivElement>) => {
-    const start = drag.current;
-    return start && height > 0
-      ? clampPreviewHeight(
-          start.share + ((start.y - event.clientY) / height) * 100,
-        )
-      : null;
-  };
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { y: event.clientY, share };
-  };
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const next = dragged(event);
-    if (next !== null)
-      region.current?.style.setProperty(
-        HEIGHT_VAR,
-        `${previewBelowHeight(next, height)}px`,
-      );
-  };
-  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    const next = dragged(event);
-    drag.current = null;
-    if (next !== null) commit(next);
-  };
+  const viewHeight = size?.height ?? 0;
+  const handlers = useSizing(
+    {
+      read: (panels) => panels.preview.height,
+      write: setPreviewHeight,
+      // Up gives the Preview more height.
+      keys: () => ({ grow: "ArrowUp", shrink: "ArrowDown" }),
+      step: () => 5,
+      min: PREVIEW_HEIGHT.min,
+      max: PREVIEW_HEIGHT.max,
+      dragged: (_handle, from, to) =>
+        viewHeight > 0 ? ((from.clientY - to.clientY) / viewHeight) * 100 : 0,
+      drawn: (next) => previewBelowHeight(clampPreviewHeight(next), viewHeight),
+      property: properties.height,
+    },
+    region,
+  );
+  const percent = new Intl.NumberFormat(host?.getLocale(), {
+    style: "percent",
+  });
   return (
     <>
       <div
@@ -276,12 +283,8 @@ function Below({
         aria-valuemax={PREVIEW_HEIGHT.max}
         // The reader's share; a short view draws less to keep the editor's.
         aria-valuenow={share}
-        aria-valuetext={`${share}%`}
-        onKeyDown={onKeyDown}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        aria-valuetext={percent.format(share / 100)}
+        {...handlers}
         {...part("split")}
       />
       <section
@@ -290,7 +293,9 @@ function Below({
         role="region"
         aria-label={label}
         data-panel="preview"
-        style={{ [HEIGHT_VAR]: `${drawn}px` } as CSSProperties}
+        style={{
+          [properties.height]: `${previewBelowHeight(share, viewHeight)}px`,
+        }}
         {...part("panel", "below")}
       >
         {content}

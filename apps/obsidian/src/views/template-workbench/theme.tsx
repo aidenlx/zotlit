@@ -202,6 +202,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
   // tooltips above the popover or chooser page they sit in.
   expressionExtension: [hostedEditor, popoverTooltips],
   expressionCompletion: nativeCompletion(expressionOption),
+  // The side panels carry their drawn sizes in the plugin's own namespace.
+  panelProperties: { width: "--zt-panel-width", height: "--zt-panel-height" },
   classes: {
     match: {
       "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",
@@ -423,7 +425,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       stack: "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col",
       editor: "zt:min-h-0 zt:min-w-0 zt:flex-1",
       panel:
-        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--workbench-panel-width) zt:data-[state=fields]:max-w-2/5 zt:data-[state=preview]:w-(--workbench-panel-width) zt:data-[state=preview]:max-w-2/5 zt:data-[state=below]:h-(--workbench-panel-height)",
+        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--zt-panel-width) zt:data-[state=fields]:max-w-2/5 zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=preview]:max-w-2/5 zt:data-[state=below]:h-(--zt-panel-height)",
       edge: "zt:w-1 zt:shrink-0 zt:cursor-col-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
       split:
         "zt:h-1 zt:shrink-0 zt:cursor-row-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",

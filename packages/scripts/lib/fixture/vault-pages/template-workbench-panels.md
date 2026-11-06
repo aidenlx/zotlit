@@ -164,8 +164,11 @@ stays at the left.
 Expected: the drag makes the Preview taller. With the keyboard, `ArrowUp`
 makes it 5% of the tab's height taller and `ArrowDown` 5% shorter; `Home`
 makes it 20% of the tab's height and `End` 80%. A screen reader reads the
-share as a percentage. In step 4, the Preview gets shorter first: the editor
-keeps at least 240 pixels of height.
+share as a percentage. After `End`, the editor keeps at least 320 pixels of
+height: the toolbar, the tabs, the tab's one-line task and at least five
+lines of the note body show above the Preview. Scroll the editor to reach
+**Include annotations in the note** and its **Add to template** button; no
+part of the editor is cut off. In step 4, the Preview gets shorter first.
 
 ## The Preview height survives a restart
 

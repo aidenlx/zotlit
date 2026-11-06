@@ -310,8 +310,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The editor hover popover now open, which the next one replaces. */
   hoverPopover: HoverPopover | null = null;
   readonly #editor: WorkbenchEditorInstance<NativeRenderResult>;
-  /** The leaf's size, which places the side panels; null until measured. */
+  /**
+   * The leaf's size, which places the side panels; null until measured.
+   * Public so a test, whose document lays nothing out, can set it.
+   */
   readonly viewSize = Atom.make<ViewSize | null>(null);
+  /** Measures the leaf in its own window, which a pop-out has apart. */
+  #sizeObserver: ResizeObserver | null = null;
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
@@ -961,7 +966,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   override onResize(): void {
     super.onResize();
-    this.#measure();
     for (const element of this.contentEl.querySelectorAll<HTMLElement>(
       ".cm-editor",
     )) {
@@ -1561,6 +1565,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   protected override onOpen(): Promise<void> {
     this.#closed = false;
     this.#release ??= holdTemplateWorkbenchModel(this.registry, this.model);
+    this.#sizeObserver?.disconnect();
+    const { ResizeObserver } = this.contentEl.win as typeof window;
+    const observer = new ResizeObserver(() => this.#measure());
+    observer.observe(this.contentEl);
+    this.#sizeObserver = observer;
     this.#measure();
     this.registerDomEvent(
       this.contentEl,
@@ -1664,6 +1673,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     } finally {
       this.#root?.unmount();
       this.#root = null;
+      this.#sizeObserver?.disconnect();
+      this.#sizeObserver = null;
       this.#cleanup.dispose();
       // Interrupts what still runs before the host and the editor go.
       const stopped = this.#runner[Symbol.asyncDispose]();

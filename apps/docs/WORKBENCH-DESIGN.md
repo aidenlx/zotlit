@@ -186,7 +186,10 @@ panels, as the Template Workbench View in Obsidian does. "Show fields" and
 "Show preview" in the header show and hide each panel at every width. The
 shared placement rule puts a panel beside the editor while the editor keeps
 360 px; otherwise the Preview goes under the editor, at its saved share of
-the height. Document order is Fields Panel, editor, Preview Panel. A short
+the height; the editor keeps its toolbar, tabs and five source lines, and
+scrolls rather than cut off a control. A pressed view action shows a primary
+border and icon over the muted fill. Document order is Fields Panel, editor,
+Preview Panel. A short
 viewport scrolls the page while preserving several lines of editor space.
 
 Source and Problems share the editor pane. An open Problems area keeps the share the reader chooses by dragging its top

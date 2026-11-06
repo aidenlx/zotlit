@@ -126,13 +126,16 @@ describe("Preview height under the editor", () => {
     expect(previewBelowHeight(25, 800)).toBe(200);
   });
 
-  it("gives up height first, so the editor keeps 240 px", () => {
-    // 80 % of 500 is 400 px, which would leave the editor 100 px.
-    expect(previewBelowHeight(80, 500)).toBe(260);
-    expect(previewBelowHeight(40, 500)).toBe(200);
+  it("gives up height first, so the editor keeps its toolbar, tabs, task and five source lines", () => {
+    // The web Workbench at 320 x 800 lays its panels out 585 px tall. At the
+    // largest share, 80 %, the Preview would leave the editor 117 px: less
+    // than its toolbar and tabs. It takes 265 px and leaves the editor 320.
+    expect(previewBelowHeight(80, 585)).toBe(265);
+    // 40 % of 700 px leaves the editor 420 px, past its floor.
+    expect(previewBelowHeight(40, 700)).toBe(280);
   });
 
   it("has no height in a view shorter than the editor's floor", () => {
-    expect(previewBelowHeight(40, 200)).toBe(0);
+    expect(previewBelowHeight(40, 300)).toBe(0);
   });
 });

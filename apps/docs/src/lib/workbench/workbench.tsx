@@ -5,7 +5,6 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Option } from "effect";
 import type { Layer } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
-import * as Atom from "effect/reactivity/Atom";
 import {
   ArrowLeft,
   Download,
@@ -64,7 +63,6 @@ import {
 } from "@zotlit/workbench/ui";
 import type {
   PanelSide,
-  ViewSize,
   WorkbenchTab,
   WorkbenchDiagnosis,
   WorkbenchHost,
@@ -118,22 +116,23 @@ import { useWorkbenchConnection } from "./use-workbench-connection";
 
 /** The result becomes a column once both reading and editing have room. */
 
+/**
+ * A view toggle while its panel shows: a primary border and icon over the
+ * muted fill, so the state reads by more than the fill.
+ */
+const PRESSED_TOGGLE =
+  "aria-pressed:border-fd-primary aria-pressed:bg-fd-muted aria-pressed:[&_svg]:text-fd-primary";
+
 /** The Workbench on a page runtime of its own, which closing the page disposes. */
 export function Workbench({
   layer,
-  viewSize,
 }: {
   /** The page's services; tests hand a layer over fakes. */
   layer?: Layer.Layer<PageServices>;
-  /**
-   * The frame's size, which places the side panels. Tests hand one, since
-   * their document lays nothing out; the page otherwise measures its frame.
-   */
-  viewSize?: Atom.Atom<ViewSize | null>;
 }) {
   return (
     <PageRuntime layer={layer}>
-      <WorkbenchPage viewSize={viewSize} />
+      <WorkbenchPage />
     </PageRuntime>
   );
 }
@@ -144,13 +143,9 @@ interface EditorReads {
 }
 
 /** The page's atoms, its host, and the one editor they serve. */
-function WorkbenchPage({
-  viewSize,
-}: {
-  viewSize: Atom.Atom<ViewSize | null> | undefined;
-}) {
+function WorkbenchPage() {
   const bridge = usePageBridge();
-  const [page] = useState(() => makeWebPage(bridge, viewSize));
+  const [page] = useState(() => makeWebPage(bridge));
   const sample = useAtomValue(page.chosen);
   // The editor's caret, read when the host asks for it.
   const reads = useRef<EditorReads>({ insertTarget: () => null });
@@ -241,7 +236,7 @@ function WorkbenchSession({
   const measureFrame = useCallback(
     (main: HTMLElement | null) => {
       const view = main?.ownerDocument.defaultView;
-      if (!main || !view || !Atom.isWritable(viewSize)) return;
+      if (!main || !view) return;
       const observer = new view.ResizeObserver(([entry]) => {
         const { width, height } = entry!.contentRect;
         if (width > 0 && height > 0)
@@ -676,7 +671,7 @@ function WorkbenchSession({
             variant="ghost"
             size="xs"
             aria-pressed={panels.fields.shown}
-            className="aria-pressed:bg-fd-muted"
+            className={PRESSED_TOGGLE}
             onClick={() => togglePanel("fields")}
           >
             <PanelLeft aria-hidden className="rtl:-scale-x-100" />
@@ -686,7 +681,7 @@ function WorkbenchSession({
             variant="ghost"
             size="xs"
             aria-pressed={panels.preview.shown}
-            className="aria-pressed:bg-fd-muted"
+            className={PRESSED_TOGGLE}
             onClick={() => togglePanel("preview")}
           >
             <PanelRight aria-hidden className="rtl:-scale-x-100" />
@@ -789,10 +784,11 @@ function WorkbenchSession({
       editor={
         <>
           <EditToolbar onModeChange={changeMode} />
-          {/* Everything the reader edits, as one region. A reading that takes
-              the whole pane leaves it no height, and it shows nothing rather
-              than spilling its tabs and source over the explanation. */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {/* Everything the reader edits, as one region. When the pane is too
+              short for the tabs and five source lines, as under a tall
+              Problems area or Preview, the region scrolls: no control is cut
+              off, and nothing spills over the explanation. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
             {advanced && (
               <>
                 <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">
@@ -818,7 +814,7 @@ function WorkbenchSession({
                     controller={controller}
                     onGo={setReveal}
                   />
-                  <div className="flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
+                  <div className="flex min-h-30 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
                     <SliceEditor
                       controller={controller}
                       slice="advanced"

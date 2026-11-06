@@ -13,10 +13,14 @@ import {
   EditToolbar,
   ResultHeader,
   ResultRegion,
+  INITIAL_PANELS,
   TabBar,
+  usePanelProperties,
+  useParts,
   WorkbenchThemeProvider,
   WorkbenchMessagesProvider,
 } from "@zotlit/workbench/ui";
+import type { PanelSide, WorkbenchPanels } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -44,16 +48,39 @@ export interface FrameParts {
 }
 
 /**
- * The parts at their first-paint places: the Fields Panel at its initial
- * width, the editor, and the Preview at its initial width, each within the
- * 2/5 share the live panels keep.
+ * The panels a new page shows: both, the Fields Panel at the width of the
+ * field column it replaced (18rem), the Preview at its initial width.
  */
-function firstPaint({ fields, edit, result }: FrameParts) {
+export const PAGE_PANELS: WorkbenchPanels = {
+  fields: { shown: true, width: 288 },
+  preview: { ...INITIAL_PANELS.preview, shown: true },
+};
+
+/**
+ * The parts as a new page first paints them, before it measures its frame:
+ * the panels of {@link PAGE_PANELS} as columns, drawn with the live panels'
+ * parts and custom properties.
+ */
+function FirstPaint({ fields, edit, result }: FrameParts) {
+  const part = useParts("panels");
+  const properties = usePanelProperties();
+  const column = (side: PanelSide, content: ReactNode) => (
+    <div
+      style={{ [properties.width]: `${PAGE_PANELS[side].width}px` }}
+      {...part("panel", side)}
+    >
+      {content}
+    </div>
+  );
   return (
-    <div className="flex h-full min-w-0 flex-1 gap-3">
-      <div className="flex w-72 max-w-2/5 shrink-0 flex-col">{fields}</div>
-      <div className="flex min-w-0 flex-1 flex-col">{edit}</div>
-      <div className="flex w-100 max-w-2/5 shrink-0 flex-col">{result}</div>
+    <div {...part("panels")}>
+      {column("fields", fields)}
+      <div aria-hidden {...part("edge", "fields")} />
+      <div {...part("stack")}>
+        <div {...part("editor")}>{edit}</div>
+      </div>
+      <div aria-hidden {...part("edge", "preview")} />
+      {column("preview", result)}
     </div>
   );
 }
@@ -69,7 +96,7 @@ export function WorkbenchFrame({
   editor,
   problems,
   result,
-  arrange = firstPaint,
+  arrange = (parts) => <FirstPaint {...parts} />,
   mainRef,
   busy = false,
   children,

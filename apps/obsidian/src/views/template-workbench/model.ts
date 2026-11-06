@@ -27,7 +27,6 @@ import {
 import type {
   BUILT_IN_BINDING_DEFAULTS,
   NameFolderPaneProps,
-  PanelSide,
   TemplateRoot,
   WorkbenchChoices,
   WorkbenchInsertTarget,
@@ -498,32 +497,32 @@ const savedPanel = Schema.Struct({
   shown: Schema.Boolean,
   width: Schema.Finite,
 });
+/** The Preview's side, which also holds its height under the editor. */
+const savedPreview = Schema.Struct({
+  shown: Schema.Boolean,
+  width: Schema.Finite,
+  height: Schema.optional(Schema.Finite),
+});
 
-/**
- * Each side decodes alone; its width is held within the limits, and so is
- * the Preview's height, which decodes apart from its side.
- */
+/** Each side decodes alone; its width and height are held within the limits. */
 function readPanels(input: unknown): SavedWorkbench["panels"] {
   const value = decode(record, input) ?? {};
-  const read = (side: PanelSide): WorkbenchPanel | undefined => {
-    const panel = decode(savedPanel, value[side]);
-    return panel
-      ? { shown: panel.shown, width: clampPanelWidth(panel.width) }
-      : undefined;
-  };
-  const fields = read("fields");
-  const preview = read("preview");
-  const height = decode(
-    Schema.Finite,
-    (decode(record, value.preview) ?? {}).height,
-  );
+  const fields = decode(savedPanel, value.fields);
+  const preview = decode(savedPreview, value.preview);
   return {
-    ...(fields ? { fields } : {}),
+    ...(fields
+      ? {
+          fields: { shown: fields.shown, width: clampPanelWidth(fields.width) },
+        }
+      : {}),
     ...(preview
       ? {
           preview: {
-            ...preview,
-            ...(height === null ? {} : { height: clampPreviewHeight(height) }),
+            shown: preview.shown,
+            width: clampPanelWidth(preview.width),
+            ...(preview.height === undefined
+              ? {}
+              : { height: clampPreviewHeight(preview.height) }),
           },
         }
       : {}),

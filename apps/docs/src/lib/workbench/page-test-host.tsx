@@ -1,7 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
-import * as Atom from "effect/reactivity/Atom";
 import { TestClock } from "effect/testing";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -199,16 +198,44 @@ export async function open({
         ),
       ).pipe(Layer.provideMerge(TestClock.layer()))
     : Layer.empty;
-  // The frame's size, which the page reads from the atom the test hands it.
-  let size = frame;
-  const resized = new Set<(next: ViewSize) => void>();
-  const viewSize = Atom.make<ViewSize | null>((get) => {
-    const listener = (next: ViewSize) => get.setSelf(next);
-    resized.add(listener);
-    get.addFinalizer(() => resized.delete(listener));
-    return size;
-  });
   await using resources = new AsyncDisposableStack();
+  // The test document lays nothing out, so the browser's geometry boundary
+  // reports the frame's size: the page measures its frame through the
+  // observer as it does in a browser, and every other element through the
+  // document's own.
+  let size = frame;
+  const frames = new Set<{ report: (next: ViewSize) => void }>();
+  const { ResizeObserver: DocumentObserver } = window;
+  class FrameObserver extends DocumentObserver {
+    readonly #callback: ResizeObserverCallback;
+    #frame: { report: (next: ViewSize) => void } | null = null;
+    constructor(callback: ResizeObserverCallback) {
+      super(callback);
+      this.#callback = callback;
+    }
+    override observe(target: Element, options?: ResizeObserverOptions) {
+      if (target.id !== "workbench-editor")
+        return super.observe(target, options);
+      const frame = {
+        report: (next: ViewSize) =>
+          this.#callback(
+            [{ target, contentRect: next } as unknown as ResizeObserverEntry],
+            this,
+          ),
+      };
+      this.#frame = frame;
+      frames.add(frame);
+      if (size) frame.report(size);
+    }
+    override disconnect() {
+      if (this.#frame) frames.delete(this.#frame);
+      super.disconnect();
+    }
+  }
+  window.ResizeObserver = FrameObserver;
+  resources.defer(() => {
+    window.ResizeObserver = DocumentObserver;
+  });
   const host = resources.adopt(document.createElement("div"), (element) => {
     element.remove();
   });
@@ -218,7 +245,6 @@ export async function open({
   const content = (
     <>
       <Workbench
-        viewSize={viewSize}
         layer={Layer.mergeAll(
           layerPage.pipe(
             Layer.provide([
@@ -262,7 +288,7 @@ export async function open({
     resizeFrame(next) {
       size = next;
       act(() => {
-        for (const listener of resized) listener(next);
+        for (const frame of frames) frame.report(next);
       });
     },
     async settle() {

@@ -30,8 +30,13 @@ export const PANEL_WIDTH = { min: 240, initial: 400, max: 960 } as const;
 /** The shares of the view height the Preview takes under the editor, in percent. */
 export const PREVIEW_HEIGHT = { min: 20, initial: 40, max: 80 } as const;
 
-/** The least room the editor keeps beside and above the panels, in pixels. */
-export const EDITOR_MIN = { width: 360, height: 240 } as const;
+/**
+ * The least room the editor keeps beside and above the panels, in pixels.
+ * The height holds the editor's toolbar and tab rows, the tab's one-line
+ * task, and five lines of source; a host draws the source at least five
+ * lines tall and scrolls the tab when its content needs more.
+ */
+export const EDITOR_MIN = { width: 360, height: 320 } as const;
 
 /** A new editor shows neither panel. */
 export const INITIAL_PANELS: WorkbenchPanels = {
@@ -133,11 +138,14 @@ export function placePanels(
 
 /**
  * The Preview's height under the editor, in pixels: its `share` of a view
- * `height` pixels tall, less whatever the editor needs to keep
+ * `viewHeight` pixels tall, less whatever the editor needs to keep
  * {@link EDITOR_MIN}. The Preview gives up height before the editor does.
  */
-export const previewBelowHeight = (share: number, height: number) =>
+export const previewBelowHeight = (share: number, viewHeight: number) =>
   Math.max(
     0,
-    Math.min(Math.round((height * share) / 100), height - EDITOR_MIN.height),
+    Math.min(
+      Math.round((viewHeight * share) / 100),
+      viewHeight - EDITOR_MIN.height,
+    ),
   );

@@ -24,7 +24,7 @@ import {
   setPreviewHeight,
   showPanel,
 } from "./panel-layout";
-import type { ViewSize, WorkbenchPanels } from "./panel-layout";
+import type { ViewSize } from "./panel-layout";
 import { fakeHost, TEST_RUNTIME } from "./test-host";
 
 import { WorkbenchDocumentController } from "#/document/controller";
@@ -55,7 +55,6 @@ function open(
     kind?: WorkbenchDocumentKind;
     partialName?: Atom.Atom<string | null>;
     viewSize?: Atom.Atom<ViewSize | null>;
-    panels?: WorkbenchPanels;
   } = {},
 ) {
   const { kind, ...rest } = options;
@@ -262,20 +261,6 @@ describe("the side panels", () => {
     });
     // Resizing the view moves the panels; what the reader chose stands.
     expect(registry.get(model.panels)).toBe(panels);
-  });
-
-  it("starts from the panels the host names", () => {
-    using opened = open({
-      panels: {
-        fields: { shown: true, width: 288 },
-        preview: { shown: true, width: 400, height: 40 },
-      },
-    });
-    const { registry, model } = opened;
-    expect(registry.get(model.panels).fields).toEqual({
-      shown: true,
-      width: 288,
-    });
   });
 
   it("draws a panel at most two fifths of its container, within the limits", () => {

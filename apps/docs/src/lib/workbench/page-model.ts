@@ -22,7 +22,6 @@ import {
   annotationSamples,
   chooseAnnotation,
   createWorkbenchEditor,
-  INITIAL_PANELS,
   INITIAL_VIEW,
   patchAt,
 } from "@zotlit/workbench/ui";
@@ -34,7 +33,6 @@ import type {
   WorkbenchItemDataInput,
   ViewSize,
   WorkbenchModel,
-  WorkbenchPanels,
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
@@ -48,6 +46,7 @@ import {
 } from "./draft-keeper";
 import type { DraftKeeper } from "./draft-keeper";
 import type { SampleItem } from "./fields";
+import { PAGE_PANELS } from "./frame";
 import { matchData } from "./host";
 import { Rendering } from "./rendering";
 import type { PageBridge } from "./runtime";
@@ -97,8 +96,8 @@ export interface PageLayout {
 /** The page's atoms and commands; one page has one. */
 export interface WebPage {
   readonly view: Atom.Writable<WorkbenchViewState>;
-  /** The size of the page's frame, which places the side panels. */
-  readonly viewSize: Atom.Atom<ViewSize | null>;
+  /** The size of the page's frame, which the page measures to place the side panels. */
+  readonly viewSize: Atom.Writable<ViewSize | null>;
   /** The vault Item the page holds, which the paper choice offers. */
   readonly retained: Atom.Writable<SampleItem | null>;
   /** The document the draft is kept for. */
@@ -134,24 +133,8 @@ export interface WebPage {
   >;
 }
 
-/**
- * A new page shows both panels, as the page always has: the Fields Panel at
- * the width of the field column it replaces, 18rem.
- */
-const PAGE_PANELS: WorkbenchPanels = {
-  fields: { shown: true, width: 288 },
-  preview: { ...INITIAL_PANELS.preview, shown: true },
-};
-
-/**
- * The page's atoms over `bridge`. Nothing runs until something reads them.
- * `viewSize` is the frame's size, which the page measures into an atom of
- * its own unless a test hands one.
- */
-export function makeWebPage(
-  bridge: PageBridge,
-  viewSize: Atom.Atom<ViewSize | null> = Atom.make<ViewSize | null>(null),
-): WebPage {
+/** The page's atoms over `bridge`. Nothing runs until something reads them. */
+export function makeWebPage(bridge: PageBridge): WebPage {
   const { runtime } = bridge;
   const view = Atom.make<WorkbenchViewState>({
     ...INITIAL_VIEW,
@@ -183,7 +166,7 @@ export function makeWebPage(
   );
   const page: WebPage = {
     view,
-    viewSize,
+    viewSize: Atom.make<ViewSize | null>(null),
     retained,
     location: Atom.make(STANDALONE_LOCATION),
     chosen,
