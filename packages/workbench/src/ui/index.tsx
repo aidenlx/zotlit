@@ -177,7 +177,11 @@ export { partialContextLabel } from "./partial-preview";
 export { TabBar, TabPanel } from "./tab-bar";
 export { isProfileProblem, TABS, tabLabel, tabLede, tabsFor } from "./tabs";
 export { routeDiagnosis, routeProblem } from "./problem-route";
-export { repairCommands, selectionInDocument } from "./repair-commands";
+export {
+  insertionTarget,
+  repairCommands,
+  selectionInDocument,
+} from "./repair-commands";
 export type { RepairCommands } from "./repair-commands";
 export type { WorkbenchTab } from "./tabs";
 export {

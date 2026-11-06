@@ -96,10 +96,23 @@ const editorText = (host: HTMLElement) =>
     .map((box) => EditorView.findFromDOM(box)?.state.doc.toString() ?? "")
     .join("\n");
 
+/** The note editor, with the caret the reader put at the end of its first line. */
+const placeCaret = (host: HTMLElement) => {
+  const note = [...host.querySelectorAll<HTMLElement>('[role="textbox"]')]
+    .map((box) => EditorView.findFromDOM(box)!)
+    .find((editor) => editor.state.doc.toString().includes("zt.title"))!;
+  act(() => {
+    note.focus();
+    note.dispatch({ selection: { anchor: note.state.doc.line(1).to } });
+  });
+  return note;
+};
+
 // #1955: where the Fields column does not fit, Fields opens its picker.
 it("opens the Fields picker from its header action in a narrow frame and inserts a field from the keyboard", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
+  const note = placeCaret(page.host);
   const fields = action(page.host, m.workbench_show_fields());
   expect(region(page.host, m.workbench_view_fields())).toBeNull();
   expect(fields.getAttribute("aria-expanded")).toBe("false");
@@ -118,11 +131,35 @@ it("opens the Fields picker from its header action in a narrow frame and inserts
   press(search, "Enter");
   await page.settle();
   expect(pickerSearch()).toBeNull();
-  expect(editorText(page.host)).toContain("zt.authors");
+  // The field goes where the reader left the caret.
+  expect(note.state.doc.line(1).text).toContain("zt.authors");
   expect(page.host.textContent).toContain(
     m.workbench_fields_inserted({ field: m.workbench_field_authors() }),
   );
 });
+
+// With no caret the reader put in the template, a field has no place to go:
+// the start of the note would break its heading, and the start of Source
+// its front matter.
+it.each([{ source: false }, { source: true }])(
+  "inserts no field before the reader places the caret (Source: $source)",
+  async ({ source }) => {
+    await using page = await open({ frame: { width: 560, height: 700 } });
+    await page.settle();
+    if (source) page.press(m.workbench_advanced());
+    await page.settle();
+    const before = editorText(page.host);
+    page.press(m.workbench_show_fields());
+    await page.settle();
+    expect(pickerSearch()!.closest('[role="dialog"]')?.textContent).toContain(
+      m.workbench_fields_choose_place(),
+    );
+    press(pickerSearch()!, "Enter");
+    await page.settle();
+    expect(editorText(page.host)).toBe(before);
+    expect(pickerSearch()).not.toBeNull();
+  },
+);
 
 it("closes the Fields picker on Escape and returns focus to the Fields action", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });

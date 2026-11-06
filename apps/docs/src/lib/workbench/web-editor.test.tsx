@@ -480,6 +480,7 @@ describe("the simplified editing flow", () => {
         selection: { anchor: 0, head: value.state.doc.length },
       }),
     );
+    act(() => value.focus());
     press(
       fieldRow(page.host, m.workbench_field_authors()),
       m.workbench_fields_put_in_note(),
@@ -497,6 +498,7 @@ describe("the simplified editing flow", () => {
         selection: { anchor: from, head: from + "zt.authors".length },
       }),
     );
+    act(() => source.focus());
     press(
       fieldRow(page.host, m.workbench_field_title()),
       m.workbench_fields_put_in_note(),

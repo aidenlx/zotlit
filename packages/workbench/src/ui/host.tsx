@@ -177,6 +177,11 @@ export interface WorkbenchInsertTarget {
   readonly range: WorkbenchSliceRange & {
     readonly anchor?: number;
     readonly head?: number;
+    /**
+     * The reader put the caret here: the pane has held focus. A pane that
+     * only came on screen reports where its caret starts, without it.
+     */
+    readonly placed?: true;
   };
 }
 

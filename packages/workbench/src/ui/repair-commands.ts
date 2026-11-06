@@ -78,6 +78,19 @@ export function selectionInDocument(
   return selection && document.hasSlice(selection.slice) ? selection : null;
 }
 
+/**
+ * Where a field the reader inserts goes: the caret the reader put in the
+ * template, while the document still has its slice. Before the reader puts
+ * one there, no place is the insertion's, and both hosts insert nothing.
+ */
+export function insertionTarget(
+  selection: WorkbenchInsertTarget | null,
+  document: Pick<WorkbenchDocumentController, "hasSlice">,
+): WorkbenchInsertTarget | null {
+  const target = selectionInDocument(selection, document);
+  return target?.range.placed ? target : null;
+}
+
 type Transition = (state: WorkbenchViewState) => WorkbenchViewState;
 
 export function repairCommands({

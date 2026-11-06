@@ -45,6 +45,7 @@ import {
   fieldSnippet,
   fieldsActionKey,
   renderDiagnosis,
+  insertionTarget,
   repairCommands,
   useParts,
   useWorkbenchProblems,
@@ -284,7 +285,6 @@ function WorkbenchSession({
     reconnect,
     disconnect,
   } = useWorkbenchConnection(page);
-  reads.insertTarget = () => ({ slice, range: caret });
 
   // One reading of the problems behind both gates: the screen a refused Profile
   // gets, and the render it never starts (the model's Item data holds the
@@ -363,6 +363,10 @@ function WorkbenchSession({
         : tab === "annotation"
           ? "annotation"
           : "note";
+  // The caret the reader put in the pane on screen; none before they do.
+  const target = insertionTarget(presentation.selection, controller);
+  const insertAt = target?.slice === slice ? target.range : null;
+  reads.insertTarget = () => insertAt && { slice, range: insertAt };
   // The note itself, which is the one result an update rewrites part of, so the
   // update-only Managed Region is offered beside it and nowhere else.
   const showAnnotation = !advanced && tab === "annotation";
@@ -427,6 +431,7 @@ function WorkbenchSession({
       ? undefined
       : controller.document?.manifest.frontmatter?.[row - 1];
   const fieldDisabled =
+    insertAt === null ||
     (showAnnotation && !controller.annotationSection) ||
     (!advanced &&
       tab === "properties" &&
@@ -467,14 +472,14 @@ function WorkbenchSession({
   /** Puts a snippet where the reader left the caret, then hands focus back. */
   const insert = useCallback(
     (snippet: string) => {
-      if (fieldDisabled) return;
+      if (fieldDisabled || insertAt === null) return;
       const head = insertSnippet(controller, slice, {
-        target: caret,
+        target: insertAt,
         snippet,
       });
       setReveal({ from: head, to: head });
     },
-    [fieldDisabled, controller, slice, caret],
+    [fieldDisabled, controller, slice, insertAt],
   );
 
   const insertion = useRef({ insert, mode: fieldMode });

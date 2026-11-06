@@ -55,7 +55,7 @@ import {
   fieldsActionKey,
   panelSizeMenus,
   repairCommands,
-  selectionInDocument,
+  insertionTarget,
   setAdvanced,
   setPanelWidth,
   setPreview,
@@ -1030,10 +1030,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The last focused slice remains the insertion target while a sidebar has focus. */
   get insertTarget(): WorkbenchInsertTarget | null {
-    return selectionInDocument(
-      this.#view.presentation.selection,
-      this.#controller,
-    );
+    return insertionTarget(this.#view.presentation.selection, this.#controller);
   }
 
   /** Inserts the field `node` names at the editor's insertion target. */
@@ -2559,6 +2556,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
                         1,
                       ),
                     }),
+                // An edit moves the caret the reader put; it is still theirs.
+                ...(range.placed ? { placed: range.placed } : {}),
               },
             },
           });

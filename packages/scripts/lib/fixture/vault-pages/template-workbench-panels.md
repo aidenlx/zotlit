@@ -190,9 +190,15 @@ first row. A press on **Show fields** while the picker is open closes it.
 1. Open the Books Profile in a new tab narrower than 600 pixels, and do not
    select the editor.
 2. Select **Show fields**, then press `Enter`.
+3. Press `Escape`. Select **Source**, and do not select the editor.
+4. Select **Show fields**, then press `Enter`.
+5. Press `Escape`. Place the cursor in the note body, then do step 4 again.
 
-Expected: the picker says "Select a place in the template to insert a
-field." `Enter` inserts nothing, and the picker stays open.
+Expected: in steps 2 and 4 the picker says "Select a place in the template
+to insert a field." `Enter` inserts nothing, and the picker stays open: the
+note's heading and the front matter stay as they were. In step 5 `Enter`
+inserts the first field at the cursor. The web Workbench does the same
+steps, with the same outcome.
 
 ## A long value in the Fields picker
 

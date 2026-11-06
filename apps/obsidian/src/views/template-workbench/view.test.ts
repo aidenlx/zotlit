@@ -1636,6 +1636,25 @@ An annotation.
     expect(view.insertTemplateField(node)).toBe(false);
   });
 
+  // A pane that only came on screen reports where its caret starts; the
+  // start of the note is no place the reader chose.
+  it("refuses an insertion before the reader places the caret", async () => {
+    const { view } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => view.open());
+      const before = view.getViewData();
+      expect(view.registry.get(view.fields.canInsert)).toBe(false);
+      await act(() => {
+        expect(view.insertField("{{ zt.title }}")).toBe(false);
+      });
+      expect(view.getViewData()).toBe(before);
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
+  });
+
   it("offers the Fields panel's insert while the editor takes edits", async () => {
     const { view } = setup();
     document.body.append(view.contentEl);
