@@ -101,6 +101,7 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import { AppContext } from "@/lib/app-context";
 import { awaitConfirm } from "@/lib/confirm";
+import { DOCS_SITE_URL } from "@/lib/constants";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
@@ -162,6 +163,7 @@ import { NativePreviewSession } from "@/views/note-preview/session";
 import { makeExportTemplateDataCommand } from "@/views/template-data-explorer/atoms";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
+import { COMMUNITY } from "@/views/welcome/links";
 
 import { templateWorkbenchAction } from "./actions";
 import {
@@ -1829,6 +1831,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setDisabled(!this.file)
         .onClick(() => this.#act("open-markdown", this.#openMarkdown())),
     );
+    this.#addHelpMenu(menu);
     if (this.file?.path === this.registry.get(defaultProfilePathAtom))
       menu.addItem((item) =>
         item
@@ -1838,6 +1841,38 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setIcon("rotate-ccw")
           .onClick(() => this.#start(Effect.ignore(this.#restoreDefault()))),
       );
+  }
+  /**
+   * The docs pages a template author returns to: the step-by-step guide, the
+   * syntax and the field references, and the community for what they miss.
+   */
+  #addHelpMenu(menu: Menu): void {
+    const pages: readonly [string, string][] = [
+      [m.template_workbench_docs_guide(), "/docs/how-to/customize-a-template"],
+      [m.workbench_docs_note(), "/docs/reference/templates/syntax"],
+      [m.template_workbench_docs_data(), "/docs/reference/templates/data"],
+    ];
+    menu.addItem((item) => {
+      item
+        .setSection(MENU_SECTION.info)
+        .setTitle(m.workbench_help())
+        .setIcon("circle-help");
+      const submenu = item.setSubmenu();
+      for (const [title, path] of pages)
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(title)
+            .setIcon("book-open")
+            .onClick(() => window.open(`${DOCS_SITE_URL}${path}`)),
+        );
+      submenu.addSeparator();
+      submenu.addItem((entry) =>
+        entry
+          .setTitle(m.workbench_problems_community())
+          .setIcon("messages-square")
+          .onClick(() => window.open(COMMUNITY)),
+      );
+    });
   }
   /**
    * Every Shared Partial the vault holds, so the reader moves between

@@ -21,6 +21,7 @@ import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
+import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 
@@ -250,7 +251,17 @@ export function ItemSelectionList({
   return (
     <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
       <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">
-        <p className={selectionHint}>{m.workbench_choose_preview_data()}</p>
+        <p className={selectionHint}>
+          {m.workbench_choose_preview_data()}{" "}
+          <a
+            className="external-link"
+            href={`${DOCS_SITE_URL}/docs/how-to/explore-template-data`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {m.template_data_explorer_docs()}
+          </a>
+        </p>
         <SelectionSearch
           label={m.workbench_search_zotero()}
           onSearch={onSearch}

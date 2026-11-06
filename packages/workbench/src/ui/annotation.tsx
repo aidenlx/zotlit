@@ -21,6 +21,7 @@ import { SampleSuggester } from "./sample-suggester";
 import type { SampleOption } from "./sample-suggester";
 import { SliceEditor } from "./slice-editor";
 import type { SliceEditorProps } from "./slice-editor";
+import { TabDocsLink } from "./tab-bar";
 import { useIcon, useParts } from "./theme";
 
 import { SAMPLE_ANNOTATIONS } from "#/render/index";
@@ -199,6 +200,7 @@ export function AnnotationPane({
       )}
       <p {...part("help-bar")}>
         <span {...part("help-lede")}>{m.workbench_annotation_lede()}</span>{" "}
+        <TabDocsLink tab="annotation" />
         <span {...part("help-toggle")}>
           <button
             ref={helpButton}

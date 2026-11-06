@@ -423,6 +423,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     tabPanel: {
       "tab-panel": "zt:min-w-0 zt:p-3",
       description: cn(hint, "zt:mb-3"),
+      // Obsidian's own external-link class: link color and the trailing arrow.
+      "docs-link": "external-link",
     },
     sliceEditor: {
       "slice-editor": cn(

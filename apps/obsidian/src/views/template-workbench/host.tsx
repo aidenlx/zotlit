@@ -41,6 +41,7 @@ import type {
 
 import { Toggle } from "@/components/obsidian/toggle";
 import { citationStyleLabel } from "@/lib/citation-style";
+import { DOCS_SITE_URL } from "@/lib/constants";
 import { awaitModal } from "@/lib/effect-modal";
 import { obsidianPopupKeys } from "@/lib/field-popup";
 import * as m from "@/lib/i18n/generated/messages";
@@ -494,6 +495,7 @@ export function createTemplateWorkbenchHost(
     },
     copy: copyToClipboard,
     communityUrl: COMMUNITY,
+    docsUrl: DOCS_SITE_URL,
     persistence: {
       read(scope, key) {
         const value: unknown = app.loadLocalStorage(
