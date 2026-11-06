@@ -39,7 +39,7 @@ import {
   memoryOpener,
   seedWorksSql,
 } from "@/services/zotero-reads/test-utils";
-import { createRenderFixture } from "@/views/note-preview/__fixtures__/render";
+import { createRenderFixture } from "@/views/template-workbench/preview/__fixtures__/render";
 
 import {
   chooseSample,
@@ -73,11 +73,13 @@ vi.mock("./partial-command", () => ({
   createSharedPartialEffect: vi.fn(() => Effect.succeed(null)),
 }));
 
-// The renderers are note-preview's own; here they stand in, so a render reports
+// The renderers are the Preview panel's own; here they stand in, so a render reports
 // which document kind the view asked for and what the session fed it.
-vi.mock("@/views/note-preview/render", async (importOriginal) => {
+vi.mock("@/views/template-workbench/preview/render", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@/views/note-preview/render")>();
+    await importOriginal<
+      typeof import("@/views/template-workbench/preview/render")
+    >();
   const { failedRender, renderIdentity } =
     await import("@zotlit/workbench/render");
   return {

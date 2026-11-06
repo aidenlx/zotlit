@@ -46,8 +46,8 @@ import type {
   ZoteroReadLease,
   ZoteroReadsState,
 } from "@/services/zotero-reads/service";
-import type { NativeRenderDeps } from "@/views/note-preview/render";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
+import type { NativeRenderDeps } from "@/views/template-workbench/preview/render";
 
 import type { WorkbenchActionServices } from "./actions";
 import type { TemplateWorkbenchDeps, TemplateWorkbenchView } from "./view";

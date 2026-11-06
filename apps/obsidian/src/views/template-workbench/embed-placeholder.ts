@@ -53,7 +53,7 @@ function placeholder(
   const box = doc.createElement("div");
   box.className =
     "zt:my-2 zt:flex zt:flex-col zt:gap-1 zt:rounded-md zt:border-(length:--border-width) zt:border-solid zt:border-(--background-modifier-border) zt:px-3 zt:py-2 zt:text-sm zt:text-muted-foreground";
-  box.dataset["notePreviewEmbed"] = note.file === null ? "missing" : "found";
+  box.dataset["previewEmbed"] = note.file === null ? "missing" : "found";
   const header = box.createDiv({
     cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-x-2",
   });

@@ -17,13 +17,13 @@ import {
 } from "@/lib/profile-stamp";
 import { bindDraftProfile, Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
-import { Template } from "@/services/template/service";
 import {
   checkDiagnostic,
   checkNativeProfile,
   PROFILE_OUTPUTS,
-} from "@/views/note-preview/check-profile";
-import type { ProfileCheck } from "@/views/note-preview/check-profile";
+} from "@/services/template-workbench/check-profile";
+import type { ProfileCheck } from "@/services/template-workbench/check-profile";
+import { Template } from "@/services/template/service";
 
 import type {
   CheckOutcome,

@@ -12,10 +12,10 @@ import type { RenderCallerSource } from "@zotlit/workbench/render";
 
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { Profile, ProfileOperationError } from "@/services/profile/service";
+import { checkDiagnostic } from "@/services/template-workbench/check-profile";
+import type { ProfileCheck } from "@/services/template-workbench/check-profile";
 import { plainTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
-import { checkDiagnostic } from "@/views/note-preview/check-profile";
-import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
 import type {
   CheckContext,

@@ -145,20 +145,20 @@ import {
 import { Template } from "@/services/template/service";
 import type { PartialUnpackOutcome } from "@/services/template/service";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
-import type {
-  NativeRenderDeps,
-  NativeRenderResult,
-} from "@/views/note-preview/render";
-import {
-  nativeResult,
-  retainNativeOutputs,
-  makeNativeRenderer,
-} from "@/views/note-preview/render";
 import type { ExplorerActions } from "@/views/template-data-explorer/actions";
 import { makeExportTemplateDataCommand } from "@/views/template-data-explorer/atoms";
 import { exportTarget } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
+import type {
+  NativeRenderDeps,
+  NativeRenderResult,
+} from "@/views/template-workbench/preview/render";
+import {
+  nativeResult,
+  retainNativeOutputs,
+  makeNativeRenderer,
+} from "@/views/template-workbench/preview/render";
 import { COMMUNITY } from "@/views/welcome/links";
 
 import { templateWorkbenchAction } from "./actions";

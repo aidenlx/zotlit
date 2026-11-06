@@ -36,8 +36,8 @@ import {
 import type { CliOutput, CliParamName, CliRejection } from "@/lib/cli-params";
 import { instantClock } from "@/lib/effect-clock";
 import { Profile } from "@/services/profile/service";
-import { PROFILE_OUTPUTS } from "@/views/note-preview/check-profile";
-import type { ProfileCheck } from "@/views/note-preview/check-profile";
+import { PROFILE_OUTPUTS } from "@/services/template-workbench/check-profile";
+import type { ProfileCheck } from "@/services/template-workbench/check-profile";
 
 import { selectCheckBaseline } from "./check-baseline";
 import {

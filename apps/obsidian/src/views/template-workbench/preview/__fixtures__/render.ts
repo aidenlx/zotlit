@@ -1,8 +1,8 @@
 import { Layer } from "effect";
 import type { PartialPreviewSelection, RenderRequest } from "@zotlit/workbench/render";
 import { runOnView } from "@/lib/__fixtures__/view-runner";
-import { makeNativeRenderer } from "@/views/note-preview/render";
-import type { NativeRenderDeps, NativeRenderResult } from "@/views/note-preview/render";
+import { makeNativeRenderer } from "@/views/template-workbench/preview/render";
+import type { NativeRenderDeps, NativeRenderResult } from "@/views/template-workbench/preview/render";
 import { buildRuntime } from "@/lib/effect-layer";
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
