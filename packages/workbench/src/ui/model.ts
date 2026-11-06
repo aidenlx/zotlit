@@ -4,7 +4,10 @@
 
 import type { WorkbenchDocumentAtoms } from "#/document/atoms";
 import type { WorkbenchDocumentController } from "#/document/controller";
-import type { CitationPreviewSelection } from "#/render/citation-examples";
+import type {
+  CitationExampleId,
+  CitationPreviewSelection,
+} from "#/render/citation-examples";
 import type { PartialPreviewSelection } from "#/render/partial-preview";
 import type { WorkbenchReportContext } from "#/render/report";
 import type { RenderRequest, RenderResources } from "#/render/request";
@@ -16,8 +19,15 @@ import type * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
+import { DEFAULT_CITATION_VARIANT } from "@zotlit/db";
+import type { CitationVariant } from "@zotlit/db";
 import type { MatchTree } from "@zotlit/templates/facade";
 
+import {
+  annotationExamples,
+  sampleAnnotationParent,
+} from "./annotation-samples";
+import type { AnnotationExamples } from "./annotation-samples";
 import type {
   WorkbenchClipboardError,
   WorkbenchHostError,
@@ -34,6 +44,11 @@ import type { SliceReveal } from "./slice-editor";
 import type { WorkbenchTab } from "./tabs";
 
 import { workbenchDocumentAtoms } from "#/document/atoms";
+import {
+  CITATION_EXAMPLE_ITEM,
+  DEFAULT_CITATION_EXAMPLE,
+} from "#/render/citation-examples";
+import { isPartialContext } from "#/render/partial-preview";
 
 /** The template root a pane edits, which the Explorer and the preview follow. */
 export type TemplateRoot = "note" | "annotation" | "filename" | "citation";
@@ -76,8 +91,6 @@ export interface WorkbenchViewState {
   readonly root: TemplateRoot;
   /** Whether the whole document is open in the Advanced editor. */
   readonly advanced: boolean;
-  /** Progress of the explicit action that creates the built-in Profile document. */
-  readonly customization: "idle" | "pending" | "failed";
 }
 
 /** How the preview renders and shows its result. */
@@ -89,12 +102,23 @@ export interface WorkbenchPreviewSettings {
   readonly showManaged: boolean;
 }
 
-/** What the reader chose to render the document against, beside the Item. */
+/**
+ * What the reader chose to render the document against, beside the Item, as
+ * both hosts name it. The model derives the example, the Citation set, and
+ * the partial selection from these and the chosen Item's data.
+ */
 export interface WorkbenchChoices {
-  readonly annotation: AnnotationExample | null;
-  readonly citation: CitationPreviewSelection | null;
-  /** A Shared Partial's caller and Profile. */
-  readonly partial: PartialPreviewSelection | null;
+  /** The annotation the examples render, by id; null for the first one. */
+  readonly annotationId: string | null;
+  /** The Citation Variant a Citation set renders under. */
+  readonly variant: CitationVariant;
+  /**
+   * The built-in Citation example set, or null while the chosen Item supplies
+   * the set. It outranks the Item: a reader who picks an example looks at it.
+   */
+  readonly citationExample: CitationExampleId | null;
+  /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
+  readonly partialProfile: string | null;
   readonly preview: WorkbenchPreviewSettings;
 }
 
@@ -103,6 +127,7 @@ export interface WorkbenchChoices {
  * through `itemData`; otherwise it is a writable atom of the model.
  */
 export interface WorkbenchItemData {
+  /** The chosen Item's own data, as the host's read answers it. */
   readonly snapshot: ItemSnapshot | null;
   readonly document?: string | undefined;
   readonly resources?: RenderResources | undefined;
@@ -129,13 +154,13 @@ export const INITIAL_VIEW: WorkbenchViewState = {
   item: null,
   root: "note",
   advanced: false,
-  customization: "idle",
 };
 
 export const INITIAL_CHOICES: WorkbenchChoices = {
-  annotation: null,
-  citation: null,
-  partial: null,
+  annotationId: null,
+  variant: DEFAULT_CITATION_VARIANT,
+  citationExample: DEFAULT_CITATION_EXAMPLE,
+  partialProfile: null,
   preview: {
     mode: "create",
     live: true,
@@ -176,14 +201,34 @@ export const setRoot = (root: TemplateRoot) =>
   patch<WorkbenchViewState>({ root });
 export const setAdvanced = (advanced: boolean) =>
   patch<WorkbenchViewState>({ advanced });
-export const chooseAnnotation = (annotation: AnnotationExample | null) =>
-  patch<WorkbenchChoices>({ annotation });
-export const chooseCitation = (citation: CitationPreviewSelection | null) =>
-  patch<WorkbenchChoices>({ citation });
-export const choosePartial = (partial: PartialPreviewSelection | null) =>
-  patch<WorkbenchChoices>({ partial });
+export const chooseAnnotation = (annotationId: string | null) =>
+  patch<WorkbenchChoices>({ annotationId });
+export const chooseCitation = (
+  value: Partial<Pick<WorkbenchChoices, "variant" | "citationExample">>,
+) => patch<WorkbenchChoices>(value);
+export const choosePartialProfile = (partialProfile: string | null) =>
+  patch<WorkbenchChoices>({ partialProfile });
 export const setPreview = (settings: Partial<WorkbenchPreviewSettings>) =>
   patchAt<WorkbenchChoices, "preview">("preview", settings);
+
+/** Whether two flat selections name the same thing, so a re-derived one keeps its readers still. */
+function sameFields<A extends object>(a: A | null, b: A | null): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  const keys = Object.keys(a) as (keyof A)[];
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((key) => a[key] === b[key])
+  );
+}
+
+/** An example re-derived from the same data is the same example. */
+function sameExample(
+  a: AnnotationExample | null,
+  b: AnnotationExample | null,
+): boolean {
+  return a === b || (a?.id === b?.id && a?.revision === b?.revision);
+}
 
 /** The runtime every read, render, and command of one host runs on. */
 export type WorkbenchRuntime = Atom.AtomRuntime<never, unknown>;
@@ -194,11 +239,10 @@ export interface WorkbenchModelOptions<R extends TemplateRenderResult> {
   readonly initial?: Partial<WorkbenchViewState>;
   /** The view state, when a host keeps it in an atom of its own. */
   readonly view?: Atom.Writable<WorkbenchViewState>;
-  /**
-   * The reader's choices, when a host keeps them in atoms of its own: it
-   * reads them from those atoms and writes each choice back to them.
-   */
-  readonly choices?: Atom.Writable<WorkbenchChoices>;
+  /** The choices to start from. */
+  readonly choices?: Partial<WorkbenchChoices>;
+  /** A Shared Partial's own name, which its preview renders; null for any other document. */
+  readonly partialName?: Atom.Atom<string | null>;
   /**
    * The chosen Item's data, when the host derives it from its own read and
    * from the document in use.
@@ -254,8 +298,25 @@ export interface WorkbenchModel<
   readonly runtime: WorkbenchRuntime;
   readonly view: Atom.Writable<WorkbenchViewState>;
   readonly choices: Atom.Writable<WorkbenchChoices>;
+  /**
+   * Makes an Item the choice. An Item the reader picked is the Citation set
+   * they asked to see, so the built-in example that outranks it stands down.
+   */
+  readonly pick: Atom.Writable<WorkbenchItemChoice | null, WorkbenchItemChoice>;
   /** Writable unless the host derives it. */
   readonly itemData: Atom.Atom<WorkbenchItemData>;
+  /** The chosen Item's annotations, and the one the examples render. */
+  readonly examples: Atom.Atom<AnnotationExamples>;
+  /** The Citation set the render reads, when the document reads one. */
+  readonly citation: Atom.Atom<CitationPreviewSelection | null>;
+  /** The Shared Partial the render draws, under its caller and Profile. */
+  readonly partial: Atom.Atom<PartialPreviewSelection | null>;
+  /**
+   * The paper one render reads. A chosen Citation example carries its own
+   * data and outranks the Item; otherwise the Item's data stands, and with
+   * no Item at all the Sample Annotation's own parent does.
+   */
+  readonly snapshot: Atom.Atom<ItemSnapshot | null>;
   /** The controller in use; a host that loads another document sets it. */
   readonly controller: Atom.Writable<WorkbenchDocumentController>;
   readonly document: WorkbenchDocumentAtoms;
@@ -303,7 +364,8 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
   controller: initialController,
   initial,
   view = Atom.make<WorkbenchViewState>({ ...INITIAL_VIEW, ...initial }),
-  choices = Atom.make(INITIAL_CHOICES),
+  choices: initialChoices,
+  partialName = Atom.make<string | null>(null),
   itemData: deriveItemData,
   runtime,
   host,
@@ -320,17 +382,76 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     : Atom.make<WorkbenchItemData>({ snapshot: null });
   const field = <K extends keyof WorkbenchViewState>(key: K) =>
     Atom.map(view, (state) => state[key]);
-  const preview = Atom.map(choices, (state) => state.preview);
+  const choices = Atom.make<WorkbenchChoices>({
+    ...INITIAL_CHOICES,
+    ...initialChoices,
+  });
+  // Narrow reads, so a change to one choice re-runs only what reads it.
+  const pick = <K extends keyof WorkbenchChoices>(key: K) =>
+    Atom.map(choices, (state) => state[key]);
+  const preview = pick("preview");
+  const item = field("item");
+  const root = field("root");
+  const kind = Atom.map(controller, (current) => current.kind);
+  const itemSnapshot = Atom.map(itemData, (data) => data.snapshot);
+  const examples = Atom.make((get) =>
+    annotationExamples(
+      get(item) !== null,
+      get(itemSnapshot),
+      get(pick("annotationId")),
+    ),
+  );
+  const example = Atom.withEquality(
+    Atom.make((get) => get(examples).example),
+    sameExample,
+  );
+  const citation = Atom.withEquality(
+    Atom.make((get): CitationPreviewSelection | null => {
+      const current = get(kind);
+      const set =
+        current === "citation" ||
+        (current === "partial" && get(root) === "citation");
+      if (!set) return null;
+      return {
+        variant: get(pick("variant")),
+        example: get(pick("citationExample")),
+      };
+    }),
+    sameFields,
+  );
+  const partial = Atom.withEquality(
+    Atom.make((get): PartialPreviewSelection | null => {
+      const name = get(partialName);
+      if (get(kind) !== "partial" || name === null) return null;
+      const context = get(root);
+      return {
+        name,
+        context: isPartialContext(context) ? context : "note",
+        profile: get(pick("partialProfile")),
+      };
+    }),
+    sameFields,
+  );
+  const snapshot = Atom.make((get): ItemSnapshot | null => {
+    if (get(citation)?.example) return CITATION_EXAMPLE_ITEM;
+    const loaded = get(itemSnapshot);
+    if (loaded) return loaded;
+    const chosen = get(example);
+    return get(item) === null && chosen
+      ? sampleAnnotationParent(chosen.id)
+      : null;
+  });
   const input = Atom.make((get): RenderSchedulerInput => {
-    const { annotation, citation, partial, preview } = get(choices);
+    const { mode, live } = get(preview);
     return {
       source: get(document.source),
-      mode: preview.mode,
-      live: preview.live,
-      annotation,
-      citation,
-      partial,
+      mode,
+      live,
+      annotation: get(example),
+      citation: get(citation),
+      partial: get(partial),
       ...get(itemData),
+      snapshot: get(snapshot),
     };
   });
   const match = Atom.make((get) => {
@@ -357,13 +478,28 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     runtime,
     view,
     choices,
+    pick: Atom.writable(
+      (get) => get(item),
+      (ctx, choice: WorkbenchItemChoice) => {
+        ctx.set(view, chooseItem(choice)(ctx.get(view)));
+        if (ctx.get(view).root === "citation")
+          ctx.set(
+            choices,
+            chooseCitation({ citationExample: null })(ctx.get(choices)),
+          );
+      },
+    ),
     itemData,
+    examples,
+    citation,
+    partial,
+    snapshot,
     controller,
     document,
     match: Atom.map(match, (state) => state.match),
     tab: field("tab"),
-    item: field("item"),
-    root: field("root"),
+    item,
+    root,
     advanced: field("advanced"),
     preview,
     input,

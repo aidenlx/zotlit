@@ -190,8 +190,9 @@ function WorkbenchSession({
   const addField = useRef<HTMLButtonElement>(null);
   const { result, trigger, attempt } = useAtomValue(model.scheduler.state);
   const { current: itemAnnotations, example: selectedAnnotation } =
-    useAtomValue(workbench.annotations);
+    useAtomValue(model.examples);
   const annotationResult =
+    selectedAnnotation !== null &&
     result?.annotationId === selectedAnnotation.id &&
     result.annotationRevision === selectedAnnotation.revision
       ? result
@@ -554,7 +555,11 @@ function WorkbenchSession({
           typeof selectedProperty.value === "string")));
   const annotationData = useMemo(() => {
     if (!ready) return null;
-    const data = rootData(sample, "annotation", selectedAnnotation)!;
+    const data = rootData(
+      sample,
+      "annotation",
+      selectedAnnotation ?? undefined,
+    )!;
     data.citation = annotationResult?.annotationCitation ?? null;
     return data;
   }, [ready, sample, selectedAnnotation, annotationResult?.annotationCitation]);
@@ -847,7 +852,7 @@ function WorkbenchSession({
         <FieldList
           root={root}
           sample={readSample}
-          annotation={selectedAnnotation}
+          annotation={selectedAnnotation ?? undefined}
           citation={annotationResult?.annotationCitation}
           ready={ready}
           mode={fieldMode}
@@ -1048,7 +1053,7 @@ function WorkbenchSession({
               <FieldList
                 root={root}
                 sample={readSample}
-                annotation={selectedAnnotation}
+                annotation={selectedAnnotation ?? undefined}
                 citation={annotationResult?.annotationCitation}
                 ready={ready}
                 mode={fieldMode}

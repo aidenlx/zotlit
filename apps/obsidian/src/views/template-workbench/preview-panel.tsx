@@ -127,9 +127,8 @@ export function PreviewPanel({
   const item = useAtomValue(workbench.item);
   const title = useAtomValue(model.title);
   const { status, error } = useAtomValue(model.read);
-  const { example } = useAtomValue(model.examples);
-  const { variant, citationExample } = useAtomValue(model.picks);
-  const preview = useAtomValue(model.preview);
+  const { example } = useAtomValue(workbench.examples);
+  const { variant, citationExample, preview } = useAtomValue(workbench.choices);
   const {
     mode,
     caller: partialContext,

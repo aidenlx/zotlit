@@ -12,12 +12,15 @@ import * as Atom from "effect/reactivity/Atom";
 import type { SaveSelectedProfileRequest } from "@zotlit/workbench/bridge";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { WorkbenchSliceRange } from "@zotlit/workbench/document";
-import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import {
+  DEFAULT_PROFILE_SOURCE,
+  SAMPLE_ANNOTATIONS,
+  SAMPLE_ITEMS,
+} from "@zotlit/workbench/render";
 import type { WorkbenchReportContext } from "@zotlit/workbench/render";
 import {
   annotationSamples,
   chooseAnnotation,
-  chooseItem,
   createWorkbenchEditor,
   INITIAL_VIEW,
   patchAt,
@@ -213,8 +216,6 @@ type Presentation = WorkbenchViewState["presentation"];
 export interface WebWorkbench extends Disposable {
   readonly editor: WorkbenchEditorInstance;
   readonly model: WorkbenchModel;
-  /** The chosen paper's Annotations, and the one chosen among them. */
-  readonly annotations: Atom.Atom<ReturnType<typeof annotationSamples>>;
   /**
    * The last manifest the document parsed with. The header and the Name and
    * folder form read it, so repairing an invalid draft blanks neither.
@@ -273,7 +274,9 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
         unsupportedProblems(problems).length > 0 ||
         unsupportedDependencies(state.resources?.dependencies).length > 0;
       return {
-        snapshot: Option.getOrNull(AsyncResult.value(read)),
+        // The chosen paper is data the page already holds; its read waits
+        // only for `Temporal`, which the hold below answers.
+        snapshot: get(page.chosen),
         document: get(page.location).reference,
         resources: state.resources,
         // A Profile the web host refuses is never compiled, so nothing renders
@@ -361,12 +364,6 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
       service.followCitationStyle(id),
     );
   });
-  const annotations = Atom.make((get) =>
-    annotationSamples(
-      get(page.chosen),
-      get(model.choices).annotation?.id ?? null,
-    ),
-  );
   const shown = Atom.make((get) => {
     get(model.document.revision);
     const controller = get(model.controller);
@@ -398,21 +395,15 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
         ? null
         : { text, revision: registry.get(model.document.revision) },
     );
-  const choose = (sample: SampleItem, id: string | null) =>
-    registry.update(
-      model.choices,
-      chooseAnnotation(annotationSamples(sample, id).example),
-    );
-  const show = (sample: SampleItem) => {
-    const annotation = registry.get(model.choices).annotation?.id ?? null;
+  const choose = (id: string | null) =>
+    registry.update(model.choices, chooseAnnotation(id));
+  // The Annotation choice stays: a paper that lacks it shows its first one.
+  const show = (sample: SampleItem) =>
     Atom.batch(() => {
       if (sample.provenance.kind === "connected")
         registry.set(page.retained, sample);
-      registry.update(page.view, chooseItem(itemChoice(sample)));
-      choose(sample, annotation);
+      registry.set(model.pick, itemChoice(sample));
     });
-  };
-  choose(registry.get(page.chosen), null);
   const present = (changes: Partial<Presentation>) =>
     registry.update(
       page.view,
@@ -431,7 +422,11 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
     screen: {
       source: model.document.source,
       sample: page.chosen,
-      annotationSelection: Atom.map(annotations, ({ example }) => example.id),
+      // The page always reads a paper, so an example always stands.
+      annotationSelection: Atom.map(
+        model.examples,
+        ({ example }) => example?.id ?? SAMPLE_ANNOTATIONS[0]!.id,
+      ),
       expected: Atom.make((get) => {
         const { saveTarget } = get(page.connection);
         return saveTarget?.reference === get(page.location).reference
@@ -497,7 +492,7 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
     retainedExpected,
     snapshot,
   }: NonNullable<ConnectionState["hydration"]>) => {
-    const annotation = registry.get(model.choices).annotation?.id ?? null;
+    const annotation = registry.get(model.choices).annotationId;
     const opened = {
       reference: selected.document.reference,
       source: selected.source,
@@ -540,14 +535,13 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
     // A tab that closed on a vault paper comes back to the text alone, so the
     // paper on screen stands.
     if (draft.snapshot) show(draft.snapshot);
-    if (draft.annotationSelection)
-      choose(registry.get(page.chosen), draft.annotationSelection);
+    if (draft.annotationSelection) choose(draft.annotationSelection);
     if (draft.expected) registry.set(page.saveAgainst, draft.expected);
   };
   const releases = [
     registry.mount(dependencies),
     registry.mount(citationStyle),
-    registry.mount(annotations),
+    registry.mount(model.examples),
     registry.mount(notice),
     registry.mount(layout),
     registry.mount(page.reconnect),
@@ -586,7 +580,6 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
   return {
     editor,
     model,
-    annotations,
     manifest,
     notice,
     drafts,
@@ -643,7 +636,7 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
       if (draft) Atom.batch(() => restore(draft));
     },
     show,
-    chooseAnnotation: (id) => choose(registry.get(page.chosen), id),
+    chooseAnnotation: choose,
     load,
     say,
     present,

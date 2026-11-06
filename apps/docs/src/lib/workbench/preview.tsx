@@ -12,7 +12,7 @@ import {
   useWorkbenchModel,
 } from "@zotlit/workbench/ui";
 import type {
-  annotationSamples,
+  AnnotationExamples,
   ResultColumnProps,
 } from "@zotlit/workbench/ui";
 
@@ -30,7 +30,7 @@ export function WebPreview({
   mode: ResultColumnProps["mode"];
   sampleBar: ReactNode;
   /** The chosen paper's Annotations, and the one chosen among them. */
-  annotations: ReturnType<typeof annotationSamples>;
+  annotations: AnnotationExamples;
   onAnnotationChoice: (choice: string) => void;
   /**
    * Reads one problem in the editor's Problems area; a null id opens the area
@@ -47,6 +47,7 @@ export function WebPreview({
   const choose = useAtomSet(model.choices);
   const run = useAtomSet(model.scheduler.run);
   const annotationResult =
+    example !== null &&
     result?.annotationId === example.id &&
     result.annotationRevision === example.revision
       ? result

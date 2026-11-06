@@ -57,6 +57,8 @@ interface WorkbenchEditorOptions {
   itemData?: WorkbenchModelOptions<TemplateRenderResult>["itemData"];
   /** {@link WorkbenchModelOptions.choices} */
   choices?: WorkbenchModelOptions<TemplateRenderResult>["choices"];
+  /** {@link WorkbenchModelOptions.partialName} */
+  partialName?: WorkbenchModelOptions<TemplateRenderResult>["partialName"];
   /** What names this editor in the report a failed example is copied as. */
   reportContext?: () => WorkbenchReportContext;
 }
@@ -79,6 +81,7 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
   runtime,
   view: providedView,
   choices,
+  partialName,
   itemData,
   reportContext,
   mapResult,
@@ -97,6 +100,7 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
     controller,
     ...(providedView ? { view: providedView } : {}),
     ...(choices ? { choices } : {}),
+    ...(partialName ? { partialName } : {}),
     ...(itemData ? { itemData } : {}),
     ...(initial ? { initial } : {}),
     runtime,

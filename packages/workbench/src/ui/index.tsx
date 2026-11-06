@@ -47,6 +47,7 @@ export {
   chooseAnnotation,
   chooseCitation,
   chooseItem,
+  choosePartialProfile,
   INITIAL_CHOICES,
   INITIAL_VIEW,
   makeWorkbenchModel,
@@ -202,6 +203,7 @@ export {
   AnnotationSectionBar,
 } from "./annotation";
 export { annotationSamples } from "./annotation-samples";
+export type { AnnotationExamples } from "./annotation-samples";
 export { SampleSuggester } from "./sample-suggester";
 export type { SampleOption } from "./sample-suggester";
 

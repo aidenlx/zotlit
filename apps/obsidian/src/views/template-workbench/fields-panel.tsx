@@ -11,12 +11,13 @@ import {
   restoreTemplateData,
   sampleItemCitation,
 } from "@zotlit/workbench/render";
-import { visibleSectionIds } from "@zotlit/workbench/ui";
+import { chooseAnnotation, visibleSectionIds } from "@zotlit/workbench/ui";
 import type {
   ExplorerPresentation,
   TemplateRoot,
   WorkbenchHost,
   WorkbenchInsertTarget,
+  WorkbenchModel,
 } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -43,7 +44,6 @@ import type {
 } from "@/views/template-data-explorer/model";
 
 import { copyToClipboard } from "./host";
-import { chooseAnnotation } from "./model";
 import type { TemplateWorkbenchModel, WorkbenchItemRead } from "./model";
 import type { TemplateWorkbenchView } from "./view";
 
@@ -105,12 +105,14 @@ const dataOf = (data: Record<string, unknown>): FieldsData => ({
 });
 
 /**
- * The panel's atoms over `model`. The editor takes a field while its document
+ * The panel's atoms over `model` and the reader's choices in `workbench`. The
+ * editor takes a field while its document
  * takes edits and `editor.insertTarget` names a place in it, which the caret
  * in the view state and the document's slices decide.
  */
 export function makeFieldsPanelModel(
   model: TemplateWorkbenchModel,
+  workbench: Pick<WorkbenchModel, "choices" | "examples">,
   editor: {
     readonly document: WorkbenchDocumentAtoms;
     readonly insertTarget: () => WorkbenchInsertTarget | null;
@@ -124,7 +126,7 @@ export function makeFieldsPanelModel(
   );
   const annotationId = Atom.make((get) =>
     get(root) === "annotation"
-      ? (get(model.examples).example?.id ?? null)
+      ? (get(workbench.examples).example?.id ?? null)
       : null,
   );
   /**
@@ -189,7 +191,7 @@ export function makeFieldsPanelModel(
     const target = get(root);
     const read = get(model.read);
     if (target === "citation") {
-      const { variant, citationExample } = get(model.picks);
+      const { variant, citationExample } = get(workbench.choices);
       if (citationExample)
         return dataOf({ ...citationExampleData(citationExample, variant) });
       return read.status === "ready"
@@ -197,7 +199,7 @@ export function makeFieldsPanelModel(
         : statusOf(read);
     }
     if (target === "annotation") {
-      const { current, example } = get(model.examples);
+      const { current, example } = get(workbench.examples);
       const annotations = current.map(({ id, root }) => ({ id, root }));
       if (example)
         return {
@@ -227,7 +229,7 @@ export function makeFieldsPanelModel(
     return { ...current, ...get(data), engines };
   });
   const exportable = Atom.make((get) => {
-    const { current, example } = get(model.examples);
+    const { current, example } = get(workbench.examples);
     const indexedKey = example?.root.indexedKey;
     return exportTarget(
       get(model.view).item,
@@ -266,7 +268,7 @@ function annotationOfNode(
   return key === null
     ? null
     : (view.registry
-        .get(view.model.examples)
+        .get(view.workbench.examples)
         .current.find((example) => example.root.key === key)?.id ?? null);
 }
 
@@ -277,7 +279,7 @@ function moveTo(view: TemplateWorkbenchView, root: TemplateRoot): void {
 
 /** Makes `id` the annotation, and shows it in the Fields panel of `view`. */
 function chooseExample(view: TemplateWorkbenchView, id: string): void {
-  view.registry.update(view.model.picks, chooseAnnotation(id));
+  view.registry.update(view.workbench.choices, chooseAnnotation(id));
   moveTo(view, "annotation");
 }
 

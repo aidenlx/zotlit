@@ -1,12 +1,11 @@
 // The per-leaf host model of the Template Workbench View: the Workbench view
-// state, the reader's choices beside it, the one read of the chosen Item, and
-// the commands one leaf owns, as atoms in the view registry.
+// state, the one read of the chosen Item, and the commands one leaf owns, as
+// atoms in the view registry. The reader's choices are the Workbench model's.
 import { Cause, Effect, Option, Schema } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
-import { CITATION_VARIANTS, DEFAULT_CITATION_VARIANT } from "@zotlit/db";
-import type { CitationVariant } from "@zotlit/db";
+import { CITATION_VARIANTS } from "@zotlit/db";
 import {
   parseLiteratureNoteTemplate,
   parsePlainTemplateDocument,
@@ -14,36 +13,22 @@ import {
 import type { WorkbenchDocumentKind } from "@zotlit/workbench/document";
 import {
   CITATION_EXAMPLE_IDS,
-  CITATION_EXAMPLE_ITEM,
-  DEFAULT_CITATION_EXAMPLE,
   PARTIAL_CONTEXTS,
-  SAMPLE_ANNOTATIONS,
-  isPartialContext,
 } from "@zotlit/workbench/render";
 import type {
   RenderRequest,
-  AnnotationExample,
-  CitationExampleId,
   PartialContext,
   PartialPreviewSelection,
 } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
-import {
-  INITIAL_CHOICES,
-  INITIAL_VIEW,
-  TABS,
-  annotationSamples,
-  chooseItem,
-  patch,
-  patchAt,
-  setRoot,
-} from "@zotlit/workbench/ui";
+import { INITIAL_VIEW, TABS, patchAt } from "@zotlit/workbench/ui";
 import type {
   TemplateRoot,
   WorkbenchChoices,
   WorkbenchItemChoice,
   WorkbenchItemData,
   WorkbenchItemDataInput,
+  WorkbenchModel,
   WorkbenchPreviewSettings,
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
@@ -55,7 +40,6 @@ import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 
 import { readChosenItem } from "./atoms";
 import { PartialPreviewFailed, PreviewItemMissing } from "./errors";
-import { getSampleAnnotationParent } from "./selection-data";
 
 /** The Template Document the leaf holds, as the view last loaded it. */
 export interface WorkbenchDocumentFacts {
@@ -63,19 +47,6 @@ export interface WorkbenchDocumentFacts {
   readonly kind: WorkbenchDocumentKind;
   /** The Shared Partial's own name, or null for any other document. */
   readonly partialName: string | null;
-}
-
-/** What the reader chose beside the Item. */
-export interface WorkbenchPicks {
-  /** The annotation the examples render, or null for the first one. */
-  readonly annotationId: string | null;
-  /** The Citation Variant a citation set renders under. */
-  readonly variant: CitationVariant;
-  /**
-   * The built-in Citation example set, or null while the chosen Item supplies
-   * the set. It outranks the Item: a reader who picks an example looks at it.
-   */
-  readonly citationExample: CitationExampleId | null;
 }
 
 /**
@@ -99,12 +70,6 @@ export type WorkbenchItemRead =
       readonly error: null;
       readonly snapshot: ItemSnapshot;
     };
-
-export const INITIAL_PICKS: WorkbenchPicks = {
-  annotationId: null,
-  variant: DEFAULT_CITATION_VARIANT,
-  citationExample: DEFAULT_CITATION_EXAMPLE,
-};
 
 /** The side panels of the view: Fields on the left, Preview on the right. */
 export type PanelSide = "fields" | "preview";
@@ -158,57 +123,18 @@ const NO_DOCUMENT: WorkbenchDocumentFacts = {
   partialName: null,
 };
 
-export const setCustomization = (
-  customization: WorkbenchViewState["customization"],
-) => patch<WorkbenchViewState>({ customization });
+/** Progress of the explicit action that creates the built-in Profile document. */
+export type Customization = "idle" | "pending" | "failed";
+
 export const setPresentation = (
   value: Partial<WorkbenchViewState["presentation"]>,
 ) => patchAt<WorkbenchViewState, "presentation">("presentation", value);
-export const chooseAnnotation = (annotationId: string | null) =>
-  patch<WorkbenchPicks>({ annotationId });
-export const chooseCitation = (
-  value: Partial<Pick<WorkbenchPicks, "variant" | "citationExample">>,
-) => patch<WorkbenchPicks>(value);
-
-/** A chooser one leaf opened; it answers what the reader chose. */
-export type ItemChooser = Effect.Effect<
-  WorkbenchItemChoice | null,
-  never,
-  ViewServices
->;
-export type AnnotationChooser = Effect.Effect<
-  string | null,
-  never,
-  ViewServices
->;
-
-interface AnnotationExamples {
-  readonly current: readonly AnnotationExample[];
-  readonly example: AnnotationExample | null;
-}
-
-/** With no Item chosen, a Sample Annotation named by id stands alone. */
-const sampleAnnotation = (annotationId: string | null): AnnotationExamples => ({
-  current: [],
-  example:
-    SAMPLE_ANNOTATIONS.find((sample) => sample.id === annotationId) ?? null,
-});
-
-const NO_EXAMPLES: AnnotationExamples = { current: [], example: null };
 
 /** What a Shared Partial preview renders with: the native renderer's own. */
 export type PartialRender = (
   request: RenderRequest,
   partial: PartialPreviewSelection,
 ) => Effect.Effect<string, unknown, ViewServices>;
-
-/** What the leaf's model reads from the view that holds it. */
-export interface TemplateWorkbenchModelOptions {
-  /** Renders a Shared Partial; a leaf without the native renderer has none. */
-  readonly renderPartial?: PartialRender | undefined;
-  /** The document's source as the editor holds it now. */
-  readonly source?: () => string;
-}
 
 /** Whether the parser refuses the draft, which no render can read. */
 function refused(kind: WorkbenchDocumentKind, source: string): boolean {
@@ -221,10 +147,7 @@ function refused(kind: WorkbenchDocumentKind, source: string): boolean {
   }
 }
 
-export function makeTemplateWorkbenchModel({
-  renderPartial,
-  source = () => "",
-}: TemplateWorkbenchModelOptions = {}) {
+export function makeTemplateWorkbenchModel() {
   /**
    * The editor's view state, and the root the reader moved the Fields panel
    * to, or null while the panel shows the editor's root.
@@ -261,18 +184,15 @@ export function makeTemplateWorkbenchModel({
       });
     },
   );
-  const picks = Atom.make(INITIAL_PICKS);
-  const preview = Atom.make<WorkbenchPreviewSettings>(INITIAL_CHOICES.preview);
   const document = Atom.make(NO_DOCUMENT);
   /** Which side panels the leaf shows, and how wide. */
   const panels = Atom.make(INITIAL_PANELS);
-  /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
-  const partialProfile = Atom.make<string | null>(null);
+  /** Progress of Customize, which creates the built-in Profile document. */
+  const customization = Atom.make<Customization>("idle");
   /** Counts the reader's refreshes; each one reads the chosen Item again. */
   const refresh = Atom.make(0);
   const item = Atom.map(view, (state) => state.item);
   const itemId = Atom.map(view, (state) => state.item?.id ?? null);
-  const root = Atom.map(view, (state) => state.root);
   /**
    * The one read of the chosen Item that every surface derives from. A new
    * choice, a refresh, or a Zotero change interrupts the read it replaces.
@@ -314,79 +234,12 @@ export function makeTemplateWorkbenchModel({
     const named = AsyncResult.isSuccess(result) ? result.value?.title : null;
     return named ?? get(item)?.title ?? null;
   });
-  const examples = Atom.make((get): AnnotationExamples => {
-    const { annotationId } = get(picks);
-    if (get(itemId) === null) return sampleAnnotation(annotationId);
-    const loaded = get(read).snapshot;
-    return loaded ? annotationSamples(loaded, annotationId) : NO_EXAMPLES;
-  });
-  /** The Citation set the render reads, when the document reads one. */
-  const citation = Atom.make((get) => {
-    const { kind } = get(document);
-    const set =
-      kind === "citation" || (kind === "partial" && get(root) === "citation");
-    if (!set) return null;
-    const { variant, citationExample } = get(picks);
-    return { variant, example: citationExample };
-  });
-  const partial = Atom.make((get): PartialPreviewSelection | null => {
-    const { kind, partialName } = get(document);
-    if (kind !== "partial" || partialName === null) return null;
-    const context = get(root);
-    return {
-      name: partialName,
-      context: isPartialContext(context) ? context : "note",
-      profile: get(partialProfile),
-    };
-  });
-  /** The choices the Workbench model reads; each write lands in the atom that holds it. */
-  const choices = Atom.writable(
-    (get): WorkbenchChoices => ({
-      annotation: get(examples).example,
-      citation: get(citation),
-      partial: get(partial),
-      preview: get(preview),
-    }),
-    (ctx, next: WorkbenchChoices) => {
-      ctx.set(
-        picks,
-        patch<WorkbenchPicks>({
-          annotationId: next.annotation?.id ?? null,
-          ...(next.citation
-            ? {
-                variant: next.citation.variant,
-                citationExample: next.citation.example,
-              }
-            : {}),
-        })(ctx.get(picks)),
-      );
-      ctx.set(preview, next.preview);
-      if (next.partial) {
-        ctx.set(view, setRoot(next.partial.context)(ctx.get(view)));
-        ctx.set(partialProfile, next.partial.profile);
-      }
-    },
-  );
-  /**
-   * The paper one render reads. A chosen Citation example carries its own
-   * data and outranks the Item; otherwise the read stands, and with no Item
-   * at all the Sample Annotation's own parent does.
-   */
-  const snapshot = Atom.make((get): ItemSnapshot | null => {
-    if (get(citation)?.example) return CITATION_EXAMPLE_ITEM;
-    const loaded = get(read).snapshot;
-    if (loaded) return loaded;
-    const { example } = get(examples);
-    return get(itemId) === null && example
-      ? getSampleAnnotationParent(example.id)
-      : null;
-  });
   const itemData = ({ document: atoms }: WorkbenchItemDataInput) => {
     const invalid = Atom.make((get) =>
       refused(get(document).kind, get(atoms.source)),
     );
     return Atom.make((get): WorkbenchItemData => ({
-      snapshot: get(snapshot),
+      snapshot: get(read).snapshot,
       // Output kept for another Template Document is another preview's.
       document: get(document).path ?? undefined,
       // A document the parser refuses is a failure, not a wait.
@@ -394,114 +247,88 @@ export function makeTemplateWorkbenchModel({
     }));
   };
   /**
-   * Makes an Item the choice. An Item the reader picked is the Citation set
-   * they asked to see, so the built-in example that outranks it stands down.
+   * Opens a chooser and answers what the reader chose. A newer chooser
+   * replaces it, and the leaf's close interrupts it.
    */
-  const pick = Atom.writable(
-    (get) => get(item),
-    (ctx, choice: WorkbenchItemChoice) => {
-      ctx.set(view, chooseItem(choice)(ctx.get(view)));
-      if (ctx.get(view).root === "citation")
-        ctx.set(
-          picks,
-          chooseCitation({ citationExample: null })(ctx.get(picks)),
-        );
-    },
-  );
-  /**
-   * A Shared Partial's preview for one caller, keyed by the JSON of
-   * `[name, context]`. It renders once the chosen Item is read, and again when
-   * a partial is saved or the data it reads changes. A failed Item read is
-   * the preview's failure. A leaf without the native renderer has none.
-   */
-  const partialPreview =
-    renderPartial &&
-    Atom.family((key: string) =>
-      viewRuntime.atom((get) => {
-        const [name, context] = JSON.parse(key) as [string, PartialContext];
-        get(templateRevisionAtom);
-        const { variant, citationExample } = get(picks);
-        const { example } = get(examples);
-        const profile = get(partialProfile);
-        const data = get(snapshot);
-        return get.result(chosen, { suspendOnWaiting: true }).pipe(
-          Effect.mapError((cause) => new PartialPreviewFailed({ cause })),
-          Effect.flatMap(
-            (): Effect.Effect<
-              string,
-              PartialPreviewFailed | PreviewItemMissing,
-              ViewServices
-            > => {
-              if (!data) return Effect.fail(new PreviewItemMissing());
-              return renderPartial(
-                {
-                  source: source(),
-                  snapshot: data,
-                  ...(example ? { annotation: example } : {}),
-                  ...(context === "citation"
-                    ? { citation: { variant, example: citationExample } }
-                    : {}),
-                },
-                { name, context, profile },
-              ).pipe(
-                Effect.mapError((cause) => new PartialPreviewFailed({ cause })),
-              );
-            },
-          ),
-        );
-      }),
+  const chooserCommand = <A>() =>
+    Atom.setIdleTTL(
+      viewRuntime.fn(
+        (chooser: Effect.Effect<A | null, never, ViewServices>) => chooser,
+      ),
+      0,
     );
-  /**
-   * Opens a chooser and makes its Item the choice; answers the choice. A
-   * newer chooser replaces it, and the leaf's close interrupts it.
-   */
-  const chooseItemCommand = Atom.setIdleTTL(
-    viewRuntime.fn((chooser: ItemChooser, get) =>
-      Effect.gen(function* () {
-        const choice = yield* chooser;
-        if (choice) yield* Effect.sync(() => get.set(pick, choice));
-        return choice;
-      }),
-    ),
-    0,
-  );
-  /** Opens the annotation chooser, and makes its answer the example. */
-  const chooseAnnotationCommand = Atom.setIdleTTL(
-    viewRuntime.fn((chooser: AnnotationChooser, get) =>
-      Effect.gen(function* () {
-        const id = yield* chooser;
-        if (id !== null)
-          yield* Effect.sync(() =>
-            get.set(picks, chooseAnnotation(id)(get(picks))),
-          );
-        return id;
-      }),
-    ),
-    0,
-  );
   return {
     editor,
     view,
     fieldsRoot,
-    picks,
-    preview,
     document,
     panels,
-    partialProfile,
+    customization,
     refresh,
     item,
     chosen,
     read,
     title,
-    examples,
-    choices,
-    snapshot,
     itemData,
-    pick,
-    partialPreview,
-    chooseItem: chooseItemCommand,
-    chooseAnnotation: chooseAnnotationCommand,
+    chooseItem: chooserCommand<WorkbenchItemChoice>(),
+    chooseAnnotation: chooserCommand<string>(),
   };
+}
+
+/**
+ * A Shared Partial's preview for one caller, keyed by the JSON of
+ * `[name, context]`. It renders once the chosen Item is read, and again when
+ * a partial is saved or the data it reads changes. A failed Item read is the
+ * preview's failure.
+ */
+export function makePartialPreviews({
+  model,
+  workbench,
+  renderPartial,
+  source,
+}: {
+  readonly model: TemplateWorkbenchModel;
+  readonly workbench: WorkbenchModel;
+  readonly renderPartial: PartialRender;
+  /** The document's source as the editor holds it now. */
+  readonly source: () => string;
+}) {
+  return Atom.family((key: string) =>
+    viewRuntime.atom((get) => {
+      const [name, context] = JSON.parse(key) as [string, PartialContext];
+      get(templateRevisionAtom);
+      const { variant, citationExample, partialProfile } = get(
+        workbench.choices,
+      );
+      const { example } = get(workbench.examples);
+      const data = get(workbench.snapshot);
+      return get.result(model.chosen, { suspendOnWaiting: true }).pipe(
+        Effect.mapError((cause) => new PartialPreviewFailed({ cause })),
+        Effect.flatMap(
+          (): Effect.Effect<
+            string,
+            PartialPreviewFailed | PreviewItemMissing,
+            ViewServices
+          > => {
+            if (!data) return Effect.fail(new PreviewItemMissing());
+            return renderPartial(
+              {
+                source: source(),
+                snapshot: data,
+                ...(example ? { annotation: example } : {}),
+                ...(context === "citation"
+                  ? { citation: { variant, example: citationExample } }
+                  : {}),
+              },
+              { name, context, profile: partialProfile },
+            ).pipe(
+              Effect.mapError((cause) => new PartialPreviewFailed({ cause })),
+            );
+          },
+        ),
+      );
+    }),
+  );
 }
 export type TemplateWorkbenchModel = ReturnType<
   typeof makeTemplateWorkbenchModel
@@ -519,11 +346,9 @@ export function holdTemplateWorkbenchModel(
   const releases = [
     model.editor,
     model.view,
-    model.picks,
-    model.preview,
     model.document,
     model.panels,
-    model.partialProfile,
+    model.customization,
     model.refresh,
     model.read,
     model.chooseItem,
@@ -557,7 +382,7 @@ export interface SavedWorkbench {
   readonly preview: Partial<WorkbenchPreviewSettings>;
   /** The Citation Variant and example set the state names; each decodes alone. */
   readonly citation: Partial<
-    Pick<WorkbenchPicks, "variant" | "citationExample">
+    Pick<WorkbenchChoices, "variant" | "citationExample">
   >;
 }
 
@@ -565,9 +390,8 @@ export interface SavedWorkbench {
 export function savedWorkbench(state: {
   readonly defaultDraft: boolean;
   readonly view: WorkbenchViewState;
-  readonly picks: WorkbenchPicks;
+  readonly choices: WorkbenchChoices;
   readonly panels: WorkbenchPanels;
-  readonly preview: WorkbenchPreviewSettings;
   /** A Shared Partial's caller and Profile; null for any other kind. */
   readonly partial: {
     readonly context: PartialContext;
@@ -579,12 +403,12 @@ export function savedWorkbench(state: {
     ...(state.defaultDraft ? { defaultDraft: true, file: null } : {}),
     tab,
     itemIndexedKey: item?.id ?? null,
-    annotationId: state.picks.annotationId,
-    variant: state.picks.variant,
-    citationExample: state.picks.citationExample,
+    annotationId: state.choices.annotationId,
+    variant: state.choices.variant,
+    citationExample: state.choices.citationExample,
     advanced,
     panels: state.panels,
-    preview: state.preview,
+    preview: state.choices.preview,
     // A Shared Partial's caller is a choice nothing else can name, so the
     // workspace carries it back with the file it belongs to. No other kind
     // has one to carry.
@@ -626,7 +450,7 @@ export function readSavedWorkbench(input: unknown): SavedWorkbench | null {
 /** A null example set stands: the chosen Item supplies the set. */
 function readCitation(
   value: Record<string, unknown>,
-): Partial<Pick<WorkbenchPicks, "variant" | "citationExample">> {
+): Partial<Pick<WorkbenchChoices, "variant" | "citationExample">> {
   const variant = decode(Schema.Literals(CITATION_VARIANTS), value.variant);
   const citationExample =
     value.citationExample === null

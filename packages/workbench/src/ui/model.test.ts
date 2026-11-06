@@ -1,3 +1,4 @@
+import type { WorkbenchDocumentKind } from "#/document/index";
 import { Effect, Queue } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -8,7 +9,7 @@ import {
   chooseAnnotation,
   chooseCitation,
   chooseItem,
-  choosePartial,
+  choosePartialProfile,
   INITIAL_VIEW,
   setAdvanced,
   setPreview,
@@ -20,7 +21,11 @@ import { fakeHost, TEST_RUNTIME } from "./test-host";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
-import { SAMPLE_ANNOTATIONS, SAMPLE_ITEMS } from "#/render/index";
+import {
+  CITATION_EXAMPLE_ITEM,
+  SAMPLE_ANNOTATIONS,
+  SAMPLE_ITEMS,
+} from "#/render/index";
 
 const PAPER = SAMPLE_ITEMS[0]!;
 const CHOICE = { id: "1:ABCDEFGH", title: "A paper" } as const;
@@ -36,9 +41,19 @@ function load(opened: ReturnType<typeof open>) {
   }));
 }
 
-function open(options: { view?: Atom.Writable<WorkbenchViewState> } = {}) {
+function open(
+  options: {
+    view?: Atom.Writable<WorkbenchViewState>;
+    kind?: WorkbenchDocumentKind;
+    partialName?: Atom.Atom<string | null>;
+  } = {},
+) {
+  const { kind, ...rest } = options;
   const host = fakeHost();
-  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  const controller = new WorkbenchDocumentController(
+    kind && kind !== "profile" ? "Body" : DEFAULT_PROFILE_SOURCE,
+    kind ? { kind } : {},
+  );
   const registry = AtomRegistry.make({
     defaultIdleTTL: 0,
     timeoutResolution: 1,
@@ -50,7 +65,7 @@ function open(options: { view?: Atom.Writable<WorkbenchViewState> } = {}) {
     registry,
     runtime: TEST_RUNTIME,
     itemData: () => data,
-    ...options,
+    ...rest,
   });
   return {
     host,
@@ -114,30 +129,115 @@ describe("the Workbench model", () => {
     expect(registry.get(model.choices)).toBe(choices);
   });
 
-  it("feeds the chosen annotation, citation, caller, and preview mode to the render", async () => {
+  it("feeds the chosen annotation and preview mode to the render", async () => {
     using opened = open();
     const { registry, model, host } = opened;
-    const citation = { variant: "main", example: "one-item" } as const;
-    const partial = {
-      name: "book-details",
-      context: "note",
-      profile: null,
-    } as const;
+    registry.update(model.view, chooseItem(CHOICE));
     load(opened);
-    registry.update(model.choices, chooseAnnotation(SAMPLE_ANNOTATIONS[0]!));
-    registry.update(model.choices, chooseCitation(citation));
-    registry.update(model.choices, choosePartial(partial));
+    registry.update(model.choices, chooseAnnotation(SAMPLE_ANNOTATIONS[1]!.id));
     registry.update(model.choices, setPreview({ mode: "update" }));
     registry.set(model.scheduler.run, undefined);
     await started(host);
     expect(host.renders).toHaveLength(1);
-    expect(host.renders[0]!.request).toMatchObject({
-      mode: "update",
-      snapshot: PAPER,
-      annotation: SAMPLE_ANNOTATIONS[0],
-      citation,
-      partial,
+    const { request } = host.renders[0]!;
+    expect(request).toMatchObject({ mode: "update", snapshot: PAPER });
+    expect(request.annotation?.id).toBe(SAMPLE_ANNOTATIONS[1]!.id);
+    expect(request.citation).toBeUndefined();
+    expect(request.partial).toBeUndefined();
+  });
+
+  it("feeds a Shared Partial's caller and Profile to the render", async () => {
+    const partialName = Atom.make<string | null>("book-details");
+    using opened = open({ kind: "partial", partialName });
+    const { registry, model, host } = opened;
+    registry.update(model.view, chooseItem(CHOICE));
+    load(opened);
+    registry.update(model.view, setRoot("annotation"));
+    registry.update(model.choices, choosePartialProfile("thesis"));
+    registry.set(model.scheduler.run, undefined);
+    await started(host);
+    expect(host.renders[0]!.request.partial).toEqual({
+      name: "book-details",
+      context: "annotation",
+      profile: "thesis",
     });
+  });
+
+  it("feeds the chosen Citation set, whose built-in example outranks the Item", async () => {
+    using opened = open({ kind: "citation" });
+    const { registry, model, host } = opened;
+    registry.update(model.view, chooseItem(CHOICE));
+    load(opened);
+    registry.update(model.choices, chooseCitation({ variant: "alt" }));
+    registry.set(model.scheduler.run, undefined);
+    await started(host);
+    expect(host.renders[0]!.request).toMatchObject({
+      snapshot: CITATION_EXAMPLE_ITEM,
+      citation: { variant: "alt", example: "one-item" },
+    });
+  });
+});
+
+describe("the reader's choices", () => {
+  it("names a Sample Annotation alone, with its own paper, while no Item is chosen", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    const sample = SAMPLE_ANNOTATIONS[2]!;
+    registry.update(model.choices, chooseAnnotation(sample.id));
+    expect(registry.get(model.examples)).toEqual({
+      current: [],
+      example: sample,
+    });
+    expect(registry.get(model.snapshot)?.item.indexedKey).toBe(
+      (sample.root.parentItem as { indexedKey: string }).indexedKey,
+    );
+  });
+
+  it("offers a chosen Item's annotations once its data is read, and the first when the id is not its own", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    registry.update(model.view, chooseItem(CHOICE));
+    registry.update(model.choices, chooseAnnotation("missing"));
+    expect(registry.get(model.examples)).toEqual({
+      current: [],
+      example: null,
+    });
+    load(opened);
+    const { current, example } = registry.get(model.examples);
+    expect(current.length).toBe(PAPER.roots.annotations.length);
+    expect(example).toBe(current[0] ?? SAMPLE_ANNOTATIONS[0]);
+  });
+
+  it("reads no Citation set or partial for a Profile", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    expect(registry.get(model.citation)).toBeNull();
+    expect(registry.get(model.partial)).toBeNull();
+  });
+
+  it("keeps the same Citation set when another choice changes", () => {
+    using opened = open({ kind: "citation" });
+    const { registry, model } = opened;
+    const before = registry.get(model.citation);
+    registry.update(model.choices, setPreview({ showMarkdown: true }));
+    registry.update(model.choices, chooseAnnotation(SAMPLE_ANNOTATIONS[1]!.id));
+    expect(registry.get(model.citation)).toBe(before);
+  });
+
+  it("stands the built-in Citation example down when the reader picks an Item for a citation", () => {
+    using opened = open({ kind: "citation" });
+    const { registry, model } = opened;
+    registry.update(model.view, setRoot("citation"));
+    registry.set(model.pick, CHOICE);
+    expect(registry.get(model.item)).toEqual(CHOICE);
+    expect(registry.get(model.choices).citationExample).toBeNull();
+  });
+
+  it("keeps the built-in Citation example when the reader picks an Item elsewhere", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    registry.set(model.pick, CHOICE);
+    expect(registry.get(model.choices).citationExample).toBe("one-item");
   });
 
   it("renders the source of the controller in use, after an edit and a replacement", async () => {

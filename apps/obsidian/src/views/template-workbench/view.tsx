@@ -3,7 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { useAtomValue } from "@effect/atom-react";
 import { Cause, Effect, Schema, Semaphore, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
-import type * as Atom from "effect/reactivity/Atom";
+import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
@@ -47,13 +47,16 @@ import type {
   WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import {
+  chooseAnnotation,
+  chooseCitation,
   chooseItem,
+  choosePartialProfile,
   citationExampleLabel,
   entryDiagnostics,
   fieldSnippet,
   isProfileProblem,
-  patch,
   setAdvanced,
+  setPreview,
   setRoot,
   setTab,
 } from "@zotlit/workbench/ui";
@@ -185,14 +188,12 @@ import { openWorkbenchLayout, setLeafState } from "./layout";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
 import {
-  chooseAnnotation,
-  chooseCitation,
   holdTemplateWorkbenchModel,
+  makePartialPreviews,
   makeTemplateWorkbenchModel,
   readEphemeralWorkbench,
   readSavedWorkbench,
   savedWorkbench,
-  setCustomization,
   setPresentation,
   setPanelWidth,
   showPanel,
@@ -325,6 +326,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #arrival: ArrivingProblem | null = null;
   /** This leaf's host model: its view state, choices, and Item read. */
   readonly model: TemplateWorkbenchModel;
+  /** A Shared Partial's previews; a leaf without the native renderer has none. */
+  readonly partialPreviews: ReturnType<typeof makePartialPreviews> | null;
   /** The Fields panel's atoms over {@link model}. */
   readonly fields: FieldsPanelModel;
   /** The Fields panel's actions: choosing, sections, copy and export. */
@@ -374,10 +377,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #citationStyles: NameFolderPaneProps["citationStyles"] = [];
   /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
   get #partialProfile(): string | null {
-    return this.registry.get(this.model.partialProfile);
+    return this.registry.get(this.workbench.choices).partialProfile;
   }
   set #partialProfile(profile: string | null) {
-    this.registry.set(this.model.partialProfile, profile);
+    this.registry.update(this.workbench.choices, choosePartialProfile(profile));
   }
   /** The partial `#partialProfile` and this leaf's root were chosen for. */
   #partialChoiceFile: string | null = null;
@@ -631,10 +634,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const renderer = deps.nativePreview
       ? makeNativeRenderer(deps.nativePreview)
       : null;
-    this.model = makeTemplateWorkbenchModel({
-      renderPartial: renderer?.partial,
-      source: () => this.#controller.source,
-    });
+    this.model = makeTemplateWorkbenchModel();
     this.#release = holdTemplateWorkbenchModel(deps.registry, this.model);
     // Closing the leaf interrupts every Effect it still runs.
     this.#runner = makeViewRunner(deps.registry);
@@ -701,14 +701,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       registry: deps.registry,
       runtime: viewRuntime,
       view: this.model.view,
-      choices: this.model.choices,
+      partialName: Atom.map(this.model.document, (facts) => facts.partialName),
       itemData: this.model.itemData,
       controller: this.#controller,
       reportContext: () => this.reportContext(this.#defaultRoot),
       mapResult: nativeResult,
       retain: retainNativeOutputs,
     });
-    this.fields = makeFieldsPanelModel(this.model, {
+    this.partialPreviews =
+      renderer &&
+      makePartialPreviews({
+        model: this.model,
+        workbench: this.#editor.model,
+        renderPartial: renderer.partial,
+        source: () => this.#controller.source,
+      });
+    this.fields = makeFieldsPanelModel(this.model, this.#editor.model, {
       document: this.#editor.model.document,
       insertTarget: () => this.insertTarget,
     });
@@ -791,7 +799,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           ? Effect.logDebug("Preview render started").pipe(
               Effect.annotateLogs({
                 revision,
-                live: registry.get(this.model.preview).live,
+                live: registry.get(this.workbench.preview).live,
               }),
             )
           : next.result !== null && next.result !== before.result
@@ -839,24 +847,15 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           this.app.workspace.requestSaveLayout();
       }),
     );
-    let picks = registry.get(model.picks);
     stops.push(
-      registry.subscribe(model.picks, (next) => {
-        const previous = picks;
-        picks = next;
-        if (next.annotationId !== previous.annotationId)
-          this.app.workspace.requestSaveLayout();
-      }),
-      registry.subscribe(model.partialProfile, () =>
+      // Every choice is saved state.
+      registry.subscribe(this.workbench.choices, () =>
         this.app.workspace.requestSaveLayout(),
       ),
       registry.subscribe(model.panels, () => {
         this.#updateActions();
         this.app.workspace.requestSaveLayout();
       }),
-      registry.subscribe(model.preview, () =>
-        this.app.workspace.requestSaveLayout(),
-      ),
     );
     let read = registry.get(model.read);
     stops.push(
@@ -1347,9 +1346,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       ...savedWorkbench({
         defaultDraft: this.#defaultDraft,
         view: this.#view,
-        picks: this.registry.get(this.model.picks),
+        choices: this.registry.get(this.workbench.choices),
         panels: this.registry.get(this.model.panels),
-        preview: this.registry.get(this.model.preview),
         partial:
           this.documentKind === "partial"
             ? { context: this.partialContext, profile: this.#partialProfile }
@@ -1479,7 +1477,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           );
         if (annotationId !== undefined)
           this.registry.update(
-            this.model.picks,
+            this.workbench.choices,
             chooseAnnotation(annotationId),
           );
       }
@@ -1517,8 +1515,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             )(showPanel(side, panel.shown)(panels)),
           );
       }
-      this.registry.update(this.model.preview, patch(value.preview));
-      this.registry.update(this.model.picks, chooseCitation(value.citation));
+      this.registry.update(this.workbench.choices, setPreview(value.preview));
+      this.registry.update(
+        this.workbench.choices,
+        chooseCitation(value.citation),
+      );
       const { change } = this;
       if (this.#applyKindDefaults()) {
         // A plain document has one tab and one editor, so nothing of the saved
@@ -1711,7 +1712,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
 
   templateDataTarget(): TemplateDataExportTarget | null {
     const { item, root } = this.#view;
-    const { current, example } = this.registry.get(this.model.examples);
+    const { current, example } = this.registry.get(this.workbench.examples);
     const indexedKey = example?.root.indexedKey;
     return exportTarget(
       item,
@@ -1834,12 +1835,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (!registry.get(model.panels).preview.shown) return;
     const { kind } = registry.get(model.document);
     const { mode, citationSet } = previewTarget(kind, this.#view.root);
-    const preview = registry.get(model.preview);
-    const setPreview = (value: Partial<typeof preview>) =>
-      registry.update(model.preview, patch(value));
-    const { variant, citationExample } = registry.get(model.picks);
+    const { choices } = this.workbench;
+    const { preview, variant, citationExample } = registry.get(choices);
+    const setSettings = (value: Partial<typeof preview>) =>
+      registry.update(choices, setPreview(value));
     const setCitation = (value: Parameters<typeof chooseCitation>[0]) =>
-      registry.update(model.picks, chooseCitation(value));
+      registry.update(choices, chooseCitation(value));
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.action)
@@ -1902,7 +1903,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             .setDisabled(
               value === "update" && result !== null && !result.sourcePath,
             )
-            .onClick(() => setPreview({ mode: value, showManaged: false })),
+            .onClick(() => setSettings({ mode: value, showManaged: false })),
         );
       menu.addItem((item) =>
         item
@@ -1910,7 +1911,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setTitle(m.workbench_preview_updated_section())
           .setIcon("rows-3")
           .setChecked(preview.showManaged)
-          .onClick(() => setPreview({ showManaged: true })),
+          .onClick(() => setSettings({ showManaged: true })),
       );
     }
     menu.addItem((item) =>
@@ -1919,7 +1920,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setTitle(m.workbench_preview_auto_refresh())
         .setIcon("zap")
         .setChecked(preview.live)
-        .onClick(() => setPreview({ live: !preview.live })),
+        .onClick(() => setSettings({ live: !preview.live })),
     );
     menu.addItem((item) =>
       item
@@ -1927,7 +1928,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setTitle(m.workbench_show_markdown())
         .setIcon("code")
         .setChecked(preview.showMarkdown)
-        .onClick(() => setPreview({ showMarkdown: !preview.showMarkdown })),
+        .onClick(() => setSettings({ showMarkdown: !preview.showMarkdown })),
     );
   }
   /**
@@ -2261,7 +2262,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const path = this.registry.get(defaultProfilePathAtom);
     if (!this.#defaultDraft) return Effect.void;
     const controller = this.#controller;
-    this.#update(setCustomization("pending"));
+    this.registry.set(this.model.customization, "pending");
     return Effect.gen({ self: this }, function* () {
       yield* Effect.logDebug("Opening Default Profile for customization");
       const { file } = yield* materializeDefault;
@@ -2296,15 +2297,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           Effect.logError("Failed to customize Default Profile").pipe(
             Effect.annotateLogs({ error: Cause.squash(cause) }),
             Effect.andThen(
-              Effect.sync(() => this.#update(setCustomization("failed"))),
+              Effect.sync(() =>
+                this.registry.set(this.model.customization, "failed"),
+              ),
             ),
           ),
         Effect.void,
       ),
       Effect.tap(() =>
         Effect.sync(() => {
-          if (this.#view.customization === "pending")
-            this.#update(setCustomization("idle"));
+          if (this.registry.get(this.model.customization) === "pending")
+            this.registry.set(this.model.customization, "idle");
         }),
       ),
       Effect.annotateLogs({ path }),
@@ -2376,7 +2379,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       ).pipe(
         Effect.tap((choice) =>
           Effect.sync(() => {
-            if (choice) this.#remember(choice);
+            if (choice) this.setItem(choice);
           }),
         ),
       ),
@@ -2420,7 +2423,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** Makes `item` the choice of this leaf. */
   setItem(item: WorkbenchItemChoice): void {
     if (this.#closed) return;
-    this.registry.set(this.model.pick, item);
+    this.registry.set(this.workbench.pick, item);
     this.#remember(item);
   }
   #remember(item: WorkbenchItemChoice): void {
@@ -2471,11 +2474,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** Ask the reader for the annotation the preview renders. */
   chooseAnnotation(): Effect.Effect<void> {
     return this.#join<string>(this.model.chooseAnnotation, () => {
-      const { current, example } = this.registry.get(this.model.examples);
+      const { current, example } = this.registry.get(this.workbench.examples);
       return workbenchAnnotationChoice(
         this.#host,
         current,
         example?.id ?? null,
+      ).pipe(
+        Effect.tap((id) =>
+          Effect.sync(() => {
+            if (id !== null && !this.#closed)
+              this.registry.update(
+                this.workbench.choices,
+                chooseAnnotation(id),
+              );
+          }),
+        ),
       );
     }).pipe(Effect.asVoid);
   }
@@ -2488,7 +2501,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.#log(
           Effect.logTrace("Preview source changed").pipe(
             Effect.annotateLogs({
-              live: this.registry.get(this.model.preview).live,
+              live: this.registry.get(this.workbench.preview).live,
             }),
           ),
         );
@@ -2602,7 +2615,8 @@ function EditorContent({
     controller.plainDocument?.manifest.language === "eta"
       ? m.workbench_name_language_eta()
       : m.workbench_name_language_liquid();
-  const { customization, presentation } = useAtomValue(view.model.view);
+  const { presentation } = useAtomValue(view.model.view);
+  const customization = useAtomValue(view.model.customization);
   const { selected, reveal, fieldFocus } = presentation;
   const setSelected = (selected: number | null) =>
     view.setPresentation({ selected });
@@ -2636,7 +2650,7 @@ function EditorContent({
   const partialsFor = (
     partialContext: PartialContext,
   ): PartialPlaceholderHost | undefined => {
-    const previews = view.model.partialPreview;
+    const previews = view.partialPreviews;
     if (!previews) return undefined;
     return {
       missing: missingPartials,
@@ -3259,14 +3273,14 @@ function EditorContent({
 
 /** The annotation examples of the chosen Item, and the one the render reads. */
 function AnnotationSelection({ view }: { view: TemplateWorkbenchView }) {
-  const { current, example } = useAtomValue(view.model.examples);
+  const { current, example } = useAtomValue(view.workbench.examples);
   return (
     <AnnotationSampleBar
       compact
       current={current}
       example={example}
       onSelect={(id) =>
-        view.registry.update(view.model.picks, chooseAnnotation(id))
+        view.registry.update(view.workbench.choices, chooseAnnotation(id))
       }
     />
   );
@@ -3277,7 +3291,7 @@ function AnnotationSelection({ view }: { view: TemplateWorkbenchView }) {
  * title carries the file, so the header names the selected data itself.
  */
 function useSelectedAnnotation(view: TemplateWorkbenchView) {
-  return useAtomValue(view.model.examples).example;
+  return useAtomValue(view.workbench.examples).example;
 }
 
 function EditorHeader({ view }: { view: TemplateWorkbenchView }) {
