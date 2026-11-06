@@ -39,6 +39,7 @@ import {
 import type {
   WorkbenchItemData,
   WorkbenchModel,
+  WorkbenchModelOptions,
   WorkbenchRuntime,
 } from "./model";
 import type {
@@ -82,6 +83,10 @@ interface WorkbenchEditorOptions {
   runtime: WorkbenchRuntime;
   /** The view state, when the host keeps it in an atom of its own. */
   view?: Atom.Writable<WorkbenchViewState>;
+  /** {@link WorkbenchModelOptions.choices} */
+  choices?: WorkbenchModelOptions<TemplateRenderResult>["choices"];
+  /** {@link WorkbenchModelOptions.itemData} */
+  itemData?: WorkbenchModelOptions<TemplateRenderResult>["itemData"];
   /**
    * A view store the host made before the editor, which the model reads and
    * writes. Facade for the web Workbench; deleted in #1946.
@@ -168,21 +173,22 @@ function schedulerOver<R extends TemplateRenderResult>(
         ...("resources" in input ? { resources: input.resources } : {}),
         ...("hold" in input ? { hold: input.hold } : {}),
       };
+      const { choices, itemData } = model;
       Atom.batch(() => {
         registry.update(
-          model.choices,
+          choices,
           setPreview({
             ...(mode === undefined ? {} : { mode }),
             ...(live === undefined ? {} : { live }),
           }),
         );
         if ("annotation" in input)
-          registry.update(model.choices, chooseAnnotation(annotation ?? null));
+          registry.update(choices, chooseAnnotation(annotation ?? null));
         if ("citation" in input)
-          registry.update(model.choices, chooseCitation(citation ?? null));
+          registry.update(choices, chooseCitation(citation ?? null));
         if ("partial" in input)
-          registry.update(model.choices, choosePartial(partial ?? null));
-        registry.update(model.itemData, patch(data));
+          registry.update(choices, choosePartial(partial ?? null));
+        registry.update(itemData, patch(data));
       });
     },
     invalidate: command(model.scheduler.invalidate),
@@ -213,6 +219,8 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
   registry: providedRegistry,
   runtime,
   view: providedView,
+  choices,
+  itemData,
   store: providedStore,
   reportContext,
   mapResult,
@@ -231,6 +239,8 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
   const model = makeWorkbenchModel<R>({
     controller,
     ...(view ? { view } : {}),
+    ...(choices ? { choices } : {}),
+    ...(itemData ? { itemData } : {}),
     ...(initial ? { initial } : {}),
     runtime,
     host,

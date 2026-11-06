@@ -1,99 +1,490 @@
-// Per-leaf Workbench atoms, with the external-store interface the shared UI reads.
-import { Option, Schema } from "effect";
+// The per-leaf host model of the Template Workbench View: the Workbench view
+// state, the reader's choices beside it, the one read of the chosen Item, and
+// the commands one leaf owns, as atoms in the view registry.
+import { Cause, Effect, Option, Schema } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
-import type { WorkbenchStore, WorkbenchViewState } from "@zotlit/workbench/ui";
+import { DEFAULT_CITATION_VARIANT } from "@zotlit/db";
+import type { CitationVariant } from "@zotlit/db";
+import {
+  parseLiteratureNoteTemplate,
+  parsePlainTemplateDocument,
+} from "@zotlit/templates/facade";
+import type {
+  WorkbenchDocumentAtoms,
+  WorkbenchDocumentKind,
+} from "@zotlit/workbench/document";
+import {
+  CITATION_EXAMPLE_ITEM,
+  DEFAULT_CITATION_EXAMPLE,
+  PARTIAL_CONTEXTS,
+  SAMPLE_ANNOTATIONS,
+  isPartialContext,
+} from "@zotlit/workbench/render";
+import type {
+  AnnotationExample,
+  CitationExampleId,
+  PartialContext,
+  PartialPreviewSelection,
+} from "@zotlit/workbench/render";
+import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
+import {
+  INITIAL_CHOICES,
+  INITIAL_VIEW,
+  TABS,
+  annotationSamples,
+  patch,
+} from "@zotlit/workbench/ui";
+import type {
+  TemplateRoot,
+  WorkbenchChoices,
+  WorkbenchItemChoice,
+  WorkbenchItemData,
+  WorkbenchPreviewSettings,
+  WorkbenchViewState,
+} from "@zotlit/workbench/ui";
 
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
+import { viewRuntime } from "@/lib/view-atoms";
+import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 
-export const patchWorkbench =
-  (patch: Partial<WorkbenchViewState>) =>
-  (state: WorkbenchViewState): WorkbenchViewState =>
-    Object.entries(patch).every(
-      ([key, value]) => state[key as keyof WorkbenchViewState] === value,
-    )
-      ? state
-      : { ...state, ...patch };
+import { readChosenItem } from "./atoms";
+import { getSampleAnnotationParent } from "./selection-data";
 
-export function makeWorkbenchModel() {
-  const state = Atom.make<WorkbenchViewState>({
-    presentation: {
-      restoreVersion: 0,
-      restoring: false,
-      selection: null,
-      selected: null,
-      reveal: null,
-      fieldFocus: null,
-      scroll: {},
-    },
-    tab: "note",
-    item: null,
-    root: "note",
-    advanced: false,
-    customization: "idle",
-  });
-  const documentRevision = Atom.make(0);
-  const partialProfile = Atom.make<string | null>(null);
-  return { state, documentRevision, partialProfile };
+/** The Template Document the leaf holds, as the view last loaded it. */
+export interface WorkbenchDocumentFacts {
+  readonly path: string | null;
+  readonly kind: WorkbenchDocumentKind;
+  /** The Shared Partial's own name, or null for any other document. */
+  readonly partialName: string | null;
 }
-export type WorkbenchModel = ReturnType<typeof makeWorkbenchModel>;
 
-export function holdWorkbenchModel(
+/** What the reader chose beside the Item. */
+export interface WorkbenchPicks {
+  /** The annotation the examples render, or null for the first one. */
+  readonly annotationId: string | null;
+  /** The Citation Variant a citation set renders under. */
+  readonly variant: CitationVariant;
+  /**
+   * The built-in Citation example set, or null while the chosen Item supplies
+   * the set. It outranks the Item: a reader who picks an example looks at it.
+   */
+  readonly citationExample: CitationExampleId | null;
+}
+
+/** The chosen Item's read, as the surfaces show it. */
+export interface WorkbenchItemRead {
+  readonly status: "empty" | "loading" | "ready" | "error";
+  /** The read's own message, when it failed with one. */
+  readonly error: string | null;
+  /** The Item's data; null while it loads, after a failure, or when unavailable. */
+  readonly snapshot: ItemSnapshot | null;
+}
+
+export const INITIAL_PICKS: WorkbenchPicks = {
+  annotationId: null,
+  variant: DEFAULT_CITATION_VARIANT,
+  citationExample: DEFAULT_CITATION_EXAMPLE,
+};
+
+const NO_DOCUMENT: WorkbenchDocumentFacts = {
+  path: null,
+  kind: "profile",
+  partialName: null,
+};
+
+export const chooseItem = (item: WorkbenchItemChoice | null) =>
+  patch<WorkbenchViewState>({ item });
+export const setTab = (tab: WorkbenchViewState["tab"]) =>
+  patch<WorkbenchViewState>({ tab });
+export const setRoot = (root: TemplateRoot) =>
+  patch<WorkbenchViewState>({ root });
+export const setAdvanced = (advanced: boolean) =>
+  patch<WorkbenchViewState>({ advanced });
+export const setCustomization = (
+  customization: WorkbenchViewState["customization"],
+) => patch<WorkbenchViewState>({ customization });
+export const setPresentation =
+  (value: Partial<WorkbenchViewState["presentation"]>) =>
+  (state: WorkbenchViewState): WorkbenchViewState => {
+    const presentation = patch(value)(state.presentation);
+    return presentation === state.presentation
+      ? state
+      : { ...state, presentation };
+  };
+export const chooseAnnotation = (annotationId: string | null) =>
+  patch<WorkbenchPicks>({ annotationId });
+export const chooseCitation = (
+  value: Partial<Pick<WorkbenchPicks, "variant" | "citationExample">>,
+) => patch<WorkbenchPicks>(value);
+
+/** A chooser one leaf opened; it answers what the reader chose. */
+export type ItemChooser = Effect.Effect<
+  WorkbenchItemChoice | null,
+  never,
+  ViewServices
+>;
+export type AnnotationChooser = Effect.Effect<
+  string | null,
+  never,
+  ViewServices
+>;
+
+/**
+ * The annotation examples the chosen Item offers and the one the render
+ * reads. With no Item, a Sample Annotation named by id stands alone.
+ */
+function examplesOf(
+  snapshot: ItemSnapshot | null,
+  chosen: boolean,
+  annotationId: string | null,
+): {
+  readonly current: readonly AnnotationExample[];
+  readonly example: AnnotationExample | null;
+} {
+  if (snapshot) return annotationSamples(snapshot, annotationId);
+  return {
+    current: [],
+    example: chosen
+      ? null
+      : (SAMPLE_ANNOTATIONS.find((sample) => sample.id === annotationId) ??
+        null),
+  };
+}
+
+/** Whether the parser refuses the draft, which no render can read. */
+function refused(kind: WorkbenchDocumentKind, source: string): boolean {
+  try {
+    if (kind === "profile") parseLiteratureNoteTemplate(source);
+    else parsePlainTemplateDocument(source);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+export function makeTemplateWorkbenchModel() {
+  const view = Atom.make<WorkbenchViewState>(INITIAL_VIEW);
+  const picks = Atom.make(INITIAL_PICKS);
+  const preview = Atom.make<WorkbenchPreviewSettings>(INITIAL_CHOICES.preview);
+  const document = Atom.make(NO_DOCUMENT);
+  /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
+  const partialProfile = Atom.make<string | null>(null);
+  /** Counts the reader's refreshes; each one reads the chosen Item again. */
+  const refresh = Atom.make(0);
+  const item = Atom.map(view, (state) => state.item);
+  const itemId = Atom.map(view, (state) => state.item?.id ?? null);
+  const root = Atom.map(view, (state) => state.root);
+  /**
+   * The one read of the chosen Item that every surface derives from. A new
+   * choice, a refresh, or a Zotero change interrupts the read it replaces.
+   */
+  // The leaf's close stops the read at once.
+  const chosen = Atom.setIdleTTL(
+    viewRuntime.atom((get) => {
+      const id = get(itemId);
+      get(refresh);
+      // Samples carry their data, so database changes reach connected Items alone.
+      if (id && !id.startsWith("sample:")) get(zoteroRevisionAtom);
+      return id === null ? Effect.succeed(null) : readChosenItem(id);
+    }),
+    0,
+  );
+  const read = Atom.make((get): WorkbenchItemRead => {
+    const result = get(chosen);
+    if (get(itemId) === null)
+      return { status: "empty", error: null, snapshot: null };
+    if (result.waiting || AsyncResult.isInitial(result))
+      return { status: "loading", error: null, snapshot: null };
+    if (AsyncResult.isFailure(result)) {
+      const failure = Cause.squash(result.cause);
+      return {
+        status: "error",
+        error:
+          failure instanceof Error
+            ? failure.message
+            : Cause.pretty(result.cause),
+        snapshot: null,
+      };
+    }
+    return {
+      status: "ready",
+      error: null,
+      snapshot: result.value?.snapshot ?? null,
+    };
+  });
+  /** The chosen Item's title: the read's, once it named one. */
+  const title = Atom.make((get) => {
+    const result = get(chosen);
+    const named = AsyncResult.isSuccess(result) ? result.value?.title : null;
+    return named ?? get(item)?.title ?? null;
+  });
+  const examples = Atom.make((get) =>
+    examplesOf(
+      get(read).snapshot,
+      get(itemId) !== null,
+      get(picks).annotationId,
+    ),
+  );
+  /** The Citation set the render reads, when the document reads one. */
+  const citation = Atom.make((get) => {
+    const { kind } = get(document);
+    const set =
+      kind === "citation" || (kind === "partial" && get(root) === "citation");
+    if (!set) return null;
+    const { variant, citationExample } = get(picks);
+    return { variant, example: citationExample };
+  });
+  const partial = Atom.make((get): PartialPreviewSelection | null => {
+    const { kind, partialName } = get(document);
+    if (kind !== "partial" || partialName === null) return null;
+    const context = get(root);
+    return {
+      name: partialName,
+      context: isPartialContext(context) ? context : "note",
+      profile: get(partialProfile),
+    };
+  });
+  const choices = Atom.make((get): WorkbenchChoices => ({
+    annotation: get(examples).example,
+    citation: get(citation),
+    partial: get(partial),
+    preview: get(preview),
+  }));
+  /**
+   * The paper one render reads. A chosen Citation example carries its own
+   * data and outranks the Item; otherwise the read stands, and with no Item
+   * at all the Sample Annotation's own parent does.
+   */
+  const snapshot = Atom.make((get): ItemSnapshot | null => {
+    if (get(citation)?.example) return CITATION_EXAMPLE_ITEM;
+    const loaded = get(read).snapshot;
+    if (loaded) return loaded;
+    const { example } = get(examples);
+    return get(itemId) === null && example
+      ? getSampleAnnotationParent(example.id)
+      : null;
+  });
+  const itemData = (atoms: WorkbenchDocumentAtoms) => {
+    const invalid = Atom.make((get) =>
+      refused(get(document).kind, get(atoms.source)),
+    );
+    return Atom.make((get): WorkbenchItemData => ({
+      snapshot: get(snapshot),
+      // Output kept for another Template Document is another preview's.
+      document: get(document).path ?? undefined,
+      // A document the parser refuses is a failure, not a wait.
+      hold: get(invalid) && "invalid",
+    }));
+  };
+  /**
+   * Opens a chooser and makes its Item the choice; answers the choice. A
+   * newer chooser replaces it, and the leaf's close interrupts it.
+   */
+  const chooseItemCommand = Atom.setIdleTTL(
+    viewRuntime.fn((chooser: ItemChooser, get) =>
+      Effect.gen(function* () {
+        const choice = yield* chooser;
+        if (choice)
+          yield* Effect.sync(() => {
+            get.set(view, chooseItem(choice)(get(view)));
+            // An Item the reader picked is the Citation set they asked to see,
+            // so the built-in example that outranks it stands down.
+            if (get(view).root === "citation")
+              get.set(
+                picks,
+                chooseCitation({ citationExample: null })(get(picks)),
+              );
+          });
+        return choice;
+      }),
+    ),
+    0,
+  );
+  /** Opens the annotation chooser, and makes its answer the example. */
+  const chooseAnnotationCommand = Atom.setIdleTTL(
+    viewRuntime.fn((chooser: AnnotationChooser, get) =>
+      Effect.gen(function* () {
+        const id = yield* chooser;
+        if (id !== null)
+          yield* Effect.sync(() =>
+            get.set(picks, chooseAnnotation(id)(get(picks))),
+          );
+        return id;
+      }),
+    ),
+    0,
+  );
+  return {
+    view,
+    picks,
+    preview,
+    document,
+    partialProfile,
+    refresh,
+    item,
+    chosen,
+    read,
+    title,
+    examples,
+    choices,
+    snapshot,
+    itemData,
+    chooseItem: chooseItemCommand,
+    chooseAnnotation: chooseAnnotationCommand,
+  };
+}
+export type TemplateWorkbenchModel = ReturnType<
+  typeof makeTemplateWorkbenchModel
+>;
+
+/**
+ * Keeps the leaf's writable state, its Item read and its commands alive in
+ * `registry`, from the view's constructor to its close.
+ * @returns Releases them, which interrupts the read and every command.
+ */
+export function holdTemplateWorkbenchModel(
   registry: ViewRegistryHandle,
-  model: WorkbenchModel,
-) {
+  model: TemplateWorkbenchModel,
+): () => void {
   const releases = [
-    registry.mount(model.state),
-    registry.mount(model.documentRevision),
-    registry.mount(model.partialProfile),
-  ];
+    model.view,
+    model.picks,
+    model.preview,
+    model.document,
+    model.partialProfile,
+    model.refresh,
+    model.read,
+    model.chooseItem,
+    model.chooseAnnotation,
+  ].map((atom) => registry.mount(atom as Atom.Atom<unknown>));
   return () => {
     for (const release of releases.reverse()) release();
   };
 }
 
-/** The package keeps its interface; all state lives in this leaf's registry. */
-export function workbenchStore(
-  registry: ViewRegistryHandle,
-  model: WorkbenchModel,
-): WorkbenchStore {
-  const update = (patch: Partial<WorkbenchViewState>) =>
-    registry.update(model.state, patchWorkbench(patch));
-  const actions = {
-    setTab: (tab: WorkbenchViewState["tab"]) => update({ tab }),
-    setItem: (item: WorkbenchViewState["item"]) => update({ item }),
-    setRoot: (root: WorkbenchViewState["root"]) => update({ root }),
-    setAdvanced: (advanced: boolean) => update({ advanced }),
-  };
-  const state = Atom.map(model.state, (state) => ({ ...state, ...actions }));
-  const initial = { ...registry.get(model.state), ...actions };
+const decode = <A>(schema: Schema.Codec<A>, value: unknown): A | null =>
+  Option.getOrNull(Schema.decodeUnknownOption(schema)(value));
+const record = Schema.Record(Schema.String, Schema.Unknown);
+const roots = Schema.Literals(["note", "annotation", "filename", "citation"]);
+
+/** The saved view state of one leaf, as `getState` writes it. */
+export interface SavedWorkbench {
+  readonly defaultDraft: boolean;
+  readonly tab: WorkbenchViewState["tab"] | null;
+  readonly root: TemplateRoot | null;
+  readonly advanced: boolean | null;
+  /** The chosen Item; undefined when the state names none, null when it clears it. */
+  readonly itemIndexedKey: string | null | undefined;
+  /** The chosen annotation; undefined when the state names none. */
+  readonly annotationId: string | null | undefined;
+  readonly partialContext: PartialContext | null;
+  readonly partialProfile: string | null;
+}
+
+/** What `getState` saves beside the file, from the leaf's state. */
+export function savedWorkbench(state: {
+  readonly defaultDraft: boolean;
+  readonly view: WorkbenchViewState;
+  readonly picks: WorkbenchPicks;
+  /** A Shared Partial's caller and Profile; null for any other kind. */
+  readonly partial: {
+    readonly context: PartialContext;
+    readonly profile: string | null;
+  } | null;
+}): Record<string, unknown> {
+  const { tab, item, advanced } = state.view;
   return {
-    getState: () => registry.get(state),
-    getInitialState: () => initial,
-    setState: (patch) => {
-      const current = registry.get(state);
-      update(typeof patch === "function" ? patch(current) : patch);
-    },
-    subscribe: (listener) => {
-      let previous = registry.get(state);
-      return registry.subscribe(state, (next) => {
-        const before = previous;
-        previous = next;
-        listener(next, before);
-      });
-    },
+    ...(state.defaultDraft ? { defaultDraft: true, file: null } : {}),
+    tab,
+    itemIndexedKey: item?.id ?? null,
+    annotationId: state.picks.annotationId,
+    advanced,
+    // A Shared Partial's caller is a choice nothing else can name, so the
+    // workspace carries it back with the file it belongs to. No other kind
+    // has one to carry.
+    ...(state.partial
+      ? {
+          partialContext: state.partial.context,
+          partialProfile: state.partial.profile,
+        }
+      : {}),
   };
 }
 
-const record = Schema.Record(Schema.String, Schema.Unknown);
-export function readWorkbenchRecord(
-  input: unknown,
-): Record<string, unknown> | null {
-  return Option.getOrNull(Schema.decodeUnknownOption(record)(input));
+/** Each saved field decodes alone, so one bad field leaves the others. */
+export function readSavedWorkbench(input: unknown): SavedWorkbench | null {
+  const value = decode(record, input);
+  if (!value) return null;
+  const nullable = (key: string) =>
+    value[key] === null
+      ? null
+      : (decode(Schema.String, value[key]) ?? undefined);
+  return {
+    defaultDraft: value.defaultDraft === true,
+    tab: decode(Schema.Literals(TABS), value.tab),
+    root: decode(roots, value.root),
+    advanced: decode(Schema.Boolean, value.advanced),
+    itemIndexedKey: nullable("itemIndexedKey"),
+    annotationId: nullable("annotationId"),
+    partialContext: decode(
+      Schema.Literals(PARTIAL_CONTEXTS),
+      value.partialContext,
+    ),
+    partialProfile: decode(Schema.String, value.partialProfile),
+  };
 }
-export const readWorkbenchString = (input: unknown) =>
-  Option.getOrNull(Schema.decodeUnknownOption(Schema.String)(input));
-export const readWorkbenchBoolean = (input: unknown) =>
-  Option.getOrNull(Schema.decodeUnknownOption(Schema.Boolean)(input));
-export const readWorkbenchNumber = (input: unknown) =>
-  Option.getOrNull(Schema.decodeUnknownOption(Schema.Finite)(input));
+
+const position = Schema.Struct({ top: Schema.Finite, left: Schema.Finite });
+const ephemeral = Schema.Struct({
+  context: Schema.String,
+  selection: Schema.optional(Schema.Unknown),
+  selected: Schema.optional(Schema.Unknown),
+  field: Schema.optional(Schema.Unknown),
+  scroll: Schema.optional(Schema.Unknown),
+});
+const range = Schema.Struct({
+  from: Schema.Finite,
+  to: Schema.Finite,
+  anchor: Schema.optional(Schema.Finite),
+  head: Schema.optional(Schema.Finite),
+});
+const insertTarget = Schema.Struct({ slice: Schema.String, range });
+
+/** The ephemeral state of one leaf, as `getEphemeralState` writes it. */
+export interface EphemeralWorkbench {
+  /** The document and Item the presentation was saved for. */
+  readonly context: string;
+  readonly focus: boolean;
+  readonly selection: typeof insertTarget.Type | null;
+  readonly selected: number | null;
+  readonly field: string | null;
+  readonly scroll: Record<string, { top: number; left: number }>;
+}
+
+/** Each ephemeral field decodes alone; the record needs its context. */
+export function readEphemeralWorkbench(
+  input: unknown,
+): EphemeralWorkbench | null {
+  const value = decode(record, input);
+  const state = decode(ephemeral, value?.zotlitTemplateWorkbench);
+  if (!value || !state) return null;
+  const selected = decode(Schema.Int, state.selected);
+  const scroll: Record<string, { top: number; left: number }> = {};
+  for (const [key, saved] of Object.entries(
+    decode(record, state.scroll) ?? {},
+  )) {
+    const at = decode(position, saved);
+    if (at)
+      scroll[key] = { top: Math.max(0, at.top), left: Math.max(0, at.left) };
+  }
+  return {
+    context: state.context,
+    focus: value.focus === true,
+    selection: decode(insertTarget, state.selection),
+    selected: selected !== null && selected >= 0 ? selected : null,
+    field: decode(Schema.String, state.field),
+    scroll,
+  };
+}

@@ -6,6 +6,10 @@ import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { vi } from "vitest";
 
+import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
+import { INITIAL_VIEW } from "@zotlit/workbench/ui";
+
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { fileProfileAtom } from "@/services/profile/atoms";
@@ -20,32 +24,216 @@ import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 import { makeWorkbenchHost } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
 import {
-  holdWorkbenchModel,
-  makeWorkbenchModel,
-  patchWorkbench,
-  workbenchStore,
+  INITIAL_PICKS,
+  chooseAnnotation,
+  chooseItem,
+  holdTemplateWorkbenchModel,
+  makeTemplateWorkbenchModel,
+  readEphemeralWorkbench,
+  readSavedWorkbench,
+  savedWorkbench,
+  setAdvanced,
+  setTab,
 } from "./model";
 
+const FIRST = "FIRST234";
+const LATER = "LATER234";
+const SNAPSHOT: ItemSnapshot = SAMPLE_ITEMS[0]!;
+
+/**
+ * A Workbench host whose Item reads the test drives: each check of a chosen
+ * Item records its key, and holds until `answer` lets it go or an interrupt
+ * stops it.
+ */
+function itemHost(options: { readonly answer?: boolean } = {}) {
+  const started: string[] = [];
+  const interrupted: string[] = [];
+  const snapshots: string[] = [];
+  const zoteroReads = stubService<WorkbenchHostDeps["zoteroReads"]>(
+    "ZoteroReads",
+    {
+      state: "ready",
+      reads: stubService<WorkbenchHostDeps["zoteroReads"]["reads"]>(
+        "ZoteroReadsApi",
+        {
+          ItemsByIndexedKeys: ({ indexedKeys }) => {
+            const key = indexedKeys[0]!;
+            started.push(key);
+            return options.answer
+              ? Effect.succeed(
+                  new Map([
+                    [
+                      key,
+                      {
+                        key,
+                        creators: [],
+                        primaryCreatorType: null,
+                        fields: { itemType: "journalArticle", title: key },
+                      },
+                    ],
+                  ]) as never,
+                )
+              : Effect.callback<never>(() =>
+                  Effect.sync(() => interrupted.push(key)),
+                );
+          },
+        },
+      ),
+      acquireRead: () =>
+        Promise.resolve(
+          stubService<
+            Awaited<ReturnType<WorkbenchHostDeps["zoteroReads"]["acquireRead"]>>
+          >("ZoteroReadLease", {
+            reads: stubService<WorkbenchHostDeps["zoteroReads"]["reads"]>(
+              "ZoteroReadsApi",
+              {
+                ItemSnapshot: (({
+                  selection,
+                }: {
+                  selection: { key: string };
+                }) =>
+                  Effect.sync(() => {
+                    snapshots.push(selection.key);
+                    return SNAPSHOT;
+                  })) as never,
+              },
+            ),
+            [Symbol.asyncDispose]: () => Promise.resolve(),
+          }),
+        ),
+    },
+  );
+  const host = makeWorkbenchHost({ zoteroReads });
+  const model = makeTemplateWorkbenchModel();
+  const release = holdTemplateWorkbenchModel(host.registry, model);
+  const choose = (id: string) =>
+    host.registry.update(model.view, chooseItem({ id, title: null }));
+  return { ...host, model, release, choose, started, interrupted, snapshots };
+}
+
+it.effect("interrupts the older Item read when a newer choice is made", () =>
+  Effect.gen(function* () {
+    const host = itemHost();
+    host.choose(FIRST);
+    yield* Effect.promise(() =>
+      waitFor(() => expect(host.started).toEqual([FIRST])),
+    );
+    host.choose(LATER);
+    yield* Effect.promise(() =>
+      waitFor(() => expect(host.started).toEqual([FIRST, LATER])),
+    );
+    expect(host.interrupted).toEqual([FIRST]);
+    expect(host.registry.get(host.model.read).status).toBe("loading");
+    host.release();
+  }),
+);
+
+it.effect("reads the chosen Item once for every surface that shows it", () =>
+  Effect.gen(function* () {
+    const host = itemHost({ answer: true });
+    host.choose(FIRST);
+    yield* Effect.promise(() =>
+      waitFor(() =>
+        expect(host.registry.get(host.model.read).status).toBe("ready"),
+      ),
+    );
+    expect(host.registry.get(host.model.read).snapshot).toBe(SNAPSHOT);
+    expect(host.registry.get(host.model.title)).toBe(FIRST);
+    // The annotation choice and the tab change the surfaces, not the read.
+    host.registry.update(host.model.picks, chooseAnnotation("other"));
+    host.registry.update(host.model.view, setTab("annotation"));
+    expect(host.registry.get(host.model.choices).annotation).not.toBeNull();
+    expect(host.started).toEqual([FIRST]);
+    expect(host.snapshots).toEqual([FIRST]);
+    host.release();
+  }),
+);
+
 it.effect(
-  "holds layout state before open and keeps the shared store interface",
+  "interrupts the Item read and the open chooser when the leaf closes",
   () =>
     Effect.gen(function* () {
-      const host = yield* Effect.sync(() => makeWorkbenchHost());
-      const model = makeWorkbenchModel();
-      const release = holdWorkbenchModel(host.registry, model);
-      const store = workbenchStore(host.registry, model);
-      const listener = vi.fn();
-      const unsubscribe = store.subscribe(listener);
-      store.getState().setTab("annotation");
-      expect(host.registry.get(model.state).tab).toBe("annotation");
-      expect(store.getState().tab).toBe("annotation");
-      const before = host.registry.get(model.state);
-      expect(patchWorkbench({ tab: "annotation" })(before)).toBe(before);
-      expect(listener).toHaveBeenCalledOnce();
-      unsubscribe();
-      release();
+      const host = itemHost();
+      const closed: string[] = [];
+      host.choose(FIRST);
+      host.registry.set(
+        host.model.chooseItem,
+        Effect.never.pipe(
+          Effect.onInterrupt(() => Effect.sync(() => closed.push("chooser"))),
+        ),
+      );
+      yield* Effect.promise(() =>
+        waitFor(() => expect(host.started).toEqual([FIRST])),
+      );
+      host.release();
+      yield* Effect.promise(() =>
+        waitFor(() => {
+          expect(host.interrupted).toEqual([FIRST]);
+          expect(closed).toEqual(["chooser"]);
+        }),
+      );
     }),
 );
+
+it("round-trips the saved and ephemeral state through Schema", () => {
+  const view = {
+    ...INITIAL_VIEW,
+    tab: "properties" as const,
+    root: "annotation" as const,
+    advanced: true,
+    item: { id: FIRST, title: "First" },
+  };
+  const saved = JSON.parse(
+    JSON.stringify(
+      savedWorkbench({
+        defaultDraft: false,
+        view,
+        picks: { ...INITIAL_PICKS, annotationId: "note-1" },
+        partial: { context: "citation", profile: "books" },
+      }),
+    ),
+  ) as unknown;
+  expect(readSavedWorkbench(saved)).toEqual({
+    defaultDraft: false,
+    tab: "properties",
+    root: null,
+    advanced: true,
+    itemIndexedKey: FIRST,
+    annotationId: "note-1",
+    partialContext: "citation",
+    partialProfile: "books",
+  });
+  // A bad field leaves the others; a cleared Item stays cleared.
+  expect(
+    readSavedWorkbench({
+      tab: "nowhere",
+      advanced: "yes",
+      itemIndexedKey: null,
+    }),
+  ).toMatchObject({ tab: null, advanced: null, itemIndexedKey: null });
+  expect(readSavedWorkbench({})?.itemIndexedKey).toBeUndefined();
+  const ephemeral = {
+    zotlitTemplateWorkbench: {
+      context: '["a.md",null]',
+      selection: { slice: "note", range: { from: 1, to: 4 } },
+      selected: 2,
+      field: "title",
+      scroll: { note: { top: 10, left: -5 }, bad: { top: "x" } },
+    },
+    focus: true,
+  };
+  expect(readEphemeralWorkbench(JSON.parse(JSON.stringify(ephemeral)))).toEqual(
+    {
+      context: '["a.md",null]',
+      focus: true,
+      selection: { slice: "note", range: { from: 1, to: 4 } },
+      selected: 2,
+      field: "title",
+      scroll: { note: { top: 10, left: 0 } },
+    },
+  );
+  expect(readEphemeralWorkbench({ zotlitTemplateWorkbench: {} })).toBeNull();
+});
 
 it.effect(
   "reloads partial names on compilation and leaves them held on local presentation changes",
@@ -71,9 +259,9 @@ it.effect(
         });
       yield* Effect.promise(() => ready());
       const count = read.mock.calls.length;
-      const model = makeWorkbenchModel();
-      const releaseModel = holdWorkbenchModel(host.registry, model);
-      host.registry.update(model.state, patchWorkbench({ advanced: true }));
+      const model = makeTemplateWorkbenchModel();
+      const releaseModel = holdTemplateWorkbenchModel(host.registry, model);
+      host.registry.update(model.view, setAdvanced(true));
       expect(read).toHaveBeenCalledTimes(count);
       const before = host.registry.get(templateRevisionAtom);
       yield* SubscriptionRef.set(revision, 1);

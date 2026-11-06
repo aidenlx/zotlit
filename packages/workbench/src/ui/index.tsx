@@ -53,6 +53,8 @@ export {
   chooseItem,
   choosePartial,
   holdWorkbenchModel,
+  INITIAL_CHOICES,
+  INITIAL_VIEW,
   makeWorkbenchModel,
   patch,
   setAdvanced,

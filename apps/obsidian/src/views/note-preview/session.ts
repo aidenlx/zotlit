@@ -40,7 +40,7 @@ import type { NativeRenderDeps, NativeRenderResult } from "./render";
 const logger = getLogger(["note-preview", "session"]);
 
 /** A partial preview was asked for before any paper was chosen. */
-class PreviewItemMissing extends Schema.TaggedError<
+export class PreviewItemMissing extends Schema.TaggedError<
   PreviewItemMissing,
   { readonly brand: unique symbol }
 >()("PreviewItemMissing", {}) {
@@ -50,7 +50,7 @@ class PreviewItemMissing extends Schema.TaggedError<
 }
 
 /** The registered Shared Partial failed to render. The message is the render's own. */
-class PartialPreviewFailed extends Schema.TaggedError<
+export class PartialPreviewFailed extends Schema.TaggedError<
   PartialPreviewFailed,
   { readonly brand: unique symbol }
 >()("PartialPreviewFailed", {
