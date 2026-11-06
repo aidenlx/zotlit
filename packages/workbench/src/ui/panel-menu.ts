@@ -22,6 +22,8 @@ export interface PanelSizeItem {
 
 export interface PanelSizeMenu {
   readonly handle: PanelHandle;
+  /** The way the handle moves: a column edge sideways, the split up and down. */
+  readonly axis: "horizontal" | "vertical";
   /** The handle's own name, so the menu reads as the handle does. */
   readonly label: string;
   readonly items: readonly PanelSizeItem[];
@@ -36,8 +38,9 @@ export function panelSizeMenus(
   bounds: PanelBounds,
 ): readonly PanelSizeMenu[] {
   return panelHandles(panels, bounds.size).map((handle) => {
+    const axis = handle === "split" ? "vertical" : "horizontal";
     const labels =
-      handle === "split"
+      axis === "vertical"
         ? {
             grow: m.workbench_panel_taller(),
             shrink: m.workbench_panel_shorter(),
@@ -50,6 +53,7 @@ export function panelSizeMenus(
           };
     return {
       handle,
+      axis,
       label:
         handle === "fields"
           ? m.workbench_fields_resize()

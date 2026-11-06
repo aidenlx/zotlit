@@ -1729,18 +1729,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.pane)
-        .setTitle(m.workbench_show_preview())
-        .setIcon("panel-right")
-        .setChecked(this.registry.get(this.workbench.panels).preview.shown)
-        .onClick(() => this.togglePanel("preview")),
-    );
-    menu.addItem((item) =>
-      item
-        .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_fields())
         .setIcon("panel-left")
         .setChecked(this.registry.get(this.workbench.panels).fields.shown)
         .onClick(() => this.togglePanel("fields")),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_show_preview())
+        .setIcon("panel-right")
+        .setChecked(this.registry.get(this.workbench.panels).preview.shown)
+        .onClick(() => this.togglePanel("preview")),
     );
     this.#addPanelSizeMenu(menu);
     menu.addItem((item) =>
@@ -1817,14 +1817,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       size: registry.get(this.viewSize),
       defaults: panelDefaults,
     });
-    for (const { handle, label, items } of menus)
+    for (const { axis, label, items } of menus)
       menu.addItem((item) => {
         item
           .setSection(MENU_SECTION.pane)
           .setTitle(label)
-          .setIcon(handle === "split" ? "move-vertical" : "move-horizontal");
+          .setIcon(`move-${axis}`);
         const submenu = item.setSubmenu();
-        const axis = handle === "split" ? "vertical" : "horizontal";
         for (const size of items)
           submenu.addItem((entry) =>
             entry

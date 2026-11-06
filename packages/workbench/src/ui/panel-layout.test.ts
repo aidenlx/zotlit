@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   canResizePanel,
+  columnLimit,
   INITIAL_PANELS,
   panelHandles,
   placePanels,
@@ -159,22 +160,79 @@ describe("sizing a panel without its handle", () => {
   });
 
   it("widens and narrows a column a large step at a time", () => {
-    const wider = resizePanel("fields", "grow", bounds(1200))(both);
+    const wider = resizePanel("fields", "grow", bounds(1600))(both);
     expect(wider.fields.width).toBe(464);
     expect(
-      resizePanel("preview", "shrink", bounds(1200))(both).preview.width,
+      resizePanel("preview", "shrink", bounds(1600))(both).preview.width,
     ).toBe(336);
     // The other panel keeps its size.
     expect(wider.preview).toBe(both.preview);
   });
 
   it("widens a column only as far as the view draws it", () => {
-    // 2/5 of 1200 px is 480 px.
+    // 2/5 of 1600 px is 640 px.
+    const fields: WorkbenchPanels = {
+      ...both,
+      preview: { ...both.preview, shown: false },
+    };
+    const grow = resizePanel("fields", "grow", bounds(1600));
+    const wide = grow(grow(grow(grow(fields))));
+    expect(wide.fields.width).toBe(640);
+    expect(canResizePanel("fields", "grow", bounds(1600))(wide)).toBe(false);
+    expect(canResizePanel("fields", "shrink", bounds(1600))(wide)).toBe(true);
+  });
+
+  it("widens a column only while the editor keeps its 360 px beside both columns", () => {
+    // 1200 px less the 400 px Preview and the editor's 360 px leaves the
+    // Fields column at most 440 px, under the 480 px 2/5 limit.
+    expect(columnLimit(both, "fields", at(1200))).toBe(440);
     const grow = resizePanel("fields", "grow", bounds(1200));
-    const wide = grow(grow(both));
-    expect(wide.fields.width).toBe(480);
-    expect(canResizePanel("fields", "grow", bounds(1200))(wide)).toBe(false);
-    expect(canResizePanel("fields", "shrink", bounds(1200))(wide)).toBe(true);
+    let panels = both;
+    for (let press = 0; press < 5; press++) panels = grow(panels);
+    expect(panels.fields.width).toBe(440);
+    expect(placePanels(panels, at(1200))).toEqual({
+      preview: "side",
+      fields: "column",
+    });
+    expect(canResizePanel("fields", "grow", bounds(1200))(panels)).toBe(false);
+    // The Fields column now takes the room the Preview could grow into.
+    expect(columnLimit(panels, "preview", at(1200))).toBe(400);
+    expect(canResizePanel("preview", "grow", bounds(1200))(panels)).toBe(false);
+    expect(
+      placePanels(
+        resizePanel("preview", "grow", bounds(1200))(panels),
+        at(1200),
+      ).fields,
+    ).toBe("column");
+  });
+
+  it("limits a column by the other one only while that one is a column", () => {
+    const preview: WorkbenchPanels = {
+      ...both,
+      fields: { ...both.fields, shown: false },
+    };
+    // A hidden Fields Panel leaves the Preview its 2/5 of the view.
+    expect(columnLimit(preview, "preview", at(1200))).toBe(480);
+    // A hidden Preview leaves the Fields column 2/5 of a 700 px view, as the
+    // editor keeps 420 px beside it.
+    const fields: WorkbenchPanels = {
+      ...both,
+      preview: { ...both.preview, shown: false },
+    };
+    expect(columnLimit(fields, "fields", at(700))).toBe(280);
+    // A view not measured yet holds a column to its largest width.
+    expect(columnLimit(both, "fields", null)).toBe(960);
+  });
+
+  it("resets a column no wider than the editor's room allows", () => {
+    const wide: WorkbenchPanels = {
+      fields: { ...both.fields, width: 300 },
+      preview: { ...both.preview, width: 480 },
+    };
+    // 1200 - 480 - 360 leaves the Fields column 360 px, under its 400 px default.
+    const reset = resizePanel("fields", "reset", bounds(1200))(wide);
+    expect(reset.fields.width).toBe(360);
+    expect(placePanels(reset, at(1200)).fields).toBe("column");
   });
 
   it("stops at the narrowest column", () => {
@@ -203,16 +261,37 @@ describe("sizing a panel without its handle", () => {
     expect(canResizePanel("split", "grow", bounds(560))(tallest)).toBe(false);
   });
 
+  it("offers a taller or shorter Preview only where the drawn height changes", () => {
+    // A 578 px view keeps the editor 320 px: the Preview draws at most 258
+    // px, which 45 % of the view already reaches.
+    const short = {
+      size: { width: 560, height: 578 },
+      defaults: INITIAL_PANELS,
+    };
+    const taller = resizePanel("split", "grow", short)(both);
+    expect(previewBelowHeight(taller.preview.height, 578)).toBe(258);
+    expect(canResizePanel("split", "grow", short)(taller)).toBe(false);
+    // A saved 80 % draws as 45 %; one step shorter draws shorter.
+    const tallest: WorkbenchPanels = {
+      ...both,
+      preview: { ...both.preview, height: 80 },
+    };
+    expect(canResizePanel("split", "grow", short)(tallest)).toBe(false);
+    const shorter = resizePanel("split", "shrink", short)(tallest);
+    expect(shorter.preview.height).toBe(35);
+    expect(previewBelowHeight(shorter.preview.height, 578)).toBeLessThan(258);
+  });
+
   it("resets a panel to its default size", () => {
     const sized: WorkbenchPanels = {
       fields: { ...both.fields, width: 300 },
       preview: { ...both.preview, width: 960, height: 70 },
     };
     expect(
-      resizePanel("fields", "reset", bounds(1200))(sized).fields.width,
+      resizePanel("fields", "reset", bounds(1600))(sized).fields.width,
     ).toBe(400);
     expect(
-      resizePanel("preview", "reset", bounds(1200))(sized).preview,
+      resizePanel("preview", "reset", bounds(1600))(sized).preview,
     ).toEqual({
       ...sized.preview,
       width: 400,

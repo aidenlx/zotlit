@@ -16,21 +16,35 @@ const at = (width: number) => ({
   defaults: INITIAL_PANELS,
 });
 
-/** Each menu's name and its entries, with a mark on the ones turned off. */
+/** Each menu's name, axis and entries, with a mark on the ones turned off. */
 const read = (menus: ReturnType<typeof panelSizeMenus>) =>
   menus.map((menu) => [
     menu.label,
+    menu.axis,
     menu.items.map((item) => (item.disabled ? `(${item.label})` : item.label)),
   ]);
 
 describe("the panel size menus", () => {
   it("names each handle the view draws, with entries for its direction", () => {
+    const widths = [
+      m.workbench_panel_wider(),
+      m.workbench_panel_narrower(),
+      `(${m.workbench_panel_reset_width()})`,
+    ];
     expect(read(panelSizeMenus(m, BOTH, at(1200)))).toEqual([
-      ["Resize fields", ["Make wider", "Make narrower", "(Reset width)"]],
-      ["Resize preview", ["Make wider", "Make narrower", "(Reset width)"]],
+      [m.workbench_fields_resize(), "horizontal", widths],
+      [m.workbench_preview_resize(), "horizontal", widths],
     ]);
     expect(read(panelSizeMenus(m, BOTH, at(560)))).toEqual([
-      ["Resize preview", ["Make taller", "Make shorter", "(Reset height)"]],
+      [
+        m.workbench_preview_resize(),
+        "vertical",
+        [
+          m.workbench_panel_taller(),
+          m.workbench_panel_shorter(),
+          `(${m.workbench_panel_reset_height()})`,
+        ],
+      ],
     ]);
   });
 

@@ -69,8 +69,8 @@ export function ViewMenu({
         >
           {m.workbench_show_preview()}
         </DropdownMenuCheckboxItem>
-        {menus.map(({ handle, label, items }) => {
-          const icons = ICONS[handle === "split" ? "vertical" : "horizontal"];
+        {menus.map(({ handle, axis, label, items }) => {
+          const icons = ICONS[axis];
           return [
             <DropdownMenuSeparator key={`${handle}-separator`} />,
             <DropdownMenuGroup key={handle}>

@@ -15,7 +15,7 @@ import {
   clampPanelWidth,
   clampPreviewHeight,
   PANEL_WIDTH,
-  panelLimit,
+  columnLimit,
   PREVIEW_HEIGHT,
   previewBelowHeight,
   resizePanel,
@@ -186,10 +186,11 @@ function Column({
   const part = useParts("panels");
   const properties = usePanelProperties();
   const size = useAtomValue(model.viewSize);
+  const panels = useAtomValue(model.panels);
   const id = useUniqueId();
   const region = useRef<HTMLElement>(null);
-  /** The widest the view draws this panel now. */
-  const max = size ? panelLimit(size.width) : PANEL_WIDTH.max;
+  /** The widest this panel may be while every column keeps its place. */
+  const max = columnLimit(panels, side, size);
   const held = (next: number) => clampPanelWidth(next, max);
   // Moving the edge away from the editor widens the panel: the Fields edge
   // toward the trailing side, the Preview edge toward the leading side.
@@ -206,7 +207,7 @@ function Column({
           : { grow: "ArrowLeft", shrink: "ArrowRight" },
       step: (event) => (event.shiftKey ? 64 : 16),
       min: PANEL_WIDTH.min,
-      max: PANEL_WIDTH.max,
+      max,
       dragged: (handle, from, to) =>
         outward(handle) * (to.clientX - from.clientX),
       drawn: held,
