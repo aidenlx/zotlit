@@ -37,14 +37,10 @@ export { EditToolbar } from "./edit-toolbar";
 export {
   createWorkbenchEditor,
   WorkbenchEditorProvider,
-  useDocumentRevision,
   useOptionalEditor,
-  useRenderScheduler,
-  useRenderState,
   useWorkbenchController,
   useWorkbenchEditor,
   useWorkbenchModel,
-  useWorkbenchStore,
 } from "./editor";
 export type { WorkbenchEditor, WorkbenchEditorInstance } from "./editor";
 export {
@@ -66,7 +62,11 @@ export type {
   ChooseJob,
   CopyJob,
   CreatePartialJob,
+  PreviewMode,
+  PreviewSettings,
+  TemplateRoot,
   WorkbenchChoices,
+  WorkbenchItemChoice,
   WorkbenchItemData,
   WorkbenchItemDataInput,
   WorkbenchModel,
@@ -74,6 +74,7 @@ export type {
   WorkbenchMatchVocabulary,
   WorkbenchPreviewSettings,
   WorkbenchRuntime,
+  WorkbenchViewState,
 } from "./model";
 export {
   NO_MATCH_DATA,
@@ -83,7 +84,6 @@ export {
   useTooltip,
   useWorkbenchHost,
 } from "./host";
-export { useFork, useForkedEffect } from "./run";
 export { joinForked, observeExit } from "#/language/host-effects";
 export type { ExitHandlers, WorkbenchRunner } from "#/language/host-effects";
 export type {
@@ -132,29 +132,14 @@ export type {
   WorkbenchProblemCapture,
   WorkbenchProblemsState,
 } from "./problems-footer";
-export { createRenderScheduler } from "./scheduler";
-export type {
-  RenderScheduler,
-  RenderSchedulerInput,
-  RenderSchedulerOptions,
-  RenderSchedulerState,
-  RenderTrigger,
-} from "./scheduler";
 export { makeRenderSchedulerAtoms } from "./scheduler-atoms";
 export type {
   RenderSchedulerAtoms,
   RenderSchedulerAtomsOptions,
+  RenderSchedulerInput,
+  RenderSchedulerState,
+  RenderTrigger,
 } from "./scheduler-atoms";
-export { createWorkbenchStore } from "./store";
-export type {
-  PreviewMode,
-  PreviewSettings,
-  TemplateRoot,
-  WorkbenchItemChoice,
-  WorkbenchStore,
-  WorkbenchViewActions,
-  WorkbenchViewState,
-} from "./store";
 export { citationExampleLabel, citationVariantLabel } from "./citation-preview";
 export { partialContextLabel } from "./partial-preview";
 export { TabBar, TabPanel } from "./tab-bar";

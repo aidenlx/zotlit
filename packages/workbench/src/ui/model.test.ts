@@ -8,13 +8,13 @@ import {
   chooseCitation,
   chooseItem,
   choosePartial,
+  INITIAL_VIEW,
   setAdvanced,
   setPreview,
   setRoot,
   setTab,
 } from "./model";
-import type { WorkbenchItemData } from "./model";
-import { createWorkbenchStore } from "./store";
+import type { WorkbenchItemData, WorkbenchViewState } from "./model";
 import { fakeHost, TEST_RUNTIME } from "./test-host";
 
 import { WorkbenchDocumentController } from "#/document/controller";
@@ -35,9 +35,7 @@ function load(opened: ReturnType<typeof open>) {
   }));
 }
 
-function open(
-  options: { store?: ReturnType<typeof createWorkbenchStore> } = {},
-) {
+function open(options: { view?: Atom.Writable<WorkbenchViewState> } = {}) {
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
   const registry = AtomRegistry.make({
@@ -63,7 +61,6 @@ function open(
     [Symbol.dispose]() {
       editor[Symbol.dispose]();
       registry.dispose();
-      host.close();
     },
   };
 }
@@ -74,23 +71,25 @@ function noteEdit(controller: WorkbenchDocumentController, insert: string) {
 }
 
 describe("the Workbench model", () => {
-  it("reads the chosen Item back from the model and from the host's store", () => {
+  it("reads the chosen Item back from the model", () => {
     using opened = open();
-    const { registry, model, editor } = opened;
+    const { registry, model } = opened;
     registry.update(model.view, chooseItem(CHOICE));
     expect(registry.get(model.item)).toEqual(CHOICE);
-    expect(editor.store.getState().item).toEqual(CHOICE);
   });
 
-  it("reads and writes the state a host store holds", () => {
-    const store = createWorkbenchStore({ tab: "properties" });
-    using opened = open({ store });
+  it("reads and writes the state a host view atom holds", () => {
+    const view = Atom.make<WorkbenchViewState>({
+      ...INITIAL_VIEW,
+      tab: "properties",
+    });
+    using opened = open({ view });
     const { registry, model } = opened;
     expect(registry.get(model.tab)).toBe("properties");
-    store.getState().setTab("name");
+    registry.update(view, setTab("name"));
     expect(registry.get(model.tab)).toBe("name");
     registry.update(model.view, setAdvanced(true));
-    expect(store.getState().advanced).toBe(true);
+    expect(registry.get(view).advanced).toBe(true);
   });
 
   it("keeps the state when a transition changes nothing", () => {

@@ -86,7 +86,6 @@ vi.mock("./layout", () => ({
   findWorkbenchLayout: vi.fn(() => Effect.succeed(null)),
 }));
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 const setOriginatingNote = vi.fn<
   (file: TFile | null) => Effect.Effect<string | null>
 >(() => Effect.succeed(null));

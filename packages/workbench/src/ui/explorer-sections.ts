@@ -10,7 +10,7 @@ import { commonRows, fieldValueText } from "./explorer-fields";
 import type { FieldRow } from "./explorer-fields";
 import type { WorkbenchMessages } from "./generated/messages";
 import type { WorkbenchMessageLabel } from "./messages";
-import type { TemplateRoot } from "./store";
+import type { TemplateRoot } from "./model";
 
 import { buildDisplayTree } from "#/explorer/index";
 

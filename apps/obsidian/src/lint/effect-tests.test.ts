@@ -116,7 +116,7 @@ const mock = [{ messageId: "mock" }];
 tester.run("no-notice-mock", noNoticeMock, {
   valid: [
     'vi.mock("@/lib/notifier")',
-    'vi.mock("zustand", async (importOriginal) => ({ ...(await importOriginal()) }))',
+    'vi.mock("preact/compat", async (importOriginal) => ({ ...(await importOriginal()) }))',
   ],
   invalid: [
     {

@@ -48,7 +48,7 @@ import {
   problemText,
   renderDiagnosis,
 } from "./problems";
-import type { RenderTrigger } from "./scheduler";
+import type { RenderTrigger } from "./scheduler-atoms";
 import { WorkbenchOption, WorkbenchSelect } from "./select";
 import { useParts, useIcon } from "./theme";
 

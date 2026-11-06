@@ -80,8 +80,7 @@
     "effect": "catalog:",
     "jsonc-parser": "^3.3.1",
     "valibot": "catalog:",
-    "yaml": "catalog:",
-    "zustand": "catalog:"
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "catalog:",

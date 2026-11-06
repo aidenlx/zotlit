@@ -21,7 +21,6 @@ import type { ExplorerHost, ExplorerReads } from "./__fixtures__";
 import { TemplateDataExplorerView } from "./view";
 import type { ExplorerViewDeps } from "./view";
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 vi.mock("@/services/item-lookup/search-modal", () => ({
   pickItem: vi.fn(async () => null),
 }));
