@@ -340,6 +340,60 @@ shows the part of the note kept up to date, then its Markdown source.
 Expected: the Problems area at the bottom of the editor names the missing
 partial once. **Show problem** in the Preview panel opens that problem.
 
+## Show problem in a narrow and a wide tab
+
+1. Do the case above in a tab narrower than 600 pixels, with the Preview
+   shown under the editor.
+2. Select **Show fields** so the Fields picker opens, then select
+   **Show problem** in the Preview panel.
+3. Make the tab wider than 1040 pixels, place the cursor at the start of the
+   note body, and select **Show problem** again.
+
+Expected: in step 2 the Fields picker closes, the Problems area opens on the
+missing partial, and the editor selects `{% render "missing-partial" %}` in
+the note body with the focus on it. The Preview stays under the editor at
+its height, and **Show preview** stays pressed. In step 3 the editor selects
+the call again, and the Preview stays at the right of the editor at its
+width.
+
+## Show problem on an unknown filter
+
+1. Show the Preview, and choose "Alpha of the personal library".
+2. In the note body, change `{% render "book-details" with zt as zt %}` to
+   `{{ zt.title | no_such_filter }}`, and place the cursor at the start of
+   the note body.
+3. Select **Show problem** in the Preview panel.
+
+Expected: the Problems area opens on the unknown filter and offers **Go to
+error**. The editor selects `{{ zt.title | no_such_filter }}`, and the Note
+tab stays chosen.
+
+## Repair commands close the Fields picker
+
+1. In a tab narrower than 600 pixels, show the Preview, and change the note
+   body as in **A problem reaches the editor**.
+2. Select **Show fields** so the Fields picker opens.
+3. In the Problems area, select the button that names where the problem is.
+
+Expected: the Fields picker closes and the editor selects the call. The
+Preview and **Show preview** stay as they were.
+
+## Open the annotation box and add the annotation loop
+
+1. In a tab narrower than 600 pixels, show the Preview, and choose
+   "Ten Simple Rules for Better Figures".
+2. Select **Show fields** so the Fields picker opens. Then select **Add to
+   template** in "Include annotations in the note".
+3. Open the Fields picker again. Select **Edit format** on the annotation
+   example under the new loop.
+
+Expected: in step 2 the Fields picker closes, the loop is added at the end
+of the note body, the Note tab stays chosen, and the cursor is after the
+loop. In step 3 the picker closes and the Annotation tab opens with the
+cursor at the start of the annotation format. The Preview stays under the
+editor in both steps, and **Show preview** stays pressed. The web Workbench
+does the same steps.
+
 ## Other document kinds
 
 1. Open `templates/zotlit-citation.md` in the Template Workbench View and show
