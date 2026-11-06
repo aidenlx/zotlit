@@ -379,7 +379,7 @@ function warningText(warning: QueryViewWarning): string {
     : warning.message;
 }
 
-function problemText(problem: QueryFileProblem): string {
+export function problemText(problem: QueryFileProblem): string {
   switch (problem.code) {
     case "invalid-yaml":
       return m.query_view_problem_invalid_yaml({ message: problem.message });

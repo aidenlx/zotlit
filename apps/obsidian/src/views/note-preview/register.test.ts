@@ -173,6 +173,7 @@ function setup() {
       id: "zotlit",
     }),
     registerView: vi.fn(),
+    registerMarkdownPostProcessor: vi.fn(),
     registerEvent: vi.fn(),
     addCommand: (command) => {
       commands.set(command.id, command);
