@@ -23,6 +23,7 @@ import {
   isPartialContext,
 } from "@zotlit/workbench/render";
 import type {
+  RenderRequest,
   AnnotationExample,
   CitationExampleId,
   PartialContext,
@@ -47,9 +48,11 @@ import type {
 
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import { viewRuntime } from "@/lib/view-atoms";
+import { templateRevisionAtom } from "@/services/template/atoms";
 import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 
 import { readChosenItem } from "./atoms";
+import { PartialPreviewFailed, PreviewItemMissing } from "./errors";
 import { getSampleAnnotationParent } from "./selection-data";
 
 /** The Template Document the leaf holds, as the view last loaded it. */
@@ -131,26 +134,32 @@ export type AnnotationChooser = Effect.Effect<
   ViewServices
 >;
 
-/**
- * The annotation examples the chosen Item offers and the one the render
- * reads. With no Item, a Sample Annotation named by id stands alone.
- */
-function examplesOf(
-  snapshot: ItemSnapshot | null,
-  chosen: boolean,
-  annotationId: string | null,
-): {
+interface AnnotationExamples {
   readonly current: readonly AnnotationExample[];
   readonly example: AnnotationExample | null;
-} {
-  if (snapshot) return annotationSamples(snapshot, annotationId);
-  return {
-    current: [],
-    example: chosen
-      ? null
-      : (SAMPLE_ANNOTATIONS.find((sample) => sample.id === annotationId) ??
-        null),
-  };
+}
+
+/** With no Item chosen, a Sample Annotation named by id stands alone. */
+const sampleAnnotation = (annotationId: string | null): AnnotationExamples => ({
+  current: [],
+  example:
+    SAMPLE_ANNOTATIONS.find((sample) => sample.id === annotationId) ?? null,
+});
+
+const NO_EXAMPLES: AnnotationExamples = { current: [], example: null };
+
+/** What a Shared Partial preview renders with: the native renderer's own. */
+export type PartialRender = (
+  request: RenderRequest,
+  partial: PartialPreviewSelection,
+) => Effect.Effect<string, unknown, ViewServices>;
+
+/** What the leaf's model reads from the view that holds it. */
+export interface TemplateWorkbenchModelOptions {
+  /** Renders a Shared Partial; a leaf without the native renderer has none. */
+  readonly renderPartial?: PartialRender | undefined;
+  /** The document's source as the editor holds it now. */
+  readonly source?: () => string;
 }
 
 /** Whether the parser refuses the draft, which no render can read. */
@@ -164,7 +173,10 @@ function refused(kind: WorkbenchDocumentKind, source: string): boolean {
   }
 }
 
-export function makeTemplateWorkbenchModel() {
+export function makeTemplateWorkbenchModel({
+  renderPartial,
+  source = () => "",
+}: TemplateWorkbenchModelOptions = {}) {
   const view = Atom.make<WorkbenchViewState>(INITIAL_VIEW);
   const picks = Atom.make(INITIAL_PICKS);
   const preview = Atom.make<WorkbenchPreviewSettings>(INITIAL_CHOICES.preview);
@@ -220,13 +232,12 @@ export function makeTemplateWorkbenchModel() {
     const named = AsyncResult.isSuccess(result) ? result.value?.title : null;
     return named ?? get(item)?.title ?? null;
   });
-  const examples = Atom.make((get) =>
-    examplesOf(
-      get(read).snapshot,
-      get(itemId) !== null,
-      get(picks).annotationId,
-    ),
-  );
+  const examples = Atom.make((get): AnnotationExamples => {
+    const { annotationId } = get(picks);
+    if (get(itemId) === null) return sampleAnnotation(annotationId);
+    const loaded = get(read).snapshot;
+    return loaded ? annotationSamples(loaded, annotationId) : NO_EXAMPLES;
+  });
   /** The Citation set the render reads, when the document reads one. */
   const citation = Atom.make((get) => {
     const { kind } = get(document);
@@ -279,6 +290,64 @@ export function makeTemplateWorkbenchModel() {
     }));
   };
   /**
+   * Makes an Item the choice. An Item the reader picked is the Citation set
+   * they asked to see, so the built-in example that outranks it stands down.
+   */
+  const pick = Atom.writable(
+    (get) => get(item),
+    (ctx, choice: WorkbenchItemChoice) => {
+      ctx.set(view, chooseItem(choice)(ctx.get(view)));
+      if (ctx.get(view).root === "citation")
+        ctx.set(
+          picks,
+          chooseCitation({ citationExample: null })(ctx.get(picks)),
+        );
+    },
+  );
+  /**
+   * A Shared Partial's preview for one caller, keyed by the JSON of
+   * `[name, context]`. It renders once the chosen Item is read, and again when
+   * a partial is saved or the data it reads changes. A failed Item read is
+   * the preview's failure. A leaf without the native renderer has none.
+   */
+  const partialPreview =
+    renderPartial &&
+    Atom.family((key: string) =>
+      viewRuntime.atom((get) => {
+        const [name, context] = JSON.parse(key) as [string, PartialContext];
+        get(templateRevisionAtom);
+        const { variant, citationExample } = get(picks);
+        const { example } = get(examples);
+        const profile = get(partialProfile);
+        const data = get(snapshot);
+        return get.result(chosen, { suspendOnWaiting: true }).pipe(
+          Effect.mapError((cause) => new PartialPreviewFailed({ cause })),
+          Effect.flatMap(
+            (): Effect.Effect<
+              string,
+              PartialPreviewFailed | PreviewItemMissing,
+              ViewServices
+            > => {
+              if (!data) return Effect.fail(new PreviewItemMissing());
+              return renderPartial(
+                {
+                  source: source(),
+                  snapshot: data,
+                  ...(example ? { annotation: example } : {}),
+                  ...(context === "citation"
+                    ? { citation: { variant, example: citationExample } }
+                    : {}),
+                },
+                { name, context, profile },
+              ).pipe(
+                Effect.mapError((cause) => new PartialPreviewFailed({ cause })),
+              );
+            },
+          ),
+        );
+      }),
+    );
+  /**
    * Opens a chooser and makes its Item the choice; answers the choice. A
    * newer chooser replaces it, and the leaf's close interrupts it.
    */
@@ -286,17 +355,7 @@ export function makeTemplateWorkbenchModel() {
     viewRuntime.fn((chooser: ItemChooser, get) =>
       Effect.gen(function* () {
         const choice = yield* chooser;
-        if (choice)
-          yield* Effect.sync(() => {
-            get.set(view, chooseItem(choice)(get(view)));
-            // An Item the reader picked is the Citation set they asked to see,
-            // so the built-in example that outranks it stands down.
-            if (get(view).root === "citation")
-              get.set(
-                picks,
-                chooseCitation({ citationExample: null })(get(picks)),
-              );
-          });
+        if (choice) yield* Effect.sync(() => get.set(pick, choice));
         return choice;
       }),
     ),
@@ -331,6 +390,8 @@ export function makeTemplateWorkbenchModel() {
     choices,
     snapshot,
     itemData,
+    pick,
+    partialPreview,
     chooseItem: chooseItemCommand,
     chooseAnnotation: chooseAnnotationCommand,
   };

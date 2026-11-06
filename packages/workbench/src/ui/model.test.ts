@@ -24,7 +24,7 @@ const CHOICE = { id: "1:ABCDEFGH", title: "A paper" } as const;
 
 /** Puts the chosen Item's data in the model, as the host's read of it does. */
 function load(opened: ReturnType<typeof open>) {
-  opened.registry.update(opened.model.itemData, (data) => ({
+  opened.registry.update(opened.editor.inputs!.itemData, (data) => ({
     ...data,
     snapshot: PAPER,
   }));
@@ -87,7 +87,7 @@ describe("the Workbench model", () => {
 
   it("keeps the state when a transition changes nothing", () => {
     using opened = open();
-    const { registry, model } = opened;
+    const { registry, model, editor } = opened;
     const view = registry.get(model.view);
     const choices = registry.get(model.choices);
     for (const transition of [
@@ -96,15 +96,18 @@ describe("the Workbench model", () => {
       chooseItem(null),
     ])
       registry.update(model.view, transition);
-    registry.update(model.choices, setPreview({ mode: "create", live: true }));
-    registry.update(model.choices, chooseAnnotation(null));
+    registry.update(
+      editor.inputs!.choices,
+      setPreview({ mode: "create", live: true }),
+    );
+    registry.update(editor.inputs!.choices, chooseAnnotation(null));
     expect(registry.get(model.view)).toBe(view);
     expect(registry.get(model.choices)).toBe(choices);
   });
 
   it("feeds the chosen annotation, citation, caller, and preview mode to the render", async () => {
     using opened = open();
-    const { registry, model, host } = opened;
+    const { registry, model, host, editor } = opened;
     const citation = { variant: "main", example: "one-item" } as const;
     const partial = {
       name: "book-details",
@@ -112,10 +115,13 @@ describe("the Workbench model", () => {
       profile: null,
     } as const;
     load(opened);
-    registry.update(model.choices, chooseAnnotation(SAMPLE_ANNOTATIONS[0]!));
-    registry.update(model.choices, chooseCitation(citation));
-    registry.update(model.choices, choosePartial(partial));
-    registry.update(model.choices, setPreview({ mode: "update" }));
+    registry.update(
+      editor.inputs!.choices,
+      chooseAnnotation(SAMPLE_ANNOTATIONS[0]!),
+    );
+    registry.update(editor.inputs!.choices, chooseCitation(citation));
+    registry.update(editor.inputs!.choices, choosePartial(partial));
+    registry.update(editor.inputs!.choices, setPreview({ mode: "update" }));
     registry.set(model.scheduler.run, undefined);
     await vi.waitFor(() => expect(host.renders).toHaveLength(1));
     expect(host.renders[0]!.request).toMatchObject({
@@ -160,7 +166,10 @@ describe("the Workbench model", () => {
       runtime: TEST_RUNTIME,
     });
     const { registry, model } = editor;
-    registry.update(model.itemData, (data) => ({ ...data, snapshot: PAPER }));
+    registry.update(editor.inputs!.itemData, (data) => ({
+      ...data,
+      snapshot: PAPER,
+    }));
     registry.set(model.scheduler.run, undefined);
     await vi.waitFor(() => expect(host.renders).toHaveLength(1));
     editor[Symbol.dispose]();

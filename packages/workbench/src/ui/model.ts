@@ -126,16 +126,6 @@ export const setPreview =
     return preview === state.preview ? state : { ...state, preview };
   };
 
-/**
- * A host's derived input as the writable field the scheduler facade writes.
- * The host's own atoms decide it, so those writes change nothing (#1946).
- */
-const derived = <A>(atom: Atom.Atom<A>): Atom.Writable<A> =>
-  Atom.writable(
-    (get) => get(atom),
-    () => {},
-  );
-
 /** The runtime every read, render, and command of one host runs on. */
 export type WorkbenchRuntime = Atom.AtomRuntime<never, unknown>;
 
@@ -202,10 +192,8 @@ export interface WorkbenchModel<
 > {
   readonly runtime: WorkbenchRuntime;
   readonly view: Atom.Writable<WorkbenchViewState>;
-  /** A host's own derived choices ignore the facade's writes (#1946). */
-  readonly choices: Atom.Writable<WorkbenchChoices>;
-  /** A host's own derived Item data ignores the facade's writes (#1946). */
-  readonly itemData: Atom.Writable<WorkbenchItemData>;
+  readonly choices: Atom.Atom<WorkbenchChoices>;
+  readonly itemData: Atom.Atom<WorkbenchItemData>;
   /** The controller in use; a host that loads another document sets it. */
   readonly controller: Atom.Writable<WorkbenchDocumentController>;
   readonly document: WorkbenchDocumentAtoms;
@@ -265,13 +253,10 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
 }: WorkbenchModelOptions<R>): WorkbenchModel<R> {
   const controller = Atom.make(initialController);
   const document = workbenchDocumentAtoms(controller);
-  const choices = hostChoices
-    ? derived(hostChoices)
-    : Atom.make(INITIAL_CHOICES);
-  const hostItemData = deriveItemData?.(document);
-  const itemData = hostItemData
-    ? derived(hostItemData)
-    : Atom.make<WorkbenchItemData>({ snapshot: null });
+  const choices = hostChoices ?? Atom.make(INITIAL_CHOICES);
+  const itemData =
+    deriveItemData?.(document) ??
+    Atom.make<WorkbenchItemData>({ snapshot: null });
   const field = <K extends keyof WorkbenchViewState>(key: K) =>
     Atom.map(view, (state) => state[key]);
   const preview = Atom.map(choices, (state) => state.preview);

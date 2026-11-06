@@ -11,28 +11,8 @@ import { Profile } from "@/services/profile/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
+import { ItemUnavailable } from "./errors";
 import { getSampleItem } from "./selection-data";
-
-/**
- * The Item `indexedKey` names, once a read confirms it is a top-level Item;
- * `null` when it is not, or the database is degraded.
- */
-export const readSelectableItem = Effect.fn("TemplateWorkbench.readItem")(
-  function* (indexedKey: string) {
-    const sample = getSampleItem(indexedKey);
-    if (sample) return { id: indexedKey, title: sample.item.title ?? null };
-    if (!parseIndexedKey(indexedKey)) return null;
-    const db = yield* ZoteroReads;
-    if ((yield* db.current).state === "degraded") return null;
-    const items = yield* db.reads.ItemsByIndexedKeys({
-      indexedKeys: [indexedKey],
-    });
-    const item = items.get(indexedKey);
-    return !item || isChildItemFields(item.fields)
-      ? null
-      : { id: indexedKey, title: itemSummary(item, item.fields).formatted };
-  },
-);
 
 /** The Item Snapshot of the Item a parsed Indexed Key names, under one read. */
 export const readItemSnapshot = Effect.fn("TemplateWorkbench.readSnapshot")(
@@ -67,18 +47,34 @@ export interface ChosenItem {
 
 /**
  * The one read of a chosen Item: a Sample Item carries its data; a library
- * Item is read once a read confirms it is a top-level Item. `null` when it is
- * not one, or the database is degraded.
+ * Item is read once a read confirms it is a top-level Item.
+ *
+ * Fails with {@link ItemUnavailable} when the key names no such Item, or the
+ * database is degraded.
  */
 export const readChosenItem = Effect.fn("TemplateWorkbench.readChosenItem")(
   function* (indexedKey: string) {
     const sample = getSampleItem(indexedKey);
     if (sample) return { title: sample.item.title ?? null, snapshot: sample };
-    const choice = yield* readSelectableItem(indexedKey);
     const parsed = parseIndexedKey(indexedKey);
-    if (!choice || !parsed) return null;
+    if (!parsed)
+      return yield* new ItemUnavailable({ indexedKey, reason: "missing" });
+    const db = yield* ZoteroReads;
+    if ((yield* db.current).state === "degraded")
+      return yield* new ItemUnavailable({ indexedKey, reason: "degraded" });
+    const items = yield* db.reads.ItemsByIndexedKeys({
+      indexedKeys: [indexedKey],
+    });
+    const item = items.get(indexedKey);
+    if (!item)
+      return yield* new ItemUnavailable({ indexedKey, reason: "missing" });
+    if (isChildItemFields(item.fields))
+      return yield* new ItemUnavailable({ indexedKey, reason: "child" });
     const snapshot: ItemSnapshot = yield* readItemSnapshot(parsed);
-    return { title: choice.title, snapshot } satisfies ChosenItem;
+    return {
+      title: itemSummary(item, item.fields).formatted,
+      snapshot,
+    } satisfies ChosenItem;
   },
 );
 

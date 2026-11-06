@@ -36,7 +36,9 @@ import {
   patch,
   setPreview,
 } from "./model";
+import { INITIAL_CHOICES } from "./model";
 import type {
+  WorkbenchChoices,
   WorkbenchItemData,
   WorkbenchModel,
   WorkbenchModelOptions,
@@ -66,6 +68,11 @@ export interface WorkbenchEditorInstance<
   readonly store: WorkbenchStore;
   /** Facade over `model.scheduler` for hosts; deleted in #1946. */
   readonly scheduler: RenderScheduler<R>;
+  /**
+   * The choices and Item data `scheduler.setInput` writes, for a host that
+   * derives neither; null when the host derives them. Deleted in #1946.
+   */
+  readonly inputs: FacadeInputs | null;
   /** Sets the controller in use to one the host loaded. */
   attach(controller: WorkbenchDocumentController): void;
 }
@@ -94,6 +101,12 @@ interface WorkbenchEditorOptions {
   store?: WorkbenchStore;
   /** What names this editor in the report a failed example is copied as. */
   reportContext?: () => WorkbenchReportContext;
+}
+
+/** What the scheduler facade writes for a host that derives no inputs. */
+interface FacadeInputs {
+  readonly choices: Atom.Writable<WorkbenchChoices>;
+  readonly itemData: Atom.Writable<WorkbenchItemData>;
 }
 
 /** The view fields of a store state, without its actions. */
@@ -153,7 +166,7 @@ function storeOver(
 function schedulerOver<R extends TemplateRenderResult>(
   registry: AtomRegistry.AtomRegistry,
   model: WorkbenchModel<R>,
-  closed: () => boolean,
+  { inputs, closed }: { inputs: FacadeInputs | null; closed: () => boolean },
 ): RenderScheduler<R> {
   const command = (atom: Atom.Writable<void, void>) => () => {
     if (!closed()) registry.set(atom, undefined);
@@ -163,7 +176,8 @@ function schedulerOver<R extends TemplateRenderResult>(
     subscribe: (listener) =>
       registry.subscribe(model.scheduler.state, () => listener()),
     setInput(input: Partial<RenderSchedulerInput>) {
-      if (closed()) return;
+      // A host that derives its choices and Item data owns them.
+      if (closed() || inputs === null) return;
       // The controller in use owns the source; the rest is the reader's
       // choice or the chosen Item's data.
       const { mode, live, annotation, citation, partial } = input;
@@ -173,7 +187,7 @@ function schedulerOver<R extends TemplateRenderResult>(
         ...("resources" in input ? { resources: input.resources } : {}),
         ...("hold" in input ? { hold: input.hold } : {}),
       };
-      const { choices, itemData } = model;
+      const { choices, itemData } = inputs;
       Atom.batch(() => {
         registry.update(
           choices,
@@ -236,11 +250,22 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
       ? { ...state, tab: "note" as const }
       : state;
   const view = providedView ?? (providedStore && storeAtom(providedStore));
+  const inputs: FacadeInputs | null =
+    choices || itemData
+      ? null
+      : {
+          choices: Atom.make(INITIAL_CHOICES),
+          itemData: Atom.make<WorkbenchItemData>({ snapshot: null }),
+        };
   const model = makeWorkbenchModel<R>({
     controller,
     ...(view ? { view } : {}),
-    ...(choices ? { choices } : {}),
-    ...(itemData ? { itemData } : {}),
+    ...(inputs
+      ? { choices: inputs.choices, itemData: () => inputs.itemData }
+      : {
+          ...(choices ? { choices } : {}),
+          ...(itemData ? { itemData } : {}),
+        }),
     ...(initial ? { initial } : {}),
     runtime,
     host,
@@ -260,7 +285,8 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
     model,
     registry,
     store: providedStore ?? storeOver(registry, model.view),
-    scheduler: schedulerOver(registry, model, () => closed),
+    scheduler: schedulerOver(registry, model, { inputs, closed: () => closed }),
+    inputs,
     attach(next) {
       registry.set(model.controller, next);
     },
