@@ -194,6 +194,16 @@ const MENU_STEP = {
   height: KEY_STEP.height * 2,
 } as const;
 
+/** Whether `side` shows as a column beside the editor in `placement`. */
+const isColumn = (
+  panels: WorkbenchPanels,
+  placement: PanelPlacement,
+  side: PanelSide,
+) =>
+  side === "fields"
+    ? panels.fields.shown && placement.fields === "column"
+    : placement.preview === "side";
+
 /** The handles a view of `size` draws for `panels`, in document order. */
 export function panelHandles(
   panels: WorkbenchPanels,
@@ -201,9 +211,8 @@ export function panelHandles(
 ): readonly PanelHandle[] {
   const placement = placePanels(panels, size);
   const handles: PanelHandle[] = [];
-  if (panels.fields.shown && placement.fields === "column")
-    handles.push("fields");
-  if (placement.preview === "side") handles.push("preview");
+  if (isColumn(panels, placement, "fields")) handles.push("fields");
+  if (isColumn(panels, placement, "preview")) handles.push("preview");
   if (placement.preview === "below") handles.push("split");
   return handles;
 }
@@ -226,16 +235,10 @@ export function columnLimit(
   if (size === null) return limit;
   const placement = placePanels(panels, size);
   // A panel the placement takes out of the side has no column to keep.
-  const isColumn =
-    side === "fields"
-      ? placement.fields === "column"
-      : placement.preview === "side";
-  if (!isColumn) return limit;
-  const other = side === "fields" ? panels.preview : panels.fields;
-  const otherIsColumn =
-    side === "fields"
-      ? placement.preview === "side"
-      : panels.fields.shown && placement.fields === "column";
+  if (!isColumn(panels, placement, side)) return limit;
+  const otherSide = side === "fields" ? "preview" : "fields";
+  const other = panels[otherSide];
+  const otherIsColumn = isColumn(panels, placement, otherSide);
   const handle = size.handle ?? 0;
   const room =
     size.width -

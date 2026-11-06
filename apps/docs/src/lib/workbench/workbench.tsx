@@ -391,7 +391,7 @@ function WorkbenchSession({
   });
 
   /** Reads one problem the editor named, in the editor's Problems area. */
-  function showProblem(id: string | null) {
+  function readProblem(id: string | null) {
     if (id === null) problems.setOpen(true);
     else problems.select(id);
   }
@@ -879,7 +879,7 @@ function WorkbenchSession({
                 {formatProblem && (
                   <AnnotationProblemMarker
                     diagnostic={formatProblem}
-                    onShow={showProblem}
+                    onShow={readProblem}
                   />
                 )}
                 <AnnotationPane
@@ -910,7 +910,7 @@ function WorkbenchSession({
                       : {})}
                     reveal={reveal}
                     onSelection={trackSelection}
-                    onShowProblem={showProblem}
+                    onShowProblem={readProblem}
                   />
                 </TabPanel>
               ))}
@@ -940,7 +940,7 @@ function WorkbenchSession({
                     onSelect={setOpenRow}
                     reveal={reveal}
                     onSelection={trackSelection}
-                    onShowProblem={showProblem}
+                    onShowProblem={readProblem}
                   />
                 )}
               </TabPanel>
@@ -1020,7 +1020,7 @@ function WorkbenchSession({
       <WorkbenchHostProvider host={host}>
         <WorkbenchDiagnosticsProvider
           value={problems.diagnoses}
-          onReveal={showProblem}
+          onReveal={readProblem}
         >
           <WorkbenchEditorProvider editor={editor}>
             {frame}
