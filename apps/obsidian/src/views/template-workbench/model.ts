@@ -75,14 +75,27 @@ export interface WorkbenchPicks {
   readonly citationExample: CitationExampleId | null;
 }
 
-/** The chosen Item's read, as the surfaces show it. */
-export interface WorkbenchItemRead {
-  readonly status: "empty" | "loading" | "ready" | "error";
-  /** The read's own message, when it failed with one. */
-  readonly error: string | null;
-  /** The Item's data; null while it loads, after a failure, or when unavailable. */
-  readonly snapshot: ItemSnapshot | null;
-}
+/**
+ * The chosen Item's read, as the surfaces show it. A finished read holds the
+ * Item's data: an Item the read cannot find fails with `ItemUnavailable`.
+ */
+export type WorkbenchItemRead =
+  | {
+      readonly status: "empty" | "loading";
+      readonly error: null;
+      readonly snapshot: null;
+    }
+  | {
+      readonly status: "error";
+      /** The read's own message. */
+      readonly error: string;
+      readonly snapshot: null;
+    }
+  | {
+      readonly status: "ready";
+      readonly error: null;
+      readonly snapshot: ItemSnapshot;
+    };
 
 export const INITIAL_PICKS: WorkbenchPicks = {
   annotationId: null,
@@ -293,8 +306,6 @@ export function makeTemplateWorkbenchModel({
   );
   const read = Atom.make((get): WorkbenchItemRead => {
     const result = get(chosen);
-    if (get(itemId) === null)
-      return { status: "empty", error: null, snapshot: null };
     if (result.waiting || AsyncResult.isInitial(result))
       return { status: "loading", error: null, snapshot: null };
     if (AsyncResult.isFailure(result)) {
@@ -308,11 +319,10 @@ export function makeTemplateWorkbenchModel({
         snapshot: null,
       };
     }
-    return {
-      status: "ready",
-      error: null,
-      snapshot: result.value?.snapshot ?? null,
-    };
+    // The read answers no Item while none is chosen.
+    return result.value === null
+      ? { status: "empty", error: null, snapshot: null }
+      : { status: "ready", error: null, snapshot: result.value.snapshot };
   });
   /** The chosen Item's title: the read's, once it named one. */
   const title = Atom.make((get) => {

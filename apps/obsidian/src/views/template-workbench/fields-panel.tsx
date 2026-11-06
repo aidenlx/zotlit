@@ -88,18 +88,13 @@ export interface FieldsPanelModel extends ExplorerSurface {
   readonly canInsert: Atom.Atom<boolean>;
 }
 
-const statusOf = (read: WorkbenchItemRead): FieldsData => ({
+const statusOf = (
+  read: Exclude<WorkbenchItemRead, { status: "ready" }>,
+): FieldsData => ({
   annotations: null,
   data: null,
-  status:
-    read.status === "empty"
-      ? "no-item"
-      : read.status === "ready"
-        ? "error"
-        : read.status,
-  // A finished read with no data is an Item that is unavailable.
-  error:
-    read.status === "ready" ? m.workbench_example_missing_item() : read.error,
+  status: read.status === "empty" ? "no-item" : read.status,
+  error: read.error,
 });
 
 const dataOf = (data: Record<string, unknown>): FieldsData => ({
@@ -197,7 +192,7 @@ export function makeFieldsPanelModel(
       const { variant, citationExample } = get(model.picks);
       if (citationExample)
         return dataOf({ ...citationExampleData(citationExample, variant) });
-      return read.snapshot
+      return read.status === "ready"
         ? dataOf({ ...sampleItemCitation(read.snapshot, variant) })
         : statusOf(read);
     }
@@ -213,7 +208,7 @@ export function makeFieldsPanelModel(
         ? { annotations, data: null, status: "empty", error: null }
         : statusOf(read);
     }
-    return read.snapshot
+    return read.status === "ready"
       ? dataOf(
           restoreTemplateData(
             read.snapshot.roots[target],
