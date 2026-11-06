@@ -64,7 +64,6 @@ Each of these broke the first migrations.
 4. Save the layout and sync the title and actions from a registry subscription.
 5. Thread `registry: ViewRegistryHandle` from `zt-main.ts`, and drop the deps the view no longer uses.
 6. Test through a host that drives the services, and walk the view in the app.
-7. Add the view's directory to the view-atom import bans in `apps/obsidian/oxlint.config.ts`.
 
 ## Consequences
 

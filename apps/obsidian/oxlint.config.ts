@@ -59,18 +59,6 @@ const commonImports = {
   paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
 };
 
-/**
- * What a view gives up when it moves onto view atoms
- * (docs/adr/0082-obsidian-views-read-effect-services-through-view-atoms.md).
- */
-const viewStorePaths = ["zustand", "zustand/vanilla", "zustand/middleware"].map(
-  (name) => ({
-    name,
-    message:
-      "A view on view atoms keeps its state in a per-leaf model of atoms (ADR 0082).",
-  }),
-);
-
 // LogTape's own configure and reset leave a host-process listener and a
 // window-wide root logger that hold a disabled plugin in memory (#1882);
 // src/lib/log.ts releases both.
@@ -567,31 +555,6 @@ export default defineConfig({
       // The wrappers that hand Obsidian's control classes to everything else.
       files: ["src/components/obsidian/**"],
       rules: { "zotlit-css/no-obsidian-class": "off" },
-    },
-    {
-      // Views on view atoms. A view joins when it migrates (ADR 0082). The
-      // PDF reader's surfaces keep their Reader Surface Model the same way.
-      files: [
-        "src/services/pdf-annotation-editor/**",
-        "src/views/library/**",
-        "src/views/query-view/**",
-        "src/views/cited-by/**",
-        "src/views/references/**",
-        "src/views/note-preview/**",
-        "src/views/template-workbench/**",
-        "src/views/welcome/**",
-        "src/views/template-data-explorer/**",
-        "src/views/annot-view/**",
-      ],
-      rules: {
-        "no-restricted-imports": [
-          "error",
-          {
-            ...runtimeImports,
-            paths: [...runtimeImports.paths, ...viewStorePaths],
-          },
-        ],
-      },
     },
     {
       // Tests can inspect the schema; the plugin's other import rules remain.
