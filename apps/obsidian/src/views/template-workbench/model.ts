@@ -5,7 +5,7 @@ import { Cause, Effect, Option, Schema } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
-import { DEFAULT_CITATION_VARIANT } from "@zotlit/db";
+import { CITATION_VARIANTS, DEFAULT_CITATION_VARIANT } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
 import {
   parseLiteratureNoteTemplate,
@@ -13,6 +13,7 @@ import {
 } from "@zotlit/templates/facade";
 import type { WorkbenchDocumentKind } from "@zotlit/workbench/document";
 import {
+  CITATION_EXAMPLE_IDS,
   CITATION_EXAMPLE_ITEM,
   DEFAULT_CITATION_EXAMPLE,
   PARTIAL_CONTEXTS,
@@ -107,8 +108,14 @@ const INITIAL_PANELS: WorkbenchPanels = {
   preview: { shown: false, width: PANEL_WIDTH.initial },
 };
 
-const panelWidth = (width: number) =>
-  Math.round(Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, width)));
+/**
+ * `width` held within {@link PANEL_WIDTH}, and within `max` where the view
+ * draws the panel narrower than that.
+ */
+export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
+  Math.round(
+    Math.min(Math.max(PANEL_WIDTH.min, max), Math.max(PANEL_WIDTH.min, width)),
+  );
 
 const patchPanel =
   (side: PanelSide, value: Partial<WorkbenchPanel>) =>
@@ -120,7 +127,7 @@ export const showPanel = (side: PanelSide, shown: boolean) =>
   patchPanel(side, { shown });
 /** Sets a panel's width, held within {@link PANEL_WIDTH}. */
 export const setPanelWidth = (side: PanelSide, width: number) =>
-  patchPanel(side, { width: panelWidth(width) });
+  patchPanel(side, { width: clampPanelWidth(width) });
 
 const NO_DOCUMENT: WorkbenchDocumentFacts = {
   path: null,
@@ -503,6 +510,10 @@ export interface SavedWorkbench {
   readonly panels: Partial<WorkbenchPanels>;
   /** The Preview's settings the state names; each one decodes alone. */
   readonly preview: Partial<WorkbenchPreviewSettings>;
+  /** The Citation Variant and example set the state names; each decodes alone. */
+  readonly citation: Partial<
+    Pick<WorkbenchPicks, "variant" | "citationExample">
+  >;
 }
 
 /** What `getState` saves beside the file, from the leaf's state. */
@@ -524,6 +535,8 @@ export function savedWorkbench(state: {
     tab,
     itemIndexedKey: item?.id ?? null,
     annotationId: state.picks.annotationId,
+    variant: state.picks.variant,
+    citationExample: state.picks.citationExample,
     advanced,
     panels: state.panels,
     preview: state.preview,
@@ -561,6 +574,23 @@ export function readSavedWorkbench(input: unknown): SavedWorkbench | null {
     partialProfile: decode(Schema.String, value.partialProfile),
     panels: readPanels(value.panels),
     preview: readPreview(value.preview),
+    citation: readCitation(value),
+  };
+}
+
+/** A null example set stands: the chosen Item supplies the set. */
+function readCitation(
+  value: Record<string, unknown>,
+): Partial<Pick<WorkbenchPicks, "variant" | "citationExample">> {
+  const variant = decode(Schema.Literals(CITATION_VARIANTS), value.variant);
+  const citationExample =
+    value.citationExample === null
+      ? null
+      : (decode(Schema.Literals(CITATION_EXAMPLE_IDS), value.citationExample) ??
+        undefined);
+  return {
+    ...(variant === null ? {} : { variant }),
+    ...(citationExample === undefined ? {} : { citationExample }),
   };
 }
 
@@ -592,7 +622,10 @@ function readPanels(input: unknown): Partial<WorkbenchPanels> {
   for (const side of ["fields", "preview"] as const) {
     const panel = decode(savedPanel, value[side]);
     if (panel)
-      panels[side] = { shown: panel.shown, width: panelWidth(panel.width) };
+      panels[side] = {
+        shown: panel.shown,
+        width: clampPanelWidth(panel.width),
+      };
   }
   return panels;
 }

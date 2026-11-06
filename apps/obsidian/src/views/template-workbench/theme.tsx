@@ -357,7 +357,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     },
     resultHeader: {
       header: "zt:flex zt:min-w-0 zt:flex-col zt:gap-2",
-      heading: "zt-note-preview-heading",
+      heading: "zt-workbench-preview-heading",
       controls: cn(row, "zt:flex-wrap zt:text-sm"),
       label: cn(row, "zt:flex-wrap"),
       "label-text": "zt:text-muted-foreground",

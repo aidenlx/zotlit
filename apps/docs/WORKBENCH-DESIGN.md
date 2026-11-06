@@ -3,8 +3,8 @@
 ## Scope and ownership
 
 This guide governs the Template Workbench on the docs site at `/workbench` and
-the Obsidian Template Workbench View, including its Note Preview and Template
-Data Explorer companions. It records visual judgment: the reader's task,
+the Obsidian Template Workbench View, including its Preview panel and the
+Template Data Explorer. It records visual judgment: the reader's task,
 composition, hierarchy, density, disclosure, and wording. Shared brand rules
 live in [DESIGN.md](DESIGN.md).
 
@@ -97,15 +97,19 @@ keeps its existing save and preview behavior.
 In Obsidian, use native headers for actions and pane menus for settings. The
 web frame's control row is the equivalent. Content shows the current outcome:
 a caption, selected icon, or check mark tells the reader what a menu setting
-means. Native titles lead with selected data and then the Preview or Fields
-role. With no selection, use the generic **Note preview** or **Template data
-explorer** name.
+means. Native titles lead with selected data and then the Fields role. With
+no selection, use the generic **Template data explorer** name.
 
-The Note Preview keeps infrequent display and preview choices in native chrome.
-Its content begins with one role heading and a muted caption that names the
-current view, such as **New note** or **Updated note**. The web uses the shared
-result header for the corresponding controls. The settings contract lives in
-[ADR 0048](../../docs/adr/0048-the-note-preview-keeps-its-settings-in-native-chrome.md).
+The Preview panel of the Template Workbench View keeps infrequent display and
+preview choices in the view's pane menu, shown while the panel shows; Show
+Markdown and the updated-section choice are menu entries, not header actions.
+The panel begins with the chosen Item and its chooser, then one role heading
+and a muted caption that names the current view, such as **New note** or
+**Updated note**. The web uses the shared result header for the corresponding
+controls. The settings contract lives in
+[ADR 0048](../../docs/adr/0048-the-note-preview-keeps-its-settings-in-native-chrome.md),
+as amended by
+[ADR 0081](../../docs/adr/0081-fields-and-preview-are-side-panels-of-the-template-workbench-view.md).
 
 ## Data and result context
 

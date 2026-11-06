@@ -1,7 +1,7 @@
 // The dedicated workbench window, as Effects over the Workspace tag: "Open
 // template workbench" and Customize show the editor with both side panels, in
-// a window of its own, beside its linked Template data explorer. A leaf stays an edge: its view state is set through the
-// leaf.
+// a window of its own, beside its linked Template data explorer. A leaf stays
+// outside the tag: its view state is set through the leaf itself.
 import { Deferred, Effect, Semaphore } from "effect";
 import type { Cause } from "effect";
 import type { ViewState, WorkspaceLeaf } from "obsidian";
@@ -31,7 +31,7 @@ const editorOpenings = new WeakMap<
   Deferred.Deferred<void, Cause.UnknownError>
 >();
 
-/** Obsidian's `setViewState` on `leaf`: a leaf stays an edge of the tags. */
+/** Sets `leaf`'s view state through the leaf, which the Workspace tag does not wrap. */
 export const setLeafState = (leaf: WorkspaceLeaf, state: ViewState) =>
   Effect.tryPromise(() => leaf.setViewState(state));
 

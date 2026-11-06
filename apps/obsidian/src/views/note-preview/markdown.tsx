@@ -146,7 +146,7 @@ export function NativeMarkdown({
   return (
     <div
       className={cn(
-        "markdown-preview-view markdown-rendered show-properties zt-note-preview-sheet zt-native-markdown",
+        "markdown-preview-view markdown-rendered show-properties zt-workbench-preview-sheet zt-native-markdown",
         app.vault.getConfig("readableLineLength") && "is-readable-line-width",
       )}
     >

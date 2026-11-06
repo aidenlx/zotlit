@@ -139,20 +139,20 @@ export const openProfileExplorer = (editor: TemplateWorkbenchView) =>
  * The explorer linked with `editor`, opened beside it when it has none, inside
  * a layout turn its caller holds. The Fields panel replaces it (#1943).
  */
-export const openExplorerBeside = Effect.fn(
-  "TemplateDataExplorer.revealCompanion",
-)(function* (editor: TemplateWorkbenchView) {
-  const workspace = yield* Workspace;
-  const existing = (yield* workspace.leavesOfType(EXPLORER_VIEW_TYPE)).find(
-    (leaf) => !!editor.leaf.group && leaf.group === editor.leaf.group,
-  );
-  const leaf =
-    existing ??
-    (yield* workspace.createLeafBySplit(editor.leaf, "vertical", true));
-  if (!existing) {
-    leaf.setGroupMember(editor.leaf);
-    yield* setLeafState(leaf, { type: EXPLORER_VIEW_TYPE, active: false });
-  }
-  yield* workspace.revealLeaf(leaf);
-  leaf.getContainer().focus();
-});
+export const openExplorerBeside = Effect.fn("TemplateDataExplorer.openBeside")(
+  function* (editor: TemplateWorkbenchView) {
+    const workspace = yield* Workspace;
+    const existing = (yield* workspace.leavesOfType(EXPLORER_VIEW_TYPE)).find(
+      (leaf) => !!editor.leaf.group && leaf.group === editor.leaf.group,
+    );
+    const leaf =
+      existing ??
+      (yield* workspace.createLeafBySplit(editor.leaf, "vertical", true));
+    if (!existing) {
+      leaf.setGroupMember(editor.leaf);
+      yield* setLeafState(leaf, { type: EXPLORER_VIEW_TYPE, active: false });
+    }
+    yield* workspace.revealLeaf(leaf);
+    leaf.getContainer().focus();
+  },
+);

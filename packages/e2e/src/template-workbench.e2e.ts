@@ -349,34 +349,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
     const first = JSON.parse(
       (await read(
-        JSON.stringify({ panels: { preview: { shown: true, width: 480 } } }),
+        JSON.stringify({ panels: { preview: { shown: true, width: 260 } } }),
       ))!,
     ) as { width: string; saved: unknown };
-    expect(first.width).toBe("480");
-    // The handle moves from the keyboard, and the new width is saved.
+    expect(first.width).toBe("260");
+    // The saved state of that leaf restores the panel in a new leaf.
     const saved = await obRun(
       run.vaultId,
-      ({ page }, { path, resize }) => {
-        const view = page.workbench({ path })!;
-        const handle = Array.from(
-          view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
-        ).find((element) => element.getAttribute("aria-label") === resize)!;
-        handle.focus();
-        handle.dispatchEvent(
-          new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
-        );
-        return JSON.stringify(view.getState());
-      },
-      { path, resize: run.m.workbench_preview_resize() },
+      ({ page }, { path }) =>
+        JSON.stringify(page.workbench({ path })!.getState()),
+      { path },
     );
     const second = JSON.parse((await read(saved))!) as {
       width: string;
       saved: unknown;
     };
-    expect(second.width).toBe("496");
+    expect(second.width).toBe("260");
     expect(second.saved).toEqual({
       fields: { shown: false, width: 400 },
-      preview: { shown: true, width: 496 },
+      preview: { shown: true, width: 260 },
     });
   });
 });

@@ -1,5 +1,7 @@
 # The Note preview keeps its settings in native chrome
 
+> Amended 2026-11-06 by [ADR 0081](0081-fields-and-preview-are-side-panels-of-the-template-workbench-view.md): the Note Preview is now the Preview panel of the Template Workbench View, and its settings sit in that view's pane menu while the panel shows. Show Markdown and the updated-section choice are pane-menu entries only: the view header already holds the editor's own actions, Advanced's `code` icon among them, and two more header toggles for one panel would crowd it. The sections below describe the original decision.
+
 The Note preview pane in Obsidian stacked two rows of labelled selects above
 the rendered note: Preview mode (Create, Update) and Refresh preview (Live, On
 demand) on one row, then an h2 "Note preview" beside Show (Complete note,

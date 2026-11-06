@@ -51,9 +51,10 @@ name the same Item.
    `Shift+ArrowLeft`, then `Home`, then `End`.
 
 Expected: the drag widens the Preview. With the keyboard, `ArrowLeft` widens
-it by 16 pixels and `Shift+ArrowLeft` by 64 pixels; `Home` makes it as wide as
-it can be (960 pixels), and `End` as narrow (240 pixels). The Preview never
-takes more than 40% of the tab.
+it by 16 pixels and `Shift+ArrowLeft` by 64 pixels; `Home` makes it as narrow
+as it can be (240 pixels), and `End` as wide as the tab allows: 960 pixels, or
+40% of the tab when that is less. The Preview never takes more than 40% of the
+tab, and a screen reader reads the width the panel has.
 
 ## The panels survive a restart
 

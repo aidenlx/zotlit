@@ -190,13 +190,17 @@ import {
   setTab,
   showPanel,
 } from "./model";
-import type { TemplateWorkbenchModel } from "./model";
+import type { PanelSide, TemplateWorkbenchModel } from "./model";
 import type { CreateSharedPartialOptions } from "./new-partial";
 import { openTemplateWorkbench } from "./open";
 import { WorkbenchPanels } from "./panels";
 import { readPartialChoice, writePartialChoice } from "./partial-choice-memory";
 import { createSharedPartialEffect } from "./partial-command";
-import { PreviewPanel, WorkbenchMarkdown, resultMode } from "./preview-panel";
+import {
+  PreviewPanel,
+  WorkbenchMarkdown,
+  previewTarget,
+} from "./preview-panel";
 import {
   publishWorkbenchSelection,
   selectionName,
@@ -1603,14 +1607,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         yield* restoreBase(state);
       }
       if (!value) return;
-      for (const [side, panel] of Object.entries(value.panels))
-        this.registry.update(this.model.panels, (panels) =>
-          setPanelWidth(
-            side as keyof typeof panels,
-            panel.width,
-          )(showPanel(side as keyof typeof panels, panel.shown)(panels)),
-        );
+      for (const side of ["fields", "preview"] as const) {
+        const panel = value.panels[side];
+        if (panel)
+          this.registry.update(this.model.panels, (panels) =>
+            setPanelWidth(
+              side,
+              panel.width,
+            )(showPanel(side, panel.shown)(panels)),
+          );
+      }
       this.registry.update(this.model.preview, patch(value.preview));
+      this.registry.update(this.model.picks, chooseCitation(value.citation));
       const { change } = this;
       if (this.#applyKindDefaults()) {
         // A plain document has one tab and one editor, so nothing of the saved
@@ -1821,7 +1829,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   /** Shows a side panel the leaf hides, or hides one it shows. */
-  togglePanel(side: "fields" | "preview"): void {
+  togglePanel(side: PanelSide): void {
     this.registry.update(this.model.panels, (panels) =>
       showPanel(side, !panels[side].shown)(panels),
     );
@@ -1911,16 +1919,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const { registry, model } = this;
     if (!registry.get(model.panels).preview.shown) return;
     const { kind } = registry.get(model.document);
-    const { root } = this.#view;
-    const mode = resultMode(kind, root);
+    const { mode, citationSet } = previewTarget(kind, this.#view.root);
     const preview = registry.get(model.preview);
     const setPreview = (value: Partial<typeof preview>) =>
       registry.update(model.preview, patch(value));
     const { variant, citationExample } = registry.get(model.picks);
     const setCitation = (value: Parameters<typeof chooseCitation>[0]) =>
       registry.update(model.picks, chooseCitation(value));
-    const citationSet =
-      mode === "citation" || (mode === "partial" && root === "citation");
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.action)
