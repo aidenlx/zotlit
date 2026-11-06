@@ -44,6 +44,7 @@ import {
   diagnosticText,
   entryDiagnostics,
   fieldSnippet,
+  fieldsActionKey,
   renderDiagnosis,
   routeDiagnosis,
   routeProblem,
@@ -694,6 +695,15 @@ function WorkbenchSession({
             }
             className={cn(PRESSED_TOGGLE, EXPANDED_TOGGLE)}
             onClick={() => registry.set(model.fieldsAction, undefined)}
+            // Where it opens the picker, an arrow opens it and a printable
+            // key opens it searching for that key.
+            onKeyDown={(event) => {
+              if (fieldsAction.opens !== "popover" || fieldsAction.open) return;
+              const query = fieldsActionKey(event);
+              if (query === null) return;
+              event.preventDefault();
+              registry.set(model.fieldsPicker, { query });
+            }}
           >
             <PanelLeft aria-hidden className="rtl:-scale-x-100" />
             {m.workbench_show_fields()}

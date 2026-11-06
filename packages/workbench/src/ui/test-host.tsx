@@ -248,9 +248,11 @@ function FakeFieldsPopover({
   onClose,
   keys,
   labelledBy,
+  returnFocus,
   children,
 }: WorkbenchFieldsPopoverProps) {
-  if (!open) return null;
+  // A closed surface says whether its focus went back to the action.
+  if (!open) return <span hidden data-return-focus={String(returnFocus)} />;
   const moves: Record<string, WorkbenchPickerMove> = {
     ArrowDown: "next",
     ArrowUp: "previous",

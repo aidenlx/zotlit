@@ -109,6 +109,20 @@ function pickerSections(
     .filter((section) => section.rows.length > 0);
 }
 
+/**
+ * What a key on the Fields action opens the picker on, where the action
+ * opens the picker: an empty search for ArrowDown and ArrowUp, the key
+ * itself for a printable one, as a Bases combobox opens. Null for every
+ * other key, Enter and Space among them, which press the action.
+ */
+export function fieldsActionKey(
+  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey">,
+): string | null {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") return "";
+  if (event.ctrlKey || event.metaKey || event.altKey) return null;
+  return [...event.key].length === 1 && event.key !== " " ? event.key : null;
+}
+
 /** The active row after `step` among `count` rows; the arrows wrap. */
 function moved(at: number, step: WorkbenchPickerMove, count: number): number {
   if (count === 0) return 0;
@@ -144,19 +158,24 @@ export function FieldPicker({
   const host = useOptionalHost();
   const m = useWorkbenchMessages();
   const part = useParts("fieldPicker");
-  const open = useAtomValue(model.fieldsPicker);
-  const setOpen = useAtomSet(model.fieldsPicker);
+  const picker = useAtomValue(model.fieldsPicker);
+  const setPicker = useAtomSet(model.fieldsPicker);
+  const open = picker !== null;
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [announcement, setAnnouncement] = useState("");
-  // Each opening starts from the whole list, at its first row.
-  const [opened, setOpened] = useState(open);
-  if (open !== opened) {
-    setOpened(open);
-    if (open) {
-      setQuery("");
+  // An insertion closes the picker and gives the editor focus.
+  const [inserted, setInserted] = useState(false);
+  // Each opening starts at the first row, on the search the reader started
+  // on the Fields action or on none.
+  const [opened, setOpened] = useState(picker);
+  if (picker !== opened) {
+    setOpened(picker);
+    if (picker) {
+      setQuery(picker.query);
       setActive(0);
       setAnnouncement("");
+      setInserted(false);
     }
   }
   const locale = host?.getLocale() ?? "en";
@@ -178,7 +197,8 @@ export function FieldPicker({
     if (!row || latest.current.disabled) return;
     if (latest.current.onInsertNode(row.node) === false) return;
     setAnnouncement(m.workbench_fields_inserted({ field: row.label }));
-    setOpen(false);
+    setInserted(true);
+    setPicker(null);
   };
   const keys: WorkbenchPickerKeys = {
     move: (step) =>
@@ -202,9 +222,10 @@ export function FieldPicker({
       {Popover && (
         <Popover
           open={open}
-          onClose={() => setOpen(false)}
+          onClose={() => setPicker(null)}
           keys={keys}
           labelledBy={labelId}
+          returnFocus={!inserted}
         >
           <PickerContent
             labelId={labelId}
@@ -259,6 +280,8 @@ function PickerContent({
   const optionId = (at: number) => `${id}-option-${at}`;
   const listId = `${id}-list`;
   const detailId = `${id}-detail`;
+  const hintId = `${id}-hint`;
+  const searchId = `${id}-search`;
   // The host mounts the contents as its surface opens.
   useLayoutEffect(() => {
     input.current?.focus({ preventScroll: true });
@@ -266,7 +289,7 @@ function PickerContent({
   useLayoutEffect(() => {
     if (index < 0) return;
     const option = input.current?.ownerDocument.getElementById(optionId(index));
-    option?.scrollIntoView?.({ block: "nearest" });
+    option?.scrollIntoView({ block: "nearest" });
   });
   let at = 0;
   const groups = sections.map((section) => {
@@ -290,6 +313,8 @@ function PickerContent({
               id={optionId(rowAt)}
               role="option"
               aria-selected={current}
+              // The active row reads its whole value with its name.
+              aria-describedby={current ? detailId : undefined}
               // The search field keeps focus while the pointer picks a row.
               onPointerDown={(event) => event.preventDefault()}
               onPointerMove={() => {
@@ -313,6 +338,7 @@ function PickerContent({
   return (
     <div {...part("picker")}>
       <HiddenName id={labelId}>{m.workbench_view_fields()}</HiddenName>
+      <HiddenName id={searchId}>{search}</HiddenName>
       {/* A text field, not a search field: a search field answers Escape
           itself by clearing its text, and the host's Escape closes the
           picker. */}
@@ -324,8 +350,10 @@ function PickerContent({
         aria-controls={listId}
         aria-autocomplete="list"
         aria-activedescendant={current ? optionId(index) : undefined}
-        aria-describedby={detailId}
-        aria-label={search}
+        // The reason Enter cannot insert, when there is one, is read with
+        // the active row's value.
+        aria-describedby={hint ? `${detailId} ${hintId}` : detailId}
+        aria-labelledby={searchId}
         placeholder={search}
         autoComplete="off"
         spellCheck={false}
@@ -333,11 +361,17 @@ function PickerContent({
         onChange={(event) => onQuery(event.currentTarget.value)}
         {...part("search")}
       />
-      {hint && <p {...part("hint")}>{hint}</p>}
+      {hint && (
+        <p id={hintId} {...part("hint")}>
+          {hint}
+        </p>
+      )}
       <div
         id={listId}
         role="listbox"
         aria-labelledby={labelId}
+        // The search field holds focus and names the active row.
+        tabIndex={-1}
         {...part("list")}
       >
         {groups}

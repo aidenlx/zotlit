@@ -1197,13 +1197,55 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const fresh = search()!.value;
         await input.key("Escape");
         await until("the picker closed", () => search() === null);
+        const escaped = el.doc.activeElement === action;
+        // From the action, a printable key opens the picker searching for
+        // it, and End and Home reach the last and the first row.
+        await input.key("d");
+        await until(
+          "the picker on the typed key",
+          () => search()?.value === "d",
+        );
+        const rows = () =>
+          el.doc.querySelectorAll('[role="dialog"] [role="option"]');
+        await input.key("End");
+        const end = activeRow() === rows()[rows().length - 1];
+        await input.key("Home");
+        const home = activeRow() === rows()[0];
+        // A picker opened again at once after an insertion keeps focus when
+        // the editor takes the focus the insertion asked for (#1955).
+        await contents.insertText("oi");
+        await until("the DOI again", () =>
+          (activeRow()?.textContent ?? "").startsWith("DOI"),
+        );
+        await input.key("Enter");
+        await until(
+          "the picker closed by the insertion",
+          () => search() === null,
+        );
+        await input.click(action);
+        await until(
+          "the picker reopened",
+          () => el.doc.activeElement === search(),
+        );
+        await until(
+          "the editor took the inserted text's focus and handed it back",
+          () =>
+            editor.state.doc.toString().endsWith("{{ zt.DOI }}{{ zt.DOI }}"),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const reopened = el.doc.activeElement === search();
+        await input.key("Escape");
+        await until("the picker closed", () => search() === null);
         return JSON.stringify({
           opened,
           moved,
           back,
           inserted,
           fresh,
-          escaped: el.doc.activeElement === action,
+          escaped,
+          end,
+          home,
+          reopened,
         });
       },
       { path, label: run.m.workbench_show_fields() },
@@ -1219,6 +1261,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       fresh: "",
       escaped: true,
+      end: true,
+      home: true,
+      reopened: true,
     });
 
     // Widening the leaf shows the column again.

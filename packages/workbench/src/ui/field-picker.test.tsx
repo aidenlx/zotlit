@@ -9,7 +9,7 @@ import {
 import * as Atom from "effect/reactivity/Atom";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FieldPicker } from "./field-picker";
+import { FieldPicker, fieldsActionKey } from "./field-picker";
 import type { FieldPickerProps } from "./field-picker";
 import { INITIAL_PANELS } from "./panel-layout";
 import type { ViewSize, WorkbenchPanels } from "./panel-layout";
@@ -77,6 +77,30 @@ const activeRow = () => {
   return id === null ? null : document.getElementById(id);
 };
 
+describe("a key on the Fields action", () => {
+  const key = (init: Partial<KeyboardEventInit> & { key: string }) =>
+    fieldsActionKey(new KeyboardEvent("keydown", init));
+  it("opens the picker from an arrow, and searches for a printable key", () => {
+    expect(key({ key: "ArrowDown" })).toBe("");
+    expect(key({ key: "ArrowUp" })).toBe("");
+    expect(key({ key: "d" })).toBe("d");
+    expect(key({ key: "D", shiftKey: true })).toBe("D");
+  });
+
+  it("leaves the action's own keys and the shortcuts alone", () => {
+    for (const init of [
+      { key: "Enter" },
+      { key: " " },
+      { key: "Tab" },
+      { key: "Escape" },
+      { key: "d", ctrlKey: true },
+      { key: "d", metaKey: true },
+      { key: "d", altKey: true },
+    ])
+      expect(key(init)).toBeNull();
+  });
+});
+
 describe("the Fields picker", () => {
   it("opens from the Fields action in a narrow view, with focus in its search field", () => {
     using page = open({});
@@ -102,7 +126,13 @@ describe("the Fields picker", () => {
     expect(page.inserted).toEqual(["DOI"]);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("status").textContent).toBe("Inserted DOI");
-    expect(page.registry.get(page.model.fieldsPicker)).toBe(false);
+    expect(page.registry.get(page.model.fieldsPicker)).toBeNull();
+    // The editor takes focus at the inserted text, not the Fields action.
+    expect(
+      document
+        .querySelector("[data-return-focus]")
+        ?.getAttribute("data-return-focus"),
+    ).toBe("false");
   });
 
   it("moves the active row with the arrow keys, wrapping at either end", () => {
@@ -132,11 +162,20 @@ describe("the Fields picker", () => {
     using page = open({});
     page.pressAction();
     press("ArrowDown");
-    const detail = document.getElementById(
-      search().getAttribute("aria-describedby")!,
-    );
-    expect(detail?.textContent).toContain("zt.abstract");
-    expect(detail?.textContent).toContain(ABSTRACT);
+    // The search field and the active row both name the detail area.
+    for (const owner of [search(), activeRow()!]) {
+      const detail = document.getElementById(
+        owner.getAttribute("aria-describedby")!,
+      );
+      expect(detail?.textContent).toContain("zt.abstract");
+      expect(detail?.textContent).toContain(ABSTRACT);
+    }
+    const others = screen
+      .getAllByRole("option")
+      .filter((option) => option !== activeRow());
+    expect(
+      others.every((option) => !option.hasAttribute("aria-describedby")),
+    ).toBe(true);
   });
 
   it("says when a search matches nothing", () => {
@@ -153,7 +192,12 @@ describe("the Fields picker", () => {
   it("asks for a place in the template while the editor takes no field", () => {
     using page = open({ disabled: true });
     page.pressAction();
-    expect(screen.getByRole("dialog").textContent).toContain(
+    // The search field reads the reason with the active row.
+    const described = search()
+      .getAttribute("aria-describedby")!
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "");
+    expect(described).toContain(
       "Select a place in the template to insert a field.",
     );
     press("Enter");
@@ -169,12 +213,30 @@ describe("the Fields picker", () => {
     expect(screen.getAllByRole("status")[0]!.textContent).toBe("");
   });
 
+  it("opens on the search the reader started on the Fields action", () => {
+    using page = open({});
+    act(() => page.registry.set(page.model.fieldsPicker, { query: "doi" }));
+    expect((search() as HTMLInputElement).value).toBe("doi");
+    expect(activeRow()?.textContent).toContain("DOI");
+  });
+
+  it("keeps the list out of the Tab order", () => {
+    using page = open({});
+    page.pressAction();
+    expect(screen.getByRole("listbox").getAttribute("tabindex")).toBe("-1");
+  });
+
   it("starts each opening over, from the whole list", () => {
     using page = open({});
     page.pressAction();
     fireEvent.change(search(), { target: { value: "doi" } });
     press("Escape");
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      document
+        .querySelector("[data-return-focus]")
+        ?.getAttribute("data-return-focus"),
+    ).toBe("true");
     page.pressAction();
     expect((search() as HTMLInputElement).value).toBe("");
     expect(activeRow()?.textContent).toContain("Title");

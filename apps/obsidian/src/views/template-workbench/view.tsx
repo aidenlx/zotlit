@@ -53,6 +53,7 @@ import {
   citationExampleLabel,
   entryDiagnostics,
   fieldSnippet,
+  fieldsActionKey,
   panelSizeMenus,
   routeDiagnosis,
   routeProblem,
@@ -1610,6 +1611,16 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.registry.set(this.workbench.fieldsAction, undefined),
     );
     this.#fieldsAnchor.current = fields;
+    // Where it opens the picker, an arrow opens it and a printable key opens
+    // it searching for that key, as a Bases combobox opens.
+    this.registerDomEvent(fields, "keydown", (event) => {
+      const action = this.registry.get(this.workbench.fieldsAction);
+      if (action.opens !== "popover" || action.open) return;
+      const query = fieldsActionKey(event);
+      if (query === null) return;
+      event.preventDefault();
+      this.registry.set(this.workbench.fieldsPicker, { query });
+    });
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
     });

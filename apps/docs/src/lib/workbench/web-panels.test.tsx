@@ -135,6 +135,48 @@ it("closes the Fields picker on Escape and returns focus to the Fields action", 
   );
 });
 
+it("opens the Fields picker from an arrow or a printable key on the Fields action", async () => {
+  await using page = await open({ frame: { width: 560, height: 700 } });
+  await page.settle();
+  const fields = action(page.host, m.workbench_show_fields());
+  act(() => fields.focus());
+  press(fields, "ArrowDown");
+  await page.settle();
+  expect(document.activeElement).toBe(pickerSearch());
+  expect(pickerSearch()!.value).toBe("");
+  // The action names the popover it controls while it stands.
+  const popup = document.getElementById(fields.getAttribute("aria-controls")!);
+  expect(popup?.contains(pickerSearch())).toBe(true);
+  press(pickerSearch()!, "Escape");
+  await page.settle();
+  expect(fields.hasAttribute("aria-controls")).toBe(false);
+  press(fields, "d");
+  await page.settle();
+  expect(pickerSearch()!.value).toBe("d");
+  // End and Home reach the last and the first row.
+  const active = () =>
+    document.getElementById(
+      pickerSearch()!.getAttribute("aria-activedescendant")!,
+    );
+  const rows = document.querySelectorAll('[role="dialog"] [role="option"]');
+  press(pickerSearch()!, "End");
+  expect(active()).toBe(rows[rows.length - 1]);
+  press(pickerSearch()!, "Home");
+  expect(active()).toBe(rows[0]);
+});
+
+it("closes the Fields picker when focus leaves it by keyboard", async () => {
+  await using page = await open({ frame: { width: 560, height: 700 } });
+  await page.settle();
+  page.press(m.workbench_show_fields());
+  await page.settle();
+  const elsewhere = page.host.querySelector<HTMLElement>('[role="tab"]')!;
+  act(() => elsewhere.focus());
+  await page.settle();
+  expect(pickerSearch()).toBeNull();
+  expect(document.activeElement).toBe(elsewhere);
+});
+
 it("leaves the Fields picker closed as the frame narrows, and shows the column again as it widens", async () => {
   await using page = await open({ frame: { width: 1200, height: 700 } });
   await page.settle();

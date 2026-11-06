@@ -441,7 +441,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "group-label":
         "zt:ps-1.5 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground",
       option:
-        "zt:flex zt:cursor-(--cursor) zt:items-baseline zt:gap-(--size-4-2) zt:rounded-sm zt:p-(--size-2-2) zt:ps-(--size-2-3) zt:text-sm zt:hover:bg-muted zt:data-[state=active]:bg-muted",
+        "zt:flex zt:cursor-(--cursor) zt:items-baseline zt:gap-(--size-4-2) zt:rounded-sm zt:p-(--size-2-2) zt:ps-(--size-2-3) zt:text-sm zt:data-[state=active]:bg-muted",
       "option-label": "zt:shrink-0 zt:text-foreground",
       "option-value":
         "zt:min-w-0 zt:flex-1 zt:truncate zt:text-end zt:text-xs zt:text-muted-foreground",

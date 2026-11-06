@@ -285,10 +285,10 @@ describe("the side panels", () => {
       open: false,
     });
     registry.set(model.fieldsAction, undefined);
-    expect(registry.get(model.fieldsPicker)).toBe(true);
+    expect(registry.get(model.fieldsPicker)).toEqual({ query: "" });
     expect(registry.get(model.fieldsAction).open).toBe(true);
     registry.set(model.fieldsAction, undefined);
-    expect(registry.get(model.fieldsPicker)).toBe(false);
+    expect(registry.get(model.fieldsPicker)).toBeNull();
     expect(registry.get(model.panels).fields.shown).toBe(true);
   });
 
@@ -297,11 +297,23 @@ describe("the side panels", () => {
     using opened = open({ viewSize });
     const { registry, model } = opened;
     registry.set(model.fieldsAction, undefined);
-    expect(registry.get(model.fieldsPicker)).toBe(true);
+    expect(registry.get(model.fieldsPicker)).toEqual({ query: "" });
     registry.set(viewSize, { width: 1200, height: 800 });
-    expect(registry.get(model.fieldsPicker)).toBe(false);
+    expect(registry.get(model.fieldsPicker)).toBeNull();
     registry.set(viewSize, { width: 560, height: 800 });
-    expect(registry.get(model.fieldsPicker)).toBe(false);
+    expect(registry.get(model.fieldsPicker)).toBeNull();
+  });
+
+  it("opens the Fields picker on a search the reader started on the Fields action", () => {
+    const viewSize = Atom.make<ViewSize | null>({ width: 560, height: 800 });
+    using opened = open({ viewSize });
+    const { registry, model } = opened;
+    registry.set(model.fieldsPicker, { query: "d" });
+    expect(registry.get(model.fieldsAction)).toEqual({
+      opens: "popover",
+      open: true,
+    });
+    expect(registry.get(model.fieldsPicker)).toEqual({ query: "d" });
   });
 
   it("draws a panel at most two fifths of its container, within the limits", () => {

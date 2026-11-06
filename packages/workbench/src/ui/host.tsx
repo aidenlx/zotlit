@@ -246,6 +246,12 @@ export interface WorkbenchFieldsPopoverProps {
   readonly keys: WorkbenchPickerKeys;
   /** The id of the element that names the surface. */
   readonly labelledBy: string;
+  /**
+   * Whether focus the surface holds as it closes goes back to the Fields
+   * action. False once the picker inserted a field: the editor takes focus
+   * at the inserted text.
+   */
+  readonly returnFocus: boolean;
   readonly children: ReactNode;
 }
 

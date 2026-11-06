@@ -39,6 +39,7 @@ import type { WorkbenchInsertTarget } from "./host";
 import { INITIAL_PANELS, placePanels, showPanel } from "./panel-layout";
 import type {
   FieldsAction,
+  FieldsPicker,
   PanelPlacement,
   ViewSize,
   WorkbenchPanels,
@@ -300,11 +301,11 @@ export interface WorkbenchModel<
   /** Where each panel goes in the view as it is now; never saved. */
   readonly placement: Atom.Atom<PanelPlacement>;
   /**
-   * Whether the Fields picker stands open over the editor. It opens only
-   * while the Fields Panel's column does not fit, and closes when the column
-   * fits again; never saved.
+   * The Fields picker standing open over the editor, or null while it is
+   * closed. It opens only while the Fields Panel's column does not fit, and
+   * closes when the column fits again; never saved.
    */
-  readonly fieldsPicker: Atom.Writable<boolean>;
+  readonly fieldsPicker: Atom.Writable<FieldsPicker | null>;
   /**
    * What the Fields action opens and whether that is open. A write presses
    * the action: it shows or hides the column, or opens or closes the picker.
@@ -475,10 +476,10 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     Atom.make((get) => placePanels(get(panels), get(viewSize))),
     sameFields,
   );
-  const pickerOpen = Atom.make(false);
+  const picker = Atom.make<FieldsPicker | null>(null);
   const fieldsPicker = Atom.writable(
-    (get) => get(pickerOpen) && get(placement).fields === "popover",
-    (ctx, open: boolean) => ctx.set(pickerOpen, open),
+    (get) => (get(placement).fields === "popover" ? get(picker) : null),
+    (ctx, next: FieldsPicker | null) => ctx.set(picker, next),
   );
   const matchRetry = Atom.make(0);
   const scheduler = makeRenderSchedulerAtoms({
@@ -503,10 +504,10 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
       (get): FieldsAction =>
         get(placement).fields === "column"
           ? { opens: "column", open: get(panels).fields.shown }
-          : { opens: "popover", open: get(fieldsPicker) },
+          : { opens: "popover", open: get(fieldsPicker) !== null },
       (ctx) => {
         if (ctx.get(placement).fields === "popover")
-          ctx.set(fieldsPicker, !ctx.get(fieldsPicker));
+          ctx.set(fieldsPicker, ctx.get(fieldsPicker) ? null : { query: "" });
         else {
           const current = ctx.get(panels);
           ctx.set(panels, showPanel("fields", !current.fields.shown)(current));
@@ -646,7 +647,7 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
   // A picker the view closed by widening stays closed when it narrows again.
   releases.push(
     registry.subscribe(model.placement, ({ fields }) => {
-      if (fields === "column") registry.set(model.fieldsPicker, false);
+      if (fields === "column") registry.set(model.fieldsPicker, null);
     }),
   );
   return () => {

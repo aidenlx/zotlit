@@ -457,7 +457,7 @@ export const WEB_THEME: WorkbenchTheme = {
       "group-label":
         "px-2 pt-2 pb-1 text-xs font-medium text-fd-muted-foreground",
       option:
-        "flex min-h-9 cursor-pointer items-baseline gap-3 rounded-sm px-2 py-1.5 text-sm hover:bg-fd-muted data-[state=active]:bg-fd-muted",
+        "flex min-h-9 cursor-pointer items-baseline gap-3 rounded-sm px-2 py-1.5 text-sm data-[state=active]:bg-fd-muted",
       "option-label": "shrink-0 text-fd-foreground",
       "option-value":
         "min-w-0 flex-1 truncate text-end text-xs text-fd-muted-foreground",
