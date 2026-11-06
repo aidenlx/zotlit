@@ -40,14 +40,12 @@ import {
   WorkbenchThemeProvider,
   patch,
   setAdvanced as setViewAdvanced,
-  setTab as setViewTab,
   diagnosticText,
   entryDiagnostics,
   fieldSnippet,
   fieldsActionKey,
   renderDiagnosis,
-  routeDiagnosis,
-  routeProblem,
+  repairCommands,
   useParts,
   useWorkbenchProblems,
   workbenchDiagnoses,
@@ -65,10 +63,8 @@ import {
 import type {
   PanelSide,
   WorkbenchTab,
-  WorkbenchDiagnosis,
   WorkbenchHost,
   WorkbenchInsertTarget,
-  WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
@@ -206,8 +202,6 @@ function WorkbenchSession({
   const annotationResult = useAtomValue(model.annotationResult);
   const tab = useAtomValue(model.tab);
   const advanced = useAtomValue(model.advanced);
-  const setTab = (next: WorkbenchTab) =>
-    registry.update(model.view, setViewTab(next));
   const setAdvanced = (next: boolean) =>
     registry.update(model.view, setViewAdvanced(next));
   const openInObsidianCommand = useAtomSet(workbench.openInObsidian);
@@ -378,52 +372,20 @@ function WorkbenchSession({
     ({ part }) => part === "annotation",
   );
 
-  /** Opens the pane a routing transition names, in the model's view state. */
-  const route = (
-    transition: (state: WorkbenchViewState) => WorkbenchViewState,
-  ) => registry.update(model.view, transition);
+  // The repair commands both hosts share. This page supplies only the toast
+  // its host adapter shows a notice in.
+  const repair = repairCommands({
+    registry,
+    model,
+    controller,
+    host,
+    problems,
+  });
 
-  /** Reads one problem the result named, in the editor's Problems area. */
+  /** Reads one problem the editor named, in the editor's Problems area. */
   function showProblem(id: string | null) {
     if (id === null) problems.setOpen(true);
     else problems.select(id);
-  }
-
-  /**
-   * Hands the reader the template back where they left it. Every pane reports
-   * its selection as the reader moves through it, so returning is revealing
-   * that place again — with the caret and the focus that go with it.
-   */
-  function returnToTemplate() {
-    setReveal({ ...caret });
-  }
-
-  /** The pane one selected problem is repaired in, whichever kind it is. */
-  function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
-    const transition = routeDiagnosis(diagnosis, controller);
-    if (transition) route(transition);
-    else
-      toast.add({
-        title: m.workbench_problems_location_unknown(),
-        type: "info",
-      });
-  }
-
-  function openAnnotation() {
-    route(routeProblem({ slice: "annotation" }, controller));
-  }
-
-  function insertAnnotations() {
-    const { repaired, caret } = controller.insertAnnotationLoop();
-    setReveal({ from: caret, to: caret });
-    if (repaired) {
-      toast.add({
-        title: m.workbench_annotation_section_added(),
-        type: "info",
-      });
-    }
-    setAdvanced(false);
-    setTab("note");
   }
 
   // The field list follows the pane the reader is in: the annotation box renders
@@ -891,10 +853,10 @@ function WorkbenchSession({
                     noteCaret.current = selection;
                     if (!advanced && tab === "note") trackSelection(selection);
                   }}
-                  onOpenAnnotation={openAnnotation}
+                  onOpenAnnotation={repair.openAnnotationBox}
                 />
                 {controller.noteRegions.annotationCalls.length === 0 && (
-                  <AnnotationPointer onInsert={insertAnnotations} />
+                  <AnnotationPointer onInsert={repair.insertAnnotationLoop} />
                 )}
               </TabPanel>
               <TabPanel tab="match" modeActive={!advanced}>
@@ -986,7 +948,7 @@ function WorkbenchSession({
           }}
           onAnnotationChoice={chooseAnnotation}
           mode={showAnnotation ? "annotation" : "note"}
-          onShowProblem={showProblem}
+          onShowProblem={repair.showProblem}
           sampleBar={
             <SampleBar
               sample={sample}
@@ -1005,8 +967,8 @@ function WorkbenchSession({
       problems={
         <ProblemsFooter
           problems={problems}
-          onOpen={openDiagnosis}
-          onReturn={returnToTemplate}
+          onOpen={repair.openDiagnosis}
+          onReturn={repair.returnToTemplate}
         />
       }
       mainRef={measureFrame}

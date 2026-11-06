@@ -3,9 +3,11 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { expect, it } from "vitest";
 
+import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+
 import { m } from "@/paraglide/messages.js";
 
-import { open } from "./page-test-host";
+import { chosenTab, keep, open } from "./page-test-host";
 
 /** The side panel the page shows under `label`, or null. */
 const region = (host: HTMLElement, label: string) =>
@@ -253,3 +255,59 @@ it("shows, sizes and resets each panel from the View menu", async () => {
   act(() => menuItem(m.workbench_show_preview()).click());
   expect(region(page.host, m.workbench_view_preview())).toBeNull();
 });
+
+/** A call, in the note, to a partial no vault holds. */
+const MISSING_CALL = "{% render 'missing-details' %}";
+
+/** The note editor's text under its selection. */
+const selectedInNote = (host: HTMLElement) => {
+  const note = [...host.querySelectorAll<HTMLElement>('[role="textbox"]')]
+    .map((box) => EditorView.findFromDOM(box))
+    .find((editor) => editor?.state.doc.toString().includes(MISSING_CALL))!;
+  const { from, to } = note.state.selection.main;
+  return note.state.sliceDoc(from, to);
+};
+
+// #1957: the preview's Show problem is the shared repair command, so the
+// round trip is the same in a narrow and a wide frame.
+it.each([
+  // Where the Fields column does not fit, the picker stands over the editor.
+  { frame: { width: 560, height: 700 }, split: "horizontal", picker: true },
+  { frame: { width: 1200, height: 700 }, split: "vertical", picker: false },
+])(
+  "reveals the call from the Preview's Show problem in a $frame.width px frame and keeps the Preview in place",
+  async ({ frame, split, picker }) => {
+    keep(
+      DEFAULT_PROFILE_SOURCE.replace(
+        "# {{ zt.title }}",
+        `# {{ zt.title }}\n${MISSING_CALL}`,
+      ),
+      SAMPLE_ITEMS[1]!,
+    );
+    await using page = await open({ frame });
+    page.press(m.workbench_restore_accept());
+    const shown = region(page.host, m.workbench_view_preview())!;
+    await page.waitFor(() =>
+      expect(shown.querySelector('[data-part="problem-open"]')).not.toBeNull(),
+    );
+    if (picker) page.press(m.workbench_show_fields());
+    await page.settle();
+    expect(pickerSearch() !== null).toBe(picker);
+    act(() =>
+      shown
+        .querySelector<HTMLButtonElement>('[data-part="problem-open"]')!
+        .click(),
+    );
+    await page.settle();
+    expect(pickerSearch()).toBeNull();
+    expect(page.host.textContent).toContain(m.workbench_problems_heading());
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
+    expect(selectedInNote(page.host)).toBe(MISSING_CALL);
+    expect(region(page.host, m.workbench_view_preview())).toBe(shown);
+    expect(
+      handle(page.host, m.workbench_preview_resize())!.getAttribute(
+        "aria-orientation",
+      ),
+    ).toBe(split);
+  },
+);
