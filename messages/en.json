@@ -1777,6 +1777,8 @@
   "workbench_example_title": "Example: {name}",
   "workbench_view_fields": "Fields",
   "workbench_view_preview": "Preview",
+  "workbench_show_preview": "Show preview",
+  "workbench_preview_resize": "Resize preview",
   "workbench_sample_type_journal_article": "Journal article",
   "workbench_sample_type_conference_paper": "Conference paper",
   "workbench_sample_type_book": "Book",

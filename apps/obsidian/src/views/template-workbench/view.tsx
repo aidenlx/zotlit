@@ -192,12 +192,15 @@ import {
   setAdvanced,
   setCustomization,
   setPresentation,
+  setPanelWidth,
   setRoot,
   setTab,
+  showPanel,
 } from "./model";
 import type { TemplateWorkbenchModel } from "./model";
 import type { CreateSharedPartialOptions } from "./new-partial";
 import { openTemplateWorkbench } from "./open";
+import { WorkbenchPanels } from "./panels";
 import { readPartialChoice, writePartialChoice } from "./partial-choice-memory";
 import { createSharedPartialEffect } from "./partial-command";
 import {
@@ -871,6 +874,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       registry.subscribe(model.partialProfile, () =>
         this.app.workspace.requestSaveLayout(),
       ),
+      registry.subscribe(model.panels, () => {
+        this.#updateActions();
+        this.app.workspace.requestSaveLayout();
+      }),
     );
     let read = registry.get(model.read);
     stops.push(
@@ -1437,6 +1444,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         defaultDraft: this.#defaultDraft,
         view: this.#view,
         picks: this.registry.get(this.model.picks),
+        panels: this.registry.get(this.model.panels),
         partial:
           this.documentKind === "partial"
             ? { context: this.partialContext, profile: this.#partialProfile }
@@ -1576,6 +1584,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       }
       const value = readSavedWorkbench(state);
       if (!value) return;
+      for (const [side, panel] of Object.entries(value.panels))
+        this.registry.update(this.model.panels, (panels) =>
+          setPanelWidth(
+            side as keyof typeof panels,
+            panel.width,
+          )(showPanel(side as keyof typeof panels, panel.shown)(panels)),
+        );
       const store = this.change;
       if (this.#applyKindDefaults()) {
         // A plain document has one tab and one editor, so nothing of the saved
@@ -1686,6 +1701,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.insertTemplateField(request),
       ),
     );
+    // Added first, so it sits nearest More options; Obsidian prepends actions.
+    const preview = this.addAction(
+      "panel-right",
+      m.workbench_show_preview(),
+      () => this.togglePanel("preview"),
+    );
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
     });
@@ -1719,6 +1740,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       const { advanced } = this.#view;
       source.setAttribute("aria-pressed", String(advanced));
       source.classList.toggle("is-active", advanced);
+      const shown = this.registry.get(this.model.panels).preview.shown;
+      preview.setAttribute("aria-pressed", String(shown));
+      preview.classList.toggle("is-active", shown);
     };
     const syncChrome = () => {
       this.#updateActions();
@@ -1790,8 +1814,23 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       : m.template_data_explorer_menu_export_json();
   }
 
+  /** Shows a side panel the leaf hides, or hides one it shows. */
+  togglePanel(side: "fields" | "preview"): void {
+    this.registry.update(this.model.panels, (panels) =>
+      showPanel(side, !panels[side].shown)(panels),
+    );
+  }
+
   override onPaneMenu(menu: Menu, source: string): void {
     super.onPaneMenu(menu, source);
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_show_preview())
+        .setIcon("panel-right")
+        .setChecked(this.registry.get(this.model.panels).preview.shown)
+        .onClick(() => this.togglePanel("preview")),
+    );
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.open)
@@ -3192,7 +3231,18 @@ function EditorContent({
       value={selectedDiagnoses}
       onReveal={selectProblem}
     >
-      {content}
+      <WorkbenchPanels
+        model={view.model}
+        panels={{
+          preview: {
+            label: m.workbench_view_preview(),
+            resizeLabel: m.workbench_preview_resize(),
+            content: null,
+          },
+        }}
+      >
+        {content}
+      </WorkbenchPanels>
     </WorkbenchDiagnosticsProvider>
   );
 }

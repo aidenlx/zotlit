@@ -45,6 +45,8 @@
   "workbench_example_title": "示例：{name}",
   "workbench_view_fields": "字段",
   "workbench_view_preview": "预览",
+  "workbench_show_preview": "显示预览",
+  "workbench_preview_resize": "调整预览宽度",
   "workbench_sample_type_journal_article": "期刊文章",
   "workbench_sample_type_conference_paper": "会议论文",
   "workbench_sample_type_book": "图书",

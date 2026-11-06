@@ -1514,6 +1514,10 @@ An annotation.
       advanced: true,
       itemIndexedKey: null,
       annotationId: null,
+      panels: {
+        fields: { shown: false, width: 400 },
+        preview: { shown: false, width: 400 },
+      },
     });
   });
   it("labels a built-in annotation sample export as selected paper data", () => {
@@ -2085,6 +2089,10 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     advanced: false,
     itemIndexedKey: null,
     annotationId: null,
+    panels: {
+      fields: { shown: false, width: 400 },
+      preview: { shown: false, width: 400 },
+    },
   });
   expect(view.controller.readOnly).toBe(true);
   expect(view.getViewData()).toBe(builtin);
@@ -3319,5 +3327,96 @@ describe("Template Workbench Item choice", () => {
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
       true,
     );
+  });
+});
+
+// #1945: the Preview is a side panel of the one view, which the reader shows,
+// hides and widens, and which the workspace saves with the view.
+describe("the side panels of the Template Workbench View", () => {
+  const actionOf = (view: TemplateWorkbenchView, title: string) =>
+    (view as unknown as MockItemView).actions.find(
+      (element) => element.getAttribute("aria-label") === title,
+    )!;
+  const region = (view: TemplateWorkbenchView, name: string) =>
+    [...view.contentEl.querySelectorAll<HTMLElement>("[role=region]")].find(
+      (element) => element.getAttribute("aria-label") === name,
+    ) ?? null;
+  const handleOf = (view: TemplateWorkbenchView, name: string) =>
+    [...view.contentEl.querySelectorAll<HTMLElement>("[role=separator]")].find(
+      (element) => element.getAttribute("aria-label") === name,
+    )!;
+  const press = (element: HTMLElement, key: string) =>
+    act(async () => {
+      element.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true }),
+      );
+    });
+
+  it("shows and hides the Preview panel from its pressed view action", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    const show = actionOf(view, m.workbench_show_preview());
+    expect(show.getAttribute("aria-pressed")).toBe("false");
+    expect(region(view, m.workbench_view_preview())).toBeNull();
+    await act(async () => show.click());
+    expect(show.getAttribute("aria-pressed")).toBe("true");
+    expect(region(view, m.workbench_view_preview())).not.toBeNull();
+    await act(async () => show.click());
+    expect(show.getAttribute("aria-pressed")).toBe("false");
+    expect(region(view, m.workbench_view_preview())).toBeNull();
+    await act(async () => view.close());
+  });
+
+  it("resizes the Preview panel from the keyboard within its limits", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const handle = handleOf(view, m.workbench_preview_resize());
+    expect(handle.tabIndex).toBe(0);
+    expect(handle.getAttribute("aria-orientation")).toBe("vertical");
+    const width = () => Number(handle.getAttribute("aria-valuenow"));
+    const initial = width();
+    // The Preview sits on the right, so moving its edge left widens it.
+    await press(handle, "ArrowLeft");
+    expect(width()).toBeGreaterThan(initial);
+    await press(handle, "End");
+    expect(width()).toBe(Number(handle.getAttribute("aria-valuemin")));
+    await press(handle, "Home");
+    expect(width()).toBe(Number(handle.getAttribute("aria-valuemax")));
+    await act(async () => view.close());
+  });
+
+  it("restores the panel's visibility and width with the view state", async () => {
+    const original = setup();
+    await act(async () => original.view.open());
+    await act(async () =>
+      actionOf(original.view, m.workbench_show_preview()).click(),
+    );
+    await press(
+      handleOf(original.view, m.workbench_preview_resize()),
+      "ArrowLeft",
+    );
+    const width = handleOf(
+      original.view,
+      m.workbench_preview_resize(),
+    ).getAttribute("aria-valuenow");
+    const saved = original.view.getState();
+    await act(async () => original.view.close());
+    const restored = setup();
+    await act(async () => restored.view.setState(saved, { history: false }));
+    await act(async () => restored.view.open());
+    expect(region(restored.view, m.workbench_view_preview())).not.toBeNull();
+    expect(
+      handleOf(restored.view, m.workbench_preview_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe(width);
+    expect(
+      actionOf(restored.view, m.workbench_show_preview()).getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+    expect(restored.view.getState()).toEqual(saved);
+    await act(async () => restored.view.close());
   });
 });

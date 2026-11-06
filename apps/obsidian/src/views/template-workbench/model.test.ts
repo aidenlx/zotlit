@@ -189,6 +189,10 @@ it("round-trips the saved and ephemeral state through Schema", () => {
         defaultDraft: false,
         view,
         picks: { ...INITIAL_PICKS, annotationId: "note-1" },
+        panels: {
+          fields: { shown: false, width: 400 },
+          preview: { shown: true, width: 520 },
+        },
         partial: { context: "citation", profile: "books" },
       }),
     ),
@@ -202,7 +206,20 @@ it("round-trips the saved and ephemeral state through Schema", () => {
     annotationId: "note-1",
     partialContext: "citation",
     partialProfile: "books",
+    panels: {
+      fields: { shown: false, width: 400 },
+      preview: { shown: true, width: 520 },
+    },
   });
+  // A bad side leaves the other, and a width outside the limits is held to them.
+  expect(
+    readSavedWorkbench({
+      panels: {
+        fields: { shown: "yes", width: 300 },
+        preview: { shown: true, width: 5000 },
+      },
+    })?.panels,
+  ).toEqual({ preview: { shown: true, width: 960 } });
   // A bad field leaves the others; a cleared Item stays cleared.
   expect(
     readSavedWorkbench({

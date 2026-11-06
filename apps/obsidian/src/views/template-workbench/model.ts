@@ -88,6 +88,39 @@ export const INITIAL_PICKS: WorkbenchPicks = {
   citationExample: DEFAULT_CITATION_EXAMPLE,
 };
 
+/** The side panels of the view: Fields on the left, Preview on the right. */
+export type PanelSide = "fields" | "preview";
+export interface WorkbenchPanel {
+  readonly shown: boolean;
+  /** The panel's width in pixels, which the reader sets with its edge. */
+  readonly width: number;
+}
+export type WorkbenchPanels = Readonly<Record<PanelSide, WorkbenchPanel>>;
+
+/** The widths a panel can take, in pixels. */
+export const PANEL_WIDTH = { min: 240, initial: 400, max: 960 } as const;
+
+/** A new view shows neither panel. */
+const INITIAL_PANELS: WorkbenchPanels = {
+  fields: { shown: false, width: PANEL_WIDTH.initial },
+  preview: { shown: false, width: PANEL_WIDTH.initial },
+};
+
+const panelWidth = (width: number) =>
+  Math.round(Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, width)));
+
+const patchPanel =
+  (side: PanelSide, value: Partial<WorkbenchPanel>) =>
+  (state: WorkbenchPanels): WorkbenchPanels => {
+    const panel = patch(value)(state[side]);
+    return panel === state[side] ? state : { ...state, [side]: panel };
+  };
+export const showPanel = (side: PanelSide, shown: boolean) =>
+  patchPanel(side, { shown });
+/** Sets a panel's width, held within {@link PANEL_WIDTH}. */
+export const setPanelWidth = (side: PanelSide, width: number) =>
+  patchPanel(side, { width: panelWidth(width) });
+
 const NO_DOCUMENT: WorkbenchDocumentFacts = {
   path: null,
   kind: "profile",
@@ -169,6 +202,8 @@ export function makeTemplateWorkbenchModel() {
   const picks = Atom.make(INITIAL_PICKS);
   const preview = Atom.make<WorkbenchPreviewSettings>(INITIAL_CHOICES.preview);
   const document = Atom.make(NO_DOCUMENT);
+  /** Which side panels the leaf shows, and how wide. */
+  const panels = Atom.make(INITIAL_PANELS);
   /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
   const partialProfile = Atom.make<string | null>(null);
   /** Counts the reader's refreshes; each one reads the chosen Item again. */
@@ -321,6 +356,7 @@ export function makeTemplateWorkbenchModel() {
     picks,
     preview,
     document,
+    panels,
     partialProfile,
     refresh,
     item,
@@ -353,6 +389,7 @@ export function holdTemplateWorkbenchModel(
     model.picks,
     model.preview,
     model.document,
+    model.panels,
     model.partialProfile,
     model.refresh,
     model.read,
@@ -381,6 +418,8 @@ export interface SavedWorkbench {
   readonly annotationId: string | null | undefined;
   readonly partialContext: PartialContext | null;
   readonly partialProfile: string | null;
+  /** The panels the state names; a side it leaves out keeps the leaf's own. */
+  readonly panels: Partial<WorkbenchPanels>;
 }
 
 /** What `getState` saves beside the file, from the leaf's state. */
@@ -388,6 +427,7 @@ export function savedWorkbench(state: {
   readonly defaultDraft: boolean;
   readonly view: WorkbenchViewState;
   readonly picks: WorkbenchPicks;
+  readonly panels: WorkbenchPanels;
   /** A Shared Partial's caller and Profile; null for any other kind. */
   readonly partial: {
     readonly context: PartialContext;
@@ -401,6 +441,7 @@ export function savedWorkbench(state: {
     itemIndexedKey: item?.id ?? null,
     annotationId: state.picks.annotationId,
     advanced,
+    panels: state.panels,
     // A Shared Partial's caller is a choice nothing else can name, so the
     // workspace carries it back with the file it belongs to. No other kind
     // has one to carry.
@@ -433,7 +474,25 @@ export function readSavedWorkbench(input: unknown): SavedWorkbench | null {
       value.partialContext,
     ),
     partialProfile: decode(Schema.String, value.partialProfile),
+    panels: readPanels(value.panels),
   };
+}
+
+const savedPanel = Schema.Struct({
+  shown: Schema.Boolean,
+  width: Schema.Finite,
+});
+
+/** Each side decodes alone; its width is held within the limits. */
+function readPanels(input: unknown): Partial<WorkbenchPanels> {
+  const value = decode(record, input) ?? {};
+  const panels: Partial<Record<PanelSide, WorkbenchPanel>> = {};
+  for (const side of ["fields", "preview"] as const) {
+    const panel = decode(savedPanel, value[side]);
+    if (panel)
+      panels[side] = { shown: panel.shown, width: panelWidth(panel.width) };
+  }
+  return panels;
 }
 
 const position = Schema.Struct({ top: Schema.Finite, left: Schema.Finite });
