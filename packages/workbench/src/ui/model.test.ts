@@ -1,6 +1,7 @@
+import { Effect, Queue } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createWorkbenchEditor } from "./editor";
 import {
@@ -65,6 +66,10 @@ function open(options: { view?: Atom.Writable<WorkbenchViewState> } = {}) {
   };
 }
 
+/** Takes the start signal of the next render `host` was asked for. */
+const started = (host: ReturnType<typeof fakeHost>) =>
+  Effect.runPromise(Queue.take(host.started));
+
 function noteEdit(controller: WorkbenchDocumentController, insert: string) {
   const { from } = controller.sliceRange("note");
   controller.dispatch({ changes: { from, insert }, userEvent: "input.type" });
@@ -124,7 +129,8 @@ describe("the Workbench model", () => {
     registry.update(model.choices, choosePartial(partial));
     registry.update(model.choices, setPreview({ mode: "update" }));
     registry.set(model.scheduler.run, undefined);
-    await vi.waitFor(() => expect(host.renders).toHaveLength(1));
+    await started(host);
+    expect(host.renders).toHaveLength(1);
     expect(host.renders[0]!.request).toMatchObject({
       mode: "update",
       snapshot: PAPER,
@@ -140,12 +146,14 @@ describe("the Workbench model", () => {
     load(opened);
     noteEdit(controller, "Edited ");
     registry.set(model.scheduler.run, undefined);
-    await vi.waitFor(() => expect(host.renders).toHaveLength(1));
+    await started(host);
+    expect(host.renders).toHaveLength(1);
     expect(host.renders[0]!.request.source).toContain("Edited ");
 
     editor.attach(new WorkbenchDocumentController("Replaced"));
     registry.set(model.scheduler.run, undefined);
-    await vi.waitFor(() => expect(host.renders).toHaveLength(2));
+    await started(host);
+    expect(host.renders).toHaveLength(2);
     expect(host.renders[1]!.request.source).toBe("Replaced");
   });
 
@@ -154,7 +162,8 @@ describe("the Workbench model", () => {
     const { registry, model, editor, host } = opened;
     load(opened);
     registry.set(model.scheduler.run, undefined);
-    await vi.waitFor(() => expect(host.renders).toHaveLength(1));
+    await started(host);
+    expect(host.renders).toHaveLength(1);
     editor[Symbol.dispose]();
     await host.renders[0]!.interruption;
   });
@@ -171,7 +180,8 @@ describe("the Workbench model", () => {
     const { registry, model } = editor;
     registry.update(data, (held) => ({ ...held, snapshot: PAPER }));
     registry.set(model.scheduler.run, undefined);
-    await vi.waitFor(() => expect(host.renders).toHaveLength(1));
+    await started(host);
+    expect(host.renders).toHaveLength(1);
     editor[Symbol.dispose]();
     expect(host.renders[0]!.interrupted).toBe(true);
     expect(() => registry.set(model.scheduler.run, undefined)).toThrow(

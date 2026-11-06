@@ -4,7 +4,7 @@
 import type { RenderRequest } from "#/render/request";
 import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { render as renderUI } from "@testing-library/react";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Queue } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { ReactNode } from "react";
@@ -79,6 +79,8 @@ export interface FakeHost extends WorkbenchHost {
   };
   /** Every render asked for, in order, none of them answered yet. */
   readonly renders: PendingRender[];
+  /** Takes each render as it starts: the signal a render was asked for. */
+  readonly started: Queue.Queue<PendingRender>;
   /**
    * While set, `confirm`, `suggester`, `copy` and every Match data read wait
    * in `held` until the test answers them; otherwise they answer at once.
@@ -97,6 +99,7 @@ export function fakeHost(): FakeHost {
   const key = (scope: WorkbenchPreferenceScope, name: string) =>
     `${scope}:${name}`;
   const renders: PendingRender[] = [];
+  const started = Effect.runSync(Queue.unbounded<PendingRender>());
   const held: HeldRequest[] = [];
   /** A request that answers at once, or waits in `held` while `hold` is set. */
   function holdable<A, E>(
@@ -130,6 +133,7 @@ export function fakeHost(): FakeHost {
     getLocale: () => "en",
     calls: { menus: [], suggesters: [], notices: [], confirms: [], copies: [] },
     renders,
+    started,
     hold: false,
     held,
     preferences,
@@ -169,7 +173,7 @@ export function fakeHost(): FakeHost {
         const identity = renderIdentity(request);
         let interrupted = false;
         const { promise, resolve } = Promise.withResolvers<void>();
-        renders.push({
+        const pending: PendingRender = {
           request,
           answer: (result) =>
             resume(
@@ -185,7 +189,9 @@ export function fakeHost(): FakeHost {
             return interrupted;
           },
           interruption: promise,
-        });
+        };
+        renders.push(pending);
+        Queue.offerUnsafe(started, pending);
         return Effect.sync(() => {
           interrupted = true;
           resolve();
