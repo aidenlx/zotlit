@@ -207,7 +207,7 @@ The installable Agent Skill (`zotlit-template`) that teaches an agent the workbe
 _Avoid_: template-workbench skill (the pre-rename install name), skill docs
 
 **Template Data Explorer** _(Obsidian)_:
-The sidebar view that displays the exact template data (`zt`) a Template receives for a real library Item, as an explorable tree anchored at the Note Root or an Annotation Root. Nodes offer copy-path — one `zt.…` path shared by both Liquid and Eta, since both engines bind the data to `zt` — copy-value, and per-engine Template Snippets; one filter box matches key names and values, scoped to the current root — changing roots resets it. Everything displayed is true at display time, and browsing never writes to the vault — link helpers that would queue imports show existing targets or labeled placeholders instead.
+The standalone view that displays the exact template data (`zt`) a Template receives for a real library Item, as an explorable tree anchored at the Note Root or an Annotation Root. Nodes offer copy-path — one `zt.…` path shared by both Liquid and Eta, since both engines bind the data to `zt` — copy-value, and per-engine Template Snippets; one filter box matches key names and values, scoped to the current root — changing roots resets it. Everything displayed is true at display time, and browsing never writes to the vault — link helpers that would queue imports show existing targets or labeled placeholders instead. It keeps its own Item and Annotation choice and has no link to any Template Workbench View: it follows no editor, shares no selection with one, and inserts into none, so its fields are copy-only. The Fields Panel is its counterpart inside the editor.
 _Avoid_: item details (v1's item-centric framing), template preview / data preview (preview implies rendered output, a non-goal)
 
 **Template Snippet** _(Obsidian)_:
@@ -225,7 +225,7 @@ The Template Data Explorer's current root, saved as a JSON file for a bug report
 _Avoid_: template export (suggests rendered note output), data dump (the file follows the published contract, it is not raw state)
 
 **Template Workbench View** _(Obsidian)_:
-The main-area view that edits one Template Document with the Workbench UI, over the vault file, saved the way Obsidian saves any note. For a Profile document it shows the same tabs, panes, and one undo history as the web Workbench; for the Citation Template or a Shared Partial it shows one editor with no Basic and Source modes, and the preview follows the document's kind. The native Markdown view keeps working on the same file; the two are one click apart. Its tab title is the document's name and kind.
+The main-area view that edits one Template Document with the Workbench UI, over the vault file, saved the way Obsidian saves any note. For a Profile document it shows the same tabs, panes, and one undo history as the web Workbench; for the Citation Template or a Shared Partial it shows one editor with no Basic and Source modes, and the preview follows the document's kind. The Fields Panel sits on its left and the Preview Panel on its right, and both read the view's one chosen Item and Annotation. The native Markdown view keeps working on the same file; the two are one click apart. Its tab title is the document's name and kind.
 _Avoid_: Profile Editor (the retired name, from when the view opened Profile documents alone), native Workbench, template editor, profile view, Obsidian Workbench
 
 **Partial Placeholder**:
@@ -236,16 +236,20 @@ _Avoid_: partial chip, partial widget, inline partial (the source is unchanged b
 The Template Workbench View's hover popover that names the field, tag, or filter under the pointer, with its type, description, syntax, and example. One Template Hover serves one visit of the pointer to the editor: it opens after Obsidian's hover delay on the first token, follows the pointer from token to token without closing, swaps its content and anchor once the pointer has rested on the next token for that same delay, and closes when the pointer rests off every token, leaves the editor, or the document changes.
 _Avoid_: hover card (the Citation Popover's retired alias), template-editor hover, token tooltip
 
-**Note Preview** _(Obsidian)_:
-The companion view that shows what the Template Workbench View's document produces for the selected Item: note name, Properties, note body with the Managed Region marked, and one annotation, displayed as Obsidian renders it. It follows its natively linked editor, or the active editor when unlinked and unpinned, like Outline.
-_Avoid_: template preview (retired for the Explorer, which shows data, not output), render pane, result view (the web column's name)
+**Preview Panel** _(Obsidian)_:
+The right side panel of the Template Workbench View that shows what the view's document produces for the view's chosen Item: note name, Properties, note body with the Managed Region marked, and one annotation, displayed as Obsidian renders it. It is part of the view, never a leaf of its own; the reader shows, hides, and resizes it, and the view's saved state keeps both. Its heading follows the document kind: "Note preview" for a Profile, "Citation preview" for the Citation Template, and "Partial preview" for a Shared Partial. While it shows, the view's pane menu carries its settings (ADR 0048 as amended by ADR 0081).
+_Avoid_: Note Preview (the retired companion view), template preview (retired for the Explorer, which shows data, not output), render pane, result view (the web column's name)
+
+**Fields Panel** _(Obsidian)_:
+The left side panel of the Template Workbench View that shows the Template Data Explorer's tree for the view's chosen Item and Annotation. It is part of the view, never a leaf of its own; the reader shows, hides, and resizes it, and the view's saved state keeps both. It shows for every Template Document kind. Its root is the editor's root until the reader moves it, and any change of the editor's root or Item returns it to the editor's root. It offers the explorer's copy actions, inserts a field into the view's editor at the cursor ("Insert field"), and, while it shows, sets the root that the pane menu's Template Data Export saves.
+_Avoid_: Fields pane, linked explorer, Data Explorer (the standalone view)
 
 **Workbench UI**:
 The shared, headless component layer that both the web Workbench and the Template Workbench View mount over the Workbench core: it renders structure and behavior and carries no styling, and each host supplies styling and the platform's own popups, menus, and dialogs.
 _Avoid_: shared components (too vague), design system (the hosts own their look), Workbench shell (the host's layout)
 
 **Render Scheduler**:
-The one rule, shared by the web Workbench and the Note Preview, for when a Profile draft is rendered: live rendering starts after a short quiet time once typing stops, Run renders now, Stop pauses live rendering while a render already running finishes, and a result the author has already typed or selected past is dropped.
+The one rule, shared by the web Workbench and the Template Workbench View, for when a Profile draft is rendered: live rendering starts after a short quiet time once typing stops, Run renders now, Stop pauses live rendering while a render already running finishes, and a result the author has already typed or selected past is dropped.
 _Avoid_: render pipeline (bundles the scheduler with the composer and the transport), render worker (no Worker exists), preview debounce (names the mechanism, not the rule)
 
 **Item Snapshot** _(web Workbench)_:
