@@ -10,20 +10,22 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/layouts/docs/slots/sidebar";
+import { validateSiteLocale } from "@/lib/i18n";
 import { baseOptions } from "@/lib/layout.shared";
 import { source } from "@/lib/source";
+import { getLocale } from "@/paraglide/runtime.js";
 
 // The sidebar tree crosses the server boundary as JSON. Its `name` and `icon`
 // fields are typed as React nodes, which the serializer rejects at the type
 // level, so the tree travels as a bare `object`: every name in this site's
 // content is a string and no entry declares an icon.
-const getPageTree = createServerFn({ method: "GET" }).handler(
-  () => source.pageTree as object,
-);
+const getPageTree = createServerFn({ method: "GET" })
+  .validator(validateSiteLocale)
+  .handler(({ data: locale }) => source.getPageTree(locale) as object);
 
 export const Route = createFileRoute("/docs")({
   component: DocsShell,
-  loader: () => getPageTree(),
+  loader: () => getPageTree({ data: getLocale() }),
 });
 
 function DocsShell() {
