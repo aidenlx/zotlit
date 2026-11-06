@@ -149,3 +149,157 @@ export const previewBelowHeight = (share: number, viewHeight: number) =>
       viewHeight - EDITOR_MIN.height,
     ),
   );
+
+/**
+ * The handles that size the panels: the edge of the Fields column, the edge
+ * of the Preview column, and the split over the Preview under the editor.
+ */
+export type PanelHandle = "fields" | "preview" | "split";
+/** What a menu entry or a double-click does to a handle's panel. */
+export type PanelResize = "grow" | "shrink" | "reset";
+
+/**
+ * How far one menu entry moves a handle: the Shift+arrow step of an edge,
+ * and two arrow steps of the split.
+ */
+const MENU_STEP = { width: 64, height: 10 } as const;
+
+/** The handles a view of `size` draws for `panels`, in document order. */
+export function panelHandles(
+  panels: WorkbenchPanels,
+  size: ViewSize | null,
+): readonly PanelHandle[] {
+  const placement = placePanels(panels, size);
+  const handles: PanelHandle[] = [];
+  if (panels.fields.shown && placement.fields === "column")
+    handles.push("fields");
+  if (placement.preview === "side") handles.push("preview");
+  if (placement.preview === "below") handles.push("split");
+  return handles;
+}
+
+/** The widest a host draws a panel in a view of `size`. */
+const drawnLimit = (size: ViewSize | null) =>
+  size ? panelLimit(size.width) : PANEL_WIDTH.max;
+
+/**
+ * The widest the column `side` may be while every column keeps its place:
+ * the editor keeps {@link EDITOR_MIN} beside the columns as they are drawn,
+ * so no edge, key or menu entry moves a column out of the side.
+ */
+export function columnLimit(
+  panels: WorkbenchPanels,
+  side: PanelSide,
+  size: ViewSize | null,
+): number {
+  const limit = drawnLimit(size);
+  if (size === null) return limit;
+  const placement = placePanels(panels, size);
+  // A panel the placement takes out of the side has no column to keep.
+  const isColumn =
+    side === "fields"
+      ? placement.fields === "column"
+      : placement.preview === "side";
+  if (!isColumn) return limit;
+  const other = side === "fields" ? panels.preview : panels.fields;
+  const otherIsColumn =
+    side === "fields"
+      ? placement.preview === "side"
+      : panels.fields.shown && placement.fields === "column";
+  const room =
+    size.width -
+    EDITOR_MIN.width -
+    (otherIsColumn ? clampPanelWidth(other.width, limit) : 0);
+  return clampPanelWidth(room, limit);
+}
+
+/**
+ * The size of `handle`'s panel as the reader sees it: a column's drawn
+ * width, or the Preview's drawn height under the editor.
+ */
+function handleSize(
+  panels: WorkbenchPanels,
+  handle: PanelHandle,
+  size: ViewSize | null,
+) {
+  if (handle !== "split")
+    return clampPanelWidth(panels[handle].width, drawnLimit(size));
+  return size
+    ? previewBelowHeight(panels.preview.height, size.height)
+    : panels.preview.height;
+}
+
+/** The size saved for `handle`'s panel: a column's width, or the Preview's share of the height. */
+const storedSize = (handle: PanelHandle, panels: WorkbenchPanels) =>
+  handle === "split" ? panels.preview.height : panels[handle].width;
+
+/**
+ * The Preview's share as drawn: a short view draws a saved share less
+ * than it asks for, and a step starts from what the reader sees.
+ */
+const drawnShare = (panels: WorkbenchPanels, size: ViewSize | null) =>
+  size && size.height > 0
+    ? Math.min(
+        panels.preview.height,
+        Math.round(
+          (previewBelowHeight(panels.preview.height, size.height) * 100) /
+            size.height,
+        ),
+      )
+    : panels.preview.height;
+
+/** What sizing a panel reads besides the panels themselves. */
+export interface PanelBounds {
+  /** The view the panels are drawn in; null until the host measures it. */
+  readonly size: ViewSize | null;
+  /** The host's default panels, which a reset returns to. */
+  readonly defaults: WorkbenchPanels;
+}
+
+/**
+ * A column steps from the width the view draws, and every column size stays
+ * within {@link columnLimit}, a reset too; the split steps from the share
+ * the view draws.
+ */
+export function resizePanel(
+  handle: PanelHandle,
+  resize: PanelResize,
+  { size, defaults }: PanelBounds,
+): (panels: WorkbenchPanels) => WorkbenchPanels {
+  if (handle === "split")
+    return (panels) =>
+      setPreviewHeight(
+        resize === "reset"
+          ? storedSize(handle, defaults)
+          : drawnShare(panels, size) +
+              (resize === "grow" ? MENU_STEP.height : -MENU_STEP.height),
+      )(panels);
+  return (panels) => {
+    const step = resize === "grow" ? MENU_STEP.width : -MENU_STEP.width;
+    const width =
+      resize === "reset"
+        ? storedSize(handle, defaults)
+        : handleSize(panels, handle, size) + step;
+    return setPanelWidth(
+      handle,
+      clampPanelWidth(width, columnLimit(panels, handle, size)),
+    )(panels);
+  };
+}
+
+/**
+ * Whether {@link resizePanel} changes anything: a step what the reader
+ * sees, a reset the size saved.
+ */
+export function canResizePanel(
+  handle: PanelHandle,
+  resize: PanelResize,
+  bounds: PanelBounds,
+): (panels: WorkbenchPanels) => boolean {
+  const apply = resizePanel(handle, resize, bounds);
+  const measure =
+    resize === "reset"
+      ? (panels: WorkbenchPanels) => storedSize(handle, panels)
+      : (panels: WorkbenchPanels) => handleSize(panels, handle, bounds.size);
+  return (panels) => measure(apply(panels)) !== measure(panels);
+}

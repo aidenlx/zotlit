@@ -53,6 +53,7 @@ import {
   citationExampleLabel,
   entryDiagnostics,
   fieldSnippet,
+  panelSizeMenus,
   routeDiagnosis,
   routeProblem,
   setAdvanced,
@@ -1728,19 +1729,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.pane)
-        .setTitle(m.workbench_show_preview())
-        .setIcon("panel-right")
-        .setChecked(this.registry.get(this.workbench.panels).preview.shown)
-        .onClick(() => this.togglePanel("preview")),
-    );
-    menu.addItem((item) =>
-      item
-        .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_fields())
         .setIcon("panel-left")
         .setChecked(this.registry.get(this.workbench.panels).fields.shown)
         .onClick(() => this.togglePanel("fields")),
     );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_show_preview())
+        .setIcon("panel-right")
+        .setChecked(this.registry.get(this.workbench.panels).preview.shown)
+        .onClick(() => this.togglePanel("preview")),
+    );
+    this.#addPanelSizeMenu(menu);
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.open)
@@ -1803,6 +1805,38 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setIcon("rotate-ccw")
           .onClick(() => this.#start(Effect.ignore(this.#restoreDefault()))),
       );
+  }
+  /**
+   * One submenu per handle the leaf draws, named as the handle is, to grow,
+   * shrink or reset its panel without a drag (WCAG 2.5.7).
+   */
+  #addPanelSizeMenu(menu: Menu): void {
+    const { registry } = this;
+    const { panels, panelDefaults } = this.workbench;
+    const menus = panelSizeMenus(workbenchM, registry.get(panels), {
+      size: registry.get(this.viewSize),
+      defaults: panelDefaults,
+    });
+    for (const { axis, label, items } of menus)
+      menu.addItem((item) => {
+        item
+          .setSection(MENU_SECTION.pane)
+          .setTitle(label)
+          .setIcon(`move-${axis}`);
+        const submenu = item.setSubmenu();
+        for (const size of items)
+          submenu.addItem((entry) =>
+            entry
+              .setTitle(size.label)
+              .setIcon(
+                size.resize === "reset"
+                  ? "rotate-ccw"
+                  : `${size.resize === "grow" ? "unfold" : "fold"}-${axis}`,
+              )
+              .setDisabled(size.disabled)
+              .onClick(() => registry.update(panels, size.apply)),
+          );
+      });
   }
   /**
    * The Preview panel's settings (ADR 0048), while the panel shows: what the
