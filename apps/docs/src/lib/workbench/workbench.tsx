@@ -3,8 +3,10 @@
 // under 1180 px the field column becomes the dialog the toolbar "Add a field"
 // button opens, and under 780 px the pane fills the screen with the result
 // behind a view switch.
-import { Layer } from "effect";
-import * as Atom from "effect/reactivity/Atom";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Option } from "effect";
+import type { Layer } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import {
   ArrowLeft,
   Download,
@@ -14,32 +16,17 @@ import {
   Save,
   X,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useStore } from "zustand";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
-import {
-  entryPosition,
-  entrySlice,
-  WorkbenchDocumentController,
-} from "@zotlit/workbench/document";
+import { entryPosition, entrySlice } from "@zotlit/workbench/document";
 import type {
   WorkbenchProblem,
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
-import {
-  currentCallSite,
-  DEFAULT_PROFILE_SOURCE,
-  SAMPLE_ITEMS,
-} from "@zotlit/workbench/render";
+import { currentCallSite, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type {
   RenderDiagnostic,
   WorkbenchReportContext,
@@ -56,11 +43,9 @@ import {
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
-  createWorkbenchEditor,
-  createWorkbenchStore,
-  useFork,
-  useForkedEffect,
-  useRenderState,
+  patch,
+  setAdvanced as setViewAdvanced,
+  setTab as setViewTab,
   diagnosticText,
   fieldSnippet,
   problemText,
@@ -72,7 +57,6 @@ import {
   AnnotationPointer,
   AnnotationSampleBar,
   AnnotationSectionBar,
-  annotationSamples,
   NameFolderPane,
   NotePane,
   PropertiesPane,
@@ -82,9 +66,8 @@ import type {
   WorkbenchTab,
   EntryDiagnostic,
   WorkbenchDiagnosis,
-  WorkbenchEditorInstance,
   WorkbenchHost,
-  WorkbenchStore,
+  WorkbenchInsertTarget,
 } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
@@ -108,18 +91,22 @@ import { annotationHeaderMark } from "./annotation-mark";
 import { ConnectionBar, ConnectionNotice } from "./connection-bar";
 import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
-import type { SampleItem } from "./fields";
 import {
   AddFieldButton,
   ProfileMenuLabel,
   WorkbenchFrame,
-  WorkbenchSkeleton,
   WorkbenchHelp,
 } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
+import { makeWebPage } from "./page-model";
+import type {
+  PageLayout,
+  Replacement,
+  WebPage,
+  WebWorkbench,
+} from "./page-model";
 import { WebPreview } from "./preview";
-import { Rendering } from "./rendering";
 import { PageRuntime, usePageBridge } from "./runtime";
 import type { PageServices } from "./runtime";
 import { SampleBar } from "./sample-bar";
@@ -128,18 +115,12 @@ import {
   downloadProfile,
   profileFileName,
   createProfileHandoffSource,
-  Transfer,
 } from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
-import { DEFAULT_SAMPLE, useWorkbenchDraft } from "./use-workbench-draft";
-import type { ProfileHydration } from "./workbench-connection";
 
 /** The result becomes a column once both reading and editing have room. */
 const WIDE_LAYOUT = "(min-width: 780px)";
-
-/** The page's one runtime, which every editor it opens shares. */
-const PAGE_RUNTIME = Atom.runtime(Layer.empty);
 
 /** The Workbench on a page runtime of its own, which closing the page disposes. */
 export function Workbench({
@@ -155,110 +136,126 @@ export function Workbench({
   );
 }
 
+/** Where the host inserts, read from the editor at the moment it asks. */
+interface EditorReads {
+  insertTarget: () => WorkbenchInsertTarget | null;
+}
+
+/** The page's atoms, its host, and the one editor they serve. */
 function WorkbenchPage() {
   const bridge = usePageBridge();
-  const fork = useFork(bridge.run);
-  const [controller, setController] = useState(
-    () => new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
-  );
-  const fileInput = useRef<HTMLInputElement>(null);
-  // Where the sheet was opened from, so closing it hands the keyboard back.
-  const addField = useRef<HTMLButtonElement>(null);
-  const [sample, setSample] = useState<SampleItem>(DEFAULT_SAMPLE);
+  const [page] = useState(() => makeWebPage(bridge));
+  const sample = useAtomValue(page.chosen);
+  // The editor's caret, read when the host asks for it.
+  const reads = useRef<EditorReads>({ insertTarget: () => null });
   const { host, overlays } = useWebHost({
     snapshot: sample,
     notice: (text) => toast.add({ title: text, type: "info" }),
-    insertTarget: () => ({ slice, range: caret }),
+    insertTarget: () => reads.current.insertTarget(),
   });
-  const [store] = useState(createWorkbenchStore);
-  const [editor, setEditor] = useState<WorkbenchEditorInstance | null>(null);
-  // What names this page in a copied error report, read once per failed
-  // attempt. It is kept current here rather than captured at creation, so a
-  // report describes the draft and paper the failing attempt actually ran on.
-  const named = useRef<() => WorkbenchReportContext>(() => ({}));
-  // Resource ownership follows the host; a replacement document attaches below.
-  const acquireEditor = useEffectEvent(
-    (ownerHost: WorkbenchHost, ownerStore: WorkbenchStore) =>
-      createWorkbenchEditor({
-        host: ownerHost,
-        store: ownerStore,
-        controller,
-        runtime: PAGE_RUNTIME,
-        reportContext: () => named.current(),
-      }),
+  const workbench = useAtomValue(page.workbench);
+  return (
+    <WorkbenchSession
+      page={page}
+      workbench={workbench}
+      host={host}
+      overlays={overlays}
+      reads={reads.current}
+    />
   );
-  useEffect(() => {
-    const owner = acquireEditor(host, store);
-    setEditor(owner);
-    return () => owner[Symbol.dispose]();
-  }, [host, store]);
-  const scheduler = editor?.scheduler ?? null;
-  useEffect(() => {
-    store.getState().setItem({
-      id: sample.item.indexedKey,
-      title: sample.item.title,
-    });
-  }, [store, sample]);
-  const { result, trigger, attempt } = useRenderState(scheduler);
-  // What the result pane's own render found. The editor owns the Problems
-  // area, so the preview hands its findings up rather than explaining them
-  // beside its own empty result.
-  const [previewProblems, setPreviewProblems] = useState<
-    readonly RenderDiagnostic[]
-  >([]);
-  const [revision, setRevision] = useState(0);
-  const [annotationChoice, setAnnotationChoice] = useState<string | null>(null);
-  const { current: itemAnnotations, example: selectedAnnotation } = useMemo(
-    () => annotationSamples(sample, annotationChoice),
-    [sample, annotationChoice],
-  );
-  useEffect(
-    () => setAnnotationChoice(selectedAnnotation.id),
-    [selectedAnnotation.id],
-  );
-  const [previewAnnotationChoice, setPreviewAnnotationChoice] = useState(
-    selectedAnnotation.id,
-  );
+}
+
+function WorkbenchSession({
+  page,
+  workbench,
+  host,
+  overlays,
+  reads,
+}: {
+  page: WebPage;
+  workbench: WebWorkbench;
+  host: WorkbenchHost;
+  overlays: ReactNode;
+  reads: EditorReads;
+}) {
+  const { editor, model, show, chooseAnnotation } = workbench;
+  const registry = editor.registry;
+  const controller = useAtomValue(model.controller);
+  const sample = useAtomValue(page.chosen);
+  const read = useAtomValue(page.read);
+  const retained = useAtomValue(page.retained);
+  // The paper's data is restored the way the renderer restores it, so the
+  // field list waits for the same read the render does.
+  const ready = AsyncResult.isSuccess(read);
+  const readSample = Option.getOrNull(AsyncResult.value(read));
+  const fileInput = useRef<HTMLInputElement>(null);
+  // Where the sheet was opened from, so closing it hands the keyboard back.
+  const addField = useRef<HTMLButtonElement>(null);
+  const { result, trigger, attempt } = useAtomValue(model.scheduler.state);
+  const { current: itemAnnotations, example: selectedAnnotation } =
+    useAtomValue(workbench.annotations);
   const annotationResult =
     result?.annotationId === selectedAnnotation.id &&
     result.annotationRevision === selectedAnnotation.revision
       ? result
       : null;
-  const tab = useStore(store, (state) => state.tab);
-  const advanced = useStore(store, (state) => state.advanced);
-  const { setTab, setAdvanced } = store.getState();
+  const tab = useAtomValue(model.tab);
+  const advanced = useAtomValue(model.advanced);
+  const setTab = (next: WorkbenchTab) =>
+    registry.update(model.view, setViewTab(next));
+  const setAdvanced = (next: boolean) =>
+    registry.update(model.view, setViewAdvanced(next));
+  const openInObsidianCommand = useAtomSet(workbench.openInObsidian);
+  const loadSelectedItem = useAtomSet(workbench.loadItem);
+  const fileMessage = useAtomValue(workbench.notice);
+  const shownManifest = useAtomValue(workbench.manifest);
+  const { present } = workbench;
+  // What the editor reveals, which row is open, and where the caret is: the
+  // model's presentation, so every pane reads one place.
+  const presentation = useAtomValue(model.view, (state) => state.presentation);
+  const openRow = presentation.selected;
+  const reveal = presentation.reveal;
+  const focusField = presentation.fieldFocus;
+  const caret: WorkbenchSliceRange = presentation.selection?.range ?? {
+    from: 0,
+    to: 0,
+  };
+  const setOpenRow = (selected: number | null) => present({ selected });
+  const setReveal = (next: WorkbenchSliceRange | null) =>
+    present({ reveal: next });
+  const setFocusField = (fieldFocus: { field: string } | null) =>
+    present({ fieldFocus });
+  const setCaret = (range: WorkbenchSliceRange) =>
+    present({ selection: { slice, range } });
+  const importFileCommand = useAtomSet(workbench.importFile);
+  const save = useAtomSet(workbench.save);
+  const { drafts, layout: layoutAtom } = workbench;
+  const dirty = useAtomValue(drafts.dirty);
+  const restorable = useAtomValue(drafts.restorable);
+  const location = useAtomValue(page.location);
   // Which of the two the narrow screen is showing, and whether the field list
   // is open over it. Both are the narrow layout's alone: a wide screen shows
   // the pane, the result, and the field list at once.
-  const [view, setView] = useState<"edit" | "result">("edit");
-  const [sheet, setSheet] = useState(false);
-  const [openRow, setOpenRow] = useState<number | null>(null);
-  const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
-  const latestRevision = useRef(0);
-  const [pendingAction, setPendingAction] = useState<{
-    label: string;
-    run: () => void;
-  } | null>(null);
+  const layout = useAtomValue(layoutAtom);
+  const { view, sheet, pending } = layout;
+  const arrange = (changes: Partial<PageLayout>) =>
+    registry.update(layoutAtom, patch<PageLayout>(changes));
+  const setView = (next: "edit" | "result") => arrange({ view: next });
+  const setSheet = (open: boolean) => arrange({ sheet: open });
+  const noteCaret = {
+    get current() {
+      return registry.get(layoutAtom).noteCaret;
+    },
+    set current(range: WorkbenchSliceRange) {
+      arrange({ noteCaret: range });
+    },
+  };
   const [handoffSource] = useState(createProfileHandoffSource);
-  const [fileMessage, setFileMessage] = useState<string | null>(null);
-  const replaceConnected = useRef(false);
-  // The Name and folder control a manifest problem opens, as a fresh object
-  // every time, so selecting the same problem twice opens it again.
-  const [focusField, setFocusField] = useState<{ field: string } | null>(null);
-  const [caret, setCaret] = useState<WorkbenchSliceRange>({ from: 0, to: 0 });
-  const noteCaret = useRef(caret);
-  // The field list restores the snapshot the way the renderer does, so it waits
-  // for the same Temporal the restoration needs.
-  const [temporal, setTemporal] = useState(
-    () => globalThis.Temporal !== undefined,
-  );
   const {
     connection,
     saveTarget,
     resources,
-    resourcesStale,
     citationStyles,
-    saveAgainst,
     connectionBusy,
     resumable,
     itemBusy,
@@ -266,26 +263,11 @@ function WorkbenchPage() {
     message: connectionMessage,
     reconnect,
     disconnect,
-    reloadProfile,
-    loadSelectedItem,
-    save,
-  } = useWorkbenchConnection({
-    controller,
-    onHydrate: openSelectedProfile,
-    onItemLoaded: setSample,
-    onSaved: ({ reference, source }) => drafts.rebase({ reference, source }),
-  });
-  const drafts = useWorkbenchDraft({
-    controller,
-    revision,
-    sample,
-    annotationSelection: previewAnnotationChoice,
-    saveTarget,
-  });
+  } = useWorkbenchConnection(page);
   /** The document, language, and paper behind whatever attempt fails next. */
   const reportContext = useCallback(
     (root: string): WorkbenchReportContext => ({
-      document: drafts.location.reference,
+      document: location.reference,
       language: controller.language,
       root,
       selection: sample.item.indexedKey,
@@ -293,71 +275,10 @@ function WorkbenchPage() {
         ? { zotlitVersion: connection.pluginVersion }
         : {}),
     }),
-    [connection, drafts.location.reference, controller, sample],
+    [connection, location.reference, controller, sample],
   );
-  named.current = () => reportContext("note");
+  reads.insertTarget = () => ({ slice, range: caret });
 
-  /** Opens the Profile a connection hydrated, with what it kept beside it. */
-  function openSelectedProfile({
-    selected,
-    installationId,
-    kept,
-    retainedExpected,
-    snapshot,
-  }: ProfileHydration) {
-    const opened = {
-      reference: selected.document.reference,
-      source: selected.source,
-      installationId,
-      ...(snapshot
-        ? {
-            snapshot,
-            annotationSelection: annotationSamples(
-              snapshot,
-              previewAnnotationChoice,
-            ).example.id,
-          }
-        : {}),
-    };
-    // A connection that comes back to the document already open leaves the text
-    // and its undo history where they are: the connection was lost, the work
-    // was not. The vault counts as part of that identity, so the same reference
-    // read out of another vault is another document and opens as one. The
-    // vault's own bytes become the saved state the draft is measured against,
-    // so an unsaved edit stays an unsaved edit.
-    if (
-      drafts.location.reference === opened.reference &&
-      drafts.location.installationId === opened.installationId &&
-      !replaceConnected.current
-    ) {
-      drafts.rebase(opened);
-      if (snapshot) setSample(snapshot);
-      // The text on screen still descends from the revision it was read at, so
-      // Save answers for that one: the vault moved, this draft did not.
-      if (retainedExpected) saveAgainst(retainedExpected);
-      return;
-    }
-    drafts.adopt(opened, replaceConnected.current ? null : kept);
-    replaceConnected.current = false;
-    loadDocument(selected.source);
-    if (snapshot) setSample(snapshot);
-  }
-
-  useEffect(
-    () =>
-      controller.subscribe(() => {
-        latestRevision.current += 1;
-        setRevision(latestRevision.current);
-      }),
-    [controller],
-  );
-  useEffect(() => setFileMessage(null), [revision]);
-  useEffect(() => editor?.attach(controller), [editor, controller]);
-  useForkedEffect(
-    bridge.run,
-    () => bridge.provide(Rendering.use((rendering) => rendering.temporal)),
-    { deps: [bridge], onSuccess: () => setTemporal(true) },
-  );
   // The Editor and Result tabs stand under 780 px alone, so a window that grows
   // past them leaves the reader in the pane rather than on a result no tab
   // reads as chosen.
@@ -371,71 +292,28 @@ function WorkbenchPage() {
   }, []);
 
   // One reading of the problems behind both gates: the screen a refused Profile
-  // gets, and the render it never starts. A connected bundle is read before any
-  // compilation, so a partial the vault holds in Eta refuses the Profile here
-  // rather than through a diagnostic the renderer raises mid-render.
+  // gets, and the render it never starts (the model's Item data holds the
+  // render). A connected bundle is read before any compilation, so a partial
+  // the vault holds in Eta refuses the Profile here rather than through a
+  // diagnostic the renderer raises mid-render.
   const unsupported = [
     ...unsupportedProblems(controller.problems),
     ...unsupportedDependencies(resources?.dependencies),
   ];
-  const refused = unsupported.length > 0;
-  // A draft the parser refuses renders as nothing, so the last good result
-  // stands beside the Problems strip while the reader repairs it, rather than
-  // emptying the sheet and reporting the same parse error twice.
-  const unparsed = controller.document === null;
-  const renderable = !refused && !unparsed;
 
-  useEffect(
-    () =>
-      // A Profile the web host refuses is never compiled, so nothing renders
-      // it, and a bundle read for another draft would render this one against
-      // the wrong partials — the last good result stands until its own bundle
-      // lands.
-      scheduler?.setInput({
-        document: drafts.location.reference,
-        snapshot: sample,
-        annotation: selectedAnnotation,
-        hold: unparsed ? "invalid" : !renderable || resourcesStale,
-        resources,
-      }),
-    [
-      scheduler,
-      drafts.location.reference,
-      sample,
-      selectedAnnotation,
-      unparsed,
-      renderable,
-      resources,
-      resourcesStale,
-    ],
-  );
-
-  // The last manifest the document parsed with. The header and the Name and
-  // folder form read it, so repairing an invalid draft blanks neither.
   const manifest = controller.document?.manifest;
-  const [shownManifest, setShownManifest] = useState(manifest ?? null);
-  useEffect(() => {
-    if (manifest) setShownManifest(manifest);
-  }, [manifest]);
   const profile = {
     name: shownManifest?.name ?? m.workbench_title(),
     description: shownManifest?.description ?? "",
   };
 
-  // The paper this Profile is written for: the bundled Item carrying its sample
-  // item type. A type no bundled Item carries leaves the paper on screen, and
-  // the header says which type went unanswered.
+  // The paper this Profile is written for is the model's to choose; a type no
+  // bundled Item carries leaves the paper on screen, and the header says which
+  // type went unanswered.
   const sampleItemType = shownManifest?.sampleItemType;
   const bundledForType = SAMPLE_ITEMS.find(
     (item) => item.item.itemType === sampleItemType,
   );
-  useEffect(() => {
-    if (bundledForType)
-      setSample((held) =>
-        held.provenance.kind === "connected" ? held : bundledForType,
-      );
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- one selection per named type, not per parse of the same manifest
-  }, [sampleItemType]);
 
   // What the editors complete and explain against: every partial this Profile
   // can call, whether the manifest carries it or a connected bundle answers it.
@@ -447,10 +325,10 @@ function WorkbenchPage() {
     [shownManifest, resources],
   );
 
-  const diagnoses = workbenchDiagnoses(controller.problems, [
-    ...(result?.diagnostics ?? []),
-    ...previewProblems,
-  ]);
+  const diagnoses = workbenchDiagnoses(
+    controller.problems,
+    result?.diagnostics ?? [],
+  );
   const problems = useWorkbenchProblems({
     diagnoses,
     trigger,
@@ -719,16 +597,11 @@ function WorkbenchPage() {
           "value" in selectedProperty &&
           typeof selectedProperty.value === "string")));
   const annotationData = useMemo(() => {
-    if (!temporal) return null;
+    if (!ready) return null;
     const data = rootData(sample, "annotation", selectedAnnotation)!;
     data.citation = annotationResult?.annotationCitation ?? null;
     return data;
-  }, [
-    temporal,
-    sample,
-    selectedAnnotation,
-    annotationResult?.annotationCitation,
-  ]);
+  }, [ready, sample, selectedAnnotation, annotationResult?.annotationCitation]);
   /**
    * What the editor's own completion and hover resolve against: the root the
    * pane the reader is in writes, the partials this Profile can call, and this
@@ -741,7 +614,7 @@ function WorkbenchPage() {
       controller.filenameSlice,
       position,
     );
-    const data = !temporal
+    const data = !ready
       ? null
       : currentRoot === "annotation"
         ? annotationData
@@ -776,32 +649,8 @@ function WorkbenchPage() {
     setCaret(selection);
   }
 
-  /** Opens `source` as the document being edited, with a history of its own. */
-  function loadDocument(source: string) {
-    setController(new WorkbenchDocumentController(source));
-    setFileMessage(null);
-    setShownManifest(null);
-    setAdvanced(false);
-    setView("edit");
-    setSheet(false);
-    setTab("note");
-    setOpenRow(null);
-    setReveal(null);
-    noteCaret.current = { from: 0, to: 0 };
-    setCaret(noteCaret.current);
-  }
-
   function openInObsidian() {
-    const source = handoffSource(controller.source);
-    fork(
-      bridge.provide(
-        Transfer.use((transfer) => transfer.openInObsidian(source)),
-      ),
-      {
-        onSuccess: () => setFileMessage(m.workbench_open_obsidian_copied()),
-        onFailure: () => setFileMessage(m.workbench_open_obsidian_failed()),
-      },
-    );
+    openInObsidianCommand(handoffSource(controller.source));
   }
 
   /** Download always returns the exact source, including an unfinished draft. */
@@ -811,27 +660,12 @@ function WorkbenchPage() {
       profileFileName(manifest?.id, { draft: controller.document === null }),
     );
     if (!canSaveToVault)
-      drafts.rebase({ ...drafts.location, source: controller.source });
+      drafts.rebase({ ...location, source: controller.source });
     toast.add({ title: m.workbench_download_complete(), type: "success" });
   }
 
-  function replaceProfile(label: string, run: () => void) {
-    if (drafts.dirty) setPendingAction({ label, run });
-    else run();
-  }
-
-  function openStandalone(source: string) {
-    drafts.adopt({ reference: "standalone", source }, null);
-    loadDocument(source);
-  }
-
   function importFile(file: File | undefined) {
-    if (!file) return;
-    fork(bridge.provide(Transfer.use((transfer) => transfer.readFile(file))), {
-      onSuccess: (source) =>
-        replaceProfile(m.workbench_import(), () => openStandalone(source)),
-      onFailure: () => setFileMessage(m.workbench_import_failed()),
-    });
+    if (file) importFileCommand(file);
   }
 
   function openTab(id: WorkbenchTab) {
@@ -849,7 +683,7 @@ function WorkbenchPage() {
   const connected = connection.state === "connected";
   const canSaveToVault =
     connected &&
-    saveTarget?.reference === drafts.location.reference &&
+    saveTarget?.reference === location.reference &&
     connection.capabilities.includes("selected-profile:save");
   // One input serves both screens, because the handoff is where a reader who
   // cannot edit this Profile reaches for another one.
@@ -871,9 +705,9 @@ function WorkbenchPage() {
 
   const replacementDialog = (
     <Dialog
-      open={pendingAction !== null}
+      open={pending !== null}
       onOpenChange={(open) => {
-        if (!open) setPendingAction(null);
+        if (!open) workbench.settle(false);
       }}
     >
       <DialogContent>
@@ -888,9 +722,7 @@ function WorkbenchPage() {
             size="xs"
             onClick={() => {
               download();
-              const next = pendingAction;
-              setPendingAction(null);
-              next?.run();
+              workbench.settle(true);
             }}
           >
             {m.workbench_replace_download()}
@@ -898,13 +730,9 @@ function WorkbenchPage() {
           <Button
             variant="outline"
             size="xs"
-            onClick={() => {
-              const next = pendingAction;
-              setPendingAction(null);
-              next?.run();
-            }}
+            onClick={() => workbench.settle(true)}
           >
-            {pendingAction?.label}
+            {pending && replacementLabel(pending)}
           </Button>
           <DialogClose render={<Button variant="ghost" size="xs" />}>
             {m.workbench_keep_editing()}
@@ -913,8 +741,6 @@ function WorkbenchPage() {
       </DialogContent>
     </Dialog>
   );
-
-  if (!scheduler) return <WorkbenchSkeleton />;
 
   if (unsupported.length > 0) {
     return (
@@ -933,7 +759,7 @@ function WorkbenchPage() {
     );
   }
 
-  const page = (
+  const frame = (
     <WorkbenchFrame
       name={profile.name}
       actions={
@@ -951,23 +777,14 @@ function WorkbenchPage() {
                 {m.workbench_import()}
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() =>
-                  replaceProfile(m.workbench_start_default(), () =>
-                    openStandalone(DEFAULT_PROFILE_SOURCE),
-                  )
-                }
+                onClick={() => workbench.replace({ kind: "default" })}
               >
                 <FilePlus2 aria-hidden />
                 {m.workbench_start_default()}
               </DropdownMenuItem>
               {connected && (
                 <DropdownMenuItem
-                  onClick={() =>
-                    replaceProfile(m.workbench_reload_profile(), () => {
-                      replaceConnected.current = true;
-                      reloadProfile();
-                    })
-                  }
+                  onClick={() => workbench.replace({ kind: "reload" })}
                 >
                   <FolderOpen aria-hidden />
                   {m.workbench_reload_profile()}
@@ -1009,9 +826,8 @@ function WorkbenchPage() {
           editingConnectedProfile={canSaveToVault}
           onReconnect={() => {
             // Reconnecting the current vault document preserves its draft and history.
-            if (saveTarget?.reference === drafts.location.reference)
-              reconnect();
-            else replaceProfile(m.workbench_connection_reconnect(), reconnect);
+            if (saveTarget?.reference === location.reference) reconnect();
+            else workbench.replace({ kind: "reconnect" });
           }}
           onDisconnect={disconnect}
         />
@@ -1028,7 +844,7 @@ function WorkbenchPage() {
               over that page alone: a standalone reader has no vault to send a
               template to. */}
 
-          {drafts.restorable && (
+          {restorable && (
             <section
               aria-label={m.workbench_restore_heading()}
               className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-s-2 border-b border-s-fd-primary border-b-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal"
@@ -1041,19 +857,7 @@ function WorkbenchPage() {
                 <Button
                   variant="outline"
                   size="xs"
-                  onClick={() => {
-                    const kept = drafts.restore();
-                    if (!kept) return;
-                    loadDocument(kept.source);
-                    // A tab that closed on a vault paper comes back to the
-                    // text alone, so the paper on screen stands.
-                    if (kept.snapshot) setSample(kept.snapshot);
-                    setAnnotationChoice(kept.annotationSelection ?? null);
-                    setPreviewAnnotationChoice(
-                      kept.annotationSelection ?? selectedAnnotation.id,
-                    );
-                    if (kept.expected) saveAgainst(kept.expected);
-                  }}
+                  onClick={workbench.restoreDraft}
                 >
                   {m.workbench_restore_accept()}
                 </Button>
@@ -1073,7 +877,7 @@ function WorkbenchPage() {
         canSaveToVault
           ? draft
             ? m.workbench_save_fix()
-            : drafts.dirty
+            : dirty
               ? m.workbench_unsaved()
               : m.workbench_saved_profile()
           : m.workbench_browser_draft()
@@ -1086,17 +890,17 @@ function WorkbenchPage() {
       fields={
         <FieldList
           root={root}
-          sample={sample}
+          sample={readSample}
           annotation={selectedAnnotation}
           citation={annotationResult?.annotationCitation}
-          ready={temporal}
+          ready={ready}
           mode={fieldMode}
           disabled={fieldDisabled}
           onInsertNode={insertNode}
         />
       }
       editor={
-        <WorkbenchEditorProvider editor={editor}>
+        <>
           <EditToolbar onModeChange={changeMode}>
             <AddFieldButton
               ref={addField}
@@ -1169,7 +973,7 @@ function WorkbenchPage() {
                       id="workbench-inline-annotation-sample"
                       current={itemAnnotations}
                       example={selectedAnnotation}
-                      onSelect={setAnnotationChoice}
+                      onSelect={chooseAnnotation}
                     />
                   }
                   formatProblem={
@@ -1287,42 +1091,37 @@ function WorkbenchPage() {
               </div>
               <FieldList
                 root={root}
-                sample={sample}
+                sample={readSample}
                 annotation={selectedAnnotation}
                 citation={annotationResult?.annotationCitation}
-                ready={temporal}
+                ready={ready}
                 mode={fieldMode}
                 disabled={fieldDisabled}
                 onInsertNode={insertNode}
               />
             </DialogContent>
           </Dialog>
-        </WorkbenchEditorProvider>
+        </>
       }
       result={
         <WebPreview
-          annotationChoice={previewAnnotationChoice}
-          onAnnotationChoice={setPreviewAnnotationChoice}
-          source={controller.source}
-          document={drafts.location.reference}
-          sample={sample}
-          resources={resources}
-          hold={unparsed ? "invalid" : !renderable || resourcesStale}
+          annotations={{
+            current: itemAnnotations,
+            example: selectedAnnotation,
+          }}
+          onAnnotationChoice={chooseAnnotation}
           mode={showAnnotation ? "annotation" : "note"}
           onShowProblem={showProblem}
-          publishProblems={setPreviewProblems}
-          reportContext={() =>
-            reportContext(showAnnotation ? "annotation" : "note")
-          }
           sampleBar={
             <SampleBar
               sample={sample}
+              retained={retained}
               connection={connection}
               {...(sampleItemType !== undefined && !bundledForType
                 ? { unmatchedItemType: sampleItemType }
                 : {})}
               busy={itemBusy}
-              onShow={setSample}
+              onShow={show}
               onLoad={loadSelectedItem}
             />
           }
@@ -1348,7 +1147,9 @@ function WorkbenchPage() {
           value={problems.diagnoses}
           onReveal={showProblem}
         >
-          {page}
+          <WorkbenchEditorProvider editor={editor}>
+            {frame}
+          </WorkbenchEditorProvider>
         </WorkbenchDiagnosticsProvider>
       </WorkbenchHostProvider>
     </WorkbenchThemeProvider>
@@ -1372,4 +1173,18 @@ function AnnotationProblemMarker({
       {m.workbench_problem_show()}
     </button>
   );
+}
+
+/** The action a held replacement runs, as the dialog's button names it. */
+function replacementLabel(next: Replacement): string {
+  switch (next.kind) {
+    case "import":
+      return m.workbench_import();
+    case "default":
+      return m.workbench_start_default();
+    case "reload":
+      return m.workbench_reload_profile();
+    case "reconnect":
+      return m.workbench_connection_reconnect();
+  }
 }

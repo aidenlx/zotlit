@@ -4,17 +4,17 @@
 import { useAtomValue } from "@effect/atom-react";
 import { Effect } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
-import { useMemo } from "react";
 
 import { isChildItemFields } from "@zotlit/db";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import type { AnnotationExample } from "@zotlit/workbench/render";
-import { annotationOption, useWorkbenchModel } from "@zotlit/workbench/ui";
+import { annotationOption } from "@zotlit/workbench/ui";
 import type { WorkbenchHost, WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
+import { viewRuntime } from "@/lib/view-atoms";
 import { awaitItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
 import { DEFAULT_LIMIT, ItemLookup } from "@/services/item-lookup/service";
@@ -39,23 +39,7 @@ const itemChoices = (hits: readonly SearchHit[]): WorkbenchItemChoice[] =>
         ],
   );
 
-/** A read of the recent Items, with the services it needs provided. */
-export type RecentItems = Effect.Effect<readonly WorkbenchItemChoice[]>;
-
 const NO_RECENT: readonly WorkbenchItemChoice[] = [];
-
-/**
- * What `recentItems` answers, read on the editor's runtime; none until it
- * answers. The caller's unmount interrupts the read.
- */
-export function useRecentItems(
-  recentItems: RecentItems,
-): readonly WorkbenchItemChoice[] {
-  const { runtime } = useWorkbenchModel();
-  const read = useMemo(() => runtime.atom(recentItems), [runtime, recentItems]);
-  const result = useAtomValue(read);
-  return AsyncResult.isSuccess(result) ? result.value : NO_RECENT;
-}
 
 /** The recently updated parent Items, at most three. */
 export const recentItemChoices: Effect.Effect<
@@ -65,6 +49,18 @@ export const recentItemChoices: Effect.Effect<
 > = Effect.flatMap(ItemLookup, (lookup) =>
   lookup.search("", { limit: 3 }),
 ).pipe(Effect.map((hits) => itemChoices(hits)));
+
+/**
+ * The recently updated parent Items, read while a list shows them; a list
+ * that leaves interrupts the read.
+ */
+export const recentItemsAtom = viewRuntime.atom(recentItemChoices);
+
+/** What {@link recentItemsAtom} answers; none until it answers. */
+export function useRecentItems(): readonly WorkbenchItemChoice[] {
+  const result = useAtomValue(recentItemsAtom);
+  return AsyncResult.isSuccess(result) ? result.value : NO_RECENT;
+}
 
 /**
  * Ask the reader for an Item: the Sample Items, the recently updated Items,

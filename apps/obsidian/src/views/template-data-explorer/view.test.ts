@@ -1,37 +1,20 @@
 // @vitest-environment happy-dom
 import type { ItemView as MockItemView } from "@mock/obsidian";
 import { Deferred, Effect } from "effect";
-import type {
-  App,
-  EventRef,
-  Vault,
-  ViewStateResult,
-  Workspace,
-  WorkspaceLeaf,
-} from "obsidian";
+import type { App, Workspace, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
-import { pickItem } from "@/services/item-lookup/search-modal";
 import { defaults } from "@/services/settings/schema";
 import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
-import {
-  activeTemplateWorkbench,
-  subscribeActiveTemplateWorkbench,
-} from "@/views/note-preview/register";
 import {
   workbenchItemChoice,
   workbenchItemSearch,
 } from "@/views/template-workbench/item-choice";
-import type {
-  TemplateAuthoringContext,
-  TemplateWorkbenchView,
-} from "@/views/template-workbench/view";
 
 import { makeExplorerHost, waitFor } from "./__fixtures__";
 import type { ExplorerHost, ExplorerReads } from "./__fixtures__";
@@ -39,18 +22,6 @@ import { TemplateDataExplorerView } from "./view";
 import type { ExplorerViewDeps } from "./view";
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-vi.mock("@/views/note-preview/register", () => ({
-  onCompanionStateRestored: (
-    app: App,
-    result: import("obsidian").ViewStateResult,
-    callback: () => void,
-  ) => {
-    result.done = () => app.workspace.onLayoutReady(callback);
-  },
-  subscribeActiveTemplateWorkbench: vi.fn(),
-  registerCompanionHistory: vi.fn(() => () => {}),
-  activeTemplateWorkbench: vi.fn(),
-}));
 vi.mock("@/services/item-lookup/search-modal", () => ({
   pickItem: vi.fn(async () => null),
 }));
@@ -82,27 +53,7 @@ class ExplorerView extends TemplateDataExplorerView {
   }
 }
 
-interface HostEvent {
-  name: string;
-  callback: (...args: unknown[]) => void;
-}
-
-function host(events = new Map<EventRef, HostEvent>()) {
-  const trigger = vi.fn((name: string, ...args: unknown[]) => {
-    for (const event of events.values())
-      if (event.name === name) event.callback(...args);
-  });
-  const on = vi.fn();
-  const offref = vi.fn((ref: EventRef) => {
-    events.delete(ref);
-  });
-  on.mockImplementation(
-    (name: string, callback: (...args: unknown[]) => void): EventRef => {
-      const ref: EventRef = {};
-      events.set(ref, { name, callback });
-      return ref;
-    },
-  );
+function host() {
   const requestSaveLayout: Workspace["requestSaveLayout"] = Object.assign(
     vi.fn(() => requestSaveLayout),
     {
@@ -111,25 +62,20 @@ function host(events = new Map<EventRef, HostEvent>()) {
     },
   );
   const app = stubService<App>("App", {
-    vault: stubService<Vault>("Vault", { on, offref }),
     workspace: stubService<Workspace>("Workspace", {
-      on,
-      offref,
-      trigger,
       getActiveFile: () => null,
       requestSaveLayout,
     }),
     loadLocalStorage: () => null,
   });
-  const leaf = (pinned = false) => {
+  const leaf = () => {
     const value = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-      pinned,
       updateHeader: vi.fn(),
     });
     Object.defineProperty(value, "app", { value: app });
     return value;
   };
-  return { app, events, leaf, trigger };
+  return { app, leaf };
 }
 
 function viewDeps(): ExplorerViewDeps {
@@ -153,39 +99,8 @@ function viewDeps(): ExplorerViewDeps {
   });
 }
 
-it("binds copied context to its editor, addresses field requests, and releases workspace listeners", async () => {
-  const { app, events, leaf, trigger } = host();
-  const editorLeaf = leaf();
-  const context: TemplateAuthoringContext = {
-    leaf: editorLeaf,
-    path: "profiles/paper.md",
-    kind: "profile",
-    item: { id: "PAPER001", title: "Paper" },
-    root: "note",
-    tab: "note",
-    advanced: false,
-    annotationId: null,
-    citation: null,
-    partial: null,
-    canInsertField: true,
-  };
-  const editor = {
-    runtime: testRuntime(),
-    leaf: editorLeaf,
-    authoringContext: context,
-    getViewData: () => "A note",
-    chooseItem: vi.fn(),
-  } as unknown as TemplateWorkbenchView;
-  let binding: (editor: TemplateWorkbenchView | null) => void = () => {};
-  vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
-  const unbind = vi.fn();
-  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
-    (_app, listener) => {
-      binding = listener;
-      listener(editor);
-      return unbind;
-    },
-  );
+it("shows its own Item, offers no field insertion, and stops its Zotero reads on close", async () => {
+  const { app, leaf } = host();
   read.mockResolvedValue({
     kind: "data",
     data: { title: "Native paper" },
@@ -195,139 +110,38 @@ it("binds copied context to its editor, addresses field requests, and releases w
   document.body.append(view.contentEl);
   try {
     await act(async () => view.open());
-    expect(view.contentEl.textContent).toContain("Native paper");
+    await act(async () =>
+      view.setState({ itemIndexedKey: "PAPER001" }, { history: false }),
+    );
+    await vi.waitFor(() =>
+      expect(view.contentEl.textContent).toContain("Native paper"),
+    );
+    expect(read).toHaveBeenLastCalledWith("PAPER001", "note");
     expect(explorerHost.zoteroSubscribers()).toBe(1);
-    const insertion = () =>
-      [...view.contentEl.querySelectorAll<HTMLElement>('[role="button"]')].find(
+    // Its fields are copy-only: no editor receives them.
+    expect(
+      [...view.contentEl.querySelectorAll<HTMLElement>("[aria-label]")].some(
         (button) =>
           button.getAttribute("aria-label") ===
           m.workbench_fields_put_in_note(),
-      );
-    const insert = insertion();
-    expect(insert).toBeDefined();
-    await act(async () => insert!.click());
-    expect(trigger).toHaveBeenCalledWith(
-      "zotlit:insert-template-field",
-      expect.objectContaining({
-        leaf: editorLeaf,
-        node: expect.objectContaining({ path: ["title"] }),
-      }),
-    );
-    vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
-    const insertions = trigger.mock.calls.filter(
-      ([name]) => name === "zotlit:insert-template-field",
-    ).length;
-    await act(async () => insert!.click());
-    expect(
-      trigger.mock.calls.filter(
-        ([name]) => name === "zotlit:insert-template-field",
       ),
-    ).toHaveLength(insertions);
-    vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
-    const before = read.mock.calls.length;
-    view.leaf.pinned = true;
-    await act(async () =>
-      trigger("zotlit:authoring-context", {
-        ...context,
-        item: { id: "OTHER001", title: "Other" },
-      }),
-    );
-    expect(read.mock.calls.length).toBe(before);
-    view.leaf.pinned = false;
-    await act(async () =>
-      trigger("zotlit:authoring-context", {
-        ...context,
-        leaf: {},
-        item: { id: "OTHER001", title: "Other" },
-      }),
-    );
-    expect(read.mock.calls.length).toBe(before);
-    await act(async () =>
-      trigger("zotlit:authoring-context", {
-        ...context,
-        canInsertField: false,
-      }),
-    );
-    expect(insertion()).toBeUndefined();
-    await act(async () => trigger("zotlit:authoring-context", context));
-    expect(insertion()).toBeDefined();
-    await act(async () => binding(null));
-    expect(view.contentEl.textContent).toContain("Native paper");
-    expect(insertion()).toBeUndefined();
-    await act(async () => binding(editor));
-    expect(insertion()).toBeDefined();
-    const earlierLeaf = leaf();
-    const earlierPeer = {
-      runtime: testRuntime(),
-      leaf: earlierLeaf,
-      authoringContext: {
-        ...context,
-        leaf: earlierLeaf,
-        path: "profiles/books.md",
-        item: null,
-      },
-      getViewData: () => "Books output.",
-      chooseItem: vi.fn(),
-    } as unknown as TemplateWorkbenchView;
-    view.leaf.pinned = true;
-    vi.mocked(activeTemplateWorkbench).mockReturnValue(earlierPeer);
-    const heldInsertion = insertion()!;
-    await act(async () => binding(earlierPeer));
-    expect(view.contentEl.textContent).toContain("Native paper");
-    expect(view.getState()).toMatchObject({ itemIndexedKey: "PAPER001" });
-    expect(insertion()).toBeUndefined();
-    const beforeMismatch = trigger.mock.calls.filter(
-      ([name]) => name === "zotlit:insert-template-field",
-    ).length;
-    await act(async () => heldInsertion.click());
-    expect(
-      trigger.mock.calls.filter(
-        ([name]) => name === "zotlit:insert-template-field",
-      ),
-    ).toHaveLength(beforeMismatch);
-    view.leaf.pinned = false;
-    await act(async () => binding(earlierPeer));
-    expect(view.getState()).toMatchObject({ itemIndexedKey: null });
-    expect(view.contentEl.textContent).not.toContain("Native paper");
-    expect(view.contentEl.textContent).toContain(m.workbench_search_zotero());
-    const launchResult: ViewStateResult = { history: false };
-    await act(async () =>
-      view.setState(
-        { itemIndexedKey: "PAPER002", zotlitLaunch: true },
-        launchResult,
-      ),
-    );
-    launchResult.done?.();
-    expect(view.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
-    expect(view.getState()).not.toHaveProperty("zotlitLaunch");
-    expect(read).toHaveBeenLastCalledWith("PAPER002", "note");
-    expect(earlierPeer.authoringContext.item).toBeNull();
-    expect(pickItem).not.toHaveBeenCalled();
+    ).toBe(false);
     // A Zotero change reads the shown Item again.
     const reads = read.mock.calls.length;
     await act(async () => explorerHost.changeZotero());
     await act(() =>
       waitFor(() => expect(read).toHaveBeenCalledTimes(reads + 1)),
     );
-    expect(read).toHaveBeenLastCalledWith("PAPER002", "note");
+    expect(read).toHaveBeenLastCalledWith("PAPER001", "note");
   } finally {
     await act(async () => view.close());
     view.contentEl.remove();
   }
-  expect(events.size).toBe(0);
-  expect(unbind).toHaveBeenCalledOnce();
   await waitFor(() => expect(explorerHost.zoteroSubscribers()).toBe(0));
 });
 
 it("restores independent Explorer navigation after delayed data and keeps search out of workspace saves", async () => {
   const { app, leaf } = host();
-  vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
-  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
-    (_app, listener) => {
-      listener(null);
-      return () => {};
-    },
-  );
   let release!: (value: TemplateDataLoadResult) => void;
   const data = new Promise<TemplateDataLoadResult>((resolve) => {
     release = resolve;
@@ -344,7 +158,6 @@ it("restores independent Explorer navigation after delayed data and keeps search
     anchorAnnotationKey: null,
     root: "note",
     collapsedSections: ["record"],
-    sourceFile: "profiles/paper.md",
   };
   await using cleanup = new AsyncDisposableStack();
   cleanup.defer(() => {
@@ -353,7 +166,14 @@ it("restores independent Explorer navigation after delayed data and keeps search
   });
   cleanup.defer(() => act(async () => view.close()));
   await act(async () => view.open());
-  await act(async () => view.setState(descriptor, { history: false }));
+  // A leaf saved as an editor's Fields pane names its file; it restores as
+  // this standalone Explorer, with its Item.
+  await act(async () =>
+    view.setState(
+      { ...descriptor, sourceFile: "profiles/paper.md" },
+      { history: false },
+    ),
+  );
   const saved = view.getEphemeralState() as {
     zotlitDataExplorer: Record<string, unknown>;
   };
@@ -389,6 +209,15 @@ it("restores independent Explorer navigation after delayed data and keeps search
   expect(document.activeElement).toBe(typing);
   expect(saves).not.toHaveBeenCalled();
   expect(view.getState()).toEqual(descriptor);
+  // The file the Fields pane named has no effect: the Explorer saves none, and
+  // offers no field to an editor.
+  expect(view.getState()).not.toHaveProperty("sourceFile");
+  expect(
+    [...view.contentEl.querySelectorAll("[aria-label]")].some(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_put_in_note(),
+    ),
+  ).toBe(false);
   await act(async () => {
     input.value = "";
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -416,184 +245,8 @@ it("restores independent Explorer navigation after delayed data and keeps search
   ).toBe("");
 });
 
-it("applies an explicit Item choice to the requesting pinned Explorer and leaves cancellation and other pins unchanged", async () => {
-  const { app, events, leaf } = host();
-  let context: TemplateAuthoringContext = {
-    leaf: leaf(),
-    path: "profiles/paper.md",
-    kind: "profile",
-    item: { id: "PAPER001", title: "First paper" },
-    root: "note",
-    tab: "note",
-    advanced: false,
-    annotationId: null,
-    citation: null,
-    partial: null,
-    canInsertField: true,
-  };
-  let accepted = true;
-  const editor = {
-    runtime: testRuntime(),
-    get authoringContext() {
-      return context;
-    },
-    chooseItem: vi.fn(() =>
-      Effect.sync(() => {
-        if (!accepted) return false;
-        context = {
-          ...context,
-          item: { id: "PAPER002", title: "Second paper" },
-        };
-        for (const event of events.values())
-          if (event.name === "zotlit:authoring-context")
-            event.callback(context);
-        return true;
-      }),
-    ),
-  } as unknown as TemplateWorkbenchView;
-  Object.defineProperty(editor, "leaf", { value: context.leaf });
-  vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
-  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
-    (_app, listener) => {
-      listener(editor);
-      return () => {};
-    },
-  );
-  read.mockImplementation(async (key) => ({
-    kind: "data",
-    data: { title: key === "PAPER001" ? "First paper" : "Second paper" },
-  }));
-  await using cleanup = new AsyncDisposableStack();
-  const views = [0, 1].map(() => {
-    const view = new ExplorerView(leaf(true), viewDeps());
-    Object.defineProperty(view, "app", { value: app });
-    cleanup.defer(() => act(async () => view.close()));
-    return view;
-  });
-  const [requesting, held] = views as [ExplorerView, ExplorerView];
-  await act(async () => {
-    for (const view of views) {
-      await view.open();
-      await view.setState({}, { history: false });
-    }
-  });
-  const choose = (requesting as unknown as MockItemView).actions.find(
-    (button) => button.getAttribute("aria-label") === m.workbench_choose_item(),
-  )!;
-  await act(async () => choose.click());
-  expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
-  await vi.waitFor(() =>
-    expect(requesting.contentEl.textContent).toContain("Second paper"),
-  );
-  expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
-  expect(held.contentEl.textContent).toContain("First paper");
-  expect(held.getState()).toMatchObject({ itemIndexedKey: "PAPER001" });
-  accepted = false;
-  context = {
-    ...context,
-    item: { id: "PAPER003", title: "Unrelated paper" },
-  };
-  await act(async () => choose.click());
-  expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
-});
-
-it("keeps pinned Explorer navigation and insertion when its Profile is renamed", async () => {
-  const { app, events, leaf, trigger } = host();
-  const editorLeaf = leaf();
-  const context: TemplateAuthoringContext = {
-    leaf: editorLeaf,
-    path: "profiles/paper.md",
-    kind: "profile",
-    item: { id: "PAPER001", title: "Paper" },
-    root: "note",
-    tab: "note",
-    annotationId: null,
-    citation: null,
-    partial: null,
-    advanced: false,
-    canInsertField: true,
-  };
-  const editor = {
-    runtime: testRuntime(),
-    leaf: editorLeaf,
-    authoringContext: context,
-    chooseItem: vi.fn(),
-  } as unknown as TemplateWorkbenchView;
-  vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
-  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
-    (_app, listener) => {
-      listener(editor);
-      return () => {};
-    },
-  );
-  read.mockResolvedValue({
-    kind: "data",
-    data: { title: "Native paper" },
-  });
-  const view = new ExplorerView(leaf(true), viewDeps());
-  Object.defineProperty(view, "app", { value: app });
-  document.body.append(view.contentEl);
-  try {
-    await act(async () => view.open());
-    const input =
-      view.contentEl.querySelector<HTMLInputElement>('input[type="search"]') ??
-      view.contentEl.querySelector<HTMLInputElement>("input")!;
-    await act(async () => {
-      input.value = "Native";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    const before = view.getState();
-    const ephemeral = view.getEphemeralState();
-    const loads = read.mock.calls.length;
-    Object.assign(editor, {
-      authoringContext: {
-        ...context,
-        path: "profiles/renamed.md",
-        item: { id: "OTHER001", title: "Other" },
-      },
-    });
-    await act(async () => {
-      trigger("zotlit:authoring-context", editor.authoringContext);
-      trigger("rename", { path: "profiles/renamed.md" }, "profiles/paper.md");
-    });
-    expect(view.getState()).toEqual({
-      ...before,
-      sourceFile: "profiles/renamed.md",
-    });
-    expect(view.getEphemeralState()).toEqual(ephemeral);
-    expect(read.mock.calls.length).toBe(loads);
-    expect(view.contentEl.textContent).toContain("Native paper");
-    const insert = [
-      ...view.contentEl.querySelectorAll<HTMLElement>('[role="button"]'),
-    ].find(
-      (button) =>
-        button.getAttribute("aria-label") === m.workbench_fields_put_in_note(),
-    );
-    expect(insert).toBeDefined();
-    await act(async () => insert!.click());
-    expect(trigger).toHaveBeenCalledWith(
-      "zotlit:insert-template-field",
-      expect.objectContaining({
-        leaf: editorLeaf,
-        node: expect.objectContaining({ path: ["title"] }),
-      }),
-    );
-  } finally {
-    await act(async () => view.close());
-    view.contentEl.remove();
-  }
-  expect(events.size).toBe(0);
-});
-
 it("closes an open Item chooser when a newer choice starts", async () => {
   const { app, leaf } = host();
-  vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
-  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
-    (_app, listener) => {
-      listener(null);
-      return () => {};
-    },
-  );
   const chooserOpened = Promise.withResolvers<void>();
   const answer = Deferred.makeUnsafe<WorkbenchItemChoice | null>();
   let chooserClosed = false;

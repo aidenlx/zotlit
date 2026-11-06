@@ -140,7 +140,7 @@ describe("the web host", () => {
   it("takes a confirmation away when the Workbench interrupts it", async () => {
     let fiber!: Fiber.Fiber<boolean>;
     act(() => {
-      fiber = host.run(
+      fiber = Effect.runFork(
         host.confirm({ title: "Replace?", body: "", confirm: "Replace" }),
       );
     });

@@ -13,6 +13,8 @@ import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
 import { buildRuntime } from "@/lib/effect-layer";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import { yieldToMain } from "@/lib/yield-to-main";
+import { ItemLookup } from "@/services/item-lookup/service";
+import type { SearchHit } from "@/services/item-lookup/service";
 import { TemplateDataError } from "@/services/template-workbench/data";
 import type {
   TemplateDataLoader,
@@ -22,13 +24,11 @@ import { TemplateDataReads } from "@/services/template-workbench/data-reads";
 import { Template } from "@/services/template/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
-import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import {
   holdExplorerModel,
   makeExplorerModel,
   refresh,
-  setContext,
   setTarget,
 } from "./model";
 import type { ExplorerModel, ExplorerSession, ExplorerState } from "./model";
@@ -40,6 +40,8 @@ export interface ExplorerReads {
     root: ContractRoot,
   ): Promise<TemplateDataLoadResult>;
   readCitation?: TemplateDataLoader["loadCitation"];
+  /** The recently updated Items an Item list offers. */
+  recent?(): Effect.Effect<SearchHit[]>;
 }
 
 export interface ExplorerHost {
@@ -67,7 +69,6 @@ export interface ExplorerSessionHandle extends Disposable {
     root: TemplateRoot,
     annotationId?: string | null,
   ): void;
-  setContext(context: TemplateAuthoringContext): void;
   refresh(): void;
   /** Waits until the load the last change started has its last read. */
   ready(): Promise<void>;
@@ -105,6 +106,10 @@ export async function makeExplorerHost(
     Layer.mergeAll(
       layerUnreadViewServices,
       layerHost(),
+      Layer.mock(ItemLookup, {
+        search: () =>
+          Effect.suspend(() => reads.recent?.() ?? Effect.succeed([])),
+      }),
       Layer.mock(TemplateDataReads, {
         read: (indexedKey, root) =>
           fromPromise((signal) => {
@@ -181,7 +186,6 @@ export async function makeExplorerHost(
         apply,
         setTarget: (item, root, annotationId = null) =>
           apply(setTarget(item, root, annotationId)),
-        setContext: (context) => apply(setContext(context)),
         refresh: () => apply(refresh),
         ready: () =>
           waitFor(() => {

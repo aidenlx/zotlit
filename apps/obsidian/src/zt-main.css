@@ -117,6 +117,11 @@
   --cursor-clickable: var(--cursor);
   --cursor-link: var(--cursor-link);
 
+  /* ===== Container sizes ===== */
+  /* Below this width the Template Workbench View stacks its side panels under
+     the editor, so a shown panel never hides the source. */
+  --container-workbench-stack: 40rem;
+
   /* ===== Animation ===== */
   --default-transition-duration: var(--anim-duration-moderate);
   --default-transition-timing-function: var(--anim-motion-smooth);
