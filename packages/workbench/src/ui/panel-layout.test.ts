@@ -220,6 +220,14 @@ describe("sizing a panel without its handle", () => {
       preview: { ...both.preview, shown: false },
     };
     expect(columnLimit(fields, "fields", at(700))).toBe(280);
+    // A panel the placement takes out of the side keeps the 2/5 limit: a
+    // 960 px Preview drawn at 311 px leaves no column room for the Fields.
+    const wide: WorkbenchPanels = {
+      fields: { ...both.fields, width: 260 },
+      preview: { ...both.preview, width: 960 },
+    };
+    expect(placePanels(wide, at(778)).fields).toBe("popover");
+    expect(columnLimit(wide, "fields", at(778))).toBe(311);
     // A view not measured yet holds a column to its largest width.
     expect(columnLimit(both, "fields", null)).toBe(960);
   });

@@ -195,6 +195,12 @@ export function columnLimit(
   const limit = drawnLimit(size);
   if (size === null) return limit;
   const placement = placePanels(panels, size);
+  // A panel the placement takes out of the side has no column to keep.
+  const isColumn =
+    side === "fields"
+      ? placement.fields === "column"
+      : placement.preview === "side";
+  if (!isColumn) return limit;
   const other = side === "fields" ? panels.preview : panels.fields;
   const otherIsColumn =
     side === "fields"
