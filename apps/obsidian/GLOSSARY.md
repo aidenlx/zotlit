@@ -237,11 +237,11 @@ The Template Workbench View's hover popover that names the field, tag, or filter
 _Avoid_: hover card (the Citation Popover's retired alias), template-editor hover, token tooltip
 
 **Preview Panel** _(Obsidian)_:
-The right side panel of the Template Workbench View that shows what the view's document produces for the view's chosen Item: note name, Properties, note body with the Managed Region marked, and one annotation, displayed as Obsidian renders it. It is part of the view, never a leaf of its own; the reader shows, hides, and resizes it, and the view's saved state keeps both. Its heading reads "Note preview".
+The right side panel of the Template Workbench View that shows what the view's document produces for the view's chosen Item: note name, Properties, note body with the Managed Region marked, and one annotation, displayed as Obsidian renders it. It is part of the view, never a leaf of its own; the reader shows, hides, and resizes it, and the view's saved state keeps both. Its heading follows the document kind: "Note preview" for a Profile, "Citation preview" for the Citation Template, and "Partial preview" for a Shared Partial. While it shows, the view's pane menu carries its settings (ADR 0048 as amended by ADR 0081).
 _Avoid_: Note Preview (the retired companion view), template preview (retired for the Explorer, which shows data, not output), render pane, result view (the web column's name)
 
 **Fields Panel** _(Obsidian)_:
-The left side panel of the Template Workbench View that shows the Template Data Explorer's tree for the view's chosen Item and Annotation. It is part of the view, never a leaf of its own; the reader shows, hides, and resizes it, and the view's saved state keeps both. It offers the explorer's copy actions, and it also inserts a field into the view's editor at the cursor.
+The left side panel of the Template Workbench View that shows the Template Data Explorer's tree for the view's chosen Item and Annotation. It is part of the view, never a leaf of its own; the reader shows, hides, and resizes it, and the view's saved state keeps both. It shows for every Template Document kind. Its root is the editor's root until the reader moves it, and any change of the editor's root or Item returns it to the editor's root. It offers the explorer's copy actions, inserts a field into the view's editor at the cursor ("Insert field"), and, while it shows, sets the root that the pane menu's Template Data Export saves.
 _Avoid_: Fields pane, linked explorer, Data Explorer (the standalone view)
 
 **Workbench UI**:

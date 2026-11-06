@@ -223,7 +223,7 @@ Neither command has a default hotkey. Where a Citation Graph cannot be opened, t
 
 ## Literature note actions
 
-The following commands operate on a literature note: the file currently open in the editor must be a ZotLit literature note. They also appear in the **file menu** (right-click the tab or use the file menu icon) under the **zotlit** section. The Template Workbench view raises the same **zotlit** section in its pane menu. While its Preview panel is shown, the pane menu adds a Preview section for the choices that shape the preview and its display toggles.
+The following commands operate on a literature note: the file currently open in the editor must be a ZotLit literature note. They also appear in the **file menu** (right-click the tab or use the file menu icon) under the **zotlit** section. The Template Workbench view raises the same **zotlit** section in its pane menu. While its Preview panel is shown, the pane menu adds the choices that shape the preview, such as <UiLabel name={m.workbench_preview_auto_refresh()} /> and <UiLabel name={m.workbench_show_markdown()} />.
 
 <Command name={m.command_update_note_name()} />
 
@@ -434,9 +434,15 @@ The Workbench view's pane menu is where most template work starts. These entries
 | <UiLabel name={m.template_workbench_partials()} />      | Opens another partial, creates one with <UiLabel name={m.workbench_partial_new()} />, or unpacks the partials a shared profile still carries with <UiLabel name={m.workbench_problem_bundled_partial_unpack()} />. |
 | <UiLabel name={m.template_workbench_open_citation()} /> | Opens the citation text, `zotlit-citation.md`.                                                                                                                                                                     |
 
-**Show fields** and **Show preview** show or hide the view's [side panels](/docs/concepts/template-workbench-view#panels). They are also view actions in the view header, pressed while their panel is shown.
+<UiLabel name={m.workbench_show_fields()} /> and
+<UiLabel name={m.workbench_show_preview()} /> show or hide the view's [side
+panels](/docs/concepts/template-workbench-view#panels), with a check mark while
+their panel is shown. They are also view actions in the view header, pressed
+while their panel is shown. While the Preview panel is shown, the menu also
+holds the [preview
+choices](/docs/concepts/template-workbench-view#preview-panel).
 
-Four entries join the pane menu outside the **zotlit** section. <UiLabel name={m.template_workbench_change_language()} /> switches the document between <UiLabel name={m.workbench_name_language_liquid()} /> and <UiLabel name={m.workbench_name_language_eta()} />, and is not offered for a profile document. <UiLabel name={m.template_data_explorer_menu_export_json()} /> saves the current template data as a JSON file; with the annotation root selected, the same entry reads <UiLabel name={m.template_data_explorer_export_selected_paper()} /> when it can export the whole paper instead. <UiLabel name={m.template_workbench_open_markdown()} /> opens the document as Markdown. <UiLabel name={m.settings_profile_document_restore()} /> moves the Default profile's custom document to the trash, so the built-in profile applies again, and is offered on that document only.
+Four entries join the pane menu outside the **zotlit** section. <UiLabel name={m.template_workbench_change_language()} /> switches the document between <UiLabel name={m.workbench_name_language_liquid()} /> and <UiLabel name={m.workbench_name_language_eta()} />, and is not offered for a profile document. <UiLabel name={m.template_data_explorer_menu_export_json()} /> saves the current template data as a JSON file, for the root the Fields panel shows while that panel is shown; with the annotation root selected, the same entry reads <UiLabel name={m.template_data_explorer_export_selected_paper()} /> when it can export the whole paper instead. <UiLabel name={m.template_workbench_open_markdown()} /> opens the document as Markdown. <UiLabel name={m.settings_profile_document_restore()} /> moves the Default profile's custom document to the trash, so the built-in profile applies again, and is offered on that document only.
 
 ## Onboarding & release
 
