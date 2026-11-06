@@ -4,6 +4,7 @@ import * as Atom from "effect/reactivity/Atom";
 
 import type {
   WorkbenchDocumentController,
+  WorkbenchDocumentKind,
   WorkbenchProblem,
   WorkbenchSliceId,
 } from "./controller";
@@ -23,6 +24,15 @@ export interface WorkbenchDocumentAtoms {
    * the last list that parsed while the draft does not.
    */
   readonly managedEntries: Atom.Atom<readonly ManagedEntrySource[] | null>;
+  /** The Template Document kind, as {@link WorkbenchDocumentController.kind}. */
+  readonly kind: Atom.Atom<WorkbenchDocumentKind>;
+  /** Whether the draft parses, as {@link WorkbenchDocumentController.parsed}. */
+  readonly parsed: Atom.Atom<boolean>;
+  /**
+   * The last Profile manifest that parsed, as
+   * {@link WorkbenchDocumentController.manifest}.
+   */
+  readonly manifest: Atom.Atom<WorkbenchDocumentController["manifest"]>;
   /** Whether the document takes no edit, as {@link WorkbenchDocumentController.readOnly}. */
   readonly readOnly: Atom.Atom<boolean>;
   /**
@@ -71,6 +81,9 @@ export function workbenchDocumentAtoms(
   return {
     revision,
     readOnly,
+    kind: Atom.map(current, (controller) => controller.kind),
+    parsed: fact((controller) => controller.parsed),
+    manifest: fact((controller) => controller.manifest),
     source: fact((controller) => controller.source),
     problems: fact((controller) => controller.problems),
     slices: fact((controller) => controller.slices),

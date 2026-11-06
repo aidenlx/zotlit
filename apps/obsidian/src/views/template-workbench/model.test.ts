@@ -11,6 +11,7 @@ import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import {
   chooseItem,
+  INITIAL_CHOICES,
   INITIAL_VIEW,
   setAdvanced,
   setTab,
@@ -31,8 +32,6 @@ import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 import { makeWorkbenchHost } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
 import {
-  INITIAL_PICKS,
-  chooseAnnotation,
   holdTemplateWorkbenchModel,
   makeTemplateWorkbenchModel,
   readEphemeralWorkbench,
@@ -169,10 +168,8 @@ it.effect("reads the chosen Item once for every surface that shows it", () =>
       snapshot: SNAPSHOT,
     });
     expect(host.registry.get(host.model.title)).toBe(FIRST);
-    // The annotation choice and the tab change the surfaces, not the read.
-    host.registry.update(host.model.picks, chooseAnnotation("other"));
+    // The tab changes the surfaces, not the read.
     host.registry.update(host.model.view, setTab("annotation"));
-    expect(host.registry.get(host.model.choices).annotation).not.toBeNull();
     expect(yield* Queue.takeAll(host.started)).toEqual([FIRST]);
     expect(host.snapshots).toEqual([FIRST]);
   }),
@@ -229,21 +226,21 @@ it("round-trips the saved and ephemeral state through Schema", () => {
       savedWorkbench({
         defaultDraft: false,
         view,
-        picks: {
-          ...INITIAL_PICKS,
+        choices: {
+          ...INITIAL_CHOICES,
           annotationId: "note-1",
           variant: "alt",
           citationExample: null,
+          preview: {
+            mode: "update",
+            live: false,
+            showMarkdown: true,
+            showManaged: false,
+          },
         },
         panels: {
           fields: { shown: false, width: 400 },
           preview: { shown: true, width: 520 },
-        },
-        preview: {
-          mode: "update",
-          live: false,
-          showMarkdown: true,
-          showManaged: false,
         },
         partial: { context: "citation", profile: "books" },
       }),

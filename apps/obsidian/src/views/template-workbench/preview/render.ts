@@ -64,6 +64,7 @@ import {
   readCitationData,
   withSettings,
 } from "@/services/template-workbench/data";
+import { previewBaseline } from "@/services/template-workbench/preview-baseline";
 import {
   syncTemplate,
   profileCall,
@@ -71,10 +72,9 @@ import {
 import { plainTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
 import type { TemplateOperations } from "@/services/template/service";
+export { previewBaseline } from "@/services/template-workbench/preview-baseline";
+import { nativePropertyRows } from "@/services/template-workbench/check-profile";
 
-import { previewBaseline } from "./baseline";
-export { previewBaseline } from "./baseline";
-import { nativePropertyRows } from "./check-profile";
 import { renderDraftCitations } from "./citations";
 import type { PreviewCitation } from "./citations";
 

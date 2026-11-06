@@ -7,6 +7,7 @@ import { useOptionalEditor, useWorkbenchModel } from "./editor";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchModel } from "./model";
+import { pendingView } from "./pending-view";
 import { useIcon, useParts } from "./theme";
 
 import { renderFailed } from "#/render/index";
@@ -122,13 +123,26 @@ export function useExampleState(surface: ExampleSurface): ExampleState {
   if (!result || result === previousResult || (busy && renderFailed(result)))
     return state("loading", m.workbench_loading_item());
   // A result the source has moved past stands until the next one lands, as it
-  // does in the result column. A live render is already on its way; a render
-  // that waits for Run, a hold, or a document the parser refuses says so
-  // beside the example it left behind.
-  if (staleReason !== null && staleReason !== "live")
-    return state("stale", m.workbench_example_awaiting_run(), {
-      retained: result,
-    });
+  // does in the Preview, under the same notice.
+  const pending = pendingView({ staleReason, result, retained }, (output) =>
+    produced(output, surface),
+  );
+  switch (pending.notice) {
+    case "behind":
+      return state("stale", m.workbench_example_awaiting_run(), {
+        retained: result,
+      });
+    case "held":
+      return state("stale", m.workbench_preview_stale(), { retained: result });
+    case "failed":
+      return state(
+        "failed",
+        pending.retained
+          ? m.workbench_preview_retained()
+          : m.workbench_preview_unavailable(),
+        { retained: pending.shown },
+      );
+  }
   if (produced(result, surface)) return state("ready", null);
   // A Managed Frontmatter failure names the row it came from and that row
   // carries it, so only a diagnostic naming the whole surface answers for one.

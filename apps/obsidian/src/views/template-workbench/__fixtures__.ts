@@ -5,7 +5,7 @@ import type { App } from "obsidian";
 import { onTestFinished } from "vitest";
 
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
-import { chooseItem, patch } from "@zotlit/workbench/ui";
+import { chooseItem, setPreview } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
   WorkbenchItemChoice,
@@ -46,8 +46,8 @@ import type {
   ZoteroReadLease,
   ZoteroReadsState,
 } from "@/services/zotero-reads/service";
-import type { NativeRenderDeps } from "@/views/note-preview/render";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
+import type { NativeRenderDeps } from "@/views/template-workbench/preview/render";
 
 import type { WorkbenchActionServices } from "./actions";
 import type { TemplateWorkbenchDeps, TemplateWorkbenchView } from "./view";
@@ -450,7 +450,7 @@ export function chooseSample(
     throw new Error("A Sample Item has sample provenance.");
   const id = `sample:${snapshot.provenance.id}`;
   Atom.batch(() => {
-    view.registry.update(view.model.preview, patch(settings));
+    view.registry.update(view.workbench.choices, setPreview(settings));
     if (view.registry.get(view.model.view).item?.id !== id)
       setViewItem(view, { id, title: snapshot.item.title });
   });

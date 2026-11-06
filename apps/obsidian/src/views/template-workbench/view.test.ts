@@ -39,7 +39,7 @@ import {
   memoryOpener,
   seedWorksSql,
 } from "@/services/zotero-reads/test-utils";
-import { createRenderFixture } from "@/views/note-preview/__fixtures__/render";
+import { createRenderFixture } from "@/views/template-workbench/preview/__fixtures__/render";
 
 import {
   chooseSample,
@@ -73,11 +73,13 @@ vi.mock("./partial-command", () => ({
   createSharedPartialEffect: vi.fn(() => Effect.succeed(null)),
 }));
 
-// The renderers are note-preview's own; here they stand in, so a render reports
+// The renderers are the Preview panel's own; here they stand in, so a render reports
 // which document kind the view asked for and what the session fed it.
-vi.mock("@/views/note-preview/render", async (importOriginal) => {
+vi.mock("@/views/template-workbench/preview/render", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@/views/note-preview/render")>();
+    await importOriginal<
+      typeof import("@/views/template-workbench/preview/render")
+    >();
   const { failedRender, renderIdentity } =
     await import("@zotlit/workbench/render");
   return {
@@ -322,11 +324,11 @@ describe("TemplateWorkbenchView", () => {
     // A second press while the update runs joins it.
     const again = run(h.view.updateOriginatingNote());
     await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
-    expect(h.view.updatingNote).toBe(true);
+    expect(h.view.registry.get(h.view.model.updating)).toBe(true);
     expect(h.updateNote).not.toHaveBeenCalled();
     saved.resolve();
     expect(await again).toBe(await updating);
-    expect(h.view.updatingNote).toBe(false);
+    expect(h.view.registry.get(h.view.model.updating)).toBe(false);
     expect(await updating).toMatchObject({
       outcome: "updated",
       name: "Original",
@@ -437,7 +439,7 @@ describe("TemplateWorkbenchView", () => {
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
       true,
     );
-    expect(h.view.updatingNote).toBe(false);
+    expect(h.view.registry.get(h.view.model.updating)).toBe(false);
     expect(h.updateNote).not.toHaveBeenCalled();
   });
 
@@ -1115,7 +1117,9 @@ An annotation.
     expect(view.getViewData()).toBe(SOURCE);
     expect(materializeDefault).not.toHaveBeenCalled();
     const creating = run(view.customizeDefault());
-    expect(viewState(view).customization === "pending").toBe(true);
+    expect(view.registry.get(view.model.customization) === "pending").toBe(
+      true,
+    );
     // A second press while the document is written joins that write.
     const again = run(view.customizeDefault());
     await vi.waitFor(() =>
@@ -1176,15 +1180,19 @@ An annotation.
     });
     await view.setState({ defaultDraft: true }, { history: false });
     await run(view.customizeDefault());
-    expect(viewState(view).customization === "failed").toBe(true);
-    expect(viewState(view).customization === "pending").toBe(false);
+    expect(view.registry.get(view.model.customization) === "failed").toBe(true);
+    expect(view.registry.get(view.model.customization) === "pending").toBe(
+      false,
+    );
     view.controller.setManifestKey("name", "Attempt after failure");
     view.controller.undo();
     expect(view.getViewData()).toBe(SOURCE);
     expect(materializeDefault).toHaveBeenCalledOnce();
     expect(requestSave).not.toHaveBeenCalled();
     await run(view.customizeDefault());
-    expect(viewState(view).customization === "failed").toBe(false);
+    expect(view.registry.get(view.model.customization) === "failed").toBe(
+      false,
+    );
     expect(view.isDefaultDraft).toBe(false);
   });
 
@@ -1258,7 +1266,7 @@ An annotation.
     await act(async () => {
       customize.click();
       await vi.waitFor(() =>
-        expect(viewState(view).customization).toBe("failed"),
+        expect(view.registry.get(view.model.customization)).toBe("failed"),
       );
     });
     expect(view.contentEl.querySelectorAll('[role="alert"]')).toHaveLength(1);
@@ -1333,7 +1341,7 @@ An annotation.
       ),
     ).resolves.toBeUndefined();
     expect(viewState(view).advanced).toBe(true);
-    expect(view.unavailableDependencies).toHaveLength(1);
+    expect(view.registry.get(view.model.unavailable)).toHaveLength(1);
     view.controller.setManifestKey("name", "Offline edit");
     expect(view.getViewData()).toContain("Offline edit");
     expect(requestSave).toHaveBeenCalledOnce();
@@ -1354,12 +1362,12 @@ An annotation.
       ),
     });
     await expect(run(view.refreshStyles())).resolves.toBeUndefined();
-    expect(view.unavailableDependencies).toHaveLength(1);
+    expect(view.registry.get(view.model.unavailable)).toHaveLength(1);
     expect(view.getViewData()).toBe(SOURCE);
-    expect(view.citationStyles).toEqual([]);
+    expect(view.registry.get(view.model.styles).list).toEqual([]);
     failed = false;
     await run(view.refreshStyles());
-    expect(view.unavailableDependencies).toEqual([]);
+    expect(view.registry.get(view.model.unavailable)).toEqual([]);
   });
 
   it("routes the view shortcut to shared history while leaving text inputs their own shortcut", () => {
@@ -1510,7 +1518,7 @@ An annotation.
     const { view } = setup();
     setViewItem(view, { id: "PAPER001g42", title: "Paper" });
     view.change.setRoot("annotation");
-    Object.defineProperty(view.model, "examples", {
+    Object.defineProperty(view.workbench, "examples", {
       value: Atom.make({
         current: [],
         example: { id: "builtin", root: { indexedKey: "EXAMP001" } },
@@ -1532,7 +1540,7 @@ An annotation.
     setViewItem(view, { id: "PAPER001g42", title: "Paper" });
     view.change.setRoot("annotation");
     const annotation = { id: "real", root: { indexedKey: "ANNO0001g42" } };
-    Object.defineProperty(view.model, "examples", {
+    Object.defineProperty(view.workbench, "examples", {
       value: Atom.make({ current: [annotation], example: annotation }),
     });
     const menu = new Menu();
@@ -2283,7 +2291,7 @@ language: liquid
     expect(editor.contentDOM).toBe(document.activeElement);
   });
 
-  it("reclaims the reading space before navigating to a source problem", async () => {
+  it("reclaims the reading space and opens the Annotation tab for a missing section", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
@@ -2306,13 +2314,15 @@ language: liquid
 
     await press('[data-part="problems-open"]');
     expect(area.dataset.state).toBe("compact");
-    expect(viewState(view).advanced).toBe(true);
-    const editor = EditorView.findFromDOM(
-      view.contentEl.querySelector<HTMLElement>(
-        '[data-workbench-mode="source"] .cm-editor',
-      )!,
-    )!;
-    expect(editor.contentDOM).toBe(document.activeElement);
+    // The section is added from the Annotation tab, as on the web.
+    expect(viewState(view)).toMatchObject({
+      advanced: false,
+      tab: "annotation",
+      root: "annotation",
+    });
+    expect(
+      view.contentEl.querySelector('[data-part="section-bar"]'),
+    ).not.toBeNull();
   });
 
   it("keeps a Profile document on its six tabs, titled by its name", async () => {
@@ -3102,9 +3112,9 @@ language: liquid
     await act(async () => view.open());
 
     expect(view.registry.get(view.model.document)).toMatchObject({
-      kind: "citation",
       path: "templates/zotlit-citation.md",
     });
+    expect(view.registry.get(view.workbench.document.kind)).toBe("citation");
     expect(view.registry.get(view.workbench.document.source)).toBe(
       CITATION_SOURCE,
     );
@@ -3490,12 +3500,55 @@ describe("the side panels of the Template Workbench View", () => {
     const restored = setup();
     cleanup.defer(() => act(async () => restored.view.close()));
     await act(async () => restored.view.setState(saved, { history: false }));
-    expect(restored.view.registry.get(restored.view.model.preview)).toEqual({
-      mode: "update",
-      live: false,
-      showMarkdown: false,
-      showManaged: false,
+    expect(restored.view.registry.get(restored.view.workbench.preview)).toEqual(
+      {
+        mode: "update",
+        live: false,
+        showMarkdown: false,
+        showManaged: false,
+      },
+    );
+  });
+
+  it("restores the reader's choices from a view an older build saved", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    // The shape the build before one owner for the choices wrote.
+    await act(async () =>
+      view.setState(
+        {
+          file: "Templates/Profile.md",
+          tab: "note",
+          itemIndexedKey: null,
+          annotationId: "example:underline",
+          variant: "alt",
+          citationExample: null,
+          advanced: false,
+          preview: {
+            mode: "update",
+            live: false,
+            showMarkdown: true,
+            showManaged: false,
+          },
+        },
+        { history: false },
+      ),
+    );
+    expect(view.registry.get(view.workbench.choices)).toMatchObject({
+      annotationId: "example:underline",
+      variant: "alt",
+      citationExample: null,
+      preview: {
+        mode: "update",
+        live: false,
+        showMarkdown: true,
+        showManaged: false,
+      },
     });
+    expect(view.registry.get(view.workbench.examples).example?.id).toBe(
+      "example:underline",
+    );
   });
 
   // Story 17: what the Preview's render finds is the editor's own problem.
@@ -3647,9 +3700,9 @@ describe("the Fields panel of the Template Workbench View", () => {
     await vi.waitFor(() =>
       expect(fields(view)?.textContent).toContain("CNPAN26A"),
     );
-    const { current } = view.registry.get(view.model.examples);
+    const { current } = view.registry.get(view.workbench.examples);
     await act(async () =>
-      view.registry.update(view.model.picks, (picks) => ({
+      view.registry.update(view.workbench.choices, (picks) => ({
         ...picks,
         annotationId: current[1]!.id,
       })),
@@ -3667,7 +3720,7 @@ describe("the Fields panel of the Template Workbench View", () => {
     await act(async () => view.change.setRoot("citation"));
     const data = () => view.registry.get(view.fields.state).data;
     await act(async () =>
-      view.registry.update(view.model.picks, (picks) => ({
+      view.registry.update(view.workbench.choices, (picks) => ({
         ...picks,
         variant: "alt" as const,
         citationExample: "two-items" as const,
@@ -3677,7 +3730,7 @@ describe("the Fields panel of the Template Workbench View", () => {
     expect(data()!["citations"]).toHaveLength(2);
     // With no example set, the chosen Item's own one-item set stands.
     await act(async () => {
-      view.registry.update(view.model.picks, (picks) => ({
+      view.registry.update(view.workbench.choices, (picks) => ({
         ...picks,
         citationExample: null,
       }));

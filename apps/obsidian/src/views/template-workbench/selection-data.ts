@@ -1,5 +1,5 @@
 // Canonical native selections for the Workbench's built-in Item snapshots.
-import { SAMPLE_ANNOTATIONS, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
@@ -21,15 +21,4 @@ export function getSampleItem(id: string): ItemSnapshot | null {
 
 export function getSampleItemType(id: string): string | null {
   return getSampleItem(id)?.item.itemType ?? null;
-}
-
-/** Supplies the render input for an explicit annotation without selecting a note Item. */
-export function getSampleAnnotationParent(id: string): ItemSnapshot | null {
-  const parent = SAMPLE_ANNOTATIONS.find((sample) => sample.id === id)?.root
-    .parentItem as Record<string, unknown> | undefined;
-  return (
-    SAMPLE_ITEMS.find(
-      (sample) => sample.item.indexedKey === parent?.indexedKey,
-    ) ?? null
-  );
 }

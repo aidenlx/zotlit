@@ -47,6 +47,7 @@ export {
   chooseAnnotation,
   chooseCitation,
   chooseItem,
+  choosePartialProfile,
   INITIAL_CHOICES,
   INITIAL_VIEW,
   makeWorkbenchModel,
@@ -142,6 +143,7 @@ export { citationExampleLabel, citationVariantLabel } from "./citation-preview";
 export { partialContextLabel } from "./partial-preview";
 export { TabBar, TabPanel } from "./tab-bar";
 export { isProfileProblem, TABS, tabLabel, tabLede, tabsFor } from "./tabs";
+export { routeDiagnosis, routeProblem } from "./problem-route";
 export type { WorkbenchTab } from "./tabs";
 export { WorkbenchThemeProvider, useIcon, useParts } from "./theme";
 export type {
@@ -202,6 +204,7 @@ export {
   AnnotationSectionBar,
 } from "./annotation";
 export { annotationSamples } from "./annotation-samples";
+export type { AnnotationExamples } from "./annotation-samples";
 export { SampleSuggester } from "./sample-suggester";
 export type { SampleOption } from "./sample-suggester";
 

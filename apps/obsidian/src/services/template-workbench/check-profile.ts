@@ -20,7 +20,7 @@ import { prepareManagedFrontmatter } from "@/services/note-feature/frontmatter";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { TemplateOperations } from "@/services/template/service";
 
-import { previewBaseline } from "./baseline";
+import { previewBaseline } from "./preview-baseline";
 
 export const PROFILE_OUTPUTS = [
   "filename",

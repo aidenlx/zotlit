@@ -1,8 +1,6 @@
 // The standalone Template Workbench: one master Profile document behind a
-// header, three columns, and the result the reader would get. It folds twice:
-// under 1180 px the field column becomes the dialog the toolbar "Add a field"
-// button opens, and under 780 px the pane fills the screen with the result
-// behind a view switch.
+// header, in three columns: the fields, the pane, and the result the reader
+// would get, as the Template Workbench View in Obsidian lays them out.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Option } from "effect";
 import type { Layer } from "effect";
@@ -14,19 +12,17 @@ import {
   FilePlus2,
   FolderOpen,
   Save,
-  X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { entryPosition, entrySlice } from "@zotlit/workbench/document";
+import { entrySlice } from "@zotlit/workbench/document";
 import type {
-  WorkbenchProblem,
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
-import { currentCallSite, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { RenderDiagnostic } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
 import {
@@ -46,8 +42,9 @@ import {
   diagnosticText,
   entryDiagnostics,
   fieldSnippet,
-  isProfileProblem,
   renderDiagnosis,
+  routeDiagnosis,
+  routeProblem,
   useParts,
   useWorkbenchProblems,
   workbenchDiagnoses,
@@ -65,6 +62,7 @@ import type {
   WorkbenchDiagnosis,
   WorkbenchHost,
   WorkbenchInsertTarget,
+  WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
@@ -88,12 +86,7 @@ import { annotationHeaderMark } from "./annotation-mark";
 import { ConnectionBar, ConnectionNotice } from "./connection-bar";
 import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
-import {
-  AddFieldButton,
-  ProfileMenuLabel,
-  WorkbenchFrame,
-  WorkbenchHelp,
-} from "./frame";
+import { ProfileMenuLabel, WorkbenchFrame, WorkbenchHelp } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
 import { makeWebPage } from "./page-model";
@@ -117,7 +110,6 @@ import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
 
 /** The result becomes a column once both reading and editing have room. */
-const WIDE_LAYOUT = "(min-width: 780px)";
 
 /** The Workbench on a page runtime of its own, which closing the page disposes. */
 export function Workbench({
@@ -186,16 +178,10 @@ function WorkbenchSession({
   const ready = AsyncResult.isSuccess(read);
   const readSample = Option.getOrNull(AsyncResult.value(read));
   const fileInput = useRef<HTMLInputElement>(null);
-  // Where the sheet was opened from, so closing it hands the keyboard back.
-  const addField = useRef<HTMLButtonElement>(null);
   const { result, trigger, attempt } = useAtomValue(model.scheduler.state);
   const { current: itemAnnotations, example: selectedAnnotation } =
-    useAtomValue(workbench.annotations);
-  const annotationResult =
-    result?.annotationId === selectedAnnotation.id &&
-    result.annotationRevision === selectedAnnotation.revision
-      ? result
-      : null;
+    useAtomValue(model.examples);
+  const annotationResult = useAtomValue(model.annotationResult);
   const tab = useAtomValue(model.tab);
   const advanced = useAtomValue(model.advanced);
   const setTab = (next: WorkbenchTab) =>
@@ -205,7 +191,9 @@ function WorkbenchSession({
   const openInObsidianCommand = useAtomSet(workbench.openInObsidian);
   const loadSelectedItem = useAtomSet(workbench.loadItem);
   const fileMessage = useAtomValue(workbench.notice);
-  const shownManifest = useAtomValue(workbench.manifest);
+  // The last manifest that parsed, so repairing a draft blanks neither the
+  // header nor the Name and folder form.
+  const shownManifest = useAtomValue(model.document.manifest);
   const { present } = workbench;
   // What the editor reveals, which row is open, and where the caret is: the
   // model's presentation, so every pane reads one place.
@@ -220,8 +208,6 @@ function WorkbenchSession({
   const setOpenRow = (selected: number | null) => present({ selected });
   const setReveal = (next: WorkbenchSliceRange | null) =>
     present({ reveal: next });
-  const setFocusField = (fieldFocus: { field: string } | null) =>
-    present({ fieldFocus });
   const setCaret = (range: WorkbenchSliceRange) =>
     present({ selection: { slice, range } });
   const importFileCommand = useAtomSet(workbench.importFile);
@@ -230,15 +216,10 @@ function WorkbenchSession({
   const dirty = useAtomValue(drafts.dirty);
   const restorable = useAtomValue(drafts.restorable);
   const location = useAtomValue(page.location);
-  // Which of the two the narrow screen is showing, and whether the field list
-  // is open over it. Both are the narrow layout's alone: a wide screen shows
-  // the pane, the result, and the field list at once.
   const layout = useAtomValue(layoutAtom);
-  const { view, sheet, pending } = layout;
+  const { pending } = layout;
   const arrange = (changes: Partial<PageLayout>) =>
     registry.update(layoutAtom, patch<PageLayout>(changes));
-  const setView = (next: "edit" | "result") => arrange({ view: next });
-  const setSheet = (open: boolean) => arrange({ sheet: open });
   const noteCaret = {
     get current() {
       return registry.get(layoutAtom).noteCaret;
@@ -262,18 +243,6 @@ function WorkbenchSession({
     disconnect,
   } = useWorkbenchConnection(page);
   reads.insertTarget = () => ({ slice, range: caret });
-
-  // The Editor and Result tabs stand under 780 px alone, so a window that grows
-  // past them leaves the reader in the pane rather than on a result no tab
-  // reads as chosen.
-  useEffect(() => {
-    const wide = window.matchMedia(WIDE_LAYOUT);
-    const settle = () => {
-      if (wide.matches) setView("edit");
-    };
-    wide.addEventListener("change", settle);
-    return () => wide.removeEventListener("change", settle);
-  }, []);
 
   // One reading of the problems behind both gates: the screen a refused Profile
   // gets, and the render it never starts (the model's Item data holds the
@@ -361,59 +330,13 @@ function WorkbenchSession({
     ({ part }) => part === "annotation",
   );
 
-  /** Opens the row a diagnostic named, wherever the reader was. */
-  function goToEntry(position: number, range?: WorkbenchSliceRange) {
-    setView("edit");
-    setAdvanced(false);
-    setTab("properties");
-    setOpenRow(position);
-    // A fresh object every time, so selecting the same problem twice reveals it
-    // again.
-    setReveal(range ? { ...range } : null);
-  }
+  /** Opens the pane a routing transition names, in the model's view state. */
+  const route = (
+    transition: (state: WorkbenchViewState) => WorkbenchViewState,
+  ) => registry.update(model.view, transition);
 
-  /**
-   * Opens the pane a problem is repaired in — the row, the note name, the note
-   * body, or Advanced — and reveals the text the parser pointed at.
-   */
-  function goToProblem(problem: WorkbenchProblem) {
-    const { slice: id, range } = problem;
-    const position = entryPosition(id);
-    if (position !== null) {
-      goToEntry(position, range);
-      return;
-    }
-    setView("edit");
-    setAdvanced(id === "advanced");
-    if (id === "note") {
-      setTab("note");
-    }
-    if (id === "annotation" || problem.code === "missing-annotation-section") {
-      openAnnotation();
-      return;
-    }
-    if (id === "filename" || id === "details") {
-      setTab(isProfileProblem(problem) ? "profile" : "name");
-    }
-    // A fresh object every time, so selecting the same problem twice reveals it
-    // again. The Name and folder form writes its manifest fields through
-    // controls rather than an editor, so a problem it owns opens the control
-    // holding the field the parser named instead of revealing text.
-    setReveal(range && id !== "details" ? { ...range } : null);
-    setFocusField(
-      id === "details" && problem.params?.field !== undefined
-        ? { field: problem.params.field }
-        : null,
-    );
-  }
-
-  /**
-   * Reads one problem the result named. The explanation belongs to the editor,
-   * so a narrow screen showing the result switches to it rather than leaving
-   * the reader on a control whose answer is in the other view.
-   */
+  /** Reads one problem the result named, in the editor's Problems area. */
   function showProblem(id: string | null) {
-    setView("edit");
     if (id === null) problems.setOpen(true);
     else problems.select(id);
   }
@@ -424,72 +347,22 @@ function WorkbenchSession({
    * that place again — with the caret and the focus that go with it.
    */
   function returnToTemplate() {
-    setView("edit");
     setReveal({ ...caret });
   }
 
   /** The pane one selected problem is repaired in, whichever kind it is. */
   function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
-    if (diagnosis.kind === "document") {
-      goToProblem(diagnosis.problem);
-      return;
-    }
-    const { part, position, callSite, sourceSite } = diagnosis.diagnostic;
-    // A verified call outranks the part the engine reported the failure under:
-    // a failure inside a called template is repaired where it was called.
-    if (callSite || sourceSite) {
-      const current = currentCallSite(diagnosis.diagnostic, controller);
-      if (current === undefined) {
-        toast.add({
-          title: m.workbench_problems_location_unknown(),
-          type: "info",
-        });
-        return;
-      }
-      // The pane whose own region holds the call; Advanced holds whatever no
-      // editing pane covers.
-      const slice =
-        (["note", "annotation", "filename"] as const).find((id) => {
-          const region = controller.sliceRange(id);
-          return region.from <= current.from && current.from < region.to;
-        }) ?? "advanced";
-      setView("edit");
-      setAdvanced(slice === "advanced");
-      if (slice !== "advanced") setTab(slice === "filename" ? "name" : slice);
-      setReveal({ ...current });
-      return;
-    }
-    if (position !== undefined) {
-      goToEntry(position);
-      return;
-    }
-    if (part === "annotation") {
-      openAnnotation();
-      return;
-    }
-    // The note name is repaired in its own tab, whether or not the failure
-    // named a place inside it. The pane takes the caret with the reveal, so
-    // the reader goes on typing where the Problems area left them.
-    if (part === "filename") {
-      setView("edit");
-      setAdvanced(false);
-      setTab("name");
-      const slice = controller.sliceRange("filename");
-      setReveal({ from: slice.from, to: slice.from });
-      return;
-    }
-    setView("edit");
-    setAdvanced(true);
+    const transition = routeDiagnosis(diagnosis, controller);
+    if (transition) route(transition);
+    else
+      toast.add({
+        title: m.workbench_problems_location_unknown(),
+        type: "info",
+      });
   }
 
   function openAnnotation() {
-    setView("edit");
-    setAdvanced(false);
-    setTab("annotation");
-    const section = controller.annotationSection;
-    setReveal(
-      section ? { from: section.source.from, to: section.source.from } : null,
-    );
+    route(routeProblem({ slice: "annotation" }, controller));
   }
 
   function insertAnnotations() {
@@ -501,7 +374,6 @@ function WorkbenchSession({
         type: "info",
       });
     }
-    setView("edit");
     setAdvanced(false);
     setTab("note");
   }
@@ -554,7 +426,11 @@ function WorkbenchSession({
           typeof selectedProperty.value === "string")));
   const annotationData = useMemo(() => {
     if (!ready) return null;
-    const data = rootData(sample, "annotation", selectedAnnotation)!;
+    const data = rootData(
+      sample,
+      "annotation",
+      selectedAnnotation ?? undefined,
+    )!;
     data.citation = annotationResult?.annotationCitation ?? null;
     return data;
   }, [ready, sample, selectedAnnotation, annotationResult?.annotationCitation]);
@@ -586,9 +462,6 @@ function WorkbenchSession({
         target: caret,
         snippet,
       });
-      // The sheet stands over the pane it writes into, so it leaves with the
-      // snippet it put there.
-      setSheet(false);
       setReveal({ from: head, to: head });
     },
     [fieldDisabled, controller, slice, caret],
@@ -630,7 +503,6 @@ function WorkbenchSession({
   }
 
   function changeMode(source: boolean) {
-    setView("edit");
     setReveal(null);
     if (!source && tab === "note") setCaret(noteCaret.current);
   }
@@ -838,16 +710,11 @@ function WorkbenchSession({
               : m.workbench_saved_profile()
           : m.workbench_browser_draft()
       }
-      view={view}
-      onView={(next) => {
-        setView(next);
-        setSheet(false);
-      }}
       fields={
         <FieldList
           root={root}
           sample={readSample}
-          annotation={selectedAnnotation}
+          annotation={selectedAnnotation ?? undefined}
           citation={annotationResult?.annotationCitation}
           ready={ready}
           mode={fieldMode}
@@ -857,13 +724,7 @@ function WorkbenchSession({
       }
       editor={
         <>
-          <EditToolbar onModeChange={changeMode}>
-            <AddFieldButton
-              ref={addField}
-              open={sheet}
-              onClick={() => setSheet(true)}
-            />
-          </EditToolbar>
+          <EditToolbar onModeChange={changeMode} />
           {/* Everything the reader edits, as one region. A reading that takes
               the whole pane leaves it no height, and it shows nothing rather
               than spilling its tabs and source over the explanation. */}
@@ -1024,39 +885,6 @@ function WorkbenchSession({
               </TabPanel>
             </div>
           </div>
-          <Dialog open={sheet} onOpenChange={setSheet}>
-            <DialogContent
-              finalFocus={addField}
-              className="h-[min(42rem,85dvh)]"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <DialogTitle className="font-sans text-base font-semibold">
-                  {m.workbench_add_field()}
-                </DialogTitle>
-                <DialogClose
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={m.workbench_fields_close()}
-                    />
-                  }
-                >
-                  <X aria-hidden />
-                </DialogClose>
-              </div>
-              <FieldList
-                root={root}
-                sample={readSample}
-                annotation={selectedAnnotation}
-                citation={annotationResult?.annotationCitation}
-                ready={ready}
-                mode={fieldMode}
-                disabled={fieldDisabled}
-                onInsertNode={insertNode}
-              />
-            </DialogContent>
-          </Dialog>
         </>
       }
       result={

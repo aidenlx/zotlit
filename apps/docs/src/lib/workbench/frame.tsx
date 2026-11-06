@@ -6,14 +6,8 @@
 // shared Workbench UI, the site's messages, the UI kit, icons, the web theme, and
 // the connection bar only.
 
-import {
-  ChevronDown,
-  CircleHelp,
-  Download,
-  FolderOpen,
-  Plus,
-} from "lucide-react";
-import type { ReactNode, Ref } from "react";
+import { ChevronDown, CircleHelp, Download, FolderOpen } from "lucide-react";
+import type { ReactNode } from "react";
 
 import {
   EditToolbar,
@@ -38,15 +32,8 @@ import { m } from "@/paraglide/messages.js";
 import { ConnectionBar } from "./connection-bar";
 import { WEB_THEME } from "./theme";
 
-/** The two the narrow screen shows one of. */
-export type WorkbenchView = "edit" | "result";
-
-/** A pane section: shown, or kept for the wide layout alone. */
-function paneClass(shown: boolean): string {
-  return `min-h-0 min-w-0 flex-1 flex-col ${
-    shown ? "flex" : "hidden min-[780px]:flex"
-  }`;
-}
+/** A pane section: a column of the main grid. */
+const PANE_CLASS = "flex min-h-0 min-w-0 flex-1 flex-col";
 
 export function WorkbenchFrame({
   name,
@@ -55,8 +42,6 @@ export function WorkbenchFrame({
   notifications,
   strips,
   status,
-  view,
-  onView,
   fields,
   editor,
   problems,
@@ -75,9 +60,6 @@ export function WorkbenchFrame({
   /** Notices that need attention before editing. */
   strips?: ReactNode;
   status: ReactNode;
-  view: WorkbenchView;
-  /** The narrow view switch's handler; without one the switch is inert. */
-  onView?: (view: WorkbenchView) => void;
   fields: ReactNode;
   editor: ReactNode;
   /** The Problems area, which shares the editor pane with the source. */
@@ -120,54 +102,22 @@ export function WorkbenchFrame({
 
       <main
         id="workbench-editor"
-        className="flex min-h-0 flex-1 flex-col gap-3 p-3 min-[780px]:grid min-[780px]:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] min-[1180px]:grid-cols-[18rem_minmax(0,1fr)_minmax(0,0.9fr)]"
+        className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)_minmax(0,0.9fr)] gap-3 p-3"
       >
-        {/* The pane and the result are columns of their own once there is
-            room for both. */}
-        <div
-          role="group"
-          aria-label={m.workbench_view_label()}
-          className="flex shrink-0 gap-1 rounded-md bg-fd-muted p-1 min-[780px]:hidden"
-        >
-          {(["edit", "result"] as const).map((id) => (
-            <Button
-              key={id}
-              variant={view === id ? "outline" : "ghost"}
-              aria-pressed={view === id}
-              aria-controls={`workbench-${id}-pane`}
-              size="xs"
-              className="flex-1"
-              disabled={onView === undefined}
-              onClick={() => onView?.(id)}
-            >
-              {id === "edit"
-                ? m.workbench_view_editor()
-                : m.workbench_view_result()}
-            </Button>
-          ))}
-        </div>
-
-        {/* A column of its own where three fit; under that width the same list
-            is what "Add a field" opens. */}
-        <div className="hidden min-h-0 min-w-0 grid-cols-1 min-[1180px]:grid">
-          {fields}
-        </div>
+        <div className="grid min-h-0 min-w-0 grid-cols-1">{fields}</div>
 
         {/* The pane the source and the Problems area share. It measures
             itself, so whether a reading fits beside the source is the pane's
             own question rather than the window's. */}
         <section
           id="workbench-edit-pane"
-          className={`@container-[size]/workbench-editor ${paneClass(view === "edit")}`}
+          className={`@container-[size]/workbench-editor ${PANE_CLASS}`}
         >
           {editor}
           {problems}
         </section>
 
-        <section
-          id="workbench-result-pane"
-          className={paneClass(view === "result")}
-        >
+        <section id="workbench-result-pane" className={PANE_CLASS}>
           {result}
         </section>
       </main>
@@ -227,36 +177,6 @@ export function WorkbenchHelp({
   );
 }
 
-/**
- * The "Add a field" button the narrow layout opens the field sheet with, on
- * the toolbar's trailing edge; without a handler it is inert.
- */
-export function AddFieldButton({
-  ref,
-  open = false,
-  onClick,
-}: {
-  ref?: Ref<HTMLButtonElement>;
-  open?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <Button
-      ref={ref}
-      variant="outline"
-      size="xs"
-      disabled={onClick === undefined}
-      onClick={onClick}
-      aria-haspopup="dialog"
-      aria-expanded={open}
-      className="min-[1180px]:hidden"
-    >
-      <Plus aria-hidden />
-      {m.workbench_add_field()}
-    </Button>
-  );
-}
-
 /** A quiet block where content is still to come. */
 function Placeholder({ className = "" }: { className?: string }) {
   return (
@@ -299,13 +219,10 @@ export function WorkbenchSkeleton() {
             />
           }
           status={m.workbench_loading()}
-          view="edit"
           fields={<Placeholder className="min-h-40" />}
           editor={
             <>
-              <EditToolbar>
-                <AddFieldButton />
-              </EditToolbar>
+              <EditToolbar />
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="mb-2 flex shrink-0 gap-2">
                   <TabBar />

@@ -181,11 +181,9 @@ and add actions align at its leading edge.
 
 ## Adaptation and access
 
-At 1180 px and wider, show fields, editor, and result in three columns. Below
-that, fields open in the **Add a field** sheet. Below 780 px, switch between
-editor and result views. These folds protect useful source width. A short,
-narrow viewport scrolls the page while preserving several lines of editor
-space.
+Show fields, editor, and result in three columns at every width, as the
+Template Workbench View in Obsidian does. A short viewport scrolls the page
+while preserving several lines of editor space.
 
 Source and Problems share the editor pane. An open Problems area keeps the share the reader chooses by dragging its top
 divider. Arrow keys adjust the focused divider; Home and End select its size

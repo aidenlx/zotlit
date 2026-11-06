@@ -21,7 +21,7 @@ import { renderCitationRuns } from "@/services/wikilink-reading/render";
 import type { PreviewCitation } from "./citations";
 import type { NativeRenderResult } from "./render";
 
-const logger = getLogger(["note-preview", "markdown"]);
+const logger = getLogger(["views", "template-workbench", "preview"]);
 export function NativeMarkdown({
   app,
   markdown,

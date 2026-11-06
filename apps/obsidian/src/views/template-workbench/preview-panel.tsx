@@ -27,7 +27,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
-import { NativeMarkdown } from "@/views/note-preview/markdown";
+import { NativeMarkdown } from "@/views/template-workbench/preview/markdown";
 
 import { selectionName } from "./selection";
 import { selectionBar, selectionHint, templateWorkbenchButton } from "./theme";
@@ -122,14 +122,13 @@ export function PreviewPanel({
   const { result, retained, busy, staleReason } = useAtomValue(
     workbench.scheduler.state,
   );
-  const { kind } = useAtomValue(model.document);
+  const kind = useAtomValue(workbench.document.kind);
   const root = useAtomValue(workbench.root);
   const item = useAtomValue(workbench.item);
   const title = useAtomValue(model.title);
   const { status, error } = useAtomValue(model.read);
-  const { example } = useAtomValue(model.examples);
-  const { variant, citationExample } = useAtomValue(model.picks);
-  const preview = useAtomValue(model.preview);
+  const { example } = useAtomValue(workbench.examples);
+  const { variant, citationExample, preview } = useAtomValue(workbench.choices);
   const {
     mode,
     caller: partialContext,

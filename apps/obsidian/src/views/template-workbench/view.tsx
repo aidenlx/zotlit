@@ -3,7 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { useAtomValue } from "@effect/atom-react";
 import { Cause, Effect, Schema, Semaphore, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
-import type * as Atom from "effect/reactivity/Atom";
+import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
@@ -35,7 +35,6 @@ import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
   CITATION_EXAMPLE_IDS,
   DEFAULT_PARTIAL_CONTEXT,
-  currentCallSite,
   failedRender,
   isPartialContext,
   renderIdentity,
@@ -47,13 +46,17 @@ import type {
   WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import {
+  chooseAnnotation,
+  chooseCitation,
   chooseItem,
+  choosePartialProfile,
   citationExampleLabel,
   entryDiagnostics,
   fieldSnippet,
-  isProfileProblem,
-  patch,
+  routeDiagnosis,
+  routeProblem,
   setAdvanced,
+  setPreview,
   setRoot,
   setTab,
 } from "@zotlit/workbench/ui";
@@ -64,7 +67,6 @@ import {
   AnnotationPointer,
   useWorkbenchHost,
   createWorkbenchEditor,
-  BUILT_IN_BINDING_DEFAULTS,
   diagnosisForOccurrence,
   NameFolderPane,
   NotePane,
@@ -95,7 +97,6 @@ import type {
   WorkbenchModel,
   WorkbenchViewState,
   TemplateRoot,
-  NameFolderPaneProps,
   PartialPlaceholderHost,
 } from "@zotlit/workbench/ui";
 
@@ -113,8 +114,7 @@ import { BaseNotice } from "@/lib/notice";
 import { Notifier, withOutcome } from "@/lib/notifier";
 import type { NoticeMessage } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
-import type { ProfileSelector } from "@/lib/profile-stamp";
-import { ViewRegistryProvider, viewRuntime } from "@/lib/view-atoms";
+import { ViewRegistryProvider, viewRuntime, watch } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import {
   answerOf,
@@ -135,10 +135,7 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { bibliographyRevisionAtom } from "@/services/pandoc/atoms";
 import { defaultProfilePathAtom, profilesAtom } from "@/services/profile/atoms";
 import { Profile } from "@/services/profile/service";
-import {
-  defaultBindingsAtom,
-  templateFolderAtom,
-} from "@/services/settings/atoms";
+import { templateFolderAtom } from "@/services/settings/atoms";
 import { reportCitationTemplateOpen } from "@/services/template/actions";
 import {
   partialDocumentsAtom,
@@ -148,20 +145,20 @@ import {
 import { Template } from "@/services/template/service";
 import type { PartialUnpackOutcome } from "@/services/template/service";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
-import type {
-  NativeRenderDeps,
-  NativeRenderResult,
-} from "@/views/note-preview/render";
-import {
-  nativeResult,
-  retainNativeOutputs,
-  makeNativeRenderer,
-} from "@/views/note-preview/render";
 import type { ExplorerActions } from "@/views/template-data-explorer/actions";
 import { makeExportTemplateDataCommand } from "@/views/template-data-explorer/atoms";
 import { exportTarget } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
+import type {
+  NativeRenderDeps,
+  NativeRenderResult,
+} from "@/views/template-workbench/preview/render";
+import {
+  nativeResult,
+  retainNativeOutputs,
+  makeNativeRenderer,
+} from "@/views/template-workbench/preview/render";
 import { COMMUNITY } from "@/views/welcome/links";
 
 import { templateWorkbenchAction } from "./actions";
@@ -185,14 +182,12 @@ import { openWorkbenchLayout, setLeafState } from "./layout";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
 import {
-  chooseAnnotation,
-  chooseCitation,
   holdTemplateWorkbenchModel,
+  makePartialPreviews,
   makeTemplateWorkbenchModel,
   readEphemeralWorkbench,
   readSavedWorkbench,
   savedWorkbench,
-  setCustomization,
   setPresentation,
   setPanelWidth,
   showPanel,
@@ -325,6 +320,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #arrival: ArrivingProblem | null = null;
   /** This leaf's host model: its view state, choices, and Item read. */
   readonly model: TemplateWorkbenchModel;
+  /** A Shared Partial's previews; a leaf without the native renderer has none. */
+  readonly partialPreviews: ReturnType<typeof makePartialPreviews> | null;
   /** The Fields panel's atoms over {@link model}. */
   readonly fields: FieldsPanelModel;
   /** The Fields panel's actions: choosing, sections, copy and export. */
@@ -359,29 +356,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #root: Root | null = null;
   #updateActions = () => {};
   #unsubscribe: (() => void) | null = null;
-  get #insertTarget(): WorkbenchInsertTarget | null {
-    return this.#view.presentation.selection;
-  }
-  set #insertTarget(selection: WorkbenchInsertTarget | null) {
-    this.setPresentation({ selection });
-  }
-  #insertRequest: WorkbenchInsertTarget | null = null;
   #closed = false;
   /** Counts the documents this leaf loaded, so each one mounts a fresh tree. */
   #loads = 0;
-  #bindingDefaults = BUILT_IN_BINDING_DEFAULTS;
-  #stylesUnavailable = false;
-  #citationStyles: NameFolderPaneProps["citationStyles"] = [];
-  /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
-  get #partialProfile(): string | null {
-    return this.registry.get(this.model.partialProfile);
-  }
-  set #partialProfile(profile: string | null) {
-    this.registry.set(this.model.partialProfile, profile);
-  }
-  /** The partial `#partialProfile` and this leaf's root were chosen for. */
+  /** The partial this leaf's partial Profile and root were chosen for. */
   #partialChoiceFile: string | null = null;
-  #defaultDraft = false;
+  get #defaultDraft(): boolean {
+    return this.registry.get(this.model.defaultDraft);
+  }
+  set #defaultDraft(value: boolean) {
+    this.registry.set(this.model.defaultDraft, value);
+  }
   #bindingDraft = false;
   #receivingSource = false;
   #sourceRevision = 0;
@@ -391,12 +376,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #initialRead: object | null = null;
   #pendingSource: string | null = null;
   #clearing = false;
-  #originatingNote: {
-    file: TFile;
-    indexedKey: string;
-    template: TFile | null;
-    profile: ProfileSelector;
-  } | null = null;
   /** The launch that sets the originating note; a later one stops an older one. */
   readonly #origins: LatestSlot<ViewServices>;
   /** One save at a time: a native save returns early while another runs. */
@@ -427,10 +406,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   get originatingNote(): TFile | null {
-    return this.#originatingNote?.file ?? null;
+    return this.registry.get(this.model.origin)?.file ?? null;
   }
+  /** Whether the originating note's update runs. */
   get updatingNote(): boolean {
-    return this.#noteUpdates.running();
+    return this.registry.get(this.model.updating);
   }
   /**
    * Fork `flow` on this leaf, for a button or a menu entry. The flow reports
@@ -453,7 +433,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           file &&
           itemKeyFromFrontmatter(this.app.metadataCache.getFileCache(file));
         const resolved = file ? yield* profileOfFile(file) : null;
-        this.#originatingNote =
+        this.registry.set(
+          this.model.origin,
           file && indexedKey && resolved?.ok
             ? {
                 file,
@@ -461,8 +442,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
                 template: this.file,
                 profile: resolved.profile.selector,
               }
-            : null;
-        this.#mount();
+            : null,
+        );
         return file && (!indexedKey || !resolved?.ok) ? file.basename : null;
       }),
       null,
@@ -537,14 +518,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     ViewServices
   > {
     return Effect.gen({ self: this }, function* () {
-      const origin = this.#originatingNote;
+      const origin = this.registry.get(this.model.origin);
       if (!origin) return { outcome: "no-target" } as const;
       const name = origin.file.basename;
       // Session state only: the note update checks the note's own Zotero key
       // against the content its one write replaces. Closing the leaf
       // interrupts the update before the write; a write that started finishes.
       const available = () =>
-        this.#originatingNote === origin &&
+        this.registry.get(this.model.origin) === origin &&
         this.file === origin.template &&
         this.app.vault.getFileByPath(origin.file.path) === origin.file;
       if (!available()) return { outcome: "unavailable", name } as const;
@@ -631,10 +612,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const renderer = deps.nativePreview
       ? makeNativeRenderer(deps.nativePreview)
       : null;
-    this.model = makeTemplateWorkbenchModel({
-      renderPartial: renderer?.partial,
-      source: () => this.#controller.source,
-    });
+    this.model = makeTemplateWorkbenchModel();
     this.#release = holdTemplateWorkbenchModel(deps.registry, this.model);
     // Closing the leaf interrupts every Effect it still runs.
     this.#runner = makeViewRunner(deps.registry);
@@ -643,7 +621,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#noteUpdates = inFlightSlot(
       this.#runner.run,
       Effect.suspend(() => this.#noteUpdate()),
-      () => this.#mount(),
+      () => this.registry.set(this.model.updating, this.#noteUpdates.running()),
     );
     this.#customizing = inFlightSlot(
       this.#runner.run,
@@ -701,14 +679,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       registry: deps.registry,
       runtime: viewRuntime,
       view: this.model.view,
-      choices: this.model.choices,
+      partialName: Atom.map(this.model.document, (facts) => facts.partialName),
       itemData: this.model.itemData,
       controller: this.#controller,
       reportContext: () => this.reportContext(this.#defaultRoot),
       mapResult: nativeResult,
       retain: retainNativeOutputs,
     });
-    this.fields = makeFieldsPanelModel(this.model, {
+    this.partialPreviews =
+      renderer &&
+      makePartialPreviews({
+        model: this.model,
+        workbench: this.#editor.model,
+        renderPartial: renderer.partial,
+        source: () => this.#controller.source,
+      });
+    this.fields = makeFieldsPanelModel(this.model, this.#editor.model, {
       document: this.#editor.model.document,
       insertTarget: () => this.insertTarget,
     });
@@ -749,22 +735,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         }
       }),
     );
+    // The Default Profile's bindings feed a render through the Profile.
     this.#cleanup.defer(
-      deps.registry.subscribe(
-        defaultBindingsAtom,
-        (bindings) => {
-          this.#bindingDefaults = {
-            folder: bindings["note.literature-folder"],
-            citationStyle: bindings["citation.references-style"],
-            importFolder: bindings["note.import-folder"],
-            importColoredHighlights: bindings["note.import-colored-highlights"],
-            importAnnotationsAsTemplate:
-              bindings["note.import-annotations-as-template"],
-          };
-          this.#invalidate();
-          this.#mount();
-        },
-        { immediate: true },
+      watch(deps.registry, this.model.bindingDefaults, () =>
+        this.#invalidate(),
       ),
     );
   }
@@ -791,7 +765,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           ? Effect.logDebug("Preview render started").pipe(
               Effect.annotateLogs({
                 revision,
-                live: registry.get(this.model.preview).live,
+                live: registry.get(this.workbench.preview).live,
               }),
             )
           : next.result !== null && next.result !== before.result
@@ -819,17 +793,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #follow(): () => void {
     const { registry, model } = this;
     const stops: (() => void)[] = [];
-    let view = registry.get(model.view);
     stops.push(
-      registry.subscribe(model.view, (next) => {
-        const previous = view;
-        view = next;
-        // The one editor a Shared Partial opens completes under the caller the
-        // reader chose, which is this root.
-        if (next.root !== previous.root && this.documentKind === "partial") {
-          this.#controller.setPartialContext(this.partialContext);
+      watch(registry, model.view, (next, previous) => {
+        // A Shared Partial's caller is this root, which its file remembers.
+        if (next.root !== previous.root && this.documentKind === "partial")
           this.#rememberPartialChoice();
-        }
         if (
           next.tab !== previous.tab ||
           next.root !== previous.root ||
@@ -839,30 +807,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           this.app.workspace.requestSaveLayout();
       }),
     );
-    let picks = registry.get(model.picks);
     stops.push(
-      registry.subscribe(model.picks, (next) => {
-        const previous = picks;
-        picks = next;
-        if (next.annotationId !== previous.annotationId)
-          this.app.workspace.requestSaveLayout();
-      }),
-      registry.subscribe(model.partialProfile, () =>
+      // Every choice is saved state.
+      registry.subscribe(this.workbench.choices, () =>
         this.app.workspace.requestSaveLayout(),
       ),
       registry.subscribe(model.panels, () => {
         this.#updateActions();
         this.app.workspace.requestSaveLayout();
       }),
-      registry.subscribe(model.preview, () =>
-        this.app.workspace.requestSaveLayout(),
-      ),
     );
-    let read = registry.get(model.read);
     stops.push(
-      registry.subscribe(model.read, (next) => {
-        const previous = read;
-        read = next;
+      watch(registry, model.read, (next, previous) => {
         if (
           next.status === "error" &&
           next.error &&
@@ -872,7 +828,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             code: "render-error",
             message: next.error,
           });
-        if (next.status !== previous.status) this.#mount();
       }),
     );
     if (this.#deps.nativePreview) stops.push(this.#followRenderInputs());
@@ -886,16 +841,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const { registry } = nativePreview;
     const stops: (() => void)[] = [];
     // A saved partial or bibliography changes what a render reads.
-    for (const atom of [templateRevisionAtom, bibliographyRevisionAtom]) {
-      let previous = registry.get(atom);
+    for (const atom of [templateRevisionAtom, bibliographyRevisionAtom])
       stops.push(
-        registry.subscribe(atom, (next) => {
-          if (next === previous) return;
-          previous = next;
-          this.#invalidate();
+        watch(registry, atom, (next, previous) => {
+          if (next !== previous) this.#invalidate();
         }),
       );
-    }
     // The note a render previews as an update changed on disk.
     this.registerEvent(
       nativePreview.app.vault.on("modify", (file) => {
@@ -914,9 +865,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   get nativeRenderDeps(): NativeRenderDeps | undefined {
     return this.#deps.nativePreview;
   }
-  /** The Template Document this view holds, which picks its tabs and its root. */
+  /**
+   * The Template Document this view holds, which picks its tabs and its root:
+   * the kind the controller was opened for, from the file's path at load.
+   */
   get documentKind(): WorkbenchDocumentKind {
-    return templateDocumentKind(this.file, this.#templateFolder);
+    return this.#controller.kind;
   }
   /**
    * What names this Workbench in a copied error report. Read once per failed
@@ -961,14 +915,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const { root } = this.#view;
     return isPartialContext(root) ? root : DEFAULT_PARTIAL_CONTEXT;
   }
-  /** {@link TemplateWorkbenchView.#partialProfile} */
+  /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
   get partialProfile(): string | null {
-    return this.#partialProfile;
+    return this.registry.get(this.workbench.choices).partialProfile;
   }
   /** Applies the caller and Profile the reader chose for this partial. */
   setPartialSelection(selection: PartialChoice): void {
     if (this.documentKind !== "partial") return;
-    this.#partialProfile = selection.profile;
+    this.registry.update(
+      this.workbench.choices,
+      choosePartialProfile(selection.profile),
+    );
     this.#update(setRoot(selection.context));
     this.#rememberPartialChoice();
   }
@@ -982,7 +939,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (this.documentKind !== "partial") return;
     writePartialChoice(this.app, this.file?.path ?? null, {
       context: this.partialContext,
-      profile: this.#partialProfile,
+      profile: this.partialProfile,
     });
   }
   override onResize(): void {
@@ -995,17 +952,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         editor.setRoot(element.ownerDocument);
     }
   }
-  get unavailableDependencies(): string[] {
-    return [
-      ...(this.registry.get(zoteroStateAtom).state === "degraded"
-        ? [m.template_workbench_database_unavailable()]
-        : []),
-      ...(this.#stylesUnavailable
-        ? [m.template_workbench_styles_unavailable()]
-        : []),
-    ];
-  }
-
   subscribeReveals(
     listener: (
       target: Pick<WorkbenchProblem, "slice" | "range" | "params">,
@@ -1059,21 +1005,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       listener({ slice, ...(range ? { range } : {}) });
     void this.app.workspace.revealLeaf(this.leaf);
   }
-  get bindingDefaults(): typeof BUILT_IN_BINDING_DEFAULTS {
-    return this.#bindingDefaults;
-  }
-  get citationStyles(): NameFolderPaneProps["citationStyles"] {
-    return this.#citationStyles;
-  }
   get controller(): WorkbenchDocumentController {
     return this.#controller;
   }
   /** The last focused slice remains the insertion target while a sidebar has focus. */
   get insertTarget(): WorkbenchInsertTarget | null {
-    return this.#insertTarget &&
-      this.#controller.hasSlice(this.#insertTarget.slice)
-      ? this.#insertTarget
-      : null;
+    const target = this.#view.presentation.selection;
+    return target && this.#controller.hasSlice(target.slice) ? target : null;
   }
 
   /** Inserts the field `node` names at the editor's insertion target. */
@@ -1101,8 +1039,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#log(
         Effect.logTrace("Rejected Explorer insertion").pipe(
           Effect.annotateLogs({
-            slice: this.#insertTarget?.slice ?? null,
-            reason: this.#insertTarget ? "removed-slice" : "no-selection",
+            slice: this.#view.presentation.selection?.slice ?? null,
+            reason: this.#view.presentation.selection
+              ? "removed-slice"
+              : "no-selection",
           }),
         ),
       );
@@ -1129,8 +1069,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   #focusTarget(target: WorkbenchInsertTarget): void {
-    this.#insertRequest = target;
-    this.#insertTarget = target;
+    this.registry.set(this.model.insertRequest, target);
+    this.setPresentation({ selection: target });
     const state = this.change;
     state.setAdvanced(target.slice === "advanced");
     state.setTab(
@@ -1153,7 +1093,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       )?.root ?? this.#defaultRoot,
     );
     this.app.workspace.setActiveLeaf(this.leaf, { focus: false });
-    this.#mount();
   }
 
   override getViewType(): string {
@@ -1209,12 +1148,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#controller = new WorkbenchDocumentController(source, {
         runtime: "native",
         readOnly: this.#defaultDraft,
-        kind: this.documentKind,
-        context: this.partialContext,
+        kind: templateDocumentKind(this.file, this.#templateFolder),
+        context: () => this.partialContext,
       });
       this.registry.set(this.model.document, {
         path: this.file?.path ?? null,
-        kind: this.documentKind,
         partialName: templatePartialName(
           this.file?.path ?? "",
           this.#templateFolder,
@@ -1229,7 +1167,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         scroll: {},
         restoring: false,
       });
-      this.#insertRequest = null;
+      this.registry.set(this.model.insertRequest, null);
       this.#applyKindDefaults();
       this.#subscribe();
       this.#mount();
@@ -1347,12 +1285,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       ...savedWorkbench({
         defaultDraft: this.#defaultDraft,
         view: this.#view,
-        picks: this.registry.get(this.model.picks),
+        choices: this.registry.get(this.workbench.choices),
         panels: this.registry.get(this.model.panels),
-        preview: this.registry.get(this.model.preview),
         partial:
           this.documentKind === "partial"
-            ? { context: this.partialContext, profile: this.#partialProfile }
+            ? { context: this.partialContext, profile: this.partialProfile }
             : null,
       }),
     };
@@ -1479,7 +1416,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           );
         if (annotationId !== undefined)
           this.registry.update(
-            this.model.picks,
+            this.workbench.choices,
             chooseAnnotation(annotationId),
           );
       }
@@ -1517,8 +1454,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             )(showPanel(side, panel.shown)(panels)),
           );
       }
-      this.registry.update(this.model.preview, patch(value.preview));
-      this.registry.update(this.model.picks, chooseCitation(value.citation));
+      this.registry.update(this.workbench.choices, setPreview(value.preview));
+      this.registry.update(
+        this.workbench.choices,
+        chooseCitation(value.citation),
+      );
       const { change } = this;
       if (this.#applyKindDefaults()) {
         // A plain document has one tab and one editor, so nothing of the saved
@@ -1529,7 +1469,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         // what `#applyKindDefaults` read back from this device instead. The
         // Profile is set first, so the root subscription remembers the pair.
         if (this.documentKind === "partial" && value.partialContext !== null) {
-          this.#partialProfile = value.partialProfile;
+          this.registry.update(
+            this.workbench.choices,
+            choosePartialProfile(value.partialProfile),
+          );
           change.setRoot(value.partialContext);
         }
       } else {
@@ -1584,7 +1527,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (path !== this.#partialChoiceFile) {
       this.#partialChoiceFile = path;
       const held = readPartialChoice(this.app, path);
-      this.#partialProfile = held.profile;
+      this.registry.update(
+        this.workbench.choices,
+        choosePartialProfile(held.profile),
+      );
       change.setRoot(held.context);
     } else if (!isPartialContext(this.#view.root))
       change.setRoot(DEFAULT_PARTIAL_CONTEXT);
@@ -1711,7 +1657,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
 
   templateDataTarget(): TemplateDataExportTarget | null {
     const { item, root } = this.#view;
-    const { current, example } = this.registry.get(this.model.examples);
+    const { current, example } = this.registry.get(this.workbench.examples);
     const indexedKey = example?.root.indexedKey;
     return exportTarget(
       item,
@@ -1832,14 +1778,16 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #addPreviewMenu(menu: Menu): void {
     const { registry, model } = this;
     if (!registry.get(model.panels).preview.shown) return;
-    const { kind } = registry.get(model.document);
-    const { mode, citationSet } = previewTarget(kind, this.#view.root);
-    const preview = registry.get(model.preview);
-    const setPreview = (value: Partial<typeof preview>) =>
-      registry.update(model.preview, patch(value));
-    const { variant, citationExample } = registry.get(model.picks);
+    const { mode, citationSet } = previewTarget(
+      this.documentKind,
+      this.#view.root,
+    );
+    const { choices } = this.workbench;
+    const { preview, variant, citationExample } = registry.get(choices);
+    const setSettings = (value: Partial<typeof preview>) =>
+      registry.update(choices, setPreview(value));
     const setCitation = (value: Parameters<typeof chooseCitation>[0]) =>
-      registry.update(model.picks, chooseCitation(value));
+      registry.update(choices, chooseCitation(value));
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.action)
@@ -1902,7 +1850,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             .setDisabled(
               value === "update" && result !== null && !result.sourcePath,
             )
-            .onClick(() => setPreview({ mode: value, showManaged: false })),
+            .onClick(() => setSettings({ mode: value, showManaged: false })),
         );
       menu.addItem((item) =>
         item
@@ -1910,7 +1858,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setTitle(m.workbench_preview_updated_section())
           .setIcon("rows-3")
           .setChecked(preview.showManaged)
-          .onClick(() => setPreview({ showManaged: true })),
+          .onClick(() => setSettings({ showManaged: true })),
       );
     }
     menu.addItem((item) =>
@@ -1919,7 +1867,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setTitle(m.workbench_preview_auto_refresh())
         .setIcon("zap")
         .setChecked(preview.live)
-        .onClick(() => setPreview({ live: !preview.live })),
+        .onClick(() => setSettings({ live: !preview.live })),
     );
     menu.addItem((item) =>
       item
@@ -1927,7 +1875,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setTitle(m.workbench_show_markdown())
         .setIcon("code")
         .setChecked(preview.showMarkdown)
-        .onClick(() => setPreview({ showMarkdown: !preview.showMarkdown })),
+        .onClick(() => setSettings({ showMarkdown: !preview.showMarkdown })),
     );
   }
   /**
@@ -1937,7 +1885,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    */
   #addCallerMenu(menu: Menu): void {
     const current = this.partialContext;
-    const profile = this.#partialProfile;
+    const profile = this.partialProfile;
     for (const [context, title, icon] of [
       ["note", m.template_workbench_preview_as_note(), "file-text"],
       [
@@ -2261,7 +2209,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const path = this.registry.get(defaultProfilePathAtom);
     if (!this.#defaultDraft) return Effect.void;
     const controller = this.#controller;
-    this.#update(setCustomization("pending"));
+    this.registry.set(this.model.customization, "pending");
     return Effect.gen({ self: this }, function* () {
       yield* Effect.logDebug("Opening Default Profile for customization");
       const { file } = yield* materializeDefault;
@@ -2296,15 +2244,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           Effect.logError("Failed to customize Default Profile").pipe(
             Effect.annotateLogs({ error: Cause.squash(cause) }),
             Effect.andThen(
-              Effect.sync(() => this.#update(setCustomization("failed"))),
+              Effect.sync(() =>
+                this.registry.set(this.model.customization, "failed"),
+              ),
             ),
           ),
         Effect.void,
       ),
       Effect.tap(() =>
         Effect.sync(() => {
-          if (this.#view.customization === "pending")
-            this.#update(setCustomization("idle"));
+          if (this.registry.get(this.model.customization) === "pending")
+            this.registry.set(this.model.customization, "idle");
         }),
       ),
       Effect.annotateLogs({ path }),
@@ -2314,9 +2264,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** Read the citation styles again; closing the leaf stops the read quietly. */
   #refreshStyles(): Effect.Effect<void, never, ViewServices> {
     return Effect.gen({ self: this }, function* () {
-      this.#citationStyles = yield* installedStyles;
-      this.#stylesUnavailable = false;
-      this.#mount();
+      const list = yield* installedStyles;
+      this.registry.set(this.model.styles, { list, unavailable: false });
     }).pipe(
       recover(
         (cause) =>
@@ -2325,10 +2274,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           ).pipe(
             Effect.annotateLogs({ error: Cause.squash(cause) }),
             Effect.andThen(
-              Effect.sync(() => {
-                this.#stylesUnavailable = true;
-                this.#mount();
-              }),
+              Effect.sync(() =>
+                this.registry.update(this.model.styles, (styles) => ({
+                  ...styles,
+                  unavailable: true,
+                })),
+              ),
             ),
           ),
         Effect.void,
@@ -2376,7 +2327,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       ).pipe(
         Effect.tap((choice) =>
           Effect.sync(() => {
-            if (choice) this.#remember(choice);
+            if (choice) this.setItem(choice);
           }),
         ),
       ),
@@ -2420,7 +2371,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** Makes `item` the choice of this leaf. */
   setItem(item: WorkbenchItemChoice): void {
     if (this.#closed) return;
-    this.registry.set(this.model.pick, item);
+    this.registry.set(this.workbench.pick, item);
     this.#remember(item);
   }
   #remember(item: WorkbenchItemChoice): void {
@@ -2471,11 +2422,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** Ask the reader for the annotation the preview renders. */
   chooseAnnotation(): Effect.Effect<void> {
     return this.#join<string>(this.model.chooseAnnotation, () => {
-      const { current, example } = this.registry.get(this.model.examples);
+      const { current, example } = this.registry.get(this.workbench.examples);
       return workbenchAnnotationChoice(
         this.#host,
         current,
         example?.id ?? null,
+      ).pipe(
+        Effect.tap((id) =>
+          Effect.sync(() => {
+            if (id !== null && !this.#closed)
+              this.registry.update(
+                this.workbench.choices,
+                chooseAnnotation(id),
+              );
+          }),
+        ),
       );
     }).pipe(Effect.asVoid);
   }
@@ -2488,25 +2449,31 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.#log(
           Effect.logTrace("Preview source changed").pipe(
             Effect.annotateLogs({
-              live: this.registry.get(this.model.preview).live,
+              live: this.registry.get(this.workbench.preview).live,
             }),
           ),
         );
-        if (this.#insertTarget) {
-          const { slice, range } = this.#insertTarget;
-          this.#insertTarget = {
-            slice,
-            range: {
-              from: transaction.changes.mapPos(range.from, 1),
-              to: transaction.changes.mapPos(range.to, 1),
-              ...(range.anchor === undefined
-                ? {}
-                : {
-                    anchor: transaction.changes.mapPos(range.anchor, 1),
-                    head: transaction.changes.mapPos(range.head ?? range.to, 1),
-                  }),
+        const selection = this.#view.presentation.selection;
+        if (selection) {
+          const { slice, range } = selection;
+          this.setPresentation({
+            selection: {
+              slice,
+              range: {
+                from: transaction.changes.mapPos(range.from, 1),
+                to: transaction.changes.mapPos(range.to, 1),
+                ...(range.anchor === undefined
+                  ? {}
+                  : {
+                      anchor: transaction.changes.mapPos(range.anchor, 1),
+                      head: transaction.changes.mapPos(
+                        range.head ?? range.to,
+                        1,
+                      ),
+                    }),
+              },
             },
-          };
+          });
         }
         this.#sourceRevision++;
         this.data = this.#controller.source;
@@ -2550,9 +2517,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.provide(
         <EditorContent
           view={this}
-          insertRequest={this.#insertRequest}
           onSelection={(target) => {
-            this.#insertTarget = target;
+            this.setPresentation({ selection: target });
             const root =
               this.#controller.templateRegions.find(
                 (region) =>
@@ -2569,14 +2535,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
 
 function EditorContent({
   view,
-  insertRequest,
   onSelection,
 }: {
   view: TemplateWorkbenchView;
-  insertRequest: WorkbenchInsertTarget | null;
   onSelection: (target: WorkbenchInsertTarget) => void;
 }) {
   const controller = view.controller;
+  const insertRequest = useAtomValue(view.model.insertRequest);
+  const origin = useAtomValue(view.model.origin);
+  const originatingNote = origin?.file ?? null;
+  const updatingNote = useAtomValue(view.model.updating);
+  const isDefaultDraft = useAtomValue(view.model.defaultDraft);
+  const unavailable = useAtomValue(view.model.unavailable);
+  const bindingDefaults = useAtomValue(view.model.bindingDefaults);
+  const { list: citationStyles } = useAtomValue(view.model.styles);
   const host = useWorkbenchHost();
   const resultPart = useParts("resultColumn");
   const { workbench } = view;
@@ -2602,14 +2574,13 @@ function EditorContent({
     controller.plainDocument?.manifest.language === "eta"
       ? m.workbench_name_language_eta()
       : m.workbench_name_language_liquid();
-  const { customization, presentation } = useAtomValue(view.model.view);
+  const { presentation } = useAtomValue(view.model.view);
+  const customization = useAtomValue(view.model.customization);
   const { selected, reveal, fieldFocus } = presentation;
   const setSelected = (selected: number | null) =>
     view.setPresentation({ selected });
   const setReveal = (reveal: WorkbenchViewState["presentation"]["reveal"]) =>
     view.setPresentation({ reveal });
-  const setFieldFocus = (fieldFocus: { field: string } | null) =>
-    view.setPresentation({ fieldFocus });
   const previewStatus = useAtomValue(view.model.read).status;
   useEffect(
     () => view.restoreScroll(),
@@ -2623,8 +2594,8 @@ function EditorContent({
       reveal: insertRequest.range,
     });
   }, [view, insertRequest]);
-  const manifest = useRef(controller.document?.manifest ?? null);
-  if (controller.document) manifest.current = controller.document.manifest;
+  // The last manifest that parsed, so a repair keeps the form's values.
+  const manifest = useAtomValue(view.workbench.document.manifest);
   // A missing partial is the engine's own render failure, so the boxes read
   // the names the last render could not resolve rather than a scan.
   const missingPartials = (result?.diagnostics ?? []).flatMap((diagnostic) =>
@@ -2636,7 +2607,7 @@ function EditorContent({
   const partialsFor = (
     partialContext: PartialContext,
   ): PartialPlaceholderHost | undefined => {
-    const previews = view.model.partialPreview;
+    const previews = view.partialPreviews;
     if (!previews) return undefined;
     return {
       missing: missingPartials,
@@ -2666,7 +2637,7 @@ function EditorContent({
   // A manifest the parser never read has no field pane to open, so its
   // problems are repaired in the source the reader can still see.
   const documentProblems = controller.problems.map((entry) =>
-    entry.slice === "details" && manifest.current === null
+    entry.slice === "details" && manifest === null
       ? { ...entry, slice: "advanced" as const }
       : entry,
   );
@@ -2811,87 +2782,20 @@ function EditorContent({
     kind,
   ]);
   const state = view.change;
+  /** Opens the pane a routing transition names, in the leaf's view state. */
+  const route = (
+    transition: (state: WorkbenchViewState) => WorkbenchViewState,
+  ) => view.registry.update(view.model.view, transition);
   function openProblem(
     problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
   ) {
-    if (kind !== "profile" || problem.slice === "source") {
-      // A plain document's every problem is in the one editor it opens with,
-      // so every reveal target lands there and its tabs stay as they are.
-      setReveal(problem.range ?? null);
-      return;
-    }
-    const entry = entryPosition(problem.slice);
-    state.setAdvanced(problem.slice === "advanced");
-    state.setTab(
-      entry !== null
-        ? "properties"
-        : isProfileProblem(problem)
-          ? "profile"
-          : problem.slice === "filename" || problem.slice === "details"
-            ? "name"
-            : problem.slice === "annotation"
-              ? "annotation"
-              : "note",
-    );
-    state.setRoot(
-      problem.slice === "annotation"
-        ? "annotation"
-        : problem.slice === "filename"
-          ? "filename"
-          : "note",
-    );
-    if (entry !== null) setSelected(entry);
-    setReveal(problem.range ?? null);
-    setFieldFocus(
-      problem.slice === "details" && problem.params?.field
-        ? { field: problem.params.field }
-        : null,
-    );
-  }
-  /**
-   * The pane whose own region holds `from`, which is where a verified call is
-   * repaired. Advanced holds whatever no editing pane covers.
-   */
-  function sliceHolding(from: number): WorkbenchProblem["slice"] {
-    if (kind !== "profile") return "source";
-    for (const slice of ["note", "annotation", "filename"] as const) {
-      const region = controller.sliceRange(slice);
-      if (region.from <= from && from < region.to) return slice;
-    }
-    return "advanced";
+    route(routeProblem(problem, controller));
   }
   /** The pane one selected problem is repaired in, whichever kind it is. */
   function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
-    if (diagnosis.kind === "document") {
-      openProblem(diagnosis.problem);
-      return;
-    }
-    const { part, position, callSite, sourceSite } = diagnosis.diagnostic;
-    // A verified call outranks the part the engine reported the failure under:
-    // a failure inside a called template is repaired where it was called.
-    if (callSite || sourceSite) {
-      const current = currentCallSite(diagnosis.diagnostic, controller);
-      if (current === undefined) {
-        new BaseNotice(m.workbench_problems_location_unknown());
-        return;
-      }
-      openProblem({ slice: sliceHolding(current.from), range: current });
-      return;
-    }
-    const slice: WorkbenchProblem["slice"] =
-      position === undefined
-        ? part === "annotation"
-          ? "annotation"
-          : // The note name is repaired in its own tab, whether or not the
-            // failure named a place inside it.
-            part === "filename" && kind === "profile"
-            ? "filename"
-            : kind === "profile"
-              ? "advanced"
-              : "source"
-        : `entry:${position}`;
-    const range = controller.sliceRange(slice);
-    openProblem({ slice, ...(range ? { range } : {}) });
+    const transition = routeDiagnosis(diagnosis, controller);
+    if (transition) route(transition);
+    else new BaseNotice(m.workbench_problems_location_unknown());
   }
   /**
    * Hands the reader the template back where they left it. The selection each
@@ -2921,7 +2825,7 @@ function EditorContent({
       {/* A Citation Template renders an example set, not the note of an Item,
           so its selection is the preview pane's own. */}
       {kind === "profile" && <EditorHeader view={view} />}
-      {view.originatingNote && (
+      {originatingNote && (
         <div
           data-part="originating-note"
           className={originatingNoteNotice.root}
@@ -2942,12 +2846,12 @@ function EditorContent({
             <span className={originatingNoteNotice.note}>
               <Icon name="file-text" aria-hidden="true" />
               <span className={originatingNoteNotice["note-name"]}>
-                {view.originatingNote.basename}
+                {originatingNote.basename}
               </span>
             </span>
             <button
               className={originatingNoteNotice.button}
-              disabled={view.updatingNote}
+              disabled={updatingNote}
               onClick={() =>
                 // The update reports its own outcome, failures included.
                 view.startNoteUpdate()
@@ -2956,21 +2860,21 @@ function EditorContent({
               <span className={originatingNoteNotice.labels}>
                 <span
                   className={
-                    view.updatingNote
+                    updatingNote
                       ? originatingNoteNotice["label-hidden"]
                       : undefined
                   }
-                  aria-hidden={view.updatingNote}
+                  aria-hidden={updatingNote}
                 >
                   {m.template_workbench_update_this_note()}
                 </span>
                 <span
                   className={
-                    !view.updatingNote
+                    !updatingNote
                       ? originatingNoteNotice["label-hidden"]
                       : undefined
                   }
-                  aria-hidden={!view.updatingNote}
+                  aria-hidden={!updatingNote}
                 >
                   {m.notice_updating_note()}
                 </span>
@@ -2979,7 +2883,7 @@ function EditorContent({
           </div>
         </div>
       )}
-      {view.isDefaultDraft && (
+      {isDefaultDraft && (
         <p
           role="status"
           className="zt:px-3 zt:pb-2 zt:text-xs zt:leading-normal zt:text-muted-foreground"
@@ -3003,7 +2907,7 @@ function EditorContent({
           )}
         </p>
       )}
-      {view.unavailableDependencies.map((message) => (
+      {unavailable.map((message) => (
         <p
           key={message}
           role="status"
@@ -3167,7 +3071,7 @@ function EditorContent({
               )}
               <AnnotationPane
                 finishHelp={
-                  view.originatingNote
+                  originatingNote
                     ? m.workbench_annotation_help_finish_note()
                     : m.workbench_annotation_help_finish_native()
                 }
@@ -3187,9 +3091,9 @@ function EditorContent({
                 onChooseItem={() => view.startItemChoice()}
                 onRetry={() => view.refresh()}
                 controller={controller}
-                manifest={manifest.current}
-                defaults={view.bindingDefaults}
-                citationStyles={view.citationStyles}
+                manifest={manifest}
+                defaults={bindingDefaults}
+                citationStyles={citationStyles}
                 focus={fieldFocus}
                 filename={result?.filename ?? null}
                 notePath={result?.notePath ?? null}
@@ -3203,7 +3107,7 @@ function EditorContent({
               <NameFolderPane
                 section="profile"
                 controller={controller}
-                manifest={manifest.current}
+                manifest={manifest}
                 focus={fieldFocus}
                 filename={null}
                 notePath={null}
@@ -3259,14 +3163,14 @@ function EditorContent({
 
 /** The annotation examples of the chosen Item, and the one the render reads. */
 function AnnotationSelection({ view }: { view: TemplateWorkbenchView }) {
-  const { current, example } = useAtomValue(view.model.examples);
+  const { current, example } = useAtomValue(view.workbench.examples);
   return (
     <AnnotationSampleBar
       compact
       current={current}
       example={example}
       onSelect={(id) =>
-        view.registry.update(view.model.picks, chooseAnnotation(id))
+        view.registry.update(view.workbench.choices, chooseAnnotation(id))
       }
     />
   );
@@ -3277,7 +3181,7 @@ function AnnotationSelection({ view }: { view: TemplateWorkbenchView }) {
  * title carries the file, so the header names the selected data itself.
  */
 function useSelectedAnnotation(view: TemplateWorkbenchView) {
-  return useAtomValue(view.model.examples).example;
+  return useAtomValue(view.workbench.examples).example;
 }
 
 function EditorHeader({ view }: { view: TemplateWorkbenchView }) {

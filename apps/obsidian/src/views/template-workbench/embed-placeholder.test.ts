@@ -49,7 +49,7 @@ function render(srcs: string[], draft = true): HTMLElement {
 
 it("names a note the vault holds, with its path, in place of its content", () => {
   const el = render(["Reading list#Methods"]);
-  const box = el.querySelector('[data-note-preview-embed="found"]');
+  const box = el.querySelector('[data-preview-embed="found"]');
   expect(box?.textContent).toBe(
     "Reading list › MethodsEmbedded noteThe created note shows the content of projects/Reading list.md here.",
   );
@@ -58,7 +58,7 @@ it("names a note the vault holds, with its path, in place of its content", () =>
 
 it("says a missing note does not exist yet, with no way to create it", () => {
   const el = render(["123"]);
-  const box = el.querySelector('[data-note-preview-embed="missing"]');
+  const box = el.querySelector('[data-preview-embed="missing"]');
   expect(box?.textContent).toContain(
     'No note named "123" exists yet. The created note offers to create it here.',
   );
@@ -68,9 +68,7 @@ it("says a missing note does not exist yet, with no way to create it", () => {
 
 it("takes a missing note whose name holds a dot for a note", () => {
   const el = render(["Smith et al. 2020", "scan.pdf"]);
-  expect(
-    el.querySelectorAll('[data-note-preview-embed="missing"]'),
-  ).toHaveLength(2);
+  expect(el.querySelectorAll('[data-preview-embed="missing"]')).toHaveLength(2);
   expect(embedsLeft(el)).toBe(0);
 });
 
