@@ -3,10 +3,10 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { ReactNode } from "react";
 
+import type { RenderDiagnostic } from "@zotlit/workbench/render";
 import {
   AnnotationSampleBar,
   PreviewControls,
-  renderDiagnosis,
   ResultColumn,
   setPreview,
   useWorkbenchModel,
@@ -33,10 +33,11 @@ export function WebPreview({
   annotations: AnnotationExamples;
   onAnnotationChoice: (choice: string) => void;
   /**
-   * Reads one problem in the editor's Problems area; a null id opens the area
-   * on whatever the editor's own checks found.
+   * The shared Show problem command: reads the problem in the editor's
+   * Problems area and reveals its place in the editor; a null diagnostic opens
+   * the area on whatever the editor's own checks found.
    */
-  onShowProblem: (id: string | null) => void;
+  onShowProblem: (diagnostic: RenderDiagnostic | null) => void;
 }) {
   const model = useWorkbenchModel();
   const { result, retained, busy, staleReason } = useAtomValue(
@@ -76,11 +77,7 @@ export function WebPreview({
         onShowMarkdown={(showMarkdown) => choose(setPreview({ showMarkdown }))}
         showManaged={settings.showManaged}
         onShowManaged={(showManaged) => choose(setPreview({ showManaged }))}
-        onShowProblem={(diagnostic) =>
-          onShowProblem(
-            diagnostic === null ? null : renderDiagnosis(diagnostic).id,
-          )
-        }
+        onShowProblem={onShowProblem}
         help={
           <WorkbenchHelp title={m.workbench_result_heading()}>
             {mode === "annotation"

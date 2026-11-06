@@ -1280,4 +1280,183 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { what: "the Fields column in the widened leaf" },
     );
   });
+
+  // #1957: the Preview's Show problem is the shared repair command, so the
+  // problem round trip is the same in a narrow and a wide leaf.
+  it("reveals the call from the Preview's Show problem in a narrow and a wide leaf, closing the Fields picker and keeping the Preview in place", async () => {
+    const path = `templates/${booksProfile.document}`;
+    const documentPath = join(e2eVaultPath, path);
+    const original = await readFile(documentPath, "utf-8");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        ({ app }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          app.workspace.detachLeavesOfType("empty");
+        },
+        undefined,
+      );
+      await writeFile(documentPath, original);
+    });
+    await suite.wideWindow(cleanup);
+    const call = '{% render "missing-partial" %}';
+    const panels = {
+      fields: { shown: true, width: 400 },
+      preview: { shown: true, width: 400, height: 40 },
+    };
+    /**
+     * Opens the editor with both panels in `share` percent of the window, or
+     * the whole window when `share` is null, with the call to a partial no
+     * vault holds in the note body and the cursor at its start.
+     */
+    const open = async (share: number | null) => {
+      await obRun(
+        run.vaultId,
+        async ({ app }, { path, key, panels, share }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          app.workspace.detachLeavesOfType("empty");
+          const leaf = app.workspace.createLeafInParent(
+            app.workspace.rootSplit,
+            0,
+          );
+          await leaf.setViewState({
+            type: "zotlit-template-workbench",
+            state: { file: path, itemIndexedKey: key, panels },
+            active: true,
+          });
+          if (share === null) return;
+          const other = app.workspace.createLeafBySplit(leaf, "vertical");
+          await other.setViewState({ type: "empty" });
+          // Each part's share of the split, as dragging its edge sets it.
+          type Sized = { setDimension(share: number): void };
+          for (const child of (
+            app.workspace.rootSplit as unknown as { children: unknown[] }
+          ).children)
+            (child as Sized).setDimension(
+              child === leaf || child === leaf.parent ? share : 100 - share,
+            );
+        },
+        { path, key: targetItem.key, panels, share },
+      );
+      await obRunUntil(
+        run.vaultId,
+        ({ page }, { path, call }) => {
+          const view = page.workbench({ path });
+          const editor = Array.from(
+            view?.contentEl.querySelectorAll<CodeMirrorElement>(
+              ".cm-content",
+            ) ?? [],
+          )
+            .map((content) => content.cmTile?.root.view)
+            .find((editor) =>
+              /\{% render "(book-details|missing-partial)"/.test(
+                editor?.state.doc.toString() ?? "",
+              ),
+            );
+          if (!view || !editor) return false;
+          // The edit is made once, on the poll that first finds the editor.
+          const text = editor.state.doc.toString();
+          const from = text.indexOf('{% render "book-details"');
+          if (from >= 0)
+            editor.dispatch({
+              changes: {
+                from,
+                to: text.indexOf("%}", from) + 2,
+                insert: call,
+              },
+              userEvent: "input.type",
+            });
+          editor.dispatch({ selection: { anchor: 0 } });
+          return true;
+        },
+        { path, call },
+        { what: "the note editor, with the call to a missing partial" },
+      );
+      await obRunUntil(
+        run.vaultId,
+        ({ page }, { path }) =>
+          page
+            .previewPanel(page.workbench({ path }))
+            ?.querySelector('[data-part="problem-open"]') != null,
+        { path },
+        { what: "the Preview's Show problem on the missing partial" },
+      );
+    };
+    /** Opens the picker when the column does not fit, then presses Show problem. */
+    const showProblem = async () =>
+      JSON.parse(
+        await obRun(
+          run.vaultId,
+          async ({ page }, { path, call, label }) => {
+            const { until } = page;
+            const view = page.workbench({ path })!;
+            const el = view.contentEl;
+            const search = () =>
+              el.doc.querySelector('[role="dialog"] [role="combobox"]');
+            const action = view.containerEl.querySelector<HTMLElement>(
+              `.view-action[aria-label="${label}"]`,
+            )!;
+            const popover = action.getAttribute("aria-expanded") !== null;
+            if (popover) {
+              action.click();
+              await until("the Fields picker", () => search() !== null);
+            }
+            const panel = page.previewPanel(view)!;
+            const box = () => {
+              const { left, top, width, height } =
+                panel.getBoundingClientRect();
+              return [left, top, width, height].map(Math.round);
+            };
+            const before = box();
+            panel
+              .querySelector<HTMLElement>('[data-part="problem-open"]')!
+              .click();
+            const editor = Array.from(
+              el.querySelectorAll<CodeMirrorElement>(".cm-content"),
+            )
+              .map((content) => content.cmTile!.root.view)
+              .find((editor) => editor.state.doc.toString().includes(call))!;
+            const selected = () => {
+              const { from, to } = editor.state.selection.main;
+              return editor.state.sliceDoc(from, to);
+            };
+            await until(
+              "the call selected in the editor",
+              () => selected() === call,
+            );
+            return JSON.stringify({
+              popover,
+              picker: search() !== null,
+              problems:
+                el.querySelector('[data-part="problems-open"]') !== null,
+              samePreview:
+                panel.isConnected &&
+                JSON.stringify(box()) === JSON.stringify(before),
+              saved: view.getState().panels,
+            });
+          },
+          { path, call, label: run.m.workbench_show_fields() },
+        ),
+      ) as Record<string, unknown>;
+
+    // A narrow leaf: the Preview under the editor, the Fields picker open.
+    await open(30);
+    expect(await showProblem()).toEqual({
+      popover: true,
+      picker: false,
+      problems: true,
+      samePreview: true,
+      saved: panels,
+    });
+    // A wide leaf: three columns, the same round trip.
+    await open(null);
+    expect(await showProblem()).toEqual({
+      popover: false,
+      picker: false,
+      problems: true,
+      samePreview: true,
+      saved: panels,
+    });
+  });
 });

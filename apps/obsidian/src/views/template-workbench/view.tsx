@@ -42,7 +42,6 @@ import {
 import type {
   PartialChoice,
   PartialContext,
-  RenderDiagnostic,
   WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import {
@@ -55,8 +54,8 @@ import {
   fieldSnippet,
   fieldsActionKey,
   panelSizeMenus,
-  routeDiagnosis,
-  routeProblem,
+  repairCommands,
+  selectionInDocument,
   setAdvanced,
   setPanelWidth,
   setPreview,
@@ -65,14 +64,12 @@ import {
   setTab,
   showPanel,
 } from "@zotlit/workbench/ui";
-import type { WorkbenchDiagnosis } from "@zotlit/workbench/ui";
 import {
   AnnotationPane,
   diagnosticText,
   AnnotationPointer,
   useWorkbenchHost,
   createWorkbenchEditor,
-  diagnosisForOccurrence,
   NameFolderPane,
   NotePane,
   PropertiesPane,
@@ -118,7 +115,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { loadedTextFileView } from "@/lib/live-text";
 import { MENU_SECTION } from "@/lib/menu-section";
-import { BaseNotice } from "@/lib/notice";
 import { Notifier, withOutcome } from "@/lib/notifier";
 import type { NoticeMessage } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
@@ -324,9 +320,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
-  readonly #showProblemListeners = new Set<
-    (id: string | null, occurrence?: RenderDiagnostic) => void
-  >();
+  readonly #openProblemsListeners = new Set<() => void>();
   /**
    * The captured failure a refused note operation asked this editor to explain.
    * Its report remains available even when this editor's own check differs.
@@ -996,32 +990,25 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     };
   }
   /**
-   * Reads one problem in the Problems area, which is what a preview's Show
-   * problem and a failed deliberate Run ask for. A null id opens the area on
-   * whatever it already has selected.
+   * Opens the Problems area on whatever it already has selected, which is
+   * what a failed note operation asks for.
    */
-  showProblem(
-    id: string | null,
-    reveal = true,
-    occurrence?: RenderDiagnostic,
-  ): void {
-    for (const listener of this.#showProblemListeners) listener(id, occurrence);
+  openProblems(reveal = true): void {
+    for (const listener of this.#openProblemsListeners) listener();
     // A deliberate request brings this editor forward; a failed automatic or
     // Run attempt leaves the reader's pane where they put it.
     if (reveal) void this.app.workspace.revealLeaf(this.leaf);
   }
-  subscribeShowProblem(
-    listener: (id: string | null, occurrence?: RenderDiagnostic) => void,
-  ): () => void {
-    this.#showProblemListeners.add(listener);
+  subscribeOpenProblems(listener: () => void): () => void {
+    this.#openProblemsListeners.add(listener);
     return () => {
-      this.#showProblemListeners.delete(listener);
+      this.#openProblemsListeners.delete(listener);
     };
   }
   /** Records the captured failure that brought the reader here, and opens Problems. */
   explainArrival(arrival: ArrivingProblem): void {
     this.#arrival = arrival;
-    this.showProblem(null, false);
+    this.openProblems(false);
   }
   /** Takes one arrival so it opens one explanation. */
   takeArrival(): ArrivingProblem | null {
@@ -1043,8 +1030,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The last focused slice remains the insertion target while a sidebar has focus. */
   get insertTarget(): WorkbenchInsertTarget | null {
-    const target = this.#view.presentation.selection;
-    return target && this.#controller.hasSlice(target.slice) ? target : null;
+    return selectionInDocument(
+      this.#view.presentation.selection,
+      this.#controller,
+    );
   }
 
   /** Inserts the field `node` names at the editor's insertion target. */
@@ -2748,17 +2737,8 @@ function EditorContent({
     ...(result?.diagnostics ?? []),
     ...(arrivalDiagnostic === undefined ? [] : [arrivalDiagnostic]),
   ]);
-  const [requestedOccurrence, setRequestedOccurrence] = useState<{
-    readonly id: string;
-    readonly occurrence: RenderDiagnostic;
-  } | null>(null);
-  const selectedDiagnoses = diagnoses.map((diagnosis) =>
-    requestedOccurrence?.id === diagnosis.id
-      ? diagnosisForOccurrence(diagnosis, requestedOccurrence.occurrence)
-      : diagnosis,
-  );
   const problems = useWorkbenchProblems({
-    diagnoses: selectedDiagnoses,
+    diagnoses,
     trigger,
     attempt,
     // A parser problem never reached a render, so the area captures its report
@@ -2773,19 +2753,8 @@ function EditorContent({
   const selectProblem = problems.select;
   const openProblems = problems.setOpen;
   useEffect(
-    () =>
-      view.subscribeShowProblem((id, occurrence) => {
-        if (id === null) {
-          setRequestedOccurrence(null);
-          openProblems(true);
-        } else {
-          setRequestedOccurrence(
-            occurrence === undefined ? null : { id, occurrence },
-          );
-          selectProblem(id);
-        }
-      }),
-    [view, selectProblem, openProblems],
+    () => view.subscribeOpenProblems(() => openProblems(true)),
+    [view, openProblems],
   );
   // A refused note operation brings its own captured diagnosis here. Consume
   // the arrival once, then keep its report available even when this editor's
@@ -2881,34 +2850,17 @@ function EditorContent({
     kind,
   ]);
   const state = view.change;
-  /** Opens the pane a routing transition names, in the leaf's view state. */
-  const route = (
-    transition: (state: WorkbenchViewState) => WorkbenchViewState,
-  ) => view.registry.update(view.model.view, transition);
-  function openProblem(
-    problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
-  ) {
-    route(routeProblem(problem, controller));
-  }
-  /** The pane one selected problem is repaired in, whichever kind it is. */
-  function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
-    const transition = routeDiagnosis(diagnosis, controller);
-    if (transition) route(transition);
-    else new BaseNotice(m.workbench_problems_location_unknown());
-  }
-  /**
-   * Hands the reader the template back where they left it. The selection each
-   * pane reports as the reader moves through it is that place, so returning is
-   * revealing it again — with the caret and the focus that go with it.
-   */
-  function returnToTemplate(): void {
-    const target = view.insertTarget;
-    setReveal(
-      target ? { ...target.range, slice: target.slice } : { from: 0, to: 0 },
-    );
-  }
-  const revealHandler = useRef(openProblem);
-  revealHandler.current = openProblem;
+  // The repair commands both hosts share. The leaf supplies only the Obsidian
+  // notice its host adapter shows.
+  const repair = repairCommands({
+    registry: view.registry,
+    model: { view: view.model.view, fieldsPicker: workbench.fieldsPicker },
+    controller,
+    host,
+    problems,
+  });
+  const revealHandler = useRef(repair.goToProblem);
+  revealHandler.current = repair.goToProblem;
   useEffect(
     () => view.subscribeReveals((target) => revealHandler.current(target)),
     [view],
@@ -3088,10 +3040,7 @@ function EditorContent({
                     <AnnotationSelection view={view} />
                   ) : null
                 }
-                onOpenAnnotation={() => {
-                  state.setTab("annotation");
-                  state.setRoot("annotation");
-                }}
+                onOpenAnnotation={repair.openAnnotationBox}
                 partials={partialsFor("note")}
                 reveal={advanced ? null : reveal}
                 onSelection={(range) => {
@@ -3101,13 +3050,7 @@ function EditorContent({
               {controller.noteRegions.annotationCalls.length === 0 && (
                 <AnnotationPointer
                   disabled={controller.readOnly}
-                  onInsert={() => {
-                    const { repaired, caret } =
-                      controller.insertAnnotationLoop();
-                    setReveal({ from: caret, to: caret });
-                    if (repaired)
-                      host.notice(m.workbench_annotation_section_added());
-                  }}
+                  onInsert={repair.insertAnnotationLoop}
                 />
               )}
             </TabPanel>
@@ -3218,14 +3161,14 @@ function EditorContent({
       </div>
       <ProblemsFooter
         problems={problems}
-        onOpen={openDiagnosis}
-        onReturn={returnToTemplate}
+        onOpen={repair.openDiagnosis}
+        onReturn={repair.returnToTemplate}
       />
     </div>
   );
   return (
     <WorkbenchDiagnosticsProvider
-      value={selectedDiagnoses}
+      value={problems.diagnoses}
       onReveal={selectProblem}
     >
       <SidePanels
@@ -3240,16 +3183,7 @@ function EditorContent({
             label: m.workbench_view_preview(),
             resizeLabel: m.workbench_preview_resize(),
             content: (
-              <PreviewPanel
-                view={view}
-                showProblem={(diagnostic) =>
-                  view.showProblem(
-                    diagnostic === null ? null : renderDiagnosis(diagnostic).id,
-                    false,
-                    diagnostic ?? undefined,
-                  )
-                }
-              />
+              <PreviewPanel view={view} showProblem={repair.showProblem} />
             ),
           },
         }}
