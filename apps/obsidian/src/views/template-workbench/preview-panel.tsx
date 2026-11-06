@@ -122,7 +122,7 @@ export function PreviewPanel({
   const { result, retained, busy, staleReason } = useAtomValue(
     workbench.scheduler.state,
   );
-  const { kind } = useAtomValue(model.document);
+  const kind = useAtomValue(workbench.document.kind);
   const root = useAtomValue(workbench.root);
   const item = useAtomValue(workbench.item);
   const title = useAtomValue(model.title);

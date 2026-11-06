@@ -7,11 +7,6 @@ import * as Atom from "effect/reactivity/Atom";
 
 import { CITATION_VARIANTS } from "@zotlit/db";
 import {
-  parseLiteratureNoteTemplate,
-  parsePlainTemplateDocument,
-} from "@zotlit/templates/facade";
-import type { WorkbenchDocumentKind } from "@zotlit/workbench/document";
-import {
   CITATION_EXAMPLE_IDS,
   PARTIAL_CONTEXTS,
 } from "@zotlit/workbench/render";
@@ -41,10 +36,12 @@ import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 import { readChosenItem } from "./atoms";
 import { PartialPreviewFailed, PreviewItemMissing } from "./errors";
 
-/** The Template Document the leaf holds, as the view last loaded it. */
+/**
+ * The Template Document the leaf holds, as the view last loaded it. Its kind
+ * is the controller's.
+ */
 export interface WorkbenchDocumentFacts {
   readonly path: string | null;
-  readonly kind: WorkbenchDocumentKind;
   /** The Shared Partial's own name, or null for any other document. */
   readonly partialName: string | null;
 }
@@ -119,7 +116,6 @@ export const setPanelWidth = (side: PanelSide, width: number) =>
 
 const NO_DOCUMENT: WorkbenchDocumentFacts = {
   path: null,
-  kind: "profile",
   partialName: null,
 };
 
@@ -135,17 +131,6 @@ export type PartialRender = (
   request: RenderRequest,
   partial: PartialPreviewSelection,
 ) => Effect.Effect<string, unknown, ViewServices>;
-
-/** Whether the parser refuses the draft, which no render can read. */
-function refused(kind: WorkbenchDocumentKind, source: string): boolean {
-  try {
-    if (kind === "profile") parseLiteratureNoteTemplate(source);
-    else parsePlainTemplateDocument(source);
-    return false;
-  } catch {
-    return true;
-  }
-}
 
 export function makeTemplateWorkbenchModel() {
   /**
@@ -234,18 +219,14 @@ export function makeTemplateWorkbenchModel() {
     const named = AsyncResult.isSuccess(result) ? result.value?.title : null;
     return named ?? get(item)?.title ?? null;
   });
-  const itemData = ({ document: atoms }: WorkbenchItemDataInput) => {
-    const invalid = Atom.make((get) =>
-      refused(get(document).kind, get(atoms.source)),
-    );
-    return Atom.make((get): WorkbenchItemData => ({
+  const itemData = ({ document: atoms }: WorkbenchItemDataInput) =>
+    Atom.make((get): WorkbenchItemData => ({
       snapshot: get(read).snapshot,
       // Output kept for another Template Document is another preview's.
       document: get(document).path ?? undefined,
       // A document the parser refuses is a failure, not a wait.
-      hold: get(invalid) && "invalid",
+      hold: !get(atoms.parsed) && "invalid",
     }));
-  };
   /**
    * Opens a chooser and answers what the reader chose. A newer chooser
    * replaces it, and the leaf's close interrupts it.

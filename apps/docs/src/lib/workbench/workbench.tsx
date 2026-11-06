@@ -181,12 +181,7 @@ function WorkbenchSession({
   const { result, trigger, attempt } = useAtomValue(model.scheduler.state);
   const { current: itemAnnotations, example: selectedAnnotation } =
     useAtomValue(model.examples);
-  const annotationResult =
-    selectedAnnotation !== null &&
-    result?.annotationId === selectedAnnotation.id &&
-    result.annotationRevision === selectedAnnotation.revision
-      ? result
-      : null;
+  const annotationResult = useAtomValue(model.annotationResult);
   const tab = useAtomValue(model.tab);
   const advanced = useAtomValue(model.advanced);
   const setTab = (next: WorkbenchTab) =>
@@ -196,7 +191,9 @@ function WorkbenchSession({
   const openInObsidianCommand = useAtomSet(workbench.openInObsidian);
   const loadSelectedItem = useAtomSet(workbench.loadItem);
   const fileMessage = useAtomValue(workbench.notice);
-  const shownManifest = useAtomValue(workbench.manifest);
+  // The last manifest that parsed, so repairing a draft blanks neither the
+  // header nor the Name and folder form.
+  const shownManifest = useAtomValue(model.document.manifest);
   const { present } = workbench;
   // What the editor reveals, which row is open, and where the caret is: the
   // model's presentation, so every pane reads one place.

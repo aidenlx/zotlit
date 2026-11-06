@@ -2,7 +2,7 @@ import type { WorkbenchDocumentKind } from "#/document/index";
 import { Effect, Queue } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createWorkbenchEditor } from "./editor";
 import {
@@ -175,6 +175,26 @@ describe("the Workbench model", () => {
       snapshot: CITATION_EXAMPLE_ITEM,
       citation: { variant: "alt", example: "one-item" },
     });
+  });
+});
+
+describe("the annotation result", () => {
+  it("is the render's result while it is for the chosen example", async () => {
+    using opened = open();
+    const { registry, model, host } = opened;
+    registry.update(model.view, chooseItem(CHOICE));
+    load(opened);
+    registry.update(model.choices, chooseAnnotation(SAMPLE_ANNOTATIONS[1]!.id));
+    registry.set(model.scheduler.run, undefined);
+    (await started(host)).answer({});
+    await vi.waitFor(() =>
+      expect(registry.get(model.scheduler.state).result).not.toBeNull(),
+    );
+    expect(registry.get(model.annotationResult)).toBe(
+      registry.get(model.scheduler.state).result,
+    );
+    registry.update(model.choices, chooseAnnotation(SAMPLE_ANNOTATIONS[2]!.id));
+    expect(registry.get(model.annotationResult)).toBeNull();
   });
 });
 

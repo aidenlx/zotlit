@@ -14,7 +14,7 @@ import type { RenderRequest, RenderResources } from "#/render/request";
 import type { TemplateRenderResult } from "#/render/result";
 import type { AnnotationExample } from "#/render/sample-annotations";
 import type { ItemSnapshot } from "#/snapshot/index";
-import { Cause, Effect, Option } from "effect";
+import { Cause, Effect } from "effect";
 import type * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -329,6 +329,8 @@ export interface WorkbenchModel<
   readonly preview: Atom.Atom<WorkbenchPreviewSettings>;
   readonly input: Atom.Atom<RenderSchedulerInput>;
   readonly scheduler: RenderSchedulerAtoms<R>;
+  /** The render's result when it is for the chosen annotation example, or null. */
+  readonly annotationResult: Atom.Atom<R | null>;
   /** Counts the reader's retries of the Match reads; each one reads again. */
   readonly matchRetry: Atom.Writable<number>;
   /** The Match vocabulary, read again for each host vocabulary revision. */
@@ -454,26 +456,16 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
       snapshot: get(snapshot),
     };
   });
-  const match = Atom.make((get) => {
-    get(document.revision);
-    const current = get(controller);
-    const parsed = current.document;
-    const previous = Option.getOrUndefined(
-      get.self<{
-        readonly controller: WorkbenchDocumentController;
-        readonly match: MatchTree | undefined;
-      }>(),
-    );
-    return {
-      controller: current,
-      match: parsed
-        ? parsed.manifest.match
-        : previous?.controller === current
-          ? previous.match
-          : undefined,
-    };
-  });
   const matchRetry = Atom.make(0);
+  const scheduler = makeRenderSchedulerAtoms({
+    runtime,
+    input,
+    render,
+    failed,
+    ...(retain ? { retain } : {}),
+    ...(reportContext ? { reportContext } : {}),
+    ...(debounceMs === undefined ? {} : { debounceMs }),
+  });
   return {
     runtime,
     view,
@@ -496,21 +488,22 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     snapshot,
     controller,
     document,
-    match: Atom.map(match, (state) => state.match),
+    match: Atom.map(document.manifest, (manifest) => manifest?.match),
     tab: field("tab"),
     item,
     root,
     advanced: field("advanced"),
     preview,
     input,
-    scheduler: makeRenderSchedulerAtoms({
-      runtime,
-      input,
-      render,
-      failed,
-      ...(retain ? { retain } : {}),
-      ...(reportContext ? { reportContext } : {}),
-      ...(debounceMs === undefined ? {} : { debounceMs }),
+    scheduler,
+    annotationResult: Atom.make((get) => {
+      const { result } = get(scheduler.state);
+      const chosen = get(example);
+      return chosen !== null &&
+        result?.annotationId === chosen.id &&
+        result.annotationRevision === chosen.revision
+        ? result
+        : null;
     }),
     matchRetry,
     matchVocabulary: Atom.family((_revision: string) =>

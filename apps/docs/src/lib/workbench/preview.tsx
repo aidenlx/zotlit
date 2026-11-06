@@ -46,12 +46,7 @@ export function WebPreview({
   const hold = useAtomValue(model.itemData, (data) => data.hold ?? false);
   const choose = useAtomSet(model.choices);
   const run = useAtomSet(model.scheduler.run);
-  const annotationResult =
-    example !== null &&
-    result?.annotationId === example.id &&
-    result.annotationRevision === example.revision
-      ? result
-      : null;
+  const annotationResult = useAtomValue(model.annotationResult);
   return (
     <>
       <div className={mode === "annotation" ? "hidden" : "contents"}>

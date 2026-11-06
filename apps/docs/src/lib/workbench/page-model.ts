@@ -5,7 +5,7 @@
 // page disposes the registry, which interrupts every read and command still
 // running.
 
-import { Effect, Option, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
@@ -212,11 +212,6 @@ type Presentation = WorkbenchViewState["presentation"];
 export interface WebWorkbench extends Disposable {
   readonly editor: WorkbenchEditorInstance;
   readonly model: WorkbenchModel;
-  /**
-   * The last manifest the document parsed with. The header and the Name and
-   * folder form read it, so repairing an invalid draft blanks neither.
-   */
-  readonly manifest: Atom.Atom<ProfileManifest | null>;
   /** What the last file action said, until the document changes. */
   readonly notice: Atom.Atom<string | null>;
   /** Loads the Item selected in Zotero and chooses it. */
@@ -249,10 +244,6 @@ export interface WebWorkbench extends Disposable {
   readonly reportContext: () => WorkbenchReportContext;
 }
 
-type ProfileManifest = NonNullable<
-  WorkbenchDocumentController["document"]
->["manifest"];
-
 function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
   const { registry, runtime } = bridge;
   // The connection as the draft on screen sees it: a hydration the page has
@@ -260,10 +251,10 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
   const settled = Atom.make((get) => get(page.hydration) === get(page.opened));
   const connected = Atom.map(page.connection, (state) => state.connection);
   const resources = Atom.map(page.connection, (state) => state.resources);
-  const itemData = ({ controller, document }: WorkbenchItemDataInput) =>
+  const itemData = ({ document }: WorkbenchItemDataInput) =>
     Atom.make((get): WorkbenchItemData => {
       const problems = get(document.problems);
-      const parsed = get(controller).document !== null;
+      const parsed = get(document.parsed);
       const state = get(page.connection);
       const read = get(page.read);
       const refused =
@@ -360,23 +351,6 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
       service.followCitationStyle(id),
     );
   });
-  const shown = Atom.make((get) => {
-    get(model.document.revision);
-    const controller = get(model.controller);
-    const previous = Option.getOrUndefined(
-      get.self<{
-        readonly controller: WorkbenchDocumentController;
-        readonly manifest: ProfileManifest | null;
-      }>(),
-    );
-    return {
-      controller,
-      manifest:
-        controller.document?.manifest ??
-        (previous?.controller === controller ? previous.manifest : null),
-    };
-  });
-  const manifest = Atom.map(shown, (state) => state.manifest);
   const said = Atom.make<{ text: string; revision: number } | null>(null);
   const notice = Atom.make((get) => {
     const held = get(said);
@@ -543,7 +517,10 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
     // The paper this Profile is written for: the bundled Item carrying its
     // sample item type, once per named type. A vault paper stays on screen.
     registry.subscribe(
-      Atom.map(manifest, (shownManifest) => shownManifest?.sampleItemType),
+      Atom.map(
+        model.document.manifest,
+        (shownManifest) => shownManifest?.sampleItemType,
+      ),
       (itemType) => {
         const bundled = SAMPLE_ITEMS.find(
           (sample) => sample.item.itemType === itemType,
@@ -572,7 +549,6 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
   return {
     editor,
     model,
-    manifest,
     notice,
     drafts,
     layout,

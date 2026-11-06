@@ -157,6 +157,48 @@ describe("workbenchDocumentAtoms", () => {
     expect(seen).toEqual([1, 2, 3, 4]);
   });
 
+  it("holds the last manifest that parsed while the draft does not", () => {
+    const controller = new WorkbenchDocumentController(PROFILE);
+    using held = hold(controller);
+    const { registry, atoms } = held;
+    expect(registry.get(atoms.parsed)).toBe(true);
+    const manifest = registry.get(atoms.manifest);
+    expect(manifest?.name).toBe("Reading notes");
+
+    const year = controller.sliceRange("entry:2");
+    controller.dispatch({ changes: { from: year.from, insert: "[" } });
+    expect(registry.get(atoms.parsed)).toBe(false);
+    expect(registry.get(atoms.manifest)).toBe(manifest);
+
+    controller.undo();
+    expect(registry.get(atoms.parsed)).toBe(true);
+    expect(registry.get(atoms.manifest)?.name).toBe("Reading notes");
+  });
+
+  it("names whether a plain document parses, and keeps no Profile manifest", () => {
+    const controller = new WorkbenchDocumentController(
+      "---\nlanguage: liquid\n---\n{{ zt.title }}",
+      { kind: "citation" },
+    );
+    using held = hold(controller);
+    const { registry, atoms } = held;
+    expect(registry.get(atoms.kind)).toBe("citation");
+    expect(registry.get(atoms.parsed)).toBe(true);
+    expect(registry.get(atoms.manifest)).toBeNull();
+
+    controller.dispatch({ changes: { from: 4, insert: "[" } });
+    expect(registry.get(atoms.parsed)).toBe(false);
+  });
+
+  it("starts a loaded controller with no manifest of the one it replaced", () => {
+    const first = new WorkbenchDocumentController(PROFILE);
+    using held = hold(first);
+    const { registry, current, atoms } = held;
+    registry.set(current, new WorkbenchDocumentController("not a profile"));
+    expect(registry.get(atoms.parsed)).toBe(false);
+    expect(registry.get(atoms.manifest)).toBeNull();
+  });
+
   it("reads the controller a host loads in place of the one it held", () => {
     const first = new WorkbenchDocumentController(PROFILE);
     using held = hold(first);

@@ -167,6 +167,7 @@ export class WorkbenchDocumentController {
   readonly #kind: WorkbenchDocumentKind;
   #context: PartialContext = DEFAULT_PARTIAL_CONTEXT;
   #document: LiteratureNoteTemplateDocument | null = null;
+  #manifest: LiteratureNoteTemplateDocument["manifest"] | null = null;
   #plain: PlainTemplateDocument | null = null;
   #problems: readonly WorkbenchProblem[] = [];
   #focused: WorkbenchSliceId | null = null;
@@ -275,6 +276,20 @@ export class WorkbenchDocumentController {
   /** The parsed document, or null while the draft does not parse. */
   get document(): LiteratureNoteTemplateDocument | null {
     return this.#document;
+  }
+
+  /** Whether the draft parses as its kind's document, which alone a render reads. */
+  get parsed(): boolean {
+    return (this.#kind === "profile" ? this.#document : this.#plain) !== null;
+  }
+
+  /**
+   * The last Profile manifest that parsed, which stands while the draft does
+   * not, so the header and the Name and folder form keep their values during
+   * a repair. Null on a plain document and until a manifest parses.
+   */
+  get manifest(): LiteratureNoteTemplateDocument["manifest"] | null {
+    return this.#manifest;
   }
 
   /**
@@ -914,6 +929,7 @@ export class WorkbenchDocumentController {
     try {
       const document = parseLiteratureNoteTemplate(source);
       this.#document = document;
+      this.#manifest = document.manifest;
       this.#language = document.manifest.language;
       this.#ranges.set("note", {
         from: document.bodyStart,

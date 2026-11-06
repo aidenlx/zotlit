@@ -913,9 +913,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   get nativeRenderDeps(): NativeRenderDeps | undefined {
     return this.#deps.nativePreview;
   }
-  /** The Template Document this view holds, which picks its tabs and its root. */
+  /**
+   * The Template Document this view holds, which picks its tabs and its root:
+   * the kind the controller was opened for, from the file's path at load.
+   */
   get documentKind(): WorkbenchDocumentKind {
-    return templateDocumentKind(this.file, this.#templateFolder);
+    return this.#controller.kind;
   }
   /**
    * What names this Workbench in a copied error report. Read once per failed
@@ -1208,12 +1211,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#controller = new WorkbenchDocumentController(source, {
         runtime: "native",
         readOnly: this.#defaultDraft,
-        kind: this.documentKind,
+        kind: templateDocumentKind(this.file, this.#templateFolder),
         context: this.partialContext,
       });
       this.registry.set(this.model.document, {
         path: this.file?.path ?? null,
-        kind: this.documentKind,
         partialName: templatePartialName(
           this.file?.path ?? "",
           this.#templateFolder,
@@ -1833,8 +1835,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #addPreviewMenu(menu: Menu): void {
     const { registry, model } = this;
     if (!registry.get(model.panels).preview.shown) return;
-    const { kind } = registry.get(model.document);
-    const { mode, citationSet } = previewTarget(kind, this.#view.root);
+    const { mode, citationSet } = previewTarget(
+      this.documentKind,
+      this.#view.root,
+    );
     const { choices } = this.workbench;
     const { preview, variant, citationExample } = registry.get(choices);
     const setSettings = (value: Partial<typeof preview>) =>
@@ -2635,8 +2639,8 @@ function EditorContent({
       reveal: insertRequest.range,
     });
   }, [view, insertRequest]);
-  const manifest = useRef(controller.document?.manifest ?? null);
-  if (controller.document) manifest.current = controller.document.manifest;
+  // The last manifest that parsed, so a repair keeps the form's values.
+  const manifest = useAtomValue(view.workbench.document.manifest);
   // A missing partial is the engine's own render failure, so the boxes read
   // the names the last render could not resolve rather than a scan.
   const missingPartials = (result?.diagnostics ?? []).flatMap((diagnostic) =>
@@ -2678,7 +2682,7 @@ function EditorContent({
   // A manifest the parser never read has no field pane to open, so its
   // problems are repaired in the source the reader can still see.
   const documentProblems = controller.problems.map((entry) =>
-    entry.slice === "details" && manifest.current === null
+    entry.slice === "details" && manifest === null
       ? { ...entry, slice: "advanced" as const }
       : entry,
   );
@@ -3132,7 +3136,7 @@ function EditorContent({
                 onChooseItem={() => view.startItemChoice()}
                 onRetry={() => view.refresh()}
                 controller={controller}
-                manifest={manifest.current}
+                manifest={manifest}
                 defaults={view.bindingDefaults}
                 citationStyles={view.citationStyles}
                 focus={fieldFocus}
@@ -3148,7 +3152,7 @@ function EditorContent({
               <NameFolderPane
                 section="profile"
                 controller={controller}
-                manifest={manifest.current}
+                manifest={manifest}
                 focus={fieldFocus}
                 filename={null}
                 notePath={null}

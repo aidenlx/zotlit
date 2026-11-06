@@ -3110,9 +3110,9 @@ language: liquid
     await act(async () => view.open());
 
     expect(view.registry.get(view.model.document)).toMatchObject({
-      kind: "citation",
       path: "templates/zotlit-citation.md",
     });
+    expect(view.registry.get(view.workbench.document.kind)).toBe("citation");
     expect(view.registry.get(view.workbench.document.source)).toBe(
       CITATION_SOURCE,
     );
