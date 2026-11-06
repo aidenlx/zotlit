@@ -2451,7 +2451,7 @@ function EditorContent({
   const resultPart = useParts("resultColumn");
   const tab = useWorkbenchStore((state) => state.tab);
   useDocumentRevision(controller);
-  const { result, trigger, attempt, busy, stale } = useRenderState();
+  const { result, trigger, attempt, busy, staleReason } = useRenderState();
   const previewProblems = usePreviewProblems(view);
   const formatProblem = [
     ...(result?.diagnostics ?? []),
@@ -2626,7 +2626,7 @@ function EditorContent({
       !arrival ||
       attempt <= arrivalAttempt.current ||
       busy ||
-      stale ||
+      staleReason !== null ||
       !result ||
       documentProblems.length > 0
     )
@@ -2683,7 +2683,7 @@ function EditorContent({
     arrival,
     attempt,
     busy,
-    stale,
+    staleReason,
     result,
     documentProblems.length,
     view,

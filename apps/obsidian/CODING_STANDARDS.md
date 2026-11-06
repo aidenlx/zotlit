@@ -65,7 +65,7 @@ Effect.logWarning("Could not read the saved Uses; starting empty").pipe(
 
 ## View state and menus
 
-View/modal state uses a zustand **vanilla store + React context, one per instance** — not the global `create()` hook, not signals. Follow `src/views/annot-view/store.ts`.
+View state is a **per-leaf model of Effect atoms**, changed by pure transitions and read through the view registry ([ADR 0082](docs/adr/0082-obsidian-views-read-effect-services-through-view-atoms.md)). Follow `src/views/annot-view/model.ts`; the vanilla-DOM surfaces in the PDF reader follow `src/services/pdf-annotation-editor/reader-surface-model.ts`.
 
 Menus and popovers are Obsidian's own `Menu` and popover primitives, built imperatively and shown from the gesture that opens them — inside a Preact tree as much as in vanilla DOM. `src/views/annot-view` is the pattern: `presentation.ts` answers which entries exist, `menus.ts` fills a `Menu` from them, `actions.tsx` shows it, and the component calls the action; `pane-menu.ts` puts the same entries in the pane menu. A menu opened from a control is anchored under it with `showMenuAtButton` from `src/lib/menu.ts`, which keeps a keyboard-activated control and a popout host both correct; `showAtMouseEvent` is for a right-click. Obsidian owns placement, viewport clamping, theme, and chrome ([ADR 0044](docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md)). A menu opened from inside a Chooser — the "…" of a Chooser page — is `Chooser.PageMenu`, a popover nested in the popup, since a `Menu` paints under the popup's top layer.
 

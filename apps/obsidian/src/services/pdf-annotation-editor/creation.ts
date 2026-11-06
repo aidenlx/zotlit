@@ -34,6 +34,7 @@ import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import { themeHook } from "@/lib/theme-hooks";
 import * as toast from "@/lib/toast";
+import { watch } from "@/lib/view-atoms";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationRecord,
@@ -82,6 +83,14 @@ import {
 } from "./operations";
 import type { BindingWrites, CreateWrite, WriteRun } from "./operations";
 import {
+  current,
+  modify,
+  recordColorUse,
+  setToolColor,
+  update,
+} from "./reader-surface-model";
+import type { ReaderSurface } from "./reader-surface-model";
+import {
   appendPendingStroke,
   arm,
   beginCapture,
@@ -94,20 +103,14 @@ import {
   finishTextDraft,
   moveCapture,
   openTextDraft,
-  recordColorUse,
   refitTextDraft,
   selectCapture,
   selectCreateRowInput,
-  sameFlatList,
-  sameFlat,
-  selectCreationToolbar,
-  selectFloatingHead,
   setCommenting,
   setInFlight,
   selectTextDraft,
   settlePendingStroke,
   settleTextDraft,
-  setToolColor,
   textDraftPosition,
   toggleMarks,
 } from "./reader-surface-state";
@@ -116,7 +119,6 @@ import type {
   Floating,
   PendingStroke,
   ReaderSurfaceState,
-  ReaderSurfaceStore,
   TextDraft,
 } from "./reader-surface-state";
 import { interfaceFont } from "./render";
@@ -332,7 +334,7 @@ export interface MarkCreationDeps {
    */
   colors: ToolColorStore;
   /** What this view's surfaces draw from; the toolbar redraws off it alone. */
-  surfaceState: ReaderSurfaceStore;
+  surface: ReaderSurface;
   annotations: AnnotationCreates;
   bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
   /** Starts a create, or a selection's placement, on the view's own Scope. */
@@ -397,26 +399,23 @@ export class MarkCreation implements CreationGestures, Disposable {
     // The sheet goes with the episode it was opened for, so its editor lets go
     // of the keys it holds even when the popup hides under it.
     this.#surfaces.defer(
-      deps.surfaceState.subscribe(
-        selectFloatingHead,
+      watch(
+        deps.surface.registry,
+        deps.surface.model.floatingHead,
         ({ kind, commenting }) => {
           if (kind !== "create" || !commenting) this.#dropSheet();
         },
-        { equalityFn: sameFlat },
       ),
     );
     // A tool change takes the stroke or the click press in progress with it,
     // and finishes a Text Draft. The draft's own opening stands the tool down,
     // which is no change of tool.
     this.#surfaces.defer(
-      deps.surfaceState.subscribe(
-        ({ armed }) => armed,
-        (armed) => {
-          if (armed !== "ink") this.#discardStroke();
-          this.#dropClickPress();
-          if (armed !== null) this.finishDraft();
-        },
-      ),
+      watch(deps.surface.registry, deps.surface.model.armed, (armed) => {
+        if (armed !== "ink") this.#discardStroke();
+        this.#dropClickPress();
+        if (armed !== null) this.finishDraft();
+      }),
     );
   }
 
@@ -447,12 +446,12 @@ export class MarkCreation implements CreationGestures, Disposable {
    */
   mountToolbar(slot: HTMLElement): CreationToolbarNodes {
     this.#surfaces.defer(() => removeCreationToolbar(slot));
-    const state = this.#deps.surfaceState;
+    const { registry, model } = this.#deps.surface;
     const draw = (controls: readonly CreationToolbarControl[]) =>
       renderCreationToolbar(slot, controls, (id, node) =>
         this.#toolbarActivate(id, node),
       );
-    const nodes = draw(selectCreationToolbar(state.getState()));
+    const nodes = draw(registry.get(model.toolbar));
     // A pointer press on the toolbar hands the keyboard to the pages rather
     // than to the control pressed, so the Reader Keymap and the edit keys act
     // next — and a key pressed after it rings no control the pointer chose.
@@ -462,11 +461,7 @@ export class MarkCreation implements CreationGestures, Disposable {
         this.#deps.focusReader();
       }),
     );
-    this.#surfaces.defer(
-      state.subscribe(selectCreationToolbar, draw, {
-        equalityFn: sameFlatList,
-      }),
-    );
+    this.#surfaces.defer(watch(registry, model.toolbar, draw));
     this.#deps.renderCapability(nodes.capabilitySlot);
     return nodes;
   }
@@ -536,7 +531,7 @@ export class MarkCreation implements CreationGestures, Disposable {
         }
         const anchorAt = anchorFractionOf(pages, captured.pageIndex);
         if (anchorAt)
-          captureSelection(this.#deps.surfaceState, { captured, anchorAt });
+          update(this.#deps.surface, captureSelection({ captured, anchorAt }));
       }),
     );
   }
@@ -578,7 +573,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     }
     if (key !== "c" || !waiting) return;
     event.preventDefault();
-    setCommenting(this.#deps.surfaceState, true);
+    update(this.#deps.surface, setCommenting(true));
   }
 
   /**
@@ -626,10 +621,13 @@ export class MarkCreation implements CreationGestures, Disposable {
       return;
     }
     this.#capturing = { pointerId: event.pointerId, page };
-    beginCapture(this.#deps.surfaceState, {
-      pageIndex: page.pageIndex,
-      from: pdfPointAt(page.view, client),
-    });
+    update(
+      this.#deps.surface,
+      beginCapture({
+        pageIndex: page.pageIndex,
+        from: pdfPointAt(page.view, client),
+      }),
+    );
   }
 
   move(event: PointerEvent): void {
@@ -644,16 +642,18 @@ export class MarkCreation implements CreationGestures, Disposable {
     // Read on every move, so a scroll or a zoom mid-drag is measured against
     // the page as it now stands.
     const { view } = capturing.page;
-    moveCapture(
-      this.#deps.surfaceState,
-      captureRect({
-        from: capture.from,
-        to: pdfPointAt(capturing.page.view, {
-          x: event.clientX,
-          y: event.clientY,
+    update(
+      this.#deps.surface,
+      moveCapture(
+        captureRect({
+          from: capture.from,
+          to: pdfPointAt(capturing.page.view, {
+            x: event.clientX,
+            y: event.clientY,
+          }),
+          viewBox: view.viewport.viewBox,
         }),
-        viewBox: view.viewport.viewBox,
-      }),
+      ),
     );
   }
 
@@ -678,7 +678,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     const capturing = this.#capturing;
     if (!capturing || event.pointerId !== capturing.pointerId) return;
     this.#capturing = releaseCapture(this.#deps.containerEl, this.#capturing);
-    const rect = endCapture(this.#deps.surfaceState);
+    const rect = modify(this.#deps.surface, endCapture);
     if (!rect) return;
     this.#creating = this.#createImage(capturing.page.pageIndex, rect);
   }
@@ -709,15 +709,15 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   /** The tool the toolbar shows as armed, or `null` while none is. */
   #arm(tool: MarkTool | null): void {
-    arm(this.#deps.surfaceState, tool);
+    update(this.#deps.surface, arm(tool));
   }
 
   #setColor(tool: MarkTool, color: string): void {
-    setToolColor(this.#deps.surfaceState, this.#deps.colors, { tool, color });
+    setToolColor(this.#deps.surface, this.#deps.colors, { tool, color });
   }
 
   #state(): ReaderSurfaceState {
-    return this.#deps.surfaceState.getState();
+    return current(this.#deps.surface);
   }
 
   #floating(): Floating {
@@ -755,7 +755,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       return true;
     }
     if (floating.kind === "create" && floating.commenting) {
-      setCommenting(this.#deps.surfaceState, false);
+      update(this.#deps.surface, setCommenting(false));
       return true;
     }
     if (floating.kind === "create") {
@@ -769,7 +769,7 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   #toolbarActivate(id: string, node: HTMLElement): void {
     if (id === "visibility") {
-      toggleMarks(this.#deps.surfaceState);
+      update(this.#deps.surface, toggleMarks);
       this.#deps.repaint();
       return;
     }
@@ -843,7 +843,7 @@ export class MarkCreation implements CreationGestures, Disposable {
                   : m.pdf_toolbar_highlight(),
               run: commit,
             },
-            onCancel: () => setCommenting(this.#deps.surfaceState, false),
+            onCancel: () => update(this.#deps.surface, setCommenting(false)),
           }
         : null,
     });
@@ -864,9 +864,9 @@ export class MarkCreation implements CreationGestures, Disposable {
       }
       case "comment": {
         const floating = this.#floating();
-        setCommenting(
-          this.#deps.surfaceState,
-          floating.kind === "create" && !floating.commenting,
+        update(
+          this.#deps.surface,
+          setCommenting(floating.kind === "create" && !floating.commenting),
         );
         return;
       }
@@ -944,12 +944,15 @@ export class MarkCreation implements CreationGestures, Disposable {
       this.#deps.reportBlockedGesture();
       return;
     }
-    openTextDraft(this.#deps.surfaceState, {
-      pageIndex,
-      at,
-      fontSize: this.#deps.colors.textFontSize(),
-      color: this.#state().colors.text,
-    });
+    update(
+      this.#deps.surface,
+      openTextDraft({
+        pageIndex,
+        at,
+        fontSize: this.#deps.colors.textFontSize(),
+        color: this.#state().colors.text,
+      }),
+    );
     logger.debug("A Text Draft was opened", { pageIndex });
     // This surface's disposal finishes a draft still typed, after the viewer
     // let go of its document. The structure is kept, and its page and the Page
@@ -971,10 +974,13 @@ export class MarkCreation implements CreationGestures, Disposable {
       .pages()
       .find(({ pageIndex }) => pageIndex === draft?.pageIndex);
     if (!page) return;
-    refitTextDraft(this.#deps.surfaceState, text, {
-      measure: interfaceFont(this.#deps.containerEl.win).measure,
-      pageBox: page.view.viewport.viewBox,
-    });
+    update(
+      this.#deps.surface,
+      refitTextDraft(text, {
+        measure: interfaceFont(this.#deps.containerEl.win).measure,
+        pageBox: page.view.viewport.viewBox,
+      }),
+    );
   }
 
   /**
@@ -985,7 +991,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     if (selectTextDraft(this.#state())?.phase !== "typing") return;
     const structure = this.#draftStructure;
     this.#draftStructure = null;
-    const draft = finishTextDraft(this.#deps.surfaceState);
+    const draft = modify(this.#deps.surface, finishTextDraft);
     logger.debug("A Text Draft was finished", { committed: draft !== null });
     if (draft) this.#creating = this.#createText(draft, structure);
   }
@@ -1000,19 +1006,19 @@ export class MarkCreation implements CreationGestures, Disposable {
     draft: TextDraft,
     structure: PdfTextStructure | null,
   ): WriteRun | null {
-    const store = this.#deps.surfaceState;
+    const surface = this.#deps.surface;
     // The typed text is lost, so a lapse names the create that failed.
     const capability = this.#capability();
     if (!editingLive(capability)) {
-      dropTextDraft(store);
+      update(surface, dropTextDraft);
       this.#deps.reportCreateFailure(
         blockedReason(capability, this.#deps.now()),
       );
       return null;
     }
     const settle = (key: string | null) => {
-      if (key === null) dropTextDraft(store);
-      else settleTextDraft(store, key);
+      if (key === null) update(surface, dropTextDraft);
+      else update(surface, settleTextDraft(key));
     };
     const run = this.#create(
       {
@@ -1038,7 +1044,7 @@ export class MarkCreation implements CreationGestures, Disposable {
    */
   #createImage(pageIndex: number, rect: PdfRect): WriteRun | null {
     if (!editingLive(this.#capability())) {
-      cancelCapture(this.#deps.surfaceState);
+      update(this.#deps.surface, cancelCapture);
       this.#deps.reportBlockedGesture();
       return null;
     }
@@ -1085,13 +1091,13 @@ export class MarkCreation implements CreationGestures, Disposable {
     // which hears every key of the shared edit keymap.
     if (!editingLive(this.#capability())) return null;
     if (!structure) {
-      cancelCapture(this.#deps.surfaceState);
+      update(this.#deps.surface, cancelCapture);
       logger.warn("No text structure stands for this PDF; nothing was created");
       this.#deps.reportCreateFailure(m.pdf_create_reason_no_document());
       return null;
     }
     const { foreground, disarm } = CREATE_EFFECTS[type];
-    const store = this.#deps.surfaceState;
+    const surface = this.#deps.surface;
     return createMark(
       this.#deps.annotations,
       {
@@ -1106,10 +1112,10 @@ export class MarkCreation implements CreationGestures, Disposable {
         begin: () => {
           if (!foreground) return;
           this.#writing = true;
-          setInFlight(store, true);
+          update(surface, setInFlight(true));
         },
         created: (annotationKey) => {
-          recordColorUse(store, this.#deps.colors, color);
+          recordColorUse(surface, this.#deps.colors, color);
           if (foreground) this.#deps.reveal(annotationKey, reveal);
           if (disarm) this.#arm(null);
         },
@@ -1117,9 +1123,9 @@ export class MarkCreation implements CreationGestures, Disposable {
         end: (annotationKey) => {
           if (foreground) {
             this.#writing = false;
-            setInFlight(store, false);
+            update(surface, setInFlight(false));
             // The rectangle stays drawn until Zotero answered, whatever it said.
-            cancelCapture(store);
+            update(surface, cancelCapture);
           }
           if (annotationKey !== null && foreground) {
             this.#clear();
@@ -1163,7 +1169,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       at: client,
       width,
       color,
-      surfaceState: this.#deps.surfaceState,
+      surface: this.#deps.surface,
       win: this.#deps.containerEl.win,
       // The pointer and the tool stay held; only the part drawn so far goes.
       onSplit: (path) =>
@@ -1221,7 +1227,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       id: ++this.#strokeSerial,
       paths: [path],
     };
-    appendPendingStroke(this.#deps.surfaceState, pending);
+    update(this.#deps.surface, appendPendingStroke(pending));
     logger.debug("An ink stroke was finished", {
       reason,
       pageIndex: pending.pageIndex,
@@ -1245,8 +1251,8 @@ export class MarkCreation implements CreationGestures, Disposable {
   ): CreateWrite | null {
     const { id, pageIndex, width, color, paths } = pending;
     const settle = (key: string | null) => {
-      if (key === null) dropPendingStroke(this.#deps.surfaceState, id);
-      else settlePendingStroke(this.#deps.surfaceState, { id, key });
+      if (key === null) update(this.#deps.surface, dropPendingStroke(id));
+      else update(this.#deps.surface, settlePendingStroke({ id, key }));
     };
     if (!editingLive(this.#capability())) {
       this.#deps.reportBlockedGesture();
@@ -1297,7 +1303,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   #cancelCapture(): void {
     this.#capturing = releaseCapture(this.#deps.containerEl, this.#capturing);
     if (selectCapture(this.#state())?.phase !== "saving")
-      cancelCapture(this.#deps.surfaceState);
+      update(this.#deps.surface, cancelCapture);
   }
 
   /** Whether a client point falls on the text the window has selected. */
@@ -1315,7 +1321,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   #clear(): void {
     this.#dropSheet();
     if (this.#floating().kind === "create")
-      clearFloating(this.#deps.surfaceState);
+      update(this.#deps.surface, clearFloating);
   }
 
   /**

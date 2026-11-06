@@ -16,6 +16,7 @@ import {
   TemplateWorkbenchView,
 } from "@/views/template-workbench/view";
 
+import { noteEmbedPlaceholders } from "./embed-placeholder";
 import { openNotePreview, openWorkbenchLayout } from "./layout";
 import type { PreviewViewDeps } from "./view";
 import { NotePreviewView, NOTE_PREVIEW_VIEW_TYPE } from "./view";
@@ -158,6 +159,7 @@ export function registerNotePreview(
     NOTE_PREVIEW_VIEW_TYPE,
     (leaf) => new NotePreviewView(leaf, plugin.manifest.id, deps),
   );
+  plugin.registerMarkdownPostProcessor(noteEmbedPlaceholders(app));
   plugin.addCommand({
     id: "open-template-workbench",
     name: m.template_workbench_open_layout(),

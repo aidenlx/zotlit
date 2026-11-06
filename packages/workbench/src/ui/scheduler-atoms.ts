@@ -12,7 +12,7 @@ import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
 import { WorkbenchHostError } from "./host";
-import { held, staleReasonFor } from "./scheduler";
+import { held, rebased, rebaser, staleReasonFor } from "./scheduler";
 import type {
   RenderSchedulerInput,
   RenderSchedulerState,
@@ -97,10 +97,17 @@ interface Job {
 
 interface Landed<R extends TemplateRenderResult> {
   readonly result: R | null;
+  /** The draft `result` was rendered from. */
+  readonly source: string;
   readonly trigger: RenderTrigger | null;
   readonly attempt: number;
   /** The last output each preview surface produced, whatever has failed since. */
   readonly produced: R | null;
+  /**
+   * The draft whose Managed Frontmatter positions `produced` names: the one
+   * the newest attempt rendered.
+   */
+  readonly producedSource: string;
   /** The Template Document `produced` was rendered from. */
   readonly producedDocument: string | undefined;
   /** `InputGeneration.cleared` when `result` landed; a later clear hides it. */
@@ -175,7 +182,6 @@ function sameState<R extends TemplateRenderResult>(
     a.result === b.result &&
     a.retained === b.retained &&
     a.busy === b.busy &&
-    a.stale === b.stale &&
     a.staleReason === b.staleReason &&
     a.trigger === b.trigger &&
     a.attempt === b.attempt
@@ -231,11 +237,15 @@ export function makeRenderSchedulerAtoms<
   /** The generation whose quiet time Run, Stop, or a host failure ended. */
   const cancelled = Atom.make(-1);
   const job = Atom.make<Job | null>(null);
+  // Each source is read only beside the result it names, so neither matters
+  // before one lands.
   const landed = Atom.make<Landed<R>>({
     result: null,
+    source: "",
     trigger: null,
     attempt: 0,
     produced: null,
+    producedSource: "",
     producedDocument: undefined,
     cleared: 0,
   });
@@ -275,11 +285,14 @@ export function makeRenderSchedulerAtoms<
     previous: Landed<R>,
     {
       published,
+      source,
       trigger,
       now,
       clearedNow,
     }: {
       readonly published: R;
+      /** The draft `published` was rendered from. */
+      readonly source: string;
       readonly trigger: RenderTrigger;
       readonly now: RenderSchedulerInput;
       readonly clearedNow: number;
@@ -303,16 +316,23 @@ export function makeRenderSchedulerAtoms<
         } as R)
       : result;
     const keeps = !renderFailed(forRetention);
+    // What was kept names the positions of the draft the attempt before
+    // rendered, so it moves to this attempt's draft before the two combine.
     return {
       result,
+      source,
       trigger,
       attempt,
       produced: keeps
         ? previous.produced !== null &&
           previous.producedDocument === now.document
-          ? retain(previous.produced, forRetention)
+          ? retain(
+              rebased(previous.produced, previous.producedSource, source),
+              forRetention,
+            )
           : forRetention
         : previous.produced,
+      producedSource: keeps ? source : previous.producedSource,
       producedDocument: keeps ? now.document : previous.producedDocument,
       cleared: clearedNow,
     };
@@ -362,20 +382,30 @@ export function makeRenderSchedulerAtoms<
           const now = yield* Atom.get(input);
           const clearedNow = yield* Atom.get(cleared);
           yield* Atom.update(landed, (previous) =>
-            land(previous, { published: result, trigger, now, clearedNow }),
+            land(previous, {
+              published: result,
+              source: request.source,
+              trigger,
+              now,
+              clearedNow,
+            }),
           );
         }),
       ),
     );
   });
 
+  // A result stands across an edit until the next one lands, so each is read
+  // against the draft on screen; the same pair answers with the same object.
+  const shownResult = rebaser<R>();
+  const shownRetained = rebaser<R>();
   const state = Atom.make((get): RenderSchedulerState<R> => {
     get(quiet);
     const now = get(input);
     const busy = AsyncResult.isWaiting(get(rendering));
     const last = get(landed);
     const result = last.cleared === get(cleared) ? last.result : null;
-    const { produced, producedDocument } = last;
+    const { produced, producedSource, producedDocument } = last;
     // Only a failure sends the reader back to working output, and only where
     // that output still answers for the document and the selection they are
     // reading now.
@@ -387,17 +417,16 @@ export function makeRenderSchedulerAtoms<
       produced !== null &&
       producedDocument === now.document &&
       sameSelection(now, produced)
-        ? produced
+        ? shownRetained(produced, producedSource, now.source)
         : null;
     const identityMismatch =
       result !== null &&
       (result.sourceRevision !== templateSourceRevision(now.source) ||
         !sameSelection(now, result));
     return {
-      result,
+      result: shownResult(result, last.source, now.source),
       retained,
       busy,
-      stale: held(now) || identityMismatch,
       staleReason: staleReasonFor(now, result !== null && !identityMismatch),
       trigger: last.trigger,
       attempt: last.attempt,
@@ -429,6 +458,7 @@ export function makeRenderSchedulerAtoms<
         landed,
         land(ctx.get(landed), {
           published: failed(failedRender(renderIdentity(now), diagnostic)),
+          source: now.source,
           trigger: "automatic",
           now,
           clearedNow: ctx.get(cleared),

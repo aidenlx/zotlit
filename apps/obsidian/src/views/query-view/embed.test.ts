@@ -198,6 +198,27 @@ it("shows a placeholder named after the file in a note preview", async () => {
   expect(run).not.toHaveBeenCalled();
 });
 
+it("lists in the preview placeholder each view it shows, and the ones bound to the note's item", async () => {
+  const { preview } = await setup();
+  const views = (el: HTMLElement) =>
+    [...el.querySelectorAll("[data-query-placeholder-view]")].map(
+      (row) => row.textContent,
+    );
+  const plain = await preview();
+  expect(views(plain)).toEqual([
+    "YellowAnnotations",
+    "MineAnnotations · Only this note's item",
+  ]);
+  expect(views(await preview("#Mine"))).toEqual([
+    "MineAnnotations · Only this note's item",
+  ]);
+  const missing = await preview("#Methods");
+  expect(views(missing)).toEqual([]);
+  expect(
+    missing.querySelector("[data-query-placeholder-problem]")?.textContent,
+  ).toBe('The query has no view named "Methods".');
+});
+
 it("saves through an open tab of the file, so the tab shows the change", async () => {
   const { embed, host } = await setup();
   const tab = openTextFileView(host, host.file(FILE_PATH));

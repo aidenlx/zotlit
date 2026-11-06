@@ -21,6 +21,7 @@ export type {
   WorkbenchUpdate,
 } from "./controller";
 export {
+  followEntries,
   managedEntryEdit,
   managedFrontmatterEntries,
   manifestKeyEdit,
