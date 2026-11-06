@@ -140,7 +140,7 @@ export function WebPreview({
     state.mode,
     state.live,
   ]);
-  const { result, retained, busy, stale, staleReason, trigger, attempt } =
+  const { result, retained, busy, staleReason, trigger, attempt } =
     useRenderState(scheduler);
   // The editor owns the explanation, so this preview publishes what its render
   // found and takes it back when it closes.
@@ -183,7 +183,6 @@ export function WebPreview({
         annotationResult={annotationResult}
         retained={retained}
         mode={mode}
-        stale={stale}
         staleReason={staleReason}
         showMarkdown={state.showMarkdown}
         onShowMarkdown={(showMarkdown) => store.setState({ showMarkdown })}

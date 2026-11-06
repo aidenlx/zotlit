@@ -133,7 +133,6 @@ const INERT_STATE: RenderSchedulerState = {
   result: null,
   retained: null,
   busy: false,
-  stale: false,
   staleReason: null,
   trigger: null,
   attempt: 0,
