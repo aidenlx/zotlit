@@ -237,6 +237,8 @@ export function FilterEditor({
       // The Filter offers its own values and tests no Item.
       matchData: NO_MATCH_DATA,
       insertTarget: () => null,
+      // The popover stands in the window that has focus.
+      window: () => activeWindow,
     });
     // The popover stands over Obsidian's suggestion popups.
     return { ...created, inputSuggestions: undefined };

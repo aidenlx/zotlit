@@ -27,10 +27,7 @@ import type {
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import { currentCallSite, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import type {
-  RenderDiagnostic,
-  WorkbenchReportContext,
-} from "@zotlit/workbench/render";
+import type { RenderDiagnostic } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
 import {
   EditToolbar,
@@ -47,8 +44,9 @@ import {
   setAdvanced as setViewAdvanced,
   setTab as setViewTab,
   diagnosticText,
+  entryDiagnostics,
   fieldSnippet,
-  problemText,
+  isProfileProblem,
   renderDiagnosis,
   useParts,
   useWorkbenchProblems,
@@ -64,7 +62,6 @@ import {
 } from "@zotlit/workbench/ui";
 import type {
   WorkbenchTab,
-  EntryDiagnostic,
   WorkbenchDiagnosis,
   WorkbenchHost,
   WorkbenchInsertTarget,
@@ -264,19 +261,6 @@ function WorkbenchSession({
     reconnect,
     disconnect,
   } = useWorkbenchConnection(page);
-  /** The document, language, and paper behind whatever attempt fails next. */
-  const reportContext = useCallback(
-    (root: string): WorkbenchReportContext => ({
-      document: location.reference,
-      language: controller.language,
-      root,
-      selection: sample.item.indexedKey,
-      ...(connection.state === "connected"
-        ? { zotlitVersion: connection.pluginVersion }
-        : {}),
-    }),
-    [connection, location.reference, controller, sample],
-  );
   reads.insertTarget = () => ({ slice, range: caret });
 
   // The Editor and Result tabs stand under 780 px alone, so a window that grows
@@ -338,10 +322,7 @@ function WorkbenchSession({
     capture: {
       messages: m,
       source: controller.source,
-      context: () =>
-        reportContext(
-          !advanced && tab === "annotation" ? "annotation" : "note",
-        ),
+      context: workbench.reportContext,
     },
   });
   // Null while the manifest's list is one the rows cannot edit, which is what
@@ -355,24 +336,11 @@ function WorkbenchSession({
       : null;
   // A row carries every problem that names it: the renderer's own, and the
   // manifest errors the parser pinned to one entry.
-  const rowProblems: EntryDiagnostic[] = [
-    ...(result?.diagnostics ?? []).flatMap((diagnostic) =>
-      diagnostic.position === undefined
-        ? []
-        : [
-            {
-              position: diagnostic.position,
-              message: diagnosticText(m, diagnostic),
-            },
-          ],
-    ),
-    ...controller.problems.flatMap((entry) => {
-      const position = entryPosition(entry.slice);
-      return position === null
-        ? []
-        : [{ position, message: problemText(m, entry).message }];
-    }),
-  ];
+  const rowProblems = entryDiagnostics(
+    m,
+    result?.diagnostics ?? [],
+    controller.problems,
+  );
   // The Name and folder tab writes the note name; a manifest that holds that
   // value in a form no one-line pane can own leaves the caret in the note.
   const slice: WorkbenchSliceId = advanced
@@ -425,19 +393,7 @@ function WorkbenchSession({
       return;
     }
     if (id === "filename" || id === "details") {
-      setTab(
-        id === "details" &&
-          [
-            "name",
-            "description",
-            "version",
-            "author",
-            "sampleItemType",
-            "language",
-          ].includes(problem.params?.field ?? "")
-          ? "profile"
-          : "name",
-      );
+      setTab(isProfileProblem(problem) ? "profile" : "name");
     }
     // A fresh object every time, so selecting the same problem twice reveals it
     // again. The Name and folder form writes its manifest fields through

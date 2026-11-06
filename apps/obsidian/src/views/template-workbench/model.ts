@@ -33,7 +33,10 @@ import {
   INITIAL_VIEW,
   TABS,
   annotationSamples,
+  chooseItem,
   patch,
+  patchAt,
+  setRoot,
 } from "@zotlit/workbench/ui";
 import type {
   TemplateRoot,
@@ -75,14 +78,27 @@ export interface WorkbenchPicks {
   readonly citationExample: CitationExampleId | null;
 }
 
-/** The chosen Item's read, as the surfaces show it. */
-export interface WorkbenchItemRead {
-  readonly status: "empty" | "loading" | "ready" | "error";
-  /** The read's own message, when it failed with one. */
-  readonly error: string | null;
-  /** The Item's data; null while it loads, after a failure, or when unavailable. */
-  readonly snapshot: ItemSnapshot | null;
-}
+/**
+ * The chosen Item's read, as the surfaces show it. A finished read holds the
+ * Item's data: an Item the read cannot find fails with `ItemUnavailable`.
+ */
+export type WorkbenchItemRead =
+  | {
+      readonly status: "empty" | "loading";
+      readonly error: null;
+      readonly snapshot: null;
+    }
+  | {
+      readonly status: "error";
+      /** The read's own message. */
+      readonly error: string;
+      readonly snapshot: null;
+    }
+  | {
+      readonly status: "ready";
+      readonly error: null;
+      readonly snapshot: ItemSnapshot;
+    };
 
 export const INITIAL_PICKS: WorkbenchPicks = {
   annotationId: null,
@@ -109,6 +125,19 @@ const INITIAL_PANELS: WorkbenchPanels = {
 };
 
 /**
+ * The share of the panels' container one panel takes at most, so the source
+ * stays in view; the panel's `max-w-2/5` draws it.
+ */
+const PANEL_SHARE = 0.4;
+
+/**
+ * The widest the view draws a panel in a container `container` pixels wide:
+ * {@link PANEL_SHARE} of it, and never past {@link PANEL_WIDTH}.
+ */
+export const panelLimit = (container: number) =>
+  clampPanelWidth(container * PANEL_SHARE);
+
+/**
  * `width` held within {@link PANEL_WIDTH}, and within `max` where the view
  * draws the panel narrower than that.
  */
@@ -117,17 +146,11 @@ export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
     Math.min(Math.max(PANEL_WIDTH.min, max), Math.max(PANEL_WIDTH.min, width)),
   );
 
-const patchPanel =
-  (side: PanelSide, value: Partial<WorkbenchPanel>) =>
-  (state: WorkbenchPanels): WorkbenchPanels => {
-    const panel = patch(value)(state[side]);
-    return panel === state[side] ? state : { ...state, [side]: panel };
-  };
 export const showPanel = (side: PanelSide, shown: boolean) =>
-  patchPanel(side, { shown });
+  patchAt<WorkbenchPanels, PanelSide>(side, { shown });
 /** Sets a panel's width, held within {@link PANEL_WIDTH}. */
 export const setPanelWidth = (side: PanelSide, width: number) =>
-  patchPanel(side, { width: clampPanelWidth(width) });
+  patchAt<WorkbenchPanels, PanelSide>(side, { width: clampPanelWidth(width) });
 
 const NO_DOCUMENT: WorkbenchDocumentFacts = {
   path: null,
@@ -135,25 +158,12 @@ const NO_DOCUMENT: WorkbenchDocumentFacts = {
   partialName: null,
 };
 
-export const chooseItem = (item: WorkbenchItemChoice | null) =>
-  patch<WorkbenchViewState>({ item });
-export const setTab = (tab: WorkbenchViewState["tab"]) =>
-  patch<WorkbenchViewState>({ tab });
-export const setRoot = (root: TemplateRoot) =>
-  patch<WorkbenchViewState>({ root });
-export const setAdvanced = (advanced: boolean) =>
-  patch<WorkbenchViewState>({ advanced });
 export const setCustomization = (
   customization: WorkbenchViewState["customization"],
 ) => patch<WorkbenchViewState>({ customization });
-export const setPresentation =
-  (value: Partial<WorkbenchViewState["presentation"]>) =>
-  (state: WorkbenchViewState): WorkbenchViewState => {
-    const presentation = patch(value)(state.presentation);
-    return presentation === state.presentation
-      ? state
-      : { ...state, presentation };
-  };
+export const setPresentation = (
+  value: Partial<WorkbenchViewState["presentation"]>,
+) => patchAt<WorkbenchViewState, "presentation">("presentation", value);
 export const chooseAnnotation = (annotationId: string | null) =>
   patch<WorkbenchPicks>({ annotationId });
 export const chooseCitation = (
@@ -280,8 +290,6 @@ export function makeTemplateWorkbenchModel({
   );
   const read = Atom.make((get): WorkbenchItemRead => {
     const result = get(chosen);
-    if (get(itemId) === null)
-      return { status: "empty", error: null, snapshot: null };
     if (result.waiting || AsyncResult.isInitial(result))
       return { status: "loading", error: null, snapshot: null };
     if (AsyncResult.isFailure(result)) {
@@ -295,11 +303,10 @@ export function makeTemplateWorkbenchModel({
         snapshot: null,
       };
     }
-    return {
-      status: "ready",
-      error: null,
-      snapshot: result.value?.snapshot ?? null,
-    };
+    // The read answers no Item while none is chosen.
+    return result.value === null
+      ? { status: "empty", error: null, snapshot: null }
+      : { status: "ready", error: null, snapshot: result.value.snapshot };
   });
   /** The chosen Item's title: the read's, once it named one. */
   const title = Atom.make((get) => {

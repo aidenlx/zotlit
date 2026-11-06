@@ -47,9 +47,15 @@ import type {
   WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import {
+  chooseItem,
   citationExampleLabel,
+  entryDiagnostics,
   fieldSnippet,
+  isProfileProblem,
   patch,
+  setAdvanced,
+  setRoot,
+  setTab,
 } from "@zotlit/workbench/ui";
 import type { WorkbenchDiagnosis } from "@zotlit/workbench/ui";
 import {
@@ -65,7 +71,6 @@ import {
   PropertiesPane,
   ProblemsFooter,
   WorkbenchDiagnosticsProvider,
-  problemText,
   useWorkbenchProblems,
   workbenchDiagnoses,
   renderDiagnosis,
@@ -182,18 +187,14 @@ import { NativeMatchPane } from "./match-pane";
 import {
   chooseAnnotation,
   chooseCitation,
-  chooseItem,
   holdTemplateWorkbenchModel,
   makeTemplateWorkbenchModel,
   readEphemeralWorkbench,
   readSavedWorkbench,
   savedWorkbench,
-  setAdvanced,
   setCustomization,
   setPresentation,
   setPanelWidth,
-  setRoot,
-  setTab,
   showPanel,
 } from "./model";
 import type { PanelSide, TemplateWorkbenchModel } from "./model";
@@ -680,6 +681,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         markdown: (props) => <WorkbenchMarkdown {...props} view={this} />,
         matchData: createMatchData(this.#runner.provide),
         insertTarget: () => this.insertTarget,
+        window: () => this.contentEl.win,
         partials: {
           names: () => this.partialNames,
           create: (query) =>
@@ -707,11 +709,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       retain: retainNativeOutputs,
     });
     this.fields = makeFieldsPanelModel(this.model, {
-      revision: this.#editor.model.document.revision,
-      canInsert: () =>
-        !this.#closed &&
-        !this.#controller.readOnly &&
-        this.insertTarget !== null,
+      document: this.#editor.model.document,
+      insertTarget: () => this.insertTarget,
     });
     this.#cleanup.defer(deps.registry.mount(this.fields.local));
     this.fieldsActions = makeFieldsActions(this, this.#host, (target) =>
@@ -2826,15 +2825,7 @@ function EditorContent({
     state.setTab(
       entry !== null
         ? "properties"
-        : problem.slice === "details" &&
-            [
-              "name",
-              "description",
-              "version",
-              "author",
-              "sampleItemType",
-              "language",
-            ].includes(problem.params?.field ?? "")
+        : isProfileProblem(problem)
           ? "profile"
           : problem.slice === "filename" || problem.slice === "details"
             ? "name"
@@ -3137,29 +3128,11 @@ function EditorContent({
                   entries={controller.managedEntries}
                   properties={result?.properties ?? []}
                   fold={result?.fold ?? []}
-                  diagnostics={[
-                    ...(result?.diagnostics ?? []).flatMap((diagnostic) =>
-                      diagnostic.position === undefined
-                        ? []
-                        : [
-                            {
-                              position: diagnostic.position,
-                              message: diagnosticText(workbenchM, diagnostic),
-                            },
-                          ],
-                    ),
-                    ...controller.problems.flatMap((problem) => {
-                      const position = entryPosition(problem.slice);
-                      return position === null
-                        ? []
-                        : [
-                            {
-                              position,
-                              message: problemText(workbenchM, problem).message,
-                            },
-                          ];
-                    }),
-                  ]}
+                  diagnostics={entryDiagnostics(
+                    workbenchM,
+                    result?.diagnostics ?? [],
+                    controller.problems,
+                  )}
                   selected={selected}
                   onSelect={setSelected}
                   onOpenSource={(range) => {

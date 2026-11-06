@@ -5,7 +5,7 @@ import type { App } from "obsidian";
 import { onTestFinished } from "vitest";
 
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
-import { patch } from "@zotlit/workbench/ui";
+import { chooseItem, patch } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
   WorkbenchItemChoice,
@@ -50,7 +50,6 @@ import type { NativeRenderDeps } from "@/views/note-preview/render";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
 import type { WorkbenchActionServices } from "./actions";
-import { chooseItem } from "./model";
 import type { TemplateWorkbenchDeps, TemplateWorkbenchView } from "./view";
 type TemplateFixture = TemplateOperations & {
   readonly "compile-status-changed": Stream.Stream<void>;

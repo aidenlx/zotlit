@@ -1,7 +1,10 @@
 // The authoring tabs, in the order the pane offers them, with the label and
 // the lede each opens with. The Template Document kind picks the set.
 
-import type { WorkbenchDocumentKind } from "#/document/controller";
+import type {
+  WorkbenchDocumentKind,
+  WorkbenchProblem,
+} from "#/document/controller";
 
 import type { WorkbenchMessages } from "./generated/messages";
 import type { WorkbenchMessageLabel } from "./messages";
@@ -24,6 +27,23 @@ export const TABS: readonly WorkbenchTab[] = [
   "match",
   "profile",
 ];
+
+/** The manifest's `details` fields the Profile tab edits; the rest are the Name and folder tab's. */
+const PROFILE_FIELDS: readonly string[] = [
+  "name",
+  "description",
+  "version",
+  "author",
+  "sampleItemType",
+  "language",
+];
+
+/** Whether `problem` names a manifest field the Profile tab edits. */
+export const isProfileProblem = (
+  problem: Pick<WorkbenchProblem, "slice" | "params">,
+): boolean =>
+  problem.slice === "details" &&
+  PROFILE_FIELDS.includes(problem.params?.field ?? "");
 
 const KIND_TABS: Record<WorkbenchDocumentKind, readonly WorkbenchTab[]> = {
   profile: TABS,

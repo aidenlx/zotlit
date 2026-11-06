@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
-import { Effect } from "effect";
+import { Deferred, Effect, Exit } from "effect";
 import { act } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { renderProfile } from "@zotlit/workbench/render";
 import type { TemplateRenderResult } from "@zotlit/workbench/render";
@@ -13,9 +13,6 @@ import { m } from "@/paraglide/messages.js";
 import { renderInThread, open } from "./page-test-host";
 
 describe("preview scheduling", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
   function choose(scope: HTMLElement, label: string, value: string) {
     const control = [...scope.querySelectorAll("label")]
       .find((node) => node.textContent?.includes(label))!
@@ -40,12 +37,13 @@ describe("preview scheduling", () => {
   }
 
   it("runs the one render on demand, for the editor and the Preview alike", async () => {
-    await using page = await open();
+    await using page = await open({ clock: true });
     await page.settle();
     choose(page.host, m.workbench_preview_refresh(), "demand");
     renderInThread.mockClear();
     editNote(page.host, "Held draft\n");
-    await act(async () => vi.advanceTimersByTimeAsync(300));
+    // Past the quiet time, which starts no render on demand.
+    await page.adjust(300);
     expect(renderInThread).not.toHaveBeenCalled();
     page.press(m.workbench_preview_run());
     await page.waitFor(() => {
@@ -58,29 +56,28 @@ describe("preview scheduling", () => {
   });
 
   it("interrupts the render in flight when the page closes", async () => {
-    let interrupted = false;
-    let started = false;
+    const started = Deferred.makeUnsafe<void>();
+    const interrupted = Deferred.makeUnsafe<void>();
     renderInThread.mockImplementation(() =>
       Effect.callback<TemplateRenderResult>(() => {
-        started = true;
-        return Effect.sync(() => {
-          interrupted = true;
-        });
+        Deferred.doneUnsafe(started, Exit.void);
+        return Effect.sync(() => Deferred.doneUnsafe(interrupted, Exit.void));
       }),
     );
-    const page = await open();
-    await page.waitFor(() => expect(started).toBe(true));
+    const page = await open({ clock: true });
+    await page.adjust(300);
+    await Effect.runPromise(Deferred.await(started));
     await page[Symbol.asyncDispose]();
-    await vi.waitFor(() => expect(interrupted).toBe(true));
+    await Effect.runPromise(Deferred.await(interrupted));
   });
 
   it("passes create and update inputs while preserving the synthesized note's outside text", async () => {
-    await using page = await open();
+    await using page = await open({ clock: true });
     editNote(page.host, "My own introduction\n");
-    await act(async () => vi.advanceTimersByTimeAsync(300));
+    await page.adjust(300);
     expect(renderInThread.mock.lastCall![0].mode).toBe("create");
     choose(page.host, m.workbench_preview_mode(), "update");
-    await act(async () => vi.advanceTimersByTimeAsync(300));
+    await page.adjust(300);
     const request = renderInThread.mock.lastCall![0];
     expect(request.mode).toBe("update");
     const result = renderProfile(request.source, request.snapshot, request);

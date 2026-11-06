@@ -38,7 +38,12 @@ function settled<A, E>(fiber: Fiber.Fiber<A, E>): Promise<A> {
   );
 }
 
-function setup() {
+/** A pop-out window the leaf sits in, apart from the window that has focus. */
+const popout = {
+  document: document.implementation.createHTMLDocument("Pop-out"),
+} as unknown as Window;
+
+function setup(leafWindow: Window = window) {
   const memory = new Map<string, string | null>();
   const app = stubService<App>("App", {
     loadLocalStorage: (key: string) => memory.get(key),
@@ -55,6 +60,7 @@ function setup() {
       ),
     matchData: NO_MATCH_DATA,
     insertTarget: () => null,
+    window: () => leafWindow,
   });
   return { host, memory };
 }
@@ -251,6 +257,30 @@ describe("Template Workbench host", () => {
     await expect(settled(chosen)).resolves.toBeNull();
     expect(document.activeElement).toBe(anchor);
     anchor.remove();
+  });
+
+  // Obsidian opens a modal in the window that last took focus, which can be
+  // the main window while the reader works in a pop-out.
+  it("opens its choosers, confirms and dialogs in the leaf's own window", () => {
+    const { host } = setup(popout);
+    using suggest = vi.spyOn(SuggestModal.prototype, "open");
+    using confirm = vi.spyOn(ConfirmationModal.prototype, "open");
+    const focused = { activeWindow, activeDocument };
+    activeWindow = window;
+    try {
+      host.run(host.suggester({ title: "Choose item", groups: [] }));
+      host.run(host.confirm({ title: "Replace?", body: "", confirm: "Go" }));
+      host.dialog({ title: "Details", content: null });
+      expect(
+        [
+          suggest.mock.contexts.at(-1) as SuggestModal<unknown>,
+          confirm.mock.contexts.at(-1) as ConfirmationModal,
+          Modal.instances.at(-1)!,
+        ].map((modal) => modal.win === popout),
+      ).toEqual([true, true, true]);
+    } finally {
+      ({ activeWindow, activeDocument } = focused);
+    }
   });
 
   it("closes the chooser when its Effect is interrupted", async () => {

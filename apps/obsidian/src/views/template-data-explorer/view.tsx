@@ -377,6 +377,7 @@ export class TemplateDataExplorerView extends ItemView {
         // This view shows no Match.
         matchData: NO_MATCH_DATA,
         insertTarget: () => null,
+        window: () => this.contentEl.win,
       }),
     );
     this.#actions = createExplorerActions({

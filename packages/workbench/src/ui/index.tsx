@@ -47,12 +47,11 @@ export {
   chooseAnnotation,
   chooseCitation,
   chooseItem,
-  choosePartial,
-  holdWorkbenchModel,
   INITIAL_CHOICES,
   INITIAL_VIEW,
   makeWorkbenchModel,
   patch,
+  patchAt,
   setAdvanced,
   setPreview,
   setRoot,
@@ -125,7 +124,6 @@ export type {
 export {
   ProblemsFooter,
   problemWhere,
-  usePublishedProblems,
   useWorkbenchProblems,
 } from "./problems-footer";
 export type {
@@ -143,7 +141,7 @@ export type {
 export { citationExampleLabel, citationVariantLabel } from "./citation-preview";
 export { partialContextLabel } from "./partial-preview";
 export { TabBar, TabPanel } from "./tab-bar";
-export { TABS, tabLabel, tabLede, tabsFor } from "./tabs";
+export { isProfileProblem, TABS, tabLabel, tabLede, tabsFor } from "./tabs";
 export type { WorkbenchTab } from "./tabs";
 export { WorkbenchThemeProvider, useIcon, useParts } from "./theme";
 export type {
@@ -194,7 +192,7 @@ export { PreviewControls } from "./preview-controls";
 
 export { NameFolderPane, BUILT_IN_BINDING_DEFAULTS } from "./name-folder";
 export type { NameFolderPaneProps } from "./name-folder";
-export { PropertiesPane } from "./properties-tab";
+export { entryDiagnostics, PropertiesPane } from "./properties-tab";
 export type { EntryDiagnostic, PropertiesPaneProps } from "./properties-tab";
 export {
   AnnotationPane,

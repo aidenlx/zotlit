@@ -20,7 +20,7 @@ import {
   chooseItem,
   createWorkbenchEditor,
   INITIAL_VIEW,
-  patch,
+  patchAt,
 } from "@zotlit/workbench/ui";
 import type {
   WorkbenchEditorInstance,
@@ -248,6 +248,8 @@ export interface WebWorkbench extends Disposable {
   readonly restoreDraft: () => void;
   /** Changes what the editor reveals, selects, and opens. */
   readonly present: (changes: Partial<Presentation>) => void;
+  /** The document, language, and paper behind whatever attempt fails next. */
+  readonly reportContext: () => WorkbenchReportContext;
 }
 
 type ProfileManifest = NonNullable<
@@ -412,12 +414,10 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
   };
   choose(registry.get(page.chosen), null);
   const present = (changes: Partial<Presentation>) =>
-    registry.update(page.view, (state) => {
-      const presentation = patch<Presentation>(changes)(state.presentation);
-      return presentation === state.presentation
-        ? state
-        : { ...state, presentation };
-    });
+    registry.update(
+      page.view,
+      patchAt<WorkbenchViewState, "presentation">("presentation", changes),
+    );
   const layout = Atom.make<PageLayout>({
     view: "edit",
     sheet: false,
@@ -647,6 +647,7 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
     load,
     say,
     present,
+    reportContext,
     [Symbol.dispose]() {
       for (const release of releases.reverse()) release();
       editor[Symbol.dispose]();

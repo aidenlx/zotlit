@@ -20,7 +20,6 @@ import type { RenderReport, WorkbenchReportContext } from "#/render/report";
 //
 // Source and explanation share the pane. The divider adjusts that share;
 // the chevron closes the explanation and returns focus to the source.
-import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { useAtomSet } from "@effect/atom-react";
 import {
   useCallback,
@@ -46,7 +45,6 @@ import {
   diagnosisReport,
   diagnosisWhere,
   problemText,
-  renderDiagnosis,
 } from "./problems";
 import type { RenderTrigger } from "./scheduler-atoms";
 import { WorkbenchOption, WorkbenchSelect } from "./select";
@@ -222,53 +220,6 @@ export function useWorkbenchProblems({
 }
 
 /** Nothing found, as one value, so an idle preview publishes no new list. */
-const NO_DIAGNOSTICS: readonly RenderDiagnostic[] = [];
-
-/**
- * The preview's half of the Problems contract, which both hosts keep alike:
- * what this preview's render found goes to the editor that explains it, a
- * preview that closes takes its findings back with it, and a deliberate Run
- * that failed asks for its explanation at once. A failure while the reader
- * types asks for nothing, which is what leaves the editor as they left it.
- *
- * `publish` and `showProblem` are read through refs, so a host may pass a
- * fresh callback on every draw without republishing on every draw.
- */
-export function usePublishedProblems({
-  result,
-  trigger,
-  attempt,
-  publish,
-  showProblem,
-}: {
-  /** The newest landed result, whose diagnostics this preview publishes. */
-  readonly result: TemplateRenderResult | null;
-  /** How the attempt behind that result started. */
-  readonly trigger: RenderTrigger | null;
-  /** Counts published results, so one deliberate failure opens the area once. */
-  readonly attempt: number;
-  readonly publish: (diagnostics: readonly RenderDiagnostic[]) => void;
-  readonly showProblem: (id: string, occurrence?: RenderDiagnostic) => void;
-}): void {
-  const diagnostics = result?.diagnostics ?? NO_DIAGNOSTICS;
-  const publishing = useRef(publish);
-  publishing.current = publish;
-  const open = useRef(showProblem);
-  open.current = showProblem;
-  useEffect(() => {
-    publishing.current(diagnostics);
-  }, [diagnostics]);
-  useEffect(() => () => publishing.current(NO_DIAGNOSTICS), []);
-  const opened = useRef(attempt);
-  useEffect(() => {
-    if (attempt === opened.current) return;
-    opened.current = attempt;
-    const first = diagnostics[0];
-    if (trigger === "explicit" && first)
-      open.current(renderDiagnosis(first).id, first);
-  }, [attempt, trigger, diagnostics]);
-}
-
 export function ProblemsFooter({
   problems,
   onOpen,

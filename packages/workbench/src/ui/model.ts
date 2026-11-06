@@ -154,6 +154,21 @@ export const patch =
       ? state
       : { ...state, ...changes };
 
+/**
+ * Applies `changes` to the object `state` holds at `key`, or keeps `state`
+ * itself when every field already holds.
+ */
+export const patchAt =
+  <S extends object, K extends keyof S>(
+    key: K,
+    changes: Partial<S[K] & object>,
+  ) =>
+  (state: S): S => {
+    const current = state[key] as S[K] & object;
+    const next = patch(changes)(current);
+    return next === current ? state : { ...state, [key]: next };
+  };
+
 export const setTab = (tab: WorkbenchTab) => patch<WorkbenchViewState>({ tab });
 export const chooseItem = (item: WorkbenchItemChoice | null) =>
   patch<WorkbenchViewState>({ item });
@@ -167,12 +182,8 @@ export const chooseCitation = (citation: CitationPreviewSelection | null) =>
   patch<WorkbenchChoices>({ citation });
 export const choosePartial = (partial: PartialPreviewSelection | null) =>
   patch<WorkbenchChoices>({ partial });
-export const setPreview =
-  (settings: Partial<WorkbenchPreviewSettings>) =>
-  (state: WorkbenchChoices): WorkbenchChoices => {
-    const preview = patch<WorkbenchPreviewSettings>(settings)(state.preview);
-    return preview === state.preview ? state : { ...state, preview };
-  };
+export const setPreview = (settings: Partial<WorkbenchPreviewSettings>) =>
+  patchAt<WorkbenchChoices, "preview">("preview", settings);
 
 /** The runtime every read, render, and command of one host runs on. */
 export type WorkbenchRuntime = Atom.AtomRuntime<never, unknown>;
