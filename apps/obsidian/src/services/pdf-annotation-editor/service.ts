@@ -37,7 +37,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { registerAnnotationAnchorCapture } from "./anchor-capture";
 import { PdfViewBinding } from "./binding";
-import { bindingWrites } from "./operations";
+import { bindingResources } from "./operations";
 import { PdfReads } from "./reads";
 import { openFileOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
@@ -177,7 +177,9 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
           if (bindings.has(view)) continue;
           if (!trackOpens) restoredViews.add(view);
           const scope = yield* Scope.fork(bindingScopes);
-          const writes = yield* bindingWrites.pipe(Scope.provide(scope));
+          const { registry, writes } = yield* bindingResources.pipe(
+            Scope.provide(scope),
+          );
           const binding = new PdfViewBinding({
             view,
             adapter: {
@@ -208,6 +210,7 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
             now,
             reads,
             openedAt: restoredViews.has(view) ? null : now(),
+            registry,
           });
           // The surfaces go before the writes end, so the writes a disposal
           // starts, a typed Text Draft's create among them, run on an open
