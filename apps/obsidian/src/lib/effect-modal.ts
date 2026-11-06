@@ -24,3 +24,19 @@ export function awaitModal<A>(
     return Effect.sync(() => modal.close());
   });
 }
+
+/**
+ * Opens `modal` in `win`, the window of the view that asked for it.
+ *
+ * Obsidian opens a modal in `activeWindow`, which moves only when a window
+ * takes focus. A pop-out the reader works in does not always take focus
+ * first, so `win` becomes the active window here, as that focus would make it,
+ * and the modals that follow from this one open there too.
+ *
+ * @see apps/obsidian/policies/popout-windows.md
+ */
+export function openModalIn(modal: { open(): void }, win: Window): void {
+  activeWindow = win;
+  activeDocument = win.document;
+  modal.open();
+}

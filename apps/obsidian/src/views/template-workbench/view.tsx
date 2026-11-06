@@ -680,6 +680,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         markdown: (props) => <WorkbenchMarkdown {...props} view={this} />,
         matchData: createMatchData(this.#runner.provide),
         insertTarget: () => this.insertTarget,
+        window: () => this.contentEl.win,
         partials: {
           names: () => this.partialNames,
           create: (query) =>
