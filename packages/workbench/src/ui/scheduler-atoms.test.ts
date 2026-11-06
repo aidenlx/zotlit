@@ -792,3 +792,40 @@ it("reports the attempt a failure came from, not the draft the reader moved on t
     formatRenderReport(scheduler.state().result!.diagnostics[0]!.report!),
   ).toBe(text);
 });
+
+it("renders once for a host whose render answers at once", async () => {
+  // The web host renders on the page's own thread, so its render completes
+  // inside the step that starts it.
+  const requests: RenderRequest[] = [];
+  const input = Atom.make<RenderSchedulerInput>({
+    source: "Draft",
+    snapshot: PAPER,
+    annotation: EXAMPLE,
+    mode: "create",
+    live: true,
+  });
+  const runtime = Atom.runtime(TestClock.layer());
+  const scheduler = makeRenderSchedulerAtoms({
+    runtime,
+    input,
+    render: (request) =>
+      Effect.sync(() => {
+        requests.push(request);
+        return {
+          ...failedRender(renderIdentity(request), { code: "render-error" }),
+          diagnostics: [],
+        };
+      }),
+    failed: (result) => result,
+  });
+  const registry = AtomRegistry.make({
+    defaultIdleTTL: 0,
+    timeoutResolution: 1,
+  });
+  const release = registry.mount(scheduler.state);
+  registry.set(scheduler.run, undefined);
+  await vi.waitFor(() => expect(registry.get(scheduler.state).attempt).toBe(1));
+  expect(requests).toHaveLength(1);
+  release();
+  registry.dispose();
+});

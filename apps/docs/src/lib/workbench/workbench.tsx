@@ -3,8 +3,10 @@
 // under 1180 px the field column becomes the dialog the toolbar "Add a field"
 // button opens, and under 780 px the pane fills the screen with the result
 // behind a view switch.
-import { Layer } from "effect";
-import * as Atom from "effect/reactivity/Atom";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Option } from "effect";
+import type { Layer } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import {
   ArrowLeft,
   Download,
@@ -14,21 +16,10 @@ import {
   Save,
   X,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useStore } from "zustand";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
-import {
-  entryPosition,
-  entrySlice,
-  WorkbenchDocumentController,
-} from "@zotlit/workbench/document";
+import { entryPosition, entrySlice } from "@zotlit/workbench/document";
 import type {
   WorkbenchProblem,
   WorkbenchSliceId,
@@ -56,11 +47,8 @@ import {
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
-  createWorkbenchEditor,
-  createWorkbenchStore,
-  useFork,
-  useForkedEffect,
-  useRenderState,
+  setAdvanced as setViewAdvanced,
+  setTab as setViewTab,
   diagnosticText,
   fieldSnippet,
   problemText,
@@ -82,9 +70,8 @@ import type {
   WorkbenchTab,
   EntryDiagnostic,
   WorkbenchDiagnosis,
-  WorkbenchEditorInstance,
   WorkbenchHost,
-  WorkbenchStore,
+  WorkbenchInsertTarget,
 } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
@@ -108,7 +95,6 @@ import { annotationHeaderMark } from "./annotation-mark";
 import { ConnectionBar, ConnectionNotice } from "./connection-bar";
 import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
-import type { SampleItem } from "./fields";
 import {
   AddFieldButton,
   ProfileMenuLabel,
@@ -118,8 +104,9 @@ import {
 } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
+import { makeWebPage, openWebWorkbench } from "./page-model";
+import type { WebPage, WebWorkbench } from "./page-model";
 import { WebPreview } from "./preview";
-import { Rendering } from "./rendering";
 import { PageRuntime, usePageBridge } from "./runtime";
 import type { PageServices } from "./runtime";
 import { SampleBar } from "./sample-bar";
@@ -128,18 +115,14 @@ import {
   downloadProfile,
   profileFileName,
   createProfileHandoffSource,
-  Transfer,
 } from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
-import { DEFAULT_SAMPLE, useWorkbenchDraft } from "./use-workbench-draft";
+import { useWorkbenchDraft } from "./use-workbench-draft";
 import type { ProfileHydration } from "./workbench-connection";
 
 /** The result becomes a column once both reading and editing have room. */
 const WIDE_LAYOUT = "(min-width: 780px)";
-
-/** The page's one runtime, which every editor it opens shares. */
-const PAGE_RUNTIME = Atom.runtime(Layer.empty);
 
 /** The Workbench on a page runtime of its own, which closing the page disposes. */
 export function Workbench({
@@ -155,78 +138,95 @@ export function Workbench({
   );
 }
 
+/** What the host reads of the editor at the moment it asks. */
+interface EditorReads {
+  insertTarget: () => WorkbenchInsertTarget | null;
+  reportContext: () => WorkbenchReportContext;
+}
+
+/** The page's atoms, its host, and the one editor they serve. */
 function WorkbenchPage() {
   const bridge = usePageBridge();
-  const fork = useFork(bridge.run);
-  const [controller, setController] = useState(
-    () => new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
-  );
-  const fileInput = useRef<HTMLInputElement>(null);
-  // Where the sheet was opened from, so closing it hands the keyboard back.
-  const addField = useRef<HTMLButtonElement>(null);
-  const [sample, setSample] = useState<SampleItem>(DEFAULT_SAMPLE);
+  const [page] = useState(() => makeWebPage(bridge));
+  const sample = useAtomValue(page.chosen);
+  // The editor's caret and report names, read when the host asks for them.
+  const reads = useRef<EditorReads>({
+    insertTarget: () => null,
+    reportContext: () => ({}),
+  });
   const { host, overlays } = useWebHost({
     snapshot: sample,
     notice: (text) => toast.add({ title: text, type: "info" }),
-    insertTarget: () => ({ slice, range: caret }),
+    insertTarget: () => reads.current.insertTarget(),
   });
-  const [store] = useState(createWorkbenchStore);
-  const [editor, setEditor] = useState<WorkbenchEditorInstance | null>(null);
-  // What names this page in a copied error report, read once per failed
-  // attempt. It is kept current here rather than captured at creation, so a
-  // report describes the draft and paper the failing attempt actually ran on.
-  const named = useRef<() => WorkbenchReportContext>(() => ({}));
-  // Resource ownership follows the host; a replacement document attaches below.
-  const acquireEditor = useEffectEvent(
-    (ownerHost: WorkbenchHost, ownerStore: WorkbenchStore) =>
-      createWorkbenchEditor({
-        host: ownerHost,
-        store: ownerStore,
-        controller,
-        runtime: PAGE_RUNTIME,
-        reportContext: () => named.current(),
-      }),
-  );
+  const [workbench, setWorkbench] = useState<WebWorkbench | null>(null);
+  // The editor's resources follow the host; a replacement document attaches
+  // to the editor in hand.
   useEffect(() => {
-    const owner = acquireEditor(host, store);
-    setEditor(owner);
-    return () => owner[Symbol.dispose]();
-  }, [host, store]);
-  const scheduler = editor?.scheduler ?? null;
-  useEffect(() => {
-    store.getState().setItem({
-      id: sample.item.indexedKey,
-      title: sample.item.title,
+    const owner = openWebWorkbench({
+      bridge,
+      page,
+      host,
+      reportContext: () => reads.current.reportContext(),
     });
-  }, [store, sample]);
-  const { result, trigger, attempt } = useRenderState(scheduler);
-  // What the result pane's own render found. The editor owns the Problems
-  // area, so the preview hands its findings up rather than explaining them
-  // beside its own empty result.
-  const [previewProblems, setPreviewProblems] = useState<
-    readonly RenderDiagnostic[]
-  >([]);
-  const [revision, setRevision] = useState(0);
-  const [annotationChoice, setAnnotationChoice] = useState<string | null>(null);
-  const { current: itemAnnotations, example: selectedAnnotation } = useMemo(
-    () => annotationSamples(sample, annotationChoice),
-    [sample, annotationChoice],
+    setWorkbench(owner);
+    return () => owner[Symbol.dispose]();
+  }, [bridge, page, host]);
+  if (!workbench) return <WorkbenchSkeleton />;
+  return (
+    <WorkbenchSession
+      page={page}
+      workbench={workbench}
+      host={host}
+      overlays={overlays}
+      reads={reads.current}
+    />
   );
-  useEffect(
-    () => setAnnotationChoice(selectedAnnotation.id),
-    [selectedAnnotation.id],
-  );
-  const [previewAnnotationChoice, setPreviewAnnotationChoice] = useState(
-    selectedAnnotation.id,
-  );
+}
+
+function WorkbenchSession({
+  page,
+  workbench,
+  host,
+  overlays,
+  reads,
+}: {
+  page: WebPage;
+  workbench: WebWorkbench;
+  host: WorkbenchHost;
+  overlays: ReactNode;
+  reads: EditorReads;
+}) {
+  const { editor, model, show, chooseAnnotation } = workbench;
+  const registry = editor.registry;
+  const controller = useAtomValue(model.controller);
+  const revision = useAtomValue(model.document.revision);
+  const sample = useAtomValue(page.chosen);
+  const read = useAtomValue(page.read);
+  const retained = useAtomValue(page.retained);
+  // The paper's data is restored the way the renderer restores it, so the
+  // field list waits for the same read the render does.
+  const ready = AsyncResult.isSuccess(read);
+  const readSample = Option.getOrNull(AsyncResult.value(read));
+  const fileInput = useRef<HTMLInputElement>(null);
+  // Where the sheet was opened from, so closing it hands the keyboard back.
+  const addField = useRef<HTMLButtonElement>(null);
+  const { result, trigger, attempt } = useAtomValue(model.scheduler.state);
+  const { current: itemAnnotations, example: selectedAnnotation } =
+    useAtomValue(workbench.annotations);
   const annotationResult =
     result?.annotationId === selectedAnnotation.id &&
     result.annotationRevision === selectedAnnotation.revision
       ? result
       : null;
-  const tab = useStore(store, (state) => state.tab);
-  const advanced = useStore(store, (state) => state.advanced);
-  const { setTab, setAdvanced } = store.getState();
+  const tab = useAtomValue(model.tab);
+  const advanced = useAtomValue(model.advanced);
+  const setTab = (next: WorkbenchTab) =>
+    registry.update(model.view, setViewTab(next));
+  const setAdvanced = (next: boolean) =>
+    registry.update(model.view, setViewAdvanced(next));
+  const openInObsidianCommand = useAtomSet(page.openInObsidian);
+  const importFileCommand = useAtomSet(page.importFile);
   // Which of the two the narrow screen is showing, and whether the field list
   // is open over it. Both are the narrow layout's alone: a wide screen shows
   // the pane, the result, and the field list at once.
@@ -234,7 +234,6 @@ function WorkbenchPage() {
   const [sheet, setSheet] = useState(false);
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
-  const latestRevision = useRef(0);
   const [pendingAction, setPendingAction] = useState<{
     label: string;
     run: () => void;
@@ -247,16 +246,10 @@ function WorkbenchPage() {
   const [focusField, setFocusField] = useState<{ field: string } | null>(null);
   const [caret, setCaret] = useState<WorkbenchSliceRange>({ from: 0, to: 0 });
   const noteCaret = useRef(caret);
-  // The field list restores the snapshot the way the renderer does, so it waits
-  // for the same Temporal the restoration needs.
-  const [temporal, setTemporal] = useState(
-    () => globalThis.Temporal !== undefined,
-  );
   const {
     connection,
     saveTarget,
     resources,
-    resourcesStale,
     citationStyles,
     saveAgainst,
     connectionBusy,
@@ -270,16 +263,17 @@ function WorkbenchPage() {
     loadSelectedItem,
     save,
   } = useWorkbenchConnection({
-    controller,
+    page,
     onHydrate: openSelectedProfile,
-    onItemLoaded: setSample,
+    onItemLoaded: show,
     onSaved: ({ reference, source }) => drafts.rebase({ reference, source }),
   });
   const drafts = useWorkbenchDraft({
+    location: page.location,
     controller,
     revision,
     sample,
-    annotationSelection: previewAnnotationChoice,
+    annotationSelection: selectedAnnotation.id,
     saveTarget,
   });
   /** The document, language, and paper behind whatever attempt fails next. */
@@ -295,7 +289,11 @@ function WorkbenchPage() {
     }),
     [connection, drafts.location.reference, controller, sample],
   );
-  named.current = () => reportContext("note");
+  // The result column shows the Annotation tab's example while that tab is
+  // open, so a failure there is reported against the annotation root.
+  reads.reportContext = () =>
+    reportContext(showAnnotation ? "annotation" : "note");
+  reads.insertTarget = () => ({ slice, range: caret });
 
   /** Opens the Profile a connection hydrated, with what it kept beside it. */
   function openSelectedProfile({
@@ -314,7 +312,7 @@ function WorkbenchPage() {
             snapshot,
             annotationSelection: annotationSamples(
               snapshot,
-              previewAnnotationChoice,
+              selectedAnnotation.id,
             ).example.id,
           }
         : {}),
@@ -331,7 +329,7 @@ function WorkbenchPage() {
       !replaceConnected.current
     ) {
       drafts.rebase(opened);
-      if (snapshot) setSample(snapshot);
+      if (snapshot) show(snapshot);
       // The text on screen still descends from the revision it was read at, so
       // Save answers for that one: the vault moved, this draft did not.
       if (retainedExpected) saveAgainst(retainedExpected);
@@ -340,24 +338,10 @@ function WorkbenchPage() {
     drafts.adopt(opened, replaceConnected.current ? null : kept);
     replaceConnected.current = false;
     loadDocument(selected.source);
-    if (snapshot) setSample(snapshot);
+    if (snapshot) show(snapshot);
   }
 
-  useEffect(
-    () =>
-      controller.subscribe(() => {
-        latestRevision.current += 1;
-        setRevision(latestRevision.current);
-      }),
-    [controller],
-  );
   useEffect(() => setFileMessage(null), [revision]);
-  useEffect(() => editor?.attach(controller), [editor, controller]);
-  useForkedEffect(
-    bridge.run,
-    () => bridge.provide(Rendering.use((rendering) => rendering.temporal)),
-    { deps: [bridge], onSuccess: () => setTemporal(true) },
-  );
   // The Editor and Result tabs stand under 780 px alone, so a window that grows
   // past them leaves the reader in the pane rather than on a result no tab
   // reads as chosen.
@@ -371,44 +355,14 @@ function WorkbenchPage() {
   }, []);
 
   // One reading of the problems behind both gates: the screen a refused Profile
-  // gets, and the render it never starts. A connected bundle is read before any
-  // compilation, so a partial the vault holds in Eta refuses the Profile here
-  // rather than through a diagnostic the renderer raises mid-render.
+  // gets, and the render it never starts (the model's Item data holds the
+  // render). A connected bundle is read before any compilation, so a partial
+  // the vault holds in Eta refuses the Profile here rather than through a
+  // diagnostic the renderer raises mid-render.
   const unsupported = [
     ...unsupportedProblems(controller.problems),
     ...unsupportedDependencies(resources?.dependencies),
   ];
-  const refused = unsupported.length > 0;
-  // A draft the parser refuses renders as nothing, so the last good result
-  // stands beside the Problems strip while the reader repairs it, rather than
-  // emptying the sheet and reporting the same parse error twice.
-  const unparsed = controller.document === null;
-  const renderable = !refused && !unparsed;
-
-  useEffect(
-    () =>
-      // A Profile the web host refuses is never compiled, so nothing renders
-      // it, and a bundle read for another draft would render this one against
-      // the wrong partials — the last good result stands until its own bundle
-      // lands.
-      scheduler?.setInput({
-        document: drafts.location.reference,
-        snapshot: sample,
-        annotation: selectedAnnotation,
-        hold: unparsed ? "invalid" : !renderable || resourcesStale,
-        resources,
-      }),
-    [
-      scheduler,
-      drafts.location.reference,
-      sample,
-      selectedAnnotation,
-      unparsed,
-      renderable,
-      resources,
-      resourcesStale,
-    ],
-  );
 
   // The last manifest the document parsed with. The header and the Name and
   // folder form read it, so repairing an invalid draft blanks neither.
@@ -430,10 +384,11 @@ function WorkbenchPage() {
     (item) => item.item.itemType === sampleItemType,
   );
   useEffect(() => {
-    if (bundledForType)
-      setSample((held) =>
-        held.provenance.kind === "connected" ? held : bundledForType,
-      );
+    if (
+      bundledForType &&
+      registry.get(page.chosen).provenance.kind !== "connected"
+    )
+      show(bundledForType);
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- one selection per named type, not per parse of the same manifest
   }, [sampleItemType]);
 
@@ -447,10 +402,10 @@ function WorkbenchPage() {
     [shownManifest, resources],
   );
 
-  const diagnoses = workbenchDiagnoses(controller.problems, [
-    ...(result?.diagnostics ?? []),
-    ...previewProblems,
-  ]);
+  const diagnoses = workbenchDiagnoses(
+    controller.problems,
+    result?.diagnostics ?? [],
+  );
   const problems = useWorkbenchProblems({
     diagnoses,
     trigger,
@@ -719,16 +674,11 @@ function WorkbenchPage() {
           "value" in selectedProperty &&
           typeof selectedProperty.value === "string")));
   const annotationData = useMemo(() => {
-    if (!temporal) return null;
+    if (!ready) return null;
     const data = rootData(sample, "annotation", selectedAnnotation)!;
     data.citation = annotationResult?.annotationCitation ?? null;
     return data;
-  }, [
-    temporal,
-    sample,
-    selectedAnnotation,
-    annotationResult?.annotationCitation,
-  ]);
+  }, [ready, sample, selectedAnnotation, annotationResult?.annotationCitation]);
   /**
    * What the editor's own completion and hover resolve against: the root the
    * pane the reader is in writes, the partials this Profile can call, and this
@@ -741,7 +691,7 @@ function WorkbenchPage() {
       controller.filenameSlice,
       position,
     );
-    const data = !temporal
+    const data = !ready
       ? null
       : currentRoot === "annotation"
         ? annotationData
@@ -778,7 +728,7 @@ function WorkbenchPage() {
 
   /** Opens `source` as the document being edited, with a history of its own. */
   function loadDocument(source: string) {
-    setController(new WorkbenchDocumentController(source));
+    workbench.load(source);
     setFileMessage(null);
     setShownManifest(null);
     setAdvanced(false);
@@ -793,15 +743,15 @@ function WorkbenchPage() {
 
   function openInObsidian() {
     const source = handoffSource(controller.source);
-    fork(
-      bridge.provide(
-        Transfer.use((transfer) => transfer.openInObsidian(source)),
-      ),
-      {
-        onSuccess: () => setFileMessage(m.workbench_open_obsidian_copied()),
-        onFailure: () => setFileMessage(m.workbench_open_obsidian_failed()),
-      },
-    );
+    openInObsidianCommand({
+      source,
+      done: (copied) =>
+        setFileMessage(
+          copied
+            ? m.workbench_open_obsidian_copied()
+            : m.workbench_open_obsidian_failed(),
+        ),
+    });
   }
 
   /** Download always returns the exact source, including an unfinished draft. */
@@ -827,10 +777,11 @@ function WorkbenchPage() {
 
   function importFile(file: File | undefined) {
     if (!file) return;
-    fork(bridge.provide(Transfer.use((transfer) => transfer.readFile(file))), {
-      onSuccess: (source) =>
+    importFileCommand({
+      file,
+      read: (source) =>
         replaceProfile(m.workbench_import(), () => openStandalone(source)),
-      onFailure: () => setFileMessage(m.workbench_import_failed()),
+      failed: () => setFileMessage(m.workbench_import_failed()),
     });
   }
 
@@ -914,8 +865,6 @@ function WorkbenchPage() {
     </Dialog>
   );
 
-  if (!scheduler) return <WorkbenchSkeleton />;
-
   if (unsupported.length > 0) {
     return (
       <>
@@ -933,7 +882,7 @@ function WorkbenchPage() {
     );
   }
 
-  const page = (
+  const frame = (
     <WorkbenchFrame
       name={profile.name}
       actions={
@@ -1047,11 +996,9 @@ function WorkbenchPage() {
                     loadDocument(kept.source);
                     // A tab that closed on a vault paper comes back to the
                     // text alone, so the paper on screen stands.
-                    if (kept.snapshot) setSample(kept.snapshot);
-                    setAnnotationChoice(kept.annotationSelection ?? null);
-                    setPreviewAnnotationChoice(
-                      kept.annotationSelection ?? selectedAnnotation.id,
-                    );
+                    if (kept.snapshot) show(kept.snapshot);
+                    if (kept.annotationSelection)
+                      chooseAnnotation(kept.annotationSelection);
                     if (kept.expected) saveAgainst(kept.expected);
                   }}
                 >
@@ -1086,17 +1033,17 @@ function WorkbenchPage() {
       fields={
         <FieldList
           root={root}
-          sample={sample}
+          sample={readSample}
           annotation={selectedAnnotation}
           citation={annotationResult?.annotationCitation}
-          ready={temporal}
+          ready={ready}
           mode={fieldMode}
           disabled={fieldDisabled}
           onInsertNode={insertNode}
         />
       }
       editor={
-        <WorkbenchEditorProvider editor={editor}>
+        <>
           <EditToolbar onModeChange={changeMode}>
             <AddFieldButton
               ref={addField}
@@ -1169,7 +1116,7 @@ function WorkbenchPage() {
                       id="workbench-inline-annotation-sample"
                       current={itemAnnotations}
                       example={selectedAnnotation}
-                      onSelect={setAnnotationChoice}
+                      onSelect={chooseAnnotation}
                     />
                   }
                   formatProblem={
@@ -1287,42 +1234,37 @@ function WorkbenchPage() {
               </div>
               <FieldList
                 root={root}
-                sample={sample}
+                sample={readSample}
                 annotation={selectedAnnotation}
                 citation={annotationResult?.annotationCitation}
-                ready={temporal}
+                ready={ready}
                 mode={fieldMode}
                 disabled={fieldDisabled}
                 onInsertNode={insertNode}
               />
             </DialogContent>
           </Dialog>
-        </WorkbenchEditorProvider>
+        </>
       }
       result={
         <WebPreview
-          annotationChoice={previewAnnotationChoice}
-          onAnnotationChoice={setPreviewAnnotationChoice}
-          source={controller.source}
-          document={drafts.location.reference}
-          sample={sample}
-          resources={resources}
-          hold={unparsed ? "invalid" : !renderable || resourcesStale}
+          annotations={{
+            current: itemAnnotations,
+            example: selectedAnnotation,
+          }}
+          onAnnotationChoice={chooseAnnotation}
           mode={showAnnotation ? "annotation" : "note"}
           onShowProblem={showProblem}
-          publishProblems={setPreviewProblems}
-          reportContext={() =>
-            reportContext(showAnnotation ? "annotation" : "note")
-          }
           sampleBar={
             <SampleBar
               sample={sample}
+              retained={retained}
               connection={connection}
               {...(sampleItemType !== undefined && !bundledForType
                 ? { unmatchedItemType: sampleItemType }
                 : {})}
               busy={itemBusy}
-              onShow={setSample}
+              onShow={show}
               onLoad={loadSelectedItem}
             />
           }
@@ -1348,7 +1290,9 @@ function WorkbenchPage() {
           value={problems.diagnoses}
           onReveal={showProblem}
         >
-          {page}
+          <WorkbenchEditorProvider editor={editor}>
+            {frame}
+          </WorkbenchEditorProvider>
         </WorkbenchDiagnosticsProvider>
       </WorkbenchHostProvider>
     </WorkbenchThemeProvider>

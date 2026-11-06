@@ -4,6 +4,8 @@
 // a visit that outlived its tab is offered the text with the paper it still
 // has.
 
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import type * as Atom from "effect/reactivity/Atom";
 import { useEffect, useState } from "react";
 
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
@@ -29,7 +31,9 @@ export const DEFAULT_SAMPLE = SAMPLE_ITEMS[0]!;
 const STANDALONE_DOCUMENT = "standalone";
 
 /** Where a page that has opened no vault document keeps its work. */
-const STANDALONE_LOCATION: DraftLocation = { reference: STANDALONE_DOCUMENT };
+export const STANDALONE_LOCATION: DraftLocation = {
+  reference: STANDALONE_DOCUMENT,
+};
 
 /** Quiet time after the last change before the draft is written. */
 const AUTOSAVE_MS = 500;
@@ -81,12 +85,15 @@ export interface WorkbenchDraftKeeper {
 }
 
 export function useWorkbenchDraft({
+  location: locationAtom,
   controller,
   revision,
   sample,
   annotationSelection,
   saveTarget,
 }: {
+  /** The document the draft is kept for, which the render names too. */
+  readonly location: Atom.Writable<DraftLocation>;
   readonly controller: WorkbenchDocumentController;
   /** Counts the controller's changes, so the autosave follows the text. */
   readonly revision: number;
@@ -96,7 +103,8 @@ export function useWorkbenchDraft({
   readonly saveTarget: SaveTarget | null;
 }): WorkbenchDraftKeeper {
   const [baseline, setBaseline] = useState(STANDALONE_BASELINE);
-  const [location, setLocation] = useState<DraftLocation>(STANDALONE_LOCATION);
+  const location = useAtomValue(locationAtom);
+  const setLocation = useAtomSet(locationAtom);
   const reference = location.reference;
   // Read once, before the first autosave, so the record the last visit left is
   // the one the reader is offered.

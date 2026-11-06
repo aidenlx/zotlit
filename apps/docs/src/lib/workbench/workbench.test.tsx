@@ -1,12 +1,23 @@
+import { Effect, Layer } from "effect";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
+import { renderProfile } from "@zotlit/workbench/render";
 import { createWorkbenchEditor } from "@zotlit/workbench/ui";
+import type { WorkbenchHostError } from "@zotlit/workbench/ui";
 
 // @vitest-environment happy-dom
 import { m } from "@/paraglide/messages.js";
 
-import { open, openMenu, importFile, KEPT } from "./page-test-host";
+import {
+  open,
+  openMenu,
+  importFile,
+  KEPT,
+  renderInThread,
+  shownItem,
+} from "./page-test-host";
+import { Rendering } from "./rendering";
 import { WEB_THEME } from "./theme";
 
 vi.mock("@zotlit/workbench/ui", async (original) => {
@@ -116,4 +127,72 @@ it("hands a Default copy from the Profile menu to the native import flow", async
   expect(copies[0]).not.toContain("id: default");
   expect(urls).toEqual(["obsidian://zotlit/import-profile?clipboard=true"]);
   expect(page.host.textContent).toContain(m.workbench_open_obsidian_copied());
+});
+
+/** The text of every field row the page's field lists show. */
+function fieldText(host: HTMLElement): string {
+  return [...host.ownerDocument.querySelectorAll('[role="treeitem"]')]
+    .map((row) => row.textContent)
+    .join("\n");
+}
+
+it("shows one chosen Item on every surface, from one render", async () => {
+  await using page = await open();
+  await page.settle();
+  renderInThread.mockClear();
+  await page.show("NW2CPDTC");
+  await page.settle();
+  // The editor's examples and the Preview read the same result.
+  expect(renderInThread).toHaveBeenCalledTimes(1);
+  expect(renderInThread.mock.lastCall![0].snapshot.item.key).toBe("NW2CPDTC");
+  await page.waitFor(() => {
+    expect(shownItem(page.host)).toBe("Thinking, fast and slow");
+    expect(fieldText(page.host)).toContain("Thinking, fast and slow");
+    expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
+      "Thinking, fast and slow",
+    );
+  });
+  page.press(m.workbench_tab_name_and_folder());
+  expect(
+    page.host.querySelector('[data-part="filename-output"]')?.textContent,
+  ).toBe("literatures/Kahneman2011.md");
+});
+
+it("interrupts the read of an Item the reader chose away from", async () => {
+  // Each read of the chosen Item waits for `Temporal`; the fake holds every
+  // wait until the test lets it go, and records the ones interrupted.
+  const reads: { release: () => void; interrupted: boolean }[] = [];
+  const temporal = Effect.callback<void, WorkbenchHostError>((resume) => {
+    const read = { release: () => resume(Effect.void), interrupted: false };
+    reads.push(read);
+    return Effect.sync(() => {
+      read.interrupted = true;
+    });
+  });
+  await using page = await open({
+    rendering: Layer.succeed(
+      Rendering,
+      Rendering.of({
+        temporal,
+        render: (request) =>
+          Effect.sync(() =>
+            renderProfile(request.source, request.snapshot, request),
+          ),
+      }),
+    ),
+  });
+  await page.settle();
+  const first = reads.length;
+  expect(first).toBeGreaterThan(0);
+  expect(fieldText(page.host)).toBe("");
+  await page.show("NW2CPDTC");
+  await page.settle();
+  expect(reads.slice(0, first).every((read) => read.interrupted)).toBe(true);
+  for (const read of reads.slice(first)) act(() => read.release());
+  await page.waitFor(() =>
+    expect(fieldText(page.host)).toContain("Thinking, fast and slow"),
+  );
+  expect(fieldText(page.host)).not.toContain(
+    "Why Most Published Research Findings Are False",
+  );
 });

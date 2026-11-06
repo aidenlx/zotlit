@@ -359,6 +359,9 @@ export function makeRenderSchedulerAtoms<
       }),
       Effect.flatMap((result) =>
         Effect.gen(function* () {
+          // A render that answers at once lands after this atom is built:
+          // landing inside the build would rebuild it and render again.
+          yield* Effect.promise(() => Promise.resolve());
           const now = yield* Atom.get(input);
           const clearedNow = yield* Atom.get(cleared);
           yield* Atom.update(landed, (previous) =>

@@ -39,6 +39,7 @@ import {
 import type {
   WorkbenchItemData,
   WorkbenchModel,
+  WorkbenchModelOptions,
   WorkbenchRuntime,
 } from "./model";
 import type {
@@ -82,6 +83,8 @@ interface WorkbenchEditorOptions {
   runtime: WorkbenchRuntime;
   /** The view state, when the host keeps it in an atom of its own. */
   view?: Atom.Writable<WorkbenchViewState>;
+  /** The chosen Item's data, when the host derives it from its own read. */
+  itemData?: WorkbenchModelOptions<TemplateRenderResult>["itemData"];
   /**
    * A view store the host made before the editor, which the model reads and
    * writes. Facade for the web Workbench; deleted in #1946.
@@ -182,7 +185,9 @@ function schedulerOver<R extends TemplateRenderResult>(
           registry.update(model.choices, chooseCitation(citation ?? null));
         if ("partial" in input)
           registry.update(model.choices, choosePartial(partial ?? null));
-        registry.update(model.itemData, patch(data));
+        // A host that derives the Item's data supplies none here.
+        if (Atom.isWritable(model.itemData))
+          registry.update(model.itemData, patch(data));
       });
     },
     invalidate: command(model.scheduler.invalidate),
@@ -213,6 +218,7 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
   registry: providedRegistry,
   runtime,
   view: providedView,
+  itemData,
   store: providedStore,
   reportContext,
   mapResult,
@@ -231,6 +237,7 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
   const model = makeWorkbenchModel<R>({
     controller,
     ...(view ? { view } : {}),
+    ...(itemData ? { itemData } : {}),
     ...(initial ? { initial } : {}),
     runtime,
     host,
