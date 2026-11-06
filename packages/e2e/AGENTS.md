@@ -72,6 +72,7 @@ Add a new case to the area file that matches its feature (create a new area file
 | `query-view.e2e.ts`, `query-view-properties.e2e.ts`, `query-view-table.e2e.ts`, `query-view-filter.e2e.ts` | Query View UI, formulas, table and Items layout, the Filter's property list |
 | `library-view.e2e.ts`, `library-view-navigation.e2e.ts`, `library-view-reading.e2e.ts` | Library View browsing, search, Reading Card |
 | `literature-notes.e2e.ts` | Literature Note create/update, profiles, match workbench |
+| `template-workbench.e2e.ts` | Template Workbench editing: Properties rows keep their example values through a reorder while the preview renders again |
 | `local-bridge.e2e.ts` | Local Bridge / web workbench (needs `WEB_WORKBENCH_ENABLED=true`) |
 | `follow-mode.e2e.ts` | Follow Mode menu rendering |
 | `query-cli*.e2e.ts` | `zotlit:query`, schema, scope CLI |
