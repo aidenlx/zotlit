@@ -550,11 +550,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const handle = Array.from(
               view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
             ).find((element) => element.getAttribute("aria-label") === label);
-            if (!panel?.parentElement || !handle) return null;
+            // The panels' own container, which the share is of; the Preview
+            // stands in the editor's stack inside it.
+            const container = panel?.closest<HTMLElement>(
+              '[data-part="panels"]',
+            );
+            if (!panel || !container || !handle) return null;
             const now = handle.getAttribute("aria-valuenow");
             edges[side] = {
               drawn: panel.offsetWidth,
-              container: panel.parentElement.clientWidth,
+              container: container.clientWidth,
               now,
               max: handle.getAttribute("aria-valuemax"),
             };

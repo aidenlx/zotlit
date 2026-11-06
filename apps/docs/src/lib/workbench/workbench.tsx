@@ -662,7 +662,6 @@ function WorkbenchSession({
             )}
             className={cn(PRESSED_TOGGLE, EXPANDED_TOGGLE)}
             onClick={() => pressFieldsAction(registry, model)}
-            onPointerDown={(event) => holdPickerFocus(fieldsAction, event)}
             onMouseDown={(event) => holdPickerFocus(fieldsAction, event)}
             // Where it opens the picker, an arrow opens it and a printable
             // key opens it searching for that key.

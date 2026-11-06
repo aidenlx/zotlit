@@ -173,7 +173,8 @@ export function fieldsActionAttributes(
  * Keeps focus where it is when the pointer presses the Fields action while
  * the picker stands, so the press closes the picker from inside it and
  * focus goes back to the action, as Escape's does. Hosts call it on the
- * action's `pointerdown` and `mousedown`.
+ * action's `mousedown`, whose default moves focus. A cancelled `pointerdown`
+ * would also cancel the mouse events after it, `mouseup` among them.
  */
 export function holdPickerFocus(
   action: FieldsAction,

@@ -1627,10 +1627,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       event.preventDefault();
       this.registry.set(this.workbench.fieldsPicker, { query });
     });
-    for (const type of ["pointerdown", "mousedown"] as const)
-      this.registerDomEvent(fields, type, (event) =>
-        holdPickerFocus(this.registry.get(this.workbench.fieldsAction), event),
-      );
+    this.registerDomEvent(fields, "mousedown", (event) =>
+      holdPickerFocus(this.registry.get(this.workbench.fieldsAction), event),
+    );
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
     });
