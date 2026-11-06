@@ -965,6 +965,15 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       profile: this.partialProfile,
     });
   }
+  /** The one observer of the leaf's size, made in the window `win` that shows it. */
+  #observeSize(win: Window): void {
+    this.#sizeObserver?.disconnect();
+    const { ResizeObserver } = win as typeof window;
+    const observer = new ResizeObserver(() => this.#measure());
+    observer.observe(this.contentEl);
+    this.#sizeObserver = observer;
+    this.#measure();
+  }
   /**
    * Measures the leaf, whose size places the side panels. A leaf in a
    * background tab measures nothing and keeps the size it last had.
@@ -1573,12 +1582,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   protected override onOpen(): Promise<void> {
     this.#closed = false;
     this.#release ??= holdTemplateWorkbenchModel(this.registry, this.model);
-    this.#sizeObserver?.disconnect();
-    const { ResizeObserver } = this.contentEl.win as typeof window;
-    const observer = new ResizeObserver(() => this.#measure());
-    observer.observe(this.contentEl);
-    this.#sizeObserver = observer;
-    this.#measure();
+    this.#observeSize(this.contentEl.win);
+    // An observer hears only the window it was made in: a tab moved to
+    // another window watches its size from there.
+    const migrated = this.contentEl.onWindowMigrated((win) =>
+      this.#observeSize(win),
+    );
+    this.#cleanup.defer(migrated);
     this.registerDomEvent(
       this.contentEl,
       "scroll",

@@ -154,6 +154,16 @@ Expected: the Preview moves under the editor and back to the right, and the
 same control keeps the focus each time. The rendered note keeps its scroll
 position. The web Workbench does the same when the window narrows and widens.
 
+## A tab moved to its own window
+
+1. Show the Preview and the Fields in a wide tab.
+2. Drag the tab out of the window, so it opens in a window of its own.
+3. Make the new window about 500 pixels wide, then wide again.
+
+Expected: at about 500 pixels the Preview moves under the editor and **Show
+fields** opens the Fields picker, as in a narrow tab of the main window. When
+the window is wide again, the columns return.
+
 ## Three columns need room after the Preview
 
 1. Show the Preview and the Fields, both at their initial width of 400 pixels.
