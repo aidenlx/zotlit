@@ -52,10 +52,14 @@ import {
   citationExampleLabel,
   entryDiagnostics,
   fieldSnippet,
+  fieldsActionAttributes,
   fieldsActionKey,
+  holdPickerFocus,
+  pressFieldsAction,
   panelSizeMenus,
+  pickPanelSize,
   repairCommands,
-  selectionInDocument,
+  insertionTarget,
   setAdvanced,
   setPanelWidth,
   setPreview,
@@ -210,6 +214,7 @@ import { selectionName } from "./selection";
 import { getSampleItem } from "./selection-data";
 import {
   originatingNoteNotice,
+  PANEL_HANDLE_WIDTH,
   templateWorkbenchButton,
   templateWorkbenchTheme,
   selectionBar,
@@ -365,6 +370,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #updateActions = () => {};
   /** The Fields view action, which the Fields picker opens under. */
   readonly #fieldsAnchor: { current: HTMLElement | null } = { current: null };
+  /** The Fields view action and the picker it opens where the column does not fit. */
+  readonly #fieldsAction = fieldsActionHost(this.#fieldsAnchor);
   #unsubscribe: (() => void) | null = null;
   #closed = false;
   /** Counts the documents this leaf loaded, so each one mounts a fresh tree. */
@@ -681,7 +688,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         extractPartial: (source) =>
           this.#runner.provide(this.#extractPartial(source)),
         hoverParent: this,
-        fieldsAction: fieldsActionHost(this.#fieldsAnchor),
+        fieldsAction: this.#fieldsAction,
       },
       (content) => this.provide(content),
     );
@@ -958,6 +965,15 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       profile: this.partialProfile,
     });
   }
+  /** The one observer of the leaf's size, made in the window `win` that shows it. */
+  #observeSize(win: Window): void {
+    this.#sizeObserver?.disconnect();
+    const { ResizeObserver } = win as typeof window;
+    const observer = new ResizeObserver(() => this.#measure());
+    observer.observe(this.contentEl);
+    this.#sizeObserver = observer;
+    this.#measure();
+  }
   /**
    * Measures the leaf, whose size places the side panels. A leaf in a
    * background tab measures nothing and keeps the size it last had.
@@ -967,7 +983,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (width === 0 || height === 0) return;
     const current = this.registry.get(this.viewSize);
     if (current?.width !== width || current.height !== height)
-      this.registry.set(this.viewSize, { width, height });
+      this.registry.set(this.viewSize, {
+        width,
+        height,
+        handle: PANEL_HANDLE_WIDTH,
+      });
   }
   override onResize(): void {
     super.onResize();
@@ -1030,10 +1050,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The last focused slice remains the insertion target while a sidebar has focus. */
   get insertTarget(): WorkbenchInsertTarget | null {
-    return selectionInDocument(
-      this.#view.presentation.selection,
-      this.#controller,
-    );
+    return insertionTarget(this.#view.presentation.selection, this.#controller);
   }
 
   /** Inserts the field `node` names at the editor's insertion target. */
@@ -1565,12 +1582,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   protected override onOpen(): Promise<void> {
     this.#closed = false;
     this.#release ??= holdTemplateWorkbenchModel(this.registry, this.model);
-    this.#sizeObserver?.disconnect();
-    const { ResizeObserver } = this.contentEl.win as typeof window;
-    const observer = new ResizeObserver(() => this.#measure());
-    observer.observe(this.contentEl);
-    this.#sizeObserver = observer;
-    this.#measure();
+    this.#observeSize(this.contentEl.win);
+    // An observer hears only the window it was made in: a tab moved to
+    // another window watches its size from there.
+    const migrated = this.contentEl.onWindowMigrated((win) =>
+      this.#observeSize(win),
+    );
+    this.#cleanup.defer(migrated);
     this.registerDomEvent(
       this.contentEl,
       "scroll",
@@ -1597,19 +1615,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     // It shows the Fields column, or opens the Fields picker where the column
     // does not fit.
     const fields = this.addAction("panel-left", m.workbench_show_fields(), () =>
-      this.registry.set(this.workbench.fieldsAction, undefined),
+      pressFieldsAction(this.registry, this.workbench),
     );
     this.#fieldsAnchor.current = fields;
     // Where it opens the picker, an arrow opens it and a printable key opens
     // it searching for that key, as a Bases combobox opens.
     this.registerDomEvent(fields, "keydown", (event) => {
       const action = this.registry.get(this.workbench.fieldsAction);
-      if (action.opens !== "popover" || action.open) return;
-      const query = fieldsActionKey(event);
+      const query = fieldsActionKey(action, event);
       if (query === null) return;
       event.preventDefault();
       this.registry.set(this.workbench.fieldsPicker, { query });
     });
+    this.registerDomEvent(fields, "mousedown", (event) =>
+      holdPickerFocus(this.registry.get(this.workbench.fieldsAction), event),
+    );
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
     });
@@ -1648,15 +1668,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       preview.classList.toggle("is-active", shown);
       const action = this.registry.get(this.workbench.fieldsAction);
       // A toggle for the column; a disclosure for the picker.
-      if (action.opens === "column") {
-        fields.setAttribute("aria-pressed", String(action.open));
-        fields.removeAttribute("aria-expanded");
-        fields.removeAttribute("aria-haspopup");
-      } else {
-        fields.removeAttribute("aria-pressed");
-        fields.setAttribute("aria-haspopup", "dialog");
-        fields.setAttribute("aria-expanded", String(action.open));
-      }
+      for (const [name, value] of Object.entries(
+        fieldsActionAttributes(action, this.#fieldsAction.popoverId),
+      ))
+        if (value === undefined) fields.removeAttribute(name);
+        else fields.setAttribute(name, value);
       fields.classList.toggle("is-active", action.open);
     };
     const syncChrome = () => {
@@ -1752,8 +1768,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_fields())
         .setIcon("panel-left")
-        .setChecked(this.registry.get(this.workbench.panels).fields.shown)
-        .onClick(() => this.togglePanel("fields")),
+        // The view action's own press: the column, or the picker where the
+        // column does not fit.
+        .setChecked(this.registry.get(this.workbench.fieldsAction).open)
+        .onClick(() => pressFieldsAction(this.registry, this.workbench)),
     );
     menu.addItem((item) =>
       item
@@ -1855,7 +1873,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
                   : `${size.resize === "grow" ? "unfold" : "fold"}-${axis}`,
               )
               .setDisabled(size.disabled)
-              .onClick(() => registry.update(panels, size.apply)),
+              .onClick(() => pickPanelSize(registry, this.workbench, size)),
           );
       });
   }
@@ -2559,6 +2577,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
                         1,
                       ),
                     }),
+                // An edit moves the caret the reader put; it is still theirs.
+                ...(range.placed ? { placed: range.placed } : {}),
               },
             },
           });

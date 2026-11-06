@@ -185,12 +185,25 @@ Lay out the Fields Panel, the editor, and the Preview Panel with the shared
 panels, as the Template Workbench View in Obsidian does. "Show fields" and
 "Show preview" in the header show and hide each panel at every width. The
 shared placement rule puts a panel beside the editor while the editor keeps
-360 px; otherwise the Preview goes under the editor, at its saved share of
-the height; the editor keeps its toolbar, tabs and five source lines, and
-scrolls rather than cut off a control. A pressed view action shows a primary
-border and icon over the muted fill. Document order is Fields Panel, editor,
-Preview Panel. A short
-viewport scrolls the page while preserving several lines of editor space.
+360 px beside the columns and their 12 px handles. Otherwise the Preview
+goes under the editor, at its saved share of the height, as the same region:
+it keeps its focus and scroll across the move. Only the Preview goes under
+the editor: where the Fields column does not fit, "Show fields" opens the
+Fields picker, a Base UI popover under the action, and reads as a
+disclosure rather than a toggle. The editor keeps its toolbar, tabs and five
+source lines; the edit region is its one scroller, so the source grows to
+its text and a reveal scrolls the selected text into view. A pressed view
+action shows a primary border and icon over the muted fill. Document order
+is Fields Panel, editor, Preview Panel. A short viewport scrolls the page
+while preserving several lines of editor space.
+
+The "View" header menu holds "Show fields", "Show preview" and one size group
+for each handle the page draws ("Resize fields", "Resize preview"), so a
+reader who cannot drag sizes every panel (WCAG 2.5.7). "Show fields" in the
+menu presses the same Fields action as the header, and opens the picker
+where the column does not fit. The menu stays open across size steps and
+closes when a step moves a panel to another place, so no entry moves under
+the pointer. A polite status reads each new size.
 
 Source and Problems share the editor pane. An open Problems area keeps the share the reader chooses by dragging its top
 divider. Arrow keys adjust the focused divider; Home and End select its size

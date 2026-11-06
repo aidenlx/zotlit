@@ -112,7 +112,7 @@ Expected: the drag widens the Preview. With the keyboard, `ArrowLeft` widens
 it by 16 pixels and `Shift+ArrowLeft` by 64 pixels; `Home` makes it as narrow
 as it can be (240 pixels), and `End` as wide as the tab allows: 960 pixels, or
 40% of the tab when that is less, or the width that keeps the editor 360
-pixels wide beside the columns when that is less again. The Preview never
+pixels wide beside the columns and their edges when that is less again. The Preview never
 takes more than 40% of the tab, and a screen reader reads the width the panel
 has and the largest width it can take.
 
@@ -143,6 +143,27 @@ before. The Preview does not hide or show, and **Show preview** stays pressed.
 A narrow Preview, made with `Home` on its edge, returns at a narrower tab
 width than a wide one.
 
+## The Preview keeps what you were doing in it
+
+1. Show the Preview in a wide tab. Scroll the rendered note down, then press
+   `Tab` until a control in the Preview has the focus, such as **Choose
+   item**.
+2. Make the tab narrower than 600 pixels, then wide again.
+
+Expected: the Preview moves under the editor and back to the right, and the
+same control keeps the focus each time. The rendered note keeps its scroll
+position. The web Workbench does the same when the window narrows and widens.
+
+## A tab moved to its own window
+
+1. Show the Preview and the Fields in a wide tab.
+2. Drag the tab out of the window, so it opens in a window of its own.
+3. Make the new window about 500 pixels wide, then wide again.
+
+Expected: at about 500 pixels the Preview moves under the editor and **Show
+fields** opens the Fields picker, as in a narrow tab of the main window. When
+the window is wide again, the columns return.
+
 ## Three columns need room after the Preview
 
 1. Show the Preview and the Fields, both at their initial width of 400 pixels.
@@ -152,7 +173,7 @@ Expected: at about 1000 pixels the Preview is at the right, and the Fields
 column goes away: the editor keeps at least 360 pixels of width.
 **Show fields** is not pressed now; it opens the Fields picker (see **Insert
 a field from the Fields picker**). At about 1200 pixels all three columns fit
-with the editor 400 pixels wide, and **Show fields** is pressed again. In a
+with the editor about 390 pixels wide beside the two 4-pixel edges, and **Show fields** is pressed again. In a
 tab of 560 pixels, the Preview is under the editor and the Fields column goes
 away.
 
@@ -176,23 +197,48 @@ DOI".
 
 ## Close the Fields picker
 
-1. Do steps 1 to 3 of the case above.
+1. Do steps 1 to 3 of the case above. Select a few words in the note body
+   before step 3.
 2. Press `Escape`.
 3. Open the picker again. Select a place outside it, in the editor.
 4. Open the picker again. Press `Shift+Tab`.
+5. Open the picker again. Press `Tab`, then `Enter`.
+6. Open the picker again. Select **Show fields**.
 
-Expected: step 2 closes the picker and gives **Show fields** the focus. Steps
-3 and 4 close the picker too. Each opening starts with an empty search at the
-first row. A press on **Show fields** while the picker is open closes it.
+Expected: step 2 closes the picker and gives **Show fields** the focus. Step
+3 closes the picker and leaves the focus in the editor. Steps 4, 5 and 6
+close the picker and give **Show fields** the focus. In step 5, `Enter`
+inserts nothing: the selected words stay as they were. Each opening starts
+with an empty search at the first row. The web Workbench does the same steps,
+with the same outcome.
+
+## Show fields in the pane menu
+
+1. In a tab narrower than 600 pixels, open the pane menu and select **Show
+   fields**.
+2. In a tab wider than 1040 pixels, open the pane menu and select **Show
+   fields** twice.
+
+Expected: in step 1 the entry has no check mark, and it opens the Fields
+picker under **Show fields** with the focus in its search field, as the view
+action does. In step 2 the entry shows and hides the Fields column, with a
+check mark while the column shows. The web Workbench's **View** menu does
+the same.
 
 ## The Fields picker without a cursor
 
 1. Open the Books Profile in a new tab narrower than 600 pixels, and do not
    select the editor.
 2. Select **Show fields**, then press `Enter`.
+3. Press `Escape`. Select **Source**, and do not select the editor.
+4. Select **Show fields**, then press `Enter`.
+5. Press `Escape`. Place the cursor in the note body, then do step 4 again.
 
-Expected: the picker says "Select a place in the template to insert a
-field." `Enter` inserts nothing, and the picker stays open.
+Expected: in steps 2 and 4 the picker says "Select a place in the template
+to insert a field." `Enter` inserts nothing, and the picker stays open: the
+note's heading and the front matter stay as they were. In step 5 `Enter`
+inserts the first field at the cursor. The web Workbench does the same
+steps, with the same outcome.
 
 ## A long value in the Fields picker
 
@@ -235,7 +281,10 @@ pressed. Narrowing the tab again leaves the picker closed.
 Expected: the drag makes the Preview taller. With the keyboard, `ArrowUp`
 makes it 5% of the tab's height taller and `ArrowDown` 5% shorter; `Home`
 makes it 20% of the tab's height and `End` 80%. A screen reader reads the
-share as a percentage. After `End`, the editor keeps at least 320 pixels of
+share as a percentage, the share the tab draws. In a short tab, where the
+Preview draws less than its saved share to keep the editor 320 pixels high,
+the handle reads the share drawn, and `ArrowDown` makes the Preview shorter
+at once: each step starts from what you see, as the menu's do. After `End`, the editor keeps at least 320 pixels of
 height: the toolbar, the tabs, the tab's one-line task and at least five
 lines of the note body show above the Preview. Scroll the editor to reach
 **Include annotations in the note** and its **Add to template** button; no
@@ -254,7 +303,9 @@ part of the editor is cut off. In step 4, the Preview gets shorter first.
 
 Expected: in step 1, **Resize fields** and **Resize preview** sit below
 **Show preview**, and each submenu offers **Make wider**, **Make narrower** and
-**Reset width**; **Reset width** is unavailable while the panel has its
+**Reset width**. After each entry, a screen reader reads the panel and its
+new size, such as "Fields: 336 pixels" or "Preview: 50%"; a screen reader
+reads each edge's width as "400 pixels". **Reset width** is unavailable while the panel has its
 default width of 400 pixels. In step 2, the Fields panel gets 64 pixels
 narrower and the Preview 64 pixels wider. In step 3, the Fields panel returns
 to 400 pixels. **Make wider** is unavailable when the panel is as wide as the
@@ -264,6 +315,17 @@ menu has no **Resize fields**, as the Fields panel has no column, and
 height**. **Make taller** makes the Preview 10% of the tab's height taller.
 After step 5, the Preview is under the editor at 50% of the tab's height;
 widen the tab, and the Preview returns at the width step 2 gave it.
+
+## The web View menu closes when the panels move
+
+1. In the web Workbench, make the window about 1000 pixels wide, with the
+   Fields and the Preview shown. The Fields column does not fit.
+2. Open **View**, and select **Make narrower** under **Resize preview**.
+
+Expected: the narrower Preview makes room for the Fields column, which
+appears at the left of the editor. The menu closes, so no entry moves under
+the pointer; open **View** again to see **Resize fields** above **Resize
+preview**.
 
 ## A column keeps its place however wide it gets
 
@@ -276,12 +338,13 @@ widen the tab, and the Preview returns at the width step 2 gave it.
    editor. Select **Make taller** under **Resize preview** until it is
    unavailable.
 
-Expected: in step 2, the Fields panel stops at 440 pixels, the width that
-keeps the editor 360 pixels wide beside both columns, and **Make wider**
+Expected: in step 2, the Fields panel stops at 432 pixels, the width that
+keeps the editor 360 pixels wide beside both columns and their 4-pixel
+edges, and **Make wider**
 becomes unavailable. The Fields panel stays a column, and **Resize fields**
 stays in the menu. In step 3, **Make wider** is unavailable, as a wider
 Preview would push the Fields panel out of its column. In step 4, the Fields
-panel keeps its width, and a screen reader reads 440 as the largest width. A
+panel keeps its width, and a screen reader reads 432 as the largest width. A
 drag stops at the same width. In step 5, **Make taller** becomes unavailable
 once the Preview stops growing, when the editor keeps 320 pixels of height,
 and **Make shorter** makes it shorter at once.
@@ -351,7 +414,13 @@ partial once. **Show problem** in the Preview panel opens that problem.
 
 Expected: in step 2 the Fields picker closes, the Problems area opens on the
 missing partial, and the editor selects `{% render "missing-partial" %}` in
-the note body with the focus on it. The Preview stays under the editor at
+the note body with the focus on it. The selected call is in view above the
+Problems area, even when the call is on line 4 and the tab is short: the
+editor area scrolls to it. A screen reader reads the call and then why it
+fails: "The partial 'missing-partial' isn't in your template folder." Under
+the explanation, a rule separates it from **Go to the call** and the other
+buttons; a long explanation scrolls under that rule, and no line of it
+stands behind the buttons. The Preview stays under the editor at
 its height, and **Show preview** stays pressed. In step 3 the editor selects
 the call again, and the Preview stays at the right of the editor at its
 width.
@@ -366,7 +435,8 @@ width.
 
 Expected: the Problems area opens on the unknown filter and offers **Go to
 error**. The editor selects `{{ zt.title | no_such_filter }}`, and the Note
-tab stays chosen.
+tab stays chosen. A screen reader reads why the call fails after the
+selected call.
 
 ## Repair commands close the Fields picker
 

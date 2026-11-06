@@ -40,6 +40,7 @@ import { INITIAL_PANELS, placePanels, showPanel } from "./panel-layout";
 import type {
   FieldsAction,
   FieldsPicker,
+  PanelHandle,
   PanelPlacement,
   ViewSize,
   WorkbenchPanels,
@@ -296,6 +297,12 @@ export interface WorkbenchModel<
   readonly panels: Atom.Writable<WorkbenchPanels>;
   /** The panels the editor started from, whose sizes a reset returns to. */
   readonly panelDefaults: WorkbenchPanels;
+  /**
+   * The handle a size menu entry last sized, whose new size the panels
+   * announce; null once the reader sizes a panel with its handle, whose own
+   * value a screen reader reads. Never saved.
+   */
+  readonly sizedFromMenu: Atom.Writable<PanelHandle | null>;
   /** The size of the view the host measured, or null until it has. */
   readonly viewSize: Atom.Atom<ViewSize | null>;
   /** Where each panel goes in the view as it is now; never saved. */
@@ -497,6 +504,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     choices,
     panels,
     panelDefaults: initialPanels,
+    sizedFromMenu: Atom.make<PanelHandle | null>(null),
     viewSize,
     placement,
     fieldsPicker,
@@ -626,6 +634,18 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
 }
 
 /**
+ * Presses the Fields action: shows or hides the Fields column, or opens or
+ * closes the picker where the column does not fit. The view action, the
+ * pane menu and the web View menu each press it.
+ */
+export function pressFieldsAction(
+  registry: AtomRegistry.AtomRegistry,
+  model: Pick<WorkbenchModel, "fieldsAction">,
+): void {
+  registry.set(model.fieldsAction, undefined);
+}
+
+/**
  * Keeps the model's writable state and its render alive in `registry`.
  * @returns Releases them.
  */
@@ -637,6 +657,7 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
     model.view,
     model.choices,
     model.panels,
+    model.sizedFromMenu,
     model.viewSize,
     model.itemData,
     model.controller,

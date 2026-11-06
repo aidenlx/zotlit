@@ -225,7 +225,7 @@ The Template Data Explorer's current root, saved as a JSON file for a bug report
 _Avoid_: template export (suggests rendered note output), data dump (the file follows the published contract, it is not raw state)
 
 **Template Workbench View** _(Obsidian)_:
-The main-area view that edits one Template Document with the Workbench UI, over the vault file, saved the way Obsidian saves any note. For a Profile document it shows the same tabs, panes, and one undo history as the web Workbench; for the Citation Template or a Shared Partial it shows one editor with no Basic and Source modes, and the preview follows the document's kind. The Fields Panel sits at its leading edge and the Preview Panel at its trailing edge, or under the editor when the view is too narrow for a column, and both read the view's one chosen Item and Annotation. The native Markdown view keeps working on the same file; the two are one click apart. Its tab title is the document's name and kind.
+The main-area view that edits one Template Document with the Workbench UI, over the vault file, saved the way Obsidian saves any note. For a Profile document it shows the same tabs, panes, and one undo history as the web Workbench; for the Citation Template or a Shared Partial it shows one editor with no Basic and Source modes, and the preview follows the document's kind. The Fields Panel sits at its leading edge, or gives way to the Fields Picker when the view is too narrow for its column, and the Preview Panel at its trailing edge, or under the editor when the view is too narrow for a column; both read the view's one chosen Item and Annotation. The native Markdown view keeps working on the same file; the two are one click apart. Its tab title is the document's name and kind.
 _Avoid_: Profile Editor (the retired name, from when the view opened Profile documents alone), native Workbench, template editor, profile view, Obsidian Workbench
 
 **Partial Placeholder**:
@@ -241,8 +241,12 @@ The side panel of the Template Workbench View, at the right of the editor or und
 _Avoid_: Note Preview (the retired companion view), template preview (retired for the Explorer, which shows data, not output), render pane, result view (the web column's name)
 
 **Fields Panel** _(Obsidian)_:
-The left side panel of the Template Workbench View that shows the Template Data Explorer's tree for the view's chosen Item and Annotation. It is part of the view, never a leaf of its own; the reader shows, hides, and resizes it, and the view's saved state keeps both. It shows for every Template Document kind. Its root is the editor's root until the reader moves it, and any change of the editor's root or Item returns it to the editor's root. It offers the explorer's copy actions, inserts a field into the view's editor at the cursor ("Insert field"), and, while it shows, sets the root that the pane menu's Template Data Export saves.
+The side panel at the leading edge of the Template Workbench View that shows the Template Data Explorer's tree for the view's chosen Item and Annotation. It is part of the view, never a leaf of its own; the reader shows, hides, and resizes it, and the view's saved state keeps both. It shows for every Template Document kind. Its root is the editor's root until the reader moves it, and any change of the editor's root or Item returns it to the editor's root. It offers the explorer's copy actions, inserts a field into the view's editor at the cursor ("Insert field"), and, while it shows, sets the root that the pane menu's Template Data Export saves. It stands only as a column beside the editor; in a view too narrow for the column, the Fields Picker takes its place.
 _Avoid_: Fields pane, linked explorer, Data Explorer (the standalone view)
+
+**Fields Picker**:
+The searchable list of the Fields Panel's fields that the "Show fields" action opens in a popover under it while the view is too narrow for the Fields Panel's column; it inserts the chosen field at the cursor the reader placed in the template. It belongs to both the Template Workbench View and the web Workbench, holds no saved state, and closes when the column fits again.
+_Avoid_: field sheet (the retired web surface), Fields popover, field menu
 
 **Workbench UI**:
 The shared, headless component layer that both the web Workbench and the Template Workbench View mount over the Workbench core: it renders structure and behavior and carries no styling, and each host supplies styling and the platform's own popups, menus, and dialogs.

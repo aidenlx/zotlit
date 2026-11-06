@@ -6,7 +6,7 @@
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Effect } from "effect";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import { testItemSeed } from "@zotlit/item-query";
@@ -143,6 +143,7 @@ export function useWebHost({
   fieldsAnchor: RefObject<HTMLButtonElement | null>;
 } {
   const fieldsAnchor = useRef<HTMLButtonElement>(null);
+  const fieldsPopoverId = useId();
   const [menu, setMenu] = useState<WorkbenchMenuRequest | null>(null);
   const [dialog, setDialog] = useState<WorkbenchDialogRequest | null>(null);
   const [confirm, setConfirm] = useState<Pending<
@@ -209,7 +210,7 @@ export function useWebHost({
         customFields: Effect.suspend(() => latest.current.data.customFields),
       },
       insertTarget: () => latest.current.insertTarget(),
-      fieldsAction: webFieldsAction(fieldsAnchor),
+      fieldsAction: webFieldsAction(fieldsAnchor, fieldsPopoverId),
       persistence: {
         read(scope, key) {
           try {
@@ -236,7 +237,7 @@ export function useWebHost({
         },
       },
     }),
-    [bridge],
+    [bridge, fieldsPopoverId],
   );
 
   function answerConfirm(value: boolean) {

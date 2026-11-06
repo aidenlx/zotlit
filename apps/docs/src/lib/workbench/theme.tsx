@@ -90,6 +90,12 @@ const nameInput = inputVariants({ size: "xs" });
 const nameRow =
   "flex flex-col gap-2 rounded-md border border-fd-border bg-fd-card px-2.5 py-2";
 
+/**
+ * The width each column's handle takes between the column and the editor,
+ * in pixels: the `w-3` of the `edge` part below. The placement counts it.
+ */
+export const PANEL_HANDLE_WIDTH = 12;
+
 export const WEB_THEME: WorkbenchTheme = {
   editorExtension: (slice, language) => [
     editorTheme,
@@ -346,9 +352,9 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     sliceEditor: {
       "slice-editor":
-        "flex min-h-0 flex-1 flex-col rounded-md has-[.cm-content:focus-visible]:outline-2 has-[.cm-content:focus-visible]:outline-offset-2 has-[.cm-content:focus-visible]:outline-fd-ring",
+        "flex flex-1 flex-col rounded-md has-[.cm-content:focus-visible]:outline-2 has-[.cm-content:focus-visible]:outline-offset-2 has-[.cm-content:focus-visible]:outline-fd-ring",
       "slice-scroll":
-        "min-h-0 flex-1 overflow-auto rounded-md [&_.cm-content]:min-w-0 [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent",
+        "flex-1 rounded-md [&_.cm-content]:min-w-0 [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent",
     },
     notePane: {
       "annotation-toggle": cn(
@@ -432,14 +438,16 @@ export const WEB_THEME: WorkbenchTheme = {
       empty: "text-fd-muted-foreground italic",
     },
     // The side panels: the model places them, so the classes only draw each
-    // placement. Each handle is the 12 px gap between two parts, with a rule
+    // placement. Each handle is the 12 px gap between two parts
+    // (PANEL_HANDLE_WIDTH, which the placement counts), with a rule
     // down its middle that turns the primary color while it is used.
     panels: {
       panels: "flex min-h-0 min-w-0 flex-1",
-      stack: "flex min-h-0 min-w-0 flex-1 flex-col",
+      stack: "flex min-h-0 min-w-0 flex-1 data-[state=below]:flex-col",
+      status: "sr-only",
       editor: "flex min-h-0 min-w-0 flex-1 flex-col",
       panel:
-        "flex min-h-0 min-w-0 shrink-0 flex-col data-[state=fields]:w-(--workbench-panel-width) data-[state=fields]:max-w-2/5 data-[state=preview]:w-(--workbench-panel-width) data-[state=preview]:max-w-2/5 data-[state=below]:h-(--workbench-panel-height)",
+        "flex min-h-0 min-w-0 shrink-0 flex-col data-[state=fields]:w-(--workbench-panel-width) data-[state=preview]:w-(--workbench-panel-width) data-[state=below]:h-(--workbench-panel-height)",
       edge: "relative w-3 shrink-0 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:start-1/2 after:w-px after:bg-fd-muted-foreground hover:after:w-0.5 hover:after:bg-fd-primary focus-visible:after:w-0.5 focus-visible:after:bg-fd-primary",
       split:
         "relative h-3 shrink-0 cursor-row-resize touch-none outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-fd-muted-foreground hover:after:h-0.5 hover:after:bg-fd-primary focus-visible:after:h-0.5 focus-visible:after:bg-fd-primary",
@@ -474,7 +482,7 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     tabPanel: {
       description: "mb-3 shrink-0 text-xs text-pretty text-fd-muted-foreground",
-      "tab-panel": "flex min-h-0 min-w-0 flex-1 flex-col [&[hidden]]:hidden",
+      "tab-panel": "flex min-w-0 flex-1 flex-col [&[hidden]]:hidden",
       "docs-link": "text-fd-primary underline underline-offset-2",
     },
     editToolbar: {
@@ -499,6 +507,7 @@ export const WEB_THEME: WorkbenchTheme = {
       "problems-heading": "font-semibold",
       // A value that changes as problems are repaired, so its digits hold
       // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-announcement": "sr-only",
       "problems-count":
         "shrink-0 rounded-sm bg-destructive/10 px-1.5 font-medium tabular-nums whitespace-nowrap",
       "problems-text": "min-w-0 text-pretty font-medium",
@@ -521,7 +530,7 @@ export const WEB_THEME: WorkbenchTheme = {
       // A reader with no pointer scrolls it from the keyboard, so it takes the
       // site's focus indicator the way the other focusable regions do.
       "problems-scroll":
-        "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary",
+        "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pb-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary",
       // The chooser leads the explanation where the object line otherwise
       // would, at its own width rather than stretched across the column.
       "problems-select": "min-w-0 max-w-full self-start",
@@ -543,9 +552,11 @@ export const WEB_THEME: WorkbenchTheme = {
         "mt-1 max-h-56 overflow-auto rounded-md border border-fd-border bg-fd-muted/60 p-2 font-mono whitespace-pre select-text",
       "problems-copy-failed": "mt-1 text-pretty text-destructive",
       // Under the scroll, never inside it: every one of these stays put while
-      // a long explanation and an open disclosure move past above them.
+      // a long explanation and an open disclosure move past above them. The
+      // rule over them marks where the explanation scrolls out of view, so a
+      // line cut at that edge reads as more to scroll, not as covered.
       "problems-controls":
-        "mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2 [&>*]:max-w-full [&>*]:min-w-0",
+        "flex min-w-0 shrink-0 flex-wrap border-t border-fd-border pt-2 items-center gap-2 [&>*]:max-w-full [&>*]:min-w-0",
       "problems-open": "cursor-pointer underline underline-offset-2",
       "problems-copy": "cursor-pointer underline underline-offset-2",
       "problems-community": "underline underline-offset-2",

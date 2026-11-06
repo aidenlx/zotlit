@@ -177,6 +177,11 @@ export interface WorkbenchInsertTarget {
   readonly range: WorkbenchSliceRange & {
     readonly anchor?: number;
     readonly head?: number;
+    /**
+     * The reader put the caret here: the pane has held focus. A pane that
+     * only came on screen reports where its caret starts, without it.
+     */
+    readonly placed?: true;
   };
 }
 
@@ -258,6 +263,8 @@ export interface WorkbenchFieldsPopoverProps {
 /** The host's Fields action, which opens the Fields Panel or its picker. */
 export interface WorkbenchFieldsAction {
   readonly popover: ComponentType<WorkbenchFieldsPopoverProps>;
+  /** The id of the surface `popover` draws, which the action names while it stands. */
+  readonly popoverId: string;
   /** Moves focus to the action, as when a resize takes away the column that held it. */
   focus(): void;
 }

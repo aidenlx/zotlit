@@ -12,9 +12,15 @@ import {
   UnfoldHorizontal,
   UnfoldVertical,
 } from "lucide-react";
+import { useRef, useState } from "react";
 
-import { panelSizeMenus, showPanel } from "@zotlit/workbench/ui";
-import type { PanelSide, WorkbenchModel } from "@zotlit/workbench/ui";
+import {
+  panelSizeMenus,
+  pickPanelSize,
+  pressFieldsAction,
+  showPanel,
+} from "@zotlit/workbench/ui";
+import type { WorkbenchModel } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -38,34 +44,71 @@ export function ViewMenu({
   model,
   registry,
 }: {
-  model: Pick<WorkbenchModel, "panels" | "panelDefaults" | "viewSize">;
+  model: Pick<
+    WorkbenchModel,
+    "panels" | "panelDefaults" | "viewSize" | "fieldsAction" | "sizedFromMenu"
+  >;
   registry: AtomRegistry.AtomRegistry;
 }) {
   const panels = useAtomValue(model.panels);
   const size = useAtomValue(model.viewSize);
-  const show = (side: PanelSide, shown: boolean) =>
-    registry.update(model.panels, showPanel(side, shown));
+  const fieldsAction = useAtomValue(model.fieldsAction);
+  // Show fields presses the Fields action. Where that opens the picker, the
+  // menu closes first and the picker opens once the menu has handed focus
+  // back, so the picker keeps the focus it takes.
+  const opensPicker = useRef(false);
   const menus = panelSizeMenus(m, panels, {
     size,
     defaults: model.panelDefaults,
   });
+  // The menu stays open across size steps, so the reader takes step after
+  // step. A step that moves a panel to another place changes which handles
+  // the view draws, and with them the groups below: the entries would move
+  // under the pointer. The menu closes then, on the new layout.
+  const [open, setOpen] = useState(false);
+  const handles = menus.map(({ handle }) => handle).join(" ");
+  const [drawn, setDrawn] = useState(handles);
+  if (drawn !== handles) {
+    setDrawn(handles);
+    if (open) setOpen(false);
+  }
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        if (next) opensPicker.current = false;
+        setOpen(next);
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open && opensPicker.current) pressFieldsAction(registry, model);
+      }}
+    >
       <DropdownMenuTrigger render={<Button variant="outline" size="xs" />}>
         <PanelsTopLeft aria-hidden />
         {m.workbench_view_menu()}
         <ChevronDown aria-hidden />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" size="xs">
+      <DropdownMenuContent
+        align="end"
+        size="xs"
+        // Focus goes to the picker the entry opens, not back to View.
+        finalFocus={() => !opensPicker.current}
+      >
         <DropdownMenuCheckboxItem
-          checked={panels.fields.shown}
-          onCheckedChange={(shown) => show("fields", shown)}
+          checked={fieldsAction.open}
+          closeOnClick={fieldsAction.opens === "popover"}
+          onCheckedChange={() => {
+            if (fieldsAction.opens === "popover") opensPicker.current = true;
+            else pressFieldsAction(registry, model);
+          }}
         >
           {m.workbench_show_fields()}
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
           checked={panels.preview.shown}
-          onCheckedChange={(shown) => show("preview", shown)}
+          onCheckedChange={(shown) =>
+            registry.update(model.panels, showPanel("preview", shown))
+          }
         >
           {m.workbench_show_preview()}
         </DropdownMenuCheckboxItem>
@@ -85,7 +128,7 @@ export function ViewMenu({
                     // The menu stays open, so the reader takes step after
                     // step and sees the panel change behind it.
                     closeOnClick={false}
-                    onClick={() => registry.update(model.panels, item.apply)}
+                    onClick={() => pickPanelSize(registry, model, item)}
                   >
                     <Icon aria-hidden />
                     {item.label}

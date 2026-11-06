@@ -53,6 +53,7 @@ export {
   makeWorkbenchModel,
   patch,
   patchAt,
+  pressFieldsAction,
   setAdvanced,
   setPreview,
   setRoot,
@@ -79,32 +80,29 @@ export type {
 export {
   clampPanelWidth,
   clampPreviewHeight,
-  EDITOR_MIN,
   INITIAL_PANELS,
-  PANEL_WIDTH,
-  panelLimit,
-  placePanels,
-  PREVIEW_HEIGHT,
-  previewBelowHeight,
   setPanelWidth,
   setPreviewHeight,
   showPanel,
 } from "./panel-layout";
 export type {
-  FieldsAction,
   FieldsPicker,
-  PanelPlacement,
   PanelSide,
   PreviewPanel,
   ViewSize,
   WorkbenchPanel,
   WorkbenchPanels,
 } from "./panel-layout";
-export { panelSizeMenus } from "./panel-menu";
+export { panelSizeMenus, pickPanelSize } from "./panel-menu";
 export { SidePanels } from "./panels";
-export { FieldPicker, fieldsActionKey } from "./field-picker";
+export {
+  FieldPicker,
+  fieldsActionAttributes,
+  fieldsActionKey,
+  holdPickerFocus,
+  PICKER_MOVE_KEYS,
+} from "./field-picker";
 export type { FieldPickerProps } from "./field-picker";
-export type { SidePanel } from "./panels";
 export {
   NO_MATCH_DATA,
   WorkbenchClipboardError,
@@ -177,8 +175,11 @@ export { partialContextLabel } from "./partial-preview";
 export { TabBar, TabPanel } from "./tab-bar";
 export { isProfileProblem, TABS, tabLabel, tabLede, tabsFor } from "./tabs";
 export { routeDiagnosis, routeProblem } from "./problem-route";
-export { repairCommands, selectionInDocument } from "./repair-commands";
-export type { RepairCommands } from "./repair-commands";
+export {
+  insertionTarget,
+  repairCommands,
+  selectionInDocument,
+} from "./repair-commands";
 export type { WorkbenchTab } from "./tabs";
 export {
   WorkbenchThemeProvider,

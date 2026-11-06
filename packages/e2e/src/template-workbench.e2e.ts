@@ -550,11 +550,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const handle = Array.from(
               view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
             ).find((element) => element.getAttribute("aria-label") === label);
-            if (!panel?.parentElement || !handle) return null;
+            // The panels' own container, which the share is of; the Preview
+            // stands in the editor's stack inside it.
+            const container = panel?.closest<HTMLElement>(
+              '[data-part="panels"]',
+            );
+            if (!panel || !container || !handle) return null;
             const now = handle.getAttribute("aria-valuenow");
             edges[side] = {
               drawn: panel.offsetWidth,
-              container: panel.parentElement.clientWidth,
+              container: container.clientWidth,
               now,
               max: handle.getAttribute("aria-valuemax"),
             };
@@ -597,10 +602,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(preview.max).toBe(String(limit(preview.container)));
     expect(preview.drawn).toBe(limit(preview.container));
     // The Fields column grows only as far as keeps it a column beside the
-    // Preview and an editor of 360 px (#1956).
+    // Preview and an editor of 360 px, past both columns' 4 px handles
+    // (#1956, #1952).
     const { container } = first.edges.fields;
     expect(first.edges.fields.max).toBe(
-      String(Math.min(limit(container), container - preview.drawn - 360)),
+      String(
+        Math.min(limit(container), container - preview.drawn - 360 - 2 * 4),
+      ),
     );
     // The saved state of that leaf restores both panels in a new leaf.
     const saved = await obRun(
@@ -1032,7 +1040,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   // #1955: where the Fields column does not fit, Fields opens its picker.
-  it("inserts a field from the Fields picker of a narrow leaf with the keyboard, and closes it on Escape", async () => {
+  it("inserts a field from the Fields picker of a narrow leaf with the keyboard, and closes it on Escape, Tab and a press on the action", async () => {
     const path = `templates/${booksProfile.document}`;
     const documentPath = join(e2eVaultPath, path);
     const original = await readFile(documentPath, "utf-8");
@@ -1217,6 +1225,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await until("the DOI again", () =>
           (activeRow()?.textContent ?? "").startsWith("DOI"),
         );
+        let editorFocused = false;
+        content.addEventListener("focusin", () => (editorFocused = true), {
+          once: true,
+        });
         await input.key("Enter");
         await until(
           "the picker closed by the insertion",
@@ -1230,12 +1242,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await until(
           "the editor took the inserted text's focus and handed it back",
           () =>
-            editor.state.doc.toString().endsWith("{{ zt.DOI }}{{ zt.DOI }}"),
+            editorFocused &&
+            editor.state.doc.toString().endsWith("{{ zt.DOI }}{{ zt.DOI }}") &&
+            el.doc.activeElement === search(),
         );
-        await new Promise((resolve) => setTimeout(resolve, 500));
         const reopened = el.doc.activeElement === search();
-        await input.key("Escape");
-        await until("the picker closed", () => search() === null);
+        // Tab leaves the picker: it closes, and focus goes to the action with
+        // the picker's keys gone, so Enter no longer inserts a field (#1952).
+        const kept = editor.state.doc.toString();
+        await input.key("Tab");
+        await until("the picker closed by Tab", () => search() === null);
+        const tabbed = el.doc.activeElement === action;
+        // The key reaches the action, whose keys handle it as it goes down.
+        await input.key("Enter");
+        const untouched =
+          search() === null && editor.state.doc.toString() === kept;
+        // A press on the action while the picker stands closes it and hands
+        // focus to the action.
+        await input.click(action);
+        await until(
+          "the picker opened by the press",
+          () => el.doc.activeElement === search(),
+        );
+        await input.click(action);
+        await until("the picker closed by the press", () => search() === null);
+        const pressed = el.doc.activeElement === action;
         return JSON.stringify({
           opened,
           moved,
@@ -1246,6 +1277,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           end,
           home,
           reopened,
+          tabbed,
+          untouched,
+          pressed,
         });
       },
       { path, label: run.m.workbench_show_fields() },
@@ -1264,6 +1298,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       end: true,
       home: true,
       reopened: true,
+      tabbed: true,
+      untouched: true,
+      pressed: true,
     });
 
     // Widening the leaf shows the column again.
@@ -1425,7 +1462,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "the call selected in the editor",
               () => selected() === call,
             );
+            // The reveal scrolls the call into the edit region's view, at the
+            // editor's height floor too (#1952).
+            const region = el.querySelector<HTMLElement>(
+              '[data-workbench-scroll="editor"]',
+            )!;
+            const inView = await until("the call in view", () => {
+              const at = editor.coordsAtPos(editor.state.selection.main.from);
+              const box = region.getBoundingClientRect();
+              return (
+                at !== null && at.top >= box.top && at.bottom <= box.bottom
+              );
+            });
+            // Focus is on the call, so the area's status says why it fails.
+            const announced =
+              el.querySelector('[data-part="problems-announcement"]')
+                ?.textContent ?? "";
             return JSON.stringify({
+              inView,
+              announced: announced.includes("missing-partial"),
               popover,
               picker: search() !== null,
               problems:
@@ -1443,6 +1498,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A narrow leaf: the Preview under the editor, the Fields picker open.
     await open(30);
     expect(await showProblem()).toEqual({
+      inView: true,
+      announced: true,
       popover: true,
       picker: false,
       problems: true,
@@ -1452,6 +1509,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A wide leaf: three columns, the same round trip.
     await open(null);
     expect(await showProblem()).toEqual({
+      inView: true,
+      announced: true,
       popover: false,
       picker: false,
       problems: true,

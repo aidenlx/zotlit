@@ -52,6 +52,7 @@ import {
 import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "./__fixtures__";
 import { createSharedPartialEffect } from "./partial-command";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
+import { windowMigration } from "./test-window-migration";
 import {
   TemplateWorkbenchView,
   originatingNoteUpdateNotice,
@@ -1634,6 +1635,25 @@ An annotation.
       view.contentEl.remove();
     }
     expect(view.insertTemplateField(node)).toBe(false);
+  });
+
+  // A pane that only came on screen reports where its caret starts; the
+  // start of the note is no place the reader chose.
+  it("refuses an insertion before the reader places the caret", async () => {
+    const { view } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => view.open());
+      const before = view.getViewData();
+      expect(view.registry.get(view.fields.canInsert)).toBe(false);
+      await act(() => {
+        expect(view.insertField("{{ zt.title }}")).toBe(false);
+      });
+      expect(view.getViewData()).toBe(before);
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
   });
 
   it("offers the Fields panel's insert while the editor takes edits", async () => {
@@ -3423,6 +3443,46 @@ describe("the side panels of the Template Workbench View", () => {
     ).toBe("true");
     expect(restored.view.getState()).toEqual(saved);
     await act(async () => restored.view.close());
+  });
+
+  // A ResizeObserver hears only the window it was made in, so a tab moved to
+  // another window watches its size from there (#1952).
+  it("measures the leaf from the window its tab moves to", async () => {
+    using migration = windowMigration();
+    const { view } = setup();
+    await act(async () => view.open());
+    const size = { width: 1200, height: 800 };
+    for (const [name, axis] of [
+      ["clientWidth", "width"],
+      ["clientHeight", "height"],
+    ] as const)
+      Object.defineProperty(view.contentEl, name, {
+        configurable: true,
+        get: () => size[axis],
+      });
+    let resized: (() => void) | null = null;
+    const observed: Element[] = [];
+    class PopoutResizeObserver {
+      constructor(listener: () => void) {
+        resized = listener;
+      }
+      observe(element: Element) {
+        observed.push(element);
+      }
+      disconnect() {}
+    }
+    // The window the tab lands in brings its own observer.
+    vi.stubGlobal("ResizeObserver", PopoutResizeObserver);
+    await act(async () => migration.move(window));
+    vi.unstubAllGlobals();
+    expect(observed).toEqual([view.contentEl]);
+    size.width = 520;
+    await act(async () => resized?.());
+    expect(view.registry.get(view.viewSize)).toMatchObject({
+      width: 520,
+      height: 800,
+    });
+    await act(async () => view.close());
   });
 
   // #1954: the leaf's size places the Preview; it never changes what shows.

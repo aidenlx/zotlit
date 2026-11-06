@@ -40,6 +40,7 @@ function open({
   expect(registry.get(model.fieldsPicker)).not.toBeNull();
   const selected: [string, RenderDiagnostic | undefined][] = [];
   const opened: boolean[] = [];
+  const announced: string[] = [];
   const commands = repairCommands({
     registry,
     model,
@@ -49,12 +50,14 @@ function open({
       diagnoses,
       select: (id, occurrence) => void selected.push([id, occurrence]),
       setOpen: (next) => void opened.push(next),
+      announce: (text) => void announced.push(text),
     },
   });
   return Object.assign(mounted, {
     commands,
     selected,
     opened,
+    announced,
     view: () => registry.get(model.view),
     picker: () => registry.get(model.fieldsPicker),
     panels: () => registry.get(model.panels),
@@ -203,6 +206,10 @@ describe("the repair commands", () => {
     });
     expect(page.picker()).toBeNull();
     expect(page.panels()).toEqual(BOTH);
+    // Focus goes to the call, so the area's status says why it fails.
+    expect(page.announced).toEqual([
+      "The partial 'missing-bit' isn't in your template folder.",
+    ]);
   });
 
   it("show a problem with no known place in the Problems area and leave the editor where it is", () => {
@@ -216,6 +223,9 @@ describe("the repair commands", () => {
       presentation: { reveal: null },
     });
     expect(page.host.calls.notices).toEqual([]);
+    expect(page.announced).toEqual([
+      "Could not render the template. This problem has no verified location in your templates.",
+    ]);
   });
 
   it("open the Problems area on a document the parser refused", () => {
@@ -223,5 +233,6 @@ describe("the repair commands", () => {
     page.commands.showProblem(null);
     expect(page.opened).toEqual([true]);
     expect(page.picker()).toBeNull();
+    expect(page.announced).toEqual([m.workbench_problems_location_unknown()]);
   });
 });

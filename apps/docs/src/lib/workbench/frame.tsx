@@ -130,7 +130,10 @@ export function WorkbenchFrame({
     // The page sits under the site's banner strip, so its height is the window
     // less whatever that strip takes; a dismissed strip leaves the whole window.
     // Short, narrow windows scroll the page so wrapped controls still leave
-    // enough height to edit several lines.
+    // enough height to edit several lines: under 780 px the header wraps to
+    // two or three rows, and a page held to the window would leave the main
+    // area less than the editor's 320 px floor (EDITOR_MIN) with the Preview
+    // under it. At 44rem the main area keeps that floor.
     <div
       aria-busy={busy || undefined}
       className="flex h-[calc(100dvh-var(--fd-banner-height,0px))] min-h-0 flex-col bg-fd-background font-sans text-sm leading-normal text-fd-foreground max-[780px]:min-h-[44rem]"

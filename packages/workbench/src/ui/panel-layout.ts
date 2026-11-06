@@ -50,8 +50,9 @@ export const INITIAL_PANELS: WorkbenchPanels = {
 
 /**
  * The share of the panels' container one panel takes at most, so the source
- * stays in view. A host draws the same share in CSS, such as a `max-w-2/5`
- * class on the panel.
+ * stays in view. The panels draw each column at the width this share leaves
+ * it, through the host's width custom property, so the hosts' CSS holds no
+ * share of its own.
  */
 const PANEL_SHARE = 0.4;
 
@@ -90,6 +91,12 @@ export const setPreviewHeight = (share: number) =>
 export interface ViewSize {
   readonly width: number;
   readonly height: number;
+  /**
+   * The width the host draws each column's handle at, between the column and
+   * the editor; a column takes it from the editor's room too. None where the
+   * host draws its handles over the panels.
+   */
+  readonly handle?: number;
 }
 
 /**
@@ -132,10 +139,12 @@ export function placePanels(
     };
   const drawn = (panel: WorkbenchPanel) =>
     clampPanelWidth(panel.width, panelLimit(size.width));
+  // Each column takes its handle's width with its own.
+  const taken = (panel: WorkbenchPanel) => drawn(panel) + (size.handle ?? 0);
   let room = size.width;
   let preview: PanelPlacement["preview"] = "hidden";
   if (panels.preview.shown) {
-    const width = drawn(panels.preview);
+    const width = taken(panels.preview);
     if (room - width >= EDITOR_MIN.width) {
       preview = "side";
       room -= width;
@@ -144,7 +153,7 @@ export function placePanels(
   return {
     preview,
     fields:
-      room - drawn(panels.fields) >= EDITOR_MIN.width ? "column" : "popover",
+      room - taken(panels.fields) >= EDITOR_MIN.width ? "column" : "popover",
   };
 }
 
@@ -171,10 +180,29 @@ export type PanelHandle = "fields" | "preview" | "split";
 export type PanelResize = "grow" | "shrink" | "reset";
 
 /**
+ * How far one key press moves a handle: an edge by `width` pixels, or by
+ * `wideWidth` with Shift, and the split by `height` percent of the view.
+ */
+export const KEY_STEP = { width: 16, wideWidth: 64, height: 5 } as const;
+
+/**
  * How far one menu entry moves a handle: the Shift+arrow step of an edge,
  * and two arrow steps of the split.
  */
-const MENU_STEP = { width: 64, height: 10 } as const;
+const MENU_STEP = {
+  width: KEY_STEP.wideWidth,
+  height: KEY_STEP.height * 2,
+} as const;
+
+/** Whether `side` shows as a column beside the editor in `placement`. */
+const isColumn = (
+  panels: WorkbenchPanels,
+  placement: PanelPlacement,
+  side: PanelSide,
+) =>
+  side === "fields"
+    ? panels.fields.shown && placement.fields === "column"
+    : placement.preview === "side";
 
 /** The handles a view of `size` draws for `panels`, in document order. */
 export function panelHandles(
@@ -183,9 +211,8 @@ export function panelHandles(
 ): readonly PanelHandle[] {
   const placement = placePanels(panels, size);
   const handles: PanelHandle[] = [];
-  if (panels.fields.shown && placement.fields === "column")
-    handles.push("fields");
-  if (placement.preview === "side") handles.push("preview");
+  if (isColumn(panels, placement, "fields")) handles.push("fields");
+  if (isColumn(panels, placement, "preview")) handles.push("preview");
   if (placement.preview === "below") handles.push("split");
   return handles;
 }
@@ -208,20 +235,16 @@ export function columnLimit(
   if (size === null) return limit;
   const placement = placePanels(panels, size);
   // A panel the placement takes out of the side has no column to keep.
-  const isColumn =
-    side === "fields"
-      ? placement.fields === "column"
-      : placement.preview === "side";
-  if (!isColumn) return limit;
-  const other = side === "fields" ? panels.preview : panels.fields;
-  const otherIsColumn =
-    side === "fields"
-      ? placement.preview === "side"
-      : panels.fields.shown && placement.fields === "column";
+  if (!isColumn(panels, placement, side)) return limit;
+  const otherSide = side === "fields" ? "preview" : "fields";
+  const other = panels[otherSide];
+  const otherIsColumn = isColumn(panels, placement, otherSide);
+  const handle = size.handle ?? 0;
   const room =
     size.width -
     EDITOR_MIN.width -
-    (otherIsColumn ? clampPanelWidth(other.width, limit) : 0);
+    handle -
+    (otherIsColumn ? clampPanelWidth(other.width, limit) + handle : 0);
   return clampPanelWidth(room, limit);
 }
 
@@ -249,7 +272,7 @@ const storedSize = (handle: PanelHandle, panels: WorkbenchPanels) =>
  * The Preview's share as drawn: a short view draws a saved share less
  * than it asks for, and a step starts from what the reader sees.
  */
-const drawnShare = (panels: WorkbenchPanels, size: ViewSize | null) =>
+export const drawnShare = (panels: WorkbenchPanels, size: ViewSize | null) =>
   size && size.height > 0
     ? Math.min(
         panels.preview.height,

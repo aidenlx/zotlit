@@ -43,8 +43,12 @@ import {
   diagnosticText,
   entryDiagnostics,
   fieldSnippet,
+  fieldsActionAttributes,
   fieldsActionKey,
+  holdPickerFocus,
+  pressFieldsAction,
   renderDiagnosis,
+  insertionTarget,
   repairCommands,
   useParts,
   useWorkbenchProblems,
@@ -103,7 +107,7 @@ import { WebPreview } from "./preview";
 import { PageRuntime, usePageBridge } from "./runtime";
 import type { PageServices } from "./runtime";
 import { SampleBar } from "./sample-bar";
-import { WEB_THEME } from "./theme";
+import { PANEL_HANDLE_WIDTH, WEB_THEME } from "./theme";
 import {
   downloadProfile,
   profileFileName,
@@ -248,6 +252,7 @@ function WorkbenchSession({
           registry.set(viewSize, {
             width: Math.round(width),
             height: Math.round(height),
+            handle: PANEL_HANDLE_WIDTH,
           });
       });
       observer.observe(main);
@@ -284,7 +289,6 @@ function WorkbenchSession({
     reconnect,
     disconnect,
   } = useWorkbenchConnection(page);
-  reads.insertTarget = () => ({ slice, range: caret });
 
   // One reading of the problems behind both gates: the screen a refused Profile
   // gets, and the render it never starts (the model's Item data holds the
@@ -363,6 +367,10 @@ function WorkbenchSession({
         : tab === "annotation"
           ? "annotation"
           : "note";
+  // The caret the reader put in the pane on screen; none before they do.
+  const target = insertionTarget(presentation.selection, controller);
+  const insertAt = target?.slice === slice ? target.range : null;
+  reads.insertTarget = () => insertAt && { slice, range: insertAt };
   // The note itself, which is the one result an update rewrites part of, so the
   // update-only Managed Region is offered beside it and nowhere else.
   const showAnnotation = !advanced && tab === "annotation";
@@ -383,7 +391,7 @@ function WorkbenchSession({
   });
 
   /** Reads one problem the editor named, in the editor's Problems area. */
-  function showProblem(id: string | null) {
+  function readProblem(id: string | null) {
     if (id === null) problems.setOpen(true);
     else problems.select(id);
   }
@@ -427,6 +435,7 @@ function WorkbenchSession({
       ? undefined
       : controller.document?.manifest.frontmatter?.[row - 1];
   const fieldDisabled =
+    insertAt === null ||
     (showAnnotation && !controller.annotationSection) ||
     (!advanced &&
       tab === "properties" &&
@@ -467,14 +476,14 @@ function WorkbenchSession({
   /** Puts a snippet where the reader left the caret, then hands focus back. */
   const insert = useCallback(
     (snippet: string) => {
-      if (fieldDisabled) return;
+      if (fieldDisabled || insertAt === null) return;
       const head = insertSnippet(controller, slice, {
-        target: caret,
+        target: insertAt,
         snippet,
       });
       setReveal({ from: head, to: head });
     },
-    [fieldDisabled, controller, slice, caret],
+    [fieldDisabled, controller, slice, insertAt],
   );
 
   const insertion = useRef({ insert, mode: fieldMode });
@@ -646,22 +655,18 @@ function WorkbenchSession({
             ref={fieldsAnchor}
             variant="ghost"
             size="xs"
-            aria-pressed={
-              fieldsAction.opens === "column" ? fieldsAction.open : undefined
-            }
-            aria-haspopup={
-              fieldsAction.opens === "popover" ? "dialog" : undefined
-            }
-            aria-expanded={
-              fieldsAction.opens === "popover" ? fieldsAction.open : undefined
-            }
+            // A toggle for the column; a disclosure for the picker.
+            {...fieldsActionAttributes(
+              fieldsAction,
+              host.fieldsAction?.popoverId ?? "",
+            )}
             className={cn(PRESSED_TOGGLE, EXPANDED_TOGGLE)}
-            onClick={() => registry.set(model.fieldsAction, undefined)}
+            onClick={() => pressFieldsAction(registry, model)}
+            onMouseDown={(event) => holdPickerFocus(fieldsAction, event)}
             // Where it opens the picker, an arrow opens it and a printable
             // key opens it searching for that key.
             onKeyDown={(event) => {
-              if (fieldsAction.opens !== "popover" || fieldsAction.open) return;
-              const query = fieldsActionKey(event);
+              const query = fieldsActionKey(fieldsAction, event);
               if (query === null) return;
               event.preventDefault();
               registry.set(model.fieldsPicker, { query });
@@ -777,10 +782,12 @@ function WorkbenchSession({
       editor={
         <>
           <EditToolbar onModeChange={changeMode} />
-          {/* Everything the reader edits, as one region. When the pane is too
-              short for the tabs and five source lines, as under a tall
-              Problems area or Preview, the region scrolls: no control is cut
-              off, and nothing spills over the explanation. */}
+          {/* Everything the reader edits, as one region and its one
+              scroller: the source grows to its text, as the Obsidian view's
+              does. When the pane is too short, as under a tall Problems area
+              or Preview, the region scrolls: no control is cut off, nothing
+              spills over the explanation, and a reveal scrolls the text it
+              selects into view. */}
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
             {advanced && (
               <>
@@ -823,7 +830,7 @@ function WorkbenchSession({
             )}
             <div
               hidden={advanced}
-              className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
+              className="flex flex-1 flex-col [&[hidden]]:hidden"
             >
               <div className="mb-2 flex shrink-0 items-center gap-1">
                 <TabBar onTabChange={openTab} />
@@ -871,7 +878,7 @@ function WorkbenchSession({
                 {formatProblem && (
                   <AnnotationProblemMarker
                     diagnostic={formatProblem}
-                    onShow={showProblem}
+                    onShow={readProblem}
                   />
                 )}
                 <AnnotationPane
@@ -902,7 +909,7 @@ function WorkbenchSession({
                       : {})}
                     reveal={reveal}
                     onSelection={trackSelection}
-                    onShowProblem={showProblem}
+                    onShowProblem={readProblem}
                   />
                 </TabPanel>
               ))}
@@ -932,7 +939,7 @@ function WorkbenchSession({
                     onSelect={setOpenRow}
                     reveal={reveal}
                     onSelection={trackSelection}
-                    onShowProblem={showProblem}
+                    onShowProblem={readProblem}
                   />
                 )}
               </TabPanel>
@@ -1012,7 +1019,7 @@ function WorkbenchSession({
       <WorkbenchHostProvider host={host}>
         <WorkbenchDiagnosticsProvider
           value={problems.diagnoses}
-          onReveal={showProblem}
+          onReveal={readProblem}
         >
           <WorkbenchEditorProvider editor={editor}>
             {frame}

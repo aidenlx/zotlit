@@ -72,6 +72,43 @@ it("puts the Preview under the editor in a narrow frame and beside it in a wide 
   ).toBe("true");
 });
 
+// The Preview moves between the side and the place under the editor as one
+// region, so what the reader was doing in it stays.
+it("keeps focus and scroll in the Preview as it moves under the editor and back", async () => {
+  await using page = await open({ frame: { width: 1200, height: 700 } });
+  await page.settle();
+  const shown = region(page.host, m.workbench_view_preview())!;
+  const control = shown.querySelector<HTMLElement>("button")!;
+  act(() => control.focus());
+  page.resizeFrame({ width: 560, height: 700 });
+  await page.settle();
+  expect(
+    handle(page.host, m.workbench_preview_resize())!.getAttribute(
+      "aria-orientation",
+    ),
+  ).toBe("horizontal");
+  expect(region(page.host, m.workbench_view_preview())).toBe(shown);
+  expect(document.activeElement).toBe(control);
+  page.resizeFrame({ width: 1200, height: 700 });
+  await page.settle();
+  expect(region(page.host, m.workbench_view_preview())).toBe(shown);
+  expect(document.activeElement).toBe(control);
+});
+
+// A short view draws the Preview at less than its saved share; the split's
+// keys step from the share the reader sees, as the View menu's entries do.
+it("steps the split from the share a short view draws", async () => {
+  await using page = await open({ frame: { width: 560, height: 500 } });
+  await page.settle();
+  const split = handle(page.host, m.workbench_preview_resize())!;
+  // The editor keeps 320 of the 500 px, so the Preview draws 36%, not 40%.
+  expect(split.getAttribute("aria-valuenow")).toBe("36");
+  expect(split.getAttribute("aria-valuetext")).toBe("36%");
+  expect(split.getAttribute("aria-valuemax")).toBe("36");
+  press(split, "ArrowDown");
+  expect(split.getAttribute("aria-valuenow")).toBe("31");
+});
+
 it("sizes each panel with its handle", async () => {
   await using page = await open({ frame: { width: 1200, height: 700 } });
   await page.settle();
@@ -96,10 +133,23 @@ const editorText = (host: HTMLElement) =>
     .map((box) => EditorView.findFromDOM(box)?.state.doc.toString() ?? "")
     .join("\n");
 
+/** The note editor, with the caret the reader put at the end of its first line. */
+const placeCaret = (host: HTMLElement) => {
+  const note = [...host.querySelectorAll<HTMLElement>('[role="textbox"]')]
+    .map((box) => EditorView.findFromDOM(box)!)
+    .find((editor) => editor.state.doc.toString().includes("zt.title"))!;
+  act(() => {
+    note.focus();
+    note.dispatch({ selection: { anchor: note.state.doc.line(1).to } });
+  });
+  return note;
+};
+
 // #1955: where the Fields column does not fit, Fields opens its picker.
 it("opens the Fields picker from its header action in a narrow frame and inserts a field from the keyboard", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
+  const note = placeCaret(page.host);
   const fields = action(page.host, m.workbench_show_fields());
   expect(region(page.host, m.workbench_view_fields())).toBeNull();
   expect(fields.getAttribute("aria-expanded")).toBe("false");
@@ -118,11 +168,35 @@ it("opens the Fields picker from its header action in a narrow frame and inserts
   press(search, "Enter");
   await page.settle();
   expect(pickerSearch()).toBeNull();
-  expect(editorText(page.host)).toContain("zt.authors");
+  // The field goes where the reader left the caret.
+  expect(note.state.doc.line(1).text).toContain("zt.authors");
   expect(page.host.textContent).toContain(
     m.workbench_fields_inserted({ field: m.workbench_field_authors() }),
   );
 });
+
+// With no caret the reader put in the template, a field has no place to go:
+// the start of the note would break its heading, and the start of Source
+// its front matter.
+it.each([{ source: false }, { source: true }])(
+  "inserts no field before the reader places the caret (Source: $source)",
+  async ({ source }) => {
+    await using page = await open({ frame: { width: 560, height: 700 } });
+    await page.settle();
+    if (source) page.press(m.workbench_advanced());
+    await page.settle();
+    const before = editorText(page.host);
+    page.press(m.workbench_show_fields());
+    await page.settle();
+    expect(pickerSearch()!.closest('[role="dialog"]')?.textContent).toContain(
+      m.workbench_fields_choose_place(),
+    );
+    press(pickerSearch()!, "Enter");
+    await page.settle();
+    expect(editorText(page.host)).toBe(before);
+    expect(pickerSearch()).not.toBeNull();
+  },
+);
 
 it("closes the Fields picker on Escape and returns focus to the Fields action", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
@@ -167,7 +241,9 @@ it("opens the Fields picker from an arrow or a printable key on the Fields actio
   expect(active()).toBe(rows[0]);
 });
 
-it("closes the Fields picker when focus leaves it by keyboard", async () => {
+// Tab out of the picker lands on the Fields action, not on the page's body
+// or on the next control, so the reader is where the picker came from.
+it("closes the Fields picker when focus leaves it by keyboard, and gives the Fields action focus", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
   page.press(m.workbench_show_fields());
@@ -176,7 +252,36 @@ it("closes the Fields picker when focus leaves it by keyboard", async () => {
   act(() => elsewhere.focus());
   await page.settle();
   expect(pickerSearch()).toBeNull();
-  expect(document.activeElement).toBe(elsewhere);
+  expect(document.activeElement).toBe(
+    action(page.host, m.workbench_show_fields()),
+  );
+});
+
+// A press on the Fields action keeps focus in the open picker, so the press
+// closes it from inside and focus goes back to the action, as Escape's does.
+it("closes the Fields picker from a press on its action and gives the action focus", async () => {
+  await using page = await open({ frame: { width: 560, height: 700 } });
+  await page.settle();
+  const fields = action(page.host, m.workbench_show_fields());
+  page.press(m.workbench_show_fields());
+  await page.settle();
+  const search = pickerSearch()!;
+  const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+  act(() => {
+    fields.dispatchEvent(down);
+  });
+  expect(down.defaultPrevented).toBe(true);
+  expect(document.activeElement).toBe(search);
+  act(() => fields.click());
+  await page.settle();
+  expect(pickerSearch()).toBeNull();
+  expect(document.activeElement).toBe(fields);
+  // A closed picker leaves the press to move focus as it always does.
+  const next = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+  act(() => {
+    fields.dispatchEvent(next);
+  });
+  expect(next.defaultPrevented).toBe(false);
 });
 
 it("leaves the Fields picker closed as the frame narrows, and shows the column again as it widens", async () => {
@@ -235,15 +340,26 @@ it("shows, sizes and resets each panel from the View menu", async () => {
   act(() => fields(m.workbench_panel_wider()).click());
   const edge = handle(page.host, m.workbench_fields_resize())!;
   expect(edge.getAttribute("aria-valuenow")).toBe("352");
+  expect(edge.getAttribute("aria-valuetext")).toBe("352 pixels");
+  // A menu entry moves no focus to the handle, so a status line says the
+  // size it gave.
+  const status = () =>
+    page.host.querySelector('[data-part="panels"] > [role="status"]:last-child')
+      ?.textContent;
+  expect(status()).toBe("Fields: 352 pixels");
   // The menu stays open, so the reader can pick the next step.
   act(() => fields(m.workbench_panel_reset_width()).click());
   expect(edge.getAttribute("aria-valuenow")).toBe("288");
+  // The resize moves the Preview under the editor, which changes the size
+  // groups, so the menu closes; it opens again on the new groups.
   page.resizeFrame({ width: 560, height: 700 });
   await page.waitFor(() =>
-    expect(
-      sizeItem(m.workbench_preview_resize(), m.workbench_panel_shorter()),
-    ).toBeTruthy(),
+    expect(document.querySelector('[role="menu"]')).toBeNull(),
   );
+  await openView();
+  expect(
+    sizeItem(m.workbench_preview_resize(), m.workbench_panel_shorter()),
+  ).toBeTruthy();
   act(() =>
     sizeItem(m.workbench_preview_resize(), m.workbench_panel_shorter()).click(),
   );
@@ -252,8 +368,61 @@ it("shows, sizes and resets each panel from the View menu", async () => {
       "aria-valuenow",
     ),
   ).toBe("30");
+  expect(status()).toBe("Preview: 30%");
+  // The handle's own use leaves its value to the handle.
+  press(handle(page.host, m.workbench_preview_resize())!, "ArrowUp");
+  expect(status()).toBe("");
   act(() => menuItem(m.workbench_show_preview()).click());
   expect(region(page.host, m.workbench_view_preview())).toBeNull();
+});
+
+// A step that moves a panel to another place changes the size groups the
+// View menu lists; the menu closes rather than move its entries under the
+// pointer.
+it("closes the View menu when a size step changes where the panels go", async () => {
+  await using page = await open({ frame: { width: 1024, height: 700 } });
+  await page.settle();
+  // The Preview leaves no room for the Fields column beside the editor.
+  expect(region(page.host, m.workbench_view_fields())).toBeNull();
+  page.press(m.workbench_view_menu());
+  await page.waitFor(() =>
+    expect(document.querySelector('[role="menu"]')).not.toBeNull(),
+  );
+  const narrower = [
+    ...document.querySelectorAll<HTMLElement>(
+      '[role="menu"] [role="menuitem"]',
+    ),
+  ].find((element) => element.textContent === m.workbench_panel_narrower())!;
+  act(() => narrower.click());
+  await page.settle();
+  // The narrower Preview makes room for the Fields column.
+  expect(region(page.host, m.workbench_view_fields())).not.toBeNull();
+  await page.waitFor(() =>
+    expect(document.querySelector('[role="menu"]')).toBeNull(),
+  );
+});
+
+// The View menu presses the same Fields action as the header: where the
+// column does not fit, Show fields opens the picker.
+it("opens the Fields picker from the View menu's Show fields in a narrow frame", async () => {
+  await using page = await open({ frame: { width: 560, height: 700 } });
+  await page.settle();
+  page.press(m.workbench_view_menu());
+  await page.waitFor(() =>
+    expect(document.querySelector('[role="menu"]')).not.toBeNull(),
+  );
+  const show = [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]'),
+  ].find((element) => element.textContent === m.workbench_show_fields())!;
+  // The picker is closed, so the entry reads unchecked.
+  expect(show.getAttribute("aria-checked")).toBe("false");
+  act(() => show.click());
+  await page.waitFor(() => expect(pickerSearch()).not.toBeNull());
+  await page.settle();
+  expect(document.activeElement).toBe(pickerSearch());
+  expect(
+    action(page.host, m.workbench_show_fields()).getAttribute("aria-expanded"),
+  ).toBe("true");
 });
 
 /** A call, in the note, to a partial no vault holds. */
@@ -303,6 +472,11 @@ it.each([
     expect(page.host.textContent).toContain(m.workbench_problems_heading());
     expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
     expect(selectedInNote(page.host)).toBe(MISSING_CALL);
+    // Focus is on the call, so the Problems area's status says why it fails.
+    expect(
+      page.host.querySelector('[data-part="problems-announcement"]')
+        ?.textContent,
+    ).toContain("missing-details");
     expect(region(page.host, m.workbench_view_preview())).toBe(shown);
     expect(
       handle(page.host, m.workbench_preview_resize())!.getAttribute(

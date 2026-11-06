@@ -36,7 +36,9 @@ The editor tabs and both panels use one chosen item and one chosen annotation. C
 
 ### Show or hide a panel [#show-panels]
 
-Select <UiLabel name={m.workbench_show_fields()} /> or <UiLabel name={m.workbench_show_preview()} /> in the view header. The action looks pressed while its panel is shown. Select it again to hide the panel. The same two entries are in the view's pane menu, with a check mark while their panel is shown.
+Select <UiLabel name={m.workbench_show_fields()} /> or <UiLabel name={m.workbench_show_preview()} /> in the view header. The action looks pressed while its panel is shown. Select it again to hide the panel. The same two entries are in the view's pane menu, with a check mark while their panel is shown. The web Workbench has the same actions in its header, and the same entries in its <UiLabel name={m.workbench_view_menu()} /> menu.
+
+In a view too narrow for the Fields column, <UiLabel name={m.workbench_show_fields()} /> opens the Fields picker under the action instead, from the header or from the menu. See [Panels in a narrow view](#narrow-view).
 
 Hiding a panel keeps your chosen item and annotation. The panel shows them again when you bring it back.
 
@@ -53,13 +55,21 @@ The edge also works from the keyboard. Press Tab to focus it; a screen reader na
 | Home                      | Makes the panel as narrow as it can be     |
 | End                       | Makes the panel as wide as it can be       |
 
+Double-click the edge to give the panel its default width again.
+
+You can also size a panel without the edge. In the view's pane menu, point to <UiLabel name={m.workbench_fields_resize()} /> or <UiLabel name={m.workbench_preview_resize()} />, and select <UiLabel name={m.workbench_panel_wider()} />, <UiLabel name={m.workbench_panel_narrower()} />, or <UiLabel name={m.workbench_panel_reset_width()} />. Each step is 64 pixels. In the web Workbench, the same entries are in the <UiLabel name={m.workbench_view_menu()} /> menu, which stays open so you can take several steps. After each step, a screen reader reads the panel and its new size, such as "Fields: 336 pixels".
+
+A panel never grows so wide that the other column loses its place: the editor keeps 360 pixels beside both columns and their edges.
+
 ### Panels in a narrow view [#narrow-view]
 
 A panel stands beside the editor only while the editor keeps at least 360 pixels of width. The Preview panel takes the side first, so you can compare the template with its result as you edit.
 
-When the view is too narrow for the Preview beside the editor, the Preview moves under the editor. It takes 40% of the view's height at first. Drag the edge above it, or focus the edge and press Up Arrow or Down Arrow, to give it more or less height; Home and End set its smallest and largest share. The editor always keeps room for its toolbar, its tabs and at least five lines of your template; the Preview gets shorter first. When the editor needs more room, it scrolls.
+When the view is too narrow for the Preview beside the editor, the Preview moves under the editor. It takes 40% of the view's height at first. Drag the edge above it, or focus the edge and press Up Arrow or Down Arrow, to give it more or less height; Home and End set its smallest and largest share. Double-click the edge to give it 40% again. In the pane menu, <UiLabel name={m.workbench_preview_resize()} /> then offers <UiLabel name={m.workbench_panel_taller()} />, <UiLabel name={m.workbench_panel_shorter()} />, and <UiLabel name={m.workbench_panel_reset_height()} />, in steps of 10%. The editor always keeps room for its toolbar, its tabs and at least five lines of your template; the Preview gets shorter first. Each step starts from the height you see. When the editor needs more room, it scrolls.
 
-Making the view narrower or wider moves the panels and changes nothing else: a panel you showed stays shown, and it gets its width back when the view is wide enough again. A narrower panel fits beside the editor in a narrower view.
+Only the Preview goes under the editor. When the view is too narrow for the Fields column, <UiLabel name={m.workbench_show_fields()} /> opens the Fields picker: a list of the fields under the action, with a search field. Type to filter the list, use Up Arrow and Down Arrow to choose a field, and press Enter to put it into the editor at your cursor. The area under the list shows the whole value of the chosen field. To close the picker, press Escape or Tab, or select <UiLabel name={m.workbench_show_fields()} /> again; the focus goes back to the action. Place your cursor in the template before you open the picker: until you do, the picker says <UiLabel name={m.workbench_fields_choose_place()} /> and puts nothing in.
+
+Making the view narrower or wider moves the panels and changes nothing else: a panel you showed stays shown, and it gets its width back when the view is wide enough again. A narrower panel fits beside the editor in a narrower view. The Preview keeps your place as it moves: the control you were on and the scroll position stay. A view you move to another window follows that window's width.
 
 ### What the view remembers [#panel-state]
 

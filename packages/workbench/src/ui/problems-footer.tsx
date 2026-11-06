@@ -90,6 +90,12 @@ export interface WorkbenchProblemsState {
   readonly select: (id: string, occurrence?: RenderDiagnostic) => void;
   /** Opens or reclaims the area; reclaiming it also gives back the editor. */
   readonly setOpen: (open: boolean) => void;
+  /**
+   * What the area's polite status says: why a problem Show problem revealed
+   * fails, while focus is on the call in the editor rather than in the area.
+   */
+  readonly announcement: string;
+  readonly announce: (text: string) => void;
 }
 
 /**
@@ -122,6 +128,7 @@ export function useWorkbenchProblems({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [occurrence, setOccurrence] = useState<RenderDiagnostic | null>(null);
   const [open, setOpen] = useState(false);
+  const [announcement, announce] = useState("");
   // The occurrence the reader asked about stands for its grouped problem while
   // a check still reports it.
   const diagnoses =
@@ -137,6 +144,7 @@ export function useWorkbenchProblems({
   const openArea = useCallback((next: boolean) => {
     setOpen(next);
     if (!next) {
+      announce("");
       setSelectedId(null);
       setOccurrence(null);
     }
@@ -231,6 +239,8 @@ export function useWorkbenchProblems({
       setOpen(true);
     },
     setOpen: openArea,
+    announcement,
+    announce,
   };
 }
 
@@ -468,6 +478,9 @@ export function ProblemsFooter({
         {!open && explanation !== null && (
           <p {...part("problems-text")}>{explanation.condition}</p>
         )}
+        <p role="status" {...part("problems-announcement")}>
+          {problems.announcement}
+        </p>
         {/* How much of the editor this reading takes, on the trailing edge and
             together: one grows the area, the other gives it all back. */}
         <div {...part("problems-space")}>

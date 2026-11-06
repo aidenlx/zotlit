@@ -9,10 +9,16 @@ import {
 import * as Atom from "effect/reactivity/Atom";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { FieldPicker, fieldsActionKey } from "./field-picker";
+import {
+  FieldPicker,
+  fieldsActionAttributes,
+  fieldsActionKey,
+  holdPickerFocus,
+} from "./field-picker";
 import type { FieldPickerProps } from "./field-picker";
+import { pressFieldsAction } from "./model";
 import { INITIAL_PANELS } from "./panel-layout";
-import type { ViewSize, WorkbenchPanels } from "./panel-layout";
+import type { FieldsAction, ViewSize, WorkbenchPanels } from "./panel-layout";
 import { SidePanels } from "./panels";
 import { mount } from "./test-host";
 
@@ -65,7 +71,7 @@ function open({
     inserted,
     resize: (next: ViewSize) => act(() => mounted.registry.set(viewSize, next)),
     pressAction: () =>
-      act(() => mounted.registry.set(mounted.model.fieldsAction, undefined)),
+      act(() => pressFieldsAction(mounted.registry, mounted.model)),
   });
 }
 
@@ -78,13 +84,23 @@ const activeRow = () => {
 };
 
 describe("a key on the Fields action", () => {
-  const key = (init: Partial<KeyboardEventInit> & { key: string }) =>
-    fieldsActionKey(new KeyboardEvent("keydown", init));
+  const closed = { opens: "popover", open: false } as const;
+  const key = (
+    init: Partial<KeyboardEventInit> & { key: string },
+    action: FieldsAction = closed,
+  ) => fieldsActionKey(action, new KeyboardEvent("keydown", init));
   it("opens the picker from an arrow, and searches for a printable key", () => {
     expect(key({ key: "ArrowDown" })).toBe("");
     expect(key({ key: "ArrowUp" })).toBe("");
     expect(key({ key: "d" })).toBe("d");
     expect(key({ key: "D", shiftKey: true })).toBe("D");
+  });
+
+  it("opens nothing where the action shows the column or the picker stands", () => {
+    expect(key({ key: "ArrowDown" }, { opens: "column", open: false })).toBe(
+      null,
+    );
+    expect(key({ key: "d" }, { opens: "popover", open: true })).toBe(null);
   });
 
   it("leaves the action's own keys and the shortcuts alone", () => {
@@ -98,6 +114,46 @@ describe("a key on the Fields action", () => {
       { key: "d", altKey: true },
     ])
       expect(key(init)).toBeNull();
+  });
+});
+
+describe("the Fields action's state", () => {
+  it("reads as a toggle where it shows the column", () => {
+    expect(
+      fieldsActionAttributes({ opens: "column", open: true }, "picker"),
+    ).toEqual({
+      "aria-pressed": "true",
+      "aria-haspopup": undefined,
+      "aria-expanded": undefined,
+      "aria-controls": undefined,
+    });
+  });
+
+  it("reads as a disclosure of the picker where it opens it", () => {
+    expect(
+      fieldsActionAttributes({ opens: "popover", open: false }, "picker"),
+    ).toEqual({
+      "aria-pressed": undefined,
+      "aria-haspopup": "dialog",
+      "aria-expanded": "false",
+      "aria-controls": undefined,
+    });
+    expect(
+      fieldsActionAttributes({ opens: "popover", open: true }, "picker")[
+        "aria-controls"
+      ],
+    ).toBe("picker");
+  });
+
+  it("keeps focus in the standing picker when the pointer presses the action", () => {
+    const held = (action: FieldsAction) => {
+      const event = new MouseEvent("mousedown", { cancelable: true });
+      holdPickerFocus(action, event);
+      return event.defaultPrevented;
+    };
+    expect(held({ opens: "popover", open: true })).toBe(true);
+    expect(held({ opens: "popover", open: false })).toBe(false);
+    expect(held({ opens: "column", open: true })).toBe(false);
   });
 });
 
@@ -125,7 +181,8 @@ describe("the Fields picker", () => {
     press("Enter");
     expect(page.inserted).toEqual(["DOI"]);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("status").textContent).toBe("Inserted DOI");
+    // The picker's own status line, before the panels' size status.
+    expect(screen.getAllByRole("status")[0]!.textContent).toBe("Inserted DOI");
     expect(page.registry.get(page.model.fieldsPicker)).toBeNull();
     // The editor takes focus at the inserted text, not the Fields action.
     expect(
