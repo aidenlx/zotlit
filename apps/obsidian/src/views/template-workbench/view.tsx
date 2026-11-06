@@ -106,7 +106,6 @@ import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { loadedTextFileView } from "@/lib/live-text";
-import { getLogger } from "@/lib/log";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
 import { Notifier, withOutcome } from "@/lib/notifier";
@@ -158,10 +157,6 @@ import {
   retainNativeOutputs,
   makeNativeRenderer,
 } from "@/views/note-preview/render";
-import {
-  PartialPreviewFailed,
-  PreviewItemMissing,
-} from "@/views/note-preview/session";
 import { makeExportTemplateDataCommand } from "@/views/template-data-explorer/atoms";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
@@ -218,7 +213,6 @@ import {
 } from "./theme";
 
 export const TEMPLATE_WORKBENCH_VIEW_TYPE = "zotlit-template-workbench";
-const logger = getLogger(["views", "template-workbench"]);
 
 /** A native read that a newer read, an edit, or another file outran. */
 class StaleSourceRead extends Schema.TaggedError<
@@ -367,7 +361,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    */
   #arrival: ArrivingProblem | null = null;
   /** This leaf's host model: its view state, choices, and Item read. */
-  readonly model: TemplateWorkbenchModel = makeTemplateWorkbenchModel();
+  readonly model: TemplateWorkbenchModel;
   get registry() {
     return this.#deps.registry;
   }
@@ -447,8 +441,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   >;
   /** Customize; a second press joins the materialization in flight. */
   readonly #customizing: InFlightSlot<void, never>;
-  /** Renders a Shared Partial's preview; null without the native renderer. */
-  readonly #renderer: ReturnType<typeof makeNativeRenderer> | null;
   /** The citation styles read; a request while one runs joins it. */
   readonly #styles: InFlightSlot<void, never>;
 
@@ -669,6 +661,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   constructor(leaf: WorkspaceLeaf, deps: TemplateWorkbenchDeps) {
     super(leaf);
     this.#deps = deps;
+    const renderer = deps.nativePreview
+      ? makeNativeRenderer(deps.nativePreview)
+      : null;
+    this.model = makeTemplateWorkbenchModel({
+      renderPartial: renderer?.partial,
+      source: () => this.#controller.source,
+    });
     this.#release = holdTemplateWorkbenchModel(deps.registry, this.model);
     // Closing the leaf interrupts every Effect it still runs.
     this.#runner = makeViewRunner(deps.registry);
@@ -693,10 +692,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#cleanup.defer(deps.registry.mount(partialDocumentsAtom));
     this.#cleanup.defer(deps.registry.mount(zoteroStateAtom));
     this.contentEl.addClass("zt-root", "zt-template-workbench");
-    const nativeRenderer = deps.nativePreview
-      ? makeNativeRenderer(deps.nativePreview)
-      : null;
-    this.#renderer = nativeRenderer;
+    const nativeRenderer = renderer;
     const render: WorkbenchHost["render"] =
       (nativeRenderer
         ? (request) => this.toHostEffect(nativeRenderer.render(request))
@@ -773,6 +769,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       }),
     );
     this.#cleanup.defer(this.#follow());
+    this.#cleanup.defer(this.#logRenders());
     this.scope = new Scope(this.app.scope);
     this.scope.register(["Mod"], "z", (event) => this.#history(event, false));
     this.scope.register(["Mod", "Shift"], "z", (event) =>
@@ -822,6 +819,45 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         { immediate: true },
       ),
     );
+  }
+  /** Logs from plain code under this leaf's category, on its runner. */
+  #log(entry: Effect.Effect<void>): void {
+    this.#runner.run(entry.pipe(withLogCategory("template-workbench")));
+  }
+  /**
+   * The scheduler decides on its own which render runs and which result the
+   * reader sees; this reads its state transitions back out as the log lines a
+   * diagnosis needs, since the shared package carries no logger of its own.
+   */
+  #logRenders(): () => void {
+    const { registry } = this;
+    const { state } = this.workbench.scheduler;
+    let previous = registry.get(state);
+    return registry.subscribe(state, (next) => {
+      const before = previous;
+      previous = next;
+      if (next.busy === before.busy) return;
+      const revision = registry.get(this.model.read).snapshot?.revision;
+      this.#log(
+        next.busy
+          ? Effect.logDebug("Preview render started").pipe(
+              Effect.annotateLogs({
+                revision,
+                live: registry.get(this.model.preview).live,
+              }),
+            )
+          : next.result !== null && next.result !== before.result
+            ? Effect.logDebug("Preview render published").pipe(
+                Effect.annotateLogs({
+                  revision: next.result.snapshotRevision,
+                  diagnostics: next.result.diagnostics.length,
+                }),
+              )
+            : Effect.logDebug("Discarded stale preview render").pipe(
+                Effect.annotateLogs({ revision, closed: this.#closed }),
+              ),
+      );
+    });
   }
   #invalidate(): void {
     if (!this.#closed)
@@ -903,7 +939,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** What a native render reads from outside the model: partials, bibliography, the note. */
   #followRenderInputs(): () => void {
-    const { registry, app } = this.#deps.nativePreview!;
+    const nativePreview = this.#deps.nativePreview!;
+    const { registry } = nativePreview;
     const stops: (() => void)[] = [];
     // A saved partial or bibliography changes what a render reads.
     for (const atom of [templateRevisionAtom, bibliographyRevisionAtom]) {
@@ -916,15 +953,16 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         }),
       );
     }
-    const { vault } = app;
-    const modify = vault.on("modify", (file) => {
-      if (
-        file.path ===
-        this.registry.get(this.workbench.scheduler.state).result?.sourcePath
-      )
-        this.#invalidate();
-    });
-    stops.push(() => vault.offref(modify));
+    // The note a render previews as an update changed on disk.
+    this.registerEvent(
+      nativePreview.app.vault.on("modify", (file) => {
+        if (
+          file.path ===
+          this.registry.get(this.workbench.scheduler.state).result?.sourcePath
+        )
+          this.#invalidate();
+      }),
+    );
     return () => {
       for (const stop of stops.reverse()) stop();
     };
@@ -1199,10 +1237,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (this.#controller.readOnly || this.#closed) return false;
     const target = this.insertTarget;
     if (!target) {
-      logger.trace("Rejected Explorer insertion", {
-        slice: this.#insertTarget?.slice ?? null,
-        reason: this.#insertTarget ? "removed-slice" : "no-selection",
-      });
+      this.#log(
+        Effect.logTrace("Rejected Explorer insertion").pipe(
+          Effect.annotateLogs({
+            slice: this.#insertTarget?.slice ?? null,
+            reason: this.#insertTarget ? "removed-slice" : "no-selection",
+          }),
+        ),
+      );
       return false;
     }
     const range = this.#controller.sliceRange(target.slice);
@@ -1212,7 +1254,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       changes: { from, to, insert: snippet },
       userEvent: "input.complete",
     });
-    logger.debug("Applied Explorer insertion", { slice: target.slice });
+    this.#log(
+      Effect.logDebug("Applied Explorer insertion").pipe(
+        Effect.annotateLogs({ slice: target.slice }),
+      ),
+    );
     const cursor = from + snippet.length;
     this.#focusTarget({
       slice: target.slice,
@@ -1557,8 +1603,27 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const restoreBase = (state: unknown) =>
       Effect.tryPromise(() => super.setState(state, result));
     return Effect.gen({ self: this }, function* () {
-      // A choice made while the document loads outranks the saved one.
-      const chosen = this.#view.item;
+      const value = readSavedWorkbench(state);
+      // The saved choice lands first, so a choice the reader makes while the
+      // document loads comes after it and stands.
+      if (value) {
+        const { itemIndexedKey, annotationId } = value;
+        if (itemIndexedKey !== undefined)
+          this.#update(
+            chooseItem(
+              itemIndexedKey === null
+                ? null
+                : this.#view.item?.id === itemIndexedKey
+                  ? this.#view.item
+                  : { id: itemIndexedKey, title: null },
+            ),
+          );
+        if (annotationId !== undefined)
+          this.registry.update(
+            this.model.picks,
+            chooseAnnotation(annotationId),
+          );
+      }
       const builtin =
         !!state &&
         typeof state === "object" &&
@@ -1582,7 +1647,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         }
         yield* restoreBase(state);
       }
-      const value = readSavedWorkbench(state);
       if (!value) return;
       for (const [side, panel] of Object.entries(value.panels))
         this.registry.update(this.model.panels, (panels) =>
@@ -1591,7 +1655,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             panel.width,
           )(showPanel(side as keyof typeof panels, panel.shown)(panels)),
         );
-      const store = this.change;
+      const { change } = this;
       if (this.#applyKindDefaults()) {
         // A plain document has one tab and one editor, so nothing of the saved
         // tab or Basic and Source choice applies to it. A Shared Partial's root
@@ -1602,39 +1666,25 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         // Profile is set first, so the root subscription remembers the pair.
         if (this.documentKind === "partial" && value.partialContext !== null) {
           this.#partialProfile = value.partialProfile;
-          store.setRoot(value.partialContext);
+          change.setRoot(value.partialContext);
         }
       } else {
         if (value.tab !== null)
-          store.setTab(
+          change.setTab(
             value.tab === "match" && this.isDefaultProfile ? "note" : value.tab,
           );
         if (value.root !== null && value.root !== "citation")
-          store.setRoot(value.root);
+          change.setRoot(value.root);
         else if (value.tab !== null)
-          store.setRoot(
+          change.setRoot(
             this.#view.tab === "annotation"
               ? "annotation"
               : this.#view.tab === "name"
                 ? "filename"
                 : "note",
           );
-        if (value.advanced !== null) store.setAdvanced(value.advanced);
+        if (value.advanced !== null) change.setAdvanced(value.advanced);
       }
-      // The saved Item becomes the choice; its read names its title.
-      const { itemIndexedKey, annotationId } = value;
-      if (this.#view.item === chosen && itemIndexedKey !== undefined)
-        this.#update(
-          chooseItem(
-            itemIndexedKey === null
-              ? null
-              : chosen?.id === itemIndexedKey
-                ? chosen
-                : { id: itemIndexedKey, title: null },
-          ),
-        );
-      if (annotationId !== undefined)
-        this.registry.update(this.model.picks, chooseAnnotation(annotationId));
     });
   }
 
@@ -1646,21 +1696,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * @returns whether the kind fixed them.
    */
   #applyKindDefaults(): boolean {
-    const store = { ...this.#view, ...this.change };
+    const { change } = this;
     const kind = this.documentKind;
     if (kind === "profile") {
       // A tab and root this leaf kept from a document of another kind name no
       // panel and no data here, which would leave every panel unmounted.
-      if (!TABS.includes(store.tab)) {
-        store.setTab("note");
-        store.setRoot("note");
+      if (!TABS.includes(this.#view.tab)) {
+        change.setTab("note");
+        change.setRoot("note");
       }
       return false;
     }
-    store.setTab(kind);
-    store.setAdvanced(false);
+    change.setTab(kind);
+    change.setAdvanced(false);
     if (kind === "citation") {
-      store.setRoot("citation");
+      change.setRoot("citation");
       return true;
     }
     // The caller and the Profile belong to the partial they were chosen for, so
@@ -1671,9 +1721,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#partialChoiceFile = path;
       const held = readPartialChoice(this.app, path);
       this.#partialProfile = held.profile;
-      store.setRoot(held.context);
-    } else if (!isPartialContext(store.root))
-      store.setRoot(DEFAULT_PARTIAL_CONTEXT);
+      change.setRoot(held.context);
+    } else if (!isPartialContext(this.#view.root))
+      change.setRoot(DEFAULT_PARTIAL_CONTEXT);
     return true;
   }
 
@@ -2082,14 +2132,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   openPartial(name: string): void {
     const partials = this.registry.get(partialDocumentsAtom);
     if (!AsyncResult.isSuccess(partials)) {
-      logger.debug("Edit partial before the folder scan settled", { name });
+      this.#log(
+        Effect.logDebug("Edit partial before the folder scan settled").pipe(
+          Effect.annotateLogs({ name }),
+        ),
+      );
       return;
     }
     const document = partials.value.find((partial) => partial.name === name);
     if (!document) {
-      logger.debug("Edit partial for a name the vault holds no document for", {
-        name,
-      });
+      this.#log(
+        Effect.logDebug(
+          "Edit partial for a name the vault holds no document for",
+        ).pipe(Effect.annotateLogs({ name })),
+      );
       return;
     }
     this.#openPartial(document.path);
@@ -2321,10 +2377,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         return AtomRegistry.getResult(registry, command, {
           suspendOnWaiting: true,
         }).pipe(
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.interrupt
-              : Effect.succeed(null),
+          // A chooser that could not open answers as a dismissal does.
+          recover(
+            (cause) =>
+              Effect.logWarning("Template Workbench chooser failed").pipe(
+                Effect.annotateLogs({ error: Cause.squash(cause) }),
+                withLogCategory("template-workbench"),
+              ),
+            Effect.succeed(null),
           ),
         );
       }),
@@ -2333,14 +2393,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** Makes `item` the choice of this leaf. */
   #choose(item: WorkbenchItemChoice): void {
     if (this.#closed) return;
-    this.#update(chooseItem(item));
-    // An Item the reader picked is the Citation set they asked to see, so the
-    // built-in example that outranks it stands down.
-    if (this.#view.root === "citation")
-      this.registry.update(
-        this.model.picks,
-        chooseCitation({ citationExample: null }),
-      );
+    this.registry.set(this.model.pick, item);
     this.#remember(item);
   }
   #remember(item: WorkbenchItemChoice): void {
@@ -2359,8 +2412,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         const read = AtomRegistry.getResult(registry, model.chosen, {
           suspendOnWaiting: true,
         }).pipe(
-          Effect.map((chosen) => chosen !== null),
-          Effect.catchCause(() => Effect.succeed(false)),
+          Effect.as(true),
+          recover(
+            (cause) =>
+              Effect.logWarning(
+                "Failed to restore Template Workbench Item",
+              ).pipe(
+                Effect.annotateLogs({
+                  indexedKey: item.id,
+                  error: Cause.squash(cause),
+                }),
+                withLogCategory("template-workbench"),
+              ),
+            Effect.succeed(false),
+          ),
         );
         // A newer choice outruns this one before its read answers.
         const outrun = AtomRegistry.toStream(registry, model.item).pipe(
@@ -2398,68 +2463,19 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       );
     }).pipe(Effect.asVoid);
   }
-  /**
-   * The text one registered Shared Partial produces for `context`, under this
-   * leaf's own choices, once the chosen Item is read. This is what a Partial
-   * Placeholder's preview shows. Interrupting it stops the render.
-   */
-  renderPartial(
-    name: string,
-    context: PartialContext,
-  ): Effect.Effect<
-    string,
-    PreviewItemMissing | PartialPreviewFailed,
-    ViewServices
-  > {
-    const renderer = this.#renderer;
-    if (!renderer)
-      return Effect.die("A Shared Partial preview needs the native renderer.");
-    const { registry, model } = this;
-    return AtomRegistry.getResult(registry, model.chosen, {
-      suspendOnWaiting: true,
-    }).pipe(
-      Effect.ignore,
-      Effect.flatMap(
-        (): Effect.Effect<
-          string,
-          PreviewItemMissing | PartialPreviewFailed,
-          ViewServices
-        > => {
-          const { variant, citationExample } = registry.get(model.picks);
-          const citation =
-            context === "citation"
-              ? { variant, example: citationExample }
-              : undefined;
-          const snapshot = registry.get(model.snapshot);
-          if (!snapshot) return Effect.fail(new PreviewItemMissing());
-          const { example } = registry.get(model.examples);
-          return renderer
-            .partial(
-              {
-                source: this.#controller.source,
-                snapshot,
-                ...(example ? { annotation: example } : {}),
-                ...(citation ? { citation } : {}),
-              },
-              { name, context, profile: this.#partialProfile },
-            )
-            .pipe(
-              Effect.mapError((cause) => new PartialPreviewFailed({ cause })),
-            );
-        },
-      ),
-    );
-  }
-
   #subscribe(): void {
     this.#unsubscribe = this.#controller.subscribe(
       ({ docChanged, transaction }) => {
         if (!docChanged) return;
         // What the scheduler follows on its own, named here so a diagnosis can
         // read the edit that queued or dropped a render.
-        logger.trace("Preview source changed", {
-          live: this.registry.get(this.model.preview).live,
-        });
+        this.#log(
+          Effect.logTrace("Preview source changed").pipe(
+            Effect.annotateLogs({
+              live: this.registry.get(this.model.preview).live,
+            }),
+          ),
+        );
         if (this.#insertTarget) {
           const { slice, range } = this.#insertTarget;
           this.#insertTarget = {
@@ -2600,8 +2616,6 @@ function EditorContent({
   }, [view, insertRequest]);
   const manifest = useRef(controller.document?.manifest ?? null);
   if (controller.document) manifest.current = controller.document.manifest;
-  const templateRevision = useAtomValue(templateRevisionAtom);
-  const dataRevision = usePreviewDataRevision(view);
   // A missing partial is the engine's own render failure, so the boxes read
   // the names the last render could not resolve rather than a scan.
   const missingPartials = (result?.diagnostics ?? []).flatMap((diagnostic) =>
@@ -2613,11 +2627,11 @@ function EditorContent({
   const partialsFor = (
     partialContext: PartialContext,
   ): PartialPlaceholderHost | undefined => {
-    if (!view.nativeRenderDeps) return undefined;
+    const previews = view.model.partialPreview;
+    if (!previews) return undefined;
     return {
       missing: missingPartials,
-      revision: templateRevision,
-      dataRevision,
+      preview: (name) => previews(JSON.stringify([name, partialContext])),
       onEdit: (name) => view.openPartial(name),
       onShowProblem: (name) => {
         const found = diagnoses.find(
@@ -2629,8 +2643,6 @@ function EditorContent({
         if (found) problems.select(found.id);
         else problems.setOpen(true);
       },
-      onRender: (name) =>
-        view.toHostEffect(view.renderPartial(name, partialContext)),
     };
   };
   const sourceBoxes = usePartialBoxes(
@@ -3284,30 +3296,6 @@ function AnnotationSelection({ view }: { view: TemplateWorkbenchView }) {
  */
 function useSelectedAnnotation(view: TemplateWorkbenchView) {
   return useAtomValue(view.model.examples).example;
-}
-
-/**
- * The data a Shared Partial preview reads, as one value that changes whenever
- * the reader chooses another Item, annotation, or Citation example — which is
- * what an open Partial Placeholder preview renders again for.
- */
-function usePreviewDataRevision(view: TemplateWorkbenchView): string {
-  const { item } = useAtomValue(view.model.view);
-  const { annotationId, variant, citationExample } = useAtomValue(
-    view.model.picks,
-  );
-  const example = useSelectedAnnotation(view);
-  const snapshot = useAtomValue(view.model.read).snapshot;
-  const profile = useAtomValue(view.model.partialProfile);
-  return JSON.stringify([
-    item?.id ?? "",
-    annotationId ?? "",
-    example?.id ?? "",
-    variant,
-    citationExample ?? "",
-    snapshot?.revision ?? "",
-    profile ?? "",
-  ]);
 }
 
 function EditorHeader({ view }: { view: TemplateWorkbenchView }) {

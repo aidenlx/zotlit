@@ -1,5 +1,5 @@
 // One native render owner loads its own Item Snapshot and annotation examples.
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 
 import {
@@ -25,12 +25,14 @@ import type {
   WorkbenchItemChoice,
 } from "@zotlit/workbench/ui";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { formatErrorMessage } from "@/lib/toast";
 import type { ViewServices } from "@/lib/view-atoms";
 import { bibliographyRevisionAtom } from "@/services/pandoc/atoms";
 import { templateRevisionAtom } from "@/services/template/atoms";
+import {
+  PartialPreviewFailed,
+  PreviewItemMissing,
+} from "@/views/template-workbench/errors";
 import { getSampleAnnotationParent } from "@/views/template-workbench/selection-data";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
@@ -38,29 +40,6 @@ import { makeNativeRenderer } from "./render";
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
 
 const logger = getLogger(["note-preview", "session"]);
-
-/** A partial preview was asked for before any paper was chosen. */
-export class PreviewItemMissing extends Schema.TaggedError<
-  PreviewItemMissing,
-  { readonly brand: unique symbol }
->()("PreviewItemMissing", {}) {
-  override get message(): string {
-    return m.workbench_example_missing_item();
-  }
-}
-
-/** The registered Shared Partial failed to render. The message is the render's own. */
-export class PartialPreviewFailed extends Schema.TaggedError<
-  PartialPreviewFailed,
-  { readonly brand: unique symbol }
->()("PartialPreviewFailed", {
-  /** What the render failed with. */
-  cause: Schema.Defect(),
-}) {
-  override get message(): string {
-    return formatErrorMessage(this.cause);
-  }
-}
 
 export class NativePreviewSession implements Disposable {
   readonly state: PreviewStateHandle;

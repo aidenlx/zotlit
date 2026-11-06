@@ -1,7 +1,8 @@
 // The Workbench's state seam and service dependencies.
 import { expect, it } from "@effect/vitest";
-import { Effect, Stream, SubscriptionRef } from "effect";
+import { Deferred, Effect, Queue, Stream, SubscriptionRef } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { vi } from "vitest";
@@ -11,6 +12,7 @@ import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import { INITIAL_VIEW } from "@zotlit/workbench/ui";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import * as m from "@/lib/i18n/generated/messages";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { fileProfileAtom } from "@/services/profile/atoms";
 import { defaultBindingsAtom } from "@/services/settings/atoms";
@@ -41,14 +43,33 @@ const LATER = "LATER234";
 const SNAPSHOT: ItemSnapshot = SAMPLE_ITEMS[0]!;
 
 /**
- * A Workbench host whose Item reads the test drives: each check of a chosen
- * Item records its key, and holds until `answer` lets it go or an interrupt
- * stops it.
+ * A Workbench host whose Item reads the test drives. Each check of a chosen
+ * Item offers its key to `started`; a held check waits until an interrupt
+ * stops it, which completes the key's `interrupted` signal.
  */
-function itemHost(options: { readonly answer?: boolean } = {}) {
-  const started: string[] = [];
-  const interrupted: string[] = [];
+const itemHost = Effect.fn(function* (
+  answer: "held" | "paper" | "child" | "missing" = "held",
+) {
+  const started = yield* Queue.unbounded<string>();
+  const interrupted = new Map<string, Deferred.Deferred<void>>();
   const snapshots: string[] = [];
+  const stopped = (key: string) => {
+    let signal = interrupted.get(key);
+    if (!signal) interrupted.set(key, (signal = Deferred.makeUnsafe<void>()));
+    return signal;
+  };
+  const itemOf = (key: string, itemType: string) =>
+    new Map([
+      [
+        key,
+        {
+          key,
+          creators: [],
+          primaryCreatorType: null,
+          fields: { itemType, title: key },
+        },
+      ],
+    ]) as never;
   const zoteroReads = stubService<WorkbenchHostDeps["zoteroReads"]>(
     "ZoteroReads",
     {
@@ -58,24 +79,16 @@ function itemHost(options: { readonly answer?: boolean } = {}) {
         {
           ItemsByIndexedKeys: ({ indexedKeys }) => {
             const key = indexedKeys[0]!;
-            started.push(key);
-            return options.answer
-              ? Effect.succeed(
-                  new Map([
-                    [
-                      key,
-                      {
-                        key,
-                        creators: [],
-                        primaryCreatorType: null,
-                        fields: { itemType: "journalArticle", title: key },
-                      },
-                    ],
-                  ]) as never,
-                )
-              : Effect.callback<never>(() =>
-                  Effect.sync(() => interrupted.push(key)),
-                );
+            Queue.offerUnsafe(started, key);
+            if (answer === "held")
+              return Effect.callback<never>(() =>
+                Deferred.succeed(stopped(key), undefined),
+              );
+            return Effect.succeed(
+              answer === "missing"
+                ? (new Map() as never)
+                : itemOf(key, answer === "child" ? "attachment" : "book"),
+            );
           },
         },
       ),
@@ -105,73 +118,99 @@ function itemHost(options: { readonly answer?: boolean } = {}) {
   );
   const host = makeWorkbenchHost({ zoteroReads });
   const model = makeTemplateWorkbenchModel();
-  const release = holdTemplateWorkbenchModel(host.registry, model);
   const choose = (id: string) =>
     host.registry.update(model.view, chooseItem({ id, title: null }));
-  return { ...host, model, release, choose, started, interrupted, snapshots };
-}
+  /** Holds the leaf's model, as the view does from its constructor to its close. */
+  const hold = (): Disposable => ({
+    [Symbol.dispose]: holdTemplateWorkbenchModel(host.registry, model),
+  });
+  /** The chosen Item's read, once it settles. */
+  const settled = Effect.exit(
+    AtomRegistry.getResult(host.registry, model.chosen, {
+      suspendOnWaiting: true,
+    }),
+  );
+  const interruptedOf = (key: string) => Deferred.await(stopped(key));
+  return {
+    ...host,
+    model,
+    hold,
+    choose,
+    started,
+    interruptedOf,
+    snapshots,
+    settled,
+  };
+});
 
 it.effect("interrupts the older Item read when a newer choice is made", () =>
   Effect.gen(function* () {
-    const host = itemHost();
+    const host = yield* itemHost();
+    using _held = host.hold();
     host.choose(FIRST);
-    yield* Effect.promise(() =>
-      waitFor(() => expect(host.started).toEqual([FIRST])),
-    );
+    expect(yield* Queue.take(host.started)).toBe(FIRST);
     host.choose(LATER);
-    yield* Effect.promise(() =>
-      waitFor(() => expect(host.started).toEqual([FIRST, LATER])),
-    );
-    expect(host.interrupted).toEqual([FIRST]);
+    expect(yield* Queue.take(host.started)).toBe(LATER);
+    yield* host.interruptedOf(FIRST);
     expect(host.registry.get(host.model.read).status).toBe("loading");
-    host.release();
   }),
 );
 
 it.effect("reads the chosen Item once for every surface that shows it", () =>
   Effect.gen(function* () {
-    const host = itemHost({ answer: true });
+    const host = yield* itemHost("paper");
+    using _held = host.hold();
     host.choose(FIRST);
-    yield* Effect.promise(() =>
-      waitFor(() =>
-        expect(host.registry.get(host.model.read).status).toBe("ready"),
-      ),
-    );
-    expect(host.registry.get(host.model.read).snapshot).toBe(SNAPSHOT);
+    yield* host.settled;
+    expect(host.registry.get(host.model.read)).toMatchObject({
+      status: "ready",
+      snapshot: SNAPSHOT,
+    });
     expect(host.registry.get(host.model.title)).toBe(FIRST);
     // The annotation choice and the tab change the surfaces, not the read.
     host.registry.update(host.model.picks, chooseAnnotation("other"));
     host.registry.update(host.model.view, setTab("annotation"));
     expect(host.registry.get(host.model.choices).annotation).not.toBeNull();
-    expect(host.started).toEqual([FIRST]);
+    expect(yield* Queue.takeAll(host.started)).toEqual([FIRST]);
     expect(host.snapshots).toEqual([FIRST]);
-    host.release();
   }),
+);
+
+it.effect.each(["child", "missing"] as const)(
+  "fails the read of a chosen Item that is a %s Item",
+  (answer) =>
+    Effect.gen(function* () {
+      const host = yield* itemHost(answer);
+      using _held = host.hold();
+      host.choose(FIRST);
+      yield* host.settled;
+      expect(host.registry.get(host.model.read)).toMatchObject({
+        status: "error",
+        error: m.workbench_example_missing_item(),
+        snapshot: null,
+      });
+      expect(host.snapshots).toEqual([]);
+    }),
 );
 
 it.effect(
   "interrupts the Item read and the open chooser when the leaf closes",
   () =>
     Effect.gen(function* () {
-      const host = itemHost();
-      const closed: string[] = [];
+      const host = yield* itemHost();
+      const closed = Deferred.makeUnsafe<void>();
+      const held = host.hold();
       host.choose(FIRST);
       host.registry.set(
         host.model.chooseItem,
         Effect.never.pipe(
-          Effect.onInterrupt(() => Effect.sync(() => closed.push("chooser"))),
+          Effect.onInterrupt(() => Deferred.succeed(closed, undefined)),
         ),
       );
-      yield* Effect.promise(() =>
-        waitFor(() => expect(host.started).toEqual([FIRST])),
-      );
-      host.release();
-      yield* Effect.promise(() =>
-        waitFor(() => {
-          expect(host.interrupted).toEqual([FIRST]);
-          expect(closed).toEqual(["chooser"]);
-        }),
-      );
+      expect(yield* Queue.take(host.started)).toBe(FIRST);
+      held[Symbol.dispose]();
+      yield* host.interruptedOf(FIRST);
+      yield* Deferred.await(closed);
     }),
 );
 
