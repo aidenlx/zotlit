@@ -5,7 +5,8 @@ import type { WorkbenchRunner } from "#/language/host-effects";
 import type { RenderRequest } from "#/render/request";
 import type { TemplateRenderResult } from "#/render/result";
 import { render as renderUI } from "@testing-library/react";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { ReactNode } from "react";
 
@@ -250,7 +251,12 @@ export interface Mounted extends Disposable {
   /** The scheduler facade a host feeds; deleted in #1946. */
   scheduler: RenderScheduler;
   ui: ReactNode;
+  /** Puts other children under the same host and editor, for a rerender. */
+  wrap(children: ReactNode): ReactNode;
 }
+
+/** The one runtime of the test host, as a host keeps one for all its editors. */
+export const TEST_RUNTIME = Atom.runtime(Layer.empty);
 
 /** The tree under a fake host and theme, over the built-in Default. */
 export function mount(
@@ -270,9 +276,19 @@ export function mount(
     host,
     controller,
     registry,
+    runtime: TEST_RUNTIME,
     ...(state ? { state } : {}),
   });
   const { model, store, scheduler } = editor;
+  const wrap = (children: ReactNode) => (
+    <WorkbenchThemeProvider theme={FAKE_THEME}>
+      <WorkbenchHostProvider host={host}>
+        <WorkbenchEditorProvider editor={editor}>
+          {children}
+        </WorkbenchEditorProvider>
+      </WorkbenchHostProvider>
+    </WorkbenchThemeProvider>
+  );
   return {
     host,
     registry,
@@ -280,15 +296,8 @@ export function mount(
     store,
     controller,
     scheduler,
-    ui: (
-      <WorkbenchThemeProvider theme={FAKE_THEME}>
-        <WorkbenchHostProvider host={host}>
-          <WorkbenchEditorProvider editor={editor}>
-            {children}
-          </WorkbenchEditorProvider>
-        </WorkbenchHostProvider>
-      </WorkbenchThemeProvider>
-    ),
+    ui: wrap(children),
+    wrap,
     [Symbol.dispose]() {
       editor[Symbol.dispose]();
       registry.dispose();

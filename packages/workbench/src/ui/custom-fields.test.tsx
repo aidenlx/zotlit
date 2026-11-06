@@ -1,91 +1,40 @@
-import { RegistryContext } from "@effect/atom-react";
 import { act, cleanup, render } from "@testing-library/react";
-import { Effect } from "effect";
-import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import type { ReactNode } from "react";
 import { afterEach, expect, it } from "vitest";
 
 import { useCustomFieldNames } from "./custom-fields";
-import { WorkbenchHostError } from "./host";
+import { mount } from "./test-host";
 
 afterEach(cleanup);
 
-const registry = AtomRegistry.make({ defaultIdleTTL: 0, timeoutResolution: 1 });
-
-function Names(props: {
-  read: Effect.Effect<readonly string[], unknown>;
-  reading?: boolean;
-}) {
-  const names = useCustomFieldNames(props.read, { reading: props.reading });
+function Names({ revision }: { revision: string }) {
+  const names = useCustomFieldNames(revision);
   return <output>{names.join(",")}</output>;
 }
 
-/** The names in a registry that drops a read the moment nothing shows it. */
-function InRegistry(props: Parameters<typeof Names>[0]) {
-  return (
-    <RegistryContext.Provider value={registry}>
-      <Names {...props} />
-    </RegistryContext.Provider>
-  );
-}
-
-/** A read the test answers, which records whether it was interrupted. */
-function heldRead() {
-  const reads: {
-    answer: (names: readonly string[]) => void;
-    interrupted: boolean;
-    /** Settles once the read is interrupted. */
-    interruption: Promise<void>;
-  }[] = [];
-  const read = Effect.callback<readonly string[]>((resume) => {
-    const { promise, resolve } = Promise.withResolvers<void>();
-    const entry = {
-      answer: (names: readonly string[]) => resume(Effect.succeed(names)),
-      interrupted: false,
-      interruption: promise,
-    };
-    reads.push(entry);
-    return Effect.sync(() => {
-      entry.interrupted = true;
-      resolve();
-    });
-  });
-  return { read, reads };
-}
-
-it("reads the names while reading, and interrupts the read when reading ends or the editor unmounts", async () => {
-  const { read, reads } = heldRead();
-  const { container, rerender, unmount } = render(
-    <InRegistry read={read} reading={false} />,
-  );
-  expect(reads).toHaveLength(0);
-
-  await act(async () => rerender(<InRegistry read={read} reading />));
-  expect(reads).toHaveLength(1);
-  await act(async () => reads[0]!.answer(["Shelf"]));
+it("reads the names for each revision, and interrupts the read a new revision or the unmount leaves", async () => {
+  using mounted = mount(<Names revision="1" />);
+  const { host } = mounted;
+  const wrap = (children: ReactNode) => mounted.wrap(children);
+  host.hold = true;
+  const { container, rerender, unmount } = render(mounted.ui);
+  expect(host.held.map(({ kind }) => kind)).toEqual(["customFields"]);
+  await act(async () => host.held[0]!.answer(["Shelf"]));
   expect(container.textContent).toBe("Shelf");
 
-  // A read that ends before its answer lands leaves the names as they were.
-  await act(async () => rerender(<InRegistry read={read} reading={false} />));
-  await act(async () => rerender(<InRegistry read={read} reading />));
-  expect(reads).toHaveLength(2);
-  await act(async () => rerender(<InRegistry read={read} reading={false} />));
-  await reads[1]!.interruption;
-  expect(reads[1]!.interrupted).toBe(true);
-  await act(async () => rerender(<InRegistry read={read} reading />));
-  expect(reads).toHaveLength(3);
-  await act(async () => unmount());
-  await reads[2]!.interruption;
-  expect(reads[2]!.interrupted).toBe(true);
+  rerender(wrap(<Names revision="2" />));
+  expect(host.held).toHaveLength(2);
+  rerender(wrap(<Names revision="3" />));
+  await host.held[1]!.interruption;
+  expect(host.held).toHaveLength(3);
+  act(() => unmount());
+  await host.held[2]!.interruption;
 });
 
 it("offers none when the read fails", async () => {
-  const { container } = render(
-    <Names
-      read={Effect.fail(
-        new WorkbenchHostError({ cause: new Error("no source") }),
-      )}
-    />,
-  );
-  await act(async () => {});
+  using mounted = mount(<Names revision="1" />);
+  mounted.host.hold = true;
+  const { container } = render(mounted.ui);
+  await act(async () => mounted.host.held[0]!.fail(new Error("no source")));
   expect(container.textContent).toBe("");
 });

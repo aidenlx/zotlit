@@ -11,12 +11,19 @@ import type { RenderRequest, RenderResources } from "#/render/request";
 import type { TemplateRenderResult } from "#/render/result";
 import type { AnnotationExample } from "#/render/sample-annotations";
 import type { ItemSnapshot } from "#/snapshot/index";
-import { Layer } from "effect";
-import type { Effect } from "effect";
+import { Cause, Effect, Option } from "effect";
+import type * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
-import type { WorkbenchHostError } from "./host";
+import type { MatchTree } from "@zotlit/templates/facade";
+
+import type {
+  WorkbenchClipboardError,
+  WorkbenchHostError,
+  WorkbenchMatchData,
+  WorkbenchMatchResult,
+} from "./host";
 import type { RenderSchedulerInput } from "./scheduler";
 import { makeRenderSchedulerAtoms } from "./scheduler-atoms";
 import type { RenderSchedulerAtoms } from "./scheduler-atoms";
@@ -89,8 +96,8 @@ export const INITIAL_CHOICES: WorkbenchChoices = {
   },
 };
 
-/** Applies `patch`, or keeps `state` itself when every field already holds. */
-const patch =
+/** Applies `changes`, or keeps `state` itself when every field already holds. */
+export const patch =
   <S extends object>(changes: Partial<S>) =>
   (state: S): S =>
     (Object.keys(changes) as (keyof S)[]).every(
@@ -119,14 +126,19 @@ export const setPreview =
     return preview === state.preview ? state : { ...state, preview };
   };
 
+/** The runtime every read, render, and command of one host runs on. */
+export type WorkbenchRuntime = Atom.AtomRuntime<never, unknown>;
+
 export interface WorkbenchModelOptions<R extends TemplateRenderResult> {
   readonly controller: WorkbenchDocumentController;
   /** The view state to start from. */
   readonly initial?: Partial<WorkbenchViewState>;
   /** The view state, when a host keeps it in an atom of its own. */
   readonly view?: Atom.Writable<WorkbenchViewState>;
-  /** The runtime every render and command of this editor runs on. */
-  readonly runtime?: Atom.AtomRuntime<never>;
+  /** The host's one runtime; a host never builds one per editor. */
+  readonly runtime: WorkbenchRuntime;
+  /** The host whose Match reads the model runs, read at each read. */
+  readonly host: { readonly matchData: WorkbenchMatchData };
   readonly render: (
     request: RenderRequest,
   ) => Effect.Effect<R, WorkbenchHostError>;
@@ -136,16 +148,47 @@ export interface WorkbenchModelOptions<R extends TemplateRenderResult> {
   readonly debounceMs?: number;
 }
 
+/** The vocabulary a Match condition offers, as the host read it. */
+export interface WorkbenchMatchVocabulary {
+  readonly tags: readonly string[];
+  readonly collections: readonly string[];
+  readonly libraries: readonly {
+    readonly id: string;
+    readonly name: string | null;
+  }[];
+}
+
+/** A copy a reader asked for, and what the surface shows when it ends. */
+export interface CopyJob {
+  readonly copy: Effect.Effect<void, WorkbenchClipboardError>;
+  readonly copied: () => void;
+  readonly failed: () => void;
+}
+
+/** A chooser a reader opened, and what takes the choice. */
+export interface ChooseJob {
+  readonly choose: Effect.Effect<string | null>;
+  readonly chosen: (id: string) => void;
+}
+
+/** A Shared Partial the reader names and creates from a completion. */
+export interface CreatePartialJob {
+  readonly create: Effect.Effect<string | null, WorkbenchHostError>;
+  readonly created: (insert: string | null) => void;
+}
+
 export interface WorkbenchModel<
   R extends TemplateRenderResult = TemplateRenderResult,
 > {
-  readonly runtime: Atom.AtomRuntime<never>;
+  readonly runtime: WorkbenchRuntime;
   readonly view: Atom.Writable<WorkbenchViewState>;
   readonly choices: Atom.Writable<WorkbenchChoices>;
   readonly itemData: Atom.Writable<WorkbenchItemData>;
   /** The controller in use; a host that loads another document sets it. */
   readonly controller: Atom.Writable<WorkbenchDocumentController>;
   readonly document: WorkbenchDocumentAtoms;
+  /** The last Match filter that parsed, which stands while the draft does not. */
+  readonly match: Atom.Atom<MatchTree | undefined>;
   readonly tab: Atom.Atom<WorkbenchTab>;
   readonly item: Atom.Atom<WorkbenchItemChoice | null>;
   readonly root: Atom.Atom<TemplateRoot>;
@@ -153,13 +196,43 @@ export interface WorkbenchModel<
   readonly preview: Atom.Atom<WorkbenchPreviewSettings>;
   readonly input: Atom.Atom<RenderSchedulerInput>;
   readonly scheduler: RenderSchedulerAtoms<R>;
+  /** Counts the reader's retries of the Match reads; each one reads again. */
+  readonly matchRetry: Atom.Writable<number>;
+  /** The Match vocabulary, read again for each host vocabulary revision. */
+  readonly matchVocabulary: (
+    revision: string,
+  ) => Atom.Atom<AsyncResult.AsyncResult<WorkbenchMatchVocabulary, unknown>>;
+  /** The source's custom field names, read again for each revision. */
+  readonly customFields: (
+    revision: string,
+  ) => Atom.Atom<AsyncResult.AsyncResult<readonly string[], unknown>>;
+  /**
+   * The Match test of one Item against one filter. The key is the JSON of
+   * `[indexedKey, filter, revision]`; a failure or defect answers `failed`.
+   */
+  readonly matchTest: (
+    key: string,
+  ) => Atom.Atom<
+    AsyncResult.AsyncResult<WorkbenchMatchResult | "failed", unknown>
+  >;
+  /** Copies for one surface; the surface's unmount interrupts its copy. */
+  readonly copy: (surface: string) => Atom.AtomResultFn<CopyJob, void, unknown>;
+  /** A chooser for one surface; it is open while the command runs. */
+  readonly choose: (
+    surface: string,
+  ) => Atom.AtomResultFn<ChooseJob, void, unknown>;
+  /** "New partial…" for one pane; the pane's unmount interrupts it. */
+  readonly createPartial: (
+    surface: string,
+  ) => Atom.AtomResultFn<CreatePartialJob, void, unknown>;
 }
 
 export function makeWorkbenchModel<R extends TemplateRenderResult>({
   controller: initialController,
   initial,
   view = Atom.make<WorkbenchViewState>({ ...INITIAL_VIEW, ...initial }),
-  runtime = Atom.runtime(Layer.empty),
+  runtime,
+  host,
   render,
   failed,
   retain,
@@ -185,6 +258,26 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
       ...get(itemData),
     };
   });
+  const match = Atom.make((get) => {
+    get(document.revision);
+    const current = get(controller);
+    const parsed = current.document;
+    const previous = Option.getOrUndefined(
+      get.self<{
+        readonly controller: WorkbenchDocumentController;
+        readonly match: MatchTree | undefined;
+      }>(),
+    );
+    return {
+      controller: current,
+      match: parsed
+        ? parsed.manifest.match
+        : previous?.controller === current
+          ? previous.match
+          : undefined,
+    };
+  });
+  const matchRetry = Atom.make(0);
   return {
     runtime,
     view,
@@ -192,6 +285,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     itemData,
     controller,
     document,
+    match: Atom.map(match, (state) => state.match),
     tab: field("tab"),
     item: field("item"),
     root: field("root"),
@@ -207,6 +301,79 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
       ...(reportContext ? { reportContext } : {}),
       ...(debounceMs === undefined ? {} : { debounceMs }),
     }),
+    matchRetry,
+    matchVocabulary: Atom.family((_revision: string) =>
+      runtime.atom((get) => {
+        get(matchRetry);
+        const { matchData } = host;
+        return Effect.all(
+          [matchData.tags, matchData.collections, matchData.libraries],
+          { concurrency: "unbounded" },
+        ).pipe(
+          Effect.map(
+            ([tags, collections, libraries]): WorkbenchMatchVocabulary => ({
+              tags,
+              collections: collections.map((path) => path.join("/")),
+              libraries: libraries.map(({ id, name }) => ({
+                id,
+                name: name ?? null,
+              })),
+            }),
+          ),
+        );
+      }),
+    ),
+    customFields: Atom.family((_revision: string) =>
+      runtime.atom(Effect.suspend(() => host.matchData.customFields)),
+    ),
+    matchTest: Atom.family((key: string) =>
+      runtime.atom((get) => {
+        get(matchRetry);
+        const [indexedKey, filter] = JSON.parse(key) as [string, string];
+        return host.matchData.matches(indexedKey, filter).pipe(
+          // A defect fails the test as a failure does.
+          Effect.catchCause(() => Effect.succeed("failed" as const)),
+        );
+      }),
+    ),
+    copy: Atom.family((_surface: string) =>
+      runtime.fn((job: CopyJob) =>
+        job.copy.pipe(
+          Effect.matchEffect({
+            onSuccess: () => Effect.sync(job.copied),
+            onFailure: () => Effect.sync(job.failed),
+          }),
+        ),
+      ),
+    ),
+    choose: Atom.family((_surface: string) =>
+      runtime.fn((job: ChooseJob) =>
+        job.choose.pipe(
+          Effect.flatMap((id) =>
+            id === null ? Effect.void : Effect.sync(() => job.chosen(id)),
+          ),
+          // A chooser the host could not open closes as a dismissal does.
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.void,
+          ),
+        ),
+      ),
+    ),
+    createPartial: Atom.family((_surface: string) =>
+      runtime.fn((job: CreatePartialJob) =>
+        job.create.pipe(
+          Effect.flatMap((insert) => Effect.sync(() => job.created(insert))),
+          // A flow that fails writes nothing.
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.void,
+          ),
+        ),
+      ),
+    ),
   };
 }
 

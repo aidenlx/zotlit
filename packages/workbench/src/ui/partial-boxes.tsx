@@ -34,7 +34,7 @@ import { documentRevision } from "#/document/atoms";
 import { partialCalls } from "#/document/index";
 
 /** What a failed partial render shows: the host failure's own cause, whole. */
-function failureMessage(cause: Cause.Cause<WorkbenchHostError>): string {
+function failureMessage(cause: Cause.Cause<unknown>): string {
   const failure = Cause.squash(cause);
   const error = failure instanceof WorkbenchHostError ? failure.cause : failure;
   return error instanceof Error ? error.message : String(error);

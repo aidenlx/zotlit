@@ -114,7 +114,7 @@ import { Notifier, withOutcome } from "@/lib/notifier";
 import type { NoticeMessage } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import { ViewRegistryProvider } from "@/lib/view-atoms";
+import { ViewRegistryProvider, viewRuntime } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import {
   answerOf,
@@ -722,6 +722,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#editor = createWorkbenchEditor({
       host: this.#host,
       registry: deps.registry,
+      runtime: viewRuntime,
       view: this.model.state,
       controller: this.#controller,
       reportContext: () => this.reportContext(this.#defaultRoot),

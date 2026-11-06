@@ -13,7 +13,7 @@ import {
   setTab,
 } from "./model";
 import { createWorkbenchStore } from "./store";
-import { fakeHost } from "./test-host";
+import { fakeHost, TEST_RUNTIME } from "./test-host";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
@@ -21,6 +21,14 @@ import { SAMPLE_ANNOTATIONS, SAMPLE_ITEMS } from "#/render/index";
 
 const PAPER = SAMPLE_ITEMS[0]!;
 const CHOICE = { id: "1:ABCDEFGH", title: "A paper" } as const;
+
+/** Puts the chosen Item's data in the model, as the host's read of it does. */
+function load(opened: ReturnType<typeof open>) {
+  opened.registry.update(opened.model.itemData, (data) => ({
+    ...data,
+    snapshot: PAPER,
+  }));
+}
 
 function open(
   options: { store?: ReturnType<typeof createWorkbenchStore> } = {},
@@ -35,6 +43,7 @@ function open(
     host,
     controller,
     registry,
+    runtime: TEST_RUNTIME,
     ...options,
   });
   return {
@@ -57,7 +66,7 @@ function noteEdit(controller: WorkbenchDocumentController, insert: string) {
 }
 
 describe("the Workbench model", () => {
-  it("shows the chosen Item to every reader of the editor", () => {
+  it("reads the chosen Item back from the model and from the host's store", () => {
     using opened = open();
     const { registry, model, editor } = opened;
     registry.update(model.view, chooseItem(CHOICE));
@@ -95,14 +104,14 @@ describe("the Workbench model", () => {
 
   it("feeds the chosen annotation, citation, caller, and preview mode to the render", async () => {
     using opened = open();
-    const { registry, model, editor, host } = opened;
+    const { registry, model, host } = opened;
     const citation = { variant: "main", example: "one-item" } as const;
     const partial = {
       name: "book-details",
       context: "note",
       profile: null,
     } as const;
-    editor.scheduler.setInput({ snapshot: PAPER });
+    load(opened);
     registry.update(model.choices, chooseAnnotation(SAMPLE_ANNOTATIONS[0]!));
     registry.update(model.choices, chooseCitation(citation));
     registry.update(model.choices, choosePartial(partial));
@@ -121,7 +130,7 @@ describe("the Workbench model", () => {
   it("renders the source of the controller in use, after an edit and a replacement", async () => {
     using opened = open();
     const { registry, model, editor, host, controller } = opened;
-    editor.scheduler.setInput({ snapshot: PAPER });
+    load(opened);
     noteEdit(controller, "Edited ");
     registry.set(model.scheduler.run, undefined);
     await vi.waitFor(() => expect(host.renders).toHaveLength(1));
@@ -133,23 +142,31 @@ describe("the Workbench model", () => {
     expect(host.renders[1]!.request.source).toBe("Replaced");
   });
 
-  it("interrupts the render in flight when the editor goes from a registry the host keeps", async () => {
+  it("interrupts the render in flight when the editor goes and the host keeps the registry", async () => {
     using opened = open();
     const { registry, model, editor, host } = opened;
-    editor.scheduler.setInput({ snapshot: PAPER });
+    load(opened);
     registry.set(model.scheduler.run, undefined);
     await vi.waitFor(() => expect(host.renders).toHaveLength(1));
     editor[Symbol.dispose]();
     await host.renders[0]!.interruption;
   });
 
-  it("interrupts the render in flight when the editor goes", async () => {
-    const opened = open();
-    const { registry, model, editor, host } = opened;
-    editor.scheduler.setInput({ snapshot: PAPER });
+  it("disposes the registry it made, which interrupts the render in flight", async () => {
+    const host = fakeHost();
+    const editor = createWorkbenchEditor({
+      host,
+      controller: new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
+      runtime: TEST_RUNTIME,
+    });
+    const { registry, model } = editor;
+    registry.update(model.itemData, (data) => ({ ...data, snapshot: PAPER }));
     registry.set(model.scheduler.run, undefined);
     await vi.waitFor(() => expect(host.renders).toHaveLength(1));
-    opened[Symbol.dispose]();
+    editor[Symbol.dispose]();
     expect(host.renders[0]!.interrupted).toBe(true);
+    expect(() => registry.set(model.scheduler.run, undefined)).toThrow(
+      "registry is disposed",
+    );
   });
 });

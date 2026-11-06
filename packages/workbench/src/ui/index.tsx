@@ -54,17 +54,23 @@ export {
   choosePartial,
   holdWorkbenchModel,
   makeWorkbenchModel,
+  patch,
   setAdvanced,
   setPreview,
   setRoot,
   setTab,
 } from "./model";
 export type {
+  ChooseJob,
+  CopyJob,
+  CreatePartialJob,
   WorkbenchChoices,
   WorkbenchItemData,
   WorkbenchModel,
   WorkbenchModelOptions,
+  WorkbenchMatchVocabulary,
   WorkbenchPreviewSettings,
+  WorkbenchRuntime,
 } from "./model";
 export {
   NO_MATCH_DATA,
@@ -74,7 +80,7 @@ export {
   useTooltip,
   useWorkbenchHost,
 } from "./host";
-export { forkOn, useFork, useForkedEffect, useRunner } from "./run";
+export { useFork, useForkedEffect } from "./run";
 export { joinForked, observeExit } from "#/language/host-effects";
 export type { ExitHandlers, WorkbenchRunner } from "#/language/host-effects";
 export type {

@@ -25,7 +25,7 @@ import {
 } from "./contract";
 import { etaRange } from "./eta-syntax";
 import type { EtaRange } from "./eta-syntax";
-import type { WorkbenchHostError, WorkbenchRunner } from "./host-effects";
+import type { WorkbenchHostError } from "./host-effects";
 import { jsonSuggestions, jsonHover } from "./json-e";
 import { liquidCodeRange, STRUCTURAL_TAGS } from "./liquid-ranges";
 import type { LiquidRange } from "./liquid-ranges";
@@ -62,8 +62,11 @@ export interface SuggestionConfig {
      *   argument, or `null` when the reader dismisses the prompt.
      */
     run(query: string): Effect.Effect<string | null, WorkbenchHostError>;
-    /** Forks `run`, so closing the pane's owner interrupts the flow. */
-    fork: WorkbenchRunner;
+    /**
+     * Starts a flow `run` answered as the pane's command, so closing the pane
+     * interrupts it; `created` takes its answer.
+     */
+    start: ResolveStart;
   };
   /**
    * The Template data the root binds to `zt`, as a template reads it: link
@@ -121,10 +124,19 @@ export interface Suggestion {
    */
   resolveInsert?: {
     readonly insert: Effect.Effect<string | null, WorkbenchHostError>;
-    /** The runner `insert` is forked on. */
-    readonly fork: WorkbenchRunner;
+    /** Starts `insert` as the pane's command. */
+    readonly start: ResolveStart;
   };
 }
+
+/**
+ * Starts a flow that answers the text to write. A flow that fails or is
+ * interrupted calls nothing.
+ */
+export type ResolveStart = (
+  flow: Effect.Effect<string | null, WorkbenchHostError>,
+  answered: (text: string | null) => void,
+) => void;
 export interface SuggestionResult {
   from: number;
   to: number;
@@ -320,7 +332,7 @@ function partialOptions(
         insert: Effect.map(create.run(query), (name) =>
           name === null ? null : name + (tail?.text ?? ""),
         ),
-        fork: create.fork,
+        start: create.start,
       },
     });
   return options;

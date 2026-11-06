@@ -1,6 +1,5 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import { useAtomValue } from "@effect/atom-react";
-import { Effect, Option } from "effect";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
@@ -71,6 +70,11 @@ export type {
 
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 
+/** What a Match test reads while there is no Item or no filter to test. */
+const NO_TEST = Atom.make(
+  AsyncResult.initial<WorkbenchMatchResult | "failed", unknown>(),
+);
+
 /**
  * The Match of the open Profile document: the Match editor with the
  * conditions of the Items dataset, and whether the example Item matches, as
@@ -98,48 +102,11 @@ export function MatchPane({
   useAtomValue(model.document.revision);
   const readable = controller.document !== null;
   // The last filter that parsed, which stands while the draft does not.
-  const parsedMatch = useMemo(
-    () =>
-      Atom.make((get): MatchTree | undefined => {
-        get(model.document.revision);
-        const document = controller.document;
-        return document
-          ? document.manifest.match
-          : Option.getOrElse(
-              get.self<MatchTree | undefined>(),
-              () => undefined,
-            );
-      }),
-    [model, controller],
-  );
-  const match = useAtomValue(parsedMatch);
+  const match = useAtomValue(model.match);
   const [writeProblem, setWriteProblem] = useState<string | null>(null);
-  const [retry, setRetry] = useState(0);
-  const vocabularyRead = useMemo(
-    () =>
-      model.runtime.atom(
-        Effect.all(
-          [
-            host.matchData.tags,
-            host.matchData.collections,
-            host.matchData.libraries,
-          ],
-          { concurrency: "unbounded" },
-        ).pipe(
-          Effect.map(([tags, collections, libraries]): FilterValues => ({
-            tags,
-            collections: collections.map((path) => path.join("/")),
-            libraries: libraries.map(({ id, name }) => ({
-              id,
-              name: name ?? null,
-            })),
-          })),
-        ),
-      ),
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- a new revision or retry reads again
-    [model.runtime, host.matchData, vocabularyRevision, retry],
-  );
-  const vocabularyResult = useAtomValue(vocabularyRead);
+  const retry = useAtomSet(model.matchRetry);
+  const revision = String(vocabularyRevision ?? "");
+  const vocabularyResult = useAtomValue(model.matchVocabulary(revision));
   const loading =
     AsyncResult.isInitial(vocabularyResult) || vocabularyResult.waiting;
   const values = AsyncResult.isSuccess(vocabularyResult)
@@ -152,11 +119,7 @@ export function MatchPane({
     () => (match === undefined ? null : composeFilterTree(match)),
     [match],
   );
-  const test = useMatchTest(
-    item?.id ?? null,
-    filter?.text ?? null,
-    `${vocabularyRevision ?? ""}:${retry}`,
-  );
+  const test = useMatchTest(item?.id ?? null, filter?.text ?? null, revision);
   const answer = typeof test === "object" ? test : null;
   // A mistake shows on the condition it is in, where it has a place.
   const span = answer?.kind === "problem" ? answer.span : undefined;
@@ -181,9 +144,7 @@ export function MatchPane({
     [filter, faulty, span],
   );
   const locale = host.getLocale();
-  const custom = useCustomFieldNames(host.matchData.customFields, {
-    revision: vocabularyRevision,
-  });
+  const custom = useCustomFieldNames(revision);
   // What a condition reads: the fields of an Item, labelled as Zotero labels
   // them, and the source's custom fields. A Profile binds no Query Context,
   // has no Formulas and reads no vault property.
@@ -305,7 +266,7 @@ export function MatchPane({
           onRetry={
             onRetry ??
             (problem || test === "failed"
-              ? () => setRetry((value) => value + 1)
+              ? () => retry((value) => value + 1)
               : undefined)
           }
         />
@@ -326,25 +287,12 @@ function useMatchTest(
   filter: string | null,
   revision: string,
 ): WorkbenchMatchResult | "failed" | undefined {
-  const host = useWorkbenchHost();
-  const key =
+  const model = useWorkbenchModel();
+  const answer = useAtomValue(
     indexedKey === null || filter === null
-      ? null
-      : JSON.stringify([indexedKey, filter, revision]);
-  const { runtime } = useWorkbenchModel();
-  const test = useMemo(
-    () =>
-      runtime.atom(
-        key === null || indexedKey === null || filter === null
-          ? Effect.succeed(undefined)
-          : host.matchData.matches(indexedKey, filter).pipe(
-              // A defect fails the test as a failure does.
-              Effect.catchCause(() => Effect.succeed("failed" as const)),
-            ),
-      ),
-    [runtime, host.matchData, key, indexedKey, filter],
+      ? NO_TEST
+      : model.matchTest(JSON.stringify([indexedKey, filter, revision])),
   );
-  const answer = useAtomValue(test);
   return AsyncResult.isSuccess(answer) ? answer.value : undefined;
 }
 

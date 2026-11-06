@@ -5,8 +5,12 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { WorkbenchReportContext } from "#/render/report";
 import type { TemplateRenderResult } from "#/render/result";
-import { RegistryContext, useAtomValue } from "@effect/atom-react";
-import { Effect } from "effect";
+import {
+  RegistryContext,
+  RegistryProvider,
+  useAtomValue,
+} from "@effect/atom-react";
+import { Effect, Layer } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import {
@@ -21,6 +25,7 @@ import { useStore } from "zustand";
 
 import { useUniqueId } from "@zotlit/ui";
 
+import { NO_MATCH_DATA } from "./host";
 import type { WorkbenchHost, WorkbenchHostError } from "./host";
 import {
   chooseAnnotation,
@@ -28,9 +33,14 @@ import {
   choosePartial,
   holdWorkbenchModel,
   makeWorkbenchModel,
+  patch,
   setPreview,
 } from "./model";
-import type { WorkbenchItemData, WorkbenchModel } from "./model";
+import type {
+  WorkbenchItemData,
+  WorkbenchModel,
+  WorkbenchRuntime,
+} from "./model";
 import type {
   RenderScheduler,
   RenderSchedulerInput,
@@ -68,8 +78,8 @@ interface WorkbenchEditorOptions {
    * the editor keeps a registry of its own and disposes it with itself.
    */
   registry?: AtomRegistry.AtomRegistry;
-  /** The runtime every render runs on; a test passes one with a test clock. */
-  runtime?: Atom.AtomRuntime<never>;
+  /** The host's one runtime, which every editor of the host shares. */
+  runtime: WorkbenchRuntime;
   /** The view state, when the host keeps it in an atom of its own. */
   view?: Atom.Writable<WorkbenchViewState>;
   /**
@@ -101,22 +111,13 @@ function storeAtom(store: WorkbenchStore): Atom.Writable<WorkbenchViewState> {
   return view;
 }
 
-/** Applies `patch`, or keeps `state` itself when every field already holds. */
-function patched<S extends object>(state: S, patch: Partial<S>): S {
-  return (Object.keys(patch) as (keyof S)[]).every(
-    (key) => state[key] === patch[key],
-  )
-    ? state
-    : { ...state, ...patch };
-}
-
 /** A store-shaped facade over the model's view atom. */
 function storeOver(
   registry: AtomRegistry.AtomRegistry,
   view: Atom.Writable<WorkbenchViewState>,
 ): WorkbenchStore {
-  const update = (patch: Partial<WorkbenchViewState>) =>
-    registry.update(view, (state) => patched(state, patch));
+  const update = (changes: Partial<WorkbenchViewState>) =>
+    registry.update(view, patch(changes));
   const actions: WorkbenchViewActions = {
     setTab: (tab) => update({ tab }),
     setItem: (item) => update({ item }),
@@ -181,7 +182,7 @@ function schedulerOver<R extends TemplateRenderResult>(
           registry.update(model.choices, chooseCitation(citation ?? null));
         if ("partial" in input)
           registry.update(model.choices, choosePartial(partial ?? null));
-        registry.update(model.itemData, (current) => patched(current, data));
+        registry.update(model.itemData, patch(data));
       });
     },
     invalidate: command(model.scheduler.invalidate),
@@ -231,7 +232,8 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
     controller,
     ...(view ? { view } : {}),
     ...(initial ? { initial } : {}),
-    ...(runtime ? { runtime } : {}),
+    runtime,
+    host,
     render: (request) => {
       const result = host.render(request);
       return mapResult
@@ -282,13 +284,24 @@ let inert: WorkbenchModel | undefined;
 function inertModel(): WorkbenchModel {
   inert ??= makeWorkbenchModel({
     controller: new Controller(""),
+    runtime: Atom.runtime(Layer.empty),
+    host: { matchData: NO_MATCH_DATA },
     render: () => Effect.die("An inert Workbench never renders."),
     failed: (result) => result,
   });
   return inert;
 }
 
-/** Puts `editor` and its registry in context; `null` paints the tree inert. */
+/** A browser task, as the registry schedules its notifications. */
+function scheduleTask(task: () => void): () => void {
+  const timeout = setTimeout(task, 0);
+  return () => clearTimeout(timeout);
+}
+
+/**
+ * Puts `editor` and its registry in context. `null` paints the tree inert in
+ * a registry of its own, which goes with the provider.
+ */
 export function WorkbenchEditorProvider<R extends TemplateRenderResult>({
   editor,
   children,
@@ -297,12 +310,13 @@ export function WorkbenchEditorProvider<R extends TemplateRenderResult>({
   children?: ReactNode;
 }) {
   const id = useUniqueId();
-  if (editor === null) return <>{children}</>;
-  const { registry } = editor;
-  // Every surface reads a result as the package's own type.
-  const model = editor.model as unknown as WorkbenchModel;
-  const store = editor.store;
-  const scheduler = editor.scheduler as unknown as RenderScheduler;
+  if (editor === null)
+    return (
+      <RegistryProvider scheduleTask={scheduleTask} defaultIdleTTL={400}>
+        {children}
+      </RegistryProvider>
+    );
+  const { registry, model, store, scheduler } = editor;
   return (
     <RegistryContext.Provider value={registry}>
       <EditorContext.Provider value={{ model, registry, store, scheduler, id }}>

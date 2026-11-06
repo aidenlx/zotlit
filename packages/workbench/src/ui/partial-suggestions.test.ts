@@ -12,7 +12,7 @@ describe("partialSuggestions", () => {
         names: () => ["authors", "venue-line"],
         create: () => Effect.succeed(null),
       },
-      run: Effect.runFork,
+      start: () => {},
     });
 
     expect(config.partials).toEqual(["authors", "venue-line"]);
@@ -22,7 +22,7 @@ describe("partialSuggestions", () => {
   it("falls back to the draft's scan and offers no create entry", () => {
     const config = partialSuggestions(m, ["cite", "summary"], {
       partials: undefined,
-      run: Effect.runFork,
+      start: () => {},
     });
 
     expect(config.partials).toEqual(["cite", "summary"]);
@@ -39,7 +39,7 @@ describe("partialSuggestions", () => {
           return Effect.succeed("venue-line");
         },
       },
-      run: Effect.runFork,
+      start: () => {},
     });
 
     await expect(

@@ -5,23 +5,23 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "#/document/index";
-import type { SuggestionSource } from "#/language/index";
+import type { ResolveStart, SuggestionSource } from "#/language/index";
 import { setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { completionFields } from "./completion-fields";
+import { useWorkbenchModel } from "./editor";
 import { HiddenName, useOptionalHost } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { partialSuggestions } from "./partial-suggestions";
-import { useRunner } from "./run";
 import {
   sourceDiagnostics,
   sourceProblemGutter,
@@ -151,9 +151,11 @@ export function SliceEditor({
   const m = useWorkbenchMessages();
   const part = useParts("sliceEditor");
   const adapter = useOptionalHost();
-  const run = useRunner();
   const editorExtension = useEditorExtension();
   const nameId = useUniqueId();
+  const createPartial = useAtomSet(useWorkbenchModel().createPartial(nameId));
+  const start: ResolveStart = (create, created) =>
+    createPartial({ create, created });
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
   const syntaxSlot = useRef(new Compartment());
@@ -181,7 +183,7 @@ export function SliceEditor({
     onFocus,
     suggest,
     adapter,
-    run,
+    start,
     editorExtension,
     syntax,
     m,
@@ -193,7 +195,7 @@ export function SliceEditor({
     onFocus,
     suggest,
     adapter,
-    run,
+    start,
     editorExtension,
     syntax,
     m,
@@ -226,7 +228,7 @@ export function SliceEditor({
       return {
         ...partialSuggestions(report.current.m, controller.dependencies, {
           partials: report.current.adapter?.partials,
-          run: report.current.run,
+          start: report.current.start,
         }),
         ...supplied,
         root,

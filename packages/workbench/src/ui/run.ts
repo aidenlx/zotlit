@@ -1,14 +1,10 @@
 import type { WorkbenchRunner } from "#/language/host-effects";
 // Where the tree starts host Effects: forked on the runner the host supplies,
 // interrupted when the component that started one unmounts or asks again.
-import { useAtomValue } from "@effect/atom-react";
 import { Effect, Exit, FiberSet, Scope } from "effect";
 import type { Cause, Fiber } from "effect";
-import * as AsyncResult from "effect/reactivity/AsyncResult";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DependencyList } from "react";
-
-import { useWorkbenchModel } from "./editor";
 
 import { observeExit } from "#/language/host-effects";
 
@@ -35,35 +31,8 @@ export function forkReported<A, E>(
   };
 }
 
-/**
- * A runner on the editor's runtime for the calling component. The
- * component's unmount and the editor's close interrupt every Effect it
- * forked. `null` until the runtime is ready.
- */
-export function useRunner(): WorkbenchRunner | null {
-  const { runtime } = useWorkbenchModel();
-  const runner = useMemo(
-    () => runtime.atom(FiberSet.makeRuntime<never, unknown, unknown>()),
-    [runtime],
-  );
-  const result = useAtomValue(runner);
-  return AsyncResult.isSuccess(result) ? result.value : null;
-}
-
-/**
- * Forks `effect` on `run`, a component's runner, and reports how it ended to
- * `handlers`. Without a runner it starts nothing.
- */
-export function forkOn<A, E>(
-  run: WorkbenchRunner | null,
-  effect: Effect.Effect<A, E>,
-  handlers: ForkHandlers<A, E>,
-): void {
-  if (run !== null) observeExit(run(effect), handlers);
-}
-
-// The hooks below are a facade for hosts; the shared components fork on the
-// editor's runner. Deleted in #1946.
+// The hooks below are a facade for hosts; the shared components run their
+// gestures as the model's commands. Deleted in #1946.
 
 export interface ForkedEffectOptions<A, E> extends ForkHandlers<A, E> {
   /** What `make` reads; a change starts the Effect again. */

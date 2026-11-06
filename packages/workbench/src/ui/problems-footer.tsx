@@ -1,3 +1,4 @@
+import type { RenderReport, WorkbenchReportContext } from "#/render/report";
 // The editor's Problems area: one detected problem at a time, led by the
 // object it is about, and the disclosure the reader controls. Automatic checks
 // leave that choice alone; Show problem, a source marker, and a failed
@@ -19,9 +20,8 @@
 //
 // Source and explanation share the pane. The divider adjusts that share;
 // the chevron closes the explanation and returns focus to the source.
-
-import type { RenderReport, WorkbenchReportContext } from "#/render/report";
 import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
+import { useAtomSet } from "@effect/atom-react";
 import {
   useCallback,
   useEffect,
@@ -33,6 +33,7 @@ import {
 
 import { useUniqueId } from "@zotlit/ui";
 
+import { useWorkbenchModel } from "./editor";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
@@ -47,7 +48,6 @@ import {
   problemText,
   renderDiagnosis,
 } from "./problems";
-import { forkOn, useRunner } from "./run";
 import type { RenderTrigger } from "./scheduler";
 import { WorkbenchOption, WorkbenchSelect } from "./select";
 import { useParts, useIcon } from "./theme";
@@ -287,7 +287,7 @@ export function ProblemsFooter({
 }) {
   const m = useWorkbenchMessages();
   const host = useOptionalHost();
-  const run = useRunner();
+  const startCopy = useAtomSet(useWorkbenchModel().copy(useUniqueId()));
   const part = useParts("problemsFooter");
   const icon = useIcon();
   const panel = useRef<HTMLElement>(null);
@@ -341,9 +341,10 @@ export function ProblemsFooter({
   function copyReport(text: string): void {
     if (host?.copy === undefined) return;
     setCopyFailed(false);
-    forkOn(run, host.copy(text), {
-      onSuccess: () => host.notice(m.workbench_problems_copy_done()),
-      onFailure: () => {
+    startCopy({
+      copy: host.copy(text),
+      copied: () => host.notice(m.workbench_problems_copy_done()),
+      failed: () => {
         // A denied clipboard leaves the reader the report itself: the
         // disclosure opens so the text is there to select and copy by hand.
         setCopyFailed(true);
