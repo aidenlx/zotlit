@@ -26,6 +26,7 @@ Each pattern names its reference. Copy the reference; it carries the details thi
 | A shared limit on concurrent reads across leaves | `src/views/cited-by/atoms.ts`: `reads` |
 | A service the views read, as one tag over the services it is built from | `src/services/template-workbench/data-reads.ts`: `TemplateDataReads`, `layerTemplateDataReads` |
 | A per-leaf model: writable atoms, held from the view's constructor to `onClose` | `src/views/annot-view/model.ts`: `makeAnnotViewModel`, `holdAnnotViewModel`; `src/views/template-data-explorer/model.ts`: `makeExplorerModel`, `holdExplorerModel` |
+| A per-view model under vanilla-DOM surfaces: a registry on the owner's Scope, derived atoms with equality, and renderers that `watch` them | `src/services/pdf-annotation-editor/reader-surface-model.ts`: `makeReaderSurfaceModel`, `readerSurfaceRegistry`; `src/lib/view-atoms.ts`: `watch`; transitions in `src/services/pdf-annotation-editor/reader-surface-state.ts` |
 | Pure transitions `(state) => state`, returning the same state when nothing changes | `src/views/annot-view/model.ts`: `setFollowMode`, `pinItem`, `unpin`; `src/views/template-data-explorer/model.ts`: `setTarget`, `toggleNode` |
 | Saved and ephemeral view state decoded with Schema | `src/views/template-data-explorer/model.ts`: `readSavedExplorer`, `readEphemeralExplorer` |
 | Layout save, view title and view action sync from a registry subscription | `src/views/annot-view/view.tsx`: `onOpen`; `src/views/template-data-explorer/view.tsx`: `onOpen` |

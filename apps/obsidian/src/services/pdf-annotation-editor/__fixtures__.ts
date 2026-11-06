@@ -10,6 +10,8 @@ import {
   Stream,
 } from "effect";
 import type { Duration } from "effect";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { HoverParent, PDFPageViewport, Scope } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
@@ -55,12 +57,18 @@ import { MarkPopupHost } from "./mark-popup-host";
 import { bindingWrites } from "./operations";
 import { mountReaderKeymap } from "./reader-keymap";
 import type { HistoryVerb } from "./reader-keymap";
+import { makeReaderSurfaceModel } from "./reader-surface-model";
 import {
-  createReaderSurfaceState,
+  current,
   ingestAnnotations,
+  initialReaderSurfaceState,
   listenAnnotationEvents,
 } from "./reader-surface-state";
-import type { AnnotationFacts } from "./reader-surface-state";
+import type {
+  AnnotationFacts,
+  ReaderSurface,
+  ReaderSurfaceState,
+} from "./reader-surface-state";
 import { groupAnnotationsByPage } from "./render";
 import type { OverlayPageView } from "./render";
 import { MarkSelection } from "./selection";
@@ -626,6 +634,29 @@ export function failedIn(
 
 export { dispatchKey };
 
+/** A Reader Surface over a registry of its own, as a binding holds one. */
+export function readerSurface(
+  initial: Parameters<typeof initialReaderSurfaceState>[0],
+): ReaderSurface {
+  return {
+    registry: AtomRegistry.make(),
+    model: makeReaderSurfaceModel(initialReaderSurfaceState(initial)),
+  };
+}
+
+/**
+ * A selection of the state the model carries no atom for, as a derived atom
+ * with `equals`.
+ */
+export function selection<A>(
+  { model }: ReaderSurface,
+  select: (state: ReaderSurfaceState) => A,
+  equals?: (a: A, b: A) => boolean,
+): Atom.Atom<A> {
+  const selected = Atom.map(model.state, select);
+  return equals ? Atom.withEquality(selected, equals) : selected;
+}
+
 /** The instant the reader surfaces read their clock at. */
 export const READER_NOW = toInstant(
   DateTime.makeUnsafe("2026-09-17T10:00:00Z"),
@@ -688,7 +719,7 @@ export function readerSurfaces({
   notifier = testNotifier(),
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
-  const store = createReaderSurfaceState({
+  const surface = readerSurface({
     colors: colors.current(),
     capability,
     now: READER_NOW,
@@ -697,8 +728,8 @@ export function readerSurfaces({
   // does.
   const viewHold = bridge.runSync(annotations.hold(["RGRPDF24"]));
   let held = records;
-  ingestAnnotations(store, held, { annotations, bridge });
-  const listening = listenAnnotationEvents(store, annotations, bridge);
+  ingestAnnotations(surface, held, { annotations, bridge });
+  const listening = listenAnnotationEvents(surface, annotations, bridge);
   // The view's own Scope, which the writes run on and the disposal closes.
   const scope = EffectScope.makeUnsafe();
   const writes = Effect.runSync(bindingWrites.pipe(EffectScope.provide(scope)));
@@ -746,7 +777,7 @@ export function readerSurfaces({
     renderCapability: vi.fn(),
     focusReader,
     colors,
-    surfaceState: store,
+    surface,
     annotations,
     bridge,
     writes,
@@ -763,7 +794,7 @@ export function readerSurfaces({
     popup,
     selectionSurfaces: session,
     marks: () =>
-      store.getState().marksVisible ? groupAnnotationsByPage(held) : new Map(),
+      current(surface).marksVisible ? groupAnnotationsByPage(held) : new Map(),
     records: () => held,
     pageAt: (pageIndex) => (pageIndex === 0 ? page : null),
     repaint: vi.fn(),
@@ -774,7 +805,7 @@ export function readerSurfaces({
     writes,
     notifier: notifier.service,
     colors,
-    surfaceState: store,
+    surface,
     gestures,
     creation,
     sortIndex,
@@ -798,7 +829,7 @@ export function readerSurfaces({
   );
   const host = new MarkPopupHost({
     parent,
-    store,
+    surface,
     variants: {
       selected: {
         anchor: () => selection.anchor(),
@@ -814,7 +845,7 @@ export function readerSurfaces({
 
   return {
     app,
-    store,
+    surface,
     host,
     selection,
     creation,
@@ -834,7 +865,7 @@ export function readerSurfaces({
     /** What a refresh does once the read answers: the records, replaced. */
     replace(next: readonly AnnotationRecord[]) {
       held = next;
-      ingestAnnotations(store, next, { annotations, bridge });
+      ingestAnnotations(surface, next, { annotations, bridge });
     },
     /** What the binding does once a page re-rendered. */
     sync() {

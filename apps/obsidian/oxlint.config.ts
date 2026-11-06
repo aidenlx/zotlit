@@ -569,8 +569,10 @@ export default defineConfig({
       rules: { "zotlit-css/no-obsidian-class": "off" },
     },
     {
-      // Views on view atoms. A view joins when it migrates (ADR 0082).
+      // Views on view atoms. A view joins when it migrates (ADR 0082). The
+      // PDF reader's surfaces keep their Reader Surface Model the same way.
       files: [
+        "src/services/pdf-annotation-editor/**",
         "src/views/library/**",
         "src/views/query-view/**",
         "src/views/cited-by/**",

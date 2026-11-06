@@ -3,8 +3,12 @@
 import type { ReaderPage } from "./creation";
 import type { Point } from "./hit-test";
 import { clampToViewBox, StrokeSamples } from "./ink-path";
-import { clearLiveStroke, publishLiveStroke } from "./reader-surface-state";
-import type { ReaderSurfaceStore } from "./reader-surface-state";
+import {
+  clearLiveStroke,
+  publishLiveStroke,
+  update,
+} from "./reader-surface-state";
+import type { ReaderSurface } from "./reader-surface-state";
 import { pdfPointAt } from "./surface";
 
 export interface InkStrokeOptions {
@@ -16,7 +20,7 @@ export interface InkStrokeOptions {
   at: Point;
   width: number;
   color: string;
-  surfaceState: ReaderSurfaceStore;
+  surface: ReaderSurface;
   /** The reader's own window, whose frames the stroke is published on. */
   win: Window;
   /**
@@ -87,7 +91,7 @@ export class InkStroke implements Disposable {
     if (this.#frame !== null)
       this.#options.win.cancelAnimationFrame(this.#frame);
     this.#frame = null;
-    clearLiveStroke(this.#options.surfaceState);
+    update(this.#options.surface, clearLiveStroke);
   }
 
   /**
@@ -108,11 +112,14 @@ export class InkStroke implements Disposable {
   }
 
   #publish(): void {
-    publishLiveStroke(this.#options.surfaceState, {
-      pageIndex: this.page.pageIndex,
-      paths: [this.#samples.path],
-      width: this.width,
-      color: this.color,
-    });
+    update(
+      this.#options.surface,
+      publishLiveStroke({
+        pageIndex: this.page.pageIndex,
+        paths: [this.#samples.path],
+        width: this.width,
+        color: this.color,
+      }),
+    );
   }
 }
