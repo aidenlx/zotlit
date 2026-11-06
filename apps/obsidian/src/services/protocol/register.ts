@@ -182,9 +182,7 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
     register(importManyProtocolActionId, (data) =>
       handleImportManyProtocol(data, deps),
     );
-    register(exploreProtocolActionId, (data) =>
-      handleExploreProtocol(data, deps),
-    );
+    register(exploreProtocolActionId, handleExploreProtocol);
     register(showInLibraryProtocolActionId, handleShowInLibraryProtocol);
     register(openAttachmentProtocolActionId, (data) =>
       handleOpenAttachmentProtocol(data, deps),
@@ -440,7 +438,7 @@ const handleImportManyProtocol = Effect.fn("protocol.handleImportManyProtocol")(
 );
 
 const handleExploreProtocol = Effect.fn("protocol.handleExploreProtocol")(
-  function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
+  function* (data: ObsidianProtocolData) {
     const action = "explore";
     const query = yield* parseProtocolData(data, {
       action,
@@ -452,7 +450,6 @@ const handleExploreProtocol = Effect.fn("protocol.handleExploreProtocol")(
     if (Result.isFailure(ref)) return ref.failure;
 
     yield* openTemplateDataExplorer(
-      deps.app,
       {
         itemIndexedKey: ref.success.indexedKey,
         anchorAnnotationKey: query.success.annotation,

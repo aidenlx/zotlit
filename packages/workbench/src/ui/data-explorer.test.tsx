@@ -8,8 +8,6 @@ import {
 import { Effect } from "effect";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
 
 import { DataExplorer as ControlledDataExplorer } from "./data-explorer";
 import type { DataExplorerProps } from "./data-explorer";
@@ -26,22 +24,17 @@ function DataExplorer(
     | "onNavigationChange"
   >,
 ) {
-  const [store] = useState(() =>
-    createStore(() => ({
-      collapsedSections: new Set<string>() as ReadonlySet<string>,
-      navigation: initialTreeState(),
-    })),
-  );
-  const { collapsedSections, navigation } = useStore(store);
+  const [collapsedSections, setCollapsedSections] = useState<
+    ReadonlySet<string>
+  >(() => new Set<string>());
+  const [navigation, setNavigation] = useState(initialTreeState);
   return (
     <ControlledDataExplorer
       {...props}
       collapsedSections={collapsedSections}
       navigation={navigation}
-      onCollapsedSectionsChange={(collapsedSections) =>
-        store.setState({ collapsedSections })
-      }
-      onNavigationChange={(navigation) => store.setState({ navigation })}
+      onCollapsedSectionsChange={setCollapsedSections}
+      onNavigationChange={setNavigation}
     />
   );
 }

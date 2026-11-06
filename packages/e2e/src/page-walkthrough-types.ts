@@ -17,7 +17,6 @@ export interface WalkthroughViews {
   "zotlit-cited-by": import("@/views/cited-by/view").CitedByView;
   "zotlit-template-workbench": import("@/views/template-workbench/view").TemplateWorkbenchView;
   "zotlit-template-data-explorer": import("@/views/template-data-explorer/view").TemplateDataExplorerView;
-  "zotlit-note-preview": import("@/views/note-preview/view").NotePreviewView;
 }
 export type WalkthroughLeaf<K extends keyof WalkthroughViews> = Omit<
   WorkspaceLeaf,

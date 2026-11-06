@@ -57,7 +57,6 @@ import { registerCitedByView } from "./views/cited-by/register";
 import { itemActions } from "./views/library/item-actions";
 import { registerLibraryView, showInLibrary } from "./views/library/register";
 import { showInLibraryFileMenu } from "./views/library/show-in-library-actions";
-import { registerNotePreview } from "./views/note-preview/register";
 import { openTargetCommand } from "./views/open-target";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQueryBlock } from "./views/query-view/block";
@@ -441,16 +440,6 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       settings: services.settings,
     });
 
-    registerNotePreview(this, {
-      app: this.app,
-      registry: services.viewRegistry,
-      openCitationEngineSettings,
-      bridge: services.bridge,
-      context: services.workbenchActionContext,
-      itemLookup: services.itemLookup,
-      settings: services.settings,
-    });
-
     registerReferencesView(this, {
       app: this.app,
       registry: services.viewRegistry,
@@ -505,7 +494,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
         showInLibraryFileMenu((indexedKey) =>
           services.bridge.runAndForget(services.showInLibrary.show(indexedKey)),
         ),
-        explorerFileMenu(this.app, {
+        explorerFileMenu({
           bridge: services.bridge,
           context: services.workbenchActionContext,
         }),

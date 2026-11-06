@@ -20,6 +20,8 @@ function newPartialCompletion(name: string | null) {
     parent: document.body,
   });
   const { promise, resolve } = Promise.withResolvers<string | null>();
+  // Settles once the flow's answer has been handed to the completion.
+  const answered = Promise.withResolvers<void>();
   const result = suggestions(CALL, CALL.length, {
     root: "note",
     partials: [],
@@ -27,7 +29,11 @@ function newPartialCompletion(name: string | null) {
       label: "New partial…",
       detail: "Name a new partial, then insert the call.",
       run: () => Effect.promise(() => promise),
-      fork: Effect.runFork,
+      start: (flow, write) =>
+        void Effect.runPromise(flow).then((text) => {
+          write(text);
+          answered.resolve();
+        }),
     },
   })!;
   const option = result.options.find(
@@ -39,8 +45,7 @@ function newPartialCompletion(name: string | null) {
     apply: () => applyTemplateCompletion(view, result, option),
     settle: async () => {
       resolve(name);
-      await promise;
-      await Promise.resolve();
+      await answered.promise;
     },
     [Symbol.dispose]: () => view.destroy(),
   };

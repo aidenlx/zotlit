@@ -1596,7 +1596,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       await leaf.setViewState({
         type: "zotlit-template-data-explorer",
         active: true,
-        state: { itemIndexedKey: "DMRGRART", root: "note", zotlitLaunch: true },
+        state: { itemIndexedKey: "DMRGRART", root: "note" },
       });
       const element = (leaf.view as unknown as { contentEl: HTMLElement })
         .contentEl;
@@ -1665,7 +1665,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           for (const type of [
             "zotlit-template-workbench",
             "zotlit-template-data-explorer",
-            "zotlit-note-preview",
           ])
             for (const leaf of app.workspace.getLeavesOfType(type))
               leaf.detach();
@@ -1735,13 +1734,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                 (leaf) =>
                   leaf.view.file &&
                   leaf.view.containerEl.ownerDocument !== document,
-              ) &&
-              page.leavesOfType("zotlit-note-preview").length > 0 &&
-              page.leavesOfType("zotlit-template-data-explorer").length > 0;
+              ) && editors().some((leaf) => !!page.previewPanel(leaf.view));
             await waitFor(
               ready,
               true,
-              "Template Workbench and companion views",
+              "Template Workbench with its Preview panel",
             );
             sample();
             return {
@@ -1769,8 +1766,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       await obRunUntil(
         vaultId,
         async ({ page }) => {
-          const el = page.leavesOfType("zotlit-note-preview")[0]?.view
-            .contentEl;
+          const el = page.previewPanel(
+            page.leavesOfType("zotlit-template-workbench")[0]?.view,
+          );
           return (
             !!el?.querySelector<HTMLElement>(
               "[data-zotlit-draft] [data-query-placeholder] [data-query-placeholder-view]",
@@ -1864,16 +1862,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               ),
           )?.view;
         const doc = view?.contentEl?.ownerDocument;
-        const ready =
-          doc &&
-          doc !== document &&
-          (
-            ["zotlit-template-data-explorer", "zotlit-note-preview"] as const
-          ).every((type) =>
-            page
-              .leavesOfType(type)
-              .some((leaf) => leaf.view.contentEl?.ownerDocument === doc),
-          );
+        const ready = doc && doc !== document && !!page.previewPanel(view);
         // A main-area pane shows the view header, so the reader presses its
         // Choose item action; the in-pane trigger is for a sidebar alone.
         const trigger =
@@ -1886,7 +1875,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         actionSelector: `.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`,
       },
       {
-        what: "the Choose item trigger to appear once the workbench companion panes load",
+        what: "the Choose item trigger to appear once the workbench shows its Preview panel",
       },
     );
 
@@ -1961,47 +1950,25 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     await obRunUntil(
       vaultId,
       async ({ zotlit, page }) => {
+        const panel = page.previewPanel(
+          page
+            .leavesOfType("zotlit-template-workbench")
+            .find(
+              (leaf) =>
+                leaf.view.file?.path ===
+                zotlit.services.bridge.runSync(
+                  zotlit.services.profile.defaultDocumentPath,
+                ),
+            )?.view,
+        );
         return (
-          (page
-            .leavesOfType("zotlit-note-preview")
-            .find(
-              (leaf) =>
-                leaf.view.contentEl?.ownerDocument ===
-                page
-                  .leavesOfType("zotlit-template-workbench")
-                  .find(
-                    (leaf) =>
-                      leaf.view.file?.path ===
-                      zotlit.services.bridge.runSync(
-                        zotlit.services.profile.defaultDocumentPath,
-                      ),
-                  )?.view?.contentEl?.ownerDocument,
-            )
-            ?.view.contentEl?.querySelectorAll<HTMLElement>(".callout")
-            .length ?? 0) > 0 &&
-          !page
-            .leavesOfType("zotlit-note-preview")
-            .find(
-              (leaf) =>
-                leaf.view.contentEl?.ownerDocument ===
-                page
-                  .leavesOfType("zotlit-template-workbench")
-                  .find(
-                    (leaf) =>
-                      leaf.view.file?.path ===
-                      zotlit.services.bridge.runSync(
-                        zotlit.services.profile.defaultDocumentPath,
-                      ),
-                  )?.view?.contentEl?.ownerDocument,
-            )!
-            .view.contentEl.querySelector<HTMLElement>(
-              "[data-zotlit-preview-pending]",
-            )
+          (panel?.querySelectorAll<HTMLElement>(".callout").length ?? 0) > 0 &&
+          !panel?.querySelector<HTMLElement>("[data-zotlit-preview-pending]")
         );
       },
       undefined,
       {
-        what: "the note preview beside the workbench to render callouts with no pending preview",
+        what: "the Preview panel of the workbench to render callouts with no pending preview",
       },
     );
     expect(
@@ -2010,21 +1977,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async ({ zotlit, page }) => {
           return Array.from(
             page
-              .leavesOfType("zotlit-note-preview")
-              .find(
-                (leaf) =>
-                  leaf.view.contentEl?.ownerDocument ===
-                  page
-                    .leavesOfType("zotlit-template-workbench")
-                    .find(
-                      (leaf) =>
-                        leaf.view.file?.path ===
-                        zotlit.services.bridge.runSync(
-                          zotlit.services.profile.defaultDocumentPath,
-                        ),
-                    )?.view?.contentEl?.ownerDocument,
+              .previewPanel(
+                page
+                  .leavesOfType("zotlit-template-workbench")
+                  .find(
+                    (leaf) =>
+                      leaf.view.file?.path ===
+                      zotlit.services.bridge.runSync(
+                        zotlit.services.profile.defaultDocumentPath,
+                      ),
+                  )?.view,
               )!
-              .view.contentEl.querySelectorAll<HTMLElement>(".callout p"),
+              .querySelectorAll<HTMLElement>(".callout p"),
           ).some((p) => p.classList.contains("zt:bg-accent"));
         },
         undefined,
@@ -2064,7 +2028,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           for (const type of [
             "zotlit-template-workbench",
             "zotlit-template-data-explorer",
-            "zotlit-note-preview",
           ])
             for (const leaf of app.workspace.getLeavesOfType(type))
               leaf.detach();
@@ -2211,7 +2174,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const types = [
           "zotlit-template-workbench",
           "zotlit-template-data-explorer",
-          "zotlit-note-preview",
         ];
         const detach = () => {
           for (const type of types)
@@ -2367,6 +2329,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   });
 
   it("keeps Annotation fields and preview when Customize reopens its workbench", async () => {
+    const m = await import("@obsidian-messages");
     await obRun(
       vaultId,
       async ({ app: host }) => {
@@ -2440,7 +2403,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     const expected = {
       tab: "annotation",
       editor: "annotation",
-      preview: "annotation",
+      preview: m.workbench_annotation_example(),
       fields: "annotation",
     };
     await obRunUntil(
@@ -2449,25 +2412,28 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return (
           JSON.stringify(
             (() => ({
-              tab: page
-                .leavesOfType("zotlit-template-workbench")[0]!
-                .view.store.getState().tab,
-              editor: page
-                .leavesOfType("zotlit-template-workbench")[0]!
-                .view.store.getState().root,
-              preview: page
-                .leavesOfType("zotlit-note-preview")[0]
-                ?.view.getState().root,
-              fields: page
-                .leavesOfType("zotlit-template-data-explorer")[0]
-                ?.view.getState().root,
+              tab: ((view) => view.registry.get(view.model.view).tab)(
+                page.leavesOfType("zotlit-template-workbench")[0]!.view,
+              ),
+              editor: ((view) => view.registry.get(view.model.view).root)(
+                page.leavesOfType("zotlit-template-workbench")[0]!.view,
+              ),
+              preview:
+                page
+                  .previewPanel(
+                    page.leavesOfType("zotlit-template-workbench")[0]!.view,
+                  )
+                  ?.querySelector("h2")?.textContent ?? null,
+              fields: ((view) => view.registry.get(view.fields.state).root)(
+                page.leavesOfType("zotlit-template-workbench")[0]!.view,
+              ),
             }))(),
           ) === expectedJson
         );
       },
       { expectedJson: JSON.stringify(expected) },
       {
-        what: "the workbench, preview and field explorer views to match the expected snapshot",
+        what: "the workbench, its Preview panel and its Fields panel to match the expected snapshot",
       },
     );
     await obRun(
@@ -2506,18 +2472,21 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           async ({ page }) => {
             return JSON.stringify(
               (() => ({
-                tab: page
-                  .leavesOfType("zotlit-template-workbench")[0]!
-                  .view.store.getState().tab,
-                editor: page
-                  .leavesOfType("zotlit-template-workbench")[0]!
-                  .view.store.getState().root,
-                preview: page
-                  .leavesOfType("zotlit-note-preview")[0]
-                  ?.view.getState().root,
-                fields: page
-                  .leavesOfType("zotlit-template-data-explorer")[0]
-                  ?.view.getState().root,
+                tab: ((view) => view.registry.get(view.model.view).tab)(
+                  page.leavesOfType("zotlit-template-workbench")[0]!.view,
+                ),
+                editor: ((view) => view.registry.get(view.model.view).root)(
+                  page.leavesOfType("zotlit-template-workbench")[0]!.view,
+                ),
+                preview:
+                  page
+                    .previewPanel(
+                      page.leavesOfType("zotlit-template-workbench")[0]!.view,
+                    )
+                    ?.querySelector("h2")?.textContent ?? null,
+                fields: ((view) => view.registry.get(view.fields.state).root)(
+                  page.leavesOfType("zotlit-template-workbench")[0]!.view,
+                ),
               }))(),
             );
           },
@@ -2535,7 +2504,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async ({ app, page }, { emptyStore }) => {
           for (const type of [
             "zotlit-template-workbench",
-            "zotlit-note-preview",
             "zotlit-template-data-explorer",
           ] as const)
             for (const leaf of page.leavesOfType(type)) leaf.detach();
@@ -2644,8 +2612,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       obRunUntil(
         vaultId,
         async ({ page }) => {
-          const preview = page.leavesOfType("zotlit-note-preview")[0]?.view;
-          const text = preview?.contentEl.textContent ?? "";
+          const preview = page.previewPanel(
+            page.leavesOfType("zotlit-template-workbench")[0]?.view,
+          );
+          const text = preview?.textContent ?? "";
           return text.includes("Install the Pandoc engine")
             ? {
                 citationStaysNative: /\[@\w+/.test(text),
@@ -2669,8 +2639,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         app.vault.setConfig("settingsPopoutWindow", false);
         const button = Array.from(
           page
-            .leavesOfType("zotlit-note-preview")[0]!
-            .view.contentEl.querySelectorAll<HTMLElement>("button"),
+            .previewPanel(
+              page.leavesOfType("zotlit-template-workbench")[0]!.view,
+            )!
+            .querySelectorAll<HTMLElement>("button"),
         ).find((candidate) => candidate.textContent === "Open settings");
         page.press(button, "Open settings");
         const tab = app.setting.activeTab;
@@ -2714,8 +2686,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       vaultId,
       async ({ page }) => {
         const text =
-          page.leavesOfType("zotlit-note-preview")[0]?.view.contentEl
-            .textContent ?? "";
+          page.previewPanel(
+            page.leavesOfType("zotlit-template-workbench")[0]?.view,
+          )?.textContent ?? "";
         return (
           text.includes("Scientific visualization") &&
           !text.includes("Install the Pandoc engine")
@@ -3127,11 +3100,13 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     await obRunUntil(
       vaultId,
       async ({ page }) => {
-        return page
+        const view = page
           .leavesOfType("zotlit-template-workbench")
           .map((leaf) => leaf.view)
-          .find((view) => view.file?.name === "zotlit-profile.reading-group.md")
-          ?.store.getState().tab;
+          .find(
+            (view) => view.file?.name === "zotlit-profile.reading-group.md",
+          );
+        return view?.registry.get(view.model.view).tab;
       },
       undefined,
       {

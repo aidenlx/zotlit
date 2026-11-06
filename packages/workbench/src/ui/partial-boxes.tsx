@@ -15,21 +15,30 @@ import { MapMode, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, EditorView } from "@codemirror/view";
-import type { Effect } from "effect";
+import { useAtomValue } from "@effect/atom-react";
+import { Cause } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import type * as Atom from "effect/reactivity/Atom";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useUniqueId } from "@zotlit/ui";
 
-import { useDocumentRevision } from "./editor";
 import { PreviewWidget, boxAt, boxField, boxRanges } from "./editor-boxes";
 import { useTooltip, useWorkbenchHost, WorkbenchHostError } from "./host";
 import { useWorkbenchMessages } from "./messages";
-import { useForkedEffect } from "./run";
 import { useIcon, useParts } from "./theme";
 
+import { documentRevision } from "#/document/atoms";
 import { partialCalls } from "#/document/index";
+
+/** What a failed partial render shows: the host failure's own cause, whole. */
+function failureMessage(cause: Cause.Cause<unknown>): string {
+  const failure = Cause.squash(cause);
+  const error = failure instanceof WorkbenchHostError ? failure.cause : failure;
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * What a host answers for the Shared Partials one pane's calls name. Opening a
@@ -43,18 +52,6 @@ export interface PartialPlaceholderHost {
    * @see docs/adr/0055-the-citation-template-is-one-document-and-partials-are-files.md
    */
   readonly missing: readonly string[];
-  /**
-   * Changes whenever a registered partial's own text does, so an open preview
-   * renders the partial again. A host that never changes one leaves it out.
-   */
-  readonly revision?: string | number;
-  /**
-   * Changes whenever the caller data this pane's slice supplies does — the
-   * chosen Item, the annotation example, the Citation example — so an open
-   * preview renders again for the selection the reader has now. A host whose
-   * data never changes leaves it out.
-   */
-  readonly dataRevision?: string | number;
   /** Opens the Shared Partial's own editor. */
   readonly onEdit: (name: string) => void;
   /**
@@ -62,10 +59,14 @@ export interface PartialPlaceholderHost {
    * which is where the explanation and its suggestion live.
    */
   readonly onShowProblem: (name: string) => void;
-  /** The text `name` produces for the caller this pane's slice supplies. */
-  readonly onRender: (
+  /**
+   * The text `name` produces for the caller this pane's slice supplies, as an
+   * atom keyed by the name. It renders again when the partial's own text or
+   * the data it reads changes, and stops when no open preview reads it.
+   */
+  readonly preview: (
     name: string,
-  ) => Effect.Effect<string, WorkbenchHostError>;
+  ) => Atom.Atom<AsyncResult.AsyncResult<string, unknown>>;
 }
 
 /** One pane's Partial Placeholders: the editor extension, and their contents. */
@@ -86,7 +87,7 @@ export function usePartialBoxes(
   slice: WorkbenchSliceId,
   host: PartialPlaceholderHost | undefined,
 ): PartialBoxes {
-  useDocumentRevision(controller);
+  useAtomValue(documentRevision(controller));
   const previewId = useUniqueId();
   const [opened, setOpened] = useState<{
     controller: WorkbenchDocumentController;
@@ -167,10 +168,7 @@ export function usePartialBoxes(
           createPortal(
             <PartialPreview
               id={previewId}
-              name={expanded.name}
-              revision={host.revision}
-              dataRevision={host.dataRevision}
-              onRender={host.onRender}
+              preview={host.preview(expanded.name)}
             />,
             previewHost,
           )}
@@ -253,51 +251,20 @@ function PartialPlaceholder({
 /** The partial's own text, rendered for the caller this pane supplies. */
 function PartialPreview({
   id,
-  name,
-  revision,
-  dataRevision,
-  onRender,
+  preview,
 }: {
   id: string;
-  name: string;
-  revision: string | number | undefined;
-  dataRevision: string | number | undefined;
-  onRender: (name: string) => Effect.Effect<string, WorkbenchHostError>;
+  preview: Atom.Atom<AsyncResult.AsyncResult<string, unknown>>;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("notePane");
-  const { markdown: Markdown, run } = useWorkbenchHost();
-  const [state, setState] = useState<
-    { kind: "text"; text: string } | { kind: "error"; message: string } | null
-  >(null);
-  // The render is read through a ref: a host that passes a fresh callback on
-  // every draw would otherwise start a render on every draw.
-  const render = useRef(onRender);
-  render.current = onRender;
-  // `revision` re-renders the open preview after the partial itself is
-  // saved, `dataRevision` after the reader chooses other data to read it
-  // against: the render callback is read through a ref, so the key alone
-  // decides when a preview follows the selection. A new key, or the
-  // placeholder leaving the editor, interrupts the render before it.
-  useForkedEffect(
-    run,
-    () => {
-      setState(null);
-      return render.current(name);
-    },
-    {
-      deps: [name, revision, dataRevision],
-      onSuccess: (text) => setState({ kind: "text", text }),
-      onFailure: (failure) => {
-        const error =
-          failure instanceof WorkbenchHostError ? failure.cause : failure;
-        setState({
-          kind: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
-      },
-    },
-  );
+  const { markdown: Markdown } = useWorkbenchHost();
+  const result = useAtomValue(preview);
+  const state = AsyncResult.isSuccess(result)
+    ? { kind: "text" as const, text: result.value }
+    : AsyncResult.isFailure(result)
+      ? { kind: "error" as const, message: failureMessage(result.cause) }
+      : null;
   return (
     <div id={id} data-partial-preview {...part("annotation-preview")}>
       {state?.kind === "error" && (

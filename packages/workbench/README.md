@@ -127,41 +127,57 @@ every component marks its parts with `data-part` and their state with
 `data-state`, and `WorkbenchThemeProvider` takes one optional class map, keyed
 by component and part (`WorkbenchParts` lists them), plus an icon renderer.
 Call sites pass no classes. `WorkbenchHostProvider` takes the host adapter —
-`run`, `menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `notice`,
+`menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `notice`,
 `render`, `matchData`, `insertTarget`, `persistence`, `messages`, and
 `getLocale` — so
 Obsidian shows its own `Menu`, `Modal`, `SuggestModal`, and `Notice` and the web
-shows Base UI. `WorkbenchEditorProvider` carries one editor instance: the
-zustand vanilla store from `createWorkbenchEditor` (tab, selected Item, focused
-root, preview mode and live state, Advanced)
-beside the `WorkbenchDocumentController`, which stays the document
-authority, and the one Render Scheduler its result surfaces share;
-`useWorkbenchStore`, `useWorkbenchController`, `useDocumentRevision`,
-`useRenderScheduler`, and `useRenderState` read them.
+shows Base UI. `WorkbenchEditorProvider` carries one editor instance and
+puts its atom registry in context (`@effect/atom-react`); `useWorkbenchModel`
+and `useWorkbenchController` read it. Components read the model's atoms and
+change them with its pure `(state) => state` transitions (`chooseItem`,
+`setTab`, `setRoot`, `setAdvanced`, `chooseAnnotation`, `chooseCitation`,
+`setPreview`, and `patch` / `patchAt` for the rest). They hold no copy of
+model state and fork their work on the model's runtime, so an unmount
+interrupts it.
 
-`createWorkbenchEditor({ host, controller })` owns the store and its scheduler;
-dispose the editor when it closes. The scheduler uses a 300 ms quiet time after the last edit, `run()` for Run,
-`pause()` for Stop, which lets a render already in flight finish, On demand read
-from the store, and a per-start stamp that drops a result naming a source,
-paper, annotation example, or preview mode the reader has moved past. It reads
-the document controller and the store itself; the editor forks `host.render`, an Effect
-for one request, on `host.run`; a newer request interrupts it, and its failure
-reads as a `render-error` diagnostic. An optional `mapResult` gives successful
-and failed results the host's own result shape. The host calls `setInput` with the
-paper, the annotation example, its own bundle, the `document` it is reading,
-and `hold` where nothing may render yet — `hold: "invalid"` for the one hold
-that is a failure, a document the parser refuses, which reads as
-`staleReason: "invalid"`. Its state — `result`, `retained`, `busy`, `stale` —
-is what every result surface paints. `retained` is the newest output each
-preview surface produced, kept while the document is invalid or `result` is a
-failed attempt, and the reader is still on the document, paper, example,
+`createWorkbenchEditor({ host, controller, runtime, registry })` builds the
+Workbench model with `makeWorkbenchModel` and keeps it mounted in the
+registry until the editor is disposed. The model is writable atoms — the view
+state (tab, chosen Item, focused root, Advanced, editor presentation) and the
+reader's choices (Annotation example, Citation example and Variant, Shared
+Partial caller and Profile, preview settings) — beside the document controller
+in use, which stays the document authority. `workbenchDocumentAtoms` publishes
+the controller's facts as atoms: `source`, `problems`, `slices`,
+`managedEntries`, `readOnly`, and a `revision` that counts every update;
+`attach` sets the controller in use to one the host loaded. A host that keeps
+the view state or the choices in atoms of its own passes `view` and
+`choices`, and `itemData` derives the chosen Item's data from the host's one
+read of that Item, which every surface reads.
+
+The Render Scheduler is Effect code over the model
+(`makeRenderSchedulerAtoms`). Its input is a derived atom: the source, the
+Item Snapshot, the selections, and the preview settings. A change to the
+input interrupts the 300 ms quiet time (a `sleep` on the runtime's clock) and
+any render in flight, then the scheduler forks `host.render`, an Effect for
+one request; its failure reads as a `render-error` diagnostic. `run` renders
+at once (Run), `pause` lets a render in flight finish and starts no other
+(Stop), and On demand renders only on `run`. `hold` in the input holds
+rendering while the host cannot answer for the draft; `hold: "invalid"` is the
+one hold that is a failure, a document the parser refuses, which reads as
+`staleReason: "invalid"`. An optional `mapResult` gives successful and failed
+results the host's own result shape. Its `state` atom — `result`,
+`retained`, `busy`, `staleReason` — is what every result surface paints, so
+the editor and its preview read one render. `retained` is the newest output
+each preview surface produced, kept while the document is invalid or `result`
+is a failed attempt, and the reader is still on the document, paper, example,
 caller, and mode it was rendered for, so a repair reads against working output
 rather than an empty pane; a source edit leaves that match intact. A note that
 failed beside an annotation that rendered keeps the last note that worked,
-because the surfaces are kept apart. Its `trigger` says whether Run or the quiet time after an edit asked
-for the shown result, and `attempt` counts the results it has published, so two
-attempts over the same bytes stay distinct. Outside the editor provider the
-tree paints inert, which the web's skeleton relies on. The components so far:
+because the surfaces are kept apart. Its `trigger` says whether Run or the
+quiet time after an edit asked for the shown result, and `attempt` counts the
+results it has published, so two attempts over the same bytes stay distinct.
+Outside the editor provider the tree paints inert, which the web's skeleton
+relies on. The components so far:
 `TabBar` and `TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a
 host's own controls as children), and `ProblemsFooter` with `problemText` and
 `diagnosticText`, the words for every core code. A Profile edited beside a
@@ -188,10 +204,8 @@ found, names each one in its selector with `diagnosisLabel`, and reports a
 selected problem a repair resolved as resolved, offering `next` rather than
 moving the reader to it. `diagnosisExplanation` writes the affected object, a
 plain condition, and a text suggestion; repairs stay the reader's own edit.
-A preview publishes what its render found to the editor beside it rather than
-explaining it beside its own empty result: `usePublishedProblems` is that half
-of the contract, and both hosts keep it alike — the findings go up, a preview
-that closes takes them back, and a deliberate Run that failed asks for its
+The preview and the editor read one scheduler, so the Problems area explains
+what the preview's render found, and a deliberate Run that failed opens its
 explanation at once.
 
 Technical details shows the failed attempt's report, and Copy error report

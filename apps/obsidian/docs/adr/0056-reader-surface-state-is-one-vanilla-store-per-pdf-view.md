@@ -38,7 +38,7 @@ The Reader Surface State lives in the Reader Surface Model (`reader-surface-mode
 - Each binding holds its model in its own atom registry. `bindingResources` (`operations.ts`) acquires the registry on the binding's Scope before the binding's writes, so the registry closes after them, and a create that settles as the view closes still writes its state; `operations.test.ts` closes a Scope on a create in flight to hold that order.
 - The reducers are pure transitions in `reader-surface-state.ts`: each takes the state and answers the next one, or the same state when nothing changes, and a caller runs it with `update`. A gesture that acts on what the transition decided (the end of a Geometry Edit, of a capture, of a Text Draft) runs a step with `modify`, which answers that result. A same-state transition notifies no renderer.
 - `reader-surface-state.ts` holds the state, the transitions, and the selectors: pure code that keeps `Temporal`. `reader-surface-model.ts` holds the atoms, the registry, `update` and `modify`, and the edge functions that take the tool colour store's and the repository's facts into the state.
-- `apps/obsidian` imports zustand only in the Workbench view tests, which keep it as a dev dependency until the Workbench leaves it.
+- `apps/obsidian` no longer depends on zustand: the Workbench left it in #1946.
 - The per-Annotation facts a refresh reads are ingested in one update.
 - Watchers of one derived atom hear a change together, in the order its node was first built; the Mark Popup Host watches its own atom and is built after the owners, so an editor that closes is still let go before the host redraws.
 

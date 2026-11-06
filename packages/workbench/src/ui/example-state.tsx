@@ -1,9 +1,12 @@
 import type { RenderDiagnostic, TemplateRenderResult } from "#/render/index";
-import { useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { Option } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 
-import { useOptionalEditor, useRenderState, useWorkbenchStore } from "./editor";
+import { useOptionalEditor, useWorkbenchModel } from "./editor";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import type { WorkbenchModel } from "./model";
 import { useIcon, useParts } from "./theme";
 
 import { renderFailed } from "#/render/index";
@@ -53,21 +56,48 @@ function produced(
     : result.properties.length > 0;
 }
 
+/** The chosen Item and result an example last read, and the old Item's result. */
+interface ExampleSelection {
+  readonly id: string | undefined;
+  readonly result: TemplateRenderResult | null;
+  readonly previousResult: TemplateRenderResult | null;
+}
+
+const selections = new WeakMap<WorkbenchModel, Atom.Atom<ExampleSelection>>();
+
+/**
+ * What the examples of `model` last read. It starts over when no example is
+ * on screen, as each example once did on its own.
+ */
+function exampleSelection(model: WorkbenchModel): Atom.Atom<ExampleSelection> {
+  let atom = selections.get(model);
+  if (atom === undefined) {
+    atom = Atom.make((get): ExampleSelection => {
+      const id = get(model.item)?.id;
+      const { result } = get(model.scheduler.state);
+      const selection = Option.getOrUndefined(get.self<ExampleSelection>());
+      if (selection === undefined) return { id, result, previousResult: null };
+      const changed = selection.id !== id;
+      // Hide the old item's result even before the host has supplied its new data.
+      const previousResult = changed
+        ? selection.result
+        : selection.previousResult;
+      return changed || selection.result !== result
+        ? { id, result, previousResult }
+        : selection;
+    });
+    selections.set(model, atom);
+  }
+  return atom;
+}
+
 export function useExampleState(surface: ExampleSurface): ExampleState {
   const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
-  const item = useWorkbenchStore((state) => state.item);
-  const { result, retained, busy, staleReason } = useRenderState();
-  const [selection, setSelection] = useState({
-    id: item?.id,
-    result,
-    previousResult: null as typeof result,
-  });
-  const changed = selection.id !== item?.id;
-  // Hide the old item's result even before the host has supplied its new data.
-  const previousResult = changed ? selection.result : selection.previousResult;
-  if (changed || selection.result !== result)
-    setSelection({ id: item?.id, result, previousResult });
+  const model = useWorkbenchModel();
+  const item = useAtomValue(model.item);
+  const { retained, busy, staleReason } = useAtomValue(model.scheduler.state);
+  const { result, previousResult } = useAtomValue(exampleSelection(model));
   const state = (
     kind: ExampleState["kind"],
     message: string | null,

@@ -2,14 +2,12 @@ import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
 
+import type { PreviewSettings } from "./model";
 import { PreviewControls } from "./preview-controls";
 import { PropertyList } from "./property-list";
 import { ResultBody, ResultColumn } from "./result-column";
 import type { ResultColumnProps } from "./result-column";
-import type { PreviewSettings } from "./store";
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
@@ -383,14 +381,16 @@ it("names no preview for a refused document with nothing kept", () => {
 it("changes preview mode, runs on demand, and pauses future work", () => {
   const onRun = vi.fn<() => void>();
   function Controls() {
-    const [store] = useState(() =>
-      createStore<PreviewSettings>(() => ({ mode: "create", live: true })),
-    );
-    const preview = useStore(store);
+    const [preview, setPreview] = useState<PreviewSettings>({
+      mode: "create",
+      live: true,
+    });
     return (
       <PreviewControls
         preview={preview}
-        onChange={store.setState}
+        onChange={(value) =>
+          setPreview((current) => ({ ...current, ...value }))
+        }
         busy={false}
         onRun={onRun}
       />

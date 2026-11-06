@@ -1,14 +1,16 @@
 import { EditorView } from "@codemirror/view";
+import { useAtomValue } from "@effect/atom-react";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it } from "vitest";
 
-import { useDocumentRevision, useWorkbenchController } from "./editor";
+import { useWorkbenchController } from "./editor";
 import { WorkbenchHostProvider } from "./host";
 import { PropertiesPane } from "./properties-tab";
 import { fakeHost, mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
+import { documentRevision } from "#/document/atoms";
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 import { renderProfile, SAMPLE_ITEMS } from "#/render/index";
@@ -22,7 +24,7 @@ function Pane({
   controller: WorkbenchDocumentController;
   onShowProblem?: (id: string) => void;
 }) {
-  useDocumentRevision(controller);
+  useAtomValue(documentRevision(controller));
   const [selected, onSelect] = useState<number | null>(null);
   return (
     <PropertiesPane

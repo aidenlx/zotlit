@@ -9,13 +9,13 @@ import { MapMode, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
+import { useAtomValue } from "@effect/atom-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useUniqueId } from "@zotlit/ui";
 
-import { useDocumentRevision } from "./editor";
 import {
   PreviewWidget,
   boxAt,
@@ -32,6 +32,7 @@ import type { SuggestionSource } from "./slice-editor";
 import { useParts, useIcon } from "./theme";
 import type { PartAttributes } from "./theme";
 
+import { documentRevision } from "#/document/atoms";
 import { noteRegions } from "#/document/index";
 
 export interface NotePaneProps {
@@ -61,7 +62,7 @@ export function NotePane({
   ...example
 }: NotePaneProps) {
   const m = useWorkbenchMessages();
-  useDocumentRevision(controller);
+  useAtomValue(documentRevision(controller));
   const part = useParts("notePane");
   const managedClass = part("managed-line").className;
   const labelClass = part("managed-label").className;

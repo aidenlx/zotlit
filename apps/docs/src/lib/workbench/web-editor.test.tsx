@@ -719,7 +719,7 @@ describe("the annotation box", () => {
     expect(resultText(restored.host)).toContain("Thinking, fast and slow");
   });
 
-  it("keeps Preview annotation choices separate from editor fields and compact examples", async () => {
+  it("shares one Annotation choice between the Preview, the field list, and the note's example", async () => {
     keep(ANNOTATION_LIST, SAMPLE_ITEMS[0]!);
     await using page = await open();
     page.press(m.workbench_restore_accept());
@@ -760,7 +760,7 @@ describe("the annotation box", () => {
     ).toContain("Compare these findings with the replication study.");
     expect(
       fieldRow(page.host, m.workbench_field_comment()).textContent,
-    ).toContain("Use this point in the literature review.");
+    ).toContain("Compare these findings with the replication study.");
     page.press(m.workbench_tab_note());
     expect(
       page.host.querySelector('[role="region"][data-part="region"]')
@@ -779,7 +779,7 @@ describe("the annotation box", () => {
     await page.waitFor(() =>
       expect(
         page.host.querySelector("[data-annotation-preview]")?.textContent,
-      ).toContain("Clear methods make research easier to reproduce."),
+      ).toContain("Compare these findings with the replication study."),
     );
     const note = EditorView.findFromDOM(
       page.host.querySelector<HTMLElement>(".cm-editor")!,
@@ -803,9 +803,11 @@ describe("the annotation box", () => {
     expect(
       page.host.querySelector("[data-annotation-preview]")?.textContent,
     ).toContain("Report the assumptions behind each result.");
+    // One Annotation choice serves every surface, so the Preview follows the
+    // choice made beside the note.
     page.press(m.workbench_tab_annotation());
     expect(resultText(page.host)).toContain(
-      "Compare these findings with the replication study.",
+      "Report the assumptions behind each result.",
     );
   });
 

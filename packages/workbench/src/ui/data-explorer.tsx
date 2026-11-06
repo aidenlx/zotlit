@@ -1,8 +1,12 @@
 import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
+import { useAtomSet } from "@effect/atom-react";
 import type { Effect } from "effect";
 import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
+import { useWorkbenchModel } from "./editor";
 import { fieldSnippet } from "./explorer-fields";
 import type { FieldInsertionMode } from "./explorer-fields";
 import { explorerSections } from "./explorer-sections";
@@ -19,8 +23,7 @@ import type {
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchMessageLabel } from "./messages";
-import { useFork } from "./run";
-import type { TemplateRoot } from "./store";
+import type { TemplateRoot } from "./model";
 import { useParts } from "./theme";
 
 import {
@@ -126,7 +129,7 @@ export function DataExplorer({
   }, [restore, data, onRestored]);
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
-  const fork = useFork(host.run);
+  const startCopy = useAtomSet(useWorkbenchModel().copy(useUniqueId()));
   const part = useParts("dataExplorer");
   const insertNode =
     onInsertNode ??
@@ -179,12 +182,12 @@ export function DataExplorer({
     else next.add(id);
     onCollapsedSectionsChange(next);
   };
-  const copyMenu = (text: string) => {
-    fork(copy(text), {
-      onSuccess: () => host.notice(m.workbench_field_copy_done()),
-      onFailure: () => host.notice(m.workbench_field_copy_failed()),
+  const copyMenu = (text: string) =>
+    startCopy({
+      copy: copy(text),
+      copied: () => host.notice(m.workbench_field_copy_done()),
+      failed: () => host.notice(m.workbench_field_copy_failed()),
     });
-  };
   const menuEntries = (node: DisplayNode) => {
     const value = copyValue(node);
     const items: WorkbenchMenuItem[] = [

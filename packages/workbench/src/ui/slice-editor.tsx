@@ -5,18 +5,19 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "#/document/index";
-import type { SuggestionSource } from "#/language/index";
+import type { ResolveStart, SuggestionSource } from "#/language/index";
 import { setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { completionFields } from "./completion-fields";
-import { useDocumentRevision } from "./editor";
+import { useWorkbenchModel } from "./editor";
 import { HiddenName, useOptionalHost } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
@@ -31,6 +32,7 @@ import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 import { underlineOnlyLint } from "./underline-lint";
 
+import { documentRevision } from "#/document/atoms";
 import {
   workbenchSlice,
   sliceOffsets,
@@ -141,7 +143,7 @@ export function SliceEditor({
   onFocus,
 }: SliceEditorProps) {
   const onScreen = visible ?? useContext(Visible);
-  const revision = useDocumentRevision(controller);
+  const revision = useAtomValue(documentRevision(controller));
   const diagnoses = useSourceDiagnoses();
   const revealDiagnosis = useRevealSourceDiagnosis();
   const readOnly = controller.readOnly;
@@ -151,6 +153,9 @@ export function SliceEditor({
   const adapter = useOptionalHost();
   const editorExtension = useEditorExtension();
   const nameId = useUniqueId();
+  const createPartial = useAtomSet(useWorkbenchModel().createPartial(nameId));
+  const start: ResolveStart = (create, created) =>
+    createPartial({ create, created });
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
   const syntaxSlot = useRef(new Compartment());
@@ -178,6 +183,7 @@ export function SliceEditor({
     onFocus,
     suggest,
     adapter,
+    start,
     editorExtension,
     syntax,
     m,
@@ -189,6 +195,7 @@ export function SliceEditor({
     onFocus,
     suggest,
     adapter,
+    start,
     editorExtension,
     syntax,
     m,
@@ -219,11 +226,10 @@ export function SliceEditor({
       const expression = region?.expression ?? false;
       const supplied = report.current.suggest?.(masterPosition);
       return {
-        ...partialSuggestions(
-          report.current.m,
-          controller.dependencies,
-          report.current.adapter,
-        ),
+        ...partialSuggestions(report.current.m, controller.dependencies, {
+          partials: report.current.adapter?.partials,
+          start: report.current.start,
+        }),
         ...supplied,
         root,
         language: language === "json-e" ? "json-e" : region?.language,

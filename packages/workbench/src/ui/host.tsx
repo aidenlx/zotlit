@@ -9,7 +9,6 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/controller";
 import type { SuggestionSource } from "#/language/completion";
-import type { WorkbenchRunner } from "#/language/host-effects";
 import type { RenderRequest } from "#/render/request";
 import type {
   TemplateRenderResult,
@@ -228,11 +227,6 @@ export interface WorkbenchPartials {
 
 export interface WorkbenchHost {
   readonly messages: WorkbenchMessages;
-  /**
-   * Forks each host Effect the tree starts. It belongs to one mounted
-   * Workbench: closing it interrupts every Effect it still runs.
-   */
-  readonly run: WorkbenchRunner;
   readonly toggle?: ComponentType<WorkbenchToggleProps>;
   /** The locale currently used by the host's displayed messages. */
   getLocale(): string;

@@ -45,7 +45,7 @@ export default defineConfig({
           server: {
             deps: {
               // Run through Vite so its `react` import lands on the alias.
-              inline: ["zustand"],
+              inline: ["@effect/atom-react"],
             },
           },
         },

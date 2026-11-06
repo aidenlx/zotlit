@@ -85,7 +85,7 @@ export function indexedKeyFileMenu(): FileMenuSegment {
 
 ## A view's own More options
 
-`onPaneMenu(menu, source)` calls `super.onPaneMenu` first, then adds entries with `MENU_SECTION`: display toggles and checked modes in `pane` (beside Obsidian's "Reading view"), opening other documents in `open`, choosing and refreshing in `action`, copying keys in `info`, restoring defaults in `danger`. `views/note-preview/view.tsx` is the reference.
+`onPaneMenu(menu, source)` calls `super.onPaneMenu` first, then adds entries with `MENU_SECTION`: display toggles and checked modes in `pane` (beside Obsidian's "Reading view"), opening other documents in `open`, choosing and refreshing in `action`, copying keys in `info`, restoring defaults in `danger`. `views/template-workbench/view.tsx` (`onPaneMenu`, with its Preview settings) is the reference.
 
 ## Menus ZotLit builds itself
 

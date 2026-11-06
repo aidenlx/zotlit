@@ -68,7 +68,7 @@ interface Pending<Request, Answer> {
 }
 
 /** The names the snapshot's note root carries, as the Match tab needs them. */
-function matchData(
+export function matchData(
   snapshot: RenderRequest["snapshot"],
   bridge: Pick<PageBridge, "provide">,
 ): WorkbenchHost["matchData"] {
@@ -156,12 +156,11 @@ export function useWebHost({
     latest.current = { data, notice, insertTarget };
   }, [data, notice, insertTarget]);
 
-  // The runner is the page's: closing the page interrupts every host Effect
-  // it still runs, and an Effect started after it is interrupted at once.
+  // Every host Effect runs on the page runtime, so closing the page
+  // interrupts the ones still running.
   const host = useMemo<WorkbenchHost>(
     () => ({
       messages: m,
-      run: bridge.run,
       getLocale,
       menu: setMenu,
       dialog(request) {

@@ -270,7 +270,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         })()!;
         return (
           view.contentEl.textContent.includes(expectedTemplateText) &&
-          view.store.getState().item?.id === "RUGIER24"
+          view.registry.get(view.model.view).item?.id === "RUGIER24"
         );
       },
       {
@@ -1511,7 +1511,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           for (const type of [
             "zotlit-template-workbench",
             "zotlit-template-data-explorer",
-            "zotlit-note-preview",
           ])
             app.workspace.detachLeavesOfType(type);
         },

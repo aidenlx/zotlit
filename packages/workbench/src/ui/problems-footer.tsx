@@ -1,3 +1,4 @@
+import type { RenderReport, WorkbenchReportContext } from "#/render/report";
 // The editor's Problems area: one detected problem at a time, led by the
 // object it is about, and the disclosure the reader controls. Automatic checks
 // leave that choice alone; Show problem, a source marker, and a failed
@@ -19,9 +20,7 @@
 //
 // Source and explanation share the pane. The divider adjusts that share;
 // the chevron closes the explanation and returns focus to the source.
-
-import type { RenderReport, WorkbenchReportContext } from "#/render/report";
-import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
+import { useAtomSet } from "@effect/atom-react";
 import {
   useCallback,
   useEffect,
@@ -33,6 +32,7 @@ import {
 
 import { useUniqueId } from "@zotlit/ui";
 
+import { useWorkbenchModel } from "./editor";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
@@ -45,10 +45,8 @@ import {
   diagnosisReport,
   diagnosisWhere,
   problemText,
-  renderDiagnosis,
 } from "./problems";
-import { useFork } from "./run";
-import type { RenderTrigger } from "./scheduler";
+import type { RenderTrigger } from "./scheduler-atoms";
 import { WorkbenchOption, WorkbenchSelect } from "./select";
 import { useParts, useIcon } from "./theme";
 
@@ -222,53 +220,6 @@ export function useWorkbenchProblems({
 }
 
 /** Nothing found, as one value, so an idle preview publishes no new list. */
-const NO_DIAGNOSTICS: readonly RenderDiagnostic[] = [];
-
-/**
- * The preview's half of the Problems contract, which both hosts keep alike:
- * what this preview's render found goes to the editor that explains it, a
- * preview that closes takes its findings back with it, and a deliberate Run
- * that failed asks for its explanation at once. A failure while the reader
- * types asks for nothing, which is what leaves the editor as they left it.
- *
- * `publish` and `showProblem` are read through refs, so a host may pass a
- * fresh callback on every draw without republishing on every draw.
- */
-export function usePublishedProblems({
-  result,
-  trigger,
-  attempt,
-  publish,
-  showProblem,
-}: {
-  /** The newest landed result, whose diagnostics this preview publishes. */
-  readonly result: TemplateRenderResult | null;
-  /** How the attempt behind that result started. */
-  readonly trigger: RenderTrigger | null;
-  /** Counts published results, so one deliberate failure opens the area once. */
-  readonly attempt: number;
-  readonly publish: (diagnostics: readonly RenderDiagnostic[]) => void;
-  readonly showProblem: (id: string, occurrence?: RenderDiagnostic) => void;
-}): void {
-  const diagnostics = result?.diagnostics ?? NO_DIAGNOSTICS;
-  const publishing = useRef(publish);
-  publishing.current = publish;
-  const open = useRef(showProblem);
-  open.current = showProblem;
-  useEffect(() => {
-    publishing.current(diagnostics);
-  }, [diagnostics]);
-  useEffect(() => () => publishing.current(NO_DIAGNOSTICS), []);
-  const opened = useRef(attempt);
-  useEffect(() => {
-    if (attempt === opened.current) return;
-    opened.current = attempt;
-    const first = diagnostics[0];
-    if (trigger === "explicit" && first)
-      open.current(renderDiagnosis(first).id, first);
-  }, [attempt, trigger, diagnostics]);
-}
-
 export function ProblemsFooter({
   problems,
   onOpen,
@@ -287,7 +238,7 @@ export function ProblemsFooter({
 }) {
   const m = useWorkbenchMessages();
   const host = useOptionalHost();
-  const fork = useFork(host?.run);
+  const startCopy = useAtomSet(useWorkbenchModel().copy(useUniqueId()));
   const part = useParts("problemsFooter");
   const icon = useIcon();
   const panel = useRef<HTMLElement>(null);
@@ -341,9 +292,10 @@ export function ProblemsFooter({
   function copyReport(text: string): void {
     if (host?.copy === undefined) return;
     setCopyFailed(false);
-    fork(host.copy(text), {
-      onSuccess: () => host.notice(m.workbench_problems_copy_done()),
-      onFailure: () => {
+    startCopy({
+      copy: host.copy(text),
+      copied: () => host.notice(m.workbench_problems_copy_done()),
+      failed: () => {
         // A denied clipboard leaves the reader the report itself: the
         // disclosure opens so the text is there to select and copy by hand.
         setCopyFailed(true);

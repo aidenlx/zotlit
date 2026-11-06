@@ -1,9 +1,16 @@
 // Test host translating the old boundary fixtures to Effect service fakes.
 import { Context, Effect, Layer, Stream } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import type { App } from "obsidian";
 import { onTestFinished } from "vitest";
 
-import type { WorkbenchHost } from "@zotlit/workbench/ui";
+import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
+import { chooseItem, patch } from "@zotlit/workbench/ui";
+import type {
+  WorkbenchHost,
+  WorkbenchItemChoice,
+  WorkbenchPreviewSettings,
+} from "@zotlit/workbench/ui";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -43,7 +50,7 @@ import type { NativeRenderDeps } from "@/views/note-preview/render";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
 import type { WorkbenchActionServices } from "./actions";
-import type { TemplateWorkbenchDeps } from "./view";
+import type { TemplateWorkbenchDeps, TemplateWorkbenchView } from "./view";
 type TemplateFixture = TemplateOperations & {
   readonly "compile-status-changed": Stream.Stream<void>;
 };
@@ -413,4 +420,38 @@ export function makeWorkbenchHost(
       bridge: deps.bridge,
     } satisfies TemplateWorkbenchDeps,
   };
+}
+
+/** The view state a Template Workbench View's leaf holds. */
+export const viewState = (view: TemplateWorkbenchView) =>
+  view.registry.get(view.model.view);
+
+/** Makes `item` the leaf's choice, as a chooser does. */
+export const setViewItem = (
+  view: TemplateWorkbenchView,
+  item: WorkbenchItemChoice | null,
+) => view.registry.update(view.model.view, chooseItem(item));
+
+/** The leaf's render state, as its tabs read it. */
+export const renderState = (view: TemplateWorkbenchView) =>
+  view.registry.get(view.workbench.scheduler.state);
+
+/** Renders the draft now, as Run does. */
+export const runRender = (view: TemplateWorkbenchView) =>
+  view.registry.set(view.workbench.scheduler.run, undefined);
+
+/** Chooses the Sample Item `snapshot` is, under the preview settings given. */
+export function chooseSample(
+  view: TemplateWorkbenchView,
+  snapshot: ItemSnapshot,
+  settings: Partial<WorkbenchPreviewSettings> = {},
+) {
+  if (snapshot.provenance.kind !== "sample")
+    throw new Error("A Sample Item has sample provenance.");
+  const id = `sample:${snapshot.provenance.id}`;
+  Atom.batch(() => {
+    view.registry.update(view.model.preview, patch(settings));
+    if (view.registry.get(view.model.view).item?.id !== id)
+      setViewItem(view, { id, title: snapshot.item.title });
+  });
 }

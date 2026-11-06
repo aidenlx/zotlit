@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
+import { TestClock } from "effect/testing";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, vi } from "vitest";
@@ -28,6 +29,7 @@ import { Toaster } from "@/components/ui/toast";
 // Browser storage, render, and Local Bridge fixtures for web host tests.
 import { m } from "@/paraglide/messages.js";
 
+import type { Rendering } from "./rendering";
 import { layerPage } from "./runtime";
 import { Workbench } from "./workbench";
 
@@ -155,6 +157,11 @@ export interface OpenPage extends AsyncDisposable {
   settle: () => Promise<void>;
   /** Waits until immediate Local Bridge responses produce `assertion`. */
   waitFor: (assertion: () => void) => Promise<void>;
+  /**
+   * Moves the page runtime's clock on by `ms`, running the Effect sleeps it
+   * passes, such as the render's quiet time. Only a page opened with `clock`.
+   */
+  adjust: (ms: number) => Promise<void>;
 }
 
 /**
@@ -164,7 +171,25 @@ export interface OpenPage extends AsyncDisposable {
  */
 export async function open({
   strict = false,
-}: { strict?: boolean } = {}): Promise<OpenPage> {
+  rendering,
+  clock = false,
+}: {
+  strict?: boolean;
+  /** Renders and loads `Temporal` in place of the page's own service. */
+  rendering?: Layer.Layer<Rendering>;
+  /** Runs the page runtime's Effect time on a `TestClock` the case adjusts. */
+  clock?: boolean;
+} = {}): Promise<OpenPage> {
+  let testClock: TestClock.TestClock | null = null;
+  const clockLayer = clock
+    ? Layer.effectDiscard(
+        TestClock.testClockWith((held) =>
+          Effect.sync(() => {
+            testClock = held;
+          }),
+        ),
+      ).pipe(Layer.provideMerge(TestClock.layer()))
+    : Layer.empty;
   await using resources = new AsyncDisposableStack();
   const host = resources.adopt(document.createElement("div"), (element) => {
     element.remove();
@@ -175,13 +200,17 @@ export async function open({
   const content = (
     <>
       <Workbench
-        layer={layerPage.pipe(
-          Layer.provide([
-            FetchHttpClient.layer.pipe(
-              Layer.provide(Layer.succeed(FetchHttpClient.Fetch, bridge)),
-            ),
-            Layer.succeed(LocalBridgeStorage, sessionStorage),
-          ]),
+        layer={Layer.mergeAll(
+          layerPage.pipe(
+            Layer.provide([
+              FetchHttpClient.layer.pipe(
+                Layer.provide(Layer.succeed(FetchHttpClient.Fetch, bridge)),
+              ),
+              Layer.succeed(LocalBridgeStorage, sessionStorage),
+            ]),
+          ),
+          rendering ?? Layer.empty,
+          clockLayer,
         )}
       />
       <Toaster />
@@ -235,6 +264,11 @@ export async function open({
         }
         step = Math.min(step === 0 ? 25 : step * 2, WAIT_MS - elapsed);
       }
+    },
+    async adjust(ms) {
+      const held = testClock;
+      if (!held) throw new Error("The page was opened without a test clock.");
+      await act(() => Effect.runPromise(held.adjust(ms)));
     },
     async [Symbol.asyncDispose]() {
       await lifetime.disposeAsync();

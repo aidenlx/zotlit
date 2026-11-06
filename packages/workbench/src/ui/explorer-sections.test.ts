@@ -6,7 +6,7 @@ import {
   sentenceCase,
   visibleSectionIds,
 } from "./explorer-sections";
-import type { TemplateRoot } from "./store";
+import type { TemplateRoot } from "./model";
 import { m } from "./test-messages";
 
 import { buildDisplayTree } from "#/explorer/index";

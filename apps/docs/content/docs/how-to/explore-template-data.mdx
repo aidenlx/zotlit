@@ -14,7 +14,9 @@ The Template Data Explorer shows the fields that templates receive for a Zotero 
 
 ## Open the explorer
 
-The explorer can appear in a sidebar or beside the Template Workbench View. You can reach it from several entry points.
+The explorer is a view of its own. It keeps its own item choice, so browsing here changes no template that you have open. You can reach it from several entry points.
+
+To browse fields beside a template you are editing, use the Fields panel of the Template Workbench View instead. It shows the same tree for the view's chosen item, and it can insert a field at your cursor. See [Side panels](/docs/concepts/template-workbench-view#panels).
 
 ### From the command palette
 
@@ -41,7 +43,7 @@ In the annotation sidebar, open the more-options menu on any annotation row and 
 
 ### From Zotero (item)
 
-ZotLit Companion, the Zotero add-on, adds these entry points in Zotero. Right-click a single item, open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu, and select <UiLabel name={m.template_data_explorer_menu_explore()} />. Zotero opens the explorer in Obsidian via a protocol link.
+ZotLit Companion, the Zotero add-on, adds these entry points in Zotero. Right-click a single item, open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu, and select <UiLabel name={m.template_data_explorer_menu_explore()} />. Zotero opens the explorer in Obsidian via a protocol link. The explorer opens as its own view, even while a Template Workbench View is open on another item, and that view keeps its item.
 
 ### From Zotero (annotation)
 
@@ -63,9 +65,10 @@ annotation fields, use <UiLabel name={m.workbench_choose_annotation()} />.
 The annotation chooser searches annotations from the selected item and six
 built-in examples: highlight, underline, note, text, image, and ink.
 
-Data choices update the other linked panes. Annotation fields and previews
-use the chosen annotation and its own parent item data; the note keeps its
-selected item. Separate workbenches keep their own selections.
+The explorer keeps its own choice. A choice here leaves every Template
+Workbench View on its item, and a choice in a Template Workbench View leaves
+the explorer where it is. Annotation fields use the chosen annotation and its
+own parent item data.
 
 The pane title starts with the selected data and ends with
 
@@ -75,11 +78,9 @@ no selection, the pane uses its generic name.
 
 Full panels have selection actions in the header. Sidebars have a small
 selection control near the data. Right-click the
-pane header to access its menu in either layout. To open the editor, fields, and
-preview together, select <UiLabel name={m.template_workbench_open_layout()} />
-from the Template Workbench View's pane menu.
+pane header to access its menu in either layout.
 
-Data used for the preview updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu. In <UiLabel name={m.workbench_preview_on_demand()} /> mode, select <UiLabel name={m.workbench_preview_run()} /> to render the preview.
+The explorer's data updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu.
 
 ## Copy a Zotero key [#indexed-key]
 
