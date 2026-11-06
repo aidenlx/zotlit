@@ -68,8 +68,7 @@
     "semver": "catalog:",
     "unified": "11.0.5",
     "unpic": "^4.2.2",
-    "valibot": "catalog:",
-    "zustand": "catalog:"
+    "valibot": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.64.0",

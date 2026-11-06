@@ -789,6 +789,50 @@ it("reports the attempt a failure came from, not the draft the reader moved on t
   ).toBe(text);
 });
 
+it("renders once for a host whose render answers at once", async () => {
+  // The web host renders on the page's own thread, so its render completes
+  // inside the step that starts it.
+  const requests: RenderRequest[] = [];
+  const input = Atom.make<RenderSchedulerInput>({
+    source: "Draft",
+    snapshot: PAPER,
+    annotation: EXAMPLE,
+    mode: "create",
+    live: true,
+  });
+  const runtime = Atom.runtime(TestClock.layer());
+  const scheduler = makeRenderSchedulerAtoms({
+    runtime,
+    input,
+    render: (request) =>
+      Effect.sync(() => {
+        requests.push(request);
+        return {
+          ...failedRender(renderIdentity(request), { code: "render-error" }),
+          diagnostics: [],
+        };
+      }),
+    failed: (result) => result,
+  });
+  const registry = AtomRegistry.make({
+    defaultIdleTTL: 0,
+    timeoutResolution: 1,
+  });
+  const landings = Effect.runSync(Queue.unbounded<number>());
+  const release = registry.subscribe(
+    scheduler.state,
+    ({ attempt }) => Queue.offerUnsafe(landings, attempt),
+    { immediate: true },
+  );
+  registry.set(scheduler.run, undefined);
+  // Every attempt the state lands on, up to the first result.
+  while ((await Effect.runPromise(Queue.take(landings))) < 1);
+  expect(requests).toHaveLength(1);
+  expect(registry.get(scheduler.state).attempt).toBe(1);
+  release();
+  registry.dispose();
+});
+
 /** A Profile draft whose Managed Frontmatter lists `keys`, in order. */
 const listing = (...keys: string[]) =>
   [

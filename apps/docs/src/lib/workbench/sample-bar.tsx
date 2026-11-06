@@ -1,8 +1,6 @@
 // The item the page is shown against, beside the result: which Item it is, where
 // it came from, and the one request that loads or refreshes a connected one.
 
-import { useEffect, useState } from "react";
-
 import type { LocalBridgeConnection } from "@zotlit/workbench/bridge";
 import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import { SampleSuggester } from "@zotlit/workbench/ui";
@@ -14,6 +12,7 @@ import type { SampleItem } from "./fields";
 
 export function SampleBar({
   sample,
+  retained,
   connection,
   unmatchedItemType,
   busy,
@@ -21,6 +20,8 @@ export function SampleBar({
   onLoad,
 }: {
   readonly sample: SampleItem;
+  /** The vault Item the page holds, offered beside the bundled samples. */
+  readonly retained: SampleItem | null;
   readonly connection: LocalBridgeConnection;
   /**
    * The sample item type this Profile asks for where no bundled Item carries
@@ -34,18 +35,13 @@ export function SampleBar({
 }) {
   const connected = connection.state === "connected";
   const fromVault = sample.provenance.kind === "connected";
-  // Keep the loaded item available when comparing it with bundled samples.
-  const [loadedItem, setLoadedItem] = useState(fromVault ? sample : null);
-  useEffect(() => {
-    if (sample.provenance.kind === "connected") setLoadedItem(sample);
-  }, [sample]);
   const current =
     fromVault &&
     connected &&
     sample.provenance.installationId === connection.installation.id &&
     sample.item.indexedKey === connection.selectedItem?.key;
   const name = sample.item.title ?? sample.item.key;
-  const items = loadedItem ? [...SAMPLE_ITEMS, loadedItem] : SAMPLE_ITEMS;
+  const items = retained ? [...SAMPLE_ITEMS, retained] : SAMPLE_ITEMS;
   const options = items.map((item) => ({
     sample: item,
     value:
