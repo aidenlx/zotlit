@@ -1596,7 +1596,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       await leaf.setViewState({
         type: "zotlit-template-data-explorer",
         active: true,
-        state: { itemIndexedKey: "DMRGRART", root: "note", zotlitLaunch: true },
+        state: { itemIndexedKey: "DMRGRART", root: "note" },
       });
       const element = (leaf.view as unknown as { contentEl: HTMLElement })
         .contentEl;
