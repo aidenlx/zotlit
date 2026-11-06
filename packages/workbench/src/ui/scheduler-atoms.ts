@@ -1,24 +1,25 @@
 // The render scheduler as atoms: a sleep a newer input interrupts, then the host's render Effect.
 
+import type { CitationPreviewSelection } from "#/render/citation-examples";
+import type { PartialPreviewSelection } from "#/render/partial-preview";
 import type { WorkbenchReportContext } from "#/render/report";
-import type { RenderRequest } from "#/render/request";
+import type { RenderRequest, RenderResources } from "#/render/request";
 import type {
   TemplateRenderResult,
   RenderDiagnostic,
+  RenderedProperty,
   RenderIdentity,
 } from "#/render/result";
+import type { AnnotationExample } from "#/render/sample-annotations";
+import type { ItemSnapshot } from "#/snapshot/index";
 import { Cause, Effect, Option } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
 import { WorkbenchHostError } from "./host";
-import { held, rebased, rebaser, staleReasonFor } from "./scheduler";
-import type {
-  RenderSchedulerInput,
-  RenderSchedulerState,
-  RenderTrigger,
-} from "./scheduler";
+import type { PreviewMode } from "./model";
 
+import { followEntries } from "#/document/manifest-patch";
 import { captureRenderReport, engineEvidence } from "#/render/report";
 import {
   failedRender,
@@ -27,6 +28,156 @@ import {
   templateSourceRevision,
   renderIdentity,
 } from "#/render/result";
+
+export interface RenderSchedulerInput {
+  readonly source: string;
+  /**
+   * The Template Document this preview reads — a vault path or a draft
+   * reference. Output kept from another document is another preview's, so a
+   * scheduler that follows the reader from one document to the next names the
+   * one it is on. A host with one document all along leaves it out.
+   */
+  readonly document?: string;
+  readonly mode: PreviewMode;
+  readonly live: boolean;
+  /** The paper a render is shown against; `null` while the host loads one. */
+  readonly snapshot: ItemSnapshot | null;
+  readonly annotation?: AnnotationExample | null;
+  /**
+   * The Citation set and Variant a Citation Template render reads. A new object
+   * per choice, so a reader's pick of another example or variant is a new input.
+   */
+  readonly citation?: CitationPreviewSelection | null;
+  /**
+   * The context and Profile a Shared Partial render reads. A new object per
+   * choice, so the reader's pick of another caller is a new input.
+   */
+  readonly partial?: PartialPreviewSelection | null;
+  readonly resources?: RenderResources;
+  /**
+   * Holds rendering while the host cannot answer for this draft — a Profile it
+   * refuses, or a dependency bundle read for another one. Unlike Stop, a render
+   * in flight is dropped, and the result still shown reads as stale.
+   *
+   * `"invalid"` names the one hold that is a failure rather than a wait: a
+   * document the parser refuses. The preview reads it the way it reads a
+   * render that failed, and names the output it kept.
+   */
+  readonly hold?: boolean | "invalid";
+}
+
+/**
+ * How an attempt started. Run and the quiet time after an edit reach the same
+ * entry point, so the result names which one asked for it: a deliberate
+ * failure deserves an explanation at once, a failure while typing does not.
+ */
+export type RenderTrigger = "explicit" | "automatic";
+
+export interface RenderSchedulerState<
+  R extends TemplateRenderResult = TemplateRenderResult,
+> {
+  readonly result: R | null;
+  /**
+   * The newest output each preview surface produced, kept while `result` is a
+   * failed attempt the reader can still compare against it. A note that failed
+   * beside an annotation that rendered keeps the last note that worked. Null
+   * once the retained output describes a document, paper, example, caller, or
+   * mode the reader has left, which is what keeps another preview's result out
+   * of this one.
+   */
+  readonly retained: R | null;
+  /** Set from the moment a render starts until its result lands or is dropped. */
+  readonly busy: boolean;
+  /**
+   * Why `result` describes a draft, paper, or mode the reader has left, or why
+   * none exists yet; `null` while the shown result is current. `live` means a
+   * render of the new input is on its way, so the result stands until it
+   * lands; `demand` waits for Run; `hold` and `invalid` wait for a repair.
+   */
+  readonly staleReason: "hold" | "invalid" | "demand" | "live" | null;
+  /** How the attempt behind `result` started; `null` while none has landed. */
+  readonly trigger: RenderTrigger | null;
+  /**
+   * Counts the results this scheduler has published. Two attempts over the
+   * same bytes are still two attempts, which is what tells a reader's second
+   * deliberate failure from the first.
+   */
+  readonly attempt: number;
+}
+
+/** Why the shown result is stale; `current` says it matches the input. */
+export function staleReasonFor(
+  input: Pick<RenderSchedulerInput, "hold" | "live">,
+  current: boolean,
+): RenderSchedulerState["staleReason"] {
+  if (input.hold === "invalid") return "invalid";
+  if (input.hold === true) return "hold";
+  if (current) return null;
+  return input.live ? "live" : "demand";
+}
+
+/**
+ * `result` as read against `to`. Output names Managed Frontmatter entries by
+ * their position in the draft it was rendered from, and a result stands across
+ * an edit until the next render lands, so each position is moved to the entry
+ * it belongs to in the current draft. A value of an entry the edit removed is
+ * dropped, and its problem names no row. The attempt itself — its source
+ * revision and its reports — is unchanged, and so is the result when nothing
+ * moved.
+ */
+export function rebased<R extends TemplateRenderResult>(
+  result: R,
+  from: string,
+  to: string,
+): R {
+  if (
+    from === to ||
+    (result.properties.length === 0 &&
+      result.fold.length === 0 &&
+      result.diagnostics.every(({ position }) => position === undefined))
+  )
+    return result;
+  const follow = followEntries(from, to);
+  if (follow === null) return result;
+  const move = (list: readonly RenderedProperty[]) =>
+    list.flatMap((property) => {
+      const position = follow(property.position);
+      return position === undefined ? [] : [{ ...property, position }];
+    });
+  return {
+    ...result,
+    properties: move(result.properties),
+    fold: move(result.fold),
+    // A removed entry's problem still explains why the attempt produced what
+    // it did, so it stays, naming no row.
+    diagnostics: result.diagnostics.map((diagnostic) => {
+      if (diagnostic.position === undefined) return diagnostic;
+      const { position: _removed, ...unplaced } = diagnostic;
+      const position = follow(diagnostic.position);
+      return position === undefined ? unplaced : { ...diagnostic, position };
+    }),
+  };
+}
+
+/**
+ * {@link rebased}, answering with the same object while the result and the
+ * draft it is read against stay the same, so a publish with nothing new
+ * notifies no one.
+ */
+export function rebaser<R extends TemplateRenderResult>() {
+  let last: { result: R; to: string; out: R } | null = null;
+  return (result: R | null, from: string, to: string): R | null => {
+    if (result === null) return null;
+    if (last?.result !== result || last.to !== to)
+      last = { result, to, out: rebased(result, from, to) };
+    return last.out;
+  };
+}
+
+/** Whether nothing may render, for either reason a host gives. */
+export function held(input: Pick<RenderSchedulerInput, "hold">): boolean {
+  return input.hold === true || input.hold === "invalid";
+}
 
 export interface RenderSchedulerAtomsOptions<
   R extends TemplateRenderResult,

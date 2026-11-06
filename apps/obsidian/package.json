@@ -108,8 +108,7 @@
     "valibot": "catalog:",
     "vite": "catalog:",
     "vite-bundle-analyzer": "^1.3.8",
-    "vitest": "catalog:",
-    "zustand": "catalog:"
+    "vitest": "catalog:"
   },
   "authorUrl": "https://github.com/aidenlx",
   "obsidian": {

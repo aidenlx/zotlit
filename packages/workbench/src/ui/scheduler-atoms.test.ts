@@ -8,9 +8,11 @@ import { TestClock } from "effect/testing";
 import { expect, it, vi } from "vitest";
 
 import { WorkbenchHostError } from "./host";
-import type { RenderSchedulerInput } from "./scheduler";
 import { makeRenderSchedulerAtoms } from "./scheduler-atoms";
-import type { RenderSchedulerAtomsOptions } from "./scheduler-atoms";
+import type {
+  RenderSchedulerAtomsOptions,
+  RenderSchedulerInput,
+} from "./scheduler-atoms";
 
 import {
   failedRender,

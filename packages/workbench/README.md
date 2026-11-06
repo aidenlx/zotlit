@@ -127,17 +127,15 @@ every component marks its parts with `data-part` and their state with
 `data-state`, and `WorkbenchThemeProvider` takes one optional class map, keyed
 by component and part (`WorkbenchParts` lists them), plus an icon renderer.
 Call sites pass no classes. `WorkbenchHostProvider` takes the host adapter —
-`run`, `menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `notice`,
+`menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `notice`,
 `render`, `matchData`, `insertTarget`, `persistence`, `messages`, and
 `getLocale` — so
 Obsidian shows its own `Menu`, `Modal`, `SuggestModal`, and `Notice` and the web
-shows Base UI. `WorkbenchEditorProvider` carries one editor instance: the
-zustand vanilla store from `createWorkbenchEditor` (tab, selected Item, focused
-root, preview mode and live state, Advanced)
-beside the `WorkbenchDocumentController`, which stays the document
-authority, and the one Render Scheduler its result surfaces share;
-`useWorkbenchStore`, `useWorkbenchController`, `useDocumentRevision`,
-`useRenderScheduler`, and `useRenderState` read them.
+shows Base UI. `WorkbenchEditorProvider` carries one editor instance: the Workbench model of
+atoms from `createWorkbenchEditor` (tab, selected Item, focused root, preview
+mode and live state, Advanced) beside the `WorkbenchDocumentController`, which
+stays the document authority, and the one Render Scheduler its result surfaces
+share; `useWorkbenchModel` and `useWorkbenchController` read them.
 
 `createWorkbenchEditor({ host, controller })` owns the store and its scheduler;
 dispose the editor when it closes. The scheduler uses a 300 ms quiet time after the last edit, `run()` for Run,

@@ -1,9 +1,8 @@
 // A host for the shared suite: every adapter call is recorded, preferences
 // live in memory, and the theme names each part's class after the part.
 
-import type { WorkbenchRunner } from "#/language/host-effects";
 import type { RenderRequest } from "#/render/request";
-import type { TemplateRenderResult } from "#/render/result";
+import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { render as renderUI } from "@testing-library/react";
 import { Effect, Layer } from "effect";
 import * as Atom from "effect/reactivity/Atom";
@@ -23,10 +22,12 @@ import type {
   WorkbenchSuggesterRequest,
 } from "./host";
 import { WorkbenchMessagesProvider } from "./messages";
-import type { WorkbenchModel } from "./model";
-import { makeWorkbenchRunner } from "./run";
-import type { RenderScheduler } from "./scheduler";
-import type { WorkbenchStore, WorkbenchViewState } from "./store";
+import { patch } from "./model";
+import type {
+  WorkbenchItemData,
+  WorkbenchModel,
+  WorkbenchViewState,
+} from "./model";
 import { m } from "./test-messages";
 import { WorkbenchThemeProvider } from "./theme";
 import type { WorkbenchClassMap, WorkbenchTheme } from "./theme";
@@ -68,8 +69,6 @@ export interface HeldRequest {
 }
 
 export interface FakeHost extends WorkbenchHost {
-  /** A runner over a Scope of its own, for tests of the runner facade. */
-  readonly run: WorkbenchRunner;
   readonly calls: {
     menus: WorkbenchMenuRequest[];
     suggesters: WorkbenchSuggesterRequest[];
@@ -91,8 +90,6 @@ export interface FakeHost extends WorkbenchHost {
   confirmAnswer: boolean;
   /** Whether `copy` fails, which stands for a clipboard the host refused. */
   copyFails: boolean;
-  /** Closes the runner, as a host does when its mount goes. */
-  close(): void;
 }
 
 export function fakeHost(): FakeHost {
@@ -101,7 +98,6 @@ export function fakeHost(): FakeHost {
     `${scope}:${name}`;
   const renders: PendingRender[] = [];
   const held: HeldRequest[] = [];
-  const runner = makeWorkbenchRunner();
   /** A request that answers at once, or waits in `held` while `hold` is set. */
   function holdable<A, E>(
     kind: HeldRequest["kind"],
@@ -131,8 +127,6 @@ export function fakeHost(): FakeHost {
   }
   const host: FakeHost = {
     messages: m,
-    run: runner.run,
-    close: runner.close,
     getLocale: () => "en",
     calls: { menus: [], suggesters: [], notices: [], confirms: [], copies: [] },
     renders,
@@ -245,11 +239,7 @@ export interface Mounted extends Disposable {
   /** The registry the editor's model lives in. */
   registry: AtomRegistry.AtomRegistry;
   model: WorkbenchModel;
-  /** The store facade a host reads; deleted in #1946. */
-  store: WorkbenchStore;
   controller: WorkbenchDocumentController;
-  /** The scheduler facade a host feeds; deleted in #1946. */
-  scheduler: RenderScheduler;
   ui: ReactNode;
   /** Puts other children under the same host and editor, for a rerender. */
   wrap(children: ReactNode): ReactNode;
@@ -279,7 +269,7 @@ export function mount(
     runtime: TEST_RUNTIME,
     ...(state ? { state } : {}),
   });
-  const { model, store, scheduler } = editor;
+  const { model } = editor;
   const wrap = (children: ReactNode) => (
     <WorkbenchThemeProvider theme={FAKE_THEME}>
       <WorkbenchHostProvider host={host}>
@@ -293,17 +283,45 @@ export function mount(
     host,
     registry,
     model,
-    store,
     controller,
-    scheduler,
     ui: wrap(children),
     wrap,
     [Symbol.dispose]() {
       editor[Symbol.dispose]();
       registry.dispose();
-      host.close();
     },
   };
+}
+
+/** What a test drives: the registry and the model the editor keeps in it. */
+type Driven = Pick<Mounted, "registry" | "model">;
+
+/** Sets the chosen Item's data, which the test host keeps in a writable atom. */
+export function setItemData(
+  { registry, model }: Driven,
+  data: Partial<WorkbenchItemData>,
+): void {
+  if (!Atom.isWritable(model.itemData))
+    throw new Error("The test host keeps the Item data in a writable atom.");
+  registry.update(model.itemData, patch(data));
+}
+
+/** Presses Run on the model's scheduler. */
+export function pressRun({ registry, model }: Driven): void {
+  registry.set(model.scheduler.run, undefined);
+}
+
+/** Shows `diagnostic` as the host's report of a render it could not run. */
+export function reportFailure(
+  { registry, model }: Driven,
+  diagnostic: RenderDiagnostic,
+): void {
+  registry.set(model.scheduler.fail, diagnostic);
+}
+
+/** The state the preview reads. */
+export function schedulerState({ registry, model }: Driven) {
+  return registry.get(model.scheduler.state);
 }
 
 /** Supply messages for component tests that exercise the optional-host surface. */

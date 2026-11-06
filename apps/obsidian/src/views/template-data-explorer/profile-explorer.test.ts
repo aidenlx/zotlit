@@ -41,7 +41,6 @@ import {
 } from "./model";
 import type { ExplorerModel } from "./model";
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 const read = vi.fn<NonNullable<ExplorerReads["read"]>>();
 /** What the next Item list's read of the recent Items answers. */
 let recent: Effect.Effect<SearchHit[]> = Effect.succeed([]);
@@ -183,7 +182,6 @@ describe("independent native Explorer", () => {
     using session = host.openSession();
     const choose = vi.fn();
     using cleanup = new DisposableStack();
-    const { run } = cleanup.use(makeViewRunner(host.registry));
     const container = cleanup.adopt(document.createElement("div"), (element) =>
       element.remove(),
     );
@@ -200,7 +198,6 @@ describe("independent native Explorer", () => {
               messages: workbenchM,
               getLocale: () => "en",
               persistence: { read: () => null, write: () => {} },
-              run,
             }),
           },
           withModel(
@@ -238,7 +235,6 @@ describe("independent native Explorer", () => {
   it("lists the recent Items the host reads, and stops the read at unmount", async () => {
     using session = host.openSession();
     using cleanup = new DisposableStack();
-    const { run } = cleanup.use(makeViewRunner(host.registry));
     const container = cleanup.adopt(document.createElement("div"), (element) =>
       element.remove(),
     );
@@ -254,7 +250,6 @@ describe("independent native Explorer", () => {
                 messages: workbenchM,
                 getLocale: () => "en",
                 persistence: { read: () => null, write: () => {} },
-                run,
               }),
             },
             withModel(
@@ -303,7 +298,6 @@ describe("independent native Explorer", () => {
     ]);
     using session = host.openSession();
     using cleanup = new DisposableStack();
-    const { run } = cleanup.use(makeViewRunner(host.registry));
     const container = cleanup.adopt(document.createElement("div"), (element) =>
       element.remove(),
     );
@@ -320,7 +314,6 @@ describe("independent native Explorer", () => {
               messages: workbenchM,
               getLocale: () => "en",
               persistence: { read: () => null, write: () => {} },
-              run,
             }),
           },
           withModel(
@@ -401,7 +394,6 @@ it("switches annotation data locally through the annotation chooser", async () =
             tooltip: (text: string) => ({ title: text }),
             persistence: { read: () => null, write: () => {} },
             suggester,
-            run,
           }),
         },
         withModel(
@@ -415,7 +407,6 @@ it("switches annotation data locally through the annotation chooser", async () =
                 const state = session.state();
                 const chooser = stubService<WorkbenchHost>("WorkbenchHost", {
                   suggester,
-                  run,
                 });
                 const id = await answerOf(
                   run(

@@ -7,7 +7,7 @@ import type {
 import { COMMON_FIELDS } from "./completion-fields";
 // Common field labels and values shared by the Explorer and its hosts.
 import type { WorkbenchMessages } from "./generated/messages";
-import type { TemplateRoot } from "./store";
+import type { TemplateRoot } from "./model";
 
 import { formatAccessorPath, renderSnippet } from "#/explorer/index";
 

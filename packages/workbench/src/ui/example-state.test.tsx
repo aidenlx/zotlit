@@ -10,10 +10,17 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 
 import { useWorkbenchController, useWorkbenchModel } from "./editor";
-import { chooseItem } from "./model";
+import { chooseItem, setPreview } from "./model";
 import { NameFolderPane } from "./name-folder";
 import { PropertiesPane } from "./properties-tab";
-import { mount, renderWithMessages as render } from "./test-host";
+import {
+  mount,
+  pressRun,
+  renderWithMessages as render,
+  reportFailure,
+  schedulerState,
+  setItemData,
+} from "./test-host";
 import { m } from "./test-messages";
 
 import { SAMPLE_ITEMS } from "#/render/index";
@@ -77,7 +84,7 @@ it("shows configuration before an Item is selected and distinguishes pending and
     ),
   );
   expect(screen.getAllByText(m.workbench_loading_item())).toHaveLength(2);
-  act(() => mounted.scheduler.fail({ code: "render-error" }));
+  act(() => reportFailure(mounted, { code: "render-error" }));
   expect(screen.getAllByText(m.workbench_example_failed())).toHaveLength(2);
 });
 
@@ -87,8 +94,8 @@ it("keeps Name and Properties examples when only Annotation fails", async () => 
   });
   render(mounted.ui);
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]! });
+    pressRun(mounted);
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({
@@ -118,8 +125,8 @@ it("marks a held live result as stale while rendering cannot run", async () => {
   });
   render(mounted.ui);
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]! });
+    pressRun(mounted);
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({
@@ -128,10 +135,10 @@ it("marks a held live result as stale while rendering cannot run", async () => {
     }),
   );
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]!, hold: true });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]!, hold: true });
+    pressRun(mounted);
   });
-  expect(mounted.scheduler.getState()).toMatchObject({
+  expect(schedulerState(mounted)).toMatchObject({
     staleReason: "hold",
     busy: false,
   });
@@ -169,15 +176,15 @@ it("offers local item actions and shows retry only after evaluation fails", asyn
     screen.getAllByRole("button", { name: m.workbench_choose_preview_item() }),
   ).toHaveLength(2);
   expect(screen.queryByText("Selected item title")).toBeNull();
-  act(() => mounted.scheduler.fail({ code: "render-error" }));
+  act(() => reportFailure(mounted, { code: "render-error" }));
   for (const button of screen.getAllByRole("button", {
     name: m.workbench_example_retry(),
   }))
     fireEvent.click(button);
   expect(retry).toHaveBeenCalledTimes(2);
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]! });
+    pressRun(mounted);
   });
   expect(
     screen.queryByRole("button", { name: m.workbench_example_retry() }),
@@ -202,8 +209,8 @@ it("clears note-name and expanded spread results immediately when another item i
   });
   render(mounted.ui);
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]! });
+    pressRun(mounted);
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({
@@ -231,8 +238,8 @@ it("clears note-name and expanded spread results immediately when another item i
   expect(screen.queryByText("First item value")).toBeNull();
   expect(screen.getAllByText(m.workbench_loading_item())).toHaveLength(2);
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[1]! });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[1]! });
+    pressRun(mounted);
   });
   await act(async () =>
     mounted.host.renders[1]!.answer({
@@ -262,8 +269,8 @@ async function renderFirstExample(
   diagnostics: readonly RenderDiagnostic[] = [],
 ) {
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]! });
+    pressRun(mounted);
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({
@@ -287,7 +294,7 @@ it("keeps the previous example on screen while a live render is queued", async (
   act(() => {
     mounted.controller.setManifestKey("filename", "Updated");
   });
-  expect(mounted.scheduler.getState()).toMatchObject({
+  expect(schedulerState(mounted)).toMatchObject({
     staleReason: "live",
     busy: false,
   });
@@ -298,7 +305,7 @@ it("keeps the previous example on screen while a live render is queued", async (
   expect(noteName(dom.container)).toBe("literatures/Research.md");
   expect(screen.getByRole("button", { name: "title A paper" })).toBeTruthy();
   // The render the edit queued is on its way: the example stays until it lands.
-  act(() => mounted.scheduler.run());
+  act(() => pressRun(mounted));
   expect(screen.queryByText(m.workbench_loading_item())).toBeNull();
   expect(screen.getByRole("button", { name: "title A paper" })).toBeTruthy();
 });
@@ -334,7 +341,7 @@ it("names each row's problem at the row's new place until the next render lands"
   });
   // Every reader of the result — rows, Problems, the entry editor — reads the
   // positions of the list on screen.
-  const { result } = mounted.scheduler.getState();
+  const { result } = schedulerState(mounted);
   expect(result?.diagnostics.map(({ position }) => position)).toEqual([2]);
   expect(
     result?.properties.map(({ key, position }) => [key, position]),
@@ -347,7 +354,7 @@ it("names each row's problem at the row's new place until the next render lands"
   });
   // The removed row's value leaves with it. Its problem still explains the
   // attempt, so it stays, naming no row.
-  const removed = mounted.scheduler.getState().result;
+  const removed = schedulerState(mounted).result;
   expect(removed?.properties).toMatchObject([{ key: "related", position: 1 }]);
   expect(removed?.diagnostics).toHaveLength(1);
   expect(removed?.diagnostics[0]).toMatchObject({ code: "property-error" });
@@ -360,11 +367,13 @@ it("asks for a run after the source changes while refresh is on demand", async (
   });
   const dom = render(mounted.ui);
   await renderFirstExample(mounted);
-  act(() => mounted.scheduler.setInput({ live: false }));
+  act(() =>
+    mounted.registry.update(mounted.model.choices, setPreview({ live: false })),
+  );
   act(() => {
     mounted.controller.setManifestKey("filename", "Updated");
   });
-  expect(mounted.scheduler.getState()).toMatchObject({
+  expect(schedulerState(mounted)).toMatchObject({
     staleReason: "demand",
   });
   expect(screen.getAllByText(m.workbench_example_awaiting_run())).toHaveLength(
@@ -383,8 +392,8 @@ it("tells a broken Filename Template from an empty note name", async () => {
   });
   const dom = render(mounted.ui);
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]! });
+    pressRun(mounted);
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({
@@ -413,8 +422,8 @@ it("labels the retained note name and drops it with the selected item", async ()
   });
   const dom = render(mounted.ui);
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]! });
+    pressRun(mounted);
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({
@@ -428,7 +437,7 @@ it("labels the retained note name and drops it with the selected item", async ()
   act(() => {
     mounted.controller.setManifestKey("filename", "{% for a i b %}");
   });
-  act(() => mounted.scheduler.run());
+  act(() => pressRun(mounted));
   await act(async () =>
     mounted.host.renders[1]!.answer({
       creationBody: "# A paper",
@@ -454,8 +463,8 @@ it("claims no fault in a note name that never rendered", async () => {
   });
   const dom = render(mounted.ui);
   act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
-    mounted.scheduler.run();
+    setItemData(mounted, { snapshot: SAMPLE_ITEMS[0]! });
+    pressRun(mounted);
   });
   await act(async () =>
     mounted.host.renders[0]!.answer({

@@ -23,7 +23,7 @@ import type {
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchMessageLabel } from "./messages";
-import type { TemplateRoot } from "./store";
+import type { TemplateRoot } from "./model";
 import { useParts } from "./theme";
 
 import {

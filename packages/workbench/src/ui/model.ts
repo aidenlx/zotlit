@@ -24,18 +24,61 @@ import type {
   WorkbenchMatchData,
   WorkbenchMatchResult,
 } from "./host";
-import type { RenderSchedulerInput } from "./scheduler";
+import type { WorkbenchInsertTarget } from "./host";
 import { makeRenderSchedulerAtoms } from "./scheduler-atoms";
-import type { RenderSchedulerAtoms } from "./scheduler-atoms";
 import type {
-  PreviewMode,
-  TemplateRoot,
-  WorkbenchItemChoice,
-  WorkbenchViewState,
-} from "./store";
+  RenderSchedulerAtoms,
+  RenderSchedulerInput,
+} from "./scheduler-atoms";
+import type { SliceReveal } from "./slice-editor";
 import type { WorkbenchTab } from "./tabs";
 
 import { workbenchDocumentAtoms } from "#/document/atoms";
+
+/** The template root a pane edits, which the Explorer and the preview follow. */
+export type TemplateRoot = "note" | "annotation" | "filename" | "citation";
+
+/** What the preview shows: a new note, or an existing note after Update. */
+export type PreviewMode = "create" | "update";
+
+export interface PreviewSettings {
+  readonly mode: PreviewMode;
+  readonly live: boolean;
+}
+
+/** The Item the editor is shown against, as the host names it. */
+export interface WorkbenchItemChoice {
+  /** A Sample Item's id, or the host's Item key. */
+  readonly id: string;
+  readonly title: string | null;
+}
+
+export interface EditorPresentation {
+  restoreVersion: number;
+  restoring: boolean;
+  selection: WorkbenchInsertTarget | null;
+  selected: number | null;
+  reveal: SliceReveal | null;
+  fieldFocus: {
+    field: string;
+    focus?: boolean;
+    scrollIntoView?: boolean;
+  } | null;
+  scroll: Record<string, { top: number; left: number }>;
+}
+
+/** The view state of one editor instance: what is shown, not what the document says. */
+export interface WorkbenchViewState {
+  readonly presentation: EditorPresentation;
+  readonly tab: WorkbenchTab;
+  readonly item: WorkbenchItemChoice | null;
+  /** The root the focused editor writes. */
+  readonly root: TemplateRoot;
+  /** Whether the whole document is open in the Advanced editor. */
+  readonly advanced: boolean;
+  /** Progress of the explicit action that creates the built-in Profile document. */
+  readonly customization: "idle" | "pending" | "failed";
+}
 
 /** How the preview renders and shows its result. */
 export interface WorkbenchPreviewSettings {
@@ -57,9 +100,7 @@ export interface WorkbenchChoices {
 
 /**
  * The chosen Item's data. A host derives it from its read of the chosen Item
- * through `itemData`; otherwise the host supplies it through the scheduler
- * facade's `setInput`. Expand step only: the derived read of the chosen Item
- * replaces the facade (#1942).
+ * through `itemData`; otherwise it is a writable atom of the model.
  */
 export interface WorkbenchItemData {
   readonly snapshot: ItemSnapshot | null;

@@ -73,8 +73,6 @@ vi.mock("./partial-command", () => ({
   createSharedPartialEffect: vi.fn(() => Effect.succeed(null)),
 }));
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-
 // The renderers are note-preview's own; here they stand in, so a render reports
 // which document kind the view asked for and what the session fed it.
 vi.mock("@/views/note-preview/render", async (importOriginal) => {
