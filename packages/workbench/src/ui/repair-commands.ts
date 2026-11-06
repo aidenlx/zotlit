@@ -1,14 +1,10 @@
-// The repair commands: what both hosts do when the reader goes from a problem
-// to the place that repairs it. Each one applies a routing transition to the
-// view state, reveals the place in the editor, and closes the Fields picker so
-// nothing covers it. None of them changes which panels show. The host supplies
-// only how a notice reaches the reader, through its adapter.
+// The commands both hosts run to take the reader from a problem to the place that repairs it.
 
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { RenderDiagnostic } from "#/render/result";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
-import type { WorkbenchHost } from "./host";
+import type { WorkbenchHost, WorkbenchInsertTarget } from "./host";
 import type { WorkbenchModel, WorkbenchViewState } from "./model";
 import { routeDiagnosis, routeProblem } from "./problem-route";
 import type { ProblemTarget, RoutedDocument } from "./problem-route";
@@ -20,7 +16,15 @@ import {
 import type { WorkbenchDiagnosis } from "./problems";
 import type { WorkbenchProblemsState } from "./problems-footer";
 
-/** The commands that take the reader to the place a problem is repaired in. */
+/**
+ * The commands that take the reader to the place a problem is repaired in.
+ * They route the reader and leave the repair to the reader's own edit (ADR
+ * 0056); the one edit among them is the annotation loop the reader asks for
+ * with Add to template. Each applies a routing transition to the view state,
+ * reveals the place in the editor, and closes the Fields picker so nothing
+ * covers it. None changes which panels show. The host supplies only how a
+ * notice reaches the reader, through its adapter.
+ */
 export interface RepairCommands {
   /**
    * Opens the pane that edits a document problem's slice, on the text it
@@ -63,6 +67,17 @@ export interface RepairCommandsInput {
   >;
 }
 
+/**
+ * The place the reader last left the caret, while the document still has the
+ * slice it is in; the insertion target and the return place both read it.
+ */
+export function selectionInDocument(
+  selection: WorkbenchInsertTarget | null,
+  document: Pick<WorkbenchDocumentController, "hasSlice">,
+): WorkbenchInsertTarget | null {
+  return selection && document.hasSlice(selection.slice) ? selection : null;
+}
+
 type Transition = (state: WorkbenchViewState) => WorkbenchViewState;
 
 export function repairCommands({
@@ -72,10 +87,13 @@ export function repairCommands({
   host,
   problems,
 }: RepairCommandsInput): RepairCommands {
+  const closePicker = () => registry.set(model.fieldsPicker, null);
+  const route = (transition: Transition) =>
+    registry.update(model.view, transition);
   /** Opens the place `transition` names, with nothing over the editor. */
   const go = (transition: Transition) => {
-    registry.set(model.fieldsPicker, null);
-    registry.update(model.view, transition);
+    closePicker();
+    route(transition);
   };
   const goToProblem = (problem: ProblemTarget) =>
     go(routeProblem(problem, controller));
@@ -87,23 +105,23 @@ export function repairCommands({
       else host.notice(host.messages.workbench_problems_location_unknown());
     },
     showProblem(diagnostic) {
-      registry.set(model.fieldsPicker, null);
+      closePicker();
       if (diagnostic === null) {
         problems.setOpen(true);
         return;
       }
       const id = renderDiagnosis(diagnostic).id;
-      problems.select(id);
+      // The area reads the occurrence the preview reported.
+      problems.select(id, diagnostic);
       const found = problems.diagnoses.find((diagnosis) => diagnosis.id === id);
       if (!found) return;
-      // The occurrence the preview reported is the one whose place it shows.
       const shown = diagnosisForOccurrence(found, diagnostic);
       // A problem with no known place keeps the editor where it is: the
       // Problems area says so and offers the pane that holds the rest.
       const transition = diagnosisLocated(shown)
         ? routeDiagnosis(shown, controller)
         : null;
-      if (transition) go(transition);
+      if (transition) route(transition);
     },
     openAnnotationBox: () => goToProblem({ slice: "annotation" }),
     insertAnnotationLoop() {
@@ -113,11 +131,13 @@ export function repairCommands({
         host.notice(host.messages.workbench_annotation_section_added());
     },
     returnToTemplate() {
-      const target = registry.get(model.view).presentation.selection;
-      const reveal =
-        target && controller.hasSlice(target.slice)
-          ? { ...target.range, slice: target.slice }
-          : { from: 0, to: 0 };
+      const target = selectionInDocument(
+        registry.get(model.view).presentation.selection,
+        controller,
+      );
+      const reveal = target
+        ? { ...target.range, slice: target.slice }
+        : { from: 0, to: 0 };
       go((state) => ({
         ...state,
         presentation: { ...state.presentation, reveal },

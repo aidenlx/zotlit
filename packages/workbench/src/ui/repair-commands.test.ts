@@ -38,7 +38,7 @@ function open({
   registry.mount(model.fieldsPicker);
   registry.set(model.fieldsPicker, { query: "ti" });
   expect(registry.get(model.fieldsPicker)).not.toBeNull();
-  const selected: string[] = [];
+  const selected: [string, RenderDiagnostic | undefined][] = [];
   const opened: boolean[] = [];
   const commands = repairCommands({
     registry,
@@ -47,7 +47,7 @@ function open({
     host,
     problems: {
       diagnoses,
-      select: (id) => void selected.push(id),
+      select: (id, occurrence) => void selected.push([id, occurrence]),
       setOpen: (next) => void opened.push(next),
     },
   });
@@ -194,7 +194,7 @@ describe("the repair commands", () => {
     const found = diagnosis(missingCall);
     using page = open({ source: MISSING_CALL, diagnoses: [found] });
     page.commands.showProblem(missingCall);
-    expect(page.selected).toEqual([found.id]);
+    expect(page.selected).toEqual([[found.id, missingCall]]);
     const from = page.controller.source.indexOf('{% render "missing-bit" %}');
     expect(page.view()).toMatchObject({
       advanced: false,
@@ -209,7 +209,7 @@ describe("the repair commands", () => {
     const unplaced = failure({ part: "render" });
     using page = open({ diagnoses: [diagnosis(unplaced)] });
     page.commands.showProblem(unplaced);
-    expect(page.selected).toEqual([renderDiagnosis(unplaced).id]);
+    expect(page.selected).toEqual([[renderDiagnosis(unplaced).id, unplaced]]);
     expect(page.view()).toMatchObject({
       advanced: true,
       tab: "name",

@@ -42,7 +42,6 @@ import {
 import type {
   PartialChoice,
   PartialContext,
-  RenderDiagnostic,
   WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import {
@@ -56,6 +55,7 @@ import {
   fieldsActionKey,
   panelSizeMenus,
   repairCommands,
+  selectionInDocument,
   setAdvanced,
   setPanelWidth,
   setPreview,
@@ -70,7 +70,6 @@ import {
   AnnotationPointer,
   useWorkbenchHost,
   createWorkbenchEditor,
-  diagnosisForOccurrence,
   NameFolderPane,
   NotePane,
   PropertiesPane,
@@ -1031,8 +1030,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The last focused slice remains the insertion target while a sidebar has focus. */
   get insertTarget(): WorkbenchInsertTarget | null {
-    const target = this.#view.presentation.selection;
-    return target && this.#controller.hasSlice(target.slice) ? target : null;
+    return selectionInDocument(
+      this.#view.presentation.selection,
+      this.#controller,
+    );
   }
 
   /** Inserts the field `node` names at the editor's insertion target. */
@@ -2736,17 +2737,8 @@ function EditorContent({
     ...(result?.diagnostics ?? []),
     ...(arrivalDiagnostic === undefined ? [] : [arrivalDiagnostic]),
   ]);
-  const [requestedOccurrence, setRequestedOccurrence] = useState<{
-    readonly id: string;
-    readonly occurrence: RenderDiagnostic;
-  } | null>(null);
-  const selectedDiagnoses = diagnoses.map((diagnosis) =>
-    requestedOccurrence?.id === diagnosis.id
-      ? diagnosisForOccurrence(diagnosis, requestedOccurrence.occurrence)
-      : diagnosis,
-  );
   const problems = useWorkbenchProblems({
-    diagnoses: selectedDiagnoses,
+    diagnoses,
     trigger,
     attempt,
     // A parser problem never reached a render, so the area captures its report
@@ -2761,11 +2753,7 @@ function EditorContent({
   const selectProblem = problems.select;
   const openProblems = problems.setOpen;
   useEffect(
-    () =>
-      view.subscribeOpenProblems(() => {
-        setRequestedOccurrence(null);
-        openProblems(true);
-      }),
+    () => view.subscribeOpenProblems(() => openProblems(true)),
     [view, openProblems],
   );
   // A refused note operation brings its own captured diagnosis here. Consume
@@ -3180,7 +3168,7 @@ function EditorContent({
   );
   return (
     <WorkbenchDiagnosticsProvider
-      value={selectedDiagnoses}
+      value={problems.diagnoses}
       onReveal={selectProblem}
     >
       <SidePanels
@@ -3195,21 +3183,7 @@ function EditorContent({
             label: m.workbench_view_preview(),
             resizeLabel: m.workbench_preview_resize(),
             content: (
-              <PreviewPanel
-                view={view}
-                showProblem={(diagnostic) => {
-                  // The Problems area reads the occurrence the preview named.
-                  setRequestedOccurrence(
-                    diagnostic === null
-                      ? null
-                      : {
-                          id: renderDiagnosis(diagnostic).id,
-                          occurrence: diagnostic,
-                        },
-                  );
-                  repair.showProblem(diagnostic);
-                }}
-              />
+              <PreviewPanel view={view} showProblem={repair.showProblem} />
             ),
           },
         }}
