@@ -596,8 +596,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const { preview } = first.edges;
     expect(preview.max).toBe(String(limit(preview.container)));
     expect(preview.drawn).toBe(limit(preview.container));
+    // The Fields column grows only as far as keeps it a column beside the
+    // Preview and an editor of 360 px (#1956).
+    const { container } = first.edges.fields;
     expect(first.edges.fields.max).toBe(
-      String(limit(first.edges.fields.container)),
+      String(Math.min(limit(container), container - preview.drawn - 360)),
     );
     // The saved state of that leaf restores both panels in a new leaf.
     const saved = await obRun(
