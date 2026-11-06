@@ -19,6 +19,7 @@ import type {
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import {
   clampPanelWidth,
+  clampPreviewHeight,
   INITIAL_VIEW,
   TABS,
   patchAt,
@@ -26,7 +27,6 @@ import {
 import type {
   BUILT_IN_BINDING_DEFAULTS,
   NameFolderPaneProps,
-  PanelSide,
   TemplateRoot,
   WorkbenchChoices,
   WorkbenchInsertTarget,
@@ -384,8 +384,14 @@ export interface SavedWorkbench {
   readonly annotationId: string | null | undefined;
   readonly partialContext: PartialContext | null;
   readonly partialProfile: string | null;
-  /** The panels the state names; a side it leaves out keeps the leaf's own. */
-  readonly panels: Partial<WorkbenchPanels>;
+  /**
+   * The panels the state names; a side it leaves out keeps the leaf's own,
+   * and so does a Preview height it leaves out.
+   */
+  readonly panels: {
+    readonly fields?: WorkbenchPanel;
+    readonly preview?: WorkbenchPanel & { readonly height?: number };
+  };
   /** The Preview's settings the state names; each one decodes alone. */
   readonly preview: Partial<WorkbenchPreviewSettings>;
   /** The Citation Variant and example set the state names; each decodes alone. */
@@ -491,20 +497,36 @@ const savedPanel = Schema.Struct({
   shown: Schema.Boolean,
   width: Schema.Finite,
 });
+/** The Preview's side, which also holds its height under the editor. */
+const savedPreview = Schema.Struct({
+  shown: Schema.Boolean,
+  width: Schema.Finite,
+  height: Schema.optional(Schema.Finite),
+});
 
-/** Each side decodes alone; its width is held within the limits. */
-function readPanels(input: unknown): Partial<WorkbenchPanels> {
+/** Each side decodes alone; its width and height are held within the limits. */
+function readPanels(input: unknown): SavedWorkbench["panels"] {
   const value = decode(record, input) ?? {};
-  const panels: Partial<Record<PanelSide, WorkbenchPanel>> = {};
-  for (const side of ["fields", "preview"] as const) {
-    const panel = decode(savedPanel, value[side]);
-    if (panel)
-      panels[side] = {
-        shown: panel.shown,
-        width: clampPanelWidth(panel.width),
-      };
-  }
-  return panels;
+  const fields = decode(savedPanel, value.fields);
+  const preview = decode(savedPreview, value.preview);
+  return {
+    ...(fields
+      ? {
+          fields: { shown: fields.shown, width: clampPanelWidth(fields.width) },
+        }
+      : {}),
+    ...(preview
+      ? {
+          preview: {
+            shown: preview.shown,
+            width: clampPanelWidth(preview.width),
+            ...(preview.height === undefined
+              ? {}
+              : { height: clampPreviewHeight(preview.height) }),
+          },
+        }
+      : {}),
+  };
 }
 
 const position = Schema.Struct({ top: Schema.Finite, left: Schema.Finite });

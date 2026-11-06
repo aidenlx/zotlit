@@ -1,5 +1,5 @@
 // The Workbench frame — the page shell, the header, the status line,
-// the main grid with the field column and the two panes, and the
+// the main area with the field list and the two panes, and the
 // toolbar, tab strip, and result header the panes open with — shared by the
 // live Workbench and the skeleton the route paints before the editor bundle
 // arrives. The route's chunk imports this module, so it imports React, the
@@ -7,16 +7,20 @@
 // the connection bar only.
 
 import { ChevronDown, CircleHelp, Download, FolderOpen } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import {
   EditToolbar,
   ResultHeader,
   ResultRegion,
+  INITIAL_PANELS,
   TabBar,
+  usePanelProperties,
+  useParts,
   WorkbenchThemeProvider,
   WorkbenchMessagesProvider,
 } from "@zotlit/workbench/ui";
+import type { PanelSide, WorkbenchPanels } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -32,8 +36,54 @@ import { m } from "@/paraglide/messages.js";
 import { ConnectionBar } from "./connection-bar";
 import { WEB_THEME } from "./theme";
 
-/** A pane section: a column of the main grid. */
+/** A pane section, which fills the place the layout gives it. */
 const PANE_CLASS = "flex min-h-0 min-w-0 flex-1 flex-col";
+
+/** The three parts the main area arranges. */
+export interface FrameParts {
+  readonly fields: ReactNode;
+  /** The pane the source and the Problems area share. */
+  readonly edit: ReactNode;
+  readonly result: ReactNode;
+}
+
+/**
+ * The panels a new page shows: both, the Fields Panel at the width of the
+ * field column it replaced (18rem), the Preview at its initial width.
+ */
+export const PAGE_PANELS: WorkbenchPanels = {
+  fields: { shown: true, width: 288 },
+  preview: { ...INITIAL_PANELS.preview, shown: true },
+};
+
+/**
+ * The parts as a new page first paints them, before it measures its frame:
+ * the panels of {@link PAGE_PANELS} as columns, drawn with the live panels'
+ * parts and custom properties.
+ */
+function FirstPaint({ fields, edit, result }: FrameParts) {
+  const part = useParts("panels");
+  const properties = usePanelProperties();
+  const column = (side: PanelSide, content: ReactNode) => (
+    <div
+      style={{ [properties.width]: `${PAGE_PANELS[side].width}px` }}
+      {...part("panel", side)}
+    >
+      {content}
+    </div>
+  );
+  return (
+    <div {...part("panels")}>
+      {column("fields", fields)}
+      <div aria-hidden {...part("edge", "fields")} />
+      <div {...part("stack")}>
+        <div {...part("editor")}>{edit}</div>
+      </div>
+      <div aria-hidden {...part("edge", "preview")} />
+      {column("preview", result)}
+    </div>
+  );
+}
 
 export function WorkbenchFrame({
   name,
@@ -46,6 +96,8 @@ export function WorkbenchFrame({
   editor,
   problems,
   result,
+  arrange = (parts) => <FirstPaint {...parts} />,
+  mainRef,
   busy = false,
   children,
 }: {
@@ -65,6 +117,10 @@ export function WorkbenchFrame({
   /** The Problems area, which shares the editor pane with the source. */
   problems?: ReactNode;
   result: ReactNode;
+  /** Places the parts in the main area; the skeleton paints the first layout. */
+  arrange?: (parts: FrameParts) => ReactNode;
+  /** The main area, which the live page measures to place its panels. */
+  mainRef?: Ref<HTMLElement>;
   /** Whether the page is still filling in. */
   busy?: boolean;
   /** Hidden helpers: the file input and the dialogs. */
@@ -101,25 +157,34 @@ export function WorkbenchFrame({
       {strips}
 
       <main
+        ref={mainRef}
         id="workbench-editor"
-        className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)_minmax(0,0.9fr)] gap-3 p-3"
+        className="flex min-h-0 flex-1 p-3"
       >
-        <div className="grid min-h-0 min-w-0 grid-cols-1">{fields}</div>
-
-        {/* The pane the source and the Problems area share. It measures
-            itself, so whether a reading fits beside the source is the pane's
-            own question rather than the window's. */}
-        <section
-          id="workbench-edit-pane"
-          className={`@container-[size]/workbench-editor ${PANE_CLASS}`}
-        >
-          {editor}
-          {problems}
-        </section>
-
-        <section id="workbench-result-pane" className={PANE_CLASS}>
-          {result}
-        </section>
+        {arrange({
+          fields: (
+            <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1">
+              {fields}
+            </div>
+          ),
+          // The pane the source and the Problems area share. It measures
+          // itself, so whether a reading fits beside the source is the
+          // pane's own question rather than the window's.
+          edit: (
+            <section
+              id="workbench-edit-pane"
+              className={`@container-[size]/workbench-editor ${PANE_CLASS}`}
+            >
+              {editor}
+              {problems}
+            </section>
+          ),
+          result: (
+            <section id="workbench-result-pane" className={PANE_CLASS}>
+              {result}
+            </section>
+          ),
+        })}
       </main>
       <footer
         aria-label={m.docs_workbench_status()}

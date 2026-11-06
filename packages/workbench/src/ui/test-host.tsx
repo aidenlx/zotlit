@@ -28,6 +28,7 @@ import type {
   WorkbenchModel,
   WorkbenchViewState,
 } from "./model";
+import type { ViewSize, WorkbenchPanels } from "./panel-layout";
 import { m } from "./test-messages";
 import { WorkbenchThemeProvider } from "./theme";
 import type { WorkbenchClassMap, WorkbenchTheme } from "./theme";
@@ -260,7 +261,14 @@ export function mount(
   {
     source = DEFAULT_PROFILE_SOURCE,
     state,
-  }: { source?: string; state?: Partial<WorkbenchViewState> } = {},
+    panels,
+    viewSize,
+  }: {
+    source?: string;
+    state?: Partial<WorkbenchViewState>;
+    panels?: WorkbenchPanels;
+    viewSize?: Atom.Atom<ViewSize | null>;
+  } = {},
 ): Mounted {
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(source);
@@ -274,6 +282,8 @@ export function mount(
     registry,
     runtime: TEST_RUNTIME,
     ...(state ? { state } : {}),
+    ...(panels ? { panels } : {}),
+    ...(viewSize ? { viewSize } : {}),
   });
   const { model } = editor;
   const wrap = (children: ReactNode) => (

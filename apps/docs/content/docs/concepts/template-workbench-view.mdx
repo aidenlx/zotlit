@@ -53,11 +53,17 @@ The edge also works from the keyboard. Press Tab to focus it; a screen reader na
 | Home                      | Makes the panel as narrow as it can be     |
 | End                       | Makes the panel as wide as it can be       |
 
-In a narrow view, less than 40rem wide (about 640 pixels), the panels move under the editor and take the full width. The edge is hidden there, and the panels get their width back when the view is wide again.
+### Panels in a narrow view [#narrow-view]
+
+A panel stands beside the editor only while the editor keeps at least 360 pixels of width. The Preview panel takes the side first, so you can compare the template with its result as you edit.
+
+When the view is too narrow for the Preview beside the editor, the Preview moves under the editor. It takes 40% of the view's height at first. Drag the edge above it, or focus the edge and press Up Arrow or Down Arrow, to give it more or less height; Home and End set its smallest and largest share. The editor always keeps room for its toolbar, its tabs and at least five lines of your template; the Preview gets shorter first. When the editor needs more room, it scrolls.
+
+Making the view narrower or wider moves the panels and changes nothing else: a panel you showed stays shown, and it gets its width back when the view is wide enough again. A narrower panel fits beside the editor in a narrower view.
 
 ### What the view remembers [#panel-state]
 
-Obsidian saves which panels are shown, and how wide they are, with the view. After a restart, the view opens the way you left it.
+Obsidian saves which panels are shown, how wide they are, and the Preview's height under the editor, with the view. After a restart, the view opens the way you left it.
 
 A new view starts with no panels, for a quick edit. That is the case when you open a template document from the file explorer, or with <UiLabel name={m.template_workbench_open()} />.
 

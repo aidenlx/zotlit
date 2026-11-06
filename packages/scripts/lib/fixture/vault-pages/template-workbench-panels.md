@@ -7,7 +7,10 @@ This page checks the two side panels of the Template Workbench View, and the
 standalone Template Data Explorer. The Fields panel sits on the left of the
 editor and lists the template fields of the chosen Item. The Preview sits on
 the right and shows the note that the editor's own render makes for that Item.
-Both are in the same tab as the editor.
+Both are in the same tab as the editor. When the tab is too narrow for a
+column, the Preview moves under the editor. The editor keeps at least 360
+pixels of width beside a column, and the Preview takes the right side before
+the Fields panel.
 
 Use the Scope Case `all`. Open `templates/zotlit-profile.books.md` and run
 **Switch to template workbench view**. Close any other Template Workbench tab
@@ -118,14 +121,74 @@ tab, and a screen reader reads the width the panel has.
 
 Expected: the Books Profile opens with the Preview shown, at the same width.
 
-## A narrow tab stacks the Preview
+## A narrow tab puts the Preview under the editor
 
-1. Show the Preview.
-2. Make the tab narrower than 640 pixels, for example by opening the left
-   sidebar and splitting the tab.
+1. Show the Preview at its initial width.
+2. Make the tab narrower than 600 pixels, for example by splitting it to the
+   right and dragging the split.
 
-Expected: the Preview moves below the editor and the edge handle hides. The
-source stays in view above it.
+Expected: the Preview moves under the editor and takes 40% of the tab's
+height. A horizontal handle sits between the editor and the Preview. The
+source stays in view above it. **Show preview** stays pressed.
+
+## A wide tab puts the Preview back at the right
+
+1. Do the case above.
+2. Make the tab 600 pixels wide or wider.
+
+Expected: the Preview returns to the right of the editor at the width it had
+before. The Preview does not hide or show, and **Show preview** stays pressed.
+A narrow Preview, made with `Home` on its edge, returns at a narrower tab
+width than a wide one.
+
+## Three columns need room after the Preview
+
+1. Show the Preview and the Fields, both at their initial width of 400 pixels.
+2. Make the tab about 1000 pixels wide, then about 1200 pixels wide.
+
+Expected: at about 1000 pixels the Preview is at the right, and the Fields
+panel shows as a column too. A popover takes this place in a later release;
+until then, the Fields column can make the editor narrower than 360 pixels.
+At about 1200 pixels all three columns fit with the editor 400 pixels wide.
+In a tab of 560 pixels, the Preview is under the editor and the Fields panel
+stays at the left.
+
+## Resize the Preview under the editor
+
+1. Do **A narrow tab puts the Preview under the editor**.
+2. Drag the handle above the Preview up.
+3. Press `Tab` until the handle has the focus. Press `ArrowUp`, then
+   `ArrowDown`, then `Home`, then `End`.
+4. Make the window short, so that the tab is less than 400 pixels high.
+
+Expected: the drag makes the Preview taller. With the keyboard, `ArrowUp`
+makes it 5% of the tab's height taller and `ArrowDown` 5% shorter; `Home`
+makes it 20% of the tab's height and `End` 80%. A screen reader reads the
+share as a percentage. After `End`, the editor keeps at least 320 pixels of
+height: the toolbar, the tabs, the tab's one-line task and at least five
+lines of the note body show above the Preview. Scroll the editor to reach
+**Include annotations in the note** and its **Add to template** button; no
+part of the editor is cut off. In step 4, the Preview gets shorter first.
+
+## The Preview height survives a restart
+
+1. Do **A narrow tab puts the Preview under the editor**, then press
+   `ArrowUp` twice on the handle above the Preview.
+2. Reload Obsidian (**Reload app without saving**).
+
+Expected: the Books Profile opens with the Preview under the editor at 50% of
+the tab's height. Widen the tab: the Preview returns to the right at the width
+it had before.
+
+## Right-to-left layout
+
+1. Set Obsidian's language to a right-to-left language, or run
+   `document.body.dir = "rtl"` in the developer console.
+2. Show the Preview and the Fields in a wide tab.
+3. Give the Fields edge the focus and press `ArrowLeft`.
+
+Expected: the Fields panel is on the right and the Preview on the left. On
+the Fields edge, `ArrowLeft` widens the Fields panel.
 
 ## Preview settings
 

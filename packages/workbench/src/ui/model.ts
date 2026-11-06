@@ -36,6 +36,9 @@ import type {
   WorkbenchMatchResult,
 } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
+import { INITIAL_PANELS, placePanels } from "./panel-layout";
+import type { PanelPlacement, ViewSize, WorkbenchPanels } from "./panel-layout";
+import { patch, patchAt } from "./patch";
 import { makeRenderSchedulerAtoms } from "./scheduler-atoms";
 import type {
   RenderSchedulerAtoms,
@@ -170,30 +173,7 @@ export const INITIAL_CHOICES: WorkbenchChoices = {
   },
 };
 
-/** Applies `changes`, or keeps `state` itself when every field already holds. */
-export const patch =
-  <S extends object>(changes: Partial<S>) =>
-  (state: S): S =>
-    (Object.keys(changes) as (keyof S)[]).every(
-      (key) => state[key] === changes[key],
-    )
-      ? state
-      : { ...state, ...changes };
-
-/**
- * Applies `changes` to the object `state` holds at `key`, or keeps `state`
- * itself when every field already holds.
- */
-export const patchAt =
-  <S extends object, K extends keyof S>(
-    key: K,
-    changes: Partial<S[K] & object>,
-  ) =>
-  (state: S): S => {
-    const current = state[key] as S[K] & object;
-    const next = patch(changes)(current);
-    return next === current ? state : { ...state, [key]: next };
-  };
+export { patch, patchAt };
 
 export const setTab = (tab: WorkbenchTab) => patch<WorkbenchViewState>({ tab });
 export const chooseItem = (item: WorkbenchItemChoice | null) =>
@@ -211,53 +191,6 @@ export const choosePartialProfile = (partialProfile: string | null) =>
   patch<WorkbenchChoices>({ partialProfile });
 export const setPreview = (settings: Partial<WorkbenchPreviewSettings>) =>
   patchAt<WorkbenchChoices, "preview">("preview", settings);
-
-/** The side panels beside the editor: Fields on the left, Preview on the right. */
-export type PanelSide = "fields" | "preview";
-export interface WorkbenchPanel {
-  readonly shown: boolean;
-  /** The panel's width in pixels, which the reader sets with its edge. */
-  readonly width: number;
-}
-export type WorkbenchPanels = Readonly<Record<PanelSide, WorkbenchPanel>>;
-
-/** The widths a panel can take, in pixels. */
-export const PANEL_WIDTH = { min: 240, initial: 400, max: 960 } as const;
-
-/** A new editor shows neither panel. */
-export const INITIAL_PANELS: WorkbenchPanels = {
-  fields: { shown: false, width: PANEL_WIDTH.initial },
-  preview: { shown: false, width: PANEL_WIDTH.initial },
-};
-
-/**
- * The share of the panels' container one panel takes at most, so the source
- * stays in view. A host draws the same share in CSS, such as Obsidian's
- * `zt:max-w-2/5`.
- */
-const PANEL_SHARE = 0.4;
-
-/**
- * `width` held within {@link PANEL_WIDTH}, and within `max` where the host
- * draws the panel narrower than that.
- */
-export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
-  Math.round(
-    Math.min(Math.max(PANEL_WIDTH.min, max), Math.max(PANEL_WIDTH.min, width)),
-  );
-
-/**
- * The widest a host draws a panel in a container `container` pixels wide:
- * {@link PANEL_SHARE} of it, and never past {@link PANEL_WIDTH}.
- */
-export const panelLimit = (container: number) =>
-  clampPanelWidth(container * PANEL_SHARE);
-
-export const showPanel = (side: PanelSide, shown: boolean) =>
-  patchAt<WorkbenchPanels, PanelSide>(side, { shown });
-/** Sets a panel's width, held within {@link PANEL_WIDTH}. */
-export const setPanelWidth = (side: PanelSide, width: number) =>
-  patchAt<WorkbenchPanels, PanelSide>(side, { width: clampPanelWidth(width) });
 
 /** Whether two flat selections name the same thing, so a re-derived one keeps its readers still. */
 function sameFields<A extends object>(a: A | null, b: A | null): boolean {
@@ -298,6 +231,13 @@ export interface WorkbenchModelOptions<R extends TemplateRenderResult> {
   readonly itemData?: (
     input: WorkbenchItemDataInput,
   ) => Atom.Atom<WorkbenchItemData>;
+  /** The panels to start from; a new editor shows neither. */
+  readonly panels?: WorkbenchPanels;
+  /**
+   * The size of the view the panels and the editor share, which the host
+   * measures from its own container; null until it has.
+   */
+  readonly viewSize?: Atom.Atom<ViewSize | null>;
   /** The host's one runtime; a host never builds one per editor. */
   readonly runtime: WorkbenchRuntime;
   /** The host whose Match reads the model runs, read at each read. */
@@ -346,8 +286,12 @@ export interface WorkbenchModel<
   readonly runtime: WorkbenchRuntime;
   readonly view: Atom.Writable<WorkbenchViewState>;
   readonly choices: Atom.Writable<WorkbenchChoices>;
-  /** Which side panels the editor shows, and how wide; the host saves them. */
+  /** Which side panels the editor shows, and how wide and tall; the host saves them. */
   readonly panels: Atom.Writable<WorkbenchPanels>;
+  /** The size of the view the host measured, or null until it has. */
+  readonly viewSize: Atom.Atom<ViewSize | null>;
+  /** Where each panel goes in the view as it is now; never saved. */
+  readonly placement: Atom.Atom<PanelPlacement>;
   /**
    * Makes an Item the choice. An Item the reader picked is the Citation set
    * they asked to see, so the built-in example that outranks it stands down.
@@ -419,6 +363,8 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
   choices: initialChoices,
   partialName = Atom.make<string | null>(null),
   itemData: deriveItemData,
+  panels: initialPanels = INITIAL_PANELS,
+  viewSize = Atom.make<ViewSize | null>(null),
   runtime,
   host,
   render,
@@ -506,6 +452,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
       snapshot: get(snapshot),
     };
   });
+  const panels = Atom.make(initialPanels);
   const matchRetry = Atom.make(0);
   const scheduler = makeRenderSchedulerAtoms({
     runtime,
@@ -520,7 +467,12 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     runtime,
     view,
     choices,
-    panels: Atom.make(INITIAL_PANELS),
+    panels,
+    viewSize,
+    placement: Atom.withEquality(
+      Atom.make((get) => placePanels(get(panels), get(viewSize))),
+      sameFields,
+    ),
     pick: Atom.writable(
       (get) => get(item),
       (ctx, choice: WorkbenchItemChoice) => {
@@ -644,6 +596,7 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
     model.view,
     model.choices,
     model.panels,
+    model.viewSize,
     model.itemData,
     model.controller,
     model.document.source,

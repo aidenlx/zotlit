@@ -11,6 +11,8 @@ import {
   ExternalLink,
   FilePlus2,
   FolderOpen,
+  PanelLeft,
+  PanelRight,
   Save,
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -56,8 +58,11 @@ import {
   NotePane,
   PropertiesPane,
   SliceEditor,
+  SidePanels,
+  showPanel,
 } from "@zotlit/workbench/ui";
 import type {
+  PanelSide,
   WorkbenchTab,
   WorkbenchDiagnosis,
   WorkbenchHost,
@@ -110,6 +115,13 @@ import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
 
 /** The result becomes a column once both reading and editing have room. */
+
+/**
+ * A view toggle while its panel shows: a primary border and icon over the
+ * muted fill, so the state reads by more than the fill.
+ */
+const PRESSED_TOGGLE =
+  "aria-pressed:border-fd-primary aria-pressed:bg-fd-muted aria-pressed:[&_svg]:text-fd-primary";
 
 /** The Workbench on a page runtime of its own, which closing the page disposes. */
 export function Workbench({
@@ -213,6 +225,31 @@ function WorkbenchSession({
   const importFileCommand = useAtomSet(workbench.importFile);
   const save = useAtomSet(workbench.save);
   const { drafts, layout: layoutAtom } = workbench;
+  const panels = useAtomValue(model.panels);
+  const togglePanel = (side: PanelSide) =>
+    registry.update(model.panels, (state) =>
+      showPanel(side, !state[side].shown)(state),
+    );
+  // The frame's content box is the view the panels share. A frame laid out
+  // at no size, such as one in a hidden tab, keeps the size it last had.
+  const { viewSize } = page;
+  const measureFrame = useCallback(
+    (main: HTMLElement | null) => {
+      const view = main?.ownerDocument.defaultView;
+      if (!main || !view) return;
+      const observer = new view.ResizeObserver(([entry]) => {
+        const { width, height } = entry!.contentRect;
+        if (width > 0 && height > 0)
+          registry.set(viewSize, {
+            width: Math.round(width),
+            height: Math.round(height),
+          });
+      });
+      observer.observe(main);
+      return () => observer.disconnect();
+    },
+    [registry, viewSize],
+  );
   const dirty = useAtomValue(drafts.dirty);
   const restorable = useAtomValue(drafts.restorable);
   const location = useAtomValue(page.location);
@@ -628,6 +665,28 @@ function WorkbenchSession({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* The view actions, as the Obsidian view has them: each shows or
+              hides its panel, wherever the panel goes at this width. */}
+          <Button
+            variant="ghost"
+            size="xs"
+            aria-pressed={panels.fields.shown}
+            className={PRESSED_TOGGLE}
+            onClick={() => togglePanel("fields")}
+          >
+            <PanelLeft aria-hidden className="rtl:-scale-x-100" />
+            {m.workbench_show_fields()}
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            aria-pressed={panels.preview.shown}
+            className={PRESSED_TOGGLE}
+            onClick={() => togglePanel("preview")}
+          >
+            <PanelRight aria-hidden className="rtl:-scale-x-100" />
+            {m.workbench_show_preview()}
+          </Button>
           <Button
             size="xs"
             disabled={saveBusy || (canSaveToVault && draft)}
@@ -725,10 +784,11 @@ function WorkbenchSession({
       editor={
         <>
           <EditToolbar onModeChange={changeMode} />
-          {/* Everything the reader edits, as one region. A reading that takes
-              the whole pane leaves it no height, and it shows nothing rather
-              than spilling its tabs and source over the explanation. */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {/* Everything the reader edits, as one region. When the pane is too
+              short for the tabs and five source lines, as under a tall
+              Problems area or Preview, the region scrolls: no control is cut
+              off, and nothing spills over the explanation. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
             {advanced && (
               <>
                 <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">
@@ -754,7 +814,7 @@ function WorkbenchSession({
                     controller={controller}
                     onGo={setReveal}
                   />
-                  <div className="flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
+                  <div className="flex min-h-30 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
                     <SliceEditor
                       controller={controller}
                       slice="advanced"
@@ -918,6 +978,25 @@ function WorkbenchSession({
           onReturn={returnToTemplate}
         />
       }
+      mainRef={measureFrame}
+      arrange={({ fields, edit, result }) => (
+        <SidePanels
+          panels={{
+            fields: {
+              label: m.workbench_view_fields(),
+              resizeLabel: m.workbench_fields_resize(),
+              content: fields,
+            },
+            preview: {
+              label: m.workbench_view_preview(),
+              resizeLabel: m.workbench_preview_resize(),
+              content: result,
+            },
+          }}
+        >
+          {edit}
+        </SidePanels>
+      )}
     >
       {filePicker}
       {replacementDialog}

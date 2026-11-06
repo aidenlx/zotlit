@@ -52,3 +52,11 @@ The merge moves the Workbench's view state to Effect Atom (`effect/reactivity`),
 - The web Workbench converts in the same change, because it shares the model and scheduler. `@zotlit/workbench` takes `@effect/atom-react` as a peer dependency beside React.
 - The Template Workbench View joins the view-atom import bans in the Obsidian lint config when the conversion lands.
 - A saved workspace that holds a Note Preview leaf shows it as a tab of an unknown view type, which the reader closes. The Preview panel starts hidden, and the reader shows it from the view action.
+
+## Amendment (2026-11-07): the view size places the panels
+
+Spec #1952, tickets #1953 and #1954.
+
+- The panel state (each panel's shown flag and width, and the Preview's share of the height under the editor) lives in the shared Workbench model, not in the Obsidian host model. Both hosts own it the same way; the Obsidian view saves it with its state, and the web Workbench keeps it for the page's life.
+- Where a shown panel goes is derived, never saved: a pure rule in `@zotlit/workbench/ui` places each panel from the panel state and the view size, which each host measures from its own container. A panel is a column while the editor keeps 360 px beside it, and the Preview claims the side before the Fields Panel. A Preview that does not fit goes under the editor, which keeps at least 320 px of height: its toolbar and tab rows, the tab's task line and five source lines. Each host draws the source at least five lines tall and scrolls the editor when its content needs more, so no control is cut off.
+- Resizing a view changes only the placement, never what the reader chose to show. The stacked layout under 40rem is gone.

@@ -62,8 +62,12 @@ One module owns each surface, and each says what it owns at its head:
   and the one render the editor and the result share; a new choice interrupts the read it
   replaces. A read that belongs to one connection runs in that connection's Scope, so
   Disconnect stops it; closing the page disposes the registry and stops everything.
-- The page shows the field column, the pane, and the result in three columns at every width,
-  as the Template Workbench View in Obsidian does, so both hosts share one layout.
+- The page lays out the Fields Panel, the pane, and the result with the shared panels of
+  `@zotlit/workbench/ui`, as the Template Workbench View in Obsidian does, so both hosts share
+  one layout. The page measures its frame with a `ResizeObserver` into the view-size atom
+  the placement reads; page tests report the frame's size through that observer, since their
+  document lays nothing out. A new page shows `PAGE_PANELS` from [`frame.tsx`](frame.tsx),
+  which the skeleton also paints; the panel state lives with the page and is not saved.
 - [`reading-view.tsx`](reading-view.tsx) is the only module that reads the parser packages'
   node types, each pinned to an exact version, so a package swap stays inside that file.
 - `@zotlit/workbench` names a problem by code while the shared tree's `problemText` and

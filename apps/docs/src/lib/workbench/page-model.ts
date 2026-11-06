@@ -31,6 +31,7 @@ import type {
   WorkbenchItemChoice,
   WorkbenchItemData,
   WorkbenchItemDataInput,
+  ViewSize,
   WorkbenchModel,
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
@@ -45,6 +46,7 @@ import {
 } from "./draft-keeper";
 import type { DraftKeeper } from "./draft-keeper";
 import type { SampleItem } from "./fields";
+import { PAGE_PANELS } from "./frame";
 import { matchData } from "./host";
 import { Rendering } from "./rendering";
 import type { PageBridge } from "./runtime";
@@ -94,6 +96,8 @@ export interface PageLayout {
 /** The page's atoms and commands; one page has one. */
 export interface WebPage {
   readonly view: Atom.Writable<WorkbenchViewState>;
+  /** The size of the page's frame, which the page measures to place the side panels. */
+  readonly viewSize: Atom.Writable<ViewSize | null>;
   /** The vault Item the page holds, which the paper choice offers. */
   readonly retained: Atom.Writable<SampleItem | null>;
   /** The document the draft is kept for. */
@@ -162,6 +166,7 @@ export function makeWebPage(bridge: PageBridge): WebPage {
   );
   const page: WebPage = {
     view,
+    viewSize: Atom.make<ViewSize | null>(null),
     retained,
     location: Atom.make(STANDALONE_LOCATION),
     chosen,
@@ -311,6 +316,8 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
     registry,
     runtime,
     view: page.view,
+    panels: PAGE_PANELS,
+    viewSize: page.viewSize,
     itemData,
     reportContext,
   });

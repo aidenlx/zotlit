@@ -356,8 +356,9 @@ export const WEB_THEME: WorkbenchTheme = {
         "aria-pressed:bg-fd-muted",
       ),
       "annotation-edit": buttonVariants({ variant: "ghost", size: "icon-2xs" }),
+      // At least five source lines; the tab scrolls when it needs more room.
       "note-pane":
-        "flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]",
+        "flex min-h-30 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]",
       "annotation-box":
         "inline-flex max-w-full items-center gap-1 rounded-md border border-fd-border bg-fd-card p-0.5 ps-2 align-middle text-xs font-medium text-fd-muted-foreground",
       "annotation-label": "min-w-0 whitespace-normal",
@@ -429,6 +430,19 @@ export const WEB_THEME: WorkbenchTheme = {
       text: "min-w-0",
       checkbox: "m-0 size-3.5 accent-fd-primary",
       empty: "text-fd-muted-foreground italic",
+    },
+    // The side panels: the model places them, so the classes only draw each
+    // placement. Each handle is the 12 px gap between two parts, with a rule
+    // down its middle that turns the primary color while it is used.
+    panels: {
+      panels: "flex min-h-0 min-w-0 flex-1",
+      stack: "flex min-h-0 min-w-0 flex-1 flex-col",
+      editor: "flex min-h-0 min-w-0 flex-1 flex-col",
+      panel:
+        "flex min-h-0 min-w-0 shrink-0 flex-col data-[state=fields]:w-(--workbench-panel-width) data-[state=fields]:max-w-2/5 data-[state=preview]:w-(--workbench-panel-width) data-[state=preview]:max-w-2/5 data-[state=below]:h-(--workbench-panel-height)",
+      edge: "relative w-3 shrink-0 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:start-1/2 after:w-px after:bg-fd-muted-foreground hover:after:w-0.5 hover:after:bg-fd-primary focus-visible:after:w-0.5 focus-visible:after:bg-fd-primary",
+      split:
+        "relative h-3 shrink-0 cursor-row-resize touch-none outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-fd-muted-foreground hover:after:h-0.5 hover:after:bg-fd-primary focus-visible:after:h-0.5 focus-visible:after:bg-fd-primary",
     },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",

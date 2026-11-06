@@ -48,27 +48,20 @@ export {
   chooseCitation,
   chooseItem,
   choosePartialProfile,
-  clampPanelWidth,
   INITIAL_CHOICES,
-  INITIAL_PANELS,
   INITIAL_VIEW,
   makeWorkbenchModel,
-  PANEL_WIDTH,
-  panelLimit,
   patch,
   patchAt,
   setAdvanced,
-  setPanelWidth,
   setPreview,
   setRoot,
   setTab,
-  showPanel,
 } from "./model";
 export type {
   ChooseJob,
   CopyJob,
   CreatePartialJob,
-  PanelSide,
   PreviewMode,
   PreviewSettings,
   TemplateRoot,
@@ -79,12 +72,34 @@ export type {
   WorkbenchModel,
   WorkbenchModelOptions,
   WorkbenchMatchVocabulary,
-  WorkbenchPanel,
-  WorkbenchPanels,
   WorkbenchPreviewSettings,
   WorkbenchRuntime,
   WorkbenchViewState,
 } from "./model";
+export {
+  clampPanelWidth,
+  clampPreviewHeight,
+  EDITOR_MIN,
+  INITIAL_PANELS,
+  PANEL_WIDTH,
+  panelLimit,
+  placePanels,
+  PREVIEW_HEIGHT,
+  previewBelowHeight,
+  setPanelWidth,
+  setPreviewHeight,
+  showPanel,
+} from "./panel-layout";
+export type {
+  PanelPlacement,
+  PanelSide,
+  PreviewPanel,
+  ViewSize,
+  WorkbenchPanel,
+  WorkbenchPanels,
+} from "./panel-layout";
+export { SidePanels } from "./panels";
+export type { SidePanel } from "./panels";
 export {
   NO_MATCH_DATA,
   WorkbenchClipboardError,
@@ -154,7 +169,12 @@ export { TabBar, TabPanel } from "./tab-bar";
 export { isProfileProblem, TABS, tabLabel, tabLede, tabsFor } from "./tabs";
 export { routeDiagnosis, routeProblem } from "./problem-route";
 export type { WorkbenchTab } from "./tabs";
-export { WorkbenchThemeProvider, useIcon, useParts } from "./theme";
+export {
+  WorkbenchThemeProvider,
+  useIcon,
+  usePanelProperties,
+  useParts,
+} from "./theme";
 export type {
   PartAttributes,
   WorkbenchClassMap,
