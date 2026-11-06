@@ -1,0 +1,1685 @@
+<title>Workbench Narrow Layout</title>
+<meta name="claude:viewport-fit-sides" content="cover" />
+<!--
+PROTOTYPE — throwaway. Branch proto/workbench-narrow-layout.
+Question: which one narrow layout of the Template Workbench do the web Workbench
+and the Obsidian Template Workbench View share (small window, narrow leaf in a
+wide window, Obsidian mobile)?
+Variants:
+  A  Template / Preview switch, Fields as a bottom sheet (the web layout today, on both hosts)
+  B  Three tabs: Fields / Template / Preview
+  C  The wide panels, drawn over the editor (same toggles at every width)
+  D  Merged after review: C's controls, Preview as a split under the editor, Fields as A's bottom sheet
+Verdict (2026-11-06): D. The user took C (one set of panel facts and view actions
+at every width) but wants the editor on top and the Preview below it, not a
+floating Preview, and wants Fields as A's bottom sheet.
+Follow-up (same day): desktop first. 560 px is a normal desktop leaf, so the
+bottom sheet stays for Obsidian mobile only. For a desktop view too tight for the
+Fields column, the user chose the popover picker over the drawer and the compact
+column. Spec: .scratch/spec-workbench-adaptive-layout.md
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap"
+/>
+<style>
+  /* Layout: a page of three variant tabs; each shows its design notes beside two
+   live frames (a phone, and a narrow leaf in a wide window that can widen). */
+  :root {
+    --bg: #f6f6f8; /* page ground, cool grey toward the accent */
+    --fg: #1d1b22;
+    --muted: #6b6775;
+    --line: #dddae3;
+    --surface: #ffffff; /* the mock app's own background */
+    --surface-2: #f0eef4; /* app chrome: headers, tab strips */
+    --accent: #6d4ce0; /* app accent (interactive) */
+    --accent-soft: #ece6ff;
+    --danger: #c2363b;
+    --danger-soft: #fdeceb;
+    --ok: #2f7d4f;
+    --flash: #fff4c2;
+    --font-display: "Newsreader", Georgia, serif;
+    --font-body: "Source Sans 3", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #131217;
+      --fg: #e9e6ef;
+      --muted: #9c97a8;
+      --line: #2f2c37;
+      --surface: #1c1a22;
+      --surface-2: #24212b;
+      --accent: #a58bff;
+      --accent-soft: #2e2747;
+      --danger: #ff7b7f;
+      --danger-soft: #3a1f22;
+      --ok: #6fcf97;
+      --flash: #4a4220;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #131217;
+    --fg: #e9e6ef;
+    --muted: #9c97a8;
+    --line: #2f2c37;
+    --surface: #1c1a22;
+    --surface-2: #24212b;
+    --accent: #a58bff;
+    --accent-soft: #2e2747;
+    --danger: #ff7b7f;
+    --danger-soft: #3a1f22;
+    --ok: #6fcf97;
+    --flash: #4a4220;
+    color-scheme: dark;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .page {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 28px 64px;
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h1 {
+    font-size: 2rem;
+    line-height: 1.15;
+  }
+  h2 {
+    font-size: 1.45rem;
+  }
+  h3 {
+    font-size: 1.05rem;
+    font-family: var(--font-body);
+  }
+  p {
+    margin: 0;
+  }
+  .lede {
+    color: var(--muted);
+    max-width: 70ch;
+    margin-top: 8px;
+  }
+  code,
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+  }
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 20px;
+  }
+  .switch button {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 6px 14px;
+  }
+  .switch button[aria-pressed="true"] {
+    background: var(--fg);
+    color: var(--bg);
+    border-color: var(--fg);
+  }
+
+  .variant {
+    display: grid;
+    grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
+    gap: 28px;
+    margin-top: 24px;
+  }
+  @media (max-width: 1000px) {
+    .variant {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .notes {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+  }
+  .notes section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .notes ul {
+    margin: 0;
+    padding-left: 1.1em;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .facts {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  .facts div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 6px 10px;
+    border-top: 1px solid var(--line);
+    font-size: 0.88rem;
+  }
+  .facts div:first-child {
+    border-top: 0;
+  }
+  .owner {
+    font-size: 0.72rem;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--muted);
+    align-self: start;
+  }
+  .owner.shared {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .stage {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .scenarios {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .scenarios button {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 6px;
+    padding: 5px 11px;
+    font-size: 0.9rem;
+  }
+  .frames {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+  .frame {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: none;
+  }
+  .frame-cap {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .frame-cap strong {
+    color: var(--fg);
+  }
+  .readout {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 9px;
+    white-space: pre;
+    color: var(--muted);
+  }
+  .readout b {
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  /* ---------- mock app ---------- */
+  .phone {
+    width: 380px;
+    height: 720px;
+    border: 10px solid #2a2830;
+    border-radius: 34px;
+    overflow: hidden;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+  }
+  .phone .status {
+    height: 22px;
+    flex: none;
+    background: var(--surface-2);
+    font-size: 0.7rem;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 16px;
+  }
+  .phone .appnav {
+    height: 46px;
+    flex: none;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    color: var(--muted);
+    font-size: 0.7rem;
+  }
+  .window {
+    height: 560px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    background: var(--surface);
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.06);
+  }
+  .window .side {
+    width: 150px;
+    flex: none;
+    background: var(--surface-2);
+    border-right: 1px solid var(--line);
+    padding: 10px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .window .other {
+    width: 230px;
+    flex: none;
+    border-left: 1px solid var(--line);
+    padding: 10px 12px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .window .other .t {
+    color: var(--fg);
+    font-family: var(--font-display);
+    font-size: 1rem;
+  }
+  .leaf {
+    flex: none;
+    min-width: 0;
+    display: flex;
+  }
+
+  .wb {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+    background: var(--surface);
+  }
+  .vh {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .vh .name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .icon-btn {
+    border: 1px solid transparent;
+    background: none;
+    border-radius: 5px;
+    padding: 3px 7px;
+    font-size: 12px;
+    color: var(--muted);
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .icon-btn[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: transparent;
+  }
+  .icon-btn:hover {
+    background: var(--surface-2);
+  }
+  .seg {
+    flex: none;
+    display: flex;
+    gap: 3px;
+    margin: 6px 8px 0;
+    padding: 3px;
+    border-radius: 7px;
+    background: var(--surface-2);
+  }
+  .seg button {
+    flex: 1;
+    border: 0;
+    background: none;
+    border-radius: 5px;
+    padding: 5px 4px;
+    font-size: 12.5px;
+    color: var(--muted);
+    position: relative;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  }
+  .dot {
+    display: inline-block;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 10px;
+    line-height: 16px;
+    padding: 0 4px;
+    margin-left: 4px;
+    vertical-align: 1px;
+  }
+  .body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .col {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .col.editor {
+    flex: 1;
+  }
+  .col.panel {
+    width: 34%;
+    flex: none;
+    border-color: var(--line);
+    border-style: solid;
+    border-width: 0;
+  }
+  .col.panel.left {
+    border-right-width: 1px;
+  }
+  .col.panel.right {
+    border-left-width: 1px;
+  }
+  .ph {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .tabs {
+    flex: none;
+    display: flex;
+    gap: 2px;
+    padding: 6px 8px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: end;
+  }
+  .tabs span {
+    padding: 4px 9px;
+    border-radius: 5px 5px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .tabs span.on {
+    background: var(--surface-2);
+    color: var(--fg);
+  }
+  .tabs .spacer {
+    flex: 1;
+  }
+  .add {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .src {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 8px 0;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.65;
+  }
+  .ln {
+    display: flex;
+    padding-right: 8px;
+  }
+  .ln .n {
+    width: 30px;
+    flex: none;
+    text-align: right;
+    padding-right: 8px;
+    color: var(--muted);
+    opacity: 0.6;
+  }
+  .ln .c {
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-width: 0;
+  }
+  .ln.flash {
+    background: var(--flash);
+  }
+  .ln.caret .c::after {
+    content: "";
+    display: inline-block;
+    width: 1.5px;
+    height: 1.1em;
+    background: var(--accent);
+    vertical-align: -2px;
+    margin-left: 1px;
+  }
+  .bad {
+    text-decoration: wavy underline var(--danger);
+    text-underline-offset: 3px;
+  }
+  .problems {
+    flex: none;
+    border-top: 1px solid var(--line);
+    padding: 7px 10px;
+    font-size: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: var(--danger-soft);
+  }
+  .problems.ok {
+    background: var(--surface-2);
+    color: var(--muted);
+  }
+  .problems .msg {
+    flex: 1;
+    min-width: 0;
+  }
+  .mini {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 12px;
+    flex: none;
+  }
+  .mini.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .fields {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 8px 8px;
+  }
+  .search {
+    margin: 0 8px 6px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 4px 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    padding: 6px 6px;
+    border-radius: 5px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: none;
+  }
+  .field:hover {
+    background: var(--surface-2);
+  }
+  .field .k {
+    font-weight: 600;
+    font-size: 12.5px;
+  }
+  .field .v {
+    grid-column: 1;
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .field .ins {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+    align-self: center;
+    color: var(--accent);
+    font-size: 12px;
+  }
+  .field.used .ins {
+    color: var(--muted);
+  }
+
+  .preview {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 4px 14px 14px;
+    font-size: 13px;
+  }
+  .preview h4 {
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    margin: 6px 0 8px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .preview h5 {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    margin: 12px 0 6px;
+    font-weight: 600;
+  }
+  .preview p {
+    margin: 2px 0;
+  }
+  .preview blockquote {
+    margin: 6px 0;
+    padding: 2px 10px;
+    border-left: 3px solid var(--accent);
+    color: var(--fg);
+  }
+  .stop {
+    margin-top: 10px;
+    border: 1px solid var(--danger);
+    background: var(--danger-soft);
+    border-radius: 7px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .stop .h {
+    font-weight: 600;
+    color: var(--danger);
+  }
+  .item-pick {
+    flex: none;
+    margin: 0 14px 4px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .item-pick b {
+    color: var(--fg);
+    font-weight: 600;
+  }
+
+  /* Variant A: the sheet */
+  .scrim {
+    position: absolute;
+    inset: 0;
+    background: rgb(20 18 26 / 0.35);
+    z-index: 5;
+    border: 0;
+    padding: 0;
+  }
+  .sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 72%;
+    background: var(--surface);
+    border-radius: 14px 14px 0 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 -6px 20px rgb(0 0 0 / 0.18);
+  }
+  .grab {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line);
+    margin: 7px auto 2px;
+    flex: none;
+  }
+  /* Variant B: the tab bar */
+  .tabbar {
+    flex: none;
+    display: flex;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .tabbar button {
+    flex: 1;
+    border: 0;
+    background: none;
+    padding: 8px 2px 7px;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    border-top: 2px solid transparent;
+  }
+  .tabbar button .g {
+    font-size: 15px;
+    line-height: 1;
+  }
+  .tabbar button[aria-pressed="true"] {
+    color: var(--accent);
+    border-top-color: var(--accent);
+  }
+  /* Variant D: preview split under the editor */
+  .stack {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .split-handle {
+    flex: none;
+    height: 6px;
+    background: var(--line);
+    cursor: row-resize;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .split-handle::after {
+    content: "";
+    width: 32px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--muted);
+    opacity: 0.6;
+  }
+  .split-preview {
+    flex: none;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* D at tight desktop widths */
+  .drawer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    background: var(--surface);
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--line);
+    box-shadow: 4px 0 14px rgb(0 0 0 / 0.12);
+  }
+  .popover {
+    position: absolute;
+    top: 4px;
+    right: 70px;
+    width: 300px;
+    max-width: calc(100% - 16px);
+    max-height: 75%;
+    background: var(--surface);
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+    padding-top: 8px;
+  }
+  .popover .search.focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  .popover .hint {
+    flex: none;
+    border-top: 1px solid var(--line);
+    padding: 5px 10px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .panel.compact .field .ins {
+    display: none;
+  }
+  .panel.compact .search {
+    margin-inline: 4px;
+  }
+  .tight {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  /* Variant C: overlays */
+  .overlay {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 86%;
+    background: var(--surface);
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 22px rgb(0 0 0 / 0.22);
+  }
+  .overlay.left {
+    left: 0;
+    border-right: 1px solid var(--line);
+  }
+  .overlay.right {
+    right: 0;
+    border-left: 1px solid var(--line);
+  }
+
+  .toast {
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    background: var(--fg);
+    color: var(--bg);
+    font-size: 12px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    z-index: 9;
+    white-space: nowrap;
+  }
+  .compare {
+    margin-top: 36px;
+    overflow-x: auto;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 760px;
+    font-size: 0.9rem;
+    background: var(--surface);
+    border: 1px solid var(--line);
+  }
+  th,
+  td {
+    text-align: left;
+    vertical-align: top;
+    padding: 8px 10px;
+    border-top: 1px solid var(--line);
+  }
+  th {
+    font-weight: 600;
+    background: var(--surface-2);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .ln.flash {
+      transition: background 0.6s;
+    }
+  }
+</style>
+
+<div class="page">
+  <h1>Template Workbench at every width</h1>
+  <p class="lede">
+    Throwaway prototype. Three ways to fit Fields, the template editor, and
+    Preview into one narrow place: a small browser window, a narrow Obsidian
+    leaf in a wide window, or Obsidian on a phone. Each variant runs live in two
+    frames. Variant D is the chosen design; drag its leaf width from 320 to 1400
+    px to see each layout step. Use the scenario buttons to see where a problem
+    or a field insertion takes the reader. The grey box under each frame shows
+    the facts the layout keeps.
+  </p>
+  <div class="switch" id="switch" role="group" aria-label="Variant"></div>
+  <div id="variant"></div>
+  <div class="compare">
+    <h2>Side by side</h2>
+    <table style="margin-top: 10px">
+      <thead>
+        <tr>
+          <th></th>
+          <th>A · Switch + sheet</th>
+          <th>B · Three tabs</th>
+          <th>C · Panels over the editor</th>
+          <th>D · Chosen</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>New facts in the shared model</th>
+          <td>
+            Two: shown pane (template or preview), and sheet open. Separate from
+            the wide panels.
+          </td>
+          <td>
+            One: shown tab (fields, template, preview). Separate from the wide
+            panels.
+          </td>
+          <td>
+            None. The wide panels (shown, width) move from the Obsidian host
+            model into the shared model, plus which panel is in front.
+          </td>
+          <td>
+            None beyond the panels, which move into the shared model. Perhaps a
+            Preview height for the narrow split.
+          </td>
+        </tr>
+        <tr>
+          <th>What the host supplies</th>
+          <td>Whether the layout is narrow (CSS alone can do it).</td>
+          <td>Whether the layout is narrow (CSS alone can do it).</td>
+          <td>
+            Whether the layout is narrow, as a value the commands read (a narrow
+            open closes the other panel; a repair closes the panel in front).
+          </td>
+          <td>
+            Whether the layout is narrow, as a value the commands read (a repair
+            or insertion closes the Fields sheet).
+          </td>
+        </tr>
+        <tr>
+          <th>Problem in Preview → repair</th>
+          <td>Shows the template pane, closes the sheet.</td>
+          <td>Selects the Template tab.</td>
+          <td>
+            Narrow: closes the Preview over the editor. Wide: nothing to change.
+          </td>
+          <td>
+            Nothing to change: the editor is on top. Closes the Fields sheet if
+            open.
+          </td>
+        </tr>
+        <tr>
+          <th>Insert a field</th>
+          <td>Closes the sheet, shows the template pane.</td>
+          <td>Selects the Template tab.</td>
+          <td>Narrow: closes Fields. Wide: Fields stays open.</td>
+          <td>Narrow: closes the sheet. Wide: Fields stays open.</td>
+        </tr>
+        <tr>
+          <th>Same controls at every width</th>
+          <td>
+            No. Narrow has a switch and "Add a field"; wide has panel actions.
+          </td>
+          <td>No. Narrow has a tab bar; wide has panel actions.</td>
+          <td>
+            Yes. The two view actions show Fields and Preview at every width.
+          </td>
+          <td>Yes, as in C.</td>
+        </tr>
+        <tr>
+          <th>Widen, then narrow again</th>
+          <td>
+            The narrow facts reset to the template pane; panels keep their own
+            state.
+          </td>
+          <td>The tab stays as it was; panels keep their own state.</td>
+          <td>
+            The panel in front stays over the editor; the other waits until the
+            reader opens it.
+          </td>
+          <td>
+            Preview moves between the side and the bottom; an open Fields
+            becomes a sheet (open question).
+          </td>
+        </tr>
+        <tr>
+          <th>Obsidian mobile fit</th>
+          <td>
+            The sheet sits above the app's own bottom bar; the keyboard covers
+            it.
+          </td>
+          <td>A second bottom bar above the app's bottom bar.</td>
+          <td>Side drawers, like the app's own sidebars.</td>
+          <td>
+            Preview split under the editor; Fields sheet above the app's bottom
+            bar.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  // ---------- mock data ----------
+  const FIELDS = [
+    { key: "title", label: "Title", value: "The Extended Mind" },
+    { key: "creators", label: "Authors", value: "Andy Clark, David Chalmers" },
+    { key: "year", label: "Year", value: "1998" },
+    { key: "publicationTitle", label: "Publication", value: "Analysis" },
+    { key: "DOI", label: "DOI", value: "10.1093/analys/58.1.7" },
+    {
+      key: "abstractNote",
+      label: "Abstract",
+      value:
+        "Where does the mind stop and the rest of the world begin? We propose an active externalism…",
+    },
+    { key: "citationKey", label: "Citation key", value: "clark1998" },
+  ];
+  const HIGHLIGHTS = [
+    "Where does the mind stop and the rest of the world begin?",
+    "The human organism is linked with an external entity in a two-way interaction, creating a coupled system.",
+  ];
+  const esc = (s) =>
+    String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+  function sourceLines(s) {
+    const head = s.problem
+      ? { c: '# <%= it.<span class="bad">titel</span> %>', raw: true }
+      : { c: esc("# <%= it.title %>") };
+    const lines = [
+      head,
+      { c: "" },
+      {
+        c: esc(
+          '**Authors:** <%= it.creators.map(c => c.fullname).join(", ") %>',
+        ),
+      },
+      { c: esc("**Year:** <%= it.year %>") },
+      ...s.inserted.map((k) => {
+        const f = FIELDS.find((x) => x.key === k);
+        return { c: esc(`**${f.label}:** <%= it.${f.key} %>`), key: k };
+      }),
+      { c: "" },
+      { c: "## Highlights" },
+      { c: esc("<% for (const a of it.annotations) { %>") },
+      { c: esc("> <%= a.text %>") },
+      { c: esc("<% } %>") },
+    ];
+    return lines
+      .map((l, i) => {
+        const flash =
+          (s.flash === "problem" && i === 0) || (s.flash && s.flash === l.key);
+        const caret =
+          s.flash === "problem"
+            ? i === 0
+            : s.inserted.length
+              ? l.key === s.inserted[s.inserted.length - 1]
+              : i === 3;
+        return `<div class="ln${flash ? " flash" : ""}${caret ? " caret" : ""}"><span class="n">${i + 1}</span><span class="c">${l.c || " "}</span></div>`;
+      })
+      .join("");
+  }
+
+  // ---------- shared pieces ----------
+  function editorCol(v, f, s, { addButton } = {}) {
+    return `<div class="col editor">
+    <div class="tabs"><span class="on">Note</span><span>Annotation</span><span>Name</span><span>Properties</span><span class="spacer"></span>${addButton ? `<button class="add" data-v="${v}" data-f="${f}" data-act="openSheet">+ Add a field</button>` : ""}</div>
+    <div class="src">${sourceLines(s)}</div>
+    ${
+      s.problem
+        ? `<div class="problems"><span class="msg"><b>1 problem</b> · Line 1: <code>titel</code> is not a field. Did you mean <code>title</code>?</span><button class="mini primary" data-v="${v}" data-f="${f}" data-act="fix">Use title</button></div>`
+        : `<div class="problems ok"><span class="msg">No problems</span></div>`
+    }
+  </div>`;
+  }
+  function fieldsBody(v, f, s) {
+    return `<div class="search">Search fields…</div><div class="fields">${FIELDS.map(
+      (x) => {
+        const used =
+          x.key === "title" ||
+          x.key === "creators" ||
+          x.key === "year" ||
+          s.inserted.includes(x.key);
+        return `<button class="field${used ? " used" : ""}" data-v="${v}" data-f="${f}" data-act="insert" data-arg="${x.key}"><span class="k">${x.label}</span><span class="v">${esc(x.value)}</span><span class="ins">${used ? "in template" : "Insert"}</span></button>`;
+      },
+    ).join("")}</div>`;
+  }
+  function previewBody(v, f, s) {
+    const item = `<div class="item-pick">Showing <b>Clark &amp; Chalmers 1998</b> ▾</div>`;
+    if (s.problem) {
+      return `${item}<div class="preview"><div class="stop"><span class="h">The preview stopped</span><span>Line 1 of the note template names <code>titel</code>, and this item has no field with that name.</span><span><button class="mini primary" data-v="${v}" data-f="${f}" data-act="showProblem">Show in template</button></span></div></div>`;
+    }
+    const extra = s.inserted
+      .map((k) => {
+        const x = FIELDS.find((y) => y.key === k);
+        return `<p${s.flash === k ? ' style="background:var(--flash)"' : ""}><b>${x.label}:</b> ${esc(x.value)}</p>`;
+      })
+      .join("");
+    return `${item}<div class="preview"><h4>The Extended Mind</h4><p><b>Authors:</b> Andy Clark, David Chalmers</p><p><b>Year:</b> 1998</p>${extra}<h5>Highlights</h5>${HIGHLIGHTS.map((h) => `<blockquote>${esc(h)}</blockquote>`).join("")}</div>`;
+  }
+  function viewHeader(v, f, s, { toggles }) {
+    const t = toggles
+      ? `<button class="icon-btn" aria-pressed="${s.panels.fields}" data-v="${v}" data-f="${f}" data-act="toggle" data-arg="fields" title="Show fields">▤ Fields</button><button class="icon-btn" aria-pressed="${s.panels.preview}" data-v="${v}" data-f="${f}" data-act="toggle" data-arg="preview" title="Show preview">◧ Preview${s.problem && !s.panels.preview ? "" : ""}</button>`
+      : "";
+    return `<div class="vh"><span class="name">Literature note</span>${t}<button class="icon-btn" title="More options">⋯</button></div>`;
+  }
+  function toast(s) {
+    return s.toast ? `<div class="toast">${esc(s.toast)}</div>` : "";
+  }
+
+  // The wide layout is the same for every variant: three columns from the panels.
+  function wide(v, f, s) {
+    return `<div class="wb">${viewHeader(v, f, s, { toggles: true })}<div class="body">
+    ${s.panels.fields ? `<div class="col panel left"><div class="ph">Fields</div>${fieldsBody(v, f, s)}</div>` : ""}
+    ${editorCol(v, f, s)}
+    ${s.panels.preview ? `<div class="col panel right"><div class="ph">Preview</div>${previewBody(v, f, s)}</div>` : ""}
+  </div>${toast(s)}</div>`;
+  }
+
+  // ---------- D: one placement rule for every width ----------
+  // The shared model derives where each shown panel goes from the view's width,
+  // which the host measures. A panel is a column only while the editor keeps its
+  // minimum width beside it. Preview claims the side first: the reader compares
+  // source and result all the time, and picks a field only now and then.
+  const EDITOR_MIN = 360,
+    PANEL_MIN = 240,
+    PANEL_SHARE = 0.4; // PANEL_SHARE = the 2/5 cap panels.tsx has now
+  const panelWidth = (saved, W) =>
+    Math.max(PANEL_MIN, Math.min(saved, PANEL_SHARE * W));
+  // How Fields shows on a desktop view too tight for its full column. The phone
+  // (Obsidian mobile) keeps the bottom sheet whatever this says.
+  let tightFields = "popover"; // chosen // "popover" | "drawer" | "compact"
+  const COMPACT = { fields: 180, editor: 320 };
+  function placement(s, W, frame) {
+    const p = {
+      preview: "hidden",
+      fields: "hidden",
+      previewPx: 0,
+      fieldsPx: 0,
+    };
+    let room = W;
+    if (s.panels.preview) {
+      const w = panelWidth(s.widths.preview, W);
+      if (room - w >= EDITOR_MIN) {
+        p.preview = "side";
+        p.previewPx = w;
+        room -= w;
+      } else p.preview = "below";
+    }
+    if (s.panels.fields) {
+      const w = panelWidth(s.widths.fields, W);
+      if (room - w >= EDITOR_MIN) {
+        p.fields = "column";
+        p.fieldsPx = w;
+      } else if (frame === "phone") p.fields = "sheet";
+      else if (
+        tightFields === "compact" &&
+        room - COMPACT.fields >= COMPACT.editor
+      ) {
+        p.fields = "compact";
+        p.fieldsPx = Math.min(room - COMPACT.editor, 240);
+      } else p.fields = tightFields === "compact" ? "popover" : tightFields;
+    }
+    return p;
+  }
+  // Whether Fields, where it shows, covers the editor.
+  const COVERS = ["sheet", "popover", "drawer"];
+  function adaptive(v, f, s, W) {
+    const p = placement(s, W, f);
+    const ed = editorCol(v, f, s);
+    const below =
+      p.preview === "below"
+        ? `<div class="split-handle" role="separator" aria-orientation="horizontal" aria-label="Resize preview"></div><div class="split-preview" style="height:${s.split}%"><div class="ph">Preview</div>${previewBody(v, f, s)}</div>`
+        : "";
+    const close = `<button class="mini" data-v="${v}" data-f="${f}" data-act="toggle" data-arg="fields">${p.fields === "sheet" ? "Done" : "Close"}</button>`;
+    let fields = "";
+    if (p.fields === "sheet")
+      fields = `<button class="scrim" aria-label="Close" data-v="${v}" data-f="${f}" data-act="toggle" data-arg="fields"></button><div class="sheet" role="dialog" aria-label="Fields"><div class="grab"></div><div class="ph">Fields ${close}</div>${fieldsBody(v, f, s)}</div>`;
+    if (p.fields === "drawer")
+      fields = `<div class="drawer" role="region" aria-label="Fields" style="width:${Math.min(300, Math.round(W * 0.6))}px"><div class="ph">Fields ${close}</div>${fieldsBody(v, f, s)}</div>`;
+    if (p.fields === "popover")
+      fields = `<div class="popover" role="dialog" aria-label="Insert a field"><div class="search focus">Search fields…</div>${fieldsBody(v, f, s).replace('<div class="search">Search fields…</div>', "")}<div class="hint">↑↓ choose · Enter insert · Esc close</div></div>`;
+    return `<div class="wb">${viewHeader(v, f, s, { toggles: true })}<div class="body">
+    ${p.fields === "column" || p.fields === "compact" ? `<div class="col panel left${p.fields === "compact" ? " compact" : ""}" style="width:${p.fieldsPx}px"><div class="ph">Fields</div>${fieldsBody(v, f, s)}</div>` : ""}
+    <div class="stack">${ed}${below}</div>
+    ${p.preview === "side" ? `<div class="col panel right" style="width:${p.previewPx}px"><div class="ph">Preview</div>${previewBody(v, f, s)}</div>` : ""}
+    ${fields}
+    </div>${toast(s)}</div>`;
+  }
+
+  // ---------- variants ----------
+  const VARIANTS = {
+    A: {
+      name: "Switch + sheet",
+      summary:
+        "A switch at the top shows the template or the preview. “Add a field” opens the field list as a sheet from the bottom. This is the web Workbench under 780 px today, given to Obsidian as well.",
+      narrow(v, f, s) {
+        const badge =
+          s.problem && s.pane === "preview" ? '<span class="dot">1</span>' : "";
+        return `<div class="wb">${viewHeader(v, f, s, { toggles: false })}
+        <div class="seg"><button aria-pressed="${s.pane === "template"}" data-v="${v}" data-f="${f}" data-act="pane" data-arg="template">Edit template${badge}</button><button aria-pressed="${s.pane === "preview"}" data-v="${v}" data-f="${f}" data-act="pane" data-arg="preview">Preview</button></div>
+        <div class="body">${s.pane === "template" ? editorCol(v, f, s, { addButton: true }) : `<div class="col editor">${previewBody(v, f, s)}</div>`}
+        ${s.sheet ? `<button class="scrim" aria-label="Close" data-v="${v}" data-f="${f}" data-act="closeSheet"></button><div class="sheet" role="dialog" aria-label="Add a field"><div class="grab"></div><div class="ph">Add a field <button class="mini" data-v="${v}" data-f="${f}" data-act="closeSheet">Done</button></div>${fieldsBody(v, f, s)}</div>` : ""}
+        </div>${toast(s)}</div>`;
+      },
+      act(s, act, arg, narrow) {
+        if (act === "pane") s.pane = arg;
+        if (act === "openSheet") s.sheet = true;
+        if (act === "closeSheet") s.sheet = false;
+        if (act === "insert") {
+          insert(s, arg);
+          if (narrow) {
+            s.sheet = false;
+            s.pane = "template";
+          }
+        }
+        if (act === "showProblem") {
+          s.pane = "template";
+          s.sheet = false;
+          s.flash = "problem";
+        }
+      },
+      onWiden(s) {
+        s.pane = "template";
+        s.sheet = false;
+      },
+      facts: (s) => [
+        ["layout.pane", JSON.stringify(s.pane), "shared"],
+        ["layout.sheet", String(s.sheet), "shared"],
+        ["panels.fields.shown", String(s.panels.fields), "shared"],
+        ["panels.preview.shown", String(s.panels.preview), "shared"],
+      ],
+      notes: {
+        model: [
+          ['layout.pane: "template" | "preview"', "shared"],
+          ["layout.sheet: boolean", "shared"],
+          ["panels.{fields,preview}: shown, width (wide only)", "shared"],
+          ["narrow: CSS container query", "host"],
+        ],
+        routing: [
+          "Every repair command (go to a problem, open the annotation box, insert the annotation loop, return to the template) sets pane to “template” and closes the sheet. The web host does this today; the commands would move into the shared package.",
+          "Inserting a field closes the sheet so the reader sees the new line.",
+          "The pane and the sheet mean nothing on a wide layout, so two separate sets of facts describe one view.",
+        ],
+        tradeoffs: [
+          "Known: the web readers have it now; tests exist.",
+          "The reader can never see a field list and the preview together.",
+          "On a phone the keyboard covers most of the sheet.",
+        ],
+      },
+    },
+    B: {
+      name: "Three tabs",
+      summary:
+        "A tab bar at the bottom of the view gives Fields, Template, and Preview equal places. One tab shows at a time. A field tap inserts the field and returns to Template.",
+      narrow(v, f, s) {
+        const tab = (id, g, label) =>
+          `<button aria-pressed="${s.tab === id}" data-v="${v}" data-f="${f}" data-act="tab" data-arg="${id}"><span class="g">${g}</span><span>${label}${id === "template" && s.problem && s.tab !== "template" ? '<span class="dot">1</span>' : ""}</span></button>`;
+        const content =
+          s.tab === "fields"
+            ? `<div class="col editor"><div class="ph">Tap a field to insert it at the cursor</div>${fieldsBody(v, f, s)}</div>`
+            : s.tab === "preview"
+              ? `<div class="col editor">${previewBody(v, f, s)}</div>`
+              : editorCol(v, f, s);
+        return `<div class="wb">${viewHeader(v, f, s, { toggles: false })}<div class="body">${content}</div>
+        <div class="tabbar">${tab("fields", "▤", "Fields")}${tab("template", "✎", "Template")}${tab("preview", "◧", "Preview")}</div>${toast(s)}</div>`;
+      },
+      act(s, act, arg, narrow) {
+        if (act === "tab") s.tab = arg;
+        if (act === "insert") {
+          insert(s, arg);
+          if (narrow) s.tab = "template";
+        }
+        if (act === "showProblem") {
+          s.tab = "template";
+          s.flash = "problem";
+        }
+      },
+      onWiden() {},
+      facts: (s) => [
+        ["layout.tab", JSON.stringify(s.tab), "shared"],
+        ["panels.fields.shown", String(s.panels.fields), "shared"],
+        ["panels.preview.shown", String(s.panels.preview), "shared"],
+      ],
+      notes: {
+        model: [
+          ['layout.tab: "fields" | "template" | "preview"', "shared"],
+          ["panels.{fields,preview}: shown, width (wide only)", "shared"],
+          ["narrow: CSS container query", "host"],
+        ],
+        routing: [
+          "Every repair command sets tab to “template”. One fact to write, so routing is the simplest of the three.",
+          "Inserting a field sets tab to “template”.",
+          "The tab means nothing on a wide layout, so it and the panels are two sets of facts.",
+        ],
+        tradeoffs: [
+          "Fields is easy to find: it has its own tab.",
+          "The insert target is out of sight while the reader picks a field; the caret position must be kept and shown on return.",
+          "On Obsidian mobile this is a second bottom bar above the app's own.",
+        ],
+      },
+    },
+    C: {
+      name: "Panels over the editor",
+      summary:
+        "The same two view actions that show Fields and Preview on a wide leaf open them on a narrow one. There is no room beside the editor, so the panel slides over it from its own side. Only one panel is in front at a time.",
+      narrow(v, f, s) {
+        const front = s.front && s.panels[s.front] ? s.front : null;
+        return `<div class="wb">${viewHeader(v, f, s, { toggles: true })}<div class="body">${editorCol(v, f, s)}
+        ${front ? `<button class="scrim" aria-label="Close" data-v="${v}" data-f="${f}" data-act="toggle" data-arg="${front}"></button>` : ""}
+        ${front === "fields" ? `<div class="overlay left" role="region" aria-label="Fields"><div class="ph">Fields <button class="mini" data-v="${v}" data-f="${f}" data-act="toggle" data-arg="fields">Close</button></div>${fieldsBody(v, f, s)}</div>` : ""}
+        ${front === "preview" ? `<div class="overlay right" role="region" aria-label="Preview"><div class="ph">Preview <button class="mini" data-v="${v}" data-f="${f}" data-act="toggle" data-arg="preview">Close</button></div>${previewBody(v, f, s)}</div>` : ""}
+        </div>${toast(s)}</div>`;
+      },
+      act(s, act, arg, narrow) {
+        if (act === "insert") {
+          insert(s, arg);
+          if (narrow) {
+            s.panels.fields = false;
+            s.front = null;
+          }
+        }
+        if (act === "showProblem") {
+          s.flash = "problem";
+          if (narrow) {
+            s.panels.preview = false;
+            s.front = null;
+          }
+        }
+      },
+      onWiden() {},
+      toggle(s, side, narrow) {
+        const showing = narrow
+          ? s.front === side && s.panels[side]
+          : s.panels[side];
+        if (showing) {
+          s.panels[side] = false;
+          if (s.front === side) s.front = null;
+        } else {
+          s.panels[side] = true;
+          s.front = side;
+          if (narrow) {
+            const other = side === "fields" ? "preview" : "fields";
+            s.panels[other] = false;
+          }
+        }
+      },
+      facts: (s) => [
+        ["panels.fields.shown", String(s.panels.fields), "shared"],
+        ["panels.preview.shown", String(s.panels.preview), "shared"],
+        ["panels.front", JSON.stringify(s.front), "shared"],
+      ],
+      notes: {
+        model: [
+          ["panels.{fields,preview}: shown, width", "shared"],
+          ['panels.front: "fields" | "preview" | null', "shared"],
+          ["narrow: boolean the commands read", "host"],
+        ],
+        routing: [
+          "A repair command closes the panel in front only when the layout is narrow, because only then does it cover the editor. On a wide layout the editor is already in view.",
+          "So the shared commands need to know “narrow”: each host supplies it as an atom from its container width (Obsidian measures the leaf; the web measures its frame).",
+          "Inserting a field closes Fields when narrow, so the reader sees the new line; on wide it stays open for the next field.",
+        ],
+        tradeoffs: [
+          "One set of controls and one set of facts at every width; a leaf that is resized keeps its panels.",
+          "Close to the Obsidian panels code that exists now (WorkbenchPanels, model.panels).",
+          "The web loses its Editor/Result switch; readers who use it learn the two header actions.",
+        ],
+      },
+    },
+    D: {
+      name: "Preview below, Fields adapt",
+      summary:
+        "The chosen design, desktop first. The two view actions show Fields and Preview at every width, as in C. One rule places each shown panel from the view width: a panel is a column while the editor keeps 360 px beside it. Preview claims the side first; when it does not fit, it goes under the editor. When the Fields column does not fit, a desktop view shows Fields in one of three forms (pick one above the frames); Obsidian mobile alone keeps A's bottom sheet.",
+      narrow(v, f, s) {
+        return `<div class="wb">${viewHeader(v, f, s, { toggles: true })}<div class="body"><div class="stack">${editorCol(v, f, s)}
+        ${s.panels.preview ? `<div class="split-handle" role="separator" aria-orientation="horizontal" aria-label="Resize preview"></div><div class="split-preview" style="height:${s.split}%"><div class="ph">Preview</div>${previewBody(v, f, s)}</div>` : ""}</div>
+        ${s.panels.fields ? `<button class="scrim" aria-label="Close" data-v="${v}" data-f="${f}" data-act="toggle" data-arg="fields"></button><div class="sheet" role="dialog" aria-label="Fields"><div class="grab"></div><div class="ph">Fields <button class="mini" data-v="${v}" data-f="${f}" data-act="toggle" data-arg="fields">Done</button></div>${fieldsBody(v, f, s)}</div>` : ""}
+        </div>${toast(s)}</div>`;
+      },
+      act(s, act, arg, narrow) {
+        // narrow here = where Fields shows now. A picker or a sheet closes after an
+        // insert; a drawer or a column stays for the next field.
+        if (act === "insert") {
+          insert(s, arg);
+          if (narrow === "sheet" || narrow === "popover")
+            s.panels.fields = false;
+        }
+        // A repair closes whatever covers the editor.
+        if (act === "showProblem") {
+          s.flash = "problem";
+          if (COVERS.includes(narrow)) s.panels.fields = false;
+        }
+      },
+      onWiden() {},
+      facts: (s) => [
+        ["panels.fields.shown", String(s.panels.fields), "shared"],
+        ["panels.preview.shown", String(s.panels.preview), "shared"],
+        ["panels.preview.height", s.split + "%", "shared"],
+      ],
+      notes: {
+        model: [
+          ["panels.{fields,preview}: shown, width", "shared"],
+          ["panels.preview.height (split below), or a fixed share", "shared"],
+          ["placement = f(panels, view width): pure, derived", "shared"],
+          ["view width: measured container width", "host"],
+        ],
+        routing: [
+          "A problem in the Preview needs no pane change: the editor is always on top, so \u201cShow in template\u201d only reveals the line.",
+          "A repair closes Fields when it covers the editor (popover, drawer, sheet). A column or a compact column stays.",
+          "An insertion closes the popover and the sheet (pickers). The drawer and the columns stay open for the next field.",
+          "So the commands read placement.fields; it is the only layout fact they read.",
+        ],
+        tradeoffs: [
+          "Source and result show together at every width; live preview stays useful on a phone.",
+          "Obsidian already stacks its panels under the editor below 40rem; this keeps that for Preview and changes Fields to a sheet.",
+          "On a phone with the keyboard open, editor plus Preview share very little height.",
+          "The web loses its Editor/Result switch.",
+        ],
+      },
+    },
+  };
+
+  // ---------- state ----------
+  const fresh = () => ({
+    pane: "template",
+    sheet: false,
+    tab: "template",
+    panels: { fields: false, preview: false },
+    front: null,
+    split: 45,
+    width: 560,
+    widths: { fields: 280, preview: 400 },
+    problem: true,
+    inserted: [],
+    flash: null,
+    toast: null,
+    wide: false,
+  });
+  const state = {};
+  for (const k of Object.keys(VARIANTS))
+    state[k] = { phone: fresh(), leaf: fresh() };
+  let current = "D";
+  try {
+    const h = location.hash.slice(1);
+    if (VARIANTS[h]) current = h;
+  } catch {}
+
+  function insert(s, key) {
+    const f = FIELDS.find((x) => x.key === key);
+    if (
+      ["title", "creators", "year"].includes(key) ||
+      s.inserted.includes(key)
+    ) {
+      s.toast = `${f.label} is in the template`;
+      return;
+    }
+    s.inserted.push(key);
+    s.flash = key;
+    s.toast = `Inserted ${f.label}`;
+  }
+  const frameWidth = (frame, s) => (frame === "phone" ? 360 : s.width);
+  // A-C: one breakpoint (780 px, the web's WIDE_LAYOUT). D: "narrow" means the
+  // Fields would be a sheet, which is what its commands read.
+  const isNarrow = (frame, s, v) =>
+    v === "D"
+      ? placement(s, frameWidth(frame, s), frame).fields
+      : frame === "phone" || s.width < 780;
+
+  function apply(v, frame, act, arg) {
+    const s = state[v][frame];
+    const narrow = isNarrow(frame, s, v);
+    s.toast = null;
+    s.flash = null;
+    if (act === "fix") {
+      s.problem = false;
+      s.toast = "Changed titel to title";
+    } else if (act === "width") {
+      const wasNarrow = narrow;
+      s.width = Number(arg);
+      const nowNarrow = isNarrow(frame, s, v);
+      if (wasNarrow && !nowNarrow) VARIANTS[v].onWiden(s);
+      if (nowNarrow && v === "C" && s.front && !s.panels[s.front])
+        s.front = null;
+      if (nowNarrow && v === "C" && !s.front)
+        s.front = s.panels.preview
+          ? "preview"
+          : s.panels.fields
+            ? "fields"
+            : null;
+    } else if (act === "toggle") {
+      if (VARIANTS[v].toggle) VARIANTS[v].toggle(s, arg, narrow);
+      else s.panels[arg] = !s.panels[arg];
+    } else VARIANTS[v].act(s, act, arg, narrow);
+  }
+
+  function scenario(v, which) {
+    for (const frame of ["phone", "leaf"]) {
+      const s = state[v][frame];
+      if (which === "reset") {
+        state[v][frame] = Object.assign(fresh(), { width: s.width });
+        continue;
+      }
+      const narrow = isNarrow(frame, s, v);
+      s.toast = null;
+      s.flash = null;
+      if (which === "problem") {
+        // Put the reader on Preview with the problem showing.
+        s.problem = true;
+        if (v === "A") {
+          s.pane = "preview";
+          s.sheet = false;
+        }
+        if (v === "B") s.tab = "preview";
+        if (v === "C" || v === "D" || !narrow) {
+          s.panels.preview = true;
+          s.front = "preview";
+          if (narrow && v !== "D") s.panels.fields = false;
+          if (v === "D") s.panels.fields = false;
+        }
+      }
+      if (which === "fields") {
+        if (v === "A") {
+          s.pane = "template";
+          if (narrow) s.sheet = true;
+        }
+        if (v === "B") s.tab = "fields";
+        if (v === "C" || !narrow) {
+          s.panels.fields = true;
+          s.front = "fields";
+          if (narrow) s.panels.preview = false;
+        }
+        if (v === "D") s.panels.fields = true;
+      }
+    }
+  }
+
+  // ---------- render ----------
+  function frameHTML(v, frame) {
+    const s = state[v][frame];
+    const V = VARIANTS[v];
+    const narrow = isNarrow(frame, s, v);
+    const W = frameWidth(frame, s);
+    const wb =
+      v === "D"
+        ? adaptive(v, frame, s, W)
+        : narrow
+          ? V.narrow(v, frame, s)
+          : wide(v, frame, s);
+    const facts = V.facts(s)
+      .map(
+        ([k, val, o]) =>
+          `${k.padEnd(20)} <b>${esc(val)}</b>${o === "host" ? "  (host)" : ""}`,
+      )
+      .join("\n");
+    let extra = `${"narrow (host)".padEnd(20)} <b>${narrow}</b>`;
+    if (v === "D") {
+      const p = placement(s, W, frame);
+      extra = `${"view width (host)".padEnd(20)} <b>${W} px</b>\n${"→ preview goes".padEnd(20)} <b>${p.preview}</b>\n${"→ fields go".padEnd(20)} <b>${p.fields}</b>`;
+    }
+    const readout = `<div class="readout">${facts}\n${extra}</div>`;
+    if (frame === "phone") {
+      return `<div class="frame"><div class="frame-cap"><strong>Phone</strong><span>Obsidian mobile, 360 px${current === "D" ? " · keeps the bottom sheet" : ""}</span></div>
+      <div class="phone"><div class="status"><span>9:41</span><span>●●●</span></div>${wb}<div class="appnav"><span>◀</span><span>Search</span><span>＋</span><span>Tabs</span><span>☰</span></div></div>${readout}</div>`;
+    }
+    const w = s.width;
+    return `<div class="frame"><div class="frame-cap"><strong>${v === "D" ? "Desktop leaf" : "Narrow leaf in a wide window"}</strong>
+      <span>Leaf width:</span>
+      <input type="range" id="width-${v}" min="320" max="1400" step="20" value="${w}" data-v="${v}" data-f="leaf" data-width aria-label="Leaf width"><b class="mono">${w} px</b>
+      ${[320, 560, 760, 960, 1200].map((x) => `<button class="mini" data-v="${v}" data-f="leaf" data-act="width" data-arg="${x}">${x}</button>`).join("")}</div>
+    <div class="window"><div class="side"><b style="color:var(--fg)">Vault</b><span>📁 Literature</span><span>📁 Templates</span><span>📄 clark1998.md</span><span>📄 Reading list.md</span></div>
+      <div class="leaf" style="width:${w}px">${wb}</div>
+      <div class="other"><span class="t">Reading list</span><span>A second leaf beside the workbench takes the room, so the workbench leaf is narrow inside a wide window.</span><span>- [ ] Clark &amp; Chalmers 1998</span><span>- [ ] Menary 2010</span></div></div>${readout}</div>`;
+  }
+
+  function render() {
+    document.getElementById("switch").innerHTML = Object.entries(VARIANTS)
+      .map(
+        ([k, V]) =>
+          `<button aria-pressed="${k === current}" data-pick="${k}">${k} · ${V.name}</button>`,
+      )
+      .join("");
+    const V = VARIANTS[current];
+    const own = (o) =>
+      `<span class="owner ${o === "shared" ? "shared" : ""}">${o === "shared" ? "shared model" : "each host"}</span>`;
+    document.getElementById("variant").innerHTML = `<div class="variant">
+    <div class="notes">
+      <h2>${current} · ${V.name}</h2>
+      <p>${V.summary}</p>
+      <section><span class="label">Facts it needs</span><div class="facts">${V.notes.model.map(([k, o]) => `<div><code>${esc(k)}</code>${own(o)}</div>`).join("")}</div></section>
+      <section><span class="label">Problem-to-pane routing</span><ul>${V.notes.routing.map((x) => `<li>${x}</li>`).join("")}</ul></section>
+      <section><span class="label">Trade-offs</span><ul>${V.notes.tradeoffs.map((x) => `<li>${x}</li>`).join("")}</ul></section>
+    </div>
+    <div class="stage">
+      <div class="scenarios"><span class="label">Scenario</span>
+        <button data-scn="problem">Reader is on Preview, which shows a problem</button>
+        <button data-scn="fields">Reader opens the field list</button>
+        <button data-scn="reset">Reset</button></div>
+      <p style="font-size:0.88rem;color:var(--muted)">Then try: press <b>Show in template</b>, press <b>Use title</b>, tap a field such as <b>DOI</b>, and change the leaf width.</p>
+      ${
+        current === "D"
+          ? `<div class="tight"><span class="label">Fields when its column does not fit (desktop)</span>${[
+              ["popover", "Popover picker"],
+              ["drawer", "Drawer"],
+              ["compact", "Compact column"],
+            ]
+              .map(
+                ([k, l]) =>
+                  `<button class="mini${tightFields === k ? " primary" : ""}" data-tight="${k}">${l}</button>`,
+              )
+              .join("")}</div>`
+          : ""
+      }
+      <div class="frames">${current === "D" ? frameHTML(current, "leaf") + frameHTML(current, "phone") : frameHTML(current, "phone") + frameHTML(current, "leaf")}</div>
+    </div></div>`;
+  }
+
+  document.addEventListener("click", (e) => {
+    const pick = e.target.closest("[data-pick]");
+    if (pick) {
+      current = pick.dataset.pick;
+      try {
+        history.replaceState(null, "", "#" + current);
+      } catch {}
+      render();
+      return;
+    }
+    const tight = e.target.closest("[data-tight]");
+    if (tight) {
+      tightFields = tight.dataset.tight;
+      render();
+      return;
+    }
+    const scn = e.target.closest("[data-scn]");
+    if (scn) {
+      scenario(current, scn.dataset.scn);
+      render();
+      return;
+    }
+    const a = e.target.closest("[data-act]");
+    if (a) {
+      apply(a.dataset.v, a.dataset.f, a.dataset.act, a.dataset.arg);
+      render();
+    }
+  });
+  document.addEventListener("input", (e) => {
+    const r = e.target.closest("[data-width]");
+    if (!r) return;
+    apply(r.dataset.v, r.dataset.f, "width", r.value);
+    render();
+    const again = document.getElementById("width-" + r.dataset.v);
+    if (again) again.focus();
+  });
+  window.addEventListener("hashchange", () => {
+    const h = location.hash.slice(1);
+    if (VARIANTS[h]) {
+      current = h;
+      render();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    const keys = Object.keys(VARIANTS);
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      if (e.target.closest && e.target.closest("input,textarea")) return;
+      const i = keys.indexOf(current);
+      current =
+        keys[
+          (i + (e.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length
+        ];
+      render();
+    }
+  });
+  render();
+</script>
