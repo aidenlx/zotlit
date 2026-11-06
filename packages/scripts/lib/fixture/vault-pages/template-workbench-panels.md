@@ -170,6 +170,45 @@ lines of the note body show above the Preview. Scroll the editor to reach
 **Include annotations in the note** and its **Add to template** button; no
 part of the editor is cut off. In step 4, the Preview gets shorter first.
 
+## Size the panels from the pane menu
+
+1. Show the Preview and the Fields in a tab about 1600 pixels wide.
+2. Open the pane menu. Point to **Resize fields** and select **Make
+   narrower**. Point to **Resize preview** and select **Make wider**.
+3. Open the pane menu again, point to **Resize fields**, and select **Reset
+   width**.
+4. Make the tab narrower than 600 pixels. Open the pane menu, point to
+   **Resize preview**, and select **Make taller**.
+5. Reload Obsidian (**Reload app without saving**).
+
+Expected: in step 1, **Resize fields** and **Resize preview** sit below
+**Show fields**, and each submenu offers **Make wider**, **Make narrower** and
+**Reset width**; **Reset width** is unavailable while the panel has its
+default width of 400 pixels. In step 2, the Fields panel gets 64 pixels
+narrower and the Preview 64 pixels wider. In step 3, the Fields panel returns
+to 400 pixels. **Make wider** is unavailable when the panel is as wide as the
+tab allows, and **Make narrower** when it is 240 pixels wide. In step 4, the
+menu has no **Resize fields**, as the Fields panel has no column, and
+**Resize preview** offers **Make taller**, **Make shorter** and **Reset
+height**. **Make taller** makes the Preview 10% of the tab's height taller.
+After step 5, the Preview is under the editor at 50% of the tab's height;
+widen the tab, and the Preview returns at the width step 2 gave it. A panel
+that the menu makes so wide that the editor keeps less than 360 pixels moves
+out of its column, as it does after a drag.
+
+## Reset a panel with a double-click
+
+1. Show the Preview, and widen it with its edge.
+2. Double-click the edge.
+3. Make the tab narrower than 600 pixels, and drag the handle above the
+   Preview up.
+4. Double-click the handle.
+
+Expected: step 2 returns the Preview to its default width of 400 pixels, or
+40% of the tab when that is less. Step 4 returns the Preview to 40% of the
+tab's height. A double-click on the Fields edge returns the Fields panel to
+400 pixels.
+
 ## The Preview height survives a restart
 
 1. Do **A narrow tab puts the Preview under the editor**, then press

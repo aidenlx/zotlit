@@ -53,6 +53,7 @@ import {
   citationExampleLabel,
   entryDiagnostics,
   fieldSnippet,
+  panelSizeMenus,
   routeDiagnosis,
   routeProblem,
   setAdvanced,
@@ -1741,6 +1742,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setChecked(this.registry.get(this.workbench.panels).fields.shown)
         .onClick(() => this.togglePanel("fields")),
     );
+    this.#addPanelSizeMenu(menu);
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.open)
@@ -1803,6 +1805,39 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setIcon("rotate-ccw")
           .onClick(() => this.#start(Effect.ignore(this.#restoreDefault()))),
       );
+  }
+  /**
+   * One submenu per handle the leaf draws, named as the handle is, to grow,
+   * shrink or reset its panel without a drag (WCAG 2.5.7).
+   */
+  #addPanelSizeMenu(menu: Menu): void {
+    const { registry } = this;
+    const { panels, panelDefaults } = this.workbench;
+    const menus = panelSizeMenus(workbenchM, registry.get(panels), {
+      size: registry.get(this.viewSize),
+      defaults: panelDefaults,
+    });
+    for (const { handle, label, items } of menus)
+      menu.addItem((item) => {
+        item
+          .setSection(MENU_SECTION.pane)
+          .setTitle(label)
+          .setIcon(handle === "split" ? "move-vertical" : "move-horizontal");
+        const submenu = item.setSubmenu();
+        const axis = handle === "split" ? "vertical" : "horizontal";
+        for (const size of items)
+          submenu.addItem((entry) =>
+            entry
+              .setTitle(size.label)
+              .setIcon(
+                size.resize === "reset"
+                  ? "rotate-ccw"
+                  : `${size.resize === "grow" ? "unfold" : "fold"}-${axis}`,
+              )
+              .setDisabled(size.disabled)
+              .onClick(() => registry.update(panels, size.apply)),
+          );
+      });
   }
   /**
    * The Preview panel's settings (ADR 0048), while the panel shows: what the

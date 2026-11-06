@@ -3491,6 +3491,98 @@ describe("the side panels of the Template Workbench View", () => {
   const entry = (view: TemplateWorkbenchView, title: string) =>
     paneMenu(view).find((item) => item.title === title);
 
+  // #1956: every handle sizes its panel from the pane menu alone.
+  it("sizes and resets each panel from the pane menu, and saves the size", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () => actionOf(view, m.workbench_show_fields()).click());
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    const sizeEntry = (handle: string, title: string) => {
+      const menu = entry(view, handle);
+      expect(menu?.section).toBe("pane");
+      return menu?.submenu?.items.find((item) => item.title === title);
+    };
+    expect(
+      sizeEntry(m.workbench_fields_resize(), m.workbench_panel_reset_width())
+        ?.disabled,
+    ).toBe(true);
+    await act(async () =>
+      sizeEntry(
+        m.workbench_fields_resize(),
+        m.workbench_panel_narrower(),
+      )!.click(),
+    );
+    expect(
+      handleOf(view, m.workbench_fields_resize()).getAttribute("aria-valuenow"),
+    ).toBe("336");
+    await act(async () =>
+      sizeEntry(
+        m.workbench_preview_resize(),
+        m.workbench_panel_wider(),
+      )!.click(),
+    );
+    expect(
+      handleOf(view, m.workbench_preview_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe("464");
+    // Under a narrow leaf the Preview's entries size its height.
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 560, height: 800 }),
+    );
+    expect(entry(view, m.workbench_fields_resize())).toBeUndefined();
+    await act(async () =>
+      sizeEntry(
+        m.workbench_preview_resize(),
+        m.workbench_panel_taller(),
+      )!.click(),
+    );
+    const saved = view.getState();
+    const restored = setup();
+    cleanup.defer(() => act(async () => restored.view.close()));
+    await act(async () => restored.view.setState(saved, { history: false }));
+    await act(async () => restored.view.open());
+    await act(async () =>
+      restored.view.registry.set(restored.view.viewSize, {
+        width: 560,
+        height: 800,
+      }),
+    );
+    expect(
+      handleOf(restored.view, m.workbench_preview_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe("50");
+    await act(async () =>
+      restored.view.registry.set(restored.view.viewSize, {
+        width: 1600,
+        height: 800,
+      }),
+    );
+    expect(
+      handleOf(restored.view, m.workbench_fields_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe("336");
+    await act(async () =>
+      entry(restored.view, m.workbench_fields_resize())!
+        .submenu!.items.find(
+          (item) => item.title === m.workbench_panel_reset_width(),
+        )!
+        .click(),
+    );
+    expect(
+      handleOf(restored.view, m.workbench_fields_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe("400");
+  });
+
   it("shows the editor's own render of the chosen Item in the Preview panel", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup({

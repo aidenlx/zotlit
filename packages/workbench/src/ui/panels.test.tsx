@@ -96,6 +96,24 @@ describe("the side panels", () => {
     expect(page.registry.get(page.model.panels).preview.height).toBe(50);
   });
 
+  it("resets a panel's size when the reader double-clicks its handle", () => {
+    // The browser's own event: Preact's testing library names it otherwise.
+    const doubleClick = (handle: HTMLElement) =>
+      act(() => {
+        handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      });
+    using page = open({ width: 560, height: 800 });
+    const split = screen.getByRole("separator", { name: "Resize preview" });
+    fireEvent.keyDown(split, { key: "End" });
+    doubleClick(split);
+    expect(page.registry.get(page.model.panels).preview.height).toBe(40);
+    page.resize({ width: 1200, height: 800 });
+    const edge = screen.getByRole("separator", { name: "Resize fields" });
+    fireEvent.keyDown(edge, { key: "Home" });
+    doubleClick(edge);
+    expect(page.registry.get(page.model.panels).fields.width).toBe(400);
+  });
+
   it("describes a column's edge at the width the view draws it", () => {
     using page = open({ width: 1200, height: 800 });
     const edge = screen.getByRole("separator", { name: "Resize fields" });

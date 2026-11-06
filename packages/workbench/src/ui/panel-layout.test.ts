@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canResizePanel,
   INITIAL_PANELS,
+  panelHandles,
   placePanels,
   previewBelowHeight,
+  resizePanel,
 } from "./panel-layout";
 import type { PanelPlacement, WorkbenchPanels } from "./panel-layout";
 
@@ -137,5 +140,99 @@ describe("Preview height under the editor", () => {
 
   it("has no height in a view shorter than the editor's floor", () => {
     expect(previewBelowHeight(40, 300)).toBe(0);
+  });
+});
+
+describe("sizing a panel without its handle", () => {
+  const both = shown(true, true);
+  const bounds = (width: number) => ({
+    size: at(width),
+    defaults: INITIAL_PANELS,
+  });
+
+  it("offers the handles the view draws", () => {
+    expect(panelHandles(both, at(1200))).toEqual(["fields", "preview"]);
+    // At 560 px the Preview stands under the editor and the Fields Panel
+    // opens as a popover, which has no edge.
+    expect(panelHandles(both, at(560))).toEqual(["split"]);
+    expect(panelHandles(shown(false, false), at(1200))).toEqual([]);
+  });
+
+  it("widens and narrows a column a large step at a time", () => {
+    const wider = resizePanel("fields", "grow", bounds(1200))(both);
+    expect(wider.fields.width).toBe(464);
+    expect(
+      resizePanel("preview", "shrink", bounds(1200))(both).preview.width,
+    ).toBe(336);
+    // The other panel keeps its size.
+    expect(wider.preview).toBe(both.preview);
+  });
+
+  it("widens a column only as far as the view draws it", () => {
+    // 2/5 of 1200 px is 480 px.
+    const grow = resizePanel("fields", "grow", bounds(1200));
+    const wide = grow(grow(both));
+    expect(wide.fields.width).toBe(480);
+    expect(canResizePanel("fields", "grow", bounds(1200))(wide)).toBe(false);
+    expect(canResizePanel("fields", "shrink", bounds(1200))(wide)).toBe(true);
+  });
+
+  it("stops at the narrowest column", () => {
+    const narrow: WorkbenchPanels = {
+      ...both,
+      fields: { ...both.fields, width: 260 },
+    };
+    const narrowest = resizePanel("fields", "shrink", bounds(1200))(narrow);
+    expect(narrowest.fields.width).toBe(240);
+    expect(canResizePanel("fields", "shrink", bounds(1200))(narrowest)).toBe(
+      false,
+    );
+  });
+
+  it("makes the Preview under the editor taller and shorter by a tenth of the view", () => {
+    expect(resizePanel("split", "grow", bounds(560))(both).preview.height).toBe(
+      50,
+    );
+    expect(
+      resizePanel("split", "shrink", bounds(560))(both).preview.height,
+    ).toBe(30);
+    const tallest: WorkbenchPanels = {
+      ...both,
+      preview: { ...both.preview, height: 80 },
+    };
+    expect(canResizePanel("split", "grow", bounds(560))(tallest)).toBe(false);
+  });
+
+  it("resets a panel to its default size", () => {
+    const sized: WorkbenchPanels = {
+      fields: { ...both.fields, width: 300 },
+      preview: { ...both.preview, width: 960, height: 70 },
+    };
+    expect(
+      resizePanel("fields", "reset", bounds(1200))(sized).fields.width,
+    ).toBe(400);
+    expect(
+      resizePanel("preview", "reset", bounds(1200))(sized).preview,
+    ).toEqual({
+      ...sized.preview,
+      width: 400,
+    });
+    expect(resizePanel("split", "reset", bounds(560))(sized).preview).toEqual({
+      ...sized.preview,
+      height: 40,
+    });
+    expect(canResizePanel("fields", "reset", bounds(1200))(both)).toBe(false);
+    expect(canResizePanel("split", "reset", bounds(560))(sized)).toBe(true);
+  });
+
+  it("resets to the host's own default sizes", () => {
+    // The web Workbench starts its Fields Panel at 288 px.
+    const page: WorkbenchPanels = {
+      ...both,
+      fields: { ...both.fields, width: 288 },
+    };
+    const web = { size: at(1200), defaults: page };
+    expect(resizePanel("fields", "reset", web)(both).fields.width).toBe(288);
+    expect(canResizePanel("fields", "reset", web)(page)).toBe(false);
   });
 });

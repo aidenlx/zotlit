@@ -98,6 +98,7 @@ export type {
   WorkbenchPanel,
   WorkbenchPanels,
 } from "./panel-layout";
+export { panelSizeMenus } from "./panel-menu";
 export { SidePanels } from "./panels";
 export type { SidePanel } from "./panels";
 export {

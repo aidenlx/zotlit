@@ -18,10 +18,11 @@ import {
   panelLimit,
   PREVIEW_HEIGHT,
   previewBelowHeight,
+  resizePanel,
   setPanelWidth,
   setPreviewHeight,
 } from "./panel-layout";
-import type { PanelSide, WorkbenchPanels } from "./panel-layout";
+import type { PanelHandle, PanelSide, WorkbenchPanels } from "./panel-layout";
 import { usePanelProperties, useParts } from "./theme";
 
 /** What one side panel shows, and what names it to a screen reader. */
@@ -78,6 +79,8 @@ const rightToLeft = (element: Element) =>
 
 /** How one handle sizes its panel, from the keyboard and the pointer. */
 interface Sizing {
+  /** The handle, which a double-click resets. */
+  readonly handle: PanelHandle;
   /** The size as the reader sees it, from the panels as they are now. */
   readonly read: (panels: WorkbenchPanels) => number;
   /** Writes `size`; the transition holds it within its limits. */
@@ -106,7 +109,8 @@ interface Sizing {
  * the way they point; Home and End set its smallest and largest size. Each
  * press reads the panels as they are, so presses faster than a render each
  * count. A drag writes the size to the region's own style while it moves,
- * and to the model once, where the reader lets go.
+ * and to the model once, where the reader lets go. A double-click resets
+ * the panel to its default size.
  */
 function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
   const { model, registry } = useWorkbenchEditor();
@@ -160,6 +164,14 @@ function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
     },
     onPointerUp: end,
     onPointerCancel: end,
+    onDoubleClick() {
+      update(
+        resizePanel(sizing.handle, "reset", {
+          size: registry.get(model.viewSize),
+          defaults: model.panelDefaults,
+        }),
+      );
+    },
   };
 }
 
@@ -185,6 +197,7 @@ function Column({
     (side === "fields" ? 1 : -1) * (rightToLeft(handle) ? -1 : 1);
   const handlers = useSizing(
     {
+      handle: side,
       read: (panels) => held(panels[side].width),
       write: (next) => setPanelWidth(side, held(next)),
       keys: (handle) =>
@@ -254,6 +267,7 @@ function Below({
   const viewHeight = size?.height ?? 0;
   const handlers = useSizing(
     {
+      handle: "split",
       read: (panels) => panels.preview.height,
       write: setPreviewHeight,
       // Up gives the Preview more height.

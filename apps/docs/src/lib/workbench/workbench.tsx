@@ -113,6 +113,7 @@ import {
 } from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
+import { ViewMenu } from "./view-menu";
 
 /** The result becomes a column once both reading and editing have room. */
 
@@ -665,6 +666,7 @@ function WorkbenchSession({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <ViewMenu model={model} registry={registry} />
           {/* The view actions, as the Obsidian view has them: each shows or
               hides its panel, wherever the panel goes at this width. */}
           <Button

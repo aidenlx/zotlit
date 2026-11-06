@@ -288,6 +288,8 @@ export interface WorkbenchModel<
   readonly choices: Atom.Writable<WorkbenchChoices>;
   /** Which side panels the editor shows, and how wide and tall; the host saves them. */
   readonly panels: Atom.Writable<WorkbenchPanels>;
+  /** The panels the editor started from, whose sizes a reset returns to. */
+  readonly panelDefaults: WorkbenchPanels;
   /** The size of the view the host measured, or null until it has. */
   readonly viewSize: Atom.Atom<ViewSize | null>;
   /** Where each panel goes in the view as it is now; never saved. */
@@ -468,6 +470,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     view,
     choices,
     panels,
+    panelDefaults: initialPanels,
     viewSize,
     placement: Atom.withEquality(
       Atom.make((get) => placePanels(get(panels), get(viewSize))),
