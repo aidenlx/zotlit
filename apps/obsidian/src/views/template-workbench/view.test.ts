@@ -1504,7 +1504,7 @@ An annotation.
       citationExample: "one-item",
       panels: {
         fields: { shown: false, width: 400 },
-        preview: { shown: false, width: 400 },
+        preview: { shown: false, width: 400, height: 40 },
       },
       preview: {
         mode: "create",
@@ -2102,7 +2102,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     citationExample: "one-item",
     panels: {
       fields: { shown: false, width: 400 },
-      preview: { shown: false, width: 400 },
+      preview: { shown: false, width: 400, height: 40 },
     },
     preview: {
       mode: "create",
@@ -3422,6 +3422,65 @@ describe("the side panels of the Template Workbench View", () => {
       ),
     ).toBe("true");
     expect(restored.view.getState()).toEqual(saved);
+    await act(async () => restored.view.close());
+  });
+
+  // #1954: the leaf's size places the Preview; it never changes what shows.
+  it("puts the Preview under a narrow leaf and beside a wide one, keeping the saved panels", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const saved = view.getState();
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 560, height: 800 }),
+    );
+    const split = handleOf(view, m.workbench_preview_resize());
+    expect(split.getAttribute("aria-orientation")).toBe("horizontal");
+    expect(region(view, m.workbench_view_preview())).not.toBeNull();
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    expect(
+      handleOf(view, m.workbench_preview_resize()).getAttribute(
+        "aria-orientation",
+      ),
+    ).toBe("vertical");
+    expect(view.getState()).toEqual(saved);
+    await act(async () => view.close());
+  });
+
+  it("restores the Preview's height under the editor with the view state", async () => {
+    const original = setup();
+    await act(async () => original.view.open());
+    await act(async () =>
+      actionOf(original.view, m.workbench_show_preview()).click(),
+    );
+    await act(async () =>
+      original.view.registry.set(original.view.viewSize, {
+        width: 560,
+        height: 800,
+      }),
+    );
+    await press(
+      handleOf(original.view, m.workbench_preview_resize()),
+      "ArrowUp",
+    );
+    const saved = original.view.getState();
+    await act(async () => original.view.close());
+    const restored = setup();
+    await act(async () => restored.view.setState(saved, { history: false }));
+    await act(async () => restored.view.open());
+    await act(async () =>
+      restored.view.registry.set(restored.view.viewSize, {
+        width: 560,
+        height: 800,
+      }),
+    );
+    expect(
+      handleOf(restored.view, m.workbench_preview_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe("45");
     await act(async () => restored.view.close());
   });
   const paneMenu = (view: TemplateWorkbenchView) => {

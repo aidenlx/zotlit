@@ -11,16 +11,20 @@ import {
   chooseItem,
   choosePartialProfile,
   INITIAL_VIEW,
-  panelLimit,
-  PANEL_WIDTH,
   setAdvanced,
-  setPanelWidth,
   setPreview,
   setRoot,
   setTab,
-  showPanel,
 } from "./model";
 import type { WorkbenchItemData, WorkbenchViewState } from "./model";
+import {
+  panelLimit,
+  PANEL_WIDTH,
+  setPanelWidth,
+  setPreviewHeight,
+  showPanel,
+} from "./panel-layout";
+import type { ViewSize, WorkbenchPanels } from "./panel-layout";
 import { fakeHost, TEST_RUNTIME } from "./test-host";
 
 import { WorkbenchDocumentController } from "#/document/controller";
@@ -50,6 +54,8 @@ function open(
     view?: Atom.Writable<WorkbenchViewState>;
     kind?: WorkbenchDocumentKind;
     partialName?: Atom.Atom<string | null>;
+    viewSize?: Atom.Atom<ViewSize | null>;
+    panels?: WorkbenchPanels;
   } = {},
 ) {
   const { kind, ...rest } = options;
@@ -188,7 +194,7 @@ describe("the side panels", () => {
     const { registry, model } = opened;
     expect(registry.get(model.panels)).toEqual({
       fields: { shown: false, width: 400 },
-      preview: { shown: false, width: 400 },
+      preview: { shown: false, width: 400, height: 40 },
     });
   });
 
@@ -198,7 +204,7 @@ describe("the side panels", () => {
     registry.update(model.panels, showPanel("preview", true));
     expect(registry.get(model.panels)).toEqual({
       fields: { shown: false, width: 400 },
-      preview: { shown: true, width: 400 },
+      preview: { shown: true, width: 400, height: 40 },
     });
   });
 
@@ -225,6 +231,51 @@ describe("the side panels", () => {
     registry.update(model.panels, showPanel("preview", false));
     registry.update(model.panels, setPanelWidth("fields", 400));
     expect(registry.get(model.panels)).toBe(panels);
+  });
+
+  it("holds the Preview's height under the editor within its shares", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    registry.update(model.panels, setPreviewHeight(55.4));
+    expect(registry.get(model.panels).preview.height).toBe(55);
+    registry.update(model.panels, setPreviewHeight(95));
+    expect(registry.get(model.panels).preview.height).toBe(80);
+    registry.update(model.panels, setPreviewHeight(5));
+    expect(registry.get(model.panels).preview.height).toBe(20);
+  });
+
+  it("places the panels from the view size the host measures, and keeps the panels", () => {
+    const viewSize = Atom.make<ViewSize | null>({ width: 1200, height: 800 });
+    using opened = open({ viewSize });
+    const { registry, model } = opened;
+    registry.update(model.panels, showPanel("preview", true));
+    registry.update(model.panels, showPanel("fields", true));
+    const panels = registry.get(model.panels);
+    expect(registry.get(model.placement)).toEqual({
+      preview: "side",
+      fields: "column",
+    });
+    registry.set(viewSize, { width: 560, height: 800 });
+    expect(registry.get(model.placement)).toEqual({
+      preview: "below",
+      fields: "popover",
+    });
+    // Resizing the view moves the panels; what the reader chose stands.
+    expect(registry.get(model.panels)).toBe(panels);
+  });
+
+  it("starts from the panels the host names", () => {
+    using opened = open({
+      panels: {
+        fields: { shown: true, width: 288 },
+        preview: { shown: true, width: 400, height: 40 },
+      },
+    });
+    const { registry, model } = opened;
+    expect(registry.get(model.panels).fields).toEqual({
+      shown: true,
+      width: 288,
+    });
   });
 
   it("draws a panel at most two fifths of its container, within the limits", () => {

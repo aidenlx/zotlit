@@ -58,6 +58,7 @@ import {
   setAdvanced,
   setPanelWidth,
   setPreview,
+  setPreviewHeight,
   setRoot,
   setTab,
   showPanel,
@@ -87,6 +88,7 @@ import {
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
+  SidePanels,
   useParts,
   AnnotationSampleBar,
 } from "@zotlit/workbench/ui";
@@ -101,6 +103,7 @@ import type {
   TemplateRoot,
   PanelSide,
   PartialPlaceholderHost,
+  ViewSize,
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -196,7 +199,6 @@ import {
 import type { TemplateWorkbenchModel } from "./model";
 import type { CreateSharedPartialOptions } from "./new-partial";
 import { openTemplateWorkbench } from "./open";
-import { WorkbenchPanels } from "./panels";
 import { readPartialChoice, writePartialChoice } from "./partial-choice-memory";
 import { createSharedPartialEffect } from "./partial-command";
 import {
@@ -308,6 +310,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The editor hover popover now open, which the next one replaces. */
   hoverPopover: HoverPopover | null = null;
   readonly #editor: WorkbenchEditorInstance<NativeRenderResult>;
+  /** The leaf's size, which places the side panels; null until measured. */
+  readonly viewSize = Atom.make<ViewSize | null>(null);
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
@@ -682,6 +686,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       view: this.model.view,
       partialName: Atom.map(this.model.document, (facts) => facts.partialName),
       itemData: this.model.itemData,
+      viewSize: this.viewSize,
       controller: this.#controller,
       reportContext: () => this.reportContext(this.#defaultRoot),
       mapResult: nativeResult,
@@ -943,8 +948,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       profile: this.partialProfile,
     });
   }
+  /**
+   * Measures the leaf, whose size places the side panels. A leaf in a
+   * background tab measures nothing and keeps the size it last had.
+   */
+  #measure(): void {
+    const { clientWidth: width, clientHeight: height } = this.contentEl;
+    if (width === 0 || height === 0) return;
+    const current = this.registry.get(this.viewSize);
+    if (current?.width !== width || current.height !== height)
+      this.registry.set(this.viewSize, { width, height });
+  }
   override onResize(): void {
     super.onResize();
+    this.#measure();
     for (const element of this.contentEl.querySelectorAll<HTMLElement>(
       ".cm-editor",
     )) {
@@ -1455,6 +1472,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             )(showPanel(side, panel.shown)(panels)),
           );
       }
+      const height = value.panels.preview?.height;
+      if (height !== undefined)
+        this.registry.update(this.workbench.panels, setPreviewHeight(height));
       this.registry.update(this.workbench.choices, setPreview(value.preview));
       this.registry.update(
         this.workbench.choices,
@@ -1541,6 +1561,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   protected override onOpen(): Promise<void> {
     this.#closed = false;
     this.#release ??= holdTemplateWorkbenchModel(this.registry, this.model);
+    this.#measure();
     this.registerDomEvent(
       this.contentEl,
       "scroll",
@@ -3130,8 +3151,7 @@ function EditorContent({
       value={selectedDiagnoses}
       onReveal={selectProblem}
     >
-      <WorkbenchPanels
-        model={view.workbench}
+      <SidePanels
         panels={{
           fields: {
             label: m.workbench_view_fields(),
@@ -3157,7 +3177,7 @@ function EditorContent({
         }}
       >
         {content}
-      </WorkbenchPanels>
+      </SidePanels>
     </WorkbenchDiagnosticsProvider>
   );
 }

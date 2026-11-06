@@ -22,6 +22,7 @@ import {
   annotationSamples,
   chooseAnnotation,
   createWorkbenchEditor,
+  INITIAL_PANELS,
   INITIAL_VIEW,
   patchAt,
 } from "@zotlit/workbench/ui";
@@ -31,7 +32,9 @@ import type {
   WorkbenchItemChoice,
   WorkbenchItemData,
   WorkbenchItemDataInput,
+  ViewSize,
   WorkbenchModel,
+  WorkbenchPanels,
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
@@ -94,6 +97,8 @@ export interface PageLayout {
 /** The page's atoms and commands; one page has one. */
 export interface WebPage {
   readonly view: Atom.Writable<WorkbenchViewState>;
+  /** The size of the page's frame, which places the side panels. */
+  readonly viewSize: Atom.Atom<ViewSize | null>;
   /** The vault Item the page holds, which the paper choice offers. */
   readonly retained: Atom.Writable<SampleItem | null>;
   /** The document the draft is kept for. */
@@ -129,8 +134,24 @@ export interface WebPage {
   >;
 }
 
-/** The page's atoms over `bridge`. Nothing runs until something reads them. */
-export function makeWebPage(bridge: PageBridge): WebPage {
+/**
+ * A new page shows both panels, as the page always has: the Fields Panel at
+ * the width of the field column it replaces, 18rem.
+ */
+const PAGE_PANELS: WorkbenchPanels = {
+  fields: { shown: true, width: 288 },
+  preview: { ...INITIAL_PANELS.preview, shown: true },
+};
+
+/**
+ * The page's atoms over `bridge`. Nothing runs until something reads them.
+ * `viewSize` is the frame's size, which the page measures into an atom of
+ * its own unless a test hands one.
+ */
+export function makeWebPage(
+  bridge: PageBridge,
+  viewSize: Atom.Atom<ViewSize | null> = Atom.make<ViewSize | null>(null),
+): WebPage {
   const { runtime } = bridge;
   const view = Atom.make<WorkbenchViewState>({
     ...INITIAL_VIEW,
@@ -162,6 +183,7 @@ export function makeWebPage(bridge: PageBridge): WebPage {
   );
   const page: WebPage = {
     view,
+    viewSize,
     retained,
     location: Atom.make(STANDALONE_LOCATION),
     chosen,
@@ -311,6 +333,8 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
     registry,
     runtime,
     view: page.view,
+    panels: PAGE_PANELS,
+    viewSize: page.viewSize,
     itemData,
     reportContext,
   });

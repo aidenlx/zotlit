@@ -1,5 +1,5 @@
 // The Workbench frame — the page shell, the header, the status line,
-// the main grid with the field column and the two panes, and the
+// the main area with the field list and the two panes, and the
 // toolbar, tab strip, and result header the panes open with — shared by the
 // live Workbench and the skeleton the route paints before the editor bundle
 // arrives. The route's chunk imports this module, so it imports React, the
@@ -7,7 +7,7 @@
 // the connection bar only.
 
 import { ChevronDown, CircleHelp, Download, FolderOpen } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import {
   EditToolbar,
@@ -32,8 +32,31 @@ import { m } from "@/paraglide/messages.js";
 import { ConnectionBar } from "./connection-bar";
 import { WEB_THEME } from "./theme";
 
-/** A pane section: a column of the main grid. */
+/** A pane section, which fills the place the layout gives it. */
 const PANE_CLASS = "flex min-h-0 min-w-0 flex-1 flex-col";
+
+/** The three parts the main area arranges. */
+export interface FrameParts {
+  readonly fields: ReactNode;
+  /** The pane the source and the Problems area share. */
+  readonly edit: ReactNode;
+  readonly result: ReactNode;
+}
+
+/**
+ * The parts at their first-paint places: the Fields Panel at its initial
+ * width, the editor, and the Preview at its initial width, each within the
+ * 2/5 share the live panels keep.
+ */
+function firstPaint({ fields, edit, result }: FrameParts) {
+  return (
+    <div className="flex h-full min-w-0 flex-1 gap-3">
+      <div className="flex w-72 max-w-2/5 shrink-0 flex-col">{fields}</div>
+      <div className="flex min-w-0 flex-1 flex-col">{edit}</div>
+      <div className="flex w-100 max-w-2/5 shrink-0 flex-col">{result}</div>
+    </div>
+  );
+}
 
 export function WorkbenchFrame({
   name,
@@ -46,6 +69,8 @@ export function WorkbenchFrame({
   editor,
   problems,
   result,
+  arrange = firstPaint,
+  mainRef,
   busy = false,
   children,
 }: {
@@ -65,6 +90,10 @@ export function WorkbenchFrame({
   /** The Problems area, which shares the editor pane with the source. */
   problems?: ReactNode;
   result: ReactNode;
+  /** Places the parts in the main area; the skeleton paints the first layout. */
+  arrange?: (parts: FrameParts) => ReactNode;
+  /** The main area, which the live page measures to place its panels. */
+  mainRef?: Ref<HTMLElement>;
   /** Whether the page is still filling in. */
   busy?: boolean;
   /** Hidden helpers: the file input and the dialogs. */
@@ -101,25 +130,34 @@ export function WorkbenchFrame({
       {strips}
 
       <main
+        ref={mainRef}
         id="workbench-editor"
-        className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)_minmax(0,0.9fr)] gap-3 p-3"
+        className="flex min-h-0 flex-1 p-3"
       >
-        <div className="grid min-h-0 min-w-0 grid-cols-1">{fields}</div>
-
-        {/* The pane the source and the Problems area share. It measures
-            itself, so whether a reading fits beside the source is the pane's
-            own question rather than the window's. */}
-        <section
-          id="workbench-edit-pane"
-          className={`@container-[size]/workbench-editor ${PANE_CLASS}`}
-        >
-          {editor}
-          {problems}
-        </section>
-
-        <section id="workbench-result-pane" className={PANE_CLASS}>
-          {result}
-        </section>
+        {arrange({
+          fields: (
+            <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1">
+              {fields}
+            </div>
+          ),
+          // The pane the source and the Problems area share. It measures
+          // itself, so whether a reading fits beside the source is the
+          // pane's own question rather than the window's.
+          edit: (
+            <section
+              id="workbench-edit-pane"
+              className={`@container-[size]/workbench-editor ${PANE_CLASS}`}
+            >
+              {editor}
+              {problems}
+            </section>
+          ),
+          result: (
+            <section id="workbench-result-pane" className={PANE_CLASS}>
+              {result}
+            </section>
+          ),
+        })}
       </main>
       <footer
         aria-label={m.docs_workbench_status()}

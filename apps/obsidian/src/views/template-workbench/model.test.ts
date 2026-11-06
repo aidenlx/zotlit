@@ -240,7 +240,7 @@ it("round-trips the saved and ephemeral state through Schema", () => {
         },
         panels: {
           fields: { shown: false, width: 400 },
-          preview: { shown: true, width: 520 },
+          preview: { shown: true, width: 520, height: 55 },
         },
         partial: { context: "citation", profile: "books" },
       }),
@@ -257,7 +257,7 @@ it("round-trips the saved and ephemeral state through Schema", () => {
     partialProfile: "books",
     panels: {
       fields: { shown: false, width: 400 },
-      preview: { shown: true, width: 520 },
+      preview: { shown: true, width: 520, height: 55 },
     },
     preview: {
       mode: "update",
@@ -285,6 +285,23 @@ it("round-trips the saved and ephemeral state through Schema", () => {
       },
     })?.panels,
   ).toEqual({ preview: { shown: true, width: 960 } });
+  // A Preview height outside its shares is held to them; a bad one is left out.
+  expect(
+    readSavedWorkbench({
+      panels: {
+        fields: { shown: true, width: 300, height: 30 },
+        preview: { shown: true, width: 400, height: 95 },
+      },
+    })?.panels,
+  ).toEqual({
+    fields: { shown: true, width: 300 },
+    preview: { shown: true, width: 400, height: 80 },
+  });
+  expect(
+    readSavedWorkbench({
+      panels: { preview: { shown: true, width: 400, height: "tall" } },
+    })?.panels,
+  ).toEqual({ preview: { shown: true, width: 400 } });
   // A bad field leaves the others; a cleared Item stays cleared.
   expect(
     readSavedWorkbench({

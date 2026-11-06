@@ -181,9 +181,13 @@ and add actions align at its leading edge.
 
 ## Adaptation and access
 
-Show fields, editor, and result in three columns at every width, as the
-Template Workbench View in Obsidian does. A short viewport scrolls the page
-while preserving several lines of editor space.
+Lay out the Fields Panel, the editor, and the Preview Panel with the shared
+panels, as the Template Workbench View in Obsidian does. "Show fields" and
+"Show preview" in the header show and hide each panel at every width. The
+shared placement rule puts a panel beside the editor while the editor keeps
+360 px; otherwise the Preview goes under the editor, at its saved share of
+the height. Document order is Fields Panel, editor, Preview Panel. A short
+viewport scrolls the page while preserving several lines of editor space.
 
 Source and Problems share the editor pane. An open Problems area keeps the share the reader chooses by dragging its top
 divider. Arrow keys adjust the focused divider; Home and End select its size

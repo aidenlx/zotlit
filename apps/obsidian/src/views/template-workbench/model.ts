@@ -19,6 +19,7 @@ import type {
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import {
   clampPanelWidth,
+  clampPreviewHeight,
   INITIAL_VIEW,
   TABS,
   patchAt,
@@ -384,8 +385,14 @@ export interface SavedWorkbench {
   readonly annotationId: string | null | undefined;
   readonly partialContext: PartialContext | null;
   readonly partialProfile: string | null;
-  /** The panels the state names; a side it leaves out keeps the leaf's own. */
-  readonly panels: Partial<WorkbenchPanels>;
+  /**
+   * The panels the state names; a side it leaves out keeps the leaf's own,
+   * and so does a Preview height it leaves out.
+   */
+  readonly panels: {
+    readonly fields?: WorkbenchPanel;
+    readonly preview?: WorkbenchPanel & { readonly height?: number };
+  };
   /** The Preview's settings the state names; each one decodes alone. */
   readonly preview: Partial<WorkbenchPreviewSettings>;
   /** The Citation Variant and example set the state names; each decodes alone. */
@@ -492,19 +499,35 @@ const savedPanel = Schema.Struct({
   width: Schema.Finite,
 });
 
-/** Each side decodes alone; its width is held within the limits. */
-function readPanels(input: unknown): Partial<WorkbenchPanels> {
+/**
+ * Each side decodes alone; its width is held within the limits, and so is
+ * the Preview's height, which decodes apart from its side.
+ */
+function readPanels(input: unknown): SavedWorkbench["panels"] {
   const value = decode(record, input) ?? {};
-  const panels: Partial<Record<PanelSide, WorkbenchPanel>> = {};
-  for (const side of ["fields", "preview"] as const) {
+  const read = (side: PanelSide): WorkbenchPanel | undefined => {
     const panel = decode(savedPanel, value[side]);
-    if (panel)
-      panels[side] = {
-        shown: panel.shown,
-        width: clampPanelWidth(panel.width),
-      };
-  }
-  return panels;
+    return panel
+      ? { shown: panel.shown, width: clampPanelWidth(panel.width) }
+      : undefined;
+  };
+  const fields = read("fields");
+  const preview = read("preview");
+  const height = decode(
+    Schema.Finite,
+    (decode(record, value.preview) ?? {}).height,
+  );
+  return {
+    ...(fields ? { fields } : {}),
+    ...(preview
+      ? {
+          preview: {
+            ...preview,
+            ...(height === null ? {} : { height: clampPreviewHeight(height) }),
+          },
+        }
+      : {}),
+  };
 }
 
 const position = Schema.Struct({ top: Schema.Finite, left: Schema.Finite });

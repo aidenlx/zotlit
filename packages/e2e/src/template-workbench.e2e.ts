@@ -601,6 +601,185 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const second = await read(saved);
     expect(second.edges.fields.now).toBe("260");
     expect(second.edges.preview.now).toBe(String(preview.drawn));
-    expect(second.saved).toEqual(panels);
+    // A state that names no Preview height leaves the leaf's own, 40%.
+    expect(second.saved).toEqual({
+      ...panels,
+      preview: { ...panels.preview, height: 40 },
+    });
+  });
+
+  // #1954: the leaf's width places the Preview: under the editor in a narrow
+  // leaf, at the right in a wide one. A resize never changes what the reader
+  // chose to show, and the Preview's height under the editor is saved state.
+  it("puts the Preview under the editor in a narrow leaf, back at the right in a wide one, and restores its height", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          app.workspace.detachLeavesOfType("empty");
+        },
+        undefined,
+      ),
+    );
+    await suite.wideWindow(cleanup);
+    const panels = {
+      fields: { shown: false, width: 400 },
+      preview: { shown: true, width: 400, height: 40 },
+    };
+    /**
+     * Opens the editor in the leftmost tab group with `state`, and gives that
+     * group `share` percent of the window beside an empty tab, or the whole
+     * window when `share` is null.
+     */
+    const open = (state: string, share: number | null) =>
+      obRun(
+        run.vaultId,
+        async ({ app }, { path, state, share }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          app.workspace.detachLeavesOfType("empty");
+          const leaf = app.workspace.createLeafInParent(
+            app.workspace.rootSplit,
+            0,
+          );
+          await leaf.setViewState({
+            type: "zotlit-template-workbench",
+            state: { ...(JSON.parse(state) as object), file: path },
+            active: true,
+          });
+          if (share === null) return;
+          const other = app.workspace.createLeafBySplit(leaf, "vertical");
+          await other.setViewState({ type: "empty" });
+          // A tab group's share of the split, as dragging its edge sets it.
+          type Sized = { setDimension(share: number): void };
+          (leaf.parent as unknown as Sized).setDimension(share);
+          (other.parent as unknown as Sized).setDimension(100 - share);
+          app.workspace.trigger("resize");
+        },
+        { path, state, share },
+      );
+    interface Layout {
+      readonly width: number;
+      readonly height: number;
+      readonly orientation: string | null;
+      readonly share: string | null;
+      /** Where the Preview stands against the editor. */
+      readonly preview: "below" | "right" | "other";
+      readonly previewHeight: number;
+      readonly saved: unknown;
+    }
+    /** Waits for the layout `ready` accepts, and reads it. */
+    const layout = async (what: string, ready: (layout: Layout) => boolean) =>
+      JSON.parse(
+        (await obRunUntil(
+          run.vaultId,
+          ({ page }, { path, label }) => {
+            const view = page.workbench({ path });
+            const panel = page.previewPanel(view);
+            const editor = view?.contentEl.querySelector<HTMLElement>(
+              '[data-part="editor"]',
+            );
+            const handle = Array.from(
+              view?.contentEl.querySelectorAll<HTMLElement>(
+                "[role=separator]",
+              ) ?? [],
+            ).find((element) => element.getAttribute("aria-label") === label);
+            if (!view || !panel || !editor || !handle) return null;
+            const box = panel.getBoundingClientRect();
+            const source = editor.getBoundingClientRect();
+            return JSON.stringify({
+              width: view.contentEl.clientWidth,
+              height: view.contentEl.clientHeight,
+              orientation: handle.getAttribute("aria-orientation"),
+              share: handle.getAttribute("aria-valuenow"),
+              preview:
+                box.top >= source.bottom
+                  ? "below"
+                  : box.left >= source.right
+                    ? "right"
+                    : "other",
+              previewHeight: Math.round(box.height),
+              saved: view.getState().panels,
+            } satisfies Layout);
+          },
+          { path, label: run.m.workbench_preview_resize() },
+          {
+            what,
+            ready: (value) =>
+              value !== null && ready(JSON.parse(value) as Layout),
+          },
+        ))!,
+      ) as Layout;
+
+    // A narrow leaf: 600 px less a 240 px Preview leaves the editor under
+    // 360 px, so the Preview goes under the editor at 40% of the height.
+    await open(JSON.stringify({ panels }), 30);
+    const narrow = await layout(
+      "the Preview under the editor of a narrow leaf",
+      (layout) => layout.preview === "below",
+    );
+    expect(narrow.width).toBeLessThan(600);
+    expect(narrow.orientation).toBe("horizontal");
+    expect(narrow.share).toBe("40");
+    expect(narrow.previewHeight).toBe(Math.round(narrow.height * 0.4));
+
+    // The arrows set its height: two presses up make it 50% of the leaf.
+    await obRun(
+      run.vaultId,
+      ({ page }, { path, label }) => {
+        const view = page.workbench({ path })!;
+        const handle = Array.from(
+          view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
+        ).find((element) => element.getAttribute("aria-label") === label)!;
+        for (let press = 0; press < 2; press++)
+          handle.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }),
+          );
+      },
+      { path, label: run.m.workbench_preview_resize() },
+    );
+    const taller = await layout(
+      "the Preview at half the leaf's height",
+      (layout) => layout.share === "50",
+    );
+    expect(taller.previewHeight).toBe(Math.round(taller.height * 0.5));
+    const chosen = {
+      ...panels,
+      preview: { ...panels.preview, height: 50 },
+    };
+    expect(taller.saved).toEqual(chosen);
+
+    // Widening the leaf puts the Preview back at the right, at its width,
+    // and leaves what the reader chose as it was.
+    await obRun(
+      run.vaultId,
+      ({ app }) => app.workspace.detachLeavesOfType("empty"),
+      undefined,
+    );
+    const wide = await layout(
+      "the Preview at the right of a wide leaf",
+      (layout) => layout.preview === "right",
+    );
+    expect(wide.orientation).toBe("vertical");
+    expect(wide.share).toBe("400");
+    expect(wide.saved).toEqual(chosen);
+
+    // The workspace restores the height in a new narrow leaf.
+    const saved = await obRun(
+      run.vaultId,
+      ({ page }, { path }) =>
+        JSON.stringify(page.workbench({ path })!.getState()),
+      { path },
+    );
+    await open(saved, 30);
+    const restored = await layout(
+      "the restored Preview under the editor",
+      (layout) => layout.preview === "below",
+    );
+    expect(restored.share).toBe("50");
+    expect(restored.previewHeight).toBe(Math.round(restored.height * 0.5));
+    expect(restored.saved).toEqual(chosen);
   });
 });

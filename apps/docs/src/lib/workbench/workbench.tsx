@@ -5,12 +5,15 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Option } from "effect";
 import type { Layer } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import {
   ArrowLeft,
   Download,
   ExternalLink,
   FilePlus2,
   FolderOpen,
+  PanelLeft,
+  PanelRight,
   Save,
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -56,8 +59,12 @@ import {
   NotePane,
   PropertiesPane,
   SliceEditor,
+  SidePanels,
+  showPanel,
 } from "@zotlit/workbench/ui";
 import type {
+  PanelSide,
+  ViewSize,
   WorkbenchTab,
   WorkbenchDiagnosis,
   WorkbenchHost,
@@ -114,13 +121,19 @@ import { useWorkbenchConnection } from "./use-workbench-connection";
 /** The Workbench on a page runtime of its own, which closing the page disposes. */
 export function Workbench({
   layer,
+  viewSize,
 }: {
   /** The page's services; tests hand a layer over fakes. */
   layer?: Layer.Layer<PageServices>;
+  /**
+   * The frame's size, which places the side panels. Tests hand one, since
+   * their document lays nothing out; the page otherwise measures its frame.
+   */
+  viewSize?: Atom.Atom<ViewSize | null>;
 }) {
   return (
     <PageRuntime layer={layer}>
-      <WorkbenchPage />
+      <WorkbenchPage viewSize={viewSize} />
     </PageRuntime>
   );
 }
@@ -131,9 +144,13 @@ interface EditorReads {
 }
 
 /** The page's atoms, its host, and the one editor they serve. */
-function WorkbenchPage() {
+function WorkbenchPage({
+  viewSize,
+}: {
+  viewSize: Atom.Atom<ViewSize | null> | undefined;
+}) {
   const bridge = usePageBridge();
-  const [page] = useState(() => makeWebPage(bridge));
+  const [page] = useState(() => makeWebPage(bridge, viewSize));
   const sample = useAtomValue(page.chosen);
   // The editor's caret, read when the host asks for it.
   const reads = useRef<EditorReads>({ insertTarget: () => null });
@@ -213,6 +230,31 @@ function WorkbenchSession({
   const importFileCommand = useAtomSet(workbench.importFile);
   const save = useAtomSet(workbench.save);
   const { drafts, layout: layoutAtom } = workbench;
+  const panels = useAtomValue(model.panels);
+  const togglePanel = (side: PanelSide) =>
+    registry.update(model.panels, (state) =>
+      showPanel(side, !state[side].shown)(state),
+    );
+  // The frame's content box is the view the panels share. A frame laid out
+  // at no size, such as one in a hidden tab, keeps the size it last had.
+  const { viewSize } = page;
+  const measureFrame = useCallback(
+    (main: HTMLElement | null) => {
+      const view = main?.ownerDocument.defaultView;
+      if (!main || !view || !Atom.isWritable(viewSize)) return;
+      const observer = new view.ResizeObserver(([entry]) => {
+        const { width, height } = entry!.contentRect;
+        if (width > 0 && height > 0)
+          registry.set(viewSize, {
+            width: Math.round(width),
+            height: Math.round(height),
+          });
+      });
+      observer.observe(main);
+      return () => observer.disconnect();
+    },
+    [registry, viewSize],
+  );
   const dirty = useAtomValue(drafts.dirty);
   const restorable = useAtomValue(drafts.restorable);
   const location = useAtomValue(page.location);
@@ -628,6 +670,28 @@ function WorkbenchSession({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* The view actions, as the Obsidian view has them: each shows or
+              hides its panel, wherever the panel goes at this width. */}
+          <Button
+            variant="ghost"
+            size="xs"
+            aria-pressed={panels.fields.shown}
+            className="aria-pressed:bg-fd-muted"
+            onClick={() => togglePanel("fields")}
+          >
+            <PanelLeft aria-hidden className="rtl:-scale-x-100" />
+            {m.workbench_show_fields()}
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            aria-pressed={panels.preview.shown}
+            className="aria-pressed:bg-fd-muted"
+            onClick={() => togglePanel("preview")}
+          >
+            <PanelRight aria-hidden className="rtl:-scale-x-100" />
+            {m.workbench_show_preview()}
+          </Button>
           <Button
             size="xs"
             disabled={saveBusy || (canSaveToVault && draft)}
@@ -918,6 +982,25 @@ function WorkbenchSession({
           onReturn={returnToTemplate}
         />
       }
+      mainRef={measureFrame}
+      arrange={({ fields, edit, result }) => (
+        <SidePanels
+          panels={{
+            fields: {
+              label: m.workbench_view_fields(),
+              resizeLabel: m.workbench_fields_resize(),
+              content: fields,
+            },
+            preview: {
+              label: m.workbench_view_preview(),
+              resizeLabel: m.workbench_preview_resize(),
+              content: result,
+            },
+          }}
+        >
+          {edit}
+        </SidePanels>
+      )}
     >
       {filePicker}
       {replacementDialog}

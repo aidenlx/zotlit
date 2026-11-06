@@ -415,6 +415,19 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       checkbox: "metadata-input-checkbox",
       empty: "metadata-input-longtext",
     },
+    // The side panels: the model places them, so the classes only draw each
+    // placement. A column holds its saved width within 2/5 of the view; the
+    // Preview under the editor takes the height the model computes.
+    panels: {
+      panels: "zt:flex zt:h-full zt:min-w-0",
+      stack: "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col",
+      editor: "zt:min-h-0 zt:min-w-0 zt:flex-1",
+      panel:
+        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--workbench-panel-width) zt:data-[state=fields]:max-w-2/5 zt:data-[state=preview]:w-(--workbench-panel-width) zt:data-[state=preview]:max-w-2/5 zt:data-[state=below]:h-(--workbench-panel-height)",
+      edge: "zt:w-1 zt:shrink-0 zt:cursor-col-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
+      split:
+        "zt:h-1 zt:shrink-0 zt:cursor-row-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
+    },
     tabBar: {
       "tab-bar":
         "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:pb-2",

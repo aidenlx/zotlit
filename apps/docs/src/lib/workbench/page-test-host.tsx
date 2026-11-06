@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
+import * as Atom from "effect/reactivity/Atom";
 import { TestClock } from "effect/testing";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -23,7 +24,7 @@ import type {
   TemplateRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
-import type { WorkbenchHostError } from "@zotlit/workbench/ui";
+import type { ViewSize, WorkbenchHostError } from "@zotlit/workbench/ui";
 
 import { Toaster } from "@/components/ui/toast";
 // Browser storage, render, and Local Bridge fixtures for web host tests.
@@ -155,6 +156,8 @@ export interface OpenPage extends AsyncDisposable {
   show: (key: string) => Promise<void>;
   /** Waits out the autosave's quiet time and the render's own. */
   settle: () => Promise<void>;
+  /** Lays the page's frame out at `size`, as a resized window does. */
+  resizeFrame: (size: ViewSize) => void;
   /** Waits until immediate Local Bridge responses produce `assertion`. */
   waitFor: (assertion: () => void) => Promise<void>;
   /**
@@ -173,8 +176,14 @@ export async function open({
   strict = false,
   rendering,
   clock = false,
+  frame = null,
 }: {
   strict?: boolean;
+  /**
+   * The size the page's frame is laid out at; the test document lays out
+   * nothing, so a page without one has not measured its frame.
+   */
+  frame?: ViewSize | null;
   /** Renders and loads `Temporal` in place of the page's own service. */
   rendering?: Layer.Layer<Rendering>;
   /** Runs the page runtime's Effect time on a `TestClock` the case adjusts. */
@@ -190,6 +199,15 @@ export async function open({
         ),
       ).pipe(Layer.provideMerge(TestClock.layer()))
     : Layer.empty;
+  // The frame's size, which the page reads from the atom the test hands it.
+  let size = frame;
+  const resized = new Set<(next: ViewSize) => void>();
+  const viewSize = Atom.make<ViewSize | null>((get) => {
+    const listener = (next: ViewSize) => get.setSelf(next);
+    resized.add(listener);
+    get.addFinalizer(() => resized.delete(listener));
+    return size;
+  });
   await using resources = new AsyncDisposableStack();
   const host = resources.adopt(document.createElement("div"), (element) => {
     element.remove();
@@ -200,6 +218,7 @@ export async function open({
   const content = (
     <>
       <Workbench
+        viewSize={viewSize}
         layer={Layer.mergeAll(
           layerPage.pipe(
             Layer.provide([
@@ -238,6 +257,12 @@ export async function open({
           }),
         );
         option.click();
+      });
+    },
+    resizeFrame(next) {
+      size = next;
+      act(() => {
+        for (const listener of resized) listener(next);
       });
     },
     async settle() {

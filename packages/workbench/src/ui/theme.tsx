@@ -242,6 +242,7 @@ export interface WorkbenchParts {
     | "text"
     | "checkbox";
 
+  panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description" | "docs-link";
   editToolbar:
