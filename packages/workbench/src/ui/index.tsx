@@ -110,6 +110,11 @@ export type {
   RenderSchedulerState,
   RenderTrigger,
 } from "./scheduler";
+export { makeRenderSchedulerAtoms } from "./scheduler-atoms";
+export type {
+  RenderSchedulerAtoms,
+  RenderSchedulerAtomsOptions,
+} from "./scheduler-atoms";
 export { createWorkbenchStore } from "./store";
 export type {
   PreviewMode,
