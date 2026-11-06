@@ -28,6 +28,7 @@ import { Toaster } from "@/components/ui/toast";
 // Browser storage, render, and Local Bridge fixtures for web host tests.
 import { m } from "@/paraglide/messages.js";
 
+import type { Rendering } from "./rendering";
 import { layerPage } from "./runtime";
 import { Workbench } from "./workbench";
 
@@ -164,7 +165,12 @@ export interface OpenPage extends AsyncDisposable {
  */
 export async function open({
   strict = false,
-}: { strict?: boolean } = {}): Promise<OpenPage> {
+  rendering,
+}: {
+  strict?: boolean;
+  /** Renders and loads `Temporal` in place of the page's own service. */
+  rendering?: Layer.Layer<Rendering>;
+} = {}): Promise<OpenPage> {
   await using resources = new AsyncDisposableStack();
   const host = resources.adopt(document.createElement("div"), (element) => {
     element.remove();
@@ -175,13 +181,16 @@ export async function open({
   const content = (
     <>
       <Workbench
-        layer={layerPage.pipe(
-          Layer.provide([
-            FetchHttpClient.layer.pipe(
-              Layer.provide(Layer.succeed(FetchHttpClient.Fetch, bridge)),
-            ),
-            Layer.succeed(LocalBridgeStorage, sessionStorage),
-          ]),
+        layer={Layer.merge(
+          layerPage.pipe(
+            Layer.provide([
+              FetchHttpClient.layer.pipe(
+                Layer.provide(Layer.succeed(FetchHttpClient.Fetch, bridge)),
+              ),
+              Layer.succeed(LocalBridgeStorage, sessionStorage),
+            ]),
+          ),
+          rendering ?? Layer.empty,
         )}
       />
       <Toaster />

@@ -7,6 +7,16 @@ import baseConfig, {
   testBaselineOverrides,
 } from "@zotlit/config/oxlint";
 
+const workbenchStorePaths = [
+  "zustand",
+  "zustand/vanilla",
+  "zustand/middleware",
+].map((name) => ({
+  name,
+  message:
+    "The web Workbench keeps its state in the Workbench model of atoms (ADR 0081).",
+}));
+
 export default defineConfig({
   extends: [baseConfig],
   plugins: [...(baseConfig.plugins ?? []), "nextjs"],
@@ -41,7 +51,7 @@ export default defineConfig({
       "error",
       {
         patterns: [parentImportPattern, datePattern],
-        paths: itemQuerySchemaPaths,
+        paths: [...itemQuerySchemaPaths, ...workbenchStorePaths],
       },
     ],
   },

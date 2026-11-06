@@ -56,15 +56,22 @@ export interface WorkbenchChoices {
 }
 
 /**
- * The chosen Item's data. A host that reads it derives it from the chosen
- * Item (`itemData` option); otherwise it is the value the scheduler facade's
- * `setInput` writes (#1946).
+ * The chosen Item's data. A host derives it from its read of the chosen Item
+ * through `itemData`; otherwise the host supplies it through the scheduler
+ * facade's `setInput`. Expand step only: the derived read of the chosen Item
+ * replaces the facade (#1942).
  */
 export interface WorkbenchItemData {
   readonly snapshot: ItemSnapshot | null;
   readonly document?: string | undefined;
   readonly resources?: RenderResources | undefined;
   readonly hold?: boolean | "invalid" | undefined;
+}
+
+/** The document in use, which a host's derived Item data reads beside its own read. */
+export interface WorkbenchItemDataInput {
+  readonly controller: Atom.Atom<WorkbenchDocumentController>;
+  readonly document: WorkbenchDocumentAtoms;
 }
 
 export const INITIAL_VIEW: WorkbenchViewState = {
@@ -135,15 +142,17 @@ export interface WorkbenchModelOptions<R extends TemplateRenderResult> {
   readonly initial?: Partial<WorkbenchViewState>;
   /** The view state, when a host keeps it in an atom of its own. */
   readonly view?: Atom.Writable<WorkbenchViewState>;
-  /** The reader's choices, when a host derives them from atoms of its own. */
-  readonly choices?: Atom.Atom<WorkbenchChoices>;
   /**
-   * The chosen Item's data, when a host derives it from its own read of the
-   * chosen Item. It reads the document's atoms for what the draft decides,
-   * such as a draft that does not parse.
+   * The reader's choices, when a host keeps them in atoms of its own: it
+   * reads them from those atoms and writes each choice back to them.
+   */
+  readonly choices?: Atom.Writable<WorkbenchChoices>;
+  /**
+   * The chosen Item's data, when the host derives it from its own read and
+   * from the document in use.
    */
   readonly itemData?: (
-    document: WorkbenchDocumentAtoms,
+    input: WorkbenchItemDataInput,
   ) => Atom.Atom<WorkbenchItemData>;
   /** The host's one runtime; a host never builds one per editor. */
   readonly runtime: WorkbenchRuntime;
@@ -192,7 +201,8 @@ export interface WorkbenchModel<
 > {
   readonly runtime: WorkbenchRuntime;
   readonly view: Atom.Writable<WorkbenchViewState>;
-  readonly choices: Atom.Atom<WorkbenchChoices>;
+  readonly choices: Atom.Writable<WorkbenchChoices>;
+  /** Writable unless the host derives it. */
   readonly itemData: Atom.Atom<WorkbenchItemData>;
   /** The controller in use; a host that loads another document sets it. */
   readonly controller: Atom.Writable<WorkbenchDocumentController>;
@@ -241,7 +251,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
   controller: initialController,
   initial,
   view = Atom.make<WorkbenchViewState>({ ...INITIAL_VIEW, ...initial }),
-  choices: hostChoices,
+  choices = Atom.make(INITIAL_CHOICES),
   itemData: deriveItemData,
   runtime,
   host,
@@ -253,10 +263,9 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
 }: WorkbenchModelOptions<R>): WorkbenchModel<R> {
   const controller = Atom.make(initialController);
   const document = workbenchDocumentAtoms(controller);
-  const choices = hostChoices ?? Atom.make(INITIAL_CHOICES);
-  const itemData =
-    deriveItemData?.(document) ??
-    Atom.make<WorkbenchItemData>({ snapshot: null });
+  const itemData = deriveItemData
+    ? deriveItemData({ controller, document })
+    : Atom.make<WorkbenchItemData>({ snapshot: null });
   const field = <K extends keyof WorkbenchViewState>(key: K) =>
     Atom.map(view, (state) => state[key]);
   const preview = Atom.map(choices, (state) => state.preview);

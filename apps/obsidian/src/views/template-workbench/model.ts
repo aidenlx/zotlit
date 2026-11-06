@@ -11,10 +11,7 @@ import {
   parseLiteratureNoteTemplate,
   parsePlainTemplateDocument,
 } from "@zotlit/templates/facade";
-import type {
-  WorkbenchDocumentAtoms,
-  WorkbenchDocumentKind,
-} from "@zotlit/workbench/document";
+import type { WorkbenchDocumentKind } from "@zotlit/workbench/document";
 import {
   CITATION_EXAMPLE_ITEM,
   DEFAULT_CITATION_EXAMPLE,
@@ -42,6 +39,7 @@ import type {
   WorkbenchChoices,
   WorkbenchItemChoice,
   WorkbenchItemData,
+  WorkbenchItemDataInput,
   WorkbenchPreviewSettings,
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
@@ -257,12 +255,34 @@ export function makeTemplateWorkbenchModel({
       profile: get(partialProfile),
     };
   });
-  const choices = Atom.make((get): WorkbenchChoices => ({
-    annotation: get(examples).example,
-    citation: get(citation),
-    partial: get(partial),
-    preview: get(preview),
-  }));
+  /** The choices the Workbench model reads; each write lands in the atom that holds it. */
+  const choices = Atom.writable(
+    (get): WorkbenchChoices => ({
+      annotation: get(examples).example,
+      citation: get(citation),
+      partial: get(partial),
+      preview: get(preview),
+    }),
+    (ctx, next: WorkbenchChoices) => {
+      ctx.set(
+        picks,
+        patch<WorkbenchPicks>({
+          annotationId: next.annotation?.id ?? null,
+          ...(next.citation
+            ? {
+                variant: next.citation.variant,
+                citationExample: next.citation.example,
+              }
+            : {}),
+        })(ctx.get(picks)),
+      );
+      ctx.set(preview, next.preview);
+      if (next.partial) {
+        ctx.set(view, setRoot(next.partial.context)(ctx.get(view)));
+        ctx.set(partialProfile, next.partial.profile);
+      }
+    },
+  );
   /**
    * The paper one render reads. A chosen Citation example carries its own
    * data and outranks the Item; otherwise the read stands, and with no Item
@@ -277,7 +297,7 @@ export function makeTemplateWorkbenchModel({
       ? getSampleAnnotationParent(example.id)
       : null;
   });
-  const itemData = (atoms: WorkbenchDocumentAtoms) => {
+  const itemData = ({ document: atoms }: WorkbenchItemDataInput) => {
     const invalid = Atom.make((get) =>
       refused(get(document).kind, get(atoms.source)),
     );

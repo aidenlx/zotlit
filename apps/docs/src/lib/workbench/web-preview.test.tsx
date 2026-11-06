@@ -1,44 +1,19 @@
 import { EditorView } from "@codemirror/view";
 import { Effect } from "effect";
-import { act, StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  DEFAULT_PROFILE_SOURCE,
-  SAMPLE_ITEMS,
-  renderProfile,
-} from "@zotlit/workbench/render";
+import { renderProfile } from "@zotlit/workbench/render";
 import type { TemplateRenderResult } from "@zotlit/workbench/render";
-import { createRenderScheduler } from "@zotlit/workbench/ui";
-
-vi.mock("@zotlit/workbench/ui", async (original) => {
-  const actual = await original<typeof import("@zotlit/workbench/ui")>();
-  return {
-    ...actual,
-    createRenderScheduler: vi.fn(
-      (...args: Parameters<typeof actual.createRenderScheduler>) => {
-        const scheduler = actual.createRenderScheduler(...args);
-        scheduler[Symbol.dispose] = vi.fn(scheduler[Symbol.dispose]);
-        return scheduler;
-      },
-    ),
-  };
-});
 
 // @vitest-environment happy-dom
-// The web subscribes shared controls and document changes to its scheduler.
+// The Preview reads the editor's one render and the model's preview settings.
 import { m } from "@/paraglide/messages.js";
 
 import { renderInThread, open } from "./page-test-host";
-import { WebPreview } from "./preview";
-import { WebTestHost } from "./test-host";
 
 describe("preview scheduling", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.mocked(createRenderScheduler).mockClear();
-  });
+  beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
   function choose(scope: HTMLElement, label: string, value: string) {
@@ -64,115 +39,39 @@ describe("preview scheduling", () => {
     );
   }
 
-  function openPreview(strict = false) {
-    using cleanup = new DisposableStack();
-    const host = cleanup.adopt(document.createElement("div"), (element) =>
-      element.remove(),
-    );
-    document.body.appendChild(host);
-    const root = cleanup.adopt(createRoot(host), (root) => {
-      act(() => root.unmount());
+  it("runs the one render on demand, for the editor and the Preview alike", async () => {
+    await using page = await open();
+    await page.settle();
+    choose(page.host, m.workbench_preview_refresh(), "demand");
+    renderInThread.mockClear();
+    editNote(page.host, "Held draft\n");
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(renderInThread).not.toHaveBeenCalled();
+    page.press(m.workbench_preview_run());
+    await page.waitFor(() => {
+      expect(
+        page.host.querySelector('[role="document"]')?.textContent,
+      ).toContain("Held draft");
     });
-    let source = DEFAULT_PROFILE_SOURCE;
-    function render() {
-      const content = (
-        <WebTestHost>
-          <WebPreview
-            source={source}
-            document="standalone"
-            sample={SAMPLE_ITEMS[0]!}
-            resources={undefined}
-            hold={false}
-            mode="note"
-            sampleBar={null}
-            annotationChoice=""
-            onAnnotationChoice={() => {}}
-            onShowProblem={() => {}}
-            publishProblems={() => {}}
-            reportContext={() => ({ document: "standalone" })}
-          />
-        </WebTestHost>
-      );
-      act(() =>
-        root.render(strict ? <StrictMode>{content}</StrictMode> : content),
-      );
-    }
-    render();
-    const lifetime = cleanup.move();
-    return {
-      host,
-      edit(text: string) {
-        source += text;
-        render();
-      },
-      press(label: string) {
-        const button = [...host.querySelectorAll("button")].find(
-          (node) => node.textContent === label,
-        )!;
-        act(() => button.click());
-      },
-      [Symbol.dispose]() {
-        lifetime.dispose();
-      },
-    };
-  }
-
-  it("renders and accepts edits after StrictMode effect replay", async () => {
-    using page = openPreview(true);
-    await act(async () => vi.advanceTimersByTimeAsync(300));
     expect(renderInThread).toHaveBeenCalledTimes(1);
-    await act(async () => vi.dynamicImportSettled());
-    expect(page.host.textContent).toContain("ioannidisWhyMost2005");
-    page.edit("StrictMode edit\n");
-    await act(async () => vi.advanceTimersByTimeAsync(300));
-    expect(renderInThread).toHaveBeenCalledTimes(2);
-    expect(renderInThread.mock.lastCall![0].source).toContain(
-      "StrictMode edit",
-    );
+    expect(renderInThread.mock.lastCall![0].source).toContain("Held draft");
   });
 
-  it("disposes every StrictMode effect owner and drops late completion after close", async () => {
-    let deliver!: (result: TemplateRenderResult) => void;
+  it("interrupts the render in flight when the page closes", async () => {
+    let interrupted = false;
+    let started = false;
     renderInThread.mockImplementation(() =>
-      Effect.callback((resume) => {
-        deliver = (result) => resume(Effect.succeed(result));
+      Effect.callback<TemplateRenderResult>(() => {
+        started = true;
+        return Effect.sync(() => {
+          interrupted = true;
+        });
       }),
     );
-    using page = openPreview(true);
-    const owners = vi
-      .mocked(createRenderScheduler)
-      .mock.results.map((result) => result.value);
-    expect(owners).toHaveLength(2);
-    expect(owners[0]![Symbol.dispose]).toHaveBeenCalledOnce();
-    expect(owners[1]![Symbol.dispose]).not.toHaveBeenCalled();
-    await act(async () => vi.advanceTimersByTimeAsync(300));
-    const request = renderInThread.mock.lastCall![0];
-    const pending = owners[1]!.getState();
-    page[Symbol.dispose]();
-    expect(owners[1]![Symbol.dispose]).toHaveBeenCalledOnce();
-    await act(async () => {
-      deliver(renderProfile(request.source, request.snapshot, request));
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(owners[1]!.getState()).toBe(pending);
-    expect(page.host.isConnected).toBe(false);
-  });
-
-  it("keeps independently mounted Preview controls separate", async () => {
-    using first = openPreview();
-    using second = openPreview();
-    choose(first.host, m.workbench_preview_refresh(), "demand");
-    choose(first.host, m.workbench_preview_format(), "markdown");
-    const secondControls = [...second.host.querySelectorAll("select")];
-    expect(secondControls.map((control) => control.value)).toContain("live");
-    expect(secondControls.map((control) => control.value)).toContain("reading");
-    first.edit("Held draft\n");
-    second.edit("Live draft\n");
-    await act(async () => vi.advanceTimersByTimeAsync(300));
-    expect(renderInThread).toHaveBeenCalledTimes(1);
-    expect(renderInThread.mock.lastCall![0].source).toContain("Live draft");
-    first.press(m.workbench_preview_run());
-    expect(renderInThread.mock.lastCall![0].source).toContain("Held draft");
+    const page = await open();
+    await page.waitFor(() => expect(started).toBe(true));
+    await page[Symbol.asyncDispose]();
+    await vi.waitFor(() => expect(interrupted).toBe(true));
   });
 
   it("passes create and update inputs while preserving the synthesized note's outside text", async () => {

@@ -1,3 +1,4 @@
+import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { describe, expect, it, vi } from "vitest";
 
@@ -12,6 +13,7 @@ import {
   setRoot,
   setTab,
 } from "./model";
+import type { WorkbenchItemData } from "./model";
 import { createWorkbenchStore } from "./store";
 import { fakeHost, TEST_RUNTIME } from "./test-host";
 
@@ -22,9 +24,12 @@ import { SAMPLE_ANNOTATIONS, SAMPLE_ITEMS } from "#/render/index";
 const PAPER = SAMPLE_ITEMS[0]!;
 const CHOICE = { id: "1:ABCDEFGH", title: "A paper" } as const;
 
+/** The chosen Item's data, which a host derives from its read of the Item. */
+const itemData = () => Atom.make<WorkbenchItemData>({ snapshot: null });
+
 /** Puts the chosen Item's data in the model, as the host's read of it does. */
 function load(opened: ReturnType<typeof open>) {
-  opened.registry.update(opened.editor.inputs!.itemData, (data) => ({
+  opened.registry.update(opened.itemData, (data) => ({
     ...data,
     snapshot: PAPER,
   }));
@@ -39,15 +44,18 @@ function open(
     defaultIdleTTL: 0,
     timeoutResolution: 1,
   });
+  const data = itemData();
   const editor = createWorkbenchEditor({
     host,
     controller,
     registry,
     runtime: TEST_RUNTIME,
+    itemData: () => data,
     ...options,
   });
   return {
     host,
+    itemData: data,
     controller,
     registry,
     editor,
@@ -87,7 +95,7 @@ describe("the Workbench model", () => {
 
   it("keeps the state when a transition changes nothing", () => {
     using opened = open();
-    const { registry, model, editor } = opened;
+    const { registry, model } = opened;
     const view = registry.get(model.view);
     const choices = registry.get(model.choices);
     for (const transition of [
@@ -96,18 +104,15 @@ describe("the Workbench model", () => {
       chooseItem(null),
     ])
       registry.update(model.view, transition);
-    registry.update(
-      editor.inputs!.choices,
-      setPreview({ mode: "create", live: true }),
-    );
-    registry.update(editor.inputs!.choices, chooseAnnotation(null));
+    registry.update(model.choices, setPreview({ mode: "create", live: true }));
+    registry.update(model.choices, chooseAnnotation(null));
     expect(registry.get(model.view)).toBe(view);
     expect(registry.get(model.choices)).toBe(choices);
   });
 
   it("feeds the chosen annotation, citation, caller, and preview mode to the render", async () => {
     using opened = open();
-    const { registry, model, host, editor } = opened;
+    const { registry, model, host } = opened;
     const citation = { variant: "main", example: "one-item" } as const;
     const partial = {
       name: "book-details",
@@ -115,13 +120,10 @@ describe("the Workbench model", () => {
       profile: null,
     } as const;
     load(opened);
-    registry.update(
-      editor.inputs!.choices,
-      chooseAnnotation(SAMPLE_ANNOTATIONS[0]!),
-    );
-    registry.update(editor.inputs!.choices, chooseCitation(citation));
-    registry.update(editor.inputs!.choices, choosePartial(partial));
-    registry.update(editor.inputs!.choices, setPreview({ mode: "update" }));
+    registry.update(model.choices, chooseAnnotation(SAMPLE_ANNOTATIONS[0]!));
+    registry.update(model.choices, chooseCitation(citation));
+    registry.update(model.choices, choosePartial(partial));
+    registry.update(model.choices, setPreview({ mode: "update" }));
     registry.set(model.scheduler.run, undefined);
     await vi.waitFor(() => expect(host.renders).toHaveLength(1));
     expect(host.renders[0]!.request).toMatchObject({
@@ -160,16 +162,15 @@ describe("the Workbench model", () => {
 
   it("disposes the registry it made, which interrupts the render in flight", async () => {
     const host = fakeHost();
+    const data = itemData();
     const editor = createWorkbenchEditor({
       host,
       controller: new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
       runtime: TEST_RUNTIME,
+      itemData: () => data,
     });
     const { registry, model } = editor;
-    registry.update(editor.inputs!.itemData, (data) => ({
-      ...data,
-      snapshot: PAPER,
-    }));
+    registry.update(data, (held) => ({ ...held, snapshot: PAPER }));
     registry.set(model.scheduler.run, undefined);
     await vi.waitFor(() => expect(host.renders).toHaveLength(1));
     editor[Symbol.dispose]();

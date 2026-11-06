@@ -36,9 +36,7 @@ import {
   patch,
   setPreview,
 } from "./model";
-import { INITIAL_CHOICES } from "./model";
 import type {
-  WorkbenchChoices,
   WorkbenchItemData,
   WorkbenchModel,
   WorkbenchModelOptions,
@@ -68,18 +66,14 @@ export interface WorkbenchEditorInstance<
   readonly store: WorkbenchStore;
   /** Facade over `model.scheduler` for hosts; deleted in #1946. */
   readonly scheduler: RenderScheduler<R>;
-  /**
-   * The choices and Item data `scheduler.setInput` writes, for a host that
-   * derives neither; null when the host derives them. Deleted in #1946.
-   */
-  readonly inputs: FacadeInputs | null;
   /** Sets the controller in use to one the host loaded. */
   attach(controller: WorkbenchDocumentController): void;
 }
 
 interface WorkbenchEditorOptions {
   controller: WorkbenchDocumentController;
-  host: WorkbenchHost;
+  /** The host members the model reads: its render and its Match data. */
+  host: Pick<WorkbenchHost, "render" | "matchData">;
   state?: Partial<WorkbenchViewState>;
   /**
    * The registry to keep the model in, which the host disposes. Without one
@@ -90,10 +84,10 @@ interface WorkbenchEditorOptions {
   runtime: WorkbenchRuntime;
   /** The view state, when the host keeps it in an atom of its own. */
   view?: Atom.Writable<WorkbenchViewState>;
+  /** The chosen Item's data, when the host derives it from its own read. */
+  itemData?: WorkbenchModelOptions<TemplateRenderResult>["itemData"];
   /** {@link WorkbenchModelOptions.choices} */
   choices?: WorkbenchModelOptions<TemplateRenderResult>["choices"];
-  /** {@link WorkbenchModelOptions.itemData} */
-  itemData?: WorkbenchModelOptions<TemplateRenderResult>["itemData"];
   /**
    * A view store the host made before the editor, which the model reads and
    * writes. Facade for the web Workbench; deleted in #1946.
@@ -101,12 +95,6 @@ interface WorkbenchEditorOptions {
   store?: WorkbenchStore;
   /** What names this editor in the report a failed example is copied as. */
   reportContext?: () => WorkbenchReportContext;
-}
-
-/** What the scheduler facade writes for a host that derives no inputs. */
-interface FacadeInputs {
-  readonly choices: Atom.Writable<WorkbenchChoices>;
-  readonly itemData: Atom.Writable<WorkbenchItemData>;
 }
 
 /** The view fields of a store state, without its actions. */
@@ -166,7 +154,7 @@ function storeOver(
 function schedulerOver<R extends TemplateRenderResult>(
   registry: AtomRegistry.AtomRegistry,
   model: WorkbenchModel<R>,
-  { inputs, closed }: { inputs: FacadeInputs | null; closed: () => boolean },
+  closed: () => boolean,
 ): RenderScheduler<R> {
   const command = (atom: Atom.Writable<void, void>) => () => {
     if (!closed()) registry.set(atom, undefined);
@@ -176,8 +164,7 @@ function schedulerOver<R extends TemplateRenderResult>(
     subscribe: (listener) =>
       registry.subscribe(model.scheduler.state, () => listener()),
     setInput(input: Partial<RenderSchedulerInput>) {
-      // A host that derives its choices and Item data owns them.
-      if (closed() || inputs === null) return;
+      if (closed()) return;
       // The controller in use owns the source; the rest is the reader's
       // choice or the chosen Item's data.
       const { mode, live, annotation, citation, partial } = input;
@@ -187,22 +174,23 @@ function schedulerOver<R extends TemplateRenderResult>(
         ...("resources" in input ? { resources: input.resources } : {}),
         ...("hold" in input ? { hold: input.hold } : {}),
       };
-      const { choices, itemData } = inputs;
       Atom.batch(() => {
         registry.update(
-          choices,
+          model.choices,
           setPreview({
             ...(mode === undefined ? {} : { mode }),
             ...(live === undefined ? {} : { live }),
           }),
         );
         if ("annotation" in input)
-          registry.update(choices, chooseAnnotation(annotation ?? null));
+          registry.update(model.choices, chooseAnnotation(annotation ?? null));
         if ("citation" in input)
-          registry.update(choices, chooseCitation(citation ?? null));
+          registry.update(model.choices, chooseCitation(citation ?? null));
         if ("partial" in input)
-          registry.update(choices, choosePartial(partial ?? null));
-        registry.update(itemData, patch(data));
+          registry.update(model.choices, choosePartial(partial ?? null));
+        // A host that derives the Item's data supplies none here.
+        if (Atom.isWritable(model.itemData))
+          registry.update(model.itemData, patch(data));
       });
     },
     invalidate: command(model.scheduler.invalidate),
@@ -250,22 +238,11 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
       ? { ...state, tab: "note" as const }
       : state;
   const view = providedView ?? (providedStore && storeAtom(providedStore));
-  const inputs: FacadeInputs | null =
-    choices || itemData
-      ? null
-      : {
-          choices: Atom.make(INITIAL_CHOICES),
-          itemData: Atom.make<WorkbenchItemData>({ snapshot: null }),
-        };
   const model = makeWorkbenchModel<R>({
     controller,
     ...(view ? { view } : {}),
-    ...(inputs
-      ? { choices: inputs.choices, itemData: () => inputs.itemData }
-      : {
-          ...(choices ? { choices } : {}),
-          ...(itemData ? { itemData } : {}),
-        }),
+    ...(choices ? { choices } : {}),
+    ...(itemData ? { itemData } : {}),
     ...(initial ? { initial } : {}),
     runtime,
     host,
@@ -285,8 +262,7 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
     model,
     registry,
     store: providedStore ?? storeOver(registry, model.view),
-    scheduler: schedulerOver(registry, model, { inputs, closed: () => closed }),
-    inputs,
+    scheduler: schedulerOver(registry, model, () => closed),
     attach(next) {
       registry.set(model.controller, next);
     },
