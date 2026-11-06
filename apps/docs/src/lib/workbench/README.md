@@ -38,12 +38,12 @@ One module owns each surface, and each says what it owns at its head:
 | Module | Owns |
 | --- | --- |
 | [`workbench.tsx`](workbench.tsx) | Page layout, header menu, what a tab or mode change does beyond the Workbench model, slice routing, the `{{` popup and the narrow sheet, problem navigation |
-| [`page-model.ts`](page-model.ts) | The web Workbench on the Workbench model: the chosen Item's one read, the connection's state, the draft's location, the dependency and citation-style re-reads, and the page's commands |
+| [`page-model.ts`](page-model.ts) | The web Workbench on the Workbench model: the chosen Item's one read, the connection's state, the page layout and the replacement a dirty draft holds back, hydration opening, the dependency and citation-style re-reads, and the page's commands |
 | [`runtime.tsx`](runtime.tsx) | The page runtime: one atom runtime over every service below and the Local Bridge client (`@zotlit/workbench/bridge`) in the page's one atom registry, created with the page and disposed when it closes, and the one bridge React and CodeMirror reach the services through |
 | [`workbench-connection.ts`](workbench-connection.ts) | The Workbench Connection service: the launch-fragment code exchange, hydration, the dependency and citation-style re-reads, Save with revision reconciliation, disconnect, and the connection Scope that Disconnect closes |
-| [`use-workbench-connection.ts`](use-workbench-connection.ts) | The page's view of the Workbench Connection: its state, the Profile each hydration opens, and the reader's actions |
+| [`use-workbench-connection.ts`](use-workbench-connection.ts) | The page's view of the Workbench Connection: its state and the reader's connection actions |
 | [`rendering.ts`](rendering.ts) | The Rendering service: the render the host hands the Workbench, and the `Temporal` load |
-| [`use-workbench-draft.ts`](use-workbench-draft.ts) | The baseline a draft is measured against, the autosave keyed by document reference, the restore prompt |
+| [`draft-keeper.ts`](draft-keeper.ts) | The baseline a draft is measured against, the autosave keyed by document reference, the restore prompt, as atoms of the page |
 | [`sample-bar.tsx`](sample-bar.tsx) | The paper the page is shown against, and whether it is a Sample Item, the connection's own, or retained work |
 | [`connection-bar.tsx`](connection-bar.tsx) | The connection status line |
 | [`field-list.tsx`](field-list.tsx) with [`fields.ts`](fields.ts) | The field column |

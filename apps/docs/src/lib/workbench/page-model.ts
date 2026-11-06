@@ -11,6 +11,7 @@ import * as Atom from "effect/reactivity/Atom";
 
 import type { SaveSelectedProfileRequest } from "@zotlit/workbench/bridge";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
+import type { WorkbenchSliceRange } from "@zotlit/workbench/document";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { WorkbenchReportContext } from "@zotlit/workbench/render";
 import {
@@ -34,16 +35,21 @@ import type {
 import { toast } from "@/components/ui/toast";
 import { m } from "@/paraglide/messages.js";
 
+import {
+  DEFAULT_SAMPLE,
+  makeDraftKeeper,
+  STANDALONE_LOCATION,
+} from "./draft-keeper";
+import type { DraftKeeper } from "./draft-keeper";
 import type { SampleItem } from "./fields";
 import { matchData } from "./host";
 import { Rendering } from "./rendering";
 import type { PageBridge } from "./runtime";
-import type { DraftLocation } from "./transfer";
+import type { DraftLocation, WorkbenchDraft } from "./transfer";
 import { Transfer } from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
-import { DEFAULT_SAMPLE, STANDALONE_LOCATION } from "./use-workbench-draft";
 import { WorkbenchConnection } from "./workbench-connection";
-import type { ConnectionState, SavedProfile } from "./workbench-connection";
+import type { ConnectionState } from "./workbench-connection";
 
 /** Which paper a choice names: a bundled Sample Item, or the vault's Item. */
 export interface Paper {
@@ -67,17 +73,23 @@ export function itemChoice(sample: SampleItem): WorkbenchItemChoice {
   };
 }
 
-/** A Profile save, and what the page does once the vault answered. */
-export interface SaveJob {
-  readonly source: string;
-  readonly saved: (profile: SavedProfile) => void;
-}
+/** A document that would replace the one on screen, held while the reader decides. */
+export type Replacement =
+  | { readonly kind: "import"; readonly source: string }
+  | { readonly kind: "default" }
+  | { readonly kind: "reload" }
+  | { readonly kind: "reconnect" };
 
-/** A Profile file the reader picked, and what the page does with its text. */
-export interface ImportJob {
-  readonly file: File;
-  readonly read: (source: string) => void;
-  readonly failed: () => void;
+/** The page's own layout around the editor. */
+export interface PageLayout {
+  /** What the narrow screen shows: the pane, or the result. */
+  readonly view: "edit" | "result";
+  /** Whether the field list stands over the narrow pane. */
+  readonly sheet: boolean;
+  /** A replacement waiting on the reader, while the draft has unsaved work. */
+  readonly pending: Replacement | null;
+  /** Where the caret last stood in the note, which the Note tab returns to. */
+  readonly noteCaret: WorkbenchSliceRange;
 }
 
 /** The page's atoms and commands; one page has one. */
@@ -110,14 +122,12 @@ export interface WebPage {
   readonly reconnect: Atom.AtomResultFn<void, void, never>;
   readonly reload: Atom.AtomResultFn<void, void, never>;
   readonly disconnect: Atom.AtomResultFn<void, void, never>;
-  readonly save: Atom.AtomResultFn<SaveJob, void, never>;
   /** The revision the text on screen descends from, which Save answers for. */
   readonly saveAgainst: Atom.AtomResultFn<
     SaveSelectedProfileRequest["expected"],
     void,
     never
   >;
-  readonly importFile: Atom.AtomResultFn<ImportJob, void, never>;
 }
 
 /** The page's atoms over `bridge`. Nothing runs until something reads them. */
@@ -188,29 +198,9 @@ export function makeWebPage(bridge: PageBridge): WebPage {
         ),
       ),
     ),
-    save: runtime.fn((job: SaveJob) =>
-      WorkbenchConnection.use((service) => service.save(job.source)).pipe(
-        Effect.flatMap((saved) =>
-          saved
-            ? Effect.sync(() => {
-                job.saved(saved);
-                toast.add({
-                  title: m.workbench_save_complete({ vault: saved.vault }),
-                  type: "success",
-                });
-              })
-            : Effect.void,
-        ),
-      ),
-    ),
     saveAgainst: runtime.fn(
       (expected: SaveSelectedProfileRequest["expected"]) =>
         WorkbenchConnection.use((service) => service.saveAgainst(expected)),
-    ),
-    importFile: runtime.fn((job: ImportJob) =>
-      Transfer.use((transfer) => transfer.readFile(job.file)).pipe(
-        Effect.match({ onSuccess: job.read, onFailure: job.failed }),
-      ),
     ),
   };
   return page;
@@ -244,6 +234,18 @@ export interface WebWorkbench extends Disposable {
   readonly load: (source: string) => void;
   /** Says `text` until the document changes. */
   readonly say: (text: string | null) => void;
+  readonly drafts: DraftKeeper;
+  readonly layout: Atom.Writable<PageLayout>;
+  /** Saves `source` to the vault and takes it as the saved state. */
+  readonly save: Atom.AtomResultFn<string, void, never>;
+  /** Reads a Profile file the reader picked and offers it as a replacement. */
+  readonly importFile: Atom.AtomResultFn<File, void, never>;
+  /** Opens `next` now, or holds it while the draft has unsaved work. */
+  readonly replace: (next: Replacement) => void;
+  /** Runs the held replacement when `run` is true; otherwise keeps editing. */
+  readonly settle: (run: boolean) => void;
+  /** Restores the last visit's draft with its paper and Annotation. */
+  readonly restoreDraft: () => void;
   /** Changes what the editor reveals, selects, and opens. */
   readonly present: (changes: Partial<Presentation>) => void;
 }
@@ -409,11 +411,149 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
     });
   };
   choose(registry.get(page.chosen), null);
+  const present = (changes: Partial<Presentation>) =>
+    registry.update(page.view, (state) => {
+      const presentation = patch<Presentation>(changes)(state.presentation);
+      return presentation === state.presentation
+        ? state
+        : { ...state, presentation };
+    });
+  const layout = Atom.make<PageLayout>({
+    view: "edit",
+    sheet: false,
+    pending: null,
+    noteCaret: { from: 0, to: 0 },
+  });
+  const drafts = makeDraftKeeper({
+    registry,
+    runtime,
+    location: page.location,
+    screen: {
+      source: model.document.source,
+      sample: page.chosen,
+      annotationSelection: Atom.map(annotations, ({ example }) => example.id),
+      expected: Atom.make((get) => {
+        const { saveTarget } = get(page.connection);
+        return saveTarget?.reference === get(page.location).reference
+          ? saveTarget.expected
+          : undefined;
+      }),
+    },
+  });
+  /** Opens `source` as the document being edited, with a history of its own. */
+  const load = (source: string) =>
+    Atom.batch(() => {
+      editor.attach(new WorkbenchDocumentController(source));
+      say(null);
+      registry.update(page.view, (state): WorkbenchViewState => ({
+        ...state,
+        advanced: false,
+        tab: "note",
+        presentation: {
+          ...state.presentation,
+          selected: null,
+          reveal: null,
+          selection: { slice: "note", range: { from: 0, to: 0 } },
+        },
+      }));
+      registry.update(layout, (state): PageLayout => ({
+        ...state,
+        view: "edit",
+        sheet: false,
+        noteCaret: { from: 0, to: 0 },
+      }));
+    });
+  const openStandalone = (source: string) =>
+    Atom.batch(() => {
+      drafts.adopt({ reference: "standalone", source }, null);
+      load(source);
+    });
+  // Set by Reload so the next hydration opens the vault's bytes over the
+  // draft on screen.
+  let replaceConnected = false;
+  const run = (next: Replacement) => {
+    switch (next.kind) {
+      case "import":
+        return openStandalone(next.source);
+      case "default":
+        return openStandalone(DEFAULT_PROFILE_SOURCE);
+      case "reload":
+        replaceConnected = true;
+        return registry.set(page.reload, undefined);
+      case "reconnect":
+        return registry.set(page.reconnect, undefined);
+    }
+  };
+  const replace = (next: Replacement) => {
+    if (registry.get(drafts.dirty))
+      registry.update(layout, (state) => ({ ...state, pending: next }));
+    else run(next);
+  };
+  /** Opens the Profile a connection hydrated, with what it kept beside it. */
+  const openHydration = ({
+    selected,
+    installationId,
+    kept,
+    retainedExpected,
+    snapshot,
+  }: NonNullable<ConnectionState["hydration"]>) => {
+    const annotation = registry.get(model.choices).annotation?.id ?? null;
+    const opened = {
+      reference: selected.document.reference,
+      source: selected.source,
+      installationId,
+      ...(snapshot
+        ? {
+            snapshot,
+            annotationSelection: annotationSamples(snapshot, annotation).example
+              .id,
+          }
+        : {}),
+    };
+    // A connection that comes back to the document already open leaves the
+    // text and its undo history where they are: the connection was lost, the
+    // work was not. The vault counts as part of that identity, so the same
+    // reference read out of another vault is another document and opens as
+    // one. The vault's own bytes become the saved state the draft is measured
+    // against, so an unsaved edit stays an unsaved edit.
+    const where = registry.get(page.location);
+    if (
+      where.reference === opened.reference &&
+      where.installationId === opened.installationId &&
+      !replaceConnected
+    ) {
+      drafts.rebase(opened);
+      if (snapshot) show(snapshot);
+      // The text on screen still descends from the revision it was read at,
+      // so Save answers for that one: the vault moved, this draft did not.
+      if (retainedExpected) registry.set(page.saveAgainst, retainedExpected);
+      return;
+    }
+    drafts.adopt(opened, replaceConnected ? null : kept);
+    replaceConnected = false;
+    load(selected.source);
+    if (snapshot) show(snapshot);
+  };
+  /** Opens the last visit's draft with its paper and Annotation. */
+  const restore = (draft: WorkbenchDraft) => {
+    load(draft.source);
+    // A tab that closed on a vault paper comes back to the text alone, so the
+    // paper on screen stands.
+    if (draft.snapshot) show(draft.snapshot);
+    if (draft.annotationSelection)
+      choose(registry.get(page.chosen), draft.annotationSelection);
+    if (draft.expected) registry.set(page.saveAgainst, draft.expected);
+  };
   const releases = [
     registry.mount(dependencies),
     registry.mount(citationStyle),
     registry.mount(annotations),
     registry.mount(notice),
+    registry.mount(layout),
+    registry.mount(page.reconnect),
+    registry.mount(page.reload),
+    registry.mount(page.saveAgainst),
+    drafts.hold(),
     // The paper this Profile is written for: the bundled Item carrying its
     // sample item type, once per named type. A vault paper stays on screen.
     registry.subscribe(
@@ -430,6 +570,18 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
       },
       { immediate: true },
     ),
+    // Each hydration opens once. Until it has, the reads that follow the
+    // draft on screen wait.
+    registry.subscribe(
+      page.hydration,
+      (hydration) => {
+        if (hydration === registry.get(page.opened)) return;
+        // One batch, so the prompt measures the page once it is open.
+        if (hydration) Atom.batch(() => openHydration(hydration));
+        registry.set(page.opened, hydration);
+      },
+      { immediate: true },
+    ),
   ];
   return {
     editor,
@@ -437,6 +589,8 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
     annotations,
     manifest,
     notice,
+    drafts,
+    layout,
     loadItem: runtime.fn(() =>
       WorkbenchConnection.use((service) => service.loadSelectedItem).pipe(
         Effect.flatMap((sample) =>
@@ -452,17 +606,47 @@ function openWebWorkbench(bridge: PageBridge, page: WebPage): WebWorkbench {
         }),
       ),
     ),
+    save: runtime.fn((source: string) =>
+      WorkbenchConnection.use((service) => service.save(source)).pipe(
+        Effect.flatMap((saved) =>
+          saved
+            ? Effect.sync(() => {
+                drafts.rebase({
+                  reference: saved.reference,
+                  source: saved.source,
+                });
+                toast.add({
+                  title: m.workbench_save_complete({ vault: saved.vault }),
+                  type: "success",
+                });
+              })
+            : Effect.void,
+        ),
+      ),
+    ),
+    importFile: runtime.fn((file: File) =>
+      Transfer.use((transfer) => transfer.readFile(file)).pipe(
+        Effect.match({
+          onSuccess: (source) => replace({ kind: "import", source }),
+          onFailure: () => say(m.workbench_import_failed()),
+        }),
+      ),
+    ),
+    replace,
+    settle: (confirmed) => {
+      const { pending } = registry.get(layout);
+      registry.update(layout, (state) => ({ ...state, pending: null }));
+      if (confirmed && pending) run(pending);
+    },
+    restoreDraft: () => {
+      const draft = drafts.restore();
+      if (draft) Atom.batch(() => restore(draft));
+    },
     show,
     chooseAnnotation: (id) => choose(registry.get(page.chosen), id),
-    load: (source) => editor.attach(new WorkbenchDocumentController(source)),
+    load,
     say,
-    present: (changes) =>
-      registry.update(page.view, (state) => {
-        const presentation = patch<Presentation>(changes)(state.presentation);
-        return presentation === state.presentation
-          ? state
-          : { ...state, presentation };
-      }),
+    present,
     [Symbol.dispose]() {
       for (const release of releases.reverse()) release();
       editor[Symbol.dispose]();
