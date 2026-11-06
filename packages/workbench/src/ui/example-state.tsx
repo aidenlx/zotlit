@@ -6,6 +6,8 @@ import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { useIcon, useParts } from "./theme";
 
+import { renderFailed } from "#/render/index";
+
 /** A preview surface with a tab of its own that names its condition. */
 type ExampleSurface = "filename" | "properties";
 
@@ -53,7 +55,7 @@ export function useExampleState(surface: ExampleSurface): ExampleState {
   const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
   const item = useWorkbenchStore((state) => state.item);
-  const { result, retained, busy, stale } = useRenderState();
+  const { result, retained, busy, staleReason } = useRenderState();
   const [selection, setSelection] = useState({
     id: item?.id,
     result,
@@ -83,10 +85,15 @@ export function useExampleState(surface: ExampleSurface): ExampleState {
         ? m.workbench_name_choose_item()
         : m.workbench_properties_choose_item(),
     );
-  if (busy || result === previousResult)
+  // A render under way replaces another item's result, or an attempt that
+  // produced nothing, but never an example the reader is still reading.
+  if (!result || result === previousResult || (busy && renderFailed(result)))
     return state("loading", m.workbench_loading_item());
-  if (stale) return state("stale", m.workbench_example_awaiting_run());
-  if (!result) return state("loading", m.workbench_loading_item());
+  // A live render is already on its way, so the example stands until it lands,
+  // as the result column's does. Only a render that waits for Run, a hold, or a
+  // document the parser refuses leaves the example behind the source.
+  if (staleReason !== null && staleReason !== "live")
+    return state("stale", m.workbench_example_awaiting_run());
   if (produced(result, surface)) return state("ready", null);
   // A Managed Frontmatter failure names the row it came from and that row
   // carries it, so only a diagnostic naming the whole surface answers for one.
