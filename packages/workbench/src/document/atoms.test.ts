@@ -50,6 +50,23 @@ function noteEdit(controller: WorkbenchDocumentController, insert: string) {
 }
 
 describe("workbenchDocumentAtoms", () => {
+  it("publishes a read-only change alone, and the replacement's own", () => {
+    const controller = new WorkbenchDocumentController(PROFILE);
+    using held = hold(controller);
+    const { registry, atoms, current } = held;
+    const seen: boolean[] = [];
+    registry.subscribe(atoms.readOnly, (readOnly) => seen.push(readOnly));
+
+    controller.setReadOnly(true);
+    controller.setReadOnly(false);
+    registry.set(
+      current,
+      new WorkbenchDocumentController(PROFILE, { readOnly: true }),
+    );
+
+    expect(seen).toEqual([true, false, true]);
+  });
+
   it("publishes the source after an edit", () => {
     const controller = new WorkbenchDocumentController(PROFILE);
     using held = hold(controller);

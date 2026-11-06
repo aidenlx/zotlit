@@ -3,6 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
+import type { WorkbenchDocumentAtoms } from "@zotlit/workbench/document";
 import { initialTreeState, setAnchor } from "@zotlit/workbench/explorer";
 import type { DisplayNode, TreeState } from "@zotlit/workbench/explorer";
 import {
@@ -15,6 +16,7 @@ import type {
   ExplorerPresentation,
   TemplateRoot,
   WorkbenchHost,
+  WorkbenchInsertTarget,
 } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -108,15 +110,15 @@ const dataOf = (data: Record<string, unknown>): FieldsData => ({
 });
 
 /**
- * The panel's atoms over `model`. `editor.canInsert` answers whether the
- * editor can take a field, and `editor.revision` changes whenever that answer
- * can, beside the caret the view state holds.
+ * The panel's atoms over `model`. The editor takes a field while its document
+ * takes edits and `editor.insertTarget` names a place in it, which the caret
+ * in the view state and the document's slices decide.
  */
 export function makeFieldsPanelModel(
   model: TemplateWorkbenchModel,
   editor: {
-    readonly revision: Atom.Atom<number>;
-    readonly canInsert: () => boolean;
+    readonly document: WorkbenchDocumentAtoms;
+    readonly insertTarget: () => WorkbenchInsertTarget | null;
   },
 ): FieldsPanelModel {
   const local = Atom.make(NO_FIELDS);
@@ -242,9 +244,10 @@ export function makeFieldsPanelModel(
     );
   });
   const canInsert = Atom.make((get) => {
-    get(editor.revision);
+    if (get(editor.document.readOnly)) return false;
     get(model.view);
-    return editor.canInsert();
+    get(editor.document.slices);
+    return editor.insertTarget() !== null;
   });
   return {
     local,

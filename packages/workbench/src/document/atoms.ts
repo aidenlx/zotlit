@@ -23,10 +23,12 @@ export interface WorkbenchDocumentAtoms {
    * the last list that parsed while the draft does not.
    */
   readonly managedEntries: Atom.Atom<readonly ManagedEntrySource[] | null>;
+  /** Whether the document takes no edit, as {@link WorkbenchDocumentController.readOnly}. */
+  readonly readOnly: Atom.Atom<boolean>;
   /**
    * Counts every update, a read-only toggle and a selection included, and a
    * controller replacement. A reader of a getter that changes without the
-   * text, such as `readOnly` or `canUndo`, re-reads on it.
+   * text, such as `canUndo`, re-reads on it.
    */
   readonly revision: Atom.Atom<number>;
 }
@@ -58,8 +60,17 @@ export function workbenchDocumentAtoms(
     get.addFinalizer(controller.subscribe(() => get.setSelf(++count)));
     return count;
   });
+  // A read-only toggle changes no text, so this fact reads every update.
+  const readOnly = Atom.readable((get) => {
+    const controller = get(current);
+    get.addFinalizer(
+      controller.subscribe(() => get.setSelf(controller.readOnly)),
+    );
+    return controller.readOnly;
+  });
   return {
     revision,
+    readOnly,
     source: fact((controller) => controller.source),
     problems: fact((controller) => controller.problems),
     slices: fact((controller) => controller.slices),

@@ -1628,6 +1628,30 @@ An annotation.
     expect(view.insertTemplateField(node)).toBe(false);
   });
 
+  it("offers the Fields panel's insert while the editor takes edits", async () => {
+    const { view } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => view.open());
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 3 } });
+      });
+      const canInsert = () => view.registry.get(view.fields.canInsert);
+      expect(canInsert()).toBe(true);
+      await act(() => view.controller.setReadOnly(true));
+      expect(canInsert()).toBe(false);
+      await act(() => view.controller.setReadOnly(false));
+      expect(canInsert()).toBe(true);
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
+  });
+
   it("keeps the caret target mapped when external text moves an unchanged focused slice", async () => {
     const { view } = setup();
     document.body.append(view.contentEl);

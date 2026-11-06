@@ -708,11 +708,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       retain: retainNativeOutputs,
     });
     this.fields = makeFieldsPanelModel(this.model, {
-      revision: this.#editor.model.document.revision,
-      canInsert: () =>
-        !this.#closed &&
-        !this.#controller.readOnly &&
-        this.insertTarget !== null,
+      document: this.#editor.model.document,
+      insertTarget: () => this.insertTarget,
     });
     this.#cleanup.defer(deps.registry.mount(this.fields.local));
     this.fieldsActions = makeFieldsActions(this, this.#host, (target) =>
