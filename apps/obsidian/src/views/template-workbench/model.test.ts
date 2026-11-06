@@ -232,6 +232,12 @@ it("round-trips the saved and ephemeral state through Schema", () => {
           fields: { shown: false, width: 400 },
           preview: { shown: true, width: 520 },
         },
+        preview: {
+          mode: "update",
+          live: false,
+          showMarkdown: true,
+          showManaged: false,
+        },
         partial: { context: "citation", profile: "books" },
       }),
     ),
@@ -249,7 +255,17 @@ it("round-trips the saved and ephemeral state through Schema", () => {
       fields: { shown: false, width: 400 },
       preview: { shown: true, width: 520 },
     },
+    preview: {
+      mode: "update",
+      live: false,
+      showMarkdown: true,
+      showManaged: false,
+    },
   });
+  // A bad setting leaves the others.
+  expect(
+    readSavedWorkbench({ preview: { mode: "draft", live: false } })?.preview,
+  ).toEqual({ live: false });
   // A bad side leaves the other, and a width outside the limits is held to them.
   expect(
     readSavedWorkbench({

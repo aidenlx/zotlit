@@ -501,6 +501,8 @@ export interface SavedWorkbench {
   readonly partialProfile: string | null;
   /** The panels the state names; a side it leaves out keeps the leaf's own. */
   readonly panels: Partial<WorkbenchPanels>;
+  /** The Preview's settings the state names; each one decodes alone. */
+  readonly preview: Partial<WorkbenchPreviewSettings>;
 }
 
 /** What `getState` saves beside the file, from the leaf's state. */
@@ -509,6 +511,7 @@ export function savedWorkbench(state: {
   readonly view: WorkbenchViewState;
   readonly picks: WorkbenchPicks;
   readonly panels: WorkbenchPanels;
+  readonly preview: WorkbenchPreviewSettings;
   /** A Shared Partial's caller and Profile; null for any other kind. */
   readonly partial: {
     readonly context: PartialContext;
@@ -523,6 +526,7 @@ export function savedWorkbench(state: {
     annotationId: state.picks.annotationId,
     advanced,
     panels: state.panels,
+    preview: state.preview,
     // A Shared Partial's caller is a choice nothing else can name, so the
     // workspace carries it back with the file it belongs to. No other kind
     // has one to carry.
@@ -556,6 +560,23 @@ export function readSavedWorkbench(input: unknown): SavedWorkbench | null {
     ),
     partialProfile: decode(Schema.String, value.partialProfile),
     panels: readPanels(value.panels),
+    preview: readPreview(value.preview),
+  };
+}
+
+/** Each setting decodes alone, so one bad setting leaves the others. */
+function readPreview(input: unknown): Partial<WorkbenchPreviewSettings> {
+  const value = decode(record, input) ?? {};
+  const mode = decode(Schema.Literals(["create", "update"]), value.mode);
+  const flag = (key: "live" | "showMarkdown" | "showManaged") => {
+    const flag = decode(Schema.Boolean, value[key]);
+    return flag === null ? {} : { [key]: flag };
+  };
+  return {
+    ...(mode === null ? {} : { mode }),
+    ...flag("live"),
+    ...flag("showMarkdown"),
+    ...flag("showManaged"),
   };
 }
 

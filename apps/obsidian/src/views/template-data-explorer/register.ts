@@ -11,11 +11,12 @@ import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PluginSettings } from "@/services/settings/service";
-import { inLayoutTurn, openProfileExplorer } from "@/views/note-preview/layout";
-import { activeTemplateWorkbench } from "@/views/note-preview/register";
 import { startTemplateWorkbenchAction } from "@/views/template-workbench/actions";
 import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
+import { inLayoutTurn, setLeafState } from "@/views/template-workbench/layout";
+import type { TemplateWorkbenchView } from "@/views/template-workbench/view";
 
+import { activeTemplateWorkbench } from "./companion";
 import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
 
 type ExplorerPlugin = Pick<
@@ -129,3 +130,29 @@ export function explorerFileMenu(
     );
   };
 }
+
+/** Reopen the fields in the same window as the authoring session. */
+export const openProfileExplorer = (editor: TemplateWorkbenchView) =>
+  inLayoutTurn(openExplorerBeside(editor));
+
+/**
+ * The explorer linked with `editor`, opened beside it when it has none, inside
+ * a layout turn its caller holds. The Fields panel replaces it (#1943).
+ */
+export const openExplorerBeside = Effect.fn(
+  "TemplateDataExplorer.revealCompanion",
+)(function* (editor: TemplateWorkbenchView) {
+  const workspace = yield* Workspace;
+  const existing = (yield* workspace.leavesOfType(EXPLORER_VIEW_TYPE)).find(
+    (leaf) => !!editor.leaf.group && leaf.group === editor.leaf.group,
+  );
+  const leaf =
+    existing ??
+    (yield* workspace.createLeafBySplit(editor.leaf, "vertical", true));
+  if (!existing) {
+    leaf.setGroupMember(editor.leaf);
+    yield* setLeafState(leaf, { type: EXPLORER_VIEW_TYPE, active: false });
+  }
+  yield* workspace.revealLeaf(leaf);
+  leaf.getContainer().focus();
+});

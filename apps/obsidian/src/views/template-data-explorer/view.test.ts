@@ -21,10 +21,6 @@ import { pickItem } from "@/services/item-lookup/search-modal";
 import { defaults } from "@/services/settings/schema";
 import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
 import {
-  activeTemplateWorkbench,
-  subscribeActiveTemplateWorkbench,
-} from "@/views/note-preview/register";
-import {
   workbenchItemChoice,
   workbenchItemSearch,
 } from "@/views/template-workbench/item-choice";
@@ -35,11 +31,15 @@ import type {
 
 import { makeExplorerHost, waitFor } from "./__fixtures__";
 import type { ExplorerHost, ExplorerReads } from "./__fixtures__";
+import {
+  activeTemplateWorkbench,
+  subscribeActiveTemplateWorkbench,
+} from "./companion";
 import { TemplateDataExplorerView } from "./view";
 import type { ExplorerViewDeps } from "./view";
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-vi.mock("@/views/note-preview/register", () => ({
+vi.mock("./companion", () => ({
   onCompanionStateRestored: (
     app: App,
     result: import("obsidian").ViewStateResult,

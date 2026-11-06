@@ -1,25 +1,13 @@
-// Explicit workbench opening and native group/follow association for companion views.
-import type {
-  App,
-  Plugin,
-  WorkspaceLeaf,
-  ItemView,
-  ViewStateResult,
-} from "obsidian";
+// The editor binding the standalone Template data explorer still keeps beside
+// a Template Workbench View: its follow of the active editor and its native
+// history. The Fields panel replaces them (#1943).
+import type { App, ItemView, ViewStateResult, WorkspaceLeaf } from "obsidian";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { startTemplateWorkbenchAction } from "@/views/template-workbench/actions";
-import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 import {
   TEMPLATE_WORKBENCH_VIEW_TYPE,
   TemplateWorkbenchView,
 } from "@/views/template-workbench/view";
-
-import { noteEmbedPlaceholders } from "./embed-placeholder";
-import { openNotePreview, openWorkbenchLayout } from "./layout";
-import type { PreviewViewDeps } from "./view";
-import { NotePreviewView, NOTE_PREVIEW_VIEW_TYPE } from "./view";
 
 const logger = getLogger(["views", "workbench-association"]);
 
@@ -149,45 +137,4 @@ export function subscribeActiveTemplateWorkbench(
   });
   const subscriptions = cleanup.move();
   return () => subscriptions.dispose();
-}
-export function registerNotePreview(
-  plugin: Plugin,
-  deps: PreviewViewDeps & WorkbenchActionDeps,
-): void {
-  const { app } = plugin;
-  plugin.registerView(
-    NOTE_PREVIEW_VIEW_TYPE,
-    (leaf) => new NotePreviewView(leaf, plugin.manifest.id, deps),
-  );
-  plugin.registerMarkdownPostProcessor(noteEmbedPlaceholders(app));
-  plugin.addCommand({
-    id: "open-template-workbench",
-    name: m.template_workbench_open_layout(),
-    checkCallback(checking) {
-      const editor = activeTemplateWorkbench(app);
-      if (!editor) return false;
-      if (!checking)
-        startTemplateWorkbenchAction(
-          deps,
-          "open-workbench",
-          openWorkbenchLayout(editor),
-        );
-      return true;
-    },
-  });
-  plugin.addCommand({
-    id: "open-note-preview",
-    name: m.profile_preview_open(),
-    checkCallback(checking) {
-      const editor = activeTemplateWorkbench(app);
-      if (!editor) return false;
-      if (!checking)
-        startTemplateWorkbenchAction(
-          deps,
-          "open-preview",
-          openNotePreview(editor),
-        );
-      return true;
-    },
-  });
 }

@@ -19,6 +19,8 @@ import { templateFolderAtom } from "@/services/settings/atoms";
 import { startTemplateWorkbenchAction } from "./actions";
 import type { WorkbenchActionDeps } from "./actions";
 import { templateDocumentKind } from "./document-kind";
+import { noteEmbedPlaceholders } from "./embed-placeholder";
+import { openWorkbenchLayout } from "./layout";
 import {
   customizeProfile,
   openNativeProfile,
@@ -111,6 +113,25 @@ export function registerTemplateWorkbenchView(
         pluginVersion: plugin.manifest.version,
       }),
   );
+  // A note embed in the Preview draws a placeholder for the embedded note.
+  plugin.registerMarkdownPostProcessor(noteEmbedPlaceholders(plugin.app));
+  plugin.addCommand({
+    id: "open-template-workbench",
+    name: m.template_workbench_open_layout(),
+    checkCallback(checking) {
+      const editor = plugin.app.workspace.getActiveViewOfType(
+        TemplateWorkbenchView,
+      );
+      if (!editor) return false;
+      if (!checking)
+        startTemplateWorkbenchAction(
+          deps,
+          "open-workbench",
+          openWorkbenchLayout(editor),
+        );
+      return true;
+    },
+  });
   plugin.addCommand({
     id: "customize-profile",
     name: m.template_workbench_open_layout(),

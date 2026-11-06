@@ -277,7 +277,7 @@ export function createPageHelpers(app: PageApp) {
     });
     return [...docs];
   }
-  /** The Template Workbench leaves, their companions, and the focus they sit under. */
+  /** The Template Workbench leaves, their panels and companions, and the focus they sit under. */
   function workbenchSurfaces() {
     const surfaces = (type: keyof WalkthroughViews) =>
       leavesOfType(type).map((leaf) => {
@@ -293,12 +293,15 @@ export function createPageHelpers(app: PageApp) {
           content:
             leaf.view.containerEl.querySelector(".view-content")
               ?.childElementCount ?? null,
+          panels: Array.from(
+            leaf.view.containerEl.querySelectorAll("[data-panel]"),
+            (panel) => panel.getAttribute("data-panel"),
+          ),
         };
       });
     return {
       workbench: surfaces("zotlit-template-workbench"),
       explorer: surfaces("zotlit-template-data-explorer"),
-      preview: surfaces("zotlit-note-preview"),
       activeLeaf: app.workspace.activeLeaf?.view.getViewType() ?? null,
       activeWindow: activeWindow === window ? "main" : "popout",
       focused: activeDocument.hasFocus(),
@@ -545,6 +548,13 @@ export function createPageHelpers(app: PageApp) {
       "zotlit-template-workbench"
       ? (app.workspace.activeLeaf.view as TemplateWorkbenchView)
       : undefined;
+  }
+  /** The Preview panel `view` shows, or null while it hides the panel. */
+  function previewPanel(view: TemplateWorkbenchView | undefined) {
+    return (
+      view?.contentEl.querySelector<HTMLElement>('[data-panel="preview"]') ??
+      null
+    );
   }
   function pdfView(path: string): PagePdfView | undefined {
     return app.workspace
@@ -960,6 +970,7 @@ export function createPageHelpers(app: PageApp) {
     restoreAnnotationPreparation,
     annotationOpenSubpath,
     workbench,
+    previewPanel,
     workbenchSurfaces,
     pdfView,
     clientOfFirstPage,
