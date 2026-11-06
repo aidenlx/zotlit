@@ -30,8 +30,10 @@ interface ExampleState {
   /** The diagnostic that named this surface, which routes to its explanation. */
   failure: RenderDiagnostic | null;
   /**
-   * The last attempt that produced this surface, while its own failure stands.
-   * Null whenever nothing retained answers for the surface the reader is on.
+   * The output that stands beside the message: the last attempt that produced
+   * this surface while its own failure stands, or the result a pending render
+   * has not replaced yet. Null whenever nothing answers for the surface the
+   * reader is on.
    */
   retained: TemplateRenderResult | null;
 }
@@ -89,11 +91,14 @@ export function useExampleState(surface: ExampleSurface): ExampleState {
   // produced nothing, but never an example the reader is still reading.
   if (!result || result === previousResult || (busy && renderFailed(result)))
     return state("loading", m.workbench_loading_item());
-  // A live render is already on its way, so the example stands until it lands,
-  // as the result column's does. Only a render that waits for Run, a hold, or a
-  // document the parser refuses leaves the example behind the source.
+  // A result the source has moved past stands until the next one lands, as it
+  // does in the result column. A live render is already on its way; a render
+  // that waits for Run, a hold, or a document the parser refuses says so
+  // beside the example it left behind.
   if (staleReason !== null && staleReason !== "live")
-    return state("stale", m.workbench_example_awaiting_run());
+    return state("stale", m.workbench_example_awaiting_run(), {
+      retained: result,
+    });
   if (produced(result, surface)) return state("ready", null);
   // A Managed Frontmatter failure names the row it came from and that row
   // carries it, so only a diagnostic naming the whole surface answers for one.

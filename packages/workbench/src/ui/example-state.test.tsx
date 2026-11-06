@@ -1,3 +1,4 @@
+import type { RenderDiagnostic } from "#/render/index";
 import {
   act,
   cleanup,
@@ -126,7 +127,7 @@ it("marks a held live result as stale while rendering cannot run", async () => {
     mounted.scheduler.run();
   });
   expect(mounted.scheduler.getState()).toMatchObject({
-    stale: true,
+    staleReason: "hold",
     busy: false,
   });
   expect(mounted.host.renders).toHaveLength(1);
@@ -247,7 +248,10 @@ const noteName = (container: HTMLElement) =>
   container.querySelector('[data-part="filename-output"]')?.textContent;
 
 /** Renders the first example with a value on the first two rows. */
-async function renderFirstExample(mounted: ReturnType<typeof mount>) {
+async function renderFirstExample(
+  mounted: ReturnType<typeof mount>,
+  diagnostics: readonly RenderDiagnostic[] = [],
+) {
   act(() => {
     mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
     mounted.scheduler.run();
@@ -260,6 +264,7 @@ async function renderFirstExample(mounted: ReturnType<typeof mount>) {
         { key: "title", position: 1, value: "A paper", missing: false },
         { key: "related", position: 2, value: "Linked", missing: false },
       ],
+      diagnostics,
     }),
   );
 }
@@ -274,7 +279,6 @@ it("keeps the previous example on screen while a live render is queued", async (
     mounted.controller.setManifestKey("filename", "Updated");
   });
   expect(mounted.scheduler.getState()).toMatchObject({
-    stale: true,
     staleReason: "live",
     busy: false,
   });
@@ -308,23 +312,57 @@ it("keeps each row's own value while a reordered list renders again", async () =
   expect(rows.slice(0, 2)).toEqual(["relatedLinked", "titleA paper"]);
 });
 
-it("asks for a run after the source changes while refresh is on demand", async () => {
+it("names each row's problem at the row's new place until the next render lands", async () => {
   using mounted = mount(<Configuration />, {
     state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
   });
   render(mounted.ui);
+  await renderFirstExample(mounted, [
+    { code: "property-error", position: 1, message: "The rule stopped." },
+  ]);
+  act(() => {
+    mounted.controller.editManagedEntry({ action: "move", position: 1, by: 1 });
+  });
+  // Every reader of the result — rows, Problems, the entry editor — reads the
+  // positions of the list on screen.
+  const { result } = mounted.scheduler.getState();
+  expect(result?.diagnostics.map(({ position }) => position)).toEqual([2]);
+  expect(
+    result?.properties.map(({ key, position }) => [key, position]),
+  ).toEqual([
+    ["title", 2],
+    ["related", 1],
+  ]);
+  act(() => {
+    mounted.controller.editManagedEntry({ action: "remove", position: 2 });
+  });
+  // The removed row's value and problem leave with it.
+  expect(mounted.scheduler.getState().result).toMatchObject({
+    diagnostics: [],
+    properties: [{ key: "related", position: 1 }],
+  });
+});
+
+it("asks for a run after the source changes while refresh is on demand", async () => {
+  using mounted = mount(<Configuration />, {
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  const dom = render(mounted.ui);
   await renderFirstExample(mounted);
   act(() => mounted.scheduler.setInput({ live: false }));
   act(() => {
     mounted.controller.setManifestKey("filename", "Updated");
   });
   expect(mounted.scheduler.getState()).toMatchObject({
-    stale: true,
     staleReason: "demand",
   });
   expect(screen.getAllByText(m.workbench_example_awaiting_run())).toHaveLength(
     2,
   );
+  // The example the source left behind stands beside the notice, as the
+  // result column's output does.
+  expect(noteName(dom.container)).toBe("literatures/Research.md");
+  expect(screen.getByRole("button", { name: "title A paper" })).toBeTruthy();
 });
 
 it("tells a broken Filename Template from an empty note name", async () => {

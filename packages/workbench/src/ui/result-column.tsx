@@ -96,7 +96,6 @@ export interface ResultBodyProps {
    */
   retained?: TemplateRenderResult | null;
   mode: ResultMode;
-  stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while it is current. */
   staleReason: "hold" | "invalid" | "demand" | "live" | null;
   showMarkdown: boolean;
@@ -347,7 +346,6 @@ export function ResultColumn({
   annotationResult,
   retained,
   mode,
-  stale,
   staleReason,
   showMarkdown,
   onShowMarkdown,
@@ -406,7 +404,6 @@ export function ResultColumn({
         annotationResult={annotationResult}
         retained={retained}
         mode={mode}
-        stale={stale}
         staleReason={staleReason}
         showMarkdown={showMarkdown}
         showManaged={showManaged}

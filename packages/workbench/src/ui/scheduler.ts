@@ -17,6 +17,7 @@ import { WorkbenchHostError } from "./host";
 import { forkReported } from "./run";
 import type { PreviewMode } from "./store";
 
+import { followEntries } from "#/document/manifest-patch";
 import { captureRenderReport, engineEvidence } from "#/render/report";
 import {
   failedRender,
@@ -85,9 +86,12 @@ export interface RenderSchedulerState<
   readonly retained: R | null;
   /** Set from the moment a render starts until its result lands or is dropped. */
   readonly busy: boolean;
-  /** Whether `result` describes a draft, paper, or mode the reader has left. */
-  readonly stale: boolean;
-  /** Why `result` is stale, or why none exists yet; `null` while the shown result is current. */
+  /**
+   * Why `result` describes a draft, paper, or mode the reader has left, or why
+   * none exists yet; `null` while the shown result is current. `live` means a
+   * render of the new input is on its way, so the result stands until it
+   * lands; `demand` waits for Run; `hold` and `invalid` wait for a repair.
+   */
   readonly staleReason: "hold" | "invalid" | "demand" | "live" | null;
   /** How the attempt behind `result` started; `null` while none has landed. */
   readonly trigger: RenderTrigger | null;
@@ -156,6 +160,59 @@ function staleReasonFor(
   return input.live ? "live" : "demand";
 }
 
+/**
+ * `result` as read against `to`. Output names Managed Frontmatter entries by
+ * their position in the draft it was rendered from, and a result stands across
+ * an edit until the next render lands, so each position is moved to the entry
+ * it belongs to in the current draft. Output for an entry the edit removed is
+ * dropped. The attempt itself — its source revision and its reports — is
+ * unchanged, and so is the result when nothing moved.
+ */
+function rebased<R extends TemplateRenderResult>(
+  result: R,
+  from: string,
+  to: string,
+): R {
+  if (
+    from === to ||
+    (result.properties.length === 0 &&
+      result.fold.length === 0 &&
+      result.diagnostics.every(({ position }) => position === undefined))
+  )
+    return result;
+  const follow = followEntries(from, to);
+  if (follow === null) return result;
+  const move = <T extends { readonly position?: number }>(
+    list: readonly T[],
+  ): T[] =>
+    list.flatMap((item) => {
+      if (item.position === undefined) return [item];
+      const position = follow(item.position);
+      return position === undefined ? [] : [{ ...item, position }];
+    });
+  return {
+    ...result,
+    properties: move(result.properties),
+    fold: move(result.fold),
+    diagnostics: move(result.diagnostics),
+  };
+}
+
+/**
+ * {@link rebased}, answering with the same object while the result and the
+ * draft it is read against stay the same, so a publish with nothing new
+ * notifies no one.
+ */
+function rebaser<R extends TemplateRenderResult>() {
+  let last: { result: R; to: string; out: R } | null = null;
+  return (result: R | null, from: string, to: string): R | null => {
+    if (result === null) return null;
+    if (last?.result !== result || last.to !== to)
+      last = { result, to, out: rebased(result, from, to) };
+    return last.out;
+  };
+}
+
 /** Whether nothing may render, for either reason a host gives. */
 function held(input: Pick<RenderSchedulerInput, "hold">): boolean {
   return input.hold === true || input.hold === "invalid";
@@ -175,13 +232,20 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     result: null,
     retained: null,
     busy: false,
-    stale: false,
     staleReason: staleReasonFor(initial, false),
     trigger: null,
     attempt: 0,
   };
-  // The last output each preview surface produced, whatever has failed since.
+  // The newest attempt that landed, as rendered, and the draft it rendered.
+  // What the reader sees is this result read against the draft they have now.
+  let landed: R | null = null;
+  let landedSource = initial.source;
+  const shownResult = rebaser<R>();
+  // The last output each preview surface produced, whatever has failed since,
+  // named in the positions of the draft the newest attempt rendered.
   let produced: R | null = null;
+  let producedSource = initial.source;
+  const shownRetained = rebaser<R>();
   // The Template Document `produced` was rendered from, so output kept for one
   // document is never read against another.
   let producedDocument = initial.document;
@@ -254,20 +318,25 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
 
   function publish(next: {
     result?: R | null;
+    /** The draft `result` was rendered from; the current one when absent. */
+    source?: string;
     busy?: boolean;
     trigger?: RenderTrigger;
   }): void {
     if (closed) return;
     const { trigger } = next;
-    const landed = trigger !== undefined;
-    const attempt = landed ? state.attempt + 1 : state.attempt;
-    const published = next.result === undefined ? state.result : next.result;
-    // Stamped before anything else reads it, so the result the reader keeps
-    // comparing against carries the same report the shown one does.
-    const result =
-      trigger !== undefined && published !== null
-        ? stamp(published, trigger, attempt)
-        : published;
+    const isLanding = trigger !== undefined;
+    const attempt = isLanding ? state.attempt + 1 : state.attempt;
+    if (next.result !== undefined) {
+      // Stamped before anything else reads it, so the result the reader keeps
+      // comparing against carries the same report the shown one does.
+      landed =
+        trigger !== undefined && next.result !== null
+          ? stamp(next.result, trigger, attempt)
+          : next.result;
+      landedSource = next.source ?? input.source;
+    }
+    const result = landed;
     const busy = next.busy ?? state.busy;
     // A Property failure makes the note surface unsuccessful even when the
     // renderer returned its partial body; independent surfaces still land. The
@@ -289,15 +358,19 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     // Each surface keeps the newest output it produced, so a note that failed
     // beside an annotation that rendered leaves the last good note standing.
     if (
-      landed &&
+      isLanding &&
       resultForRetention !== null &&
       !renderFailed(resultForRetention)
     ) {
       produced =
         produced !== null && producedDocument === input.document
-          ? retain(produced, resultForRetention)
+          ? retain(
+              rebased(produced, producedSource, landedSource),
+              resultForRetention,
+            )
           : resultForRetention;
       producedDocument = input.document;
+      producedSource = landedSource;
     }
     // Only a failure sends the reader back to working output, and only where
     // that output still answers for the document and the selection they are
@@ -311,32 +384,30 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       produced !== null &&
       producedDocument === input.document &&
       sameSelection(produced)
-        ? produced
+        ? shownRetained(produced, producedSource, input.source)
         : null;
     const identityMismatch =
       result !== null &&
       (result.sourceRevision !== templateSourceRevision(input.source) ||
         !sameSelection(result));
-    const stale = held(input) || identityMismatch;
     const staleReason = staleReasonFor(
       input,
       result !== null && !identityMismatch,
     );
+    const shown = shownResult(result, landedSource, input.source);
     if (
-      !landed &&
-      result === state.result &&
+      !isLanding &&
+      shown === state.result &&
       retained === state.retained &&
       busy === state.busy &&
-      stale === state.stale &&
       staleReason === state.staleReason
     ) {
       return;
     }
     state = {
-      result,
+      result: shown,
       retained,
       busy,
-      stale,
       staleReason,
       trigger: trigger ?? state.trigger,
       attempt,
@@ -386,7 +457,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
         if (current !== identity) return;
         current = undefined;
         interruptCurrent = undefined;
-        publish({ result, busy: false, trigger });
+        publish({ result, source: request.source, busy: false, trigger });
       },
       // A template that throws stops this render, not the host around it.
       onFailure: (failure) => {
@@ -407,6 +478,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
               part: "render",
             }),
           ),
+          source: request.source,
           busy: false,
           trigger,
         });

@@ -67,36 +67,8 @@ export interface PropertiesPaneProps {
 /** Produced fields under the entry that produced them, for either column. */
 function byEntry(
   properties: readonly RenderedProperty[],
-  entries: readonly ManagedEntrySource[],
 ): Map<number, readonly RenderedProperty[]> {
-  const at = new Map(entries.map((entry) => [entry.position, entry]));
-  const keyed = Map.groupBy(
-    entries.filter((entry) => entry.key !== undefined),
-    (entry) => entry.key!,
-  );
-  // The example stands while a live render of the edited list is on its way,
-  // so a row moved, added, or removed since leaves its value at a position
-  // another entry holds now. A static value follows the one entry with its
-  // name; a value no entry owns any more shows on no row. A spread's names can
-  // repeat a static entry's, so position decides first, and only a static
-  // value that lands on another name's row moves; a spread swapped with a
-  // static entry reads its neighbour's value until the render lands.
-  const owner = (property: RenderedProperty): number | undefined => {
-    const entry = at.get(property.position);
-    if (entry !== undefined && (entry.key ?? property.key) === property.key)
-      return property.position;
-    const named = keyed.get(property.key);
-    return named?.length === 1 ? named[0]!.position : undefined;
-  };
-  const owned = new Map<number, RenderedProperty[]>();
-  for (const property of properties) {
-    const position = owner(property);
-    if (position === undefined) continue;
-    const row = owned.get(position);
-    if (row) row.push(property);
-    else owned.set(position, [property]);
-  }
-  return owned;
+  return Map.groupBy(properties, (property) => property.position);
 }
 
 /** A static entry shows its own value; a spread shows what it produced. */
@@ -165,7 +137,18 @@ export function PropertiesPane({
   const part = useParts("properties");
   const example = useExampleState("properties");
   const exampleMessage = example.message;
-  const produced = byEntry(exampleMessage ? [] : properties, entries);
+  // The output the rows read: this attempt's own, or the output that stands
+  // beside the example's condition. Without either, each row shows its rule.
+  const standing =
+    exampleMessage === null
+      ? { properties, fold }
+      : example.retained
+        ? {
+            properties: example.retained.properties,
+            fold: example.retained.fold,
+          }
+        : null;
+  const produced = byEntry(standing?.properties ?? []);
   const icon = useIcon();
   const instanceId = useUniqueId();
   const host = useOptionalHost();
@@ -259,11 +242,11 @@ export function PropertiesPane({
             !open && raised.length > 0 ? raised[0]!.message : null;
           const summary =
             failure ??
-            (exampleMessage
+            (standing === null
               ? entry.language === "expr"
                 ? sliceShownText(controller, entrySlice(entry.position))
                 : controller.sliceText(entrySlice(entry.position))
-              : summarize(m, { entry, produced: fields, fold }));
+              : summarize(m, { entry, produced: fields, fold: standing.fold }));
           return (
             <li key={entry.position} {...part("row")}>
               <div {...part("row-header")}>
@@ -292,7 +275,7 @@ export function PropertiesPane({
                       )}
                       {...tooltip(summary)}
                     >
-                      {exampleMessage && !failure ? (
+                      {standing === null && !failure ? (
                         <code>{summary}</code>
                       ) : (
                         summary
@@ -389,7 +372,7 @@ export function PropertiesPane({
                   instanceId={instanceId}
                   entry={entry}
                   produced={fields}
-                  showResult={!exampleMessage}
+                  showResult={standing !== null}
                   diagnostics={raised}
                   focusName={newRow === entry.position}
                   onOpenSource={onOpenSource}
