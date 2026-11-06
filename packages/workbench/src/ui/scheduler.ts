@@ -7,6 +7,7 @@ import type { RenderRequest, RenderResources } from "#/render/request";
 import type {
   TemplateRenderResult,
   RenderDiagnostic,
+  RenderedProperty,
   RenderIdentity,
 } from "#/render/result";
 import type { AnnotationExample } from "#/render/sample-annotations";
@@ -164,9 +165,10 @@ function staleReasonFor(
  * `result` as read against `to`. Output names Managed Frontmatter entries by
  * their position in the draft it was rendered from, and a result stands across
  * an edit until the next render lands, so each position is moved to the entry
- * it belongs to in the current draft. Output for an entry the edit removed is
- * dropped. The attempt itself — its source revision and its reports — is
- * unchanged, and so is the result when nothing moved.
+ * it belongs to in the current draft. A value of an entry the edit removed is
+ * dropped, and its problem names no row. The attempt itself — its source
+ * revision and its reports — is unchanged, and so is the result when nothing
+ * moved.
  */
 function rebased<R extends TemplateRenderResult>(
   result: R,
@@ -182,19 +184,23 @@ function rebased<R extends TemplateRenderResult>(
     return result;
   const follow = followEntries(from, to);
   if (follow === null) return result;
-  const move = <T extends { readonly position?: number }>(
-    list: readonly T[],
-  ): T[] =>
-    list.flatMap((item) => {
-      if (item.position === undefined) return [item];
-      const position = follow(item.position);
-      return position === undefined ? [] : [{ ...item, position }];
+  const move = (list: readonly RenderedProperty[]) =>
+    list.flatMap((property) => {
+      const position = follow(property.position);
+      return position === undefined ? [] : [{ ...property, position }];
     });
   return {
     ...result,
     properties: move(result.properties),
     fold: move(result.fold),
-    diagnostics: move(result.diagnostics),
+    // A removed entry's problem still explains why the attempt produced what
+    // it did, so it stays, naming no row.
+    diagnostics: result.diagnostics.map((diagnostic) => {
+      if (diagnostic.position === undefined) return diagnostic;
+      const { position: _removed, ...unplaced } = diagnostic;
+      const position = follow(diagnostic.position);
+      return position === undefined ? unplaced : { ...diagnostic, position };
+    }),
   };
 }
 

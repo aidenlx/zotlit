@@ -336,11 +336,13 @@ it("names each row's problem at the row's new place until the next render lands"
   act(() => {
     mounted.controller.editManagedEntry({ action: "remove", position: 2 });
   });
-  // The removed row's value and problem leave with it.
-  expect(mounted.scheduler.getState().result).toMatchObject({
-    diagnostics: [],
-    properties: [{ key: "related", position: 1 }],
-  });
+  // The removed row's value leaves with it. Its problem still explains the
+  // attempt, so it stays, naming no row.
+  const removed = mounted.scheduler.getState().result;
+  expect(removed?.properties).toMatchObject([{ key: "related", position: 1 }]);
+  expect(removed?.diagnostics).toHaveLength(1);
+  expect(removed?.diagnostics[0]).toMatchObject({ code: "property-error" });
+  expect(removed?.diagnostics[0]).not.toHaveProperty("position");
 });
 
 it("asks for a run after the source changes while refresh is on demand", async () => {
