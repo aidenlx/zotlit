@@ -143,6 +143,11 @@ export interface WorkbenchModelOptions<R extends TemplateRenderResult> {
   /** The view state, when a host keeps it in an atom of its own. */
   readonly view?: Atom.Writable<WorkbenchViewState>;
   /**
+   * The reader's choices, when a host keeps them in atoms of its own: it
+   * reads them from those atoms and writes each choice back to them.
+   */
+  readonly choices?: Atom.Writable<WorkbenchChoices>;
+  /**
    * The chosen Item's data, when the host derives it from its own read and
    * from the document in use.
    */
@@ -246,6 +251,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
   controller: initialController,
   initial,
   view = Atom.make<WorkbenchViewState>({ ...INITIAL_VIEW, ...initial }),
+  choices = Atom.make(INITIAL_CHOICES),
   itemData: deriveItemData,
   runtime,
   host,
@@ -255,7 +261,6 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
   reportContext,
   debounceMs,
 }: WorkbenchModelOptions<R>): WorkbenchModel<R> {
-  const choices = Atom.make(INITIAL_CHOICES);
   const controller = Atom.make(initialController);
   const document = workbenchDocumentAtoms(controller);
   const itemData = deriveItemData

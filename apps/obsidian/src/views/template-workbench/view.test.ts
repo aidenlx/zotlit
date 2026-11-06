@@ -7,12 +7,12 @@ import type {
 } from "@mock/obsidian";
 import { Cause, Effect, Exit } from "effect";
 import { Stream } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import { SuggestModal, TFile } from "obsidian";
 import type { App, ViewState, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createStore } from "zustand/vanilla";
 
 import {
   formatPlainTemplateDocument,
@@ -41,7 +41,14 @@ import {
 } from "@/services/zotero-reads/test-utils";
 import { createRenderFixture } from "@/views/note-preview/__fixtures__/render";
 
-import { makeWorkbenchHost } from "./__fixtures__";
+import {
+  chooseSample,
+  makeWorkbenchHost,
+  renderState,
+  runRender,
+  setViewItem,
+  viewState,
+} from "./__fixtures__";
 import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "./__fixtures__";
 import { createSharedPartialEffect } from "./partial-command";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
@@ -312,7 +319,7 @@ describe("TemplateWorkbenchView", () => {
     using _activeFile = vi
       .spyOn(h.app.workspace, "getActiveFile")
       .mockReturnValue(other);
-    h.view.store.getState().setItem({ id: "BBBBBBBB", title: "Other paper" });
+    setViewItem(h.view, { id: "BBBBBBBB", title: "Other paper" });
     const updating = run(h.view.updateOriginatingNote());
     // A second press while the update runs joins it.
     const again = run(h.view.updateOriginatingNote());
@@ -595,18 +602,14 @@ describe("TemplateWorkbenchView", () => {
       cleanup.defer(() => act(async () => view.close()));
       await act(async () => view.open());
       await act(async () =>
-        view.scheduler.setInput({
-          snapshot: SAMPLE_ITEMS[0]!,
-          live: false,
-          hold: false,
-        }),
+        chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
       );
       const run = async () => {
-        const attempt = view.scheduler.getState().attempt;
+        const attempt = renderState(view).attempt;
         await act(async () => {
-          view.scheduler.run();
+          runRender(view);
           await vi.waitFor(() =>
-            expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+            expect(renderState(view).attempt).toBeGreaterThan(attempt),
           );
         });
       };
@@ -637,16 +640,12 @@ describe("TemplateWorkbenchView", () => {
       expect(view.contentEl.textContent).not.toContain(
         m.workbench_problems_none(),
       );
-      await act(async () =>
-        view.scheduler.setInput({ snapshot: SAMPLE_ITEMS[1]! }),
-      );
+      await act(async () => chooseSample(view, SAMPLE_ITEMS[1]!));
       await run();
       expect(view.contentEl.textContent).toContain(
         m.workbench_problems_object_partial({ name: "venue-line" }),
       );
-      await act(async () =>
-        view.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! }),
-      );
+      await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
       if (unrelatedPreview) {
         await act(async () =>
           view.publishPreviewProblems("pinned-B", [
@@ -696,11 +695,7 @@ describe("TemplateWorkbenchView", () => {
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
     await act(async () => {
-      view.scheduler.setInput({
-        snapshot: SAMPLE_ITEMS[0]!,
-        live: false,
-        hold: false,
-      });
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false });
       view.explainArrival({
         diagnostic: {
           code: "render-error",
@@ -709,11 +704,11 @@ describe("TemplateWorkbenchView", () => {
         },
       });
     });
-    const attempt = view.scheduler.getState().attempt;
+    const attempt = renderState(view).attempt;
     await act(async () => {
-      view.scheduler.run();
+      runRender(view);
       await vi.waitFor(() =>
-        expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
       );
     });
     expect(view.contentEl.textContent).toContain(
@@ -741,11 +736,7 @@ describe("TemplateWorkbenchView", () => {
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
     await act(async () => {
-      view.scheduler.setInput({
-        snapshot: SAMPLE_ITEMS[0]!,
-        live: false,
-        hold: false,
-      });
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false });
       view.explainArrival({
         diagnostic: {
           code: "missing-partial",
@@ -754,11 +745,11 @@ describe("TemplateWorkbenchView", () => {
         },
       });
     });
-    const attempt = view.scheduler.getState().attempt;
+    const attempt = renderState(view).attempt;
     await act(async () => {
-      view.scheduler.run();
+      runRender(view);
       await vi.waitFor(() =>
-        expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
       );
     });
     expect(view.contentEl.textContent).not.toContain(
@@ -820,12 +811,12 @@ describe("TemplateWorkbenchView", () => {
           ).querySelectorAll(`.${hook}`),
         ].map((node) => node.textContent);
       for (const tab of ["annotation", "name"] as const) {
-        await act(async () => view.store.getState().setTab(tab));
+        await act(async () => view.change.setTab(tab));
         expect(tokens("zt-template-delimiter")).toEqual(
           engine === "eta" ? ["<%=", "%>"] : ["{{", "}}"],
         );
       }
-      await act(async () => view.store.getState().setAdvanced(true));
+      await act(async () => view.change.setAdvanced(true));
       expect(tokens("zt-template-frontmatter")).toContain("id: paper");
       expect(tokens("zt-template-yaml-key")).toEqual([]);
       expect(tokens("zt-template-delimiter")).toEqual(
@@ -845,13 +836,13 @@ describe("TemplateWorkbenchView", () => {
     const note = view.contentEl.querySelector<HTMLElement>(".cm-editor")!;
     expect(view.contentEl.querySelectorAll(".cm-editor")).toHaveLength(1);
 
-    await act(async () => view.store.getState().setTab("annotation"));
+    await act(async () => view.change.setTab("annotation"));
     const editors = view.contentEl.querySelectorAll<HTMLElement>(".cm-editor");
     expect(editors).toHaveLength(2);
     expect([...editors]).toContain(note);
     const annotation = editors[1]!;
 
-    await act(async () => view.store.getState().setTab("note"));
+    await act(async () => view.change.setTab("note"));
     expect([...view.contentEl.querySelectorAll(".cm-editor")]).toEqual([
       note,
       annotation,
@@ -864,11 +855,11 @@ describe("TemplateWorkbenchView", () => {
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
     const note = view.contentEl.querySelector<HTMLElement>(".cm-editor")!;
-    await act(async () => view.store.getState().setTab("annotation"));
+    await act(async () => view.change.setTab("annotation"));
     const annotation =
       view.contentEl.querySelectorAll<HTMLElement>(".cm-editor")[1]!;
 
-    await act(async () => view.store.getState().setAdvanced(true));
+    await act(async () => view.change.setAdvanced(true));
     const source = view.contentEl.querySelector<HTMLElement>(
       '[data-workbench-mode="source"] .cm-editor',
     )!;
@@ -877,7 +868,7 @@ describe("TemplateWorkbenchView", () => {
       annotation.closest<HTMLElement>('[role="tabpanel"]')!;
     expect(sourcePanel.hidden).toBe(false);
     expect(annotationPanel.hidden).toBe(true);
-    await act(async () => view.store.getState().setAdvanced(false));
+    await act(async () => view.change.setAdvanced(false));
 
     expect(view.contentEl.contains(note)).toBe(true);
     expect(view.contentEl.contains(annotation)).toBe(true);
@@ -885,7 +876,7 @@ describe("TemplateWorkbenchView", () => {
     expect(sourcePanel.hidden).toBe(true);
     expect(annotationPanel.hidden).toBe(false);
 
-    await act(async () => view.store.getState().setAdvanced(true));
+    await act(async () => view.change.setAdvanced(true));
     expect(
       view.contentEl.querySelector('[data-workbench-mode="source"] .cm-editor'),
     ).toBe(source);
@@ -918,25 +909,25 @@ An annotation.
       view.contentEl.querySelector<HTMLElement>(
         '[data-part="filename-editor"] .cm-editor',
       )!;
-    await act(async () => view.store.getState().setTab("name"));
+    await act(async () => view.change.setTab("name"));
     const name = filename();
     expect(name).not.toBeNull();
-    await act(async () => view.store.getState().setTab("note"));
-    await act(async () => view.store.getState().setTab("name"));
+    await act(async () => view.change.setTab("note"));
+    await act(async () => view.change.setTab("name"));
     expect(filename()).toBe(name);
 
     const expression = () =>
       view.contentEl.querySelector<HTMLElement>(
         '[data-part="expression"] .cm-editor',
       )!;
-    await act(async () => view.store.getState().setTab("properties"));
+    await act(async () => view.change.setTab("properties"));
     await act(async () =>
       view.setPresentation({ selected: 1, reveal: null, fieldFocus: null }),
     );
     const expr = expression();
     expect(expr).not.toBeNull();
-    await act(async () => view.store.getState().setTab("note"));
-    await act(async () => view.store.getState().setTab("properties"));
+    await act(async () => view.change.setTab("note"));
+    await act(async () => view.change.setTab("properties"));
     expect(expression()).toBe(expr);
   });
 
@@ -974,7 +965,7 @@ An annotation.
     expect(view.getViewData()).toContain("<% title %>");
     expect(editor.state.selection.main.from).toBe(3);
     expect(editor.state.selection.main.to).toBe(8);
-    await act(async () => view.store.getState().setAdvanced(true));
+    await act(async () => view.change.setAdvanced(true));
     await act(async () => {
       view.controller.undo();
     });
@@ -993,7 +984,7 @@ An annotation.
     );
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
-    await act(async () => view.store.getState().setAdvanced(true));
+    await act(async () => view.change.setAdvanced(true));
     expect(
       [...view.contentEl.querySelectorAll(".zt-template-delimiter")].map(
         (node) => node.textContent,
@@ -1069,13 +1060,13 @@ An annotation.
     view.setViewData("---\nid: [", true);
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
-    await act(async () => view.store.getState().setTab("match"));
-    expect(view.store.getState().tab).toBe("note");
+    await act(async () => view.change.setTab("match"));
+    expect(viewState(view).tab).toBe("note");
     const match = [
       ...view.contentEl.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
     ].find((tab) => tab.textContent === m.workbench_tab_match())!;
     expect(match.disabled).toBe(true);
-    await act(async () => view.store.getState().setTab("name"));
+    await act(async () => view.change.setTab("name"));
     expect(
       [...view.contentEl.querySelectorAll("button")].some(
         (button) => button.textContent === m.workbench_open_settings(),
@@ -1104,7 +1095,7 @@ An annotation.
     await act(async () => redo.click());
     expect(view.getViewData()).toContain("name: Edited");
     await act(async () => source.click());
-    expect(view.store.getState().advanced).toBe(true);
+    expect(viewState(view).advanced).toBe(true);
     expect(source.getAttribute("aria-pressed")).toBe("true");
     await act(async () => view.setViewData(SOURCE, true));
     expect(undo.getAttribute("aria-disabled")).toBe("true");
@@ -1146,7 +1137,7 @@ An annotation.
     expect(view.getViewData()).toBe(SOURCE);
     expect(materializeDefault).not.toHaveBeenCalled();
     const creating = run(view.customizeDefault());
-    expect(view.store.getState().customization === "pending").toBe(true);
+    expect(viewState(view).customization === "pending").toBe(true);
     // A second press while the document is written joins that write.
     const again = run(view.customizeDefault());
     await vi.waitFor(() =>
@@ -1207,15 +1198,15 @@ An annotation.
     });
     await view.setState({ defaultDraft: true }, { history: false });
     await run(view.customizeDefault());
-    expect(view.store.getState().customization === "failed").toBe(true);
-    expect(view.store.getState().customization === "pending").toBe(false);
+    expect(viewState(view).customization === "failed").toBe(true);
+    expect(viewState(view).customization === "pending").toBe(false);
     view.controller.setManifestKey("name", "Attempt after failure");
     view.controller.undo();
     expect(view.getViewData()).toBe(SOURCE);
     expect(materializeDefault).toHaveBeenCalledOnce();
     expect(requestSave).not.toHaveBeenCalled();
     await run(view.customizeDefault());
-    expect(view.store.getState().customization === "failed").toBe(false);
+    expect(viewState(view).customization === "failed").toBe(false);
     expect(view.isDefaultDraft).toBe(false);
   });
 
@@ -1289,7 +1280,7 @@ An annotation.
     await act(async () => {
       customize.click();
       await vi.waitFor(() =>
-        expect(view.store.getState().customization).toBe("failed"),
+        expect(viewState(view).customization).toBe("failed"),
       );
     });
     expect(view.contentEl.querySelectorAll('[role="alert"]')).toHaveLength(1);
@@ -1344,7 +1335,7 @@ An annotation.
     expect(await run(view.selectItem(choice))).toBe(true);
     loaded.resolve();
     await restoring;
-    expect(view.store.getState().item).toMatchObject({ id: choice.id });
+    expect(viewState(view).item).toMatchObject({ id: choice.id });
   });
 
   it("keeps authoring and restored state available when the database fails", async () => {
@@ -1363,7 +1354,7 @@ An annotation.
         { history: false },
       ),
     ).resolves.toBeUndefined();
-    expect(view.store.getState().advanced).toBe(true);
+    expect(viewState(view).advanced).toBe(true);
     expect(view.unavailableDependencies).toHaveLength(1);
     view.controller.setManifestKey("name", "Offline edit");
     expect(view.getViewData()).toContain("Offline edit");
@@ -1464,7 +1455,7 @@ An annotation.
         { history: false },
       );
 
-      expect(view.store.getState()).toMatchObject({
+      expect(viewState(view)).toMatchObject({
         tab,
         root,
         advanced,
@@ -1480,13 +1471,13 @@ An annotation.
       { history: false },
     );
     await view.setState({ tab: "unknown" }, { history: false });
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "note",
       root: "annotation",
     });
 
     await view.setState({ tab: "name" }, { history: false });
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "name",
       root: "filename",
     });
@@ -1494,7 +1485,7 @@ An annotation.
       { tab: "note", root: "annotation" },
       { history: false },
     );
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "note",
       root: "annotation",
     });
@@ -1527,16 +1518,13 @@ An annotation.
   });
   it("labels a built-in annotation sample export as selected paper data", () => {
     const { view } = setup();
-    view.store.getState().setItem({ id: "PAPER001g42", title: "Paper" });
-    view.store.getState().setRoot("annotation");
-    Object.defineProperty(view, "preview", {
-      value: {
-        [Symbol.dispose]() {},
-        state: createStore(() => ({
-          current: [],
-          example: { id: "builtin", root: { indexedKey: "EXAMP001" } },
-        })),
-      },
+    setViewItem(view, { id: "PAPER001g42", title: "Paper" });
+    view.change.setRoot("annotation");
+    Object.defineProperty(view.model, "examples", {
+      value: Atom.make({
+        current: [],
+        example: { id: "builtin", root: { indexedKey: "EXAMP001" } },
+      }),
     });
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
@@ -1551,17 +1539,11 @@ An annotation.
 
   it("keeps a real selected annotation export on its exact Indexed Key", () => {
     const { view } = setup();
-    view.store.getState().setItem({ id: "PAPER001g42", title: "Paper" });
-    view.store.getState().setRoot("annotation");
+    setViewItem(view, { id: "PAPER001g42", title: "Paper" });
+    view.change.setRoot("annotation");
     const annotation = { id: "real", root: { indexedKey: "ANNO0001g42" } };
-    Object.defineProperty(view, "preview", {
-      value: {
-        [Symbol.dispose]() {},
-        state: createStore(() => ({
-          current: [annotation],
-          example: annotation,
-        })),
-      },
+    Object.defineProperty(view.model, "examples", {
+      value: Atom.make({ current: [annotation], example: annotation }),
     });
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
@@ -1702,7 +1684,7 @@ An annotation.
   });
   it("rejects insertion after the remembered filename slice is removed", async () => {
     const { view } = setup();
-    view.store.getState().setTab("name");
+    view.change.setTab("name");
     document.body.append(view.contentEl);
     try {
       await act(async () => {
@@ -1805,9 +1787,9 @@ describe("native Profile source exchange", () => {
     const second = editor();
     const firstController = first.view.controller;
     const secondController = second.view.controller;
-    first.view.store.getState().setItem({ id: "AAAA0001", title: "First" });
-    second.view.store.getState().setItem({ id: "BBBB0002", title: "Second" });
-    second.view.store.getState().setAdvanced(true);
+    setViewItem(first.view, { id: "AAAA0001", title: "First" });
+    setViewItem(second.view, { id: "BBBB0002", title: "Second" });
+    second.view.change.setAdvanced(true);
     const cursor = SOURCE.indexOf("stable") + 2;
     secondController.dispatch({ selection: { anchor: cursor } });
     firstController.setManifestKey("name", "Longer name");
@@ -1823,10 +1805,10 @@ describe("native Profile source exchange", () => {
     expect(first.view.controller).toBe(firstController);
     expect(second.view.controller).toBe(secondController);
     expect(secondController).not.toBe(firstController);
-    expect(first.view.store.getState().item?.id).toBe("AAAA0001");
-    expect(second.view.store.getState().item?.id).toBe("BBBB0002");
-    expect(second.view.store.getState().advanced).toBe(true);
-    expect(first.view.store.getState().advanced).toBe(false);
+    expect(viewState(first.view).item?.id).toBe("AAAA0001");
+    expect(viewState(second.view).item?.id).toBe("BBBB0002");
+    expect(viewState(second.view).advanced).toBe(true);
+    expect(viewState(first.view).advanced).toBe(false);
     expect(secondController.undo()).toBe(true);
     expect(first.view.getViewData()).toBe(SOURCE);
     expect(second.view.getViewData()).toBe(SOURCE);
@@ -1980,7 +1962,7 @@ it("recreates persisted editor choices and restores namespaced presentation afte
   document.body.append(original.view.contentEl);
   cleanup.defer(() => original.view.contentEl.remove());
   await act(async () => original.view.open());
-  await act(async () => original.view.store.getState().setAdvanced(true));
+  await act(async () => original.view.change.setAdvanced(true));
   const editor = EditorView.findFromDOM(
     original.view.contentEl.querySelector<HTMLElement>(".cm-editor")!,
   )!;
@@ -2039,7 +2021,7 @@ it("clamps stale restored ranges, ignores removed Properties, and discards a dif
   cleanup.defer(() => act(async () => view.close()));
   await act(async () => {
     await view.open();
-    view.store.getState().setAdvanced(true);
+    view.change.setAdvanced(true);
   });
   const saved = view.getEphemeralState() as {
     zotlitTemplateWorkbench: Record<string, unknown>;
@@ -2055,10 +2037,8 @@ it("clamps stale restored ranges, ignores removed Properties, and discards a dif
   )!;
   expect(editor.state.selection.main.from).toBe(0);
   expect(editor.state.selection.main.to).toBe(SOURCE.length);
-  expect(view.store.getState().presentation.selected).toBeNull();
-  await act(async () =>
-    view.store.getState().setItem({ id: "OTHER001", title: "Other" }),
-  );
+  expect(viewState(view).presentation.selected).toBeNull();
+  await act(async () => setViewItem(view, { id: "OTHER001", title: "Other" }));
   await act(async () => editor.dispatch({ selection: { anchor: 3 } }));
   await act(async () => view.setEphemeralState(saved));
   expect(editor.state.selection.main.head).toBe(3);
@@ -2159,7 +2139,7 @@ language: liquid
 
     expect(view.getDisplayText()).toBe(m.template_workbench_title_citation());
     expect(tabLabels(view)).toEqual([m.workbench_tab_citation()]);
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "citation",
       root: "citation",
       advanced: false,
@@ -2177,7 +2157,7 @@ language: liquid
     // behind its own view; a plain document has nowhere else to open.
     await act(async () => view.revealSlice("advanced"));
 
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "citation",
       root: "citation",
       advanced: false,
@@ -2277,7 +2257,7 @@ language: liquid
     await press(m.workbench_problems_return());
     // The area gives the editor back whole, and the caret is where it was.
     expect(area.dataset.state).toBe("compact");
-    expect(view.store.getState().presentation.reveal).toMatchObject({
+    expect(viewState(view).presentation.reveal).toMatchObject({
       from: caret,
       to: caret,
       slice: left.slice,
@@ -2309,7 +2289,7 @@ language: liquid
 
     await press('[data-part="problems-open"]');
     expect(area.dataset.state).toBe("compact");
-    expect(view.store.getState().advanced).toBe(true);
+    expect(viewState(view).advanced).toBe(true);
     const editor = EditorView.findFromDOM(
       view.contentEl.querySelector<HTMLElement>(
         '[data-workbench-mode="source"] .cm-editor',
@@ -2343,7 +2323,7 @@ language: liquid
     const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "citation",
       root: "citation",
     });
@@ -2357,7 +2337,7 @@ language: liquid
 
     // The Citation tab names no panel a Profile document has, so the six
     // Profile tabs open on the first of them rather than on none.
-    expect(view.store.getState()).toMatchObject({ tab: "note", root: "note" });
+    expect(viewState(view)).toMatchObject({ tab: "note", root: "note" });
     expect(tabLabels(view)).toEqual([
       m.workbench_tab_note(),
       m.workbench_tab_properties(),
@@ -2632,7 +2612,7 @@ language: liquid
       m.template_workbench_title_partial({ name: "authors" }),
     );
     expect(tabLabels(view)).toEqual([m.workbench_tab_partial()]);
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "partial",
       root: "note",
       advanced: false,
@@ -2665,7 +2645,7 @@ language: liquid
       view.setPartialSelection({ context: "annotation", profile: "reading1" }),
     );
 
-    expect(view.store.getState().root).toBe("annotation");
+    expect(viewState(view).root).toBe("annotation");
     expect(view.controller.templateRegions[0]!.root).toBe("annotation");
     expect(view.authoringContext.partial).toEqual({
       name: "authors",
@@ -2772,7 +2752,7 @@ language: liquid
       view.setViewData(SOURCE, true);
     });
 
-    expect(view.store.getState()).toMatchObject({ tab: "note", root: "note" });
+    expect(viewState(view)).toMatchObject({ tab: "note", root: "note" });
   });
 
   it("switches the rendering language on the manifest key alone", () => {
@@ -3114,19 +3094,19 @@ language: liquid
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
 
-    expect(view.preview!.state.getState()).toMatchObject({
-      context: expect.objectContaining({
-        kind: "citation",
-        path: "templates/zotlit-citation.md",
-      }),
-      source: CITATION_SOURCE,
-      sourceProblem: null,
+    expect(view.registry.get(view.model.document)).toMatchObject({
+      kind: "citation",
+      path: "templates/zotlit-citation.md",
     });
+    expect(view.registry.get(view.workbench.document.source)).toBe(
+      CITATION_SOURCE,
+    );
+    expect(view.registry.get(view.workbench.input).hold).toBe(false);
 
     const edited = CITATION_SOURCE.replace("pandoc_cite", "pandoc_cite: 'alt'");
     await act(async () => view.setViewData(edited, false));
 
-    expect(view.preview!.state.getState().source).toBe(edited);
+    expect(view.registry.get(view.workbench.document.source)).toBe(edited);
   });
 });
 
@@ -3166,7 +3146,8 @@ describe("Template Workbench Item choice", () => {
     });
     const first = run(view.selectItem({ id: FIRST, title: "First" }));
     await vi.waitFor(() => expect(reads.started).toEqual([FIRST]));
-    void run(view.selectItem({ id: LATER, title: "Later" }));
+    // The later read holds until the leaf closes, which interrupts it.
+    void Effect.runPromiseExit(view.selectItem({ id: LATER, title: "Later" }));
     await vi.waitFor(() => expect(reads.started).toEqual([FIRST, LATER]));
     await expect(first).resolves.toBe(false);
     // The later read still runs.
@@ -3192,7 +3173,7 @@ describe("Template Workbench Item choice", () => {
     const extracting = Effect.runPromiseExit(view.extractPartial("venue"));
     await vi.waitFor(() => expect(reads.started).toEqual([FIRST]));
     await view.close();
-    expect(reads.interrupted).toEqual([FIRST]);
+    await vi.waitFor(() => expect(reads.interrupted).toEqual([FIRST]));
     expect(prompts).toEqual(["closed"]);
     const extracted = await extracting;
     expect(
@@ -3205,7 +3186,7 @@ describe("Template Workbench Item choice", () => {
     ).toBe(false);
   });
 
-  it("keeps a later selection and leaves the outrun choice unpublished", async () => {
+  it("keeps a later selection over a chosen Item whose read still runs", async () => {
     // The read that confirms the chosen Item holds until the test lets it go.
     const firstRead = Promise.withResolvers<void>();
     const firstReading = Promise.withResolvers<void>();
@@ -3291,12 +3272,17 @@ describe("Template Workbench Item choice", () => {
     ).resolves.toBe(true);
     firstRead.resolve();
 
-    await expect(chosen).resolves.toBe(false);
-    expect(view.store.getState().item).toMatchObject({ id: LATER });
-    expect(trigger).not.toHaveBeenCalledWith(
+    // The chooser's Item was the choice; the later one replaced it.
+    await expect(chosen).resolves.toBe(true);
+    expect(viewState(view).item).toMatchObject({ id: LATER });
+    expect(trigger).toHaveBeenCalledWith(
       "zotlit:workbench-selection",
       expect.objectContaining({ item: expect.objectContaining({ id: FIRST }) }),
     );
+    await vi.waitFor(() =>
+      expect(view.registry.get(view.model.read).status).toBe("ready"),
+    );
+    expect(view.registry.get(view.model.title)).toContain("Later paper");
   });
   it("closes the Zotero search when the view closes while it is open", async () => {
     const { view } = setup({
@@ -3328,7 +3314,7 @@ describe("Template Workbench Item choice", () => {
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
     const picker = open.mock.contexts[1];
     await view.close();
-    expect(close.mock.contexts).toContain(picker);
+    await vi.waitFor(() => expect(close.mock.contexts).toContain(picker));
     const exit = await chosen;
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
       true,

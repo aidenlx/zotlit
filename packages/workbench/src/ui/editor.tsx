@@ -86,6 +86,8 @@ interface WorkbenchEditorOptions {
   view?: Atom.Writable<WorkbenchViewState>;
   /** The chosen Item's data, when the host derives it from its own read. */
   itemData?: WorkbenchModelOptions<TemplateRenderResult>["itemData"];
+  /** {@link WorkbenchModelOptions.choices} */
+  choices?: WorkbenchModelOptions<TemplateRenderResult>["choices"];
   /**
    * A view store the host made before the editor, which the model reads and
    * writes. Facade for the web Workbench; deleted in #1946.
@@ -219,6 +221,7 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
   registry: providedRegistry,
   runtime,
   view: providedView,
+  choices,
   itemData,
   store: providedStore,
   reportContext,
@@ -238,6 +241,7 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
   const model = makeWorkbenchModel<R>({
     controller,
     ...(view ? { view } : {}),
+    ...(choices ? { choices } : {}),
     ...(itemData ? { itemData } : {}),
     ...(initial ? { initial } : {}),
     runtime,

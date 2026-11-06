@@ -270,7 +270,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         })()!;
         return (
           view.contentEl.textContent.includes(expectedTemplateText) &&
-          view.store.getState().item?.id === "RUGIER24"
+          view.registry.get(view.model.view).item?.id === "RUGIER24"
         );
       },
       {
