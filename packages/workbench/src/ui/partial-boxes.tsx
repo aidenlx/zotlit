@@ -108,9 +108,12 @@ export function usePartialBoxes(
   );
   const previewHost = useMemo(() => document.createElement("div"), []);
   const pane = useRef<EditorView | null>(null);
+  // A box is drawn by its host's portal, so a pane with no host draws none.
+  const hasHost = host !== undefined;
   const extensions = useMemo(
-    () => partialBoxes(boxes, previewHost, { pane, controller }),
-    [boxes, previewHost, controller],
+    () =>
+      hasHost ? partialBoxes(boxes, previewHost, { pane, controller }) : [],
+    [hasHost, boxes, previewHost, controller],
   );
   const expanded =
     opened?.controller === controller
