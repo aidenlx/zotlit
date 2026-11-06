@@ -35,10 +35,6 @@ import type {
 import { ProfileOperationError } from "@/services/profile/service";
 import type { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
-import {
-  findWorkbenchLayout,
-  openWorkbenchLayout,
-} from "@/views/note-preview/layout";
 
 import { makeWorkbenchHost, workbenchActionContext } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
@@ -68,6 +64,7 @@ type LaunchServices = {
 };
 
 import type { WorkbenchActionServices } from "./actions";
+import { findWorkbenchLayout, openWorkbenchLayout } from "./layout";
 import {
   customizeProfile,
   openNativeProfile,
@@ -81,7 +78,7 @@ import {
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
 // The real leaf edges stand in: the layout module imports this view.
-vi.mock("@/views/note-preview/layout", () => ({
+vi.mock("./layout", () => ({
   setLeafState: (leaf: WorkspaceLeaf, state: ViewState) =>
     Effect.tryPromise(() => leaf.setViewState(state)),
   WORKBENCH_WINDOW: { width: 1440, height: 900 },
@@ -98,13 +95,6 @@ beforeEach(() => {
     TemplateWorkbenchView.prototype,
     "setOriginatingNote",
   ).mockImplementation(setOriginatingNote);
-  // These views are bare prototypes with no panels to show; the layout open
-  // they ask for is what each case reads.
-  vi.spyOn(TemplateWorkbenchView.prototype, "openWorkbench").mockImplementation(
-    function (this: TemplateWorkbenchView) {
-      return openWorkbenchLayout(this);
-    },
-  );
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -223,6 +213,7 @@ function setup() {
     },
     registerEvent: vi.fn(),
     register: vi.fn(),
+    registerMarkdownPostProcessor: vi.fn(),
   });
   const deps = stubService<RegistrationHostDeps>("TemplateWorkbenchDeps", {
     runtime: testRuntime(),
@@ -574,10 +565,12 @@ Annotation`);
     register(plugin, deps);
 
     expect(commands.map(({ id }) => id)).toEqual([
+      "open-template-workbench",
       "customize-profile",
       "open-template-workbench-view",
     ]);
     expect(commands.map(({ name }) => name)).toEqual([
+      m.template_workbench_open_layout(),
       m.template_workbench_open_layout(),
       m.template_workbench_open(),
     ]);
@@ -701,6 +694,28 @@ Annotation`);
         profileId: "default",
         destination: "native",
       }),
+    );
+  });
+  // #1945: the command the Note Preview used to register opens the active
+  // editor's dedicated window.
+  it("opens the active editor's workbench window from Open template workbench", async () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { app, deps, plugin, commands } = setup();
+    register(plugin, deps);
+    const command = commands.find(
+      (entry) => entry.id === "open-template-workbench",
+    )!;
+    expect(command.name).toBe(m.template_workbench_open_layout());
+    Object.assign(app.workspace, { getActiveViewOfType: () => null });
+    expect(command.checkCallback!(true)).toBe(false);
+    const editor = Object.create(
+      TemplateWorkbenchView.prototype,
+    ) as TemplateWorkbenchView;
+    Object.assign(app.workspace, { getActiveViewOfType: () => editor });
+    expect(command.checkCallback!(true)).toBe(true);
+    command.checkCallback!(false);
+    await vi.waitFor(() =>
+      expect(openWorkbenchLayout).toHaveBeenCalledWith(editor),
     );
   });
   it("switches the active Markdown view to the Template Workbench view", async () => {

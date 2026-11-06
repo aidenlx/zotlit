@@ -246,7 +246,6 @@ export function FieldsPanel({ view }: { view: TemplateWorkbenchView }) {
           onChooseAnnotation={() => view.startAnnotationChoice()}
           onSelectItem={(item) => view.pickItem(item)}
           onSearchItem={() => view.startItemChoice()}
-          recentItems={view.recentItems}
           explorer={{
             copy: copyToClipboard,
             disabled: !canInsert,

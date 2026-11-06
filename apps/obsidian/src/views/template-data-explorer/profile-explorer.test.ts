@@ -19,6 +19,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import { answerOf, makeViewRunner } from "@/lib/view-runner";
+import type { SearchHit } from "@/services/item-lookup/service";
 import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
 import { workbenchAnnotationChoice } from "@/views/template-workbench/item-choice";
 
@@ -42,10 +43,13 @@ import type { ExplorerModel } from "./model";
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 const read = vi.fn<NonNullable<ExplorerReads["read"]>>();
+/** What the next Item list's read of the recent Items answers. */
+let recent: Effect.Effect<SearchHit[]> = Effect.succeed([]);
 let host: ExplorerHost;
 beforeEach(async () => {
   vi.resetAllMocks();
-  host = await makeExplorerHost({ read });
+  recent = Effect.succeed([]);
+  host = await makeExplorerHost({ read, recent: () => recent });
 });
 afterEach(() => host.close());
 /** Gives `child` the host's registry and one Explorer model. */
@@ -210,7 +214,6 @@ describe("independent native Explorer", () => {
               },
               createElement(Explorer, {
                 explorer: { copy: () => Effect.void },
-                recentItems: Effect.succeed([]),
                 onSearchItem: choose,
                 onSelectItem: (item) => session.setTarget(item, "note"),
                 onSelectAnnotation: (id) =>
@@ -241,7 +244,7 @@ describe("independent native Explorer", () => {
     );
     document.body.append(container);
     const root = createRoot(container);
-    const renderList = (recentItems: Effect.Effect<readonly never[]>) =>
+    const renderList = () =>
       act(async () =>
         root.render(
           createElement(
@@ -265,7 +268,6 @@ describe("independent native Explorer", () => {
                 },
                 createElement(Explorer, {
                   explorer: { copy: () => Effect.void },
-                  recentItems,
                   onSearchItem: () => {},
                   onSelectItem: () => {},
                   onSelectAnnotation: () => {},
@@ -277,9 +279,10 @@ describe("independent native Explorer", () => {
         ),
       );
     const interrupted = vi.fn();
-    await renderList(
-      Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(interrupted))),
+    recent = Effect.never.pipe(
+      Effect.onInterrupt(() => Effect.sync(interrupted)),
     );
+    await renderList();
     expect(interrupted).not.toHaveBeenCalled();
 
     await act(async () => root.unmount());
@@ -287,6 +290,17 @@ describe("independent native Explorer", () => {
     await waitFor(() => expect(interrupted).toHaveBeenCalledOnce());
   });
   it("lists the recent Items the host reads", async () => {
+    recent = Effect.succeed([
+      stubService<SearchHit>("SearchHit", {
+        item: stubService<SearchHit["item"]>("Item", {
+          key: "PAPER234",
+          indexedKey: "PAPER234g42",
+          creators: [],
+          primaryCreatorType: null,
+          fields: { itemType: "book", title: "Recent paper" },
+        }),
+      }),
+    ]);
     using session = host.openSession();
     using cleanup = new DisposableStack();
     const { run } = cleanup.use(makeViewRunner(host.registry));
@@ -320,9 +334,6 @@ describe("independent native Explorer", () => {
               },
               createElement(Explorer, {
                 explorer: { copy: () => Effect.void },
-                recentItems: Effect.succeed([
-                  { id: "PAPER234g42", title: "Recent paper" },
-                ]),
                 onSearchItem: () => {},
                 onSelectItem: () => {},
                 onSelectAnnotation: () => {},
@@ -397,7 +408,6 @@ it("switches annotation data locally through the annotation chooser", async () =
           session.model,
           createElement(Explorer, {
             explorer: { copy: () => Effect.void },
-            recentItems: Effect.succeed([]),
             onSelectItem: (item) => session.setTarget(item, "note"),
             onSearchItem: () => {},
             onChooseAnnotation: () => {

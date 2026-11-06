@@ -30,7 +30,6 @@ import { answerConfirmation } from "@/lib/__fixtures__/confirm";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
-import { Workspace } from "@/lib/obsidian-workspace";
 import { VaultError } from "@/lib/vault-errors";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
@@ -60,7 +59,7 @@ import {
 } from "./view";
 
 // The real leaf edges stand in: the layout module imports this view.
-vi.mock("@/views/note-preview/layout", () => ({
+vi.mock("./layout", () => ({
   setLeafState: (leaf: WorkspaceLeaf, state: ViewState) =>
     Effect.tryPromise(() => leaf.setViewState(state)),
   WORKBENCH_WINDOW: { width: 1440, height: 900 },
@@ -581,99 +580,79 @@ describe("TemplateWorkbenchView", () => {
     expect(h.updateNote).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])(
-    "clears an arrival after a fresh matching success and retains its report (unrelated preview: %s)",
-    async (unrelatedPreview) => {
-      await using cleanup = new AsyncDisposableStack();
-      const copy = vi
-        .spyOn(navigator.clipboard, "writeText")
-        .mockResolvedValue();
-      cleanup.defer(() => copy.mockRestore());
-      const { view } = setup({
-        runtime: testRuntime(),
-        render: (request) =>
-          Effect.succeed({
-            ...emptyRender(renderIdentity(request)),
-            creationBody: "Repaired note",
-          }),
-      });
-      const file = new TFile();
-      file.path = "templates/paper.md";
-      view.file = file;
-      cleanup.defer(() => act(async () => view.close()));
-      await act(async () => view.open());
-      await act(async () =>
-        chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
-      );
-      const run = async () => {
-        const attempt = renderState(view).attempt;
-        await act(async () => {
-          runRender(view);
-          await vi.waitFor(() =>
-            expect(renderState(view).attempt).toBeGreaterThan(attempt),
-          );
-        });
-      };
-      await run();
-      const diagnostic = {
-        code: "missing-partial" as const,
-        params: { name: "venue-line" },
-        part: "render" as const,
-      };
-      const report = captureRenderReport({
-        diagnostic,
-        identity: {
-          sourceRevision: "",
-          snapshotRevision: SAMPLE_ITEMS[0]!.revision,
-        },
-        trigger: "explicit",
-        sequence: 0,
-        capturedAt: "2026-09-13T00:00:00Z",
-        context: { document: file.path },
-      });
-      await act(async () =>
-        view.explainArrival({ diagnostic: { ...diagnostic, report } }),
-      );
-      expect(view.contentEl.textContent).toContain(
-        m.workbench_problems_object_partial({ name: "venue-line" }),
-      );
-      // A result from before arrival does not prove a repair.
-      expect(view.contentEl.textContent).not.toContain(
-        m.workbench_problems_none(),
-      );
-      await act(async () => chooseSample(view, SAMPLE_ITEMS[1]!));
-      await run();
-      expect(view.contentEl.textContent).toContain(
-        m.workbench_problems_object_partial({ name: "venue-line" }),
-      );
-      await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
-      if (unrelatedPreview) {
-        await act(async () =>
-          view.publishPreviewProblems("pinned-B", [
-            {
-              code: "missing-partial",
-              part: "render",
-              params: { name: "other-partial" },
-            },
-          ]),
+  it("clears an arrival after a fresh matching success and retains its report", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    cleanup.defer(() => copy.mockRestore());
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "Repaired note",
+        }),
+    });
+    const file = new TFile();
+    file.path = "templates/paper.md";
+    view.file = file;
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    const run = async () => {
+      const attempt = renderState(view).attempt;
+      await act(async () => {
+        runRender(view);
+        await vi.waitFor(() =>
+          expect(renderState(view).attempt).toBeGreaterThan(attempt),
         );
-      }
-      await run();
-      expect(view.contentEl.textContent).toContain(
-        unrelatedPreview
-          ? m.workbench_problems_resolved()
-          : m.workbench_problems_none(),
-      );
-      expect(view.contentEl.textContent).toContain(
-        m.workbench_problems_copy_last(),
-      );
-      const copyLast = [...view.contentEl.querySelectorAll("button")].find(
-        (button) => button.textContent === m.workbench_problems_copy_last(),
-      )!;
-      await act(async () => copyLast.click());
-      expect(copy).toHaveBeenCalledExactlyOnceWith(formatRenderReport(report));
-    },
-  );
+      });
+    };
+    await run();
+    const diagnostic = {
+      code: "missing-partial" as const,
+      params: { name: "venue-line" },
+      part: "render" as const,
+    };
+    const report = captureRenderReport({
+      diagnostic,
+      identity: {
+        sourceRevision: "",
+        snapshotRevision: SAMPLE_ITEMS[0]!.revision,
+      },
+      trigger: "explicit",
+      sequence: 0,
+      capturedAt: "2026-09-13T00:00:00Z",
+      context: { document: file.path },
+    });
+    await act(async () =>
+      view.explainArrival({ diagnostic: { ...diagnostic, report } }),
+    );
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
+    // A result from before arrival does not prove a repair.
+    expect(view.contentEl.textContent).not.toContain(
+      m.workbench_problems_none(),
+    );
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[1]!));
+    await run();
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
+    await run();
+    expect(view.contentEl.textContent).toContain(m.workbench_problems_none());
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_copy_last(),
+    );
+    const copyLast = [...view.contentEl.querySelectorAll("button")].find(
+      (button) => button.textContent === m.workbench_problems_copy_last(),
+    )!;
+    await act(async () => copyLast.click());
+    expect(copy).toHaveBeenCalledExactlyOnceWith(formatRenderReport(report));
+  });
 
   it("clears a repaired Annotation arrival while a Property failure remains", async () => {
     await using cleanup = new AsyncDisposableStack();
@@ -1519,6 +1498,12 @@ An annotation.
         fields: { shown: false, width: 400 },
         preview: { shown: false, width: 400 },
       },
+      preview: {
+        mode: "create",
+        live: true,
+        showMarkdown: false,
+        showManaged: false,
+      },
     });
   });
   it("labels a built-in annotation sample export as selected paper data", () => {
@@ -2085,6 +2070,12 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
       fields: { shown: false, width: 400 },
       preview: { shown: false, width: 400 },
     },
+    preview: {
+      mode: "create",
+      live: true,
+      showMarkdown: false,
+      showManaged: false,
+    },
   });
   expect(view.controller.readOnly).toBe(true);
   expect(view.getViewData()).toBe(builtin);
@@ -2641,11 +2632,7 @@ language: liquid
 
     expect(viewState(view).root).toBe("annotation");
     expect(view.controller.templateRegions[0]!.root).toBe("annotation");
-    expect(view.authoringContext.partial).toEqual({
-      name: "authors",
-      context: "annotation",
-      profile: "reading1",
-    });
+    expect(view.partialProfile).toBe("reading1");
     const saved = view.getState();
     expect(saved).toMatchObject({
       partialContext: "annotation",
@@ -3224,7 +3211,7 @@ describe("Template Workbench Item choice", () => {
     );
     const first = items.get(FIRST)!;
     gated = true;
-    const { view, app } = setup({
+    const { view } = setup({
       runtime: testRuntime(),
       services: { zoteroReads },
       itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
@@ -3248,7 +3235,6 @@ describe("Template Workbench Item choice", () => {
       ),
     });
     using open = vi.spyOn(SuggestModal.prototype, "open");
-    using trigger = vi.spyOn(app.workspace, "trigger");
 
     const chosen = run(view.chooseItem());
     await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
@@ -3269,10 +3255,6 @@ describe("Template Workbench Item choice", () => {
     // The chooser's Item was the choice; the later one replaced it.
     await expect(chosen).resolves.toBe(true);
     expect(viewState(view).item).toMatchObject({ id: LATER });
-    expect(trigger).toHaveBeenCalledWith(
-      "zotlit:workbench-selection",
-      expect.objectContaining({ item: expect.objectContaining({ id: FIRST }) }),
-    );
     await vi.waitFor(() =>
       expect(view.registry.get(view.model.read).status).toBe("ready"),
     );
@@ -3405,6 +3387,89 @@ describe("the side panels of the Template Workbench View", () => {
     expect(restored.view.getState()).toEqual(saved);
     await act(async () => restored.view.close());
   });
+  const paneMenu = (view: TemplateWorkbenchView) => {
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    return menu.items;
+  };
+  const entry = (view: TemplateWorkbenchView, title: string) =>
+    paneMenu(view).find((item) => item.title === title);
+
+  it("shows the editor's own render of the chosen Item in the Preview panel", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "A rendered paper note",
+        }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    await act(async () => entry(view, m.workbench_show_markdown())!.click());
+    const attempt = renderState(view).attempt;
+    await act(async () => {
+      runRender(view);
+      await vi.waitFor(() =>
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
+      );
+    });
+    const panel = region(view, m.workbench_view_preview())!;
+    expect(panel.querySelector("h2")?.textContent).toBe(
+      m.workbench_result_heading(),
+    );
+    expect(panel.textContent).toContain(SAMPLE_ITEMS[0]!.item.title);
+    expect(panel.textContent).toContain(m.workbench_preview_on_demand());
+    expect(panel.textContent).toContain("A rendered paper note");
+  });
+
+  it("offers the Preview's settings in the pane menu while the panel shows, and saves them", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    expect(entry(view, m.workbench_preview_auto_refresh())).toBeUndefined();
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    expect(entry(view, m.workbench_show_preview())?.checked).toBe(true);
+    const choices = [
+      m.workbench_preview_as_new_note(),
+      m.workbench_preview_as_updated_note(),
+      m.workbench_preview_updated_section(),
+      m.workbench_preview_auto_refresh(),
+      m.workbench_show_markdown(),
+    ];
+    for (const title of choices)
+      expect(entry(view, title)?.section).toBe("pane");
+    expect(entry(view, m.workbench_preview_as_new_note())?.checked).toBe(true);
+    expect(entry(view, m.workbench_preview_auto_refresh())?.checked).toBe(true);
+    await act(async () =>
+      entry(view, m.workbench_preview_as_updated_note())!.click(),
+    );
+    await act(async () =>
+      entry(view, m.workbench_preview_auto_refresh())!.click(),
+    );
+    expect(entry(view, m.workbench_preview_as_updated_note())?.checked).toBe(
+      true,
+    );
+    expect(entry(view, m.workbench_preview_auto_refresh())?.checked).toBe(
+      false,
+    );
+    const saved = view.getState();
+    const restored = setup();
+    cleanup.defer(() => act(async () => restored.view.close()));
+    await act(async () => restored.view.setState(saved, { history: false }));
+    expect(restored.view.registry.get(restored.view.model.preview)).toEqual({
+      mode: "update",
+      live: false,
+      showMarkdown: false,
+      showManaged: false,
+    });
+  });
 });
 
 // #1943: Fields is the left side panel of the one view. It reads the view's
@@ -3438,31 +3503,6 @@ describe("the Fields panel of the Template Workbench View", () => {
     await act(async () => entry?.click());
     expect(fields(view)).toBeNull();
     expect(show.getAttribute("aria-pressed")).toBe("false");
-    await act(async () => view.close());
-  });
-
-  it("shows both panels when the full workbench opens", async () => {
-    const { view } = setup();
-    await act(async () => view.open());
-    await act(() =>
-      run(
-        view
-          .openWorkbench()
-          .pipe(
-            Effect.provideService(
-              Workspace,
-              stubService<Workspace["Service"]>("Workspace", {}),
-            ),
-          ),
-      ),
-    );
-    expect(fields(view)).not.toBeNull();
-    expect(
-      [...view.contentEl.querySelectorAll("[role=region]")].some(
-        (element) =>
-          element.getAttribute("aria-label") === m.workbench_view_preview(),
-      ),
-    ).toBe(true);
     await act(async () => view.close());
   });
 

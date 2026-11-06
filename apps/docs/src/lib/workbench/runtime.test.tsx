@@ -1,23 +1,33 @@
 // @vitest-environment happy-dom
-import { Effect, Exit, Fiber, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
-import { act, useEffect } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 import { layerTabStorage } from "@zotlit/workbench/bridge";
 
 import { layerPage, PageRuntime, usePageBridge } from "./runtime";
-import type { PageBridge } from "./runtime";
 
-it("answers an interrupted Fiber for an Effect run after the page closed", async () => {
+it("interrupts a read still running when the page closes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const held: { bridge?: PageBridge } = {};
+  let interrupted = false;
+  // A read the page keeps in its registry, so only the page's close ends it.
   function Reader() {
-    const bridge = usePageBridge();
-    useEffect(() => {
-      held.bridge = bridge;
-    });
+    const { registry, runtime } = usePageBridge();
+    useState(() =>
+      registry.mount(
+        runtime.atom(
+          Effect.never.pipe(
+            Effect.onInterrupt(() =>
+              Effect.sync(() => {
+                interrupted = true;
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
     return null;
   }
   const container = document.createElement("div");
@@ -33,12 +43,9 @@ it("answers an interrupted Fiber for an Effect run after the page closed", async
       </PageRuntime>,
     ),
   );
+  expect(interrupted).toBe(false);
   act(() => root.unmount());
   // The page closes once the commit that let go of it has passed.
-  await Promise.resolve();
-  const exit = await Effect.runPromise(
-    Fiber.await(held.bridge!.run(Effect.succeed("late"))),
-  );
-  expect(Exit.hasInterrupts(exit)).toBe(true);
+  await vi.waitFor(() => expect(interrupted).toBe(true));
   vi.unstubAllGlobals();
 });

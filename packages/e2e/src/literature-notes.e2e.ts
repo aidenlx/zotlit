@@ -1511,7 +1511,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           for (const type of [
             "zotlit-template-workbench",
             "zotlit-template-data-explorer",
-            "zotlit-note-preview",
           ])
             app.workspace.detachLeavesOfType(type);
         },

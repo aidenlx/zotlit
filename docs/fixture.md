@@ -54,6 +54,8 @@ The Fixture Vault contains generated Literature Notes, imported-note mirrors, co
 
 `citekey-smoke-test.md` checks both citation pickers in its **Citation search and insertion** section: cited-item priority, main and alternate insertion, a changed destination, unload, the 150 ms index wait, and closing a pending picker. Use the `all` Scope Case and follow the action and expected-outcome table.
 
+`template-workbench-panels.md` checks the Preview panel of the Template Workbench View: the view opening without panels, **Show preview** and its pane-menu settings, one Item across the editor tabs and the panel, the resize edge by pointer and keyboard, the panels after a reload, the stacked narrow layout, a preview problem in the editor's Problems area, the Citation Template and Shared Partial previews, and **Open template workbench**. Use the `all` Scope Case and follow each case's steps and expected outcome. The focused desktop check is `pnpm e2e --project=desktop src/template-workbench.e2e.ts`.
+
 `tools-for-thought.md` checks Template Data Explorer permissions in its **Template Data Explorer permissions** section: Liquid-only actions, enabling and removing JavaScript permission with an open Explorer, separate searches in two leaves, and cleanup after both leaves close.
 
 ### Excerpt-rendering acceptance inputs

@@ -16,13 +16,14 @@ import type {
   NativeProfileTarget,
 } from "@/services/local-bridge/customize";
 import { Profile } from "@/services/profile/service";
-import {
-  findWorkbenchLayout,
-  setLeafState,
-  WORKBENCH_WINDOW,
-} from "@/views/note-preview/layout";
 
 import type { WorkbenchOpened } from "./actions";
+import {
+  findWorkbenchLayout,
+  openWorkbenchLayout,
+  setLeafState,
+  WORKBENCH_WINDOW,
+} from "./layout";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
 /** An open that asks the reader to know nothing. */
@@ -118,7 +119,7 @@ const launchTemplateWorkbench = Effect.fn(
   const view = yield* revealWorkbench(leaf);
   if (!view) return { ...OPENED, nativeRequired };
   if (options.problem) view.explainArrival(options.problem);
-  if (options.customize) yield* view.openWorkbench();
+  if (options.customize) yield* openWorkbenchLayout(view);
   return {
     nativeRequired,
     unavailableNote: yield* view.setOriginatingNote(

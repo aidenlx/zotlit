@@ -297,14 +297,6 @@
   "apps/obsidian/src/views/note-preview/markdown.test.ts": [
     "zotlit-tests/no-markup-assertion"
   ],
-  "apps/obsidian/src/views/note-preview/register.test.ts": [
-    "zotlit-tests/no-internal-mock",
-    "zotlit-tests/no-source-text"
-  ],
-  "apps/obsidian/src/views/note-preview/view.test.ts": [
-    "zotlit-tests/no-internal-mock",
-    "zotlit-tests/no-source-text"
-  ],
   "apps/obsidian/src/views/pandoc-export/register.test.ts": [
     "zotlit-tests/no-internal-mock"
   ],

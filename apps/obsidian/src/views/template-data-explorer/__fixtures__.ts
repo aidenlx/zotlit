@@ -13,6 +13,8 @@ import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
 import { buildRuntime } from "@/lib/effect-layer";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import { yieldToMain } from "@/lib/yield-to-main";
+import { ItemLookup } from "@/services/item-lookup/service";
+import type { SearchHit } from "@/services/item-lookup/service";
 import { TemplateDataError } from "@/services/template-workbench/data";
 import type {
   TemplateDataLoader,
@@ -38,6 +40,8 @@ export interface ExplorerReads {
     root: ContractRoot,
   ): Promise<TemplateDataLoadResult>;
   readCitation?: TemplateDataLoader["loadCitation"];
+  /** The recently updated Items an Item list offers. */
+  recent?(): Effect.Effect<SearchHit[]>;
 }
 
 export interface ExplorerHost {
@@ -102,6 +106,10 @@ export async function makeExplorerHost(
     Layer.mergeAll(
       layerUnreadViewServices,
       layerHost(),
+      Layer.mock(ItemLookup, {
+        search: () =>
+          Effect.suspend(() => reads.recent?.() ?? Effect.succeed([])),
+      }),
       Layer.mock(TemplateDataReads, {
         read: (indexedKey, root) =>
           fromPromise((signal) => {

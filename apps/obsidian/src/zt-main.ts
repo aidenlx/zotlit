@@ -57,7 +57,6 @@ import { registerCitedByView } from "./views/cited-by/register";
 import { itemActions } from "./views/library/item-actions";
 import { registerLibraryView, showInLibrary } from "./views/library/register";
 import { showInLibraryFileMenu } from "./views/library/show-in-library-actions";
-import { registerNotePreview } from "./views/note-preview/register";
 import { openTargetCommand } from "./views/open-target";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQueryBlock } from "./views/query-view/block";
@@ -437,16 +436,6 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       context: services.workbenchActionContext,
       app: this.app,
       registry: services.viewRegistry,
-      itemLookup: services.itemLookup,
-      settings: services.settings,
-    });
-
-    registerNotePreview(this, {
-      app: this.app,
-      registry: services.viewRegistry,
-      openCitationEngineSettings,
-      bridge: services.bridge,
-      context: services.workbenchActionContext,
       itemLookup: services.itemLookup,
       settings: services.settings,
     });

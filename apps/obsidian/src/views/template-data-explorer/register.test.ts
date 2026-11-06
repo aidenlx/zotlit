@@ -12,10 +12,6 @@ vi.mock("@/views/template-workbench/view", () => ({
   TEMPLATE_WORKBENCH_VIEW_TYPE: "zotlit-template-workbench",
   TemplateWorkbenchView: class {},
 }));
-vi.mock("@/views/note-preview/view", () => ({
-  NOTE_PREVIEW_VIEW_TYPE: "zotlit-note-preview",
-  NotePreviewView: class {},
-}));
 vi.mock("./view", () => ({
   EXPLORER_VIEW_TYPE: "zotlit-template-data-explorer",
   TemplateDataExplorerView: class {},

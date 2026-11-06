@@ -11,9 +11,9 @@ import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PluginSettings } from "@/services/settings/service";
-import { inLayoutTurn } from "@/views/note-preview/layout";
 import { startTemplateWorkbenchAction } from "@/views/template-workbench/actions";
 import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
+import { inLayoutTurn } from "@/views/template-workbench/layout";
 
 import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
 
