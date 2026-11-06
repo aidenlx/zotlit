@@ -19,8 +19,12 @@ import type {
   WorkbenchHost,
   WorkbenchInsertTarget,
   WorkbenchMenuRequest,
+  WorkbenchRunner,
   WorkbenchSuggesterRequest,
 } from "@zotlit/workbench/ui";
+
+/** The page's host, which still lends its runner to the page's own code until #1941. */
+type WebHost = WorkbenchHost & { readonly run: WorkbenchRunner };
 
 import { Button } from "@/components/ui/button";
 import {
@@ -135,7 +139,7 @@ export function useWebHost({
   /** Puts a sentence on the status line. */
   notice: (text: string) => void;
   insertTarget: () => WorkbenchInsertTarget | null;
-}): { host: WorkbenchHost; overlays: ReactNode } {
+}): { host: WebHost; overlays: ReactNode } {
   const [menu, setMenu] = useState<WorkbenchMenuRequest | null>(null);
   const [dialog, setDialog] = useState<WorkbenchDialogRequest | null>(null);
   const [confirm, setConfirm] = useState<Pending<
@@ -158,7 +162,7 @@ export function useWebHost({
 
   // The runner is the page's: closing the page interrupts every host Effect
   // it still runs, and an Effect started after it is interrupted at once.
-  const host = useMemo<WorkbenchHost>(
+  const host = useMemo<WebHost>(
     () => ({
       messages: m,
       run: bridge.run,

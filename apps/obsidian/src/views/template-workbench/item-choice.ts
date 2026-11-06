@@ -1,12 +1,15 @@
 // The Item and annotation choosers of the Template Workbench, as Effects on
 // the host's suggester: an interrupt closes the chooser, and a dismissal
 // answers `null`.
+import { useAtomValue } from "@effect/atom-react";
 import { Effect } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import { useMemo } from "react";
 
 import { isChildItemFields } from "@zotlit/db";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import type { AnnotationExample } from "@zotlit/workbench/render";
-import { annotationOption } from "@zotlit/workbench/ui";
+import { annotationOption, useWorkbenchModel } from "@zotlit/workbench/ui";
 import type { WorkbenchHost, WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -38,6 +41,21 @@ const itemChoices = (hits: readonly SearchHit[]): WorkbenchItemChoice[] =>
 
 /** A read of the recent Items, with the services it needs provided. */
 export type RecentItems = Effect.Effect<readonly WorkbenchItemChoice[]>;
+
+const NO_RECENT: readonly WorkbenchItemChoice[] = [];
+
+/**
+ * What `recentItems` answers, read on the editor's runtime; none until it
+ * answers. The caller's unmount interrupts the read.
+ */
+export function useRecentItems(
+  recentItems: RecentItems,
+): readonly WorkbenchItemChoice[] {
+  const { runtime } = useWorkbenchModel();
+  const read = useMemo(() => runtime.atom(recentItems), [runtime, recentItems]);
+  const result = useAtomValue(read);
+  return AsyncResult.isSuccess(result) ? result.value : NO_RECENT;
+}
 
 /** The recently updated parent Items, at most three. */
 export const recentItemChoices: Effect.Effect<

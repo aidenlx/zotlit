@@ -15,21 +15,30 @@ import { MapMode, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, EditorView } from "@codemirror/view";
-import type { Effect } from "effect";
+import { useAtomValue } from "@effect/atom-react";
+import { Cause, Effect } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useUniqueId } from "@zotlit/ui";
 
-import { useDocumentRevision } from "./editor";
+import { useWorkbenchModel } from "./editor";
 import { PreviewWidget, boxAt, boxField, boxRanges } from "./editor-boxes";
 import { useTooltip, useWorkbenchHost, WorkbenchHostError } from "./host";
 import { useWorkbenchMessages } from "./messages";
-import { useForkedEffect } from "./run";
 import { useIcon, useParts } from "./theme";
 
+import { documentRevision } from "#/document/atoms";
 import { partialCalls } from "#/document/index";
+
+/** What a failed partial render shows: the host failure's own cause, whole. */
+function failureMessage(cause: Cause.Cause<unknown>): string {
+  const failure = Cause.squash(cause);
+  const error = failure instanceof WorkbenchHostError ? failure.cause : failure;
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * What a host answers for the Shared Partials one pane's calls name. Opening a
@@ -86,7 +95,7 @@ export function usePartialBoxes(
   slice: WorkbenchSliceId,
   host: PartialPlaceholderHost | undefined,
 ): PartialBoxes {
-  useDocumentRevision(controller);
+  useAtomValue(documentRevision(controller));
   const previewId = useUniqueId();
   const [opened, setOpened] = useState<{
     controller: WorkbenchDocumentController;
@@ -266,10 +275,8 @@ function PartialPreview({
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("notePane");
-  const { markdown: Markdown, run } = useWorkbenchHost();
-  const [state, setState] = useState<
-    { kind: "text"; text: string } | { kind: "error"; message: string } | null
-  >(null);
+  const { markdown: Markdown } = useWorkbenchHost();
+  const { runtime } = useWorkbenchModel();
   // The render is read through a ref: a host that passes a fresh callback on
   // every draw would otherwise start a render on every draw.
   const render = useRef(onRender);
@@ -279,25 +286,17 @@ function PartialPreview({
   // against: the render callback is read through a ref, so the key alone
   // decides when a preview follows the selection. A new key, or the
   // placeholder leaving the editor, interrupts the render before it.
-  useForkedEffect(
-    run,
-    () => {
-      setState(null);
-      return render.current(name);
-    },
-    {
-      deps: [name, revision, dataRevision],
-      onSuccess: (text) => setState({ kind: "text", text }),
-      onFailure: (failure) => {
-        const error =
-          failure instanceof WorkbenchHostError ? failure.cause : failure;
-        setState({
-          kind: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
-      },
-    },
+  const rendered = useMemo(
+    () => runtime.atom(Effect.suspend(() => render.current(name))),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- the revisions name when to render again
+    [runtime, name, revision, dataRevision],
   );
+  const result = useAtomValue(rendered);
+  const state = AsyncResult.isSuccess(result)
+    ? { kind: "text" as const, text: result.value }
+    : AsyncResult.isFailure(result)
+      ? { kind: "error" as const, message: failureMessage(result.cause) }
+      : null;
   return (
     <div id={id} data-partial-preview {...part("annotation-preview")}>
       {state?.kind === "error" && (

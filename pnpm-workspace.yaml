@@ -38,6 +38,7 @@ catalog:
   happy-dom: ^20.9.0
   hono: ^4.13.0
   yaml: ^2.9.0
+  "@effect/atom-react": 4.1.0
   "@effect/tsgo": 0.56.0
   "@effect/vitest": 4.1.0
   "@logtape/logtape": ^2.0.7
@@ -73,6 +74,7 @@ catalog:
   preact: 11.0.0-rc.2
   react: ^19.2.0
   react-dom: ^19.2.0
+  scheduler: 0.27.0
   semver: ^7.7.2
   tailwindcss: ^4.3.0
   tsdown: ^0.23.1

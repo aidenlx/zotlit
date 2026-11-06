@@ -1,7 +1,6 @@
 // Native selection shares examples, search, and labels across independent views.
 import "./selection.css";
 import type { ItemView, WorkspaceLeaf } from "obsidian";
-import { useState } from "react";
 
 import { isPageNumber } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
@@ -12,11 +11,7 @@ import type {
   CitationExampleId,
   PartialChoice,
 } from "@zotlit/workbench/render";
-import {
-  annotationOption,
-  useForkedEffect,
-  useWorkbenchHost,
-} from "@zotlit/workbench/ui";
+import { annotationOption } from "@zotlit/workbench/ui";
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -25,6 +20,7 @@ import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 
+import { useRecentItems } from "./item-choice";
 import type { RecentItems } from "./item-choice";
 import {
   getSampleItem,
@@ -242,12 +238,7 @@ export function ItemSelectionList({
   onSelect: (item: WorkbenchItemChoice) => void;
   onSearch: () => void;
 }) {
-  const [recent, setRecent] = useState<readonly WorkbenchItemChoice[]>([]);
-  // The host's runner interrupts the read when the list unmounts.
-  useForkedEffect(useWorkbenchHost().run, () => recentItems, {
-    deps: [recentItems],
-    onSuccess: setRecent,
-  });
+  const recent = useRecentItems(recentItems);
   return (
     <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
       <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">

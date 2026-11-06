@@ -409,7 +409,7 @@ it("closes a chooser it opened when the sample bar goes", async () => {
   expect(chooser?.kind).toBe("suggester");
 
   act(() => unmount());
+  await chooser!.interruption;
 
-  expect(chooser!.interrupted).toBe(true);
   expect(selected).not.toHaveBeenCalled();
 });

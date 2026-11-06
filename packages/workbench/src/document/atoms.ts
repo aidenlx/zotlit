@@ -1,4 +1,5 @@
 // The Workbench document controller's facts as atoms, beside its `subscribe` listeners.
+import { Option } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 
 import type {
@@ -22,6 +23,12 @@ export interface WorkbenchDocumentAtoms {
    * the last list that parsed while the draft does not.
    */
   readonly managedEntries: Atom.Atom<readonly ManagedEntrySource[] | null>;
+  /**
+   * Counts every update, a read-only toggle and a selection included, and a
+   * controller replacement. A reader of a getter that changes without the
+   * text, such as `readOnly` or `canUndo`, re-reads on it.
+   */
+  readonly revision: Atom.Atom<number>;
 }
 
 /**
@@ -45,10 +52,38 @@ export function workbenchDocumentAtoms(
       );
       return read(controller);
     });
+  const revision = Atom.readable((get) => {
+    const controller = get(current);
+    let count = Option.getOrElse(get.self<number>(), () => -1) + 1;
+    get.addFinalizer(controller.subscribe(() => get.setSelf(++count)));
+    return count;
+  });
   return {
+    revision,
     source: fact((controller) => controller.source),
     problems: fact((controller) => controller.problems),
     slices: fact((controller) => controller.slices),
     managedEntries: fact((controller) => controller.managedEntries),
   };
+}
+
+const revisions = new WeakMap<WorkbenchDocumentController, Atom.Atom<number>>();
+
+/**
+ * Counts every update of `controller`, as `revision` does for the controller
+ * in use, for a surface handed a controller of its own.
+ */
+export function documentRevision(
+  controller: WorkbenchDocumentController,
+): Atom.Atom<number> {
+  let revision = revisions.get(controller);
+  if (revision === undefined) {
+    revision = Atom.readable((get) => {
+      let count = Option.getOrElse(get.self<number>(), () => 0);
+      get.addFinalizer(controller.subscribe(() => get.setSelf(++count)));
+      return count;
+    });
+    revisions.set(controller, revision);
+  }
+  return revision;
 }

@@ -3,7 +3,8 @@
 // under 1180 px the field column becomes the dialog the toolbar "Add a field"
 // button opens, and under 780 px the pane fills the screen with the result
 // behind a view switch.
-import type { Layer } from "effect";
+import { Layer } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import {
   ArrowLeft,
   Download,
@@ -137,6 +138,9 @@ import type { ProfileHydration } from "./workbench-connection";
 /** The result becomes a column once both reading and editing have room. */
 const WIDE_LAYOUT = "(min-width: 780px)";
 
+/** The page's one runtime, which every editor it opens shares. */
+const PAGE_RUNTIME = Atom.runtime(Layer.empty);
+
 /** The Workbench on a page runtime of its own, which closing the page disposes. */
 export function Workbench({
   layer,
@@ -179,6 +183,7 @@ function WorkbenchPage() {
         host: ownerHost,
         store: ownerStore,
         controller,
+        runtime: PAGE_RUNTIME,
         reportContext: () => named.current(),
       }),
   );
@@ -1091,11 +1096,7 @@ function WorkbenchPage() {
         />
       }
       editor={
-        <WorkbenchEditorProvider
-          store={store}
-          controller={controller}
-          scheduler={scheduler}
-        >
+        <WorkbenchEditorProvider editor={editor}>
           <EditToolbar onModeChange={changeMode}>
             <AddFieldButton
               ref={addField}

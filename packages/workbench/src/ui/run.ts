@@ -31,6 +31,9 @@ export function forkReported<A, E>(
   };
 }
 
+// The hooks below are a facade for hosts; the shared components run their
+// gestures as the model's commands. Deleted in #1946.
+
 export interface ForkedEffectOptions<A, E> extends ForkHandlers<A, E> {
   /** What `make` reads; a change starts the Effect again. */
   readonly deps: DependencyList;

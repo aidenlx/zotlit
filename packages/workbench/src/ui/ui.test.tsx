@@ -191,7 +191,7 @@ describe("the tab bar", () => {
     expect(
       screen.getByRole("tab", { name: m.workbench_tab_match() }),
     ).toHaveProperty("disabled", true);
-    expect(mounted.store.getState().tab).toBe("note");
+    expect(mounted.registry.get(mounted.model.tab)).toBe("note");
   });
 
   it("runs host navigation effects only for user tab and mode actions", () => {

@@ -32,6 +32,7 @@ export { VAULT_SEGMENT } from "./expression-options";
 export { datasetVocabulary } from "./expression-vocabulary";
 export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 export type {
+  ResolveStart,
   Suggestion,
   SuggestionCategory,
   SuggestionConfig,

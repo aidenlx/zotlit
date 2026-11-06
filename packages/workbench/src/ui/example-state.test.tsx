@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
   act,
   cleanup,
@@ -7,7 +8,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { useRenderState, useWorkbenchController } from "./editor";
+import { useWorkbenchController, useWorkbenchModel } from "./editor";
+import { chooseItem } from "./model";
 import { NameFolderPane } from "./name-folder";
 import { PropertiesPane } from "./properties-tab";
 import { mount, renderWithMessages as render } from "./test-host";
@@ -29,7 +31,7 @@ function Configuration({
   selected?: number | null;
 }) {
   const controller = useWorkbenchController();
-  const { result } = useRenderState();
+  const { result } = useAtomValue(useWorkbenchModel().scheduler.state);
   return (
     <>
       <NameFolderPane
@@ -68,7 +70,10 @@ it("shows configuration before an Item is selected and distinguishes pending and
   const titleRow = screen.getByRole("button", { name: "title zt.title" });
   expect(within(titleRow).getByText("zt.title")).toBeTruthy();
   act(() =>
-    mounted.store.getState().setItem({ id: "1:ABCDEFGH", title: "A paper" }),
+    mounted.registry.update(
+      mounted.model.view,
+      chooseItem({ id: "1:ABCDEFGH", title: "A paper" }),
+    ),
   );
   expect(screen.getAllByText(m.workbench_loading_item())).toHaveLength(2);
   act(() => mounted.scheduler.fail({ code: "render-error" }));
@@ -182,9 +187,10 @@ it("offers local item actions and shows retry only after evaluation fails", asyn
     screen.queryByRole("button", { name: m.workbench_example_retry() }),
   ).toBeNull();
   act(() =>
-    mounted.store
-      .getState()
-      .setItem({ id: "selected", title: "Selected item title" }),
+    mounted.registry.update(
+      mounted.model.view,
+      chooseItem({ id: "selected", title: "Selected item title" }),
+    ),
   );
   expect(
     screen.getAllByRole("button", { name: m.workbench_choose_preview_item() }),
@@ -243,7 +249,10 @@ it("clears note-name and expanded spread results immediately when another item i
   expect(screen.getByText("literatures/First.md")).toBeTruthy();
   expect(screen.getByText("First item value")).toBeTruthy();
   act(() =>
-    mounted.store.getState().setItem({ id: "second", title: "Second item" }),
+    mounted.registry.update(
+      mounted.model.view,
+      chooseItem({ id: "second", title: "Second item" }),
+    ),
   );
   expect(screen.queryByText("literatures/First.md")).toBeNull();
   expect(screen.queryByText("First item value")).toBeNull();
@@ -337,7 +346,10 @@ it("labels the retained note name and drops it with the selected item", async ()
   expect(screen.getByText(m.workbench_preview_retained())).toBeTruthy();
 
   act(() =>
-    mounted.store.getState().setItem({ id: "second", title: "Second item" }),
+    mounted.registry.update(
+      mounted.model.view,
+      chooseItem({ id: "second", title: "Second item" }),
+    ),
   );
   expect(noteName(dom.container)).toBe(m.workbench_loading_item());
 });

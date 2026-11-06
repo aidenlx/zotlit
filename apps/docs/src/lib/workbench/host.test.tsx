@@ -13,7 +13,7 @@ import { m } from "@/paraglide/messages.js";
 import { useWebHost } from "./host";
 import { PageRuntime } from "./runtime";
 
-let host!: WorkbenchHost;
+let host!: ReturnType<typeof useWebHost>["host"];
 const notices: string[] = [];
 
 interface PageProps {

@@ -358,8 +358,10 @@ function addWorkbenchMenuItems(
 
 export function createTemplateWorkbenchHost(
   app: App,
-  ports: Pick<WorkbenchHost, "run" | "render" | "matchData" | "insertTarget"> &
-    Partial<
+  ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget"> & {
+    /** The leaf's runner, for the host's own popups; a facade until #1942. */
+    readonly run: WorkbenchRunner;
+  } & Partial<
       Pick<
         WorkbenchHost,
         "markdown" | "partials" | "openCitationEngineSettings"
@@ -375,7 +377,7 @@ export function createTemplateWorkbenchHost(
       extractPartial?: ExtractPartial;
     },
   wrap: (content: ReactNode) => ReactNode = (content) => content,
-): WorkbenchHost & Disposable {
+): WorkbenchHost & Disposable & { readonly run: WorkbenchRunner } {
   const open = new Set<() => void>();
   const {
     hoverParent = { hoverPopover: null },
