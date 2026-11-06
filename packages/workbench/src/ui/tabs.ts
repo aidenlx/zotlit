@@ -58,6 +58,51 @@ const TAB_LEDE: Record<WorkbenchTab, WorkbenchMessageLabel> = {
   partial: "workbench_partial_lede",
 };
 
+/** The docs page that shows how to write each tab's part of the template. */
+const TAB_DOCS: Record<
+  WorkbenchTab,
+  { readonly label: WorkbenchMessageLabel; readonly path: string }
+> = {
+  note: {
+    label: "workbench_docs_note",
+    path: "/docs/reference/templates/syntax",
+  },
+  annotation: {
+    label: "workbench_docs_annotation",
+    path: "/docs/tutorial/customize-template",
+  },
+  properties: {
+    label: "workbench_docs_properties",
+    path: "/docs/how-to/configure-frontmatter-properties",
+  },
+  match: {
+    label: "workbench_docs_match",
+    path: "/docs/how-to/use-different-templates",
+  },
+  name: {
+    label: "workbench_docs_name",
+    path: "/docs/how-to/customize-a-template",
+  },
+  profile: { label: "workbench_docs_profile", path: "/docs/concepts/profiles" },
+  citation: {
+    label: "workbench_docs_citation",
+    path: "/docs/how-to/customize-a-template#citation-text",
+  },
+  partial: {
+    label: "workbench_docs_partial",
+    path: "/docs/how-to/customize-a-template#share-a-partial",
+  },
+};
+
+/** The guide link for `tab`: its text and its path under the docs site. */
+export function tabDocs(
+  m: WorkbenchMessages,
+  tab: WorkbenchTab,
+): { label: string; path: string } {
+  const { label, path } = TAB_DOCS[tab];
+  return { label: m[label](), path };
+}
+
 export function tabLabel(m: WorkbenchMessages, tab: WorkbenchTab): string {
   return m[TAB_LABEL[tab]]();
 }

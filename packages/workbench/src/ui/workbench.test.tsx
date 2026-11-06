@@ -238,3 +238,23 @@ function SelectionProbe({
     />
   );
 }
+
+it("links each tab to the docs page that shows how to write it", () => {
+  using mounted = mount(<Panes />);
+  render(mounted.ui);
+  expect(
+    screen.getByRole("link", { name: m.workbench_docs_note() }),
+  ).toHaveProperty(
+    "href",
+    "https://example.invalid/docs/reference/templates/syntax",
+  );
+  fireEvent.click(
+    screen.getByRole("tab", { name: m.workbench_tab_annotation() }),
+  );
+  expect(
+    screen.getByRole("link", { name: m.workbench_docs_annotation() }),
+  ).toHaveProperty(
+    "href",
+    "https://example.invalid/docs/tutorial/customize-template",
+  );
+});

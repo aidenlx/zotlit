@@ -154,6 +154,7 @@ export function fakeHost(): FakeHost {
           : Effect.void;
       }),
     communityUrl: "https://example.invalid/community",
+    docsUrl: "https://example.invalid",
     // Every render is held open, so a test decides when a result lands and
     // what the reader had time to change before it did.
     render: (request) =>

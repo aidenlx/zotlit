@@ -271,6 +271,11 @@ export interface WorkbenchHost {
    * host that names none leaves the link out.
    */
   readonly communityUrl?: string;
+  /**
+   * The docs site this build belongs to, which each tab's guide link opens a
+   * page of. A host that names none leaves the guide links out.
+   */
+  readonly docsUrl?: string;
   /** Renders one request; the tree schedules it through the Render Scheduler. */
   render: (
     request: RenderRequest,

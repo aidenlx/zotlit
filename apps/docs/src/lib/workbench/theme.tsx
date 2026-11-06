@@ -437,6 +437,7 @@ export const WEB_THEME: WorkbenchTheme = {
     tabPanel: {
       description: "mb-3 shrink-0 text-xs text-pretty text-fd-muted-foreground",
       "tab-panel": "flex min-h-0 min-w-0 flex-1 flex-col [&[hidden]]:hidden",
+      "docs-link": "text-fd-primary underline underline-offset-2",
     },
     editToolbar: {
       "edit-toolbar":

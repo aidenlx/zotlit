@@ -10,10 +10,10 @@ import {
   useOptionalEditor,
   useWorkbenchStore,
 } from "./editor";
-import { useContainerName } from "./host";
+import { useContainerName, useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { SliceEditorVisibility } from "./slice-editor";
-import { TABS, tabLabel, tabLede } from "./tabs";
+import { TABS, tabDocs, tabLabel, tabLede } from "./tabs";
 import type { WorkbenchTab } from "./tabs";
 import { useParts } from "./theme";
 import { useRetention } from "./visited";
@@ -132,6 +132,28 @@ export function TabBar({
 }
 
 /**
+ * The docs page that shows how to write `tab`'s part of the template, set
+ * after the tab's lede. A host that names no docs site gets nothing.
+ */
+export function TabDocsLink({ tab }: { tab: WorkbenchTab }) {
+  const m = useWorkbenchMessages();
+  const docsUrl = useOptionalHost()?.docsUrl;
+  const part = useParts("tabPanel");
+  if (docsUrl === undefined) return null;
+  const { label, path } = tabDocs(m, tab);
+  return (
+    <a
+      href={`${docsUrl}${path}`}
+      target="_blank"
+      rel="noreferrer"
+      {...part("docs-link")}
+    >
+      {label}
+    </a>
+  );
+}
+
+/**
  * The panel `tab` opens. A tab the reader has opened before stays in the page,
  * hidden, so an editor inside keeps its view; one never opened is gone.
  */
@@ -170,10 +192,11 @@ export function TabPanel({
       hidden={!shown}
       {...part("tab-panel", shown ? "active" : "inactive")}
     >
-      {description &&
-        tab !== "annotation" &&
-        tab !== "name" &&
-        tab !== "match" && <p {...part("description")}>{tabLede(m, tab)}</p>}
+      {description && tab !== "annotation" && tab !== "match" && (
+        <p {...part("description")}>
+          {tabLede(m, tab)} <TabDocsLink tab={tab} />
+        </p>
+      )}
       <SliceEditorVisibility visible={shown}>{children}</SliceEditorVisibility>
     </div>
   );

@@ -58,6 +58,8 @@ import { copyThrough } from "./transfer";
 const STORAGE_PREFIX = "zotlit.workbench.preference";
 /** This site's own community page, which Ask the community opens. */
 const COMMUNITY_URL = "/community";
+/** This site, whose guide pages each tab links to by path. */
+const DOCS_URL = "";
 
 /** A request kept open until the reader answers it. */
 interface Pending<Request, Answer> {
@@ -187,6 +189,7 @@ export function useWebHost({
       notice: (text) => latest.current.notice(text),
       copy: copyThrough(bridge),
       communityUrl: COMMUNITY_URL,
+      docsUrl: DOCS_URL,
       render: (request) =>
         bridge.provide(Rendering.use((rendering) => rendering.render(request))),
       markdown: ResultSheet,

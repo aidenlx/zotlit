@@ -50,6 +50,7 @@ import { MatchSelect } from "./match.rows";
 // One Match tree over the document controller; rows write through the master history.
 import { useWorkbenchMessages } from "./messages";
 import { useForkedEffect } from "./run";
+import { TabDocsLink } from "./tab-bar";
 import { useParts, useIcon } from "./theme";
 
 import { datasetVocabulary } from "#/language/expression-vocabulary";
@@ -276,7 +277,9 @@ export function MatchPane({
         }
       }}
     >
-      <p>{m.workbench_match_conditions_desc()}</p>
+      <p>
+        {m.workbench_match_conditions_desc()} <TabDocsLink tab="match" />
+      </p>
       <MatchEditor
         value={match}
         vocabulary={vocabulary}
