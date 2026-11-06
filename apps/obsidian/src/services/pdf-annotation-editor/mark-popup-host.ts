@@ -82,13 +82,16 @@ export class MarkPopupHost implements Disposable {
 
   constructor(deps: MarkPopupHostDeps) {
     this.#deps = deps;
-    this.#unsubscribe = deps.store.subscribe((state, previous) => {
-      if (
-        state.floating !== previous.floating ||
-        !sameFlatList(rowOf(state), rowOf(previous))
-      )
-        this.#place({ refresh: true });
-    });
+    this.#unsubscribe = deps.store.subscribe(
+      (state) => state,
+      (state, previous) => {
+        if (
+          state.floating !== previous.floating ||
+          !sameFlatList(rowOf(state), rowOf(previous))
+        )
+          this.#place({ refresh: true });
+      },
+    );
     this.#place({ refresh: false });
   }
 

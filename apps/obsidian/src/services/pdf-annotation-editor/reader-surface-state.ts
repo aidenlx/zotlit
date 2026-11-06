@@ -1,15 +1,14 @@
 // The Reader Surface State: what the surfaces of one bound PDF view draw from,
-// held in one vanilla store per view.
+// held in one atom store per view.
 //
 // The binding turns external signals into state through the reducers here, and
 // each renderer subscribes to its own selector with an equality, so a signal
 // that changes nothing on screen draws nothing.
-import { subscribeWithSelector } from "zustand/middleware";
-import { createStore } from "zustand/vanilla";
-
 import type { SelectedText } from "@zotlit/pdf-structure";
 
 import { offeredSwatches } from "@/lib/annotation-colors";
+import { makeAtomStore } from "@/lib/atom-store";
+import type { AtomStore } from "@/lib/atom-store";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   capabilityReason,
@@ -254,7 +253,7 @@ export interface ReaderSurfaceState {
   tagDrafts: ReadonlyMap<string, TagDraft>;
 }
 
-export type ReaderSurfaceStore = ReturnType<typeof createReaderSurfaceState>;
+export type ReaderSurfaceStore = AtomStore<ReaderSurfaceState>;
 
 export function createReaderSurfaceState({
   colors,
@@ -262,25 +261,23 @@ export function createReaderSurfaceState({
   capability,
   now,
 }: Pick<ReaderSurfaceState, "colors" | "capability" | "now"> &
-  Partial<Pick<ReaderSurfaceState, "recentColors">>) {
-  return createStore<ReaderSurfaceState>()(
-    subscribeWithSelector((): ReaderSurfaceState => ({
-      armed: null,
-      marksVisible: true,
-      colors,
-      recentColors,
-      capability,
-      capabilityAt: now,
-      now,
-      floating: NONE,
-      liveStroke: null,
-      pendingStrokes: [],
-      records: [],
-      mutations: new Map(),
-      commentDrafts: new Map(),
-      tagDrafts: new Map(),
-    })),
-  );
+  Partial<Pick<ReaderSurfaceState, "recentColors">>): ReaderSurfaceStore {
+  return makeAtomStore<ReaderSurfaceState>({
+    armed: null,
+    marksVisible: true,
+    colors,
+    recentColors,
+    capability,
+    capabilityAt: now,
+    now,
+    floating: NONE,
+    liveStroke: null,
+    pendingStrokes: [],
+    records: [],
+    mutations: new Map(),
+    commentDrafts: new Map(),
+    tagDrafts: new Map(),
+  });
 }
 
 /**
