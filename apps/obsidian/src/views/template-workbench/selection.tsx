@@ -21,7 +21,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 
 import { useRecentItems } from "./item-choice";
-import type { RecentItems } from "./item-choice";
 import {
   getSampleItem,
   getSampleItemType,
@@ -229,16 +228,13 @@ function SelectionOption({
 }
 
 export function ItemSelectionList({
-  recentItems,
   onSelect,
   onSearch,
 }: {
-  /** The read of the recent Items, with the services it needs provided. */
-  recentItems: RecentItems;
   onSelect: (item: WorkbenchItemChoice) => void;
   onSearch: () => void;
 }) {
-  const recent = useRecentItems(recentItems);
+  const recent = useRecentItems();
   return (
     <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
       <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">

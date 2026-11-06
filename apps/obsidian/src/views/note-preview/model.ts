@@ -22,7 +22,7 @@ import { TABS, annotationSamples } from "@zotlit/workbench/ui";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { viewRuntime } from "@/lib/view-atoms";
 import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
-import { ZoteroReads } from "@/services/zotero-reads/service";
+import { readItemSnapshot } from "@/views/template-workbench/atoms";
 import { getSampleItem } from "@/views/template-workbench/selection-data";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
@@ -95,25 +95,7 @@ const readSnapshot = Effect.fn("NotePreview.readSnapshot")(function* (
     return yield* new PreviewItemUnavailable({
       selection: id,
     });
-  return yield* Effect.scoped(
-    Effect.gen(function* () {
-      const reads = yield* (yield* ZoteroReads).snapshot;
-      return yield* reads.ItemSnapshot({
-        selection: {
-          key: parsed.key,
-          library:
-            parsed.groupID === null
-              ? { type: "personal" }
-              : { type: "group", groupID: parsed.groupID },
-        },
-        provenance: {
-          kind: "connected",
-          installationId: "obsidian",
-          vault: "preview",
-        },
-      });
-    }),
-  );
+  return yield* readItemSnapshot(parsed);
 });
 
 export function makePreviewModel() {

@@ -2449,12 +2449,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return (
           JSON.stringify(
             (() => ({
-              tab: page
-                .leavesOfType("zotlit-template-workbench")[0]!
-                .view.store.getState().tab,
-              editor: page
-                .leavesOfType("zotlit-template-workbench")[0]!
-                .view.store.getState().root,
+              tab: ((view) => view.registry.get(view.model.view).tab)(
+                page.leavesOfType("zotlit-template-workbench")[0]!.view,
+              ),
+              editor: ((view) => view.registry.get(view.model.view).root)(
+                page.leavesOfType("zotlit-template-workbench")[0]!.view,
+              ),
               preview: page
                 .leavesOfType("zotlit-note-preview")[0]
                 ?.view.getState().root,
@@ -2506,12 +2506,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           async ({ page }) => {
             return JSON.stringify(
               (() => ({
-                tab: page
-                  .leavesOfType("zotlit-template-workbench")[0]!
-                  .view.store.getState().tab,
-                editor: page
-                  .leavesOfType("zotlit-template-workbench")[0]!
-                  .view.store.getState().root,
+                tab: ((view) => view.registry.get(view.model.view).tab)(
+                  page.leavesOfType("zotlit-template-workbench")[0]!.view,
+                ),
+                editor: ((view) => view.registry.get(view.model.view).root)(
+                  page.leavesOfType("zotlit-template-workbench")[0]!.view,
+                ),
                 preview: page
                   .leavesOfType("zotlit-note-preview")[0]
                   ?.view.getState().root,
@@ -3127,11 +3127,13 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     await obRunUntil(
       vaultId,
       async ({ page }) => {
-        return page
+        const view = page
           .leavesOfType("zotlit-template-workbench")
           .map((leaf) => leaf.view)
-          .find((view) => view.file?.name === "zotlit-profile.reading-group.md")
-          ?.store.getState().tab;
+          .find(
+            (view) => view.file?.name === "zotlit-profile.reading-group.md",
+          );
+        return view?.registry.get(view.model.view).tab;
       },
       undefined,
       {

@@ -24,7 +24,13 @@ import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { templateRevisionAtom } from "@/services/template/atoms";
 import { templateFailure } from "@/services/template/service";
 import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "@/views/template-workbench/__fixtures__";
-import { makeWorkbenchHost } from "@/views/template-workbench/__fixtures__";
+import {
+  makeWorkbenchHost,
+  renderState,
+  runRender,
+  setViewItem,
+  viewState,
+} from "@/views/template-workbench/__fixtures__";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { TemplateWorkbenchView } from "@/views/template-workbench/view";
 
@@ -244,7 +250,10 @@ async function setup(
   editor.file = file;
   editor.setViewData(PROFILE_SOURCE, true);
   // The editor's compact examples have their own refresh choice.
-  editor.preview?.setPreview({ live: false });
+  editor.registry.update(editor.model.preview, (preview) => ({
+    ...preview,
+    live: false,
+  }));
   const subscriptions = new Set<(view: TemplateWorkbenchView | null) => void>();
   vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
     (_app, listener) => {
@@ -375,9 +384,7 @@ async function failing(
   source: string,
 ): Promise<Preview> {
   await act(async () =>
-    test.editor.store
-      .getState()
-      .setItem({ id: "MAIN2345", title: "Better figures" }),
+    setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
   );
   document.body.append(test.editor.contentEl);
   await act(async () => test.editor.open());
@@ -521,7 +528,7 @@ describe("independent native Note Preview", () => {
       });
       await rendered(preview);
       expect(preview.contentEl.textContent).toContain("Personal space.");
-      expect(test.editor.store.getState().item).toBeNull();
+      expect(viewState(test.editor).item).toBeNull();
     },
   );
 
@@ -609,9 +616,7 @@ describe("independent native Note Preview", () => {
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const preview = await test.open();
     await act(async () => preview.setState({}, { history: false }));
@@ -629,9 +634,7 @@ describe("independent native Note Preview", () => {
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () => {
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" });
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" });
       test.editor.setViewData(
         PROFILE_SOURCE.replace("Personal space.", "Current group draft."),
         false,
@@ -684,9 +687,7 @@ describe("independent native Note Preview", () => {
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const first = await test.open();
     await advance();
@@ -724,9 +725,7 @@ describe("independent native Note Preview", () => {
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const first = await test.open();
     await advance();
@@ -900,18 +899,15 @@ Annotation`,
     const preview = test.previews[0]!;
     await act(async () => preview.open());
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     await advance();
     await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Personal space.");
     await act(async () => preview.close());
     expect(released).not.toHaveBeenCalled();
-    test.editor.preview![Symbol.dispose]();
+    await act(async () => test.editor.close());
     await vi.waitFor(() => expect(released).toHaveBeenCalledOnce());
-    expect(test.events.size).toBe(2);
     expect(test.subscriptions.size).toBe(0);
   });
 
@@ -920,9 +916,7 @@ Annotation`,
     vi.useFakeTimers();
     const preview = await test.open();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     await advance(1000);
     const file = test.editor.file!;
@@ -991,9 +985,7 @@ Annotation`,
     vi.useFakeTimers();
     const preview = await test.open();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     await advance(1000);
     const file = test.editor.file!;
@@ -1030,9 +1022,7 @@ Annotation`,
       m.template_data_explorer_choose_item(),
     );
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     await advance();
     await rendered(first);
@@ -1049,7 +1039,7 @@ Annotation`,
     expect(menuItem(second, m.workbench_preview_as_new_note()).checked).toBe(
       true,
     );
-    expect(test.editor.preview?.state.getState().preview).toEqual({
+    expect(test.editor.registry.get(test.editor.model.preview)).toMatchObject({
       mode: "create",
       live: false,
     });
@@ -1062,12 +1052,12 @@ Annotation`,
     expect(test.events.size).toBe(5);
     await act(async () => void test.editor.controller.undo());
     expect(test.editor.getViewData()).toBe(PROFILE_SOURCE);
-    await act(async () => test.editor.scheduler.run());
+    await act(async () => runRender(test.editor));
     await advance(0);
     await expect
       .poll(async () => {
         await act(yieldToMain);
-        return test.editor.scheduler.getState().result?.creationBody;
+        return renderState(test.editor).result?.creationBody;
       })
       .toContain("Personal space.");
     expect(second.contentEl.textContent).toContain("Personal space.");
@@ -1084,9 +1074,7 @@ Annotation`,
     );
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const preview = await test.open();
     await advance();
@@ -1150,9 +1138,7 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     document.body.append(test.editor.contentEl);
     await act(async () => test.editor.open());
@@ -1258,7 +1244,7 @@ Annotation`,
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_where_call()),
     );
-    expect(test.editor.store.getState().presentation.reveal).toEqual(at);
+    expect(viewState(test.editor).presentation.reveal).toEqual(at);
     // Diagnosis navigates and explains; it writes nothing.
     expect(test.fixture.writes.create).not.toHaveBeenCalled();
     expect(test.fixture.writes.modify).not.toHaveBeenCalled();
@@ -1279,7 +1265,7 @@ Annotation`,
       problemsButton(test.editor, m.workbench_problems_where_call()),
     );
     const at = inserted.indexOf(call);
-    expect(test.editor.store.getState().presentation.reveal).toEqual({
+    expect(viewState(test.editor).presentation.reveal).toEqual({
       from: at,
       to: at + call.length,
     });
@@ -1328,7 +1314,7 @@ Annotation`,
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_where_call()),
     );
-    expect(test.editor.store.getState().presentation.reveal).toEqual(at);
+    expect(viewState(test.editor).presentation.reveal).toEqual(at);
   });
 
   it("offers an Annotation failure marker that selects its problem", async () => {
@@ -1338,7 +1324,7 @@ Annotation`,
       test,
       PROFILE_SOURCE.replace("{{ zt.text }}", "{{ zt.text | bogus_filter }}"),
     );
-    await act(async () => test.editor.store.getState().setTab("annotation"));
+    await act(async () => test.editor.change.setTab("annotation"));
 
     const marker = test.editor.contentEl.querySelector<HTMLButtonElement>(
       '[data-part="problem-open"]',
@@ -1374,7 +1360,7 @@ Annotation`,
       problemsButton(test.editor, m.workbench_problems_where_entry()),
     );
     // The first Managed Frontmatter entry is the row that produced it.
-    expect(test.editor.store.getState().presentation.selected).toBe(1);
+    expect(viewState(test.editor).presentation.selected).toBe(1);
   });
 
   it("names a note-name failure and opens the tab it is repaired in", async () => {
@@ -1397,7 +1383,7 @@ Annotation`,
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_where_filename()),
     );
-    expect(test.editor.store.getState()).toMatchObject({
+    expect(viewState(test.editor)).toMatchObject({
       advanced: false,
       tab: "name",
     });
@@ -1500,9 +1486,7 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const preview = await test.open();
     await advance();
@@ -1534,9 +1518,7 @@ Annotation`,
     expect(preview.contentEl.textContent).toContain("Personal space.");
 
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "sample:book", title: "Sample book" }),
+      setViewItem(test.editor, { id: "sample:book", title: "Sample book" }),
     );
     await advance();
     // Another paper is another preview, so the first one's note is not read
@@ -1555,9 +1537,7 @@ Annotation`,
       "See [@figures2014].",
     );
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     test.editor.setViewData(source, true);
     document.body.append(test.editor.contentEl);
@@ -1665,9 +1645,10 @@ Annotation`,
 
     // Choosing another paper re-renders and reports that attempt's own paper.
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "BOOK2345", title: "Reading between the lines" }),
+      setViewItem(test.editor, {
+        id: "BOOK2345",
+        title: "Reading between the lines",
+      }),
     );
     await advance();
 
@@ -1696,9 +1677,7 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     document.body.append(test.editor.contentEl);
     await act(async () => test.editor.open());
@@ -1709,9 +1688,10 @@ Annotation`,
     // showing, so the attempt that fails next read that paper and no other.
     preview.leaf.pinned = true;
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "BOOK2345", title: "Reading between the lines" }),
+      setViewItem(test.editor, {
+        id: "BOOK2345",
+        title: "Reading between the lines",
+      }),
     );
     await advance();
     await act(async () =>
@@ -1749,9 +1729,7 @@ Annotation`,
       await using test = await setup();
       vi.useFakeTimers();
       await act(async () =>
-        test.editor.store
-          .getState()
-          .setItem({ id: "MAIN2345", title: "Better figures" }),
+        setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
       );
       document.body.append(test.editor.contentEl);
       await act(async () => test.editor.open());
@@ -1759,9 +1737,10 @@ Annotation`,
       await advance();
       first.leaf.pinned = true;
       await act(async () =>
-        test.editor.store
-          .getState()
-          .setItem({ id: "sample:book", title: "Thinking, fast and slow" }),
+        setViewItem(test.editor, {
+          id: "sample:book",
+          title: "Thinking, fast and slow",
+        }),
       );
       const second = await test.open();
       await advance();
@@ -1921,7 +1900,7 @@ Annotation`,
 
     // Choosing the other problem reads that one, with its own captured
     // evidence, and asks for no navigation: the source stays where it is.
-    const at = test.editor.store.getState().presentation.reveal;
+    const at = viewState(test.editor).presentation.reveal;
     await act(async () => chooseProblem(test.editor, m.workbench_advanced()));
     expect(area.textContent).toContain(
       m.workbench_problem_bundled_partial_recovery(),
@@ -1929,7 +1908,7 @@ Annotation`,
     expect(area.textContent).not.toContain(
       m.workbench_diagnostic_missing_partial_suggestion(),
     );
-    expect(test.editor.store.getState().presentation.reveal).toBe(at);
+    expect(viewState(test.editor).presentation.reveal).toBe(at);
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_copy()),
     );
@@ -2008,9 +1987,7 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     document.body.append(test.editor.contentEl);
     await act(async () => test.editor.open());
@@ -2041,9 +2018,7 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const preview = await test.open();
     await advance();
@@ -2071,9 +2046,7 @@ Annotation`,
     expect(vi.mocked(renderNativeTemplate).mock.calls.length).toBe(calls);
 
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "sample:book", title: "Sample book" }),
+      setViewItem(test.editor, { id: "sample:book", title: "Sample book" }),
     );
     await advance();
     // The kept output answers for the paper the reader has left.
@@ -2099,16 +2072,14 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const preview = await test.open();
     await advance();
     await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Personal space.");
     preview.leaf.pinned = true;
-    await act(async () => test.editor.store.getState().setItem(null));
+    await act(async () => setViewItem(test.editor, null));
     await advance();
     expect(preview.contentEl.textContent).toContain("Personal space.");
     await act(async () => {
@@ -2128,9 +2099,7 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const preview = await test.open();
     await advance();
@@ -2202,9 +2171,7 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const preview = await test.open();
     await advance();
@@ -2224,9 +2191,7 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     const preview = await test.open();
     await advance();
@@ -2255,11 +2220,9 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
-    await act(async () => test.editor.store.getState().setRoot("annotation"));
+    await act(async () => test.editor.change.setRoot("annotation"));
     const preview = await test.open();
     await advance();
     const menu = new Menu();
@@ -2275,11 +2238,9 @@ Annotation`,
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
-    await act(async () => test.editor.store.getState().setTab("properties"));
+    await act(async () => test.editor.change.setTab("properties"));
     const preview = await test.open();
     await advance();
     expect(preview.contentEl.querySelector("h2")?.textContent).toBe(
@@ -2447,9 +2408,7 @@ language: liquid
     test.editor.file = file;
     test.editor.setViewData(PARTIAL_DOCUMENT, true);
     if (options.item !== false)
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" });
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" });
     const preview = await test.open();
     await advance();
     return preview;
@@ -2493,7 +2452,7 @@ language: liquid
       menuItem(preview, m.template_workbench_preview_as_annotation()).checked,
     ).toBe(true);
     // The editor and every companion that follows it read the one choice.
-    expect(test.editor.store.getState().root).toBe("annotation");
+    expect(viewState(test.editor).root).toBe("annotation");
     expect(test.editor.controller.templateRegions[0]!.root).toBe("annotation");
     expect(preview.getState()["root"]).toBe("annotation");
   });
@@ -2507,7 +2466,7 @@ language: liquid
     await advance();
 
     expect(preview.contentEl.textContent).toContain("[||main]");
-    expect(test.editor.store.getState().root).toBe("citation");
+    expect(viewState(test.editor).root).toBe("citation");
     // A partial read as called from a Citation takes the Citation Template's
     // own two choices, so both reach its menu.
     expect(
@@ -2617,9 +2576,7 @@ After
     test.editor.file = file;
     test.editor.setViewData(source, true);
     await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
+      setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" }),
     );
     document.body.append(test.editor.contentEl);
     await act(async () => test.editor.open());
@@ -2652,9 +2609,7 @@ After
     );
     test.editor.setViewData(calling, true);
     const preview = await test.open();
-    test.editor.store
-      .getState()
-      .setItem({ id: "MAIN2345", title: "Better figures" });
+    setViewItem(test.editor, { id: "MAIN2345", title: "Better figures" });
     await advance();
     await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Alpha");

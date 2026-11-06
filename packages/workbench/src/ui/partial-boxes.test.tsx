@@ -1,6 +1,9 @@
 import { EditorView } from "@codemirror/view";
+import { RegistryContext } from "@effect/atom-react";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { Effect } from "effect";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { AnnotationPane } from "./annotation";
@@ -15,6 +18,22 @@ import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 
 afterEach(cleanup);
 
+/** A host's previews: one atom per name over `render`, read again on `data`. */
+function previews(
+  render: (name: string) => Effect.Effect<string, WorkbenchHostError>,
+  data: Atom.Atom<unknown> = Atom.make(0),
+) {
+  const calls: string[] = [];
+  const preview = Atom.family((name: string) =>
+    Atom.make((get) => {
+      get(data);
+      calls.push(name);
+      return render(name);
+    }),
+  );
+  return { preview, calls };
+}
+
 const CALLS = [
   '{% render "authors" %}',
   "{% include 'venue-line' %}",
@@ -27,13 +46,12 @@ function placeholders(
 ) {
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(source);
+  const rendered = previews(() => Effect.succeed("Smith, J., Doe, A."));
   const actions = {
     missing: [],
     onEdit: vi.fn<(name: string) => void>(),
     onShowProblem: vi.fn<(name: string) => void>(),
-    onRender: vi.fn<PartialPlaceholderHost["onRender"]>(() =>
-      Effect.succeed("Smith, J., Doe, A."),
-    ),
+    preview: rendered.preview,
     ...partials,
   } satisfies PartialPlaceholderHost;
   const result = render(
@@ -50,7 +68,7 @@ function placeholders(
   const view = EditorView.findFromDOM(
     result.container.querySelector(".cm-editor")!,
   )!;
-  return { ...result, host, controller, view, actions };
+  return { ...result, host, controller, view, actions, calls: rendered.calls };
 }
 
 /** The one call the built-in Default's note body does not carry. */
@@ -72,13 +90,13 @@ it("reveals the raw call while the selection touches it", () => {
 });
 
 it("opens the partial's own text under the call and routes Edit to its editor", async () => {
-  const { actions } = placeholders(withCalls());
+  const { actions, calls } = placeholders(withCalls());
   const toggles = screen.getAllByRole("button", {
     name: m.workbench_partial_preview(),
   });
 
   fireEvent.click(toggles[0]!);
-  expect(actions.onRender).toHaveBeenCalledWith("authors");
+  expect(calls).toEqual(["authors"]);
   expect((await screen.findByRole("document")).textContent).toBe(
     "Smith, J., Doe, A.",
   );
@@ -92,10 +110,11 @@ it("opens the partial's own text under the call and routes Edit to its editor", 
 
 it("names the failure a partial preview came back with", async () => {
   placeholders(withCalls(), {
-    onRender: () =>
+    preview: previews(() =>
       Effect.fail(
         new WorkbenchHostError({ cause: new Error("Unexpected tag") }),
       ),
+    ).preview,
   });
 
   fireEvent.click(
@@ -126,40 +145,44 @@ it("marks a partial the last render could not find and leads to its problem", ()
 });
 
 it("renders the open preview again when the caller data changes", async () => {
-  const onRender = vi
-    .fn<PartialPlaceholderHost["onRender"]>()
-    .mockReturnValueOnce(Effect.succeed("Smith, J."))
-    .mockReturnValueOnce(Effect.succeed("Doe, A."));
+  const registry = AtomRegistry.make();
+  const data = Atom.make("item-1");
+  const texts = ["Smith, J.", "Doe, A."];
+  const { preview, calls } = previews(
+    () => Effect.succeed(texts[calls.length - 1]!),
+    data,
+  );
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(withCalls());
-  const pane = (dataRevision: string) => (
-    <WorkbenchHostProvider host={host}>
-      <NotePane
-        controller={controller}
-        preview={null}
-        formatProblem={null}
-        onOpenAnnotation={() => {}}
-        partials={{
-          missing: [],
-          dataRevision,
-          onEdit: () => {},
-          onShowProblem: () => {},
-          onRender,
-        }}
-      />
-    </WorkbenchHostProvider>
+  render(
+    <RegistryContext.Provider value={registry}>
+      <WorkbenchHostProvider host={host}>
+        <NotePane
+          controller={controller}
+          preview={null}
+          formatProblem={null}
+          onOpenAnnotation={() => {}}
+          partials={{
+            missing: [],
+            onEdit: () => {},
+            onShowProblem: () => {},
+            preview,
+          }}
+        />
+      </WorkbenchHostProvider>
+    </RegistryContext.Provider>,
   );
-  const { rerender } = render(pane("item-1"));
 
   fireEvent.click(
     screen.getAllByRole("button", { name: m.workbench_partial_preview() })[0]!,
   );
   expect((await screen.findByRole("document")).textContent).toBe("Smith, J.");
 
-  await act(async () => rerender(pane("item-2")));
+  await act(async () => registry.set(data, "item-2"));
 
   expect((await screen.findByRole("document")).textContent).toBe("Doe, A.");
-  expect(onRender).toHaveBeenCalledTimes(2);
+  expect(calls).toEqual(["authors", "authors"]);
+  registry.dispose();
 });
 
 it("boxes the calls inside the Annotation Section too", async () => {
@@ -170,9 +193,7 @@ it("boxes the calls inside the Annotation Section too", async () => {
       '{% render "authors" %}\n{{ zt.imgLink | embed }}{{ zt.text }}',
     ),
   );
-  const onRender = vi.fn<PartialPlaceholderHost["onRender"]>(() =>
-    Effect.succeed("Page 12"),
-  );
+  const { preview, calls } = previews(() => Effect.succeed("Page 12"));
   render(
     <WorkbenchHostProvider host={host}>
       <AnnotationPane
@@ -182,7 +203,7 @@ it("boxes the calls inside the Annotation Section too", async () => {
           missing: [],
           onEdit: () => {},
           onShowProblem: () => {},
-          onRender,
+          preview,
         }}
       />
     </WorkbenchHostProvider>,
@@ -191,6 +212,6 @@ it("boxes the calls inside the Annotation Section too", async () => {
   fireEvent.click(
     screen.getByRole("button", { name: m.workbench_partial_preview() }),
   );
-  expect(onRender).toHaveBeenCalledWith("authors");
+  expect(calls).toEqual(["authors"]);
   expect((await screen.findByRole("document")).textContent).toBe("Page 12");
 });
