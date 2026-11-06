@@ -6,9 +6,10 @@ import { Deferred, Effect, Semaphore } from "effect";
 import type { Cause } from "effect";
 import type { ViewState, WorkspaceLeaf } from "obsidian";
 
+import { showPanel } from "@zotlit/workbench/ui";
+
 import { Workspace } from "@/lib/obsidian-workspace";
 
-import { showPanel } from "./model";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
 type ProfileSource = { file: string | null; defaultProfile: boolean };
@@ -141,7 +142,7 @@ const arrangeWorkbench = Effect.fn("TemplateWorkbench.arrangeWorkbench")(
 const showWorkbench = Effect.fn("TemplateWorkbench.showWorkbench")(function* (
   editor: TemplateWorkbenchView,
 ) {
-  editor.registry.update(editor.model.panels, (panels) =>
+  editor.registry.update(editor.workbench.panels, (panels) =>
     showPanel("preview", true)(showPanel("fields", true)(panels)),
   );
   const workspace = yield* Workspace;

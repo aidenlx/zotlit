@@ -56,9 +56,11 @@ import {
   routeDiagnosis,
   routeProblem,
   setAdvanced,
+  setPanelWidth,
   setPreview,
   setRoot,
   setTab,
+  showPanel,
 } from "@zotlit/workbench/ui";
 import type { WorkbenchDiagnosis } from "@zotlit/workbench/ui";
 import {
@@ -97,6 +99,7 @@ import type {
   WorkbenchModel,
   WorkbenchViewState,
   TemplateRoot,
+  PanelSide,
   PartialPlaceholderHost,
 } from "@zotlit/workbench/ui";
 
@@ -189,10 +192,8 @@ import {
   readSavedWorkbench,
   savedWorkbench,
   setPresentation,
-  setPanelWidth,
-  showPanel,
 } from "./model";
-import type { PanelSide, TemplateWorkbenchModel } from "./model";
+import type { TemplateWorkbenchModel } from "./model";
 import type { CreateSharedPartialOptions } from "./new-partial";
 import { openTemplateWorkbench } from "./open";
 import { WorkbenchPanels } from "./panels";
@@ -812,7 +813,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       registry.subscribe(this.workbench.choices, () =>
         this.app.workspace.requestSaveLayout(),
       ),
-      registry.subscribe(model.panels, () => {
+      registry.subscribe(this.workbench.panels, () => {
         this.#updateActions();
         this.app.workspace.requestSaveLayout();
       }),
@@ -1286,7 +1287,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         defaultDraft: this.#defaultDraft,
         view: this.#view,
         choices: this.registry.get(this.workbench.choices),
-        panels: this.registry.get(this.model.panels),
+        panels: this.registry.get(this.workbench.panels),
         partial:
           this.documentKind === "partial"
             ? { context: this.partialContext, profile: this.partialProfile }
@@ -1447,7 +1448,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       for (const side of ["fields", "preview"] as const) {
         const panel = value.panels[side];
         if (panel)
-          this.registry.update(this.model.panels, (panels) =>
+          this.registry.update(this.workbench.panels, (panels) =>
             setPanelWidth(
               side,
               panel.width,
@@ -1599,10 +1600,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       const { advanced } = this.#view;
       source.setAttribute("aria-pressed", String(advanced));
       source.classList.toggle("is-active", advanced);
-      const shown = this.registry.get(this.model.panels).preview.shown;
+      const shown = this.registry.get(this.workbench.panels).preview.shown;
       preview.setAttribute("aria-pressed", String(shown));
       preview.classList.toggle("is-active", shown);
-      const fieldsShown = this.registry.get(this.model.panels).fields.shown;
+      const fieldsShown = this.registry.get(this.workbench.panels).fields.shown;
       fields.setAttribute("aria-pressed", String(fieldsShown));
       fields.classList.toggle("is-active", fieldsShown);
     };
@@ -1685,7 +1686,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
 
   /** Shows a side panel the leaf hides, or hides one it shows. */
   togglePanel(side: PanelSide): void {
-    this.registry.update(this.model.panels, (panels) =>
+    this.registry.update(this.workbench.panels, (panels) =>
       showPanel(side, !panels[side].shown)(panels),
     );
   }
@@ -1697,7 +1698,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_preview())
         .setIcon("panel-right")
-        .setChecked(this.registry.get(this.model.panels).preview.shown)
+        .setChecked(this.registry.get(this.workbench.panels).preview.shown)
         .onClick(() => this.togglePanel("preview")),
     );
     menu.addItem((item) =>
@@ -1705,7 +1706,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_fields())
         .setIcon("panel-left")
-        .setChecked(this.registry.get(this.model.panels).fields.shown)
+        .setChecked(this.registry.get(this.workbench.panels).fields.shown)
         .onClick(() => this.togglePanel("fields")),
     );
     menu.addItem((item) =>
@@ -1742,7 +1743,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
     // With the Fields shown, the export saves the root the panel shows.
     const target = this.templateDataTarget();
-    if (this.registry.get(this.model.panels).fields.shown)
+    if (this.registry.get(this.workbench.panels).fields.shown)
       this.fieldsActions.addExportMenuItem(menu);
     else if (target && this.#deps.pluginVersion)
       menu.addItem((item) =>
@@ -1776,8 +1777,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * render reads beside the Item, which note it shows, and how it refreshes.
    */
   #addPreviewMenu(menu: Menu): void {
-    const { registry, model } = this;
-    if (!registry.get(model.panels).preview.shown) return;
+    const { registry } = this;
+    if (!registry.get(this.workbench.panels).preview.shown) return;
     const { mode, citationSet } = previewTarget(
       this.documentKind,
       this.#view.root,
@@ -3130,7 +3131,7 @@ function EditorContent({
       onReveal={selectProblem}
     >
       <WorkbenchPanels
-        model={view.model}
+        model={view.workbench}
         panels={{
           fields: {
             label: m.workbench_view_fields(),
