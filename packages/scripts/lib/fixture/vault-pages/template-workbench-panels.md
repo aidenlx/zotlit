@@ -62,14 +62,15 @@ Expected: after each choice, the editor header, the Properties tab
 2. Open the Annotation tab.
 3. In the Fields panel, select **Back to note root**.
 4. Open the Name and folder tab, then the Annotation tab again.
-5. Choose "Beta of the shared reading group".
+5. Select **Back to note root** again, then choose "Beta of the shared reading
+   group".
 
 Expected: after step 2, the Fields panel shows the Annotation root of the
 chosen annotation. After step 3, it shows the Note root, and the editor stays
-on the Annotation tab. In step 4, the panel shows the Note name root with the
-Name and folder tab, and the Note root again with the Annotation tab: the root
-the reader chose in the panel stays with the editor's Annotation tab. After
-step 5, the panel starts over at the editor's Annotation root. A filter typed
+on the Annotation tab. In step 4, the panel follows the editor: the Note name
+root with the Name and folder tab, then the Annotation root with the
+Annotation tab. After step 5, the new Item starts the panel over at the
+editor's Annotation root. A filter typed
 in the panel and the sections closed in it stay while the Item stays.
 
 ## Insert a field from the Fields

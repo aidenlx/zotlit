@@ -3579,7 +3579,7 @@ describe("the Fields panel of the Template Workbench View", () => {
     await act(async () => view.close());
   });
 
-  it("follows the editor's root, and keeps the root the reader moved to while the editor stays on its own", async () => {
+  it("follows the editor's root, and keeps the root the reader moved to until the editor's root changes", async () => {
     const { view } = setup();
     // The conference paper carries annotations of its own.
     const paper = SAMPLE_ITEMS[1]!;
@@ -3602,13 +3602,15 @@ describe("the Fields panel of the Template Workbench View", () => {
     expect(back()).toBeUndefined();
     // The editor keeps its own root.
     expect(viewState(view).root).toBe("annotation");
-    // Another editor root shows in the panel; the moved root is kept under the
-    // Annotation root it was moved from.
+    // A new editor root drops the root the reader moved to, for good.
     await act(async () => view.change.setRoot("filename"));
     expect(view.registry.get(view.fields.root)).toBe("filename");
     await act(async () => view.change.setRoot("annotation"));
+    expect(view.registry.get(view.fields.root)).toBe("annotation");
+    expect(back()).toBeDefined();
+    // So does a new Item.
+    await act(async () => back()!.click());
     expect(view.registry.get(view.fields.root)).toBe("note");
-    // A new Item starts the panel over at the editor's root.
     await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
     expect(view.registry.get(view.fields.root)).toBe("annotation");
     await act(async () => view.close());

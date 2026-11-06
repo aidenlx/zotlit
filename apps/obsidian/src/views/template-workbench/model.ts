@@ -215,7 +215,42 @@ export function makeTemplateWorkbenchModel({
   renderPartial,
   source = () => "",
 }: TemplateWorkbenchModelOptions = {}) {
-  const view = Atom.make<WorkbenchViewState>(INITIAL_VIEW);
+  /**
+   * The editor's view state, and the root the reader moved the Fields panel
+   * to, or null while the panel shows the editor's root.
+   */
+  const editor = Atom.make<{
+    readonly view: WorkbenchViewState;
+    readonly fieldsRoot: TemplateRoot | null;
+  }>({ view: INITIAL_VIEW, fieldsRoot: null });
+  /**
+   * The editor's view state. A write that changes the Item or the root drops
+   * the Fields panel's own root in the same write.
+   */
+  const view = Atom.writable(
+    (get) => get(editor).view,
+    (ctx, next: WorkbenchViewState) => {
+      const current = ctx.get(editor);
+      const moved =
+        next.root !== current.view.root ||
+        next.item?.id !== current.view.item?.id;
+      ctx.set(editor, {
+        view: next,
+        fieldsRoot: moved ? null : current.fieldsRoot,
+      });
+    },
+  );
+  /** The root the Fields panel shows instead of the editor's; null for the editor's. */
+  const fieldsRoot = Atom.writable(
+    (get) => get(editor).fieldsRoot,
+    (ctx, root: TemplateRoot | null) => {
+      const current = ctx.get(editor);
+      ctx.set(editor, {
+        ...current,
+        fieldsRoot: root === current.view.root ? null : root,
+      });
+    },
+  );
   const picks = Atom.make(INITIAL_PICKS);
   const preview = Atom.make<WorkbenchPreviewSettings>(INITIAL_CHOICES.preview);
   const document = Atom.make(NO_DOCUMENT);
@@ -438,7 +473,9 @@ export function makeTemplateWorkbenchModel({
     0,
   );
   return {
+    editor,
     view,
+    fieldsRoot,
     picks,
     preview,
     document,
@@ -473,6 +510,7 @@ export function holdTemplateWorkbenchModel(
   model: TemplateWorkbenchModel,
 ): () => void {
   const releases = [
+    model.editor,
     model.view,
     model.picks,
     model.preview,

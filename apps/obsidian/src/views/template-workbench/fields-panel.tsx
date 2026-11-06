@@ -63,22 +63,20 @@ export interface FieldsLocal {
     readonly byRoot: Partial<Record<TemplateRoot, FieldsPlace>>;
   };
   readonly collapsedSections: ReadonlySet<string>;
-  /**
-   * A root the reader moved to in the panel, kept while the editor shows the
-   * Item and root it was moved `under`.
-   */
-  readonly root: { readonly root: TemplateRoot; readonly under: string } | null;
 }
 
 const NO_FIELDS: FieldsLocal = {
   places: { item: null, byRoot: {} },
   collapsedSections: new Set(),
-  root: null,
 };
 
 /** The Fields panel's atoms over one leaf's host model. */
 export interface FieldsPanelModel extends ExplorerSurface {
-  /** What the panel owns; held while the leaf lives, so hiding the panel keeps it. */
+  /**
+   * The panel's place on each root and its closed sections; held while the
+   * leaf lives, so hiding the panel keeps them. The root it shows is the host
+   * model's.
+   */
   readonly local: Atom.Writable<FieldsLocal>;
   /** The root the panel shows. */
   readonly root: Atom.Atom<TemplateRoot>;
@@ -87,23 +85,6 @@ export interface FieldsPanelModel extends ExplorerSurface {
   /** Whether the editor can take a field now: it holds a caret and is writable. */
   readonly canInsert: Atom.Atom<boolean>;
 }
-
-type EditorPlace = {
-  readonly item: { readonly id: string } | null;
-  readonly root: TemplateRoot;
-};
-
-/** The editor's Item and root, which a root the reader moved to is kept under. */
-const underOf = (editor: EditorPlace) =>
-  JSON.stringify([editor.item?.id ?? null, editor.root]);
-
-/** Shows `root` in the panel while the editor stays where it is. */
-export const moveFieldsRoot =
-  (root: TemplateRoot, editor: EditorPlace) =>
-  (local: FieldsLocal): FieldsLocal => ({
-    ...local,
-    root: root === editor.root ? null : { root, under: underOf(editor) },
-  });
 
 const statusOf = (read: WorkbenchItemRead): FieldsData => ({
   annotations: null,
@@ -139,11 +120,11 @@ export function makeFieldsPanelModel(
   },
 ): FieldsPanelModel {
   const local = Atom.make(NO_FIELDS);
-  const root = Atom.make((get): TemplateRoot => {
-    const view = get(model.view);
-    const moved = get(local).root;
-    return moved && moved.under === underOf(view) ? moved.root : view.root;
-  });
+  // The editor's root, unless the reader moved the panel to another; a new
+  // editor root or Item drops that one.
+  const root = Atom.make(
+    (get): TemplateRoot => get(model.fieldsRoot) ?? get(model.view).root,
+  );
   const annotationId = Atom.make((get) =>
     get(root) === "annotation"
       ? (get(model.examples).example?.id ?? null)
@@ -293,8 +274,7 @@ function annotationOfNode(
 
 /** Shows `root` in the Fields panel of `view`. */
 function moveTo(view: TemplateWorkbenchView, root: TemplateRoot): void {
-  const editor = view.registry.get(view.model.view);
-  view.registry.update(view.fields.local, moveFieldsRoot(root, editor));
+  view.registry.set(view.model.fieldsRoot, root);
 }
 
 /** Makes `id` the annotation, and shows it in the Fields panel of `view`. */
