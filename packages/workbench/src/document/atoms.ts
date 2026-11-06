@@ -1,6 +1,4 @@
-// The controller's facts as atoms, beside its `subscribe` listeners. A host
-// holds the current controller in one atom and replaces it on load; every fact
-// follows that atom, so a reader keeps reading the instance in use.
+// The Workbench document controller's facts as atoms, beside its `subscribe` listeners.
 import * as Atom from "effect/reactivity/Atom";
 
 import type {
@@ -30,6 +28,7 @@ export interface WorkbenchDocumentAtoms {
  * The facts of the controller `current` holds. Each one changes in the
  * `subscribe` notification of the edit that changed it, and reads the new
  * instance once `current` is set to a replacement.
+ * @param current The controller in use, which a host sets to the one it loads.
  */
 export function workbenchDocumentAtoms(
   current: Atom.Atom<WorkbenchDocumentController>,
@@ -37,7 +36,8 @@ export function workbenchDocumentAtoms(
   const fact = <A>(read: (controller: WorkbenchDocumentController) => A) =>
     Atom.readable((get) => {
       const controller = get(current);
-      // The facts are re-derived only when the document text changes.
+      // The controller re-derives these facts only when the text changes, so a
+      // selection or read-only update would publish the same value again.
       get.addFinalizer(
         controller.subscribe(({ docChanged }) => {
           if (docChanged) get.setSelf(read(controller));

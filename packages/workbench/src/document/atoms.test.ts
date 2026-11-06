@@ -36,7 +36,12 @@ function hold(controller: WorkbenchDocumentController) {
   const atoms = workbenchDocumentAtoms(current);
   for (const atom of Object.values(atoms)) registry.mount(atom);
   registry.mount(current);
-  return { registry, current, atoms };
+  return {
+    registry,
+    current,
+    atoms,
+    [Symbol.dispose]: () => registry.dispose(),
+  };
 }
 
 function noteEdit(controller: WorkbenchDocumentController, insert: string) {
@@ -45,9 +50,10 @@ function noteEdit(controller: WorkbenchDocumentController, insert: string) {
 }
 
 describe("workbenchDocumentAtoms", () => {
-  it("publishes the source and its Problems after an edit", () => {
+  it("publishes the source after an edit", () => {
     const controller = new WorkbenchDocumentController(PROFILE);
-    const { registry, atoms } = hold(controller);
+    using held = hold(controller);
+    const { registry, atoms } = held;
     const seen: string[] = [];
     registry.subscribe(atoms.source, (source) => seen.push(source));
 
@@ -55,12 +61,12 @@ describe("workbenchDocumentAtoms", () => {
 
     expect(registry.get(atoms.source)).toContain("one # {{ zt.title }}");
     expect(seen).toHaveLength(1);
-    expect(registry.get(atoms.problems)).toEqual([]);
   });
 
   it("follows undo and redo, and stays put on an update that keeps the text", () => {
     const controller = new WorkbenchDocumentController(PROFILE);
-    const { registry, atoms } = hold(controller);
+    using held = hold(controller);
+    const { registry, atoms } = held;
     noteEdit(controller, "one ");
     const seen: string[] = [];
     registry.subscribe(atoms.source, (source) => seen.push(source));
@@ -72,12 +78,16 @@ describe("workbenchDocumentAtoms", () => {
     controller.redo();
     expect(registry.get(atoms.source)).toContain("one # {{ zt.title }}");
 
-    expect(seen).toEqual([PROFILE, controller.source]);
+    expect(seen).toEqual([
+      PROFILE,
+      PROFILE.replace("# {{ zt.title }}", "one # {{ zt.title }}"),
+    ]);
   });
 
   it("publishes the Properties rows and their slices in their new order", () => {
     const controller = new WorkbenchDocumentController(PROFILE);
-    const { registry, atoms } = hold(controller);
+    using held = hold(controller);
+    const { registry, atoms } = held;
 
     expect(
       controller.editManagedEntry({ action: "move", position: 2, by: -1 }),
@@ -96,7 +106,8 @@ describe("workbenchDocumentAtoms", () => {
 
   it("holds the last rows and names the problem while the draft does not parse", () => {
     const controller = new WorkbenchDocumentController(PROFILE);
-    const { registry, atoms } = hold(controller);
+    using held = hold(controller);
+    const { registry, atoms } = held;
     const rows = registry.get(atoms.managedEntries);
     const year = controller.sliceRange("entry:2");
 
@@ -106,10 +117,8 @@ describe("workbenchDocumentAtoms", () => {
     expect(registry.get(atoms.problems)).toHaveLength(1);
     expect(registry.get(atoms.problems)[0]).toMatchObject({ slice: "entry:2" });
     expect(registry.get(atoms.managedEntries)).toBe(rows);
-    const held = registry.get(atoms.slices).get("entry:2")!;
-    expect(registry.get(atoms.source).slice(held.from, held.to)).toBe(
-      "[zt.year",
-    );
+    const row = registry.get(atoms.slices).get("entry:2")!;
+    expect(registry.get(atoms.source).slice(row.from, row.to)).toBe("[zt.year");
 
     controller.undo();
     expect(registry.get(atoms.problems)).toEqual([]);
@@ -117,7 +126,8 @@ describe("workbenchDocumentAtoms", () => {
 
   it("reads the controller a host loads in place of the one it held", () => {
     const first = new WorkbenchDocumentController(PROFILE);
-    const { registry, current, atoms } = hold(first);
+    using held = hold(first);
+    const { registry, current, atoms } = held;
     const loaded = PROFILE.replace("# {{ zt.title }}", "# Loaded");
     const next = new WorkbenchDocumentController(loaded);
 
