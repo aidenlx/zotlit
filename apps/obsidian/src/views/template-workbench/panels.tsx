@@ -3,7 +3,7 @@
 // with a view action and widens with its edge. The leaf's host model holds
 // which panels show and how wide; CSS alone lays them out at every width.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type {
   CSSProperties,
   KeyboardEvent,
@@ -15,7 +15,12 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { cn } from "@/lib/utils";
 
-import { clampPanelWidth, PANEL_WIDTH, setPanelWidth } from "./model";
+import {
+  clampPanelWidth,
+  PANEL_WIDTH,
+  panelLimit,
+  setPanelWidth,
+} from "./model";
 import type { PanelSide, TemplateWorkbenchModel } from "./model";
 
 /** What one side panel shows, and what names it to a screen reader. */
@@ -27,8 +32,6 @@ export interface SidePanel {
   readonly content: ReactNode;
 }
 
-/** The share of the panels' container one panel takes at most; `max-w-2/5`. */
-const PANEL_SHARE = 0.4;
 /** How far one arrow press moves a panel's edge, in pixels; Shift moves more. */
 const STEP = 16;
 const LARGE_STEP = 64;
@@ -81,20 +84,35 @@ function Panel({
   const update = useAtomSet(model.panels);
   const id = useUniqueId();
   const region = useRef<HTMLElement>(null);
+  const edge = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; width: number } | null>(null);
   // The Preview sits on the right, so moving its edge left widens it.
   const direction = side === "preview" ? -1 : 1;
-  /**
-   * The widest the view draws this panel now: the panel takes at most
-   * {@link PANEL_SHARE} of the panels' container, so the source stays in view.
-   */
+  /** The widest the view draws this panel now. */
   const drawnMax = () => {
     const container = region.current?.parentElement?.clientWidth;
-    return container
-      ? Math.min(PANEL_WIDTH.max, Math.floor(container * PANEL_SHARE))
-      : PANEL_WIDTH.max;
+    return container ? panelLimit(container) : PANEL_WIDTH.max;
   };
   const held = (next: number) => clampPanelWidth(next, drawnMax());
+  // The edge describes the panel as drawn: CSS holds a saved width within
+  // the view, so the edge reads the limit from the view's width whenever the
+  // view resizes, and the panel's own width within it.
+  useLayoutEffect(() => {
+    const handle = edge.current;
+    const container = region.current?.parentElement;
+    if (!handle || !container) return;
+    const describe = () => {
+      const max = drawnMax();
+      handle.setAttribute("aria-valuemax", String(max));
+      handle.setAttribute("aria-valuenow", String(clampPanelWidth(width, max)));
+    };
+    describe();
+    // The observer of the panel's own window, which a pop-out has apart.
+    const { ResizeObserver } = container.win as typeof window;
+    const observer = new ResizeObserver(describe);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [width]);
   const commit = (next: number) => update(setPanelWidth(side, held(next)));
   // A window splitter's Home and End set the panel's smallest and largest
   // width; the arrows move its edge the way they point.
@@ -140,14 +158,13 @@ function Panel({
   };
   const handle = (
     <div
+      ref={edge}
       role="separator"
       tabIndex={0}
       aria-label={resizeLabel}
       aria-controls={id}
       aria-orientation="vertical"
-      aria-valuenow={width}
       aria-valuemin={PANEL_WIDTH.min}
-      aria-valuemax={PANEL_WIDTH.max}
       onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

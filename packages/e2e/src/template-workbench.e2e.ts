@@ -425,8 +425,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(JSON.parse((await explorer())!)).toEqual(opened);
   });
 
-  // #1945: the panels are part of the view's saved state.
-  it("restores the Preview panel and its width with the workspace", async () => {
+  // #1945: the panels are part of the view's saved state, and each edge
+  // reports the width the view draws: a panel takes at most 40% of the view,
+  // and never more than 960 px.
+  it("restores the Fields and Preview panels and their widths with the workspace", async () => {
     const path = `templates/${booksProfile.document}`;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(() =>
@@ -437,6 +439,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       ),
     );
+    interface Edge {
+      readonly drawn: number;
+      readonly container: number;
+      readonly now: string | null;
+      readonly max: string | null;
+    }
     const read = async (state: string) => {
       await obRun(
         run.vaultId,
@@ -454,48 +462,76 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         { path, state },
       );
-      return obRunUntil(
+      const read = await obRunUntil(
         run.vaultId,
-        ({ page }, { path, resize }) => {
+        ({ page }, { path, labels }) => {
           const view = page.workbench({ path });
-          const handle = Array.from(
-            view?.contentEl.querySelectorAll<HTMLElement>("[role=separator]") ??
-              [],
-          ).find((element) => element.getAttribute("aria-label") === resize);
-          if (!view || !handle || !page.previewPanel(view)) return null;
-          return JSON.stringify({
-            width: handle.getAttribute("aria-valuenow"),
-            saved: view.getState().panels,
-          });
+          if (!view) return null;
+          const edges: Record<string, Edge> = {};
+          for (const [side, label] of Object.entries(labels)) {
+            const panel =
+              side === "fields"
+                ? page.fieldsPanel(view)
+                : page.previewPanel(view);
+            const handle = Array.from(
+              view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
+            ).find((element) => element.getAttribute("aria-label") === label);
+            if (!panel?.parentElement || !handle) return null;
+            const now = handle.getAttribute("aria-valuenow");
+            // The edge has described the panel once it names its drawn width.
+            if (now !== String(panel.offsetWidth)) return null;
+            edges[side] = {
+              drawn: panel.offsetWidth,
+              container: panel.parentElement.clientWidth,
+              now,
+              max: handle.getAttribute("aria-valuemax"),
+            };
+          }
+          return JSON.stringify({ edges, saved: view.getState().panels });
         },
-        { path, resize: run.m.workbench_preview_resize() },
         {
-          what: "the Preview panel restored with its width",
+          path,
+          labels: {
+            fields: run.m.workbench_fields_resize(),
+            preview: run.m.workbench_preview_resize(),
+          },
+        },
+        {
+          what: "both panels restored, each edge naming its drawn width",
           ready: (value) => value !== null,
         },
       );
+      return JSON.parse(read!) as {
+        edges: Record<"fields" | "preview", Edge>;
+        saved: unknown;
+      };
     };
-    const first = JSON.parse(
-      (await read(
-        JSON.stringify({ panels: { preview: { shown: true, width: 260 } } }),
-      ))!,
-    ) as { width: string; saved: unknown };
-    expect(first.width).toBe("260");
-    // The saved state of that leaf restores the panel in a new leaf.
+    /** The widest the view draws a panel beside the editor. */
+    const limit = (container: number) =>
+      Math.min(960, Math.floor(container * 0.4));
+    const panels = {
+      fields: { shown: true, width: 260 },
+      // Wider than 40% of any window the run opens.
+      preview: { shown: true, width: 960 },
+    };
+    const first = await read(JSON.stringify({ panels }));
+    expect(first.edges.fields.now).toBe("260");
+    const { preview } = first.edges;
+    expect(preview.max).toBe(String(limit(preview.container)));
+    expect(preview.drawn).toBe(limit(preview.container));
+    expect(first.edges.fields.max).toBe(
+      String(limit(first.edges.fields.container)),
+    );
+    // The saved state of that leaf restores both panels in a new leaf.
     const saved = await obRun(
       run.vaultId,
       ({ page }, { path }) =>
         JSON.stringify(page.workbench({ path })!.getState()),
       { path },
     );
-    const second = JSON.parse((await read(saved))!) as {
-      width: string;
-      saved: unknown;
-    };
-    expect(second.width).toBe("260");
-    expect(second.saved).toEqual({
-      fields: { shown: false, width: 400 },
-      preview: { shown: true, width: 260 },
-    });
+    const second = await read(saved);
+    expect(second.edges.fields.now).toBe("260");
+    expect(second.edges.preview.now).toBe(String(preview.drawn));
+    expect(second.saved).toEqual(panels);
   });
 });

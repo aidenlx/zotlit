@@ -109,6 +109,19 @@ const INITIAL_PANELS: WorkbenchPanels = {
 };
 
 /**
+ * The share of the panels' container one panel takes at most, so the source
+ * stays in view; the panel's `max-w-2/5` draws it.
+ */
+const PANEL_SHARE = 0.4;
+
+/**
+ * The widest the view draws a panel in a container `container` pixels wide:
+ * {@link PANEL_SHARE} of it, and never past {@link PANEL_WIDTH}.
+ */
+export const panelLimit = (container: number) =>
+  clampPanelWidth(container * PANEL_SHARE);
+
+/**
  * `width` held within {@link PANEL_WIDTH}, and within `max` where the view
  * draws the panel narrower than that.
  */
