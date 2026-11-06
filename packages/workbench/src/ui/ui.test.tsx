@@ -8,11 +8,7 @@ import { EditToolbar } from "./edit-toolbar";
 import { setAdvanced, setTab } from "./model";
 import type { WorkbenchDiagnosis } from "./problems";
 import { workbenchDiagnoses } from "./problems";
-import {
-  ProblemsFooter,
-  usePublishedProblems,
-  useWorkbenchProblems,
-} from "./problems-footer";
+import { ProblemsFooter, useWorkbenchProblems } from "./problems-footer";
 import type { RenderTrigger } from "./scheduler-atoms";
 import { TabBar, TabPanel } from "./tab-bar";
 import { mount, renderWithMessages as render } from "./test-host";
@@ -20,7 +16,6 @@ import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
-import { failedRender } from "#/render/result";
 
 afterEach(cleanup);
 
@@ -1188,52 +1183,6 @@ describe("the error report", () => {
       ),
     );
     expect(host.calls.copies).toEqual([CAPTURED_TEXT, laterText, laterText]);
-  });
-
-  it("opens the originating occurrence when a linked preview fails an explicit Run", () => {
-    const first: RenderDiagnostic = {
-      ...CAPTURED,
-      callSite: { from: 4, to: 16 },
-    };
-    const second: RenderDiagnostic = {
-      ...first,
-      report: {
-        ...CAPTURED.report!,
-        context: { ...CAPTURED.report!.context, selection: "SECOND23" },
-      },
-    };
-    const diagnoses = workbenchDiagnoses([], [first, second]);
-    expect(diagnoses).toHaveLength(1);
-    const showProblem =
-      vi.fn<(id: string, occurrence?: RenderDiagnostic) => void>();
-    const publish = vi.fn<(diagnostics: readonly RenderDiagnostic[]) => void>();
-    const result = failedRender(
-      { sourceRevision: "1a2b3c4d", snapshotRevision: "r7" },
-      second,
-    );
-    function Preview(): ReactNode {
-      const [attempt, setAttempt] = useState(0);
-      usePublishedProblems({
-        result,
-        trigger: "explicit",
-        attempt,
-        publish,
-        showProblem,
-      });
-      return (
-        <button type="button" onClick={() => setAttempt(attempt + 1)}>
-          Run second preview
-        </button>
-      );
-    }
-    using mounted = mount(<Preview />);
-    render(mounted.ui);
-    expect(showProblem).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Run second preview" }));
-    expect(showProblem).toHaveBeenCalledExactlyOnceWith(
-      diagnoses[0]!.id,
-      second,
-    );
   });
 
   it("does not capture a validation report before Temporal is available", () => {

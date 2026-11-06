@@ -126,7 +126,6 @@ export type {
 export {
   ProblemsFooter,
   problemWhere,
-  usePublishedProblems,
   useWorkbenchProblems,
 } from "./problems-footer";
 export type {
