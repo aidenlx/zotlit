@@ -35,6 +35,12 @@
     // Pre-release Docs fallback. `/changelog/rss.xml` is negated because the
     // feed is always a file.
     "run_worker_first": [
+      "/zh-CN/docs",
+      "/zh-CN/docs/*",
+      "/zh-CN/changelog",
+      "/zh-CN/changelog/*",
+      "/zh-CN/blog",
+      "/zh-CN/blog/*",
       "/docs",
       "/docs/*",
       "/changelog",
