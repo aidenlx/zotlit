@@ -417,7 +417,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       ({ page }, { path, item, title }) => {
-        page.workbench({ path })!.pickItem({ id: item, title });
+        page.workbench({ path })!.setItem({ id: item, title });
       },
       { path, item: createTargetItem.key, title: createTargetItem.title },
     );

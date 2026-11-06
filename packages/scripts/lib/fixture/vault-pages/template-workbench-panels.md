@@ -62,12 +62,15 @@ Expected: after each choice, the editor header, the Properties tab
 2. Open the Annotation tab.
 3. In the Fields panel, select **Back to note root**.
 4. Open the Name and folder tab, then the Annotation tab again.
+5. Choose "Beta of the shared reading group".
 
 Expected: after step 2, the Fields panel shows the Annotation root of the
 chosen annotation. After step 3, it shows the Note root, and the editor stays
-on the Annotation tab. After step 4, the Fields panel follows the editor back
-to the Annotation root. A filter typed in the panel and the sections closed in
-it stay while the Item stays.
+on the Annotation tab. In step 4, the panel shows the Note name root with the
+Name and folder tab, and the Note root again with the Annotation tab: the root
+the reader chose in the panel stays with the editor's Annotation tab. After
+step 5, the panel starts over at the editor's Annotation root. A filter typed
+in the panel and the sections closed in it stay while the Item stays.
 
 ## Insert a field from the Fields
 
@@ -78,8 +81,21 @@ it stay while the Item stays.
 
 Expected: step 3 writes `{{ zt.title }}` at the cursor and gives the editor
 the focus. In step 4, the menu also offers **Copy path**, **Copy value** and
-the Template Snippets, each of which copies to the clipboard. The pane menu's
-**Save template data as JSON** saves the Item's data as a JSON file.
+the Template Snippets, each of which copies to the clipboard.
+
+## Export from the Fields
+
+1. Show the Fields, choose "Alpha of the personal library", and open the
+   Annotation tab.
+2. Open the pane menu.
+3. In the Fields panel, select **Back to note root**. Open the pane menu
+   again, and select **Save template data as JSON**.
+
+Expected: in step 2 the pane menu offers **Export selected paper data**, as
+the paper has no annotations. In step 3 it offers **Save template data as
+JSON**, and the saved file holds the Note root the panel shows, not the
+editor's Annotation root. With the Fields hidden, the entry exports the
+editor's own root.
 
 ## Resize the Preview
 
@@ -165,3 +181,16 @@ leaves the explorer on "Beta of the shared reading group". In step 4 the
 explorer stays where it is. Its rows offer copy and Template Snippets, and no
 **Insert field**. **Explore template data** on a Literature Note's file menu,
 and the Zotero `explore` action, open the same standalone explorer.
+
+## A saved Fields pane restores as the standalone explorer
+
+1. Make the leaf an older ZotLit saved for a linked Fields pane. Open the
+   developer console and run
+   `app.workspace.getRightLeaf(false).setViewState({ type: "zotlit-template-data-explorer", state: { itemIndexedKey: "AAAAAAAA", root: "note", sourceFile: "templates/zotlit-profile.books.md" } })`
+2. Reload Obsidian (**Reload app without saving**).
+3. Open the Books Profile, and choose "Beta of the shared reading group".
+
+Expected: after step 2, the explorer shows "Alpha of the personal library"
+with no **Insert field** on its rows. In step 3 the editor's choice leaves the
+explorer on its own Item. The file the old pane named, and its link group, have
+no effect.

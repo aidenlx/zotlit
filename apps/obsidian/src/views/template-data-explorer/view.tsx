@@ -15,7 +15,6 @@ import {
   SAMPLE_ANNOTATIONS,
 } from "@zotlit/workbench/render";
 import {
-  explorerSectionIds,
   visibleSectionIds,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
@@ -59,17 +58,20 @@ import { createExplorerActions, ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
 import { makeExportTemplateDataCommand } from "./atoms";
 import { Explorer } from "./Explorer";
+import { exportTarget } from "./export-file";
 import { rememberTemplateItem } from "./item-memory";
 import {
+  allSectionsCollapsed,
   annotationIndexedKey,
+  annotationKeyOfNode,
   ExplorerModelContext,
   holdExplorerModel,
   makeExplorerModel,
   readEphemeralExplorer,
   readSavedExplorer,
   refresh,
-  setCollapsedSections,
   setTarget,
+  toggleSections,
 } from "./model";
 import type { ExplorerSession, ExplorerState } from "./model";
 
@@ -206,24 +208,26 @@ export class TemplateDataExplorerView extends ItemView {
   #allSectionsCollapsed(): boolean {
     const host = this.#host;
     if (!host) return false;
-    const { root, data, collapsedSections } = this.#state();
-    const shown = visibleSectionIds(data, {
+    return allSectionsCollapsed(
+      this.#shownSections(host),
+      this.#state().collapsedSections,
+    );
+  }
+  /** The sections the reader can see. */
+  #shownSections(
+    host: ReturnType<typeof createTemplateWorkbenchHost>,
+  ): readonly string[] {
+    const { root, data } = this.#state();
+    return visibleSectionIds(data, {
       m: host.messages,
       root,
       locale: host.getLocale(),
     });
-    return shown.length > 0 && shown.every((id) => collapsedSections.has(id));
   }
   /** Closes every section, or opens every section once all are closed. */
   #toggleSections(): void {
-    const { root } = this.#state();
-    this.#update(
-      setCollapsedSections(
-        this.#allSectionsCollapsed()
-          ? new Set()
-          : new Set<string>(explorerSectionIds(root)),
-      ),
-    );
+    const host = this.#host;
+    if (host) this.#update(toggleSections(this.#shownSections(host)));
   }
   override async setState(
     state: unknown,
@@ -448,41 +452,24 @@ export class TemplateDataExplorerView extends ItemView {
   }
   #annotationKey(node: DisplayNode): string | null {
     const { item, root } = this.#state();
-    if (
-      !item ||
-      root !== "note" ||
-      node.path.length !== 2 ||
-      node.path[0] !== "annotations" ||
-      typeof node.path[1] !== "number" ||
-      node.kind !== "value" ||
-      !node.value ||
-      typeof node.value !== "object" ||
-      !("key" in node.value) ||
-      typeof node.value.key !== "string"
-    )
-      return null;
+    const key = annotationKeyOfNode(root, node);
+    if (!item || key === null) return null;
     const parsed = parseIndexedKey(item.id);
-    if (getSampleItem(item.id)) return node.value.key;
+    if (getSampleItem(item.id)) return key;
     return parsed
-      ? indexedKeyForClipboard({ key: node.value.key, groupID: parsed.groupID })
+      ? indexedKeyForClipboard({ key, groupID: parsed.groupID })
       : null;
   }
   #exportTarget() {
     const { item, root, annotationId, status } = this.#state();
-    if (
-      !item ||
-      getSampleItem(item.id) ||
-      (status !== "ready" && status !== "empty")
-    )
-      return null;
-    if (root !== "annotation") return { indexedKey: item.id, root };
-    if (
-      !annotationId ||
-      SAMPLE_ANNOTATIONS.some(({ id }) => id === annotationId)
-    )
-      return { indexedKey: item.id, root: "note" as const };
-    const key = annotationIndexedKey(item.id, annotationId);
-    return key ? { indexedKey: key, root } : null;
+    if (status !== "ready" && status !== "empty") return null;
+    const sample =
+      !annotationId || SAMPLE_ANNOTATIONS.some(({ id }) => id === annotationId);
+    const annotation =
+      item && !sample ? annotationIndexedKey(item.id, annotationId) : null;
+    // A library annotation whose key does not parse has nothing to export.
+    if (root === "annotation" && !sample && !annotation) return null;
+    return exportTarget(item, root, annotation);
   }
   #export(): void {
     const target = this.#exportTarget();

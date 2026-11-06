@@ -152,7 +152,9 @@ import {
   retainNativeOutputs,
   makeNativeRenderer,
 } from "@/views/note-preview/render";
+import type { ExplorerActions } from "@/views/template-data-explorer/actions";
 import { makeExportTemplateDataCommand } from "@/views/template-data-explorer/atoms";
+import { exportTarget } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
 import { COMMUNITY } from "@/views/welcome/links";
@@ -168,7 +170,7 @@ import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
 import {
   FieldsPanel,
-  holdFieldsPanelModel,
+  makeFieldsActions,
   makeFieldsPanelModel,
 } from "./fields-panel";
 import type { FieldsPanelModel } from "./fields-panel";
@@ -324,6 +326,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   readonly model: TemplateWorkbenchModel;
   /** The Fields panel's atoms over {@link model}. */
   readonly fields: FieldsPanelModel;
+  /** The Fields panel's actions: choosing, sections, copy and export. */
+  readonly fieldsActions: ExplorerActions;
   get registry() {
     return this.#deps.registry;
   }
@@ -630,7 +634,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       renderPartial: renderer?.partial,
       source: () => this.#controller.source,
     });
-    this.fields = makeFieldsPanelModel(this.model);
     this.#release = holdTemplateWorkbenchModel(deps.registry, this.model);
     // Closing the leaf interrupts every Effect it still runs.
     this.#runner = makeViewRunner(deps.registry);
@@ -650,7 +653,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       Effect.suspend(() => this.#refreshStyles()),
     );
     this.#cleanup.defer(deps.registry.mount(this.#exportCommand));
-    this.#cleanup.defer(holdFieldsPanelModel(deps.registry, this.fields));
     this.#cleanup.defer(deps.registry.mount(templateFolderAtom));
     this.#cleanup.defer(deps.registry.mount(defaultProfilePathAtom));
     this.#cleanup.defer(deps.registry.mount(partialDocumentsAtom));
@@ -704,6 +706,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       mapResult: nativeResult,
       retain: retainNativeOutputs,
     });
+    this.fields = makeFieldsPanelModel(this.model, {
+      revision: this.#editor.model.document.revision,
+      canInsert: () =>
+        !this.#closed &&
+        !this.#controller.readOnly &&
+        this.insertTarget !== null,
+    });
+    this.#cleanup.defer(deps.registry.mount(this.fields.local));
+    this.fieldsActions = makeFieldsActions(this, this.#host, (target) =>
+      this.exportTemplateData(target),
+    );
     this.#cleanup.defer(this.#follow());
     this.#cleanup.defer(this.#logRenders());
     this.scope = new Scope(this.app.scope);
@@ -1699,16 +1712,23 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
 
   templateDataTarget(): TemplateDataExportTarget | null {
     const { item, root } = this.#view;
-    if (!item || getSampleItem(item.id)) return null;
-    if (root !== "annotation") return { indexedKey: item.id, root };
     const { current, example } = this.registry.get(this.model.examples);
     const indexedKey = example?.root.indexedKey;
-    if (
+    return exportTarget(
+      item,
+      root,
       typeof indexedKey === "string" &&
-      current.some((entry) => entry.id === example?.id)
-    )
-      return { indexedKey, root };
-    return { indexedKey: item.id, root: "note" };
+        current.some((entry) => entry.id === example?.id)
+        ? indexedKey
+        : null,
+    );
+  }
+
+  /** Saves the Template data of `target` as a JSON file. */
+  exportTemplateData(target: TemplateDataExportTarget): void {
+    const pluginVersion = this.#deps.pluginVersion;
+    if (pluginVersion)
+      this.registry.set(this.#exportCommand, { ...target, pluginVersion });
   }
 
   templateDataExportLabel(): string {
@@ -1775,20 +1795,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .onClick(() => this.#start(Effect.ignore(reportCitationTemplateOpen))),
     );
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
+    // With the Fields shown, the export saves the root the panel shows.
     const target = this.templateDataTarget();
-    const pluginVersion = this.#deps.pluginVersion;
-    if (target && pluginVersion)
+    if (this.registry.get(this.model.panels).fields.shown)
+      this.fieldsActions.addExportMenuItem(menu);
+    else if (target && this.#deps.pluginVersion)
       menu.addItem((item) =>
         item
           .setSection(MENU_SECTION.action)
           .setTitle(this.templateDataExportLabel())
           .setIcon("file-json")
-          .onClick(() =>
-            this.registry.set(this.#exportCommand, {
-              ...target,
-              pluginVersion,
-            }),
-          ),
+          .onClick(() => this.exportTemplateData(target)),
       );
     menu.addItem((item) =>
       item
@@ -2401,12 +2418,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       }),
     );
   }
-  /** Makes `item` the choice, as the Fields panel's Item list does. */
-  pickItem(item: WorkbenchItemChoice): void {
-    this.#choose(item);
-  }
   /** Makes `item` the choice of this leaf. */
-  #choose(item: WorkbenchItemChoice): void {
+  setItem(item: WorkbenchItemChoice): void {
     if (this.#closed) return;
     this.registry.set(this.model.pick, item);
     this.#remember(item);
@@ -2422,7 +2435,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return joinOnView(
       this.#runner.run,
       Effect.suspend(() => {
-        this.#choose(item);
+        this.setItem(item);
         const { registry, model } = this;
         const read = AtomRegistry.getResult(registry, model.chosen, {
           suspendOnWaiting: true,
@@ -3245,7 +3258,7 @@ function EditorContent({
           fields: {
             label: m.workbench_view_fields(),
             resizeLabel: m.workbench_fields_resize(),
-            content: <FieldsPanel view={view} />,
+            content: <FieldsPanel view={view} actions={view.fieldsActions} />,
           },
           preview: {
             label: m.workbench_view_preview(),

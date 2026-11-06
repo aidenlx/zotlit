@@ -3579,7 +3579,7 @@ describe("the Fields panel of the Template Workbench View", () => {
     await act(async () => view.close());
   });
 
-  it("follows the editor's root, and keeps the root the reader moved to until the editor's changes", async () => {
+  it("follows the editor's root, and keeps the root the reader moved to while the editor stays on its own", async () => {
     const { view } = setup();
     // The conference paper carries annotations of its own.
     const paper = SAMPLE_ITEMS[1]!;
@@ -3602,9 +3602,15 @@ describe("the Fields panel of the Template Workbench View", () => {
     expect(back()).toBeUndefined();
     // The editor keeps its own root.
     expect(viewState(view).root).toBe("annotation");
+    // Another editor root shows in the panel; the moved root is kept under the
+    // Annotation root it was moved from.
     await act(async () => view.change.setRoot("filename"));
+    expect(view.registry.get(view.fields.root)).toBe("filename");
     await act(async () => view.change.setRoot("annotation"));
-    expect(back()).toBeDefined();
+    expect(view.registry.get(view.fields.root)).toBe("note");
+    // A new Item starts the panel over at the editor's root.
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
+    expect(view.registry.get(view.fields.root)).toBe("annotation");
     await act(async () => view.close());
   });
 
@@ -3629,6 +3635,102 @@ describe("the Fields panel of the Template Workbench View", () => {
     );
     expect(fields(view)?.textContent).not.toContain("CNPAN26A");
     await act(async () => view.close());
+  });
+
+  it("lists the Citation example set and Variant the editor chose on the Citation root", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(async () => view.change.setRoot("citation"));
+    const data = () => view.registry.get(view.fields.state).data;
+    await act(async () =>
+      view.registry.update(view.model.picks, (picks) => ({
+        ...picks,
+        variant: "alt" as const,
+        citationExample: "two-items" as const,
+      })),
+    );
+    expect(data()).toMatchObject({ variant: "alt" });
+    expect(data()!["citations"]).toHaveLength(2);
+    // With no example set, the chosen Item's own one-item set stands.
+    await act(async () => {
+      view.registry.update(view.model.picks, (picks) => ({
+        ...picks,
+        citationExample: null,
+      }));
+      chooseSample(view, SAMPLE_ITEMS[0]!);
+    });
+    await vi.waitFor(() => expect(data()!["citations"]).toHaveLength(1));
+    expect(data()).toMatchObject({ variant: "alt" });
+    await act(async () => view.close());
+  });
+
+  it("names an unavailable Item with its message", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(async () =>
+      setViewItem(view, { id: "sample:missing", title: null }),
+    );
+    await vi.waitFor(() =>
+      expect(view.registry.get(view.fields.state)).toMatchObject({
+        status: "error",
+        error: m.workbench_example_missing_item(),
+      }),
+    );
+    await act(async () => view.close());
+  });
+
+  it("exports the root the panel shows", async () => {
+    await using zoteroReads = inProcessReadsService(
+      memoryOpener(() =>
+        seedWorksSql([{ itemID: 1, key: "FIRST234", title: "First paper" }]),
+      ).open,
+    );
+    const { view } = setup({
+      runtime: testRuntime(),
+      services: { zoteroReads },
+      pluginVersion: "2.1.3",
+    });
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => view.open());
+      await act(async () => {
+        view.togglePanel("fields");
+        setViewItem(view, { id: "FIRST234", title: "First paper" });
+        view.change.setRoot("annotation");
+      });
+      const back = () =>
+        [...fields(view)!.querySelectorAll<HTMLElement>("[aria-label]")].find(
+          (button) =>
+            button.getAttribute("aria-label") ===
+            m.template_data_explorer_back_to_note_root(),
+        );
+      await vi.waitFor(() => expect(back()).toBeDefined());
+      const exportEntry = () => {
+        const menu = new Menu();
+        view.onPaneMenu(menu as never, "more-options");
+        return menu.items.find((item) => item.icon === "file-json");
+      };
+      // The paper has no annotations, so its own data stands in.
+      await vi.waitFor(() =>
+        expect(exportEntry()?.title).toBe(
+          m.template_data_explorer_export_selected_paper(),
+        ),
+      );
+      await act(async () => back()!.click());
+      expect(viewState(view).root).toBe("annotation");
+      using set = vi.spyOn(view.registry, "set");
+      const entry = exportEntry()!;
+      expect(entry.title).toBe(m.template_data_explorer_menu_export_json());
+      entry.click();
+      expect(set).toHaveBeenCalledWith(expect.anything(), {
+        indexedKey: "FIRST234",
+        root: "note",
+        pluginVersion: "2.1.3",
+      });
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
   });
 
   it("inserts a field from its row at the editor's caret", async () => {

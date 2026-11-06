@@ -384,11 +384,9 @@ describe("paneType", () => {
   it.effect("routes an explore link's paneType to the explorer", () =>
     Effect.gen(function* () {
       refOf(REF);
-      const app = appStub();
-      yield* register({ deps: { app } });
+      yield* register();
       yield* dispatch("zotlit/explore", { item: "1", paneType: "window" });
       expect(openTemplateDataExplorer).toHaveBeenCalledExactlyOnceWith(
-        app,
         { itemIndexedKey: "ABCD2345", anchorAnnotationKey: undefined },
         { paneType: "window" },
       );

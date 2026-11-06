@@ -17,10 +17,7 @@ import { inLayoutTurn } from "@/views/template-workbench/layout";
 
 import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
 
-type ExplorerPlugin = Pick<
-  Plugin,
-  "registerView" | "addCommand" | "app" | "manifest"
->;
+type ExplorerPlugin = Pick<Plugin, "registerView" | "addCommand" | "manifest">;
 
 export interface ExplorerRegistrationDeps {
   app: App;
@@ -50,7 +47,7 @@ export function registerTemplateDataExplorer(
       startTemplateWorkbenchAction(
         deps,
         "open-template-data-explorer",
-        openTemplateDataExplorer(plugin.app),
+        openTemplateDataExplorer(),
       ),
   });
 }
@@ -66,7 +63,6 @@ export function registerTemplateDataExplorer(
  */
 export const openTemplateDataExplorer = Effect.fn("TemplateDataExplorer.open")(
   function* (
-    app: App,
     state?: { itemIndexedKey: string; anchorAnnotationKey?: string },
     options: { paneType?: PaneType } = {},
   ) {
@@ -105,10 +101,7 @@ const openExplorerLeaf = Effect.fn("TemplateDataExplorer.openLeaf")(function* (
 });
 
 /** "Explore template data" on a Literature Note's file menu. */
-export function explorerFileMenu(
-  app: App,
-  deps: WorkbenchActionDeps,
-): FileMenuSegment {
+export function explorerFileMenu(deps: WorkbenchActionDeps): FileMenuSegment {
   return (menu, { itemKey }) => {
     if (!itemKey) return;
     menu.addItem((item) =>
@@ -120,7 +113,7 @@ export function explorerFileMenu(
           startTemplateWorkbenchAction(
             deps,
             "open-template-data-explorer",
-            openTemplateDataExplorer(app, { itemIndexedKey: itemKey }),
+            openTemplateDataExplorer({ itemIndexedKey: itemKey }),
           );
         }),
     );

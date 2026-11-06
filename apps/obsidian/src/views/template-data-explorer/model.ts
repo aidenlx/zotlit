@@ -15,7 +15,7 @@ import {
   setFilter as filterTree,
   toggleNode as toggleTreeNode,
 } from "@zotlit/workbench/explorer";
-import type { TreeState } from "@zotlit/workbench/explorer";
+import type { DisplayNode, TreeState } from "@zotlit/workbench/explorer";
 import {
   citationExampleData,
   DEFAULT_CITATION_EXAMPLE,
@@ -29,7 +29,7 @@ import type {
   TemplateRoot,
   WorkbenchItemChoice,
 } from "@zotlit/workbench/ui";
-import { annotationSamples } from "@zotlit/workbench/ui";
+import { annotationSamples, explorerSectionIds } from "@zotlit/workbench/ui";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { viewRuntime } from "@/lib/view-atoms";
@@ -82,7 +82,11 @@ export interface ExplorerModel {
 /** What the Explorer's tree reads and writes: a standalone Explorer's model, or a panel's. */
 export type ExplorerSurface = Pick<ExplorerModel, "session" | "state">;
 
-const NO_PRESENTATION: ExplorerPresentation = { top: 0, left: 0, field: null };
+export const NO_PRESENTATION: ExplorerPresentation = {
+  top: 0,
+  left: 0,
+  field: null,
+};
 
 export const EMPTY_EXPLORER_SESSION: ExplorerSession = {
   presentation: NO_PRESENTATION,
@@ -235,6 +239,49 @@ export const setCollapsedSections =
     ...session,
     collapsedSections,
   });
+
+/** Whether every section the reader can see, `shown`, is closed. */
+export const allSectionsCollapsed = (
+  shown: readonly string[],
+  collapsedSections: ReadonlySet<string>,
+): boolean =>
+  shown.length > 0 && shown.every((id) => collapsedSections.has(id));
+
+/**
+ * Closes every section, or opens every section once all the reader can see,
+ * `shown`, are closed.
+ */
+export const toggleSections =
+  (shown: readonly string[]) =>
+  (session: ExplorerSession): ExplorerSession =>
+    setCollapsedSections(
+      allSectionsCollapsed(shown, session.collapsedSections)
+        ? new Set()
+        : new Set<string>(explorerSectionIds(session.root)),
+    )(session);
+
+/**
+ * The annotation key a row of the note root's `annotations` list names, or
+ * null for any other row.
+ */
+export function annotationKeyOfNode(
+  root: TemplateRoot,
+  node: DisplayNode,
+): string | null {
+  if (
+    root !== "note" ||
+    node.path.length !== 2 ||
+    node.path[0] !== "annotations" ||
+    typeof node.path[1] !== "number" ||
+    node.kind !== "value" ||
+    !node.value ||
+    typeof node.value !== "object" ||
+    !("key" in node.value) ||
+    typeof node.value.key !== "string"
+  )
+    return null;
+  return node.value.key;
+}
 
 export const setPresentation =
   (presentation: ExplorerPresentation) =>

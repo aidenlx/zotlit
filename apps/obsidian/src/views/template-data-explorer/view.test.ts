@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type { ItemView as MockItemView } from "@mock/obsidian";
 import { Deferred, Effect } from "effect";
-import type { App, EventRef, Vault, Workspace, WorkspaceLeaf } from "obsidian";
+import type { App, Workspace, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -53,27 +53,7 @@ class ExplorerView extends TemplateDataExplorerView {
   }
 }
 
-interface HostEvent {
-  name: string;
-  callback: (...args: unknown[]) => void;
-}
-
-function host(events = new Map<EventRef, HostEvent>()) {
-  const trigger = vi.fn((name: string, ...args: unknown[]) => {
-    for (const event of events.values())
-      if (event.name === name) event.callback(...args);
-  });
-  const on = vi.fn();
-  const offref = vi.fn((ref: EventRef) => {
-    events.delete(ref);
-  });
-  on.mockImplementation(
-    (name: string, callback: (...args: unknown[]) => void): EventRef => {
-      const ref: EventRef = {};
-      events.set(ref, { name, callback });
-      return ref;
-    },
-  );
+function host() {
   const requestSaveLayout: Workspace["requestSaveLayout"] = Object.assign(
     vi.fn(() => requestSaveLayout),
     {
@@ -82,25 +62,20 @@ function host(events = new Map<EventRef, HostEvent>()) {
     },
   );
   const app = stubService<App>("App", {
-    vault: stubService<Vault>("Vault", { on, offref }),
     workspace: stubService<Workspace>("Workspace", {
-      on,
-      offref,
-      trigger,
       getActiveFile: () => null,
       requestSaveLayout,
     }),
     loadLocalStorage: () => null,
   });
-  const leaf = (pinned = false) => {
+  const leaf = () => {
     const value = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-      pinned,
       updateHeader: vi.fn(),
     });
     Object.defineProperty(value, "app", { value: app });
     return value;
   };
-  return { app, events, leaf, trigger };
+  return { app, leaf };
 }
 
 function viewDeps(): ExplorerViewDeps {
@@ -124,8 +99,8 @@ function viewDeps(): ExplorerViewDeps {
   });
 }
 
-it("shows its own Item, offers no field insertion, and releases its workspace listeners", async () => {
-  const { app, events, leaf } = host();
+it("shows its own Item, offers no field insertion, and stops its Zotero reads on close", async () => {
+  const { app, leaf } = host();
   read.mockResolvedValue({
     kind: "data",
     data: { title: "Native paper" },
@@ -162,7 +137,6 @@ it("shows its own Item, offers no field insertion, and releases its workspace li
     await act(async () => view.close());
     view.contentEl.remove();
   }
-  expect(events.size).toBe(0);
   await waitFor(() => expect(explorerHost.zoteroSubscribers()).toBe(0));
 });
 
@@ -235,6 +209,15 @@ it("restores independent Explorer navigation after delayed data and keeps search
   expect(document.activeElement).toBe(typing);
   expect(saves).not.toHaveBeenCalled();
   expect(view.getState()).toEqual(descriptor);
+  // The file the Fields pane named has no effect: the Explorer saves none, and
+  // offers no field to an editor.
+  expect(view.getState()).not.toHaveProperty("sourceFile");
+  expect(
+    [...view.contentEl.querySelectorAll("[aria-label]")].some(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_put_in_note(),
+    ),
+  ).toBe(false);
   await act(async () => {
     input.value = "";
     input.dispatchEvent(new Event("input", { bubbles: true }));

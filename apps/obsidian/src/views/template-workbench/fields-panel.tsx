@@ -1,37 +1,37 @@
-// The Fields panel of the Template Workbench View: the Template Data
-// Explorer's tree over the leaf's own choice. It derives its Item, root,
-// annotation and data from the host model's one read of the chosen Item, so
-// it shows the data the render reads, and inserts a field straight into the
-// editor. Only its navigation is its own.
+// The Fields panel shows the Template Data Explorer's tree over the leaf's own chosen Item, derived from the one read every surface shares.
 import { useAtomValue } from "@effect/atom-react";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
-import type { DisplayNode } from "@zotlit/workbench/explorer";
+import { initialTreeState, setAnchor } from "@zotlit/workbench/explorer";
+import type { DisplayNode, TreeState } from "@zotlit/workbench/explorer";
 import {
   citationExampleData,
   restoreTemplateData,
   sampleItemCitation,
 } from "@zotlit/workbench/render";
-import {
-  explorerSectionIds,
-  useWorkbenchHost,
-  visibleSectionIds,
+import { visibleSectionIds } from "@zotlit/workbench/ui";
+import type {
+  ExplorerPresentation,
+  TemplateRoot,
+  WorkbenchHost,
 } from "@zotlit/workbench/ui";
-import type { TemplateRoot } from "@zotlit/workbench/ui";
 
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import * as m from "@/lib/i18n/generated/messages";
 import { javascriptTemplatesEnabledAtom } from "@/services/template/atoms";
 import {
   createExplorerActions,
   ExplorerActionsContext,
 } from "@/views/template-data-explorer/actions";
+import type { ExplorerActions } from "@/views/template-data-explorer/actions";
 import { Explorer } from "@/views/template-data-explorer/Explorer";
+import { exportTarget } from "@/views/template-data-explorer/export-file";
+import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import {
-  EMPTY_EXPLORER_SESSION,
+  annotationKeyOfNode,
   ExplorerModelContext,
-  setCollapsedSections,
-  setTarget,
+  NO_PRESENTATION,
+  toggleSections,
 } from "@/views/template-data-explorer/model";
 import type {
   ExplorerLoad,
@@ -47,15 +47,63 @@ import type { TemplateWorkbenchView } from "./view";
 
 type FieldsData = Omit<ExplorerLoad, "itemId">;
 
+/** Where the reader was on one root of one Item. */
+interface FieldsPlace {
+  readonly annotationId: string | null;
+  readonly navigation: TreeState;
+  readonly presentation: ExplorerPresentation;
+  readonly restore: ExplorerPresentation | null;
+}
+
+/** What the panel owns; the Item, the annotation and the data are the editor's. */
+export interface FieldsLocal {
+  /** The reader's place on each root of the Item named by `item`. */
+  readonly places: {
+    readonly item: string | null;
+    readonly byRoot: Partial<Record<TemplateRoot, FieldsPlace>>;
+  };
+  readonly collapsedSections: ReadonlySet<string>;
+  /**
+   * A root the reader moved to in the panel, kept while the editor shows the
+   * Item and root it was moved `under`.
+   */
+  readonly root: { readonly root: TemplateRoot; readonly under: string } | null;
+}
+
+const NO_FIELDS: FieldsLocal = {
+  places: { item: null, byRoot: {} },
+  collapsedSections: new Set(),
+  root: null,
+};
+
 /** The Fields panel's atoms over one leaf's host model. */
 export interface FieldsPanelModel extends ExplorerSurface {
-  /**
-   * The panel's own session: its root and navigation. Held while the leaf
-   * lives, so hiding the panel keeps it.
-   */
-  readonly local: Atom.Writable<ExplorerSession>;
-  readonly model: TemplateWorkbenchModel;
+  /** What the panel owns; held while the leaf lives, so hiding the panel keeps it. */
+  readonly local: Atom.Writable<FieldsLocal>;
+  /** The root the panel shows. */
+  readonly root: Atom.Atom<TemplateRoot>;
+  /** What an export from the panel saves; null when nothing can be. */
+  readonly exportTarget: Atom.Atom<TemplateDataExportTarget | null>;
+  /** Whether the editor can take a field now: it holds a caret and is writable. */
+  readonly canInsert: Atom.Atom<boolean>;
 }
+
+type EditorPlace = {
+  readonly item: { readonly id: string } | null;
+  readonly root: TemplateRoot;
+};
+
+/** The editor's Item and root, which a root the reader moved to is kept under. */
+const underOf = (editor: EditorPlace) =>
+  JSON.stringify([editor.item?.id ?? null, editor.root]);
+
+/** Shows `root` in the panel while the editor stays where it is. */
+export const moveFieldsRoot =
+  (root: TemplateRoot, editor: EditorPlace) =>
+  (local: FieldsLocal): FieldsLocal => ({
+    ...local,
+    root: root === editor.root ? null : { root, under: underOf(editor) },
+  });
 
 const statusOf = (read: WorkbenchItemRead): FieldsData => ({
   annotations: null,
@@ -66,7 +114,9 @@ const statusOf = (read: WorkbenchItemRead): FieldsData => ({
       : read.status === "ready"
         ? "error"
         : read.status,
-  error: read.error,
+  // A finished read with no data is an Item that is unavailable.
+  error:
+    read.status === "ready" ? m.workbench_example_missing_item() : read.error,
 });
 
 const dataOf = (data: Record<string, unknown>): FieldsData => ({
@@ -76,31 +126,86 @@ const dataOf = (data: Record<string, unknown>): FieldsData => ({
   error: null,
 });
 
+/**
+ * The panel's atoms over `model`. `editor.canInsert` answers whether the
+ * editor can take a field, and `editor.revision` changes whenever that answer
+ * can, beside the caret the view state holds.
+ */
 export function makeFieldsPanelModel(
   model: TemplateWorkbenchModel,
+  editor: {
+    readonly revision: Atom.Atom<number>;
+    readonly canInsert: () => boolean;
+  },
 ): FieldsPanelModel {
-  const local = Atom.make(EMPTY_EXPLORER_SESSION);
+  const local = Atom.make(NO_FIELDS);
+  const root = Atom.make((get): TemplateRoot => {
+    const view = get(model.view);
+    const moved = get(local).root;
+    return moved && moved.under === underOf(view) ? moved.root : view.root;
+  });
+  const annotationId = Atom.make((get) =>
+    get(root) === "annotation"
+      ? (get(model.examples).example?.id ?? null)
+      : null,
+  );
   /**
-   * The panel's session: the editor's Item and chosen annotation, with the
-   * panel's own root and navigation.
+   * The panel's session: the editor's Item and annotation, with the reader's
+   * own place on the root the panel shows. A new Item starts every root over.
    */
   const session = Atom.writable(
     (get): ExplorerSession => {
-      const saved = get(local);
+      const { places, collapsedSections } = get(local);
       const { item } = get(model.view);
-      const annotationId =
-        saved.root === "annotation"
-          ? (get(model.examples).example?.id ?? null)
-          : null;
-      return setTarget(
-        item && { id: item.id, title: get(model.title) },
-        saved.root,
-        annotationId,
-      )(saved);
+      const shown = get(root);
+      const annotation = get(annotationId);
+      const anchor = shown === "note" ? null : (annotation ?? shown);
+      const saved =
+        places.item === (item?.id ?? null) ? places.byRoot[shown] : undefined;
+      const place: FieldsPlace = !saved
+        ? {
+            annotationId: annotation,
+            navigation: initialTreeState(anchor),
+            presentation: NO_PRESENTATION,
+            restore: null,
+          }
+        : saved.annotationId === annotation
+          ? saved
+          : {
+              annotationId: annotation,
+              navigation: setAnchor(saved.navigation, anchor),
+              presentation: NO_PRESENTATION,
+              restore: null,
+            };
+      return {
+        item: item && { id: item.id, title: get(model.title) },
+        root: shown,
+        collapsedSections,
+        revision: 0,
+        ...place,
+      };
     },
-    (ctx, next: ExplorerSession) => ctx.set(local, next),
+    (ctx, next: ExplorerSession) => {
+      const current = ctx.get(local);
+      const item = next.item?.id ?? null;
+      ctx.set(local, {
+        ...current,
+        collapsedSections: next.collapsedSections,
+        places: {
+          item,
+          byRoot: {
+            ...(current.places.item === item ? current.places.byRoot : {}),
+            [next.root]: {
+              annotationId: next.annotationId,
+              navigation: next.navigation,
+              presentation: next.presentation,
+              restore: next.restore,
+            },
+          },
+        },
+      });
+    },
   );
-  const root = Atom.map(session, (current) => current.root);
   /** The data of the panel's root, from the one read every surface shares. */
   const data = Atom.make((get): FieldsData => {
     const target = get(root);
@@ -143,33 +248,30 @@ export function makeFieldsPanelModel(
         : ["liquid"];
     return { ...current, ...get(data), engines };
   });
-  return { local, session, state, model };
-}
-
-/**
- * Holds the panel's own state from the leaf's constructor to its close. A new
- * Item or a new editor root starts the panel over at that root; a root the
- * reader moved to in the panel stays until then.
- */
-export function holdFieldsPanelModel(
-  registry: ViewRegistryHandle,
-  { local, model }: FieldsPanelModel,
-): () => void {
-  const release = registry.mount(local);
-  let followed: readonly [string | null, TemplateRoot] | null = null;
-  const stop = registry.subscribe(
-    model.view,
-    ({ item, root }) => {
-      const id = item?.id ?? null;
-      if (followed && followed[0] === id && followed[1] === root) return;
-      followed = [id, root];
-      registry.update(local, setTarget(item, root));
-    },
-    { immediate: true },
-  );
-  return () => {
-    stop();
-    release();
+  const exportable = Atom.make((get) => {
+    const { current, example } = get(model.examples);
+    const indexedKey = example?.root.indexedKey;
+    return exportTarget(
+      get(model.view).item,
+      get(root),
+      typeof indexedKey === "string" &&
+        current.some((entry) => entry.id === example?.id)
+        ? indexedKey
+        : null,
+    );
+  });
+  const canInsert = Atom.make((get) => {
+    get(editor.revision);
+    get(model.view);
+    return editor.canInsert();
+  });
+  return {
+    local,
+    root,
+    session,
+    state,
+    exportTarget: exportable,
+    canInsert,
   };
 }
 
@@ -178,74 +280,100 @@ function annotationOfNode(
   view: TemplateWorkbenchView,
   node: DisplayNode,
 ): string | null {
-  const { root } = view.registry.get(view.fields.state);
-  if (
-    root !== "note" ||
-    node.path.length !== 2 ||
-    node.path[0] !== "annotations" ||
-    typeof node.path[1] !== "number" ||
-    node.kind !== "value" ||
-    !node.value ||
-    typeof node.value !== "object" ||
-    !("key" in node.value)
-  )
-    return null;
-  const { key } = node.value;
-  return (
-    view.registry
-      .get(view.model.examples)
-      .current.find((example) => example.root.key === key)?.id ?? null
+  const key = annotationKeyOfNode(
+    view.registry.get(view.fields.state).root,
+    node,
   );
+  return key === null
+    ? null
+    : (view.registry
+        .get(view.model.examples)
+        .current.find((example) => example.root.key === key)?.id ?? null);
 }
 
-/** The Explorer's tree in the leaf's left panel. */
-export function FieldsPanel({ view }: { view: TemplateWorkbenchView }) {
-  const { registry, fields, model } = view;
-  const host = useWorkbenchHost();
-  // The insertion target is the caret the editor last held.
-  useAtomValue(model.view);
-  useAtomValue(view.workbench.document.revision);
-  const canInsert = view.insertTarget !== null && !view.controller.readOnly;
-  const moveTo = (root: TemplateRoot) => {
-    const { item } = registry.get(fields.state);
-    registry.update(fields.session, setTarget(item, root));
+/** Shows `root` in the Fields panel of `view`. */
+function moveTo(view: TemplateWorkbenchView, root: TemplateRoot): void {
+  const editor = view.registry.get(view.model.view);
+  view.registry.update(view.fields.local, moveFieldsRoot(root, editor));
+}
+
+/** Makes `id` the annotation, and shows it in the Fields panel of `view`. */
+function chooseExample(view: TemplateWorkbenchView, id: string): void {
+  view.registry.update(view.model.picks, chooseAnnotation(id));
+  moveTo(view, "annotation");
+}
+
+/**
+ * The Fields panel's actions in `view`, as the standalone Explorer has them:
+ * choosing, the sections, and the export and Indexed Key of the root shown.
+ */
+export function makeFieldsActions(
+  view: TemplateWorkbenchView,
+  host: Pick<WorkbenchHost, "messages" | "getLocale">,
+  exportData: (target: TemplateDataExportTarget) => void,
+): ExplorerActions {
+  const { registry, fields } = view;
+  const target = () => {
+    const { status } = registry.get(fields.state);
+    return status === "ready" || status === "empty"
+      ? registry.get(fields.exportTarget)
+      : null;
   };
-  const chooseExample = (id: string) => {
-    registry.update(model.picks, chooseAnnotation(id));
-    moveTo("annotation");
-  };
-  const actions = createExplorerActions({
+  return createExplorerActions({
     onChooseItem: () => view.startItemChoice(),
-    onBackToNoteRoot: () => moveTo("note"),
+    onBackToNoteRoot: () => moveTo(view, "note"),
     onToggleSections: () => {
-      const { root, data, collapsedSections } = registry.get(fields.state);
-      const shown = visibleSectionIds(data, {
-        m: host.messages,
-        root,
-        locale: host.getLocale(),
-      });
-      const collapsed =
-        shown.length > 0 && shown.every((id) => collapsedSections.has(id));
+      const { root, data } = registry.get(fields.state);
       registry.update(
         fields.session,
-        setCollapsedSections(
-          collapsed ? new Set() : new Set<string>(explorerSectionIds(root)),
+        toggleSections(
+          visibleSectionIds(data, {
+            m: host.messages,
+            root,
+            locale: host.getLocale(),
+          }),
         ),
       );
     },
     onRefresh: () => view.refresh(),
-    copyTarget: () => null,
-    canExport: () => false,
-    onExport: () => {},
+    copyTarget: () => {
+      const shown = target();
+      return shown
+        ? {
+            indexedKey: shown.indexedKey,
+            kind: shown.root === "annotation" ? "annotation" : "item",
+          }
+        : null;
+    },
+    canExport: () => target() !== null,
+    onExport: () => {
+      const shown = target();
+      if (shown) exportData(shown);
+    },
+    exportLabel: () =>
+      registry.get(fields.root) === "annotation" && target()?.root === "note"
+        ? m.template_data_explorer_export_selected_paper()
+        : m.template_data_explorer_menu_export_json(),
   });
+}
+
+/** The Explorer's tree in the leaf's left panel. */
+export function FieldsPanel({
+  view,
+  actions,
+}: {
+  view: TemplateWorkbenchView;
+  actions: ExplorerActions;
+}) {
+  const canInsert = useAtomValue(view.fields.canInsert);
   return (
-    <ExplorerModelContext value={fields}>
+    <ExplorerModelContext value={view.fields}>
       <ExplorerActionsContext value={actions}>
         <Explorer
           placement="panel"
-          onSelectAnnotation={chooseExample}
+          onSelectAnnotation={(id) => chooseExample(view, id)}
           onChooseAnnotation={() => view.startAnnotationChoice()}
-          onSelectItem={(item) => view.pickItem(item)}
+          onSelectItem={(item) => view.setItem(item)}
           onSearchItem={() => view.startItemChoice()}
           explorer={{
             copy: copyToClipboard,
@@ -255,7 +383,7 @@ export function FieldsPanel({ view }: { view: TemplateWorkbenchView }) {
               annotationOfNode(view, node) !== null,
             onExploreAnnotation: (node) => {
               const id = annotationOfNode(view, node);
-              if (id) chooseExample(id);
+              if (id) chooseExample(view, id);
             },
           }}
         />
