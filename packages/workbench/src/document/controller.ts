@@ -468,6 +468,11 @@ export class WorkbenchDocumentController {
     return this.#ranges.get(id) ?? { from: 0, to: 0 };
   }
 
+  /** Every slice and the region it covers now, as a copy the next edit leaves alone. */
+  get slices(): ReadonlyMap<WorkbenchSliceId, WorkbenchSliceRange> {
+    return new Map(this.#ranges);
+  }
+
   sliceText(id: WorkbenchSliceId): string {
     const { from, to } = this.sliceRange(id);
     return this.#state.doc.sliceString(from, to);
