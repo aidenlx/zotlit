@@ -98,6 +98,13 @@ beforeEach(() => {
     TemplateWorkbenchView.prototype,
     "setOriginatingNote",
   ).mockImplementation(setOriginatingNote);
+  // These views are bare prototypes with no panels to show; the layout open
+  // they ask for is what each case reads.
+  vi.spyOn(TemplateWorkbenchView.prototype, "openWorkbench").mockImplementation(
+    function (this: TemplateWorkbenchView) {
+      return openWorkbenchLayout(this);
+    },
+  );
 });
 afterEach(() => {
   vi.restoreAllMocks();

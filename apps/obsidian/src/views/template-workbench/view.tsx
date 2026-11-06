@@ -112,6 +112,7 @@ import { BaseNotice } from "@/lib/notice";
 import { Notifier, withOutcome } from "@/lib/notifier";
 import type { NoticeMessage } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
+import type { Workspace } from "@/lib/obsidian-workspace";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { ViewRegistryProvider, viewRuntime } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
@@ -176,8 +177,19 @@ import {
 } from "./atoms";
 import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
+import {
+  FieldsPanel,
+  holdFieldsPanelModel,
+  makeFieldsPanelModel,
+} from "./fields-panel";
+import type { FieldsPanelModel } from "./fields-panel";
 import { createTemplateWorkbenchHost, hostEffect } from "./host";
-import { workbenchAnnotationChoice, workbenchItemChoice } from "./item-choice";
+import {
+  recentItemChoices,
+  workbenchAnnotationChoice,
+  workbenchItemChoice,
+} from "./item-choice";
+import type { RecentItems } from "./item-choice";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
 import {
@@ -337,7 +349,6 @@ export interface TemplateAuthoringContext {
     readonly context: PartialContext;
     readonly profile: string | null;
   } | null;
-  readonly canInsertField?: boolean;
 }
 
 export class TemplateWorkbenchView extends TextFileView implements HoverParent {
@@ -368,6 +379,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #arrival: ArrivingProblem | null = null;
   /** This leaf's host model: its view state, choices, and Item read. */
   readonly model: TemplateWorkbenchModel = makeTemplateWorkbenchModel();
+  /** The Fields panel's atoms over {@link model}. */
+  readonly fields: FieldsPanelModel = makeFieldsPanelModel(this.model);
+  /** The read of the recent Items, as the Fields panel's Item list runs it. */
+  readonly recentItems: RecentItems;
   get registry() {
     return this.#deps.registry;
   }
@@ -688,6 +703,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       Effect.suspend(() => this.#refreshStyles()),
     );
     this.#cleanup.defer(deps.registry.mount(this.#exportCommand));
+    this.#cleanup.defer(holdFieldsPanelModel(deps.registry, this.fields));
+    this.recentItems = this.#runner.provide(recentItemChoices);
     this.#cleanup.defer(deps.registry.mount(templateFolderAtom));
     this.#cleanup.defer(deps.registry.mount(defaultProfilePathAtom));
     this.#cleanup.defer(deps.registry.mount(partialDocumentsAtom));
@@ -1038,10 +1055,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
               profile: this.#partialProfile,
             }
           : null,
-      canInsertField:
-        !this.#closed &&
-        !this.#controller.readOnly &&
-        this.insertTarget !== null,
     };
   }
   #publishAuthoringContext(): void {
@@ -1174,12 +1187,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       : null;
   }
 
-  insertTemplateField(request: {
-    leaf: WorkspaceLeaf;
-    node: DisplayNode;
-  }): boolean {
-    if (request.leaf !== this.leaf || this.#closed || this.#controller.readOnly)
-      return false;
+  /** Inserts the field `node` names at the editor's insertion target. */
+  insertTemplateField(node: DisplayNode): boolean {
+    if (this.#closed || this.#controller.readOnly) return false;
     const target = this.insertTarget;
     if (!target) return false;
     const region = this.#controller.templateRegions.find(
@@ -1192,7 +1202,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         ? "json-e"
         : "template";
     const engine = this.#documentLanguage;
-    return this.insertField(fieldSnippet(request.node, mode, { engine }));
+    return this.insertField(fieldSnippet(node, mode, { engine }));
   }
 
   insertField(snippet: string): boolean {
@@ -1696,16 +1706,15 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       },
       true,
     );
-    this.registerEvent(
-      this.app.workspace.on("zotlit:insert-template-field", (request) =>
-        this.insertTemplateField(request),
-      ),
-    );
     // Added first, so it sits nearest More options; Obsidian prepends actions.
     const preview = this.addAction(
       "panel-right",
       m.workbench_show_preview(),
       () => this.togglePanel("preview"),
+    );
+    // Added after the Preview's, so it sits to its left.
+    const fields = this.addAction("panel-left", m.workbench_show_fields(), () =>
+      this.togglePanel("fields"),
     );
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
@@ -1743,6 +1752,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       const shown = this.registry.get(this.model.panels).preview.shown;
       preview.setAttribute("aria-pressed", String(shown));
       preview.classList.toggle("is-active", shown);
+      const fieldsShown = this.registry.get(this.model.panels).fields.shown;
+      fields.setAttribute("aria-pressed", String(fieldsShown));
+      fields.classList.toggle("is-active", fieldsShown);
     };
     const syncChrome = () => {
       this.#updateActions();
@@ -1814,6 +1826,19 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       : m.template_data_explorer_menu_export_json();
   }
 
+  /**
+   * The full workbench, as "Open template workbench" and Customize open it:
+   * this editor with both side panels shown, in its workbench window.
+   */
+  openWorkbench(): Effect.Effect<void, Cause.UnknownError, Workspace> {
+    return Effect.suspend(() => {
+      this.registry.update(this.model.panels, (panels) =>
+        showPanel("preview", true)(showPanel("fields", true)(panels)),
+      );
+      return openWorkbenchLayout(this);
+    });
+  }
+
   /** Shows a side panel the leaf hides, or hides one it shows. */
   togglePanel(side: "fields" | "preview"): void {
     this.registry.update(this.model.panels, (panels) =>
@@ -1833,10 +1858,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     );
     menu.addItem((item) =>
       item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_show_fields())
+        .setIcon("panel-left")
+        .setChecked(this.registry.get(this.model.panels).fields.shown)
+        .onClick(() => this.togglePanel("fields")),
+    );
+    menu.addItem((item) =>
+      item
         .setSection(MENU_SECTION.open)
         .setTitle(m.template_workbench_open_layout())
         .setIcon("panels-top-left")
-        .onClick(() => this.#act("open-workbench", openWorkbenchLayout(this))),
+        .onClick(() => this.#act("open-workbench", this.openWorkbench())),
     );
     menu.addItem((item) =>
       item
@@ -2200,7 +2233,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         }),
       );
       this.#mount();
-      yield* openWorkbenchLayout(this);
+      yield* this.openWorkbench();
     }).pipe(
       recover(
         (cause) =>
@@ -2329,6 +2362,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         );
       }),
     );
+  }
+  /** Makes `item` the choice, as the Fields panel's Item list does. */
+  pickItem(item: WorkbenchItemChoice): void {
+    this.#choose(item);
+    publishWorkbenchSelection(this, { kind: "item", item }, this.leaf);
   }
   /** Makes `item` the choice of this leaf. */
   #choose(item: WorkbenchItemChoice): void {
@@ -3234,6 +3272,11 @@ function EditorContent({
       <WorkbenchPanels
         model={view.model}
         panels={{
+          fields: {
+            label: m.workbench_view_fields(),
+            resizeLabel: m.workbench_fields_resize(),
+            content: <FieldsPanel view={view} />,
+          },
           preview: {
             label: m.workbench_view_preview(),
             resizeLabel: m.workbench_preview_resize(),

@@ -11,8 +11,7 @@ import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PluginSettings } from "@/services/settings/service";
-import { inLayoutTurn, openProfileExplorer } from "@/views/note-preview/layout";
-import { activeTemplateWorkbench } from "@/views/note-preview/register";
+import { inLayoutTurn } from "@/views/note-preview/layout";
 import { startTemplateWorkbenchAction } from "@/views/template-workbench/actions";
 import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 
@@ -58,7 +57,8 @@ export function registerTemplateDataExplorer(
 
 /**
  * Every in-vault entry point delegates to this function. Two opens at once
- * open one pane.
+ * open one pane. It opens the standalone Explorer, with its own Item, whether
+ * or not an editor is open.
  *
  * @param options.paneType a pane the caller asks for, in Obsidian's URI
  *   vocabulary. Absent keeps the explorer's usual placement: the reusable
@@ -70,8 +70,6 @@ export const openTemplateDataExplorer = Effect.fn("TemplateDataExplorer.open")(
     state?: { itemIndexedKey: string; anchorAnnotationKey?: string },
     options: { paneType?: PaneType } = {},
   ) {
-    const editor = activeTemplateWorkbench(app);
-    if (!state && editor) return yield* openProfileExplorer(editor);
     yield* inLayoutTurn(openExplorerLeaf(state, options.paneType));
   },
 );
@@ -81,7 +79,6 @@ const openExplorerLeaf = Effect.fn("TemplateDataExplorer.openLeaf")(function* (
   paneType: PaneType | undefined,
 ) {
   const workspace = yield* Workspace;
-  const launch = state ? { ...state, zotlitLaunch: true } : undefined;
   // A named pane always gets a fresh leaf; without one the explorer reuses the
   // free sidebar leaf it already has.
   const reused = paneType
@@ -95,12 +92,12 @@ const openExplorerLeaf = Effect.fn("TemplateDataExplorer.openLeaf")(function* (
       ? yield* workspace.getLeaf(paneType)
       : yield* workspace.getRightLeaf(true));
   if (!leaf) return;
-  if (!reused || launch) {
+  if (!reused || state) {
     yield* Effect.tryPromise(() =>
       leaf.setViewState({
         type: EXPLORER_VIEW_TYPE,
         active: true,
-        state: launch,
+        state,
       }),
     );
   }

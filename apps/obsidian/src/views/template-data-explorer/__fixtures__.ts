@@ -22,13 +22,11 @@ import { TemplateDataReads } from "@/services/template-workbench/data-reads";
 import { Template } from "@/services/template/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
-import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import {
   holdExplorerModel,
   makeExplorerModel,
   refresh,
-  setContext,
   setTarget,
 } from "./model";
 import type { ExplorerModel, ExplorerSession, ExplorerState } from "./model";
@@ -67,7 +65,6 @@ export interface ExplorerSessionHandle extends Disposable {
     root: TemplateRoot,
     annotationId?: string | null,
   ): void;
-  setContext(context: TemplateAuthoringContext): void;
   refresh(): void;
   /** Waits until the load the last change started has its last read. */
   ready(): Promise<void>;
@@ -181,7 +178,6 @@ export async function makeExplorerHost(
         apply,
         setTarget: (item, root, annotationId = null) =>
           apply(setTarget(item, root, annotationId)),
-        setContext: (context) => apply(setContext(context)),
         refresh: () => apply(refresh),
         ready: () =>
           waitFor(() => {

@@ -1673,6 +1673,8 @@
   "workbench_tag_managed": "Marks the note content ZotLit replaces on update. A Profile can have one managed block in its note body. It renders in an isolated scope. Keep both boundaries as explicit tags, outside multiline liquid blocks.",
   "workbench_tag_endmanaged": "Closes the managed block. Note content after this boundary is kept during updates. Use this explicit tag outside multiline liquid blocks.",
   "workbench_fields_heading": "Template fields",
+  "workbench_show_fields": "Show fields",
+  "workbench_fields_resize": "Resize fields",
   "workbench_fields_root_note": "Note",
   "workbench_fields_root_annotation": "Annotation",
   "workbench_fields_root_filename": "Note name",

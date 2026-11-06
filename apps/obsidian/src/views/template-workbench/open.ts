@@ -18,7 +18,6 @@ import type {
 import { Profile } from "@/services/profile/service";
 import {
   findWorkbenchLayout,
-  openWorkbenchLayout,
   setLeafState,
   WORKBENCH_WINDOW,
 } from "@/views/note-preview/layout";
@@ -119,7 +118,7 @@ const launchTemplateWorkbench = Effect.fn(
   const view = yield* revealWorkbench(leaf);
   if (!view) return { ...OPENED, nativeRequired };
   if (options.problem) view.explainArrival(options.problem);
-  if (options.customize) yield* openWorkbenchLayout(view);
+  if (options.customize) yield* view.openWorkbench();
   return {
     nativeRequired,
     unavailableNote: yield* view.setOriginatingNote(

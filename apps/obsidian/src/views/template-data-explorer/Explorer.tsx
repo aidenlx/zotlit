@@ -68,8 +68,7 @@ export function Explorer({
   const model = useExplorerModel();
   const update = useAtomSet(model.session);
   const state = useAtomValue(model.state);
-  const { root, status, error, data, context, navigation, collapsedSections } =
-    state;
+  const { root, status, error, data, navigation, collapsedSections } = state;
   const host = useWorkbenchHost();
   const shownSections = visibleSectionIds(data, {
     m: host.messages,
@@ -245,7 +244,6 @@ export function Explorer({
               }
               data={data}
               root={root}
-              disabled={!context?.canInsertField}
               navigation={navigation}
               collapsedSections={collapsedSections}
               onCollapsedSectionsChange={(collapsed) =>

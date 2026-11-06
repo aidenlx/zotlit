@@ -5,19 +5,9 @@ import { describe, expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Workspace } from "@/lib/obsidian-workspace";
-import { openProfileExplorer } from "@/views/note-preview/layout";
-import { activeTemplateWorkbench } from "@/views/note-preview/register";
-import type { TemplateWorkbenchView } from "@/views/template-workbench/view";
 
 import { openTemplateDataExplorer } from "./register";
 
-vi.mock("@/views/note-preview/register", () => ({
-  activeTemplateWorkbench: vi.fn(),
-}));
-vi.mock("@/views/note-preview/layout", async (original) => ({
-  ...(await original<typeof import("@/views/note-preview/layout")>()),
-  openProfileExplorer: vi.fn(() => Effect.void),
-}));
 vi.mock("@/views/template-workbench/view", () => ({
   TEMPLATE_WORKBENCH_VIEW_TYPE: "zotlit-template-workbench",
   TemplateWorkbenchView: class {},
@@ -60,21 +50,25 @@ function workspace(members: {
 
 describe("Explorer entry point", () => {
   it.effect(
-    "reopens fields beside the active workbench editor instead of selecting another window",
+    "opens the standalone Explorer in the sidebar, never an editor's panel",
     () =>
       Effect.gen(function* () {
-        const editor = {
-          leaf: { group: "native-group" },
-        } as TemplateWorkbenchView;
-        vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
-        const leaves = vi.fn(() => []);
-        const getRightLeaf = vi.fn(() => null);
+        const setViewState = vi.fn(async () => {});
+        const created = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+          setViewState,
+        });
+        const getRightLeaf = vi.fn(() => created);
+        const revealLeaf = vi.fn();
         yield* openTemplateDataExplorer(app).pipe(
-          workspace({ leaves, getRightLeaf }),
+          workspace({ leaves: () => [], getRightLeaf, revealLeaf }),
         );
-        expect(openProfileExplorer).toHaveBeenCalledWith(editor);
-        expect(leaves).not.toHaveBeenCalled();
-        expect(getRightLeaf).not.toHaveBeenCalled();
+        expect(getRightLeaf).toHaveBeenCalledWith(true);
+        expect(setViewState).toHaveBeenCalledWith({
+          type: "zotlit-template-data-explorer",
+          active: true,
+          state: undefined,
+        });
+        expect(revealLeaf).toHaveBeenCalledWith(created);
       }),
   );
 });
@@ -83,8 +77,6 @@ it.effect(
   "opens an explicit Item in an unlinked unpinned Explorer and preserves other groups",
   () =>
     Effect.gen(function* () {
-      const editor = {} as TemplateWorkbenchView;
-      vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
       const groupedSetViewState = vi.fn();
       const pinnedSetViewState = vi.fn();
       const standaloneSetViewState = vi.fn(async () => {});
@@ -115,7 +107,7 @@ it.effect(
       expect(standaloneSetViewState).toHaveBeenCalledWith({
         type: "zotlit-template-data-explorer",
         active: true,
-        state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
+        state: { itemIndexedKey: "PAPER002" },
       });
       expect(groupedSetViewState).not.toHaveBeenCalled();
       expect(pinnedSetViewState).not.toHaveBeenCalled();
@@ -128,7 +120,6 @@ it.effect(
   "creates an explicit Explorer instead of replacing a pinned or grouped pane",
   () =>
     Effect.gen(function* () {
-      vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
       const existingSetViewState = vi.fn();
       const createdSetViewState = vi.fn(async () => {});
       const existing = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
@@ -151,7 +142,7 @@ it.effect(
       expect(existingSetViewState).not.toHaveBeenCalled();
       expect(createdSetViewState).toHaveBeenCalledWith(
         expect.objectContaining({
-          state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
+          state: { itemIndexedKey: "PAPER002" },
         }),
       );
     }),
@@ -159,7 +150,6 @@ it.effect(
 
 it.effect("opens one Explorer when two opens run at once", () =>
   Effect.gen(function* () {
-    vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
     const leaves: WorkspaceLeaf[] = [];
     // The new pane takes its view only once Obsidian has loaded it.
     const loaded = Promise.withResolvers<void>();
@@ -196,7 +186,6 @@ it.effect.each(["tab"] as const)(
   "puts the Explorer in a new %s the link names, leaving the sidebar one alone",
   (paneType) =>
     Effect.gen(function* () {
-      vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
       const sidebarSetViewState = vi.fn();
       const createdSetViewState = vi.fn(async () => {});
       const sidebar = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
@@ -228,7 +217,7 @@ it.effect.each(["tab"] as const)(
       expect(createdSetViewState).toHaveBeenCalledWith({
         type: "zotlit-template-data-explorer",
         active: true,
-        state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
+        state: { itemIndexedKey: "PAPER002" },
       });
       expect(revealLeaf).toHaveBeenCalledWith(created);
     }),

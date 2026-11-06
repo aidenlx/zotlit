@@ -199,10 +199,6 @@ const hasWorkbenchPanes = Effect.fn("NotePreview.hasWorkbenchPanes")(function* (
 export const openNotePreview = (editor: TemplateWorkbenchView) =>
   inLayoutTurn(revealCompanion(editor, NOTE_PREVIEW_VIEW_TYPE));
 
-/** Reopen the fields in the same window as the authoring session. */
-export const openProfileExplorer = (editor: TemplateWorkbenchView) =>
-  inLayoutTurn(revealCompanion(editor, EXPLORER_VIEW_TYPE));
-
 const revealCompanion = Effect.fn("NotePreview.revealCompanion")(function* (
   editor: TemplateWorkbenchView,
   type: typeof EXPLORER_VIEW_TYPE | typeof NOTE_PREVIEW_VIEW_TYPE,

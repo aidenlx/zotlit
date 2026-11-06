@@ -165,15 +165,6 @@ declare module "obsidian" {
     readWorkspaceFile?(): Promise<unknown>;
 
     on(
-      name: "zotlit:insert-template-field",
-      callback: (request: {
-        leaf: WorkspaceLeaf;
-        node: import("@zotlit/workbench/explorer").DisplayNode;
-      }) => void,
-      ctx?: any,
-    ): EventRef;
-
-    on(
       name: "quick-preview",
       callback: (file: TFile, source: string) => void,
       ctx?: any,

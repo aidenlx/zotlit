@@ -30,6 +30,7 @@ import { answerConfirmation } from "@/lib/__fixtures__/confirm";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { VaultError } from "@/lib/vault-errors";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
@@ -1601,8 +1602,8 @@ An annotation.
     }
   });
 
-  it("addresses insertion to one editor and resolves its current language", async () => {
-    const { view, leaf, requestSave } = setup();
+  it("inserts a field in the editor's current language", async () => {
+    const { view, requestSave } = setup();
     const node = {
       kind: "value",
       path: ["title"],
@@ -1622,21 +1623,12 @@ An annotation.
         editor.focus();
         editor.dispatch({ selection: { anchor: 3 } });
       });
-      expect(
-        view.insertTemplateField({
-          leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-            updateHeader: vi.fn(),
-          }),
-          node,
-        }),
-      ).toBe(false);
-      expect(requestSave).not.toHaveBeenCalled();
       await act(() => {
         view.controller.setManifestKey("language", "eta");
       });
       requestSave.mockClear();
       await act(() => {
-        expect(view.insertTemplateField({ leaf, node })).toBe(true);
+        expect(view.insertTemplateField(node)).toBe(true);
       });
       expect(view.getViewData()).toContain("A s<%= zt.title %>table note.");
       expect(requestSave).toHaveBeenCalledOnce();
@@ -1648,7 +1640,7 @@ An annotation.
       await act(async () => view.close());
       view.contentEl.remove();
     }
-    expect(view.insertTemplateField({ leaf, node })).toBe(false);
+    expect(view.insertTemplateField(node)).toBe(false);
   });
 
   it("keeps the caret target mapped when external text moves an unchanged focused slice", async () => {
@@ -2570,10 +2562,7 @@ language: liquid
   });
 
   it("writes an Explorer field into the Citation Template's one editor", async () => {
-    const { view, leaf } = openKind(
-      "templates/zotlit-citation.md",
-      CITATION_SOURCE,
-    );
+    const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
     await using cleanup = new AsyncDisposableStack();
     document.body.append(view.contentEl);
     cleanup.defer(() => view.contentEl.remove());
@@ -2589,16 +2578,13 @@ language: liquid
     await act(() => {
       expect(
         view.insertTemplateField({
-          leaf,
-          node: {
-            kind: "value",
-            path: ["variant"],
-            key: "variant",
-            label: "variant",
-            valueType: "string",
-            value: "main",
-            expandable: false,
-          },
+          kind: "value",
+          path: ["variant"],
+          key: "variant",
+          label: "variant",
+          valueType: "string",
+          value: "main",
+          expandable: false,
         }),
       ).toBe(true);
     });
@@ -3418,5 +3404,174 @@ describe("the side panels of the Template Workbench View", () => {
     ).toBe("true");
     expect(restored.view.getState()).toEqual(saved);
     await act(async () => restored.view.close());
+  });
+});
+
+// #1943: Fields is the left side panel of the one view. It reads the view's
+// own Item and root, and inserts a field straight into the editor.
+describe("the Fields panel of the Template Workbench View", () => {
+  const actionOf = (view: TemplateWorkbenchView, title: string) =>
+    (view as unknown as MockItemView).actions.find(
+      (element) => element.getAttribute("aria-label") === title,
+    )!;
+  const fields = (view: TemplateWorkbenchView) =>
+    [...view.contentEl.querySelectorAll<HTMLElement>("[role=region]")].find(
+      (element) =>
+        element.getAttribute("aria-label") === m.workbench_view_fields(),
+    ) ?? null;
+
+  it("shows and hides the Fields panel from its pressed view action and the pane menu", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    const show = actionOf(view, m.workbench_show_fields());
+    expect(show.getAttribute("aria-pressed")).toBe("false");
+    expect(fields(view)).toBeNull();
+    await act(async () => show.click());
+    expect(show.getAttribute("aria-pressed")).toBe("true");
+    expect(fields(view)).not.toBeNull();
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    const entry = menu.items.find(
+      (item) => item.title === m.workbench_show_fields(),
+    );
+    expect(entry?.checked).toBe(true);
+    await act(async () => entry?.click());
+    expect(fields(view)).toBeNull();
+    expect(show.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => view.close());
+  });
+
+  it("shows both panels when the full workbench opens", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(() =>
+      run(
+        view
+          .openWorkbench()
+          .pipe(
+            Effect.provideService(
+              Workspace,
+              stubService<Workspace["Service"]>("Workspace", {}),
+            ),
+          ),
+      ),
+    );
+    expect(fields(view)).not.toBeNull();
+    expect(
+      [...view.contentEl.querySelectorAll("[role=region]")].some(
+        (element) =>
+          element.getAttribute("aria-label") === m.workbench_view_preview(),
+      ),
+    ).toBe(true);
+    await act(async () => view.close());
+  });
+
+  const insertButtons = (panel: HTMLElement) =>
+    [...panel.querySelectorAll<HTMLElement>('[role="button"]')].filter(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_put_in_note(),
+    );
+
+  it("shows the fields of the Item the editor chose, and follows a new choice", async () => {
+    const { view } = setup();
+    const [first, second] = SAMPLE_ITEMS;
+    await act(async () => view.open());
+    await act(async () => view.togglePanel("fields"));
+    await act(async () => chooseSample(view, first!));
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain(first!.item.title),
+    );
+    await act(async () => chooseSample(view, second!));
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain(second!.item.title),
+    );
+    expect(fields(view)?.textContent).not.toContain(first!.item.title);
+    await act(async () => view.close());
+  });
+
+  it("follows the editor's root, and keeps the root the reader moved to until the editor's changes", async () => {
+    const { view } = setup();
+    // The conference paper carries annotations of its own.
+    const paper = SAMPLE_ITEMS[1]!;
+    await act(async () => view.open());
+    await act(async () => view.togglePanel("fields"));
+    await act(async () => chooseSample(view, paper));
+    const back = () =>
+      [...fields(view)!.querySelectorAll<HTMLElement>("[aria-label]")].find(
+        (button) =>
+          button.getAttribute("aria-label") ===
+          m.template_data_explorer_back_to_note_root(),
+      );
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain(paper.item.title),
+    );
+    expect(back()).toBeUndefined();
+    await act(async () => view.change.setRoot("annotation"));
+    await vi.waitFor(() => expect(back()).toBeDefined());
+    await act(async () => back()!.click());
+    expect(back()).toBeUndefined();
+    // The editor keeps its own root.
+    expect(viewState(view).root).toBe("annotation");
+    await act(async () => view.change.setRoot("filename"));
+    await act(async () => view.change.setRoot("annotation"));
+    expect(back()).toBeDefined();
+    await act(async () => view.close());
+  });
+
+  it("shows the annotation the editor chose on its Annotation root", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(async () => view.togglePanel("fields"));
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[1]!));
+    await act(async () => view.change.setRoot("annotation"));
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain("CNPAN26A"),
+    );
+    const { current } = view.registry.get(view.model.examples);
+    await act(async () =>
+      view.registry.update(view.model.picks, (picks) => ({
+        ...picks,
+        annotationId: current[1]!.id,
+      })),
+    );
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain("CNPVL26A"),
+    );
+    expect(fields(view)?.textContent).not.toContain("CNPAN26A");
+    await act(async () => view.close());
+  });
+
+  it("inserts a field from its row at the editor's caret", async () => {
+    const { view } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => view.open());
+      await act(async () => view.togglePanel("fields"));
+      await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
+      await vi.waitFor(() =>
+        expect(fields(view)?.textContent).toContain(
+          SAMPLE_ITEMS[0]!.item.title,
+        ),
+      );
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 3 } });
+      });
+      const title = insertButtons(fields(view)!).find(
+        (button) =>
+          button
+            .closest("[data-workbench-field]")
+            ?.getAttribute("data-workbench-field") === "title",
+      );
+      expect(title).toBeDefined();
+      await act(async () => title!.click());
+      expect(view.getViewData()).toContain("A s{{ zt.title }}table note.");
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
   });
 });
