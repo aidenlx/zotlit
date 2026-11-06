@@ -59,7 +59,7 @@ import {
 } from "./view";
 
 // The real leaf edges stand in: the layout module imports this view.
-vi.mock("@/views/note-preview/layout", () => ({
+vi.mock("./layout", () => ({
   setLeafState: (leaf: WorkspaceLeaf, state: ViewState) =>
     Effect.tryPromise(() => leaf.setViewState(state)),
   WORKBENCH_WINDOW: { width: 1440, height: 900 },
@@ -580,99 +580,79 @@ describe("TemplateWorkbenchView", () => {
     expect(h.updateNote).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])(
-    "clears an arrival after a fresh matching success and retains its report (unrelated preview: %s)",
-    async (unrelatedPreview) => {
-      await using cleanup = new AsyncDisposableStack();
-      const copy = vi
-        .spyOn(navigator.clipboard, "writeText")
-        .mockResolvedValue();
-      cleanup.defer(() => copy.mockRestore());
-      const { view } = setup({
-        runtime: testRuntime(),
-        render: (request) =>
-          Effect.succeed({
-            ...emptyRender(renderIdentity(request)),
-            creationBody: "Repaired note",
-          }),
-      });
-      const file = new TFile();
-      file.path = "templates/paper.md";
-      view.file = file;
-      cleanup.defer(() => act(async () => view.close()));
-      await act(async () => view.open());
-      await act(async () =>
-        chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
-      );
-      const run = async () => {
-        const attempt = renderState(view).attempt;
-        await act(async () => {
-          runRender(view);
-          await vi.waitFor(() =>
-            expect(renderState(view).attempt).toBeGreaterThan(attempt),
-          );
-        });
-      };
-      await run();
-      const diagnostic = {
-        code: "missing-partial" as const,
-        params: { name: "venue-line" },
-        part: "render" as const,
-      };
-      const report = captureRenderReport({
-        diagnostic,
-        identity: {
-          sourceRevision: "",
-          snapshotRevision: SAMPLE_ITEMS[0]!.revision,
-        },
-        trigger: "explicit",
-        sequence: 0,
-        capturedAt: "2026-09-13T00:00:00Z",
-        context: { document: file.path },
-      });
-      await act(async () =>
-        view.explainArrival({ diagnostic: { ...diagnostic, report } }),
-      );
-      expect(view.contentEl.textContent).toContain(
-        m.workbench_problems_object_partial({ name: "venue-line" }),
-      );
-      // A result from before arrival does not prove a repair.
-      expect(view.contentEl.textContent).not.toContain(
-        m.workbench_problems_none(),
-      );
-      await act(async () => chooseSample(view, SAMPLE_ITEMS[1]!));
-      await run();
-      expect(view.contentEl.textContent).toContain(
-        m.workbench_problems_object_partial({ name: "venue-line" }),
-      );
-      await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
-      if (unrelatedPreview) {
-        await act(async () =>
-          view.publishPreviewProblems("pinned-B", [
-            {
-              code: "missing-partial",
-              part: "render",
-              params: { name: "other-partial" },
-            },
-          ]),
+  it("clears an arrival after a fresh matching success and retains its report", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    cleanup.defer(() => copy.mockRestore());
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "Repaired note",
+        }),
+    });
+    const file = new TFile();
+    file.path = "templates/paper.md";
+    view.file = file;
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    const run = async () => {
+      const attempt = renderState(view).attempt;
+      await act(async () => {
+        runRender(view);
+        await vi.waitFor(() =>
+          expect(renderState(view).attempt).toBeGreaterThan(attempt),
         );
-      }
-      await run();
-      expect(view.contentEl.textContent).toContain(
-        unrelatedPreview
-          ? m.workbench_problems_resolved()
-          : m.workbench_problems_none(),
-      );
-      expect(view.contentEl.textContent).toContain(
-        m.workbench_problems_copy_last(),
-      );
-      const copyLast = [...view.contentEl.querySelectorAll("button")].find(
-        (button) => button.textContent === m.workbench_problems_copy_last(),
-      )!;
-      await act(async () => copyLast.click());
-      expect(copy).toHaveBeenCalledExactlyOnceWith(formatRenderReport(report));
-    },
-  );
+      });
+    };
+    await run();
+    const diagnostic = {
+      code: "missing-partial" as const,
+      params: { name: "venue-line" },
+      part: "render" as const,
+    };
+    const report = captureRenderReport({
+      diagnostic,
+      identity: {
+        sourceRevision: "",
+        snapshotRevision: SAMPLE_ITEMS[0]!.revision,
+      },
+      trigger: "explicit",
+      sequence: 0,
+      capturedAt: "2026-09-13T00:00:00Z",
+      context: { document: file.path },
+    });
+    await act(async () =>
+      view.explainArrival({ diagnostic: { ...diagnostic, report } }),
+    );
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
+    // A result from before arrival does not prove a repair.
+    expect(view.contentEl.textContent).not.toContain(
+      m.workbench_problems_none(),
+    );
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[1]!));
+    await run();
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
+    await run();
+    expect(view.contentEl.textContent).toContain(m.workbench_problems_none());
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_copy_last(),
+    );
+    const copyLast = [...view.contentEl.querySelectorAll("button")].find(
+      (button) => button.textContent === m.workbench_problems_copy_last(),
+    )!;
+    await act(async () => copyLast.click());
+    expect(copy).toHaveBeenCalledExactlyOnceWith(formatRenderReport(report));
+  });
 
   it("clears a repaired Annotation arrival while a Property failure remains", async () => {
     await using cleanup = new AsyncDisposableStack();
@@ -1514,6 +1494,18 @@ An annotation.
       advanced: true,
       itemIndexedKey: null,
       annotationId: null,
+      variant: "main",
+      citationExample: "one-item",
+      panels: {
+        fields: { shown: false, width: 400 },
+        preview: { shown: false, width: 400 },
+      },
+      preview: {
+        mode: "create",
+        live: true,
+        showMarkdown: false,
+        showManaged: false,
+      },
     });
   });
   it("labels a built-in annotation sample export as selected paper data", () => {
@@ -2085,6 +2077,18 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     advanced: false,
     itemIndexedKey: null,
     annotationId: null,
+    variant: "main",
+    citationExample: "one-item",
+    panels: {
+      fields: { shown: false, width: 400 },
+      preview: { shown: false, width: 400 },
+    },
+    preview: {
+      mode: "create",
+      live: true,
+      showMarkdown: false,
+      showManaged: false,
+    },
   });
   expect(view.controller.readOnly).toBe(true);
   expect(view.getViewData()).toBe(builtin);
@@ -3318,6 +3322,226 @@ describe("Template Workbench Item choice", () => {
     const exit = await chosen;
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
       true,
+    );
+  });
+});
+
+// #1945: the Preview is a side panel of the one view, which the reader shows,
+// hides and widens, and which the workspace saves with the view.
+describe("the side panels of the Template Workbench View", () => {
+  const actionOf = (view: TemplateWorkbenchView, title: string) =>
+    (view as unknown as MockItemView).actions.find(
+      (element) => element.getAttribute("aria-label") === title,
+    )!;
+  const region = (view: TemplateWorkbenchView, name: string) =>
+    [...view.contentEl.querySelectorAll<HTMLElement>("[role=region]")].find(
+      (element) => element.getAttribute("aria-label") === name,
+    ) ?? null;
+  const handleOf = (view: TemplateWorkbenchView, name: string) =>
+    [...view.contentEl.querySelectorAll<HTMLElement>("[role=separator]")].find(
+      (element) => element.getAttribute("aria-label") === name,
+    )!;
+  const press = (element: HTMLElement, key: string) =>
+    act(async () => {
+      element.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true }),
+      );
+    });
+
+  it("shows and hides the Preview panel from its pressed view action", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    const show = actionOf(view, m.workbench_show_preview());
+    expect(show.getAttribute("aria-pressed")).toBe("false");
+    expect(region(view, m.workbench_view_preview())).toBeNull();
+    await act(async () => show.click());
+    expect(show.getAttribute("aria-pressed")).toBe("true");
+    expect(region(view, m.workbench_view_preview())).not.toBeNull();
+    await act(async () => show.click());
+    expect(show.getAttribute("aria-pressed")).toBe("false");
+    expect(region(view, m.workbench_view_preview())).toBeNull();
+    await act(async () => view.close());
+  });
+
+  it("resizes the Preview panel from the keyboard within its limits", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const handle = handleOf(view, m.workbench_preview_resize());
+    expect(handle.tabIndex).toBe(0);
+    expect(handle.getAttribute("aria-orientation")).toBe("vertical");
+    const width = () => Number(handle.getAttribute("aria-valuenow"));
+    const initial = width();
+    // The Preview sits on the right, so moving its edge left widens it.
+    await press(handle, "ArrowLeft");
+    expect(width()).toBeGreaterThan(initial);
+    // A window splitter's Home is the smallest panel and End the largest.
+    await press(handle, "Home");
+    expect(width()).toBe(Number(handle.getAttribute("aria-valuemin")));
+    await press(handle, "End");
+    expect(width()).toBe(Number(handle.getAttribute("aria-valuemax")));
+    await act(async () => view.close());
+  });
+
+  it("restores the panel's visibility and width with the view state", async () => {
+    const original = setup();
+    await act(async () => original.view.open());
+    await act(async () =>
+      actionOf(original.view, m.workbench_show_preview()).click(),
+    );
+    await press(
+      handleOf(original.view, m.workbench_preview_resize()),
+      "ArrowLeft",
+    );
+    const width = handleOf(
+      original.view,
+      m.workbench_preview_resize(),
+    ).getAttribute("aria-valuenow");
+    const saved = original.view.getState();
+    await act(async () => original.view.close());
+    const restored = setup();
+    await act(async () => restored.view.setState(saved, { history: false }));
+    await act(async () => restored.view.open());
+    expect(region(restored.view, m.workbench_view_preview())).not.toBeNull();
+    expect(
+      handleOf(restored.view, m.workbench_preview_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe(width);
+    expect(
+      actionOf(restored.view, m.workbench_show_preview()).getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+    expect(restored.view.getState()).toEqual(saved);
+    await act(async () => restored.view.close());
+  });
+  const paneMenu = (view: TemplateWorkbenchView) => {
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    return menu.items;
+  };
+  const entry = (view: TemplateWorkbenchView, title: string) =>
+    paneMenu(view).find((item) => item.title === title);
+
+  it("shows the editor's own render of the chosen Item in the Preview panel", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "A rendered paper note",
+        }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    await act(async () => entry(view, m.workbench_show_markdown())!.click());
+    const attempt = renderState(view).attempt;
+    await act(async () => {
+      runRender(view);
+      await vi.waitFor(() =>
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
+      );
+    });
+    const panel = region(view, m.workbench_view_preview())!;
+    expect(panel.querySelector("h2")?.textContent).toBe(
+      m.workbench_result_heading(),
+    );
+    expect(panel.textContent).toContain(SAMPLE_ITEMS[0]!.item.title);
+    expect(panel.textContent).toContain(m.workbench_preview_on_demand());
+    expect(panel.textContent).toContain("A rendered paper note");
+  });
+
+  it("offers the Preview's settings in the pane menu while the panel shows, and saves them", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    expect(entry(view, m.workbench_preview_auto_refresh())).toBeUndefined();
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    expect(entry(view, m.workbench_show_preview())?.checked).toBe(true);
+    const choices = [
+      m.workbench_preview_as_new_note(),
+      m.workbench_preview_as_updated_note(),
+      m.workbench_preview_updated_section(),
+      m.workbench_preview_auto_refresh(),
+      m.workbench_show_markdown(),
+    ];
+    for (const title of choices)
+      expect(entry(view, title)?.section).toBe("pane");
+    expect(entry(view, m.workbench_preview_as_new_note())?.checked).toBe(true);
+    expect(entry(view, m.workbench_preview_auto_refresh())?.checked).toBe(true);
+    await act(async () =>
+      entry(view, m.workbench_preview_as_updated_note())!.click(),
+    );
+    await act(async () =>
+      entry(view, m.workbench_preview_auto_refresh())!.click(),
+    );
+    expect(entry(view, m.workbench_preview_as_updated_note())?.checked).toBe(
+      true,
+    );
+    expect(entry(view, m.workbench_preview_auto_refresh())?.checked).toBe(
+      false,
+    );
+    const saved = view.getState();
+    const restored = setup();
+    cleanup.defer(() => act(async () => restored.view.close()));
+    await act(async () => restored.view.setState(saved, { history: false }));
+    expect(restored.view.registry.get(restored.view.model.preview)).toEqual({
+      mode: "update",
+      live: false,
+      showMarkdown: false,
+      showManaged: false,
+    });
+  });
+
+  // Story 17: what the Preview's render finds is the editor's own problem.
+  it("opens the editor's Problems area on a failed Run from the Preview panel", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          diagnostics: [
+            {
+              code: "missing-partial",
+              part: "render",
+              params: { name: "venue-line" },
+            },
+          ],
+        }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const toggle = () =>
+      [...view.contentEl.querySelectorAll<HTMLElement>("[aria-expanded]")].find(
+        (button) =>
+          button.getAttribute("aria-label") === m.workbench_problem_show() ||
+          button.getAttribute("aria-label") === m.workbench_problems_return(),
+      )!;
+    const run = [
+      ...region(view, m.workbench_view_preview())!.querySelectorAll("button"),
+    ].find((button) => button.textContent === m.workbench_preview_run())!;
+    const attempt = renderState(view).attempt;
+    await act(async () => {
+      run.click();
+      await vi.waitFor(() =>
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
+      );
+    });
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
     );
   });
 });

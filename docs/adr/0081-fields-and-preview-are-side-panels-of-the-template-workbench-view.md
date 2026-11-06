@@ -45,6 +45,7 @@ The merge moves the Workbench's view state to Effect Atom (`effect/reactivity`),
 ## Consequences
 
 - One render per document and Item, not two. The Preview panel cannot show an Item other than the one the editor's tabs show.
+- The Preview's settings from [ADR 0048](0048-the-note-preview-keeps-its-settings-in-native-chrome.md) live in the editor's pane menu while the Preview panel shows. Show Markdown and the updated-section choice are pane-menu entries only, not view actions.
 - Moving, pinning, and closing a panel as an Obsidian leaf are no longer available. Hide and width are the controls. A wide preview needs a wide window. "Open template workbench" keeps its dedicated window for this reason.
 - Problems found by the Preview reach the editor's Problems area directly. The cross-view problem hand-off goes away.
 - Field insertion exists only in the Fields panel, where the target editor is known.

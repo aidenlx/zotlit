@@ -363,7 +363,6 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           for (const type of [
             "zotlit-template-workbench",
             "zotlit-template-data-explorer",
-            "zotlit-note-preview",
           ])
             app.workspace.detachLeavesOfType(type);
           await app.vault.delete(app.vault.getFileByPath(path)!);

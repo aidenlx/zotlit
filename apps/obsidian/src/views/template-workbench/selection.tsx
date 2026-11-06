@@ -152,20 +152,12 @@ export function selectionViewTitle(input: {
   item: WorkbenchItemChoice | null;
   annotation?: AnnotationChoice | null;
   annotationMode: boolean;
-  view: "preview" | "fields";
+  view: "fields";
 }): string {
   const name = selectionName(input);
   return name
-    ? m.workbench_selection_title({
-        name,
-        view:
-          input.view === "preview"
-            ? m.workbench_view_preview()
-            : m.workbench_view_fields(),
-      })
-    : input.view === "preview"
-      ? m.profile_preview_name()
-      : m.template_data_explorer_view_name();
+    ? m.workbench_selection_title({ name, view: m.workbench_view_fields() })
+    : m.template_data_explorer_view_name();
 }
 
 export function updateSelectionTitle(view: ItemView): void {

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   booksProfile,
+  booksProfileTargetItem,
   e2eVaultPath,
   reachable,
   targetItem,
@@ -26,7 +27,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           for (const type of [
             "zotlit-template-workbench",
             "zotlit-template-data-explorer",
-            "zotlit-note-preview",
           ])
             app.workspace.detachLeavesOfType(type);
         },
@@ -160,5 +160,214 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { rows: [second, title, ...rest], rules: 0, status: null },
     ]);
     expect(await rowsShown()).toEqual([second, title, ...rest]);
+  });
+
+  // #1945: the Preview is a panel of the one view, so the Item the editor's
+  // tabs read and the Item the Preview renders are one choice, whichever
+  // chooser made it.
+  it("names one Item in the Properties rows, the Name tab, and the Preview panel after a choice from the editor or the panel", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) => {
+          for (const type of [
+            "zotlit-template-workbench",
+            "zotlit-template-data-explorer",
+          ])
+            app.workspace.detachLeavesOfType(type);
+        },
+        undefined,
+      ),
+    );
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, showPreview }) => {
+        const leaf = app.workspace.createLeafInParent(
+          app.workspace.rootSplit,
+          0,
+        );
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: { file: path },
+          active: true,
+        });
+        await app.workspace.revealLeaf(leaf);
+        // The reader shows the Preview from its view action.
+        leaf.view.containerEl
+          .querySelector<HTMLElement>(
+            `.view-action[aria-label="${showPreview}"]`,
+          )
+          ?.click();
+      },
+      { path, showPreview: run.m.workbench_show_preview() },
+    );
+
+    /** Opens a chooser from `from`, searches `query`, and picks `title`. */
+    const choose = async (from: "editor" | "panel", title: string) => {
+      await obRunUntil(
+        run.vaultId,
+        ({ page }, { path, from, label }) => {
+          const view = page.workbench({ path });
+          const trigger =
+            from === "editor"
+              ? view?.containerEl.querySelector<HTMLElement>(
+                  `.view-actions .view-action[aria-label="${label}"]`,
+                )
+              : Array.from(
+                  page.previewPanel(view)?.querySelectorAll("button") ?? [],
+                ).find((button) => button.textContent.trim() === label);
+          if (!trigger) return false;
+          page.press(trigger, `Choose item in the ${from}`);
+          return true;
+        },
+        { path, from, label: run.m.workbench_choose_item() },
+        { what: `the ${from}'s Choose item trigger` },
+      );
+      await obRunUntil(
+        run.vaultId,
+        ({ page }, { query, title }) => {
+          const input =
+            document.querySelector<HTMLInputElement>(".prompt input");
+          if (!input) return false;
+          if (input.value !== query) {
+            input.value = query;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          const row = Array.from(
+            document.querySelectorAll<HTMLElement>(".prompt .suggestion-item"),
+          ).find(
+            (row) =>
+              !row.closest("[aria-busy]") && row.textContent.includes(title),
+          );
+          if (!row) return false;
+          row.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+          page.press(row, "search result");
+          return true;
+        },
+        { query: title, title },
+        {
+          what: `the "${title}" row in Choose item`,
+        },
+      );
+    };
+
+    /** Waits for the surface `where` to name `text`, opening its tab first. */
+    const names = (where: string, text: string) =>
+      withWorkbenchSurfaces(
+        run.vaultId,
+        obRunUntil(
+          run.vaultId,
+          ({ page }, { path, where, text, preview }) => {
+            const view = page.workbench({ path });
+            if (!view) return false;
+            if (where === preview)
+              return !!page.previewPanel(view)?.innerText.includes(text);
+            const tab = Array.from(
+              view.contentEl.querySelectorAll<HTMLElement>("[role=tab]"),
+            ).find((tab) => tab.textContent.trim() === where);
+            if (!tab) return false;
+            if (tab.getAttribute("aria-selected") !== "true") {
+              page.press(tab, where);
+              return false;
+            }
+            return !!view.contentEl
+              .querySelector<HTMLElement>("[role=tabpanel]:not([hidden])")
+              ?.innerText.includes(text);
+          },
+          { path, where, text, preview: "Preview" },
+          { what: `${where} to name "${text}"` },
+        ),
+      );
+
+    for (const [from, item] of [
+      ["editor", targetItem],
+      ["panel", booksProfileTargetItem],
+      ["editor", targetItem],
+    ] as const) {
+      await choose(from, item.title);
+      await names("Preview", `Book profile: ${item.title}`);
+      await names(run.m.workbench_tab_properties(), item.title);
+      await names(
+        run.m.workbench_tab_name_and_folder(),
+        `books-${item.citationKey}`,
+      );
+      await names("Preview", `Book profile: ${item.title}`);
+    }
+  });
+
+  // #1945: the panels are part of the view's saved state.
+  it("restores the Preview panel and its width with the workspace", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) =>
+          app.workspace.detachLeavesOfType("zotlit-template-workbench"),
+        undefined,
+      ),
+    );
+    const read = async (state: string) => {
+      await obRun(
+        run.vaultId,
+        async ({ app }, { path, state }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          const leaf = app.workspace.createLeafInParent(
+            app.workspace.rootSplit,
+            0,
+          );
+          await leaf.setViewState({
+            type: "zotlit-template-workbench",
+            state: { ...(JSON.parse(state) as object), file: path },
+            active: true,
+          });
+        },
+        { path, state },
+      );
+      return obRunUntil(
+        run.vaultId,
+        ({ page }, { path, resize }) => {
+          const view = page.workbench({ path });
+          const handle = Array.from(
+            view?.contentEl.querySelectorAll<HTMLElement>("[role=separator]") ??
+              [],
+          ).find((element) => element.getAttribute("aria-label") === resize);
+          if (!view || !handle || !page.previewPanel(view)) return null;
+          return JSON.stringify({
+            width: handle.getAttribute("aria-valuenow"),
+            saved: view.getState().panels,
+          });
+        },
+        { path, resize: run.m.workbench_preview_resize() },
+        {
+          what: "the Preview panel restored with its width",
+          ready: (value) => value !== null,
+        },
+      );
+    };
+    const first = JSON.parse(
+      (await read(
+        JSON.stringify({ panels: { preview: { shown: true, width: 260 } } }),
+      ))!,
+    ) as { width: string; saved: unknown };
+    expect(first.width).toBe("260");
+    // The saved state of that leaf restores the panel in a new leaf.
+    const saved = await obRun(
+      run.vaultId,
+      ({ page }, { path }) =>
+        JSON.stringify(page.workbench({ path })!.getState()),
+      { path },
+    );
+    const second = JSON.parse((await read(saved))!) as {
+      width: string;
+      saved: unknown;
+    };
+    expect(second.width).toBe("260");
+    expect(second.saved).toEqual({
+      fields: { shown: false, width: 400 },
+      preview: { shown: true, width: 260 },
+    });
   });
 });

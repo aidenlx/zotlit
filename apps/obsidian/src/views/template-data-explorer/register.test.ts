@@ -5,26 +5,17 @@ import { describe, expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Workspace } from "@/lib/obsidian-workspace";
-import { openProfileExplorer } from "@/views/note-preview/layout";
-import { activeTemplateWorkbench } from "@/views/note-preview/register";
 import type { TemplateWorkbenchView } from "@/views/template-workbench/view";
 
+import { activeTemplateWorkbench } from "./companion";
 import { openTemplateDataExplorer } from "./register";
 
-vi.mock("@/views/note-preview/register", () => ({
+vi.mock("./companion", () => ({
   activeTemplateWorkbench: vi.fn(),
-}));
-vi.mock("@/views/note-preview/layout", async (original) => ({
-  ...(await original<typeof import("@/views/note-preview/layout")>()),
-  openProfileExplorer: vi.fn(() => Effect.void),
 }));
 vi.mock("@/views/template-workbench/view", () => ({
   TEMPLATE_WORKBENCH_VIEW_TYPE: "zotlit-template-workbench",
   TemplateWorkbenchView: class {},
-}));
-vi.mock("@/views/note-preview/view", () => ({
-  NOTE_PREVIEW_VIEW_TYPE: "zotlit-note-preview",
-  NotePreviewView: class {},
 }));
 vi.mock("./view", () => ({
   EXPLORER_VIEW_TYPE: "zotlit-template-data-explorer",
@@ -67,13 +58,26 @@ describe("Explorer entry point", () => {
           leaf: { group: "native-group" },
         } as TemplateWorkbenchView;
         vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
-        const leaves = vi.fn(() => []);
+        const focus = vi.fn();
+        const fields = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+          group: "native-group",
+          getContainer: () =>
+            stubService<ReturnType<WorkspaceLeaf["getContainer"]>>(
+              "WorkspaceContainer",
+              { focus },
+            ),
+        });
+        const unlinked = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+          group: null,
+        });
+        const leaves = vi.fn(() => [unlinked, fields]);
         const getRightLeaf = vi.fn(() => null);
+        const revealLeaf = vi.fn();
         yield* openTemplateDataExplorer(app).pipe(
-          workspace({ leaves, getRightLeaf }),
+          workspace({ leaves, getRightLeaf, revealLeaf }),
         );
-        expect(openProfileExplorer).toHaveBeenCalledWith(editor);
-        expect(leaves).not.toHaveBeenCalled();
+        expect(revealLeaf).toHaveBeenCalledExactlyOnceWith(fields);
+        expect(focus).toHaveBeenCalled();
         expect(getRightLeaf).not.toHaveBeenCalled();
       }),
   );

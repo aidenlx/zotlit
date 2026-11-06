@@ -39,12 +39,6 @@ import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { PluginSettings } from "@/services/settings/service";
 import {
-  activeTemplateWorkbench,
-  registerCompanionHistory,
-  onCompanionStateRestored,
-  subscribeActiveTemplateWorkbench,
-} from "@/views/note-preview/register";
-import {
   copyToClipboard,
   createTemplateWorkbenchHost,
 } from "@/views/template-workbench/host";
@@ -69,6 +63,12 @@ import type {
 import { createExplorerActions, ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
 import { makeExportTemplateDataCommand } from "./atoms";
+import {
+  activeTemplateWorkbench,
+  registerCompanionHistory,
+  onCompanionStateRestored,
+  subscribeActiveTemplateWorkbench,
+} from "./companion";
 import { Explorer } from "./Explorer";
 import { rememberTemplateItem } from "./item-memory";
 import {

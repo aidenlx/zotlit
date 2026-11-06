@@ -15,13 +15,7 @@ import type {
   ViewStateResult,
   WorkspaceLeaf,
 } from "obsidian";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -40,6 +34,7 @@ import type {
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
+  CITATION_EXAMPLE_IDS,
   DEFAULT_PARTIAL_CONTEXT,
   currentCallSite,
   failedRender,
@@ -53,7 +48,11 @@ import type {
   RenderDiagnostic,
   WorkbenchReportContext,
 } from "@zotlit/workbench/render";
-import { fieldSnippet } from "@zotlit/workbench/ui";
+import {
+  citationExampleLabel,
+  fieldSnippet,
+  patch,
+} from "@zotlit/workbench/ui";
 import type { WorkbenchDiagnosis } from "@zotlit/workbench/ui";
 import {
   AnnotationPane,
@@ -131,7 +130,7 @@ import { NoteFeature } from "@/services/note-feature/service";
 import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { bibliographyRevisionAtom } from "@/services/pandoc/atoms";
-import { defaultProfilePathAtom } from "@/services/profile/atoms";
+import { defaultProfilePathAtom, profilesAtom } from "@/services/profile/atoms";
 import { Profile } from "@/services/profile/service";
 import {
   defaultBindingsAtom,
@@ -146,8 +145,6 @@ import {
 import { Template } from "@/services/template/service";
 import type { PartialUnpackOutcome } from "@/services/template/service";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
-import { openWorkbenchLayout, setLeafState } from "@/views/note-preview/layout";
-import { NativeMarkdown } from "@/views/note-preview/markdown";
 import type {
   NativeRenderDeps,
   NativeRenderResult,
@@ -173,6 +170,7 @@ import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
 import { createTemplateWorkbenchHost, hostEffect } from "./host";
 import { workbenchAnnotationChoice, workbenchItemChoice } from "./item-choice";
+import { openWorkbenchLayout, setLeafState } from "./layout";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
 import {
@@ -187,14 +185,22 @@ import {
   setAdvanced,
   setCustomization,
   setPresentation,
+  setPanelWidth,
   setRoot,
   setTab,
+  showPanel,
 } from "./model";
-import type { TemplateWorkbenchModel } from "./model";
+import type { PanelSide, TemplateWorkbenchModel } from "./model";
 import type { CreateSharedPartialOptions } from "./new-partial";
 import { openTemplateWorkbench } from "./open";
+import { WorkbenchPanels } from "./panels";
 import { readPartialChoice, writePartialChoice } from "./partial-choice-memory";
 import { createSharedPartialEffect } from "./partial-command";
+import {
+  PreviewPanel,
+  WorkbenchMarkdown,
+  previewTarget,
+} from "./preview-panel";
 import {
   publishWorkbenchSelection,
   selectionName,
@@ -338,17 +344,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
-  /**
-   * What each linked preview's last applicable render found, by preview. The
-   * editor owns the Problems area, so a Note Preview that renders a failure
-   * hands it here rather than explaining it beside its own empty result. A
-   * preview that closes or succeeds publishes an empty list, so nothing a
-   * superseded or closed context found stays visible.
-   */
-  readonly #previewProblems = new Map<string, readonly RenderDiagnostic[]>();
-  /** The flattened list, rebuilt only on publish so readers can compare it. */
-  #previewProblemList: readonly RenderDiagnostic[] = [];
-  readonly #previewProblemListeners = new Set<() => void>();
   readonly #showProblemListeners = new Set<
     (id: string | null, occurrence?: RenderDiagnostic) => void
   >();
@@ -688,6 +683,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#cleanup.defer(deps.registry.mount(defaultProfilePathAtom));
     this.#cleanup.defer(deps.registry.mount(partialDocumentsAtom));
     this.#cleanup.defer(deps.registry.mount(zoteroStateAtom));
+    this.#cleanup.defer(deps.registry.mount(profilesAtom));
     this.contentEl.addClass("zt-root", "zt-template-workbench");
     const nativeRenderer = renderer;
     const render: WorkbenchHost["render"] =
@@ -707,13 +703,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           openCitationEngineSettings:
             deps.nativePreview.openCitationEngineSettings,
         }),
-        markdown: (props) => (
-          <NativeMarkdown
-            {...props}
-            app={this.app}
-            result={this.registry.get(this.workbench.scheduler.state).result}
-          />
-        ),
+        markdown: (props) => <WorkbenchMarkdown {...props} view={this} />,
         matchData: createMatchData(this.#runner.provide),
         insertTarget: () => this.insertTarget,
         partials: {
@@ -905,6 +895,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           this.app.workspace.requestSaveLayout();
       }),
       registry.subscribe(model.partialProfile, () =>
+        this.app.workspace.requestSaveLayout(),
+      ),
+      registry.subscribe(model.panels, () => {
+        this.#updateActions();
+        this.app.workspace.requestSaveLayout();
+      }),
+      registry.subscribe(model.preview, () =>
         this.app.workspace.requestSaveLayout(),
       ),
     );
@@ -1111,38 +1108,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#revealListeners.add(listener);
     return () => {
       this.#revealListeners.delete(listener);
-    };
-  }
-  /**
-   * What every linked preview has found, as one list. Read through
-   * `subscribePreviewProblems`, which changes whenever a preview publishes.
-   */
-  get previewProblems(): readonly RenderDiagnostic[] {
-    return this.#previewProblemList;
-  }
-  publishPreviewProblems(
-    preview: string,
-    diagnostics: readonly RenderDiagnostic[],
-  ): void {
-    if (diagnostics.length === 0) {
-      if (!this.#previewProblems.delete(preview)) return;
-    } else {
-      const held = this.#previewProblems.get(preview);
-      if (
-        held?.length === diagnostics.length &&
-        held.every((entry, index) => entry === diagnostics[index])
-      ) {
-        return;
-      }
-      this.#previewProblems.set(preview, diagnostics);
-    }
-    this.#previewProblemList = [...this.#previewProblems.values()].flat();
-    for (const listener of this.#previewProblemListeners) listener();
-  }
-  subscribePreviewProblems(listener: () => void): () => void {
-    this.#previewProblemListeners.add(listener);
-    return () => {
-      this.#previewProblemListeners.delete(listener);
     };
   }
   /**
@@ -1483,6 +1448,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         defaultDraft: this.#defaultDraft,
         view: this.#view,
         picks: this.registry.get(this.model.picks),
+        panels: this.registry.get(this.model.panels),
+        preview: this.registry.get(this.model.preview),
         partial:
           this.documentKind === "partial"
             ? { context: this.partialContext, profile: this.#partialProfile }
@@ -1640,6 +1607,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         yield* restoreBase(state);
       }
       if (!value) return;
+      for (const side of ["fields", "preview"] as const) {
+        const panel = value.panels[side];
+        if (panel)
+          this.registry.update(this.model.panels, (panels) =>
+            setPanelWidth(
+              side,
+              panel.width,
+            )(showPanel(side, panel.shown)(panels)),
+          );
+      }
+      this.registry.update(this.model.preview, patch(value.preview));
+      this.registry.update(this.model.picks, chooseCitation(value.citation));
       const { change } = this;
       if (this.#applyKindDefaults()) {
         // A plain document has one tab and one editor, so nothing of the saved
@@ -1736,6 +1715,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.insertTemplateField(request),
       ),
     );
+    // Added first, so it sits nearest More options; Obsidian prepends actions.
+    const preview = this.addAction(
+      "panel-right",
+      m.workbench_show_preview(),
+      () => this.togglePanel("preview"),
+    );
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
     });
@@ -1769,6 +1754,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       const { advanced } = this.#view;
       source.setAttribute("aria-pressed", String(advanced));
       source.classList.toggle("is-active", advanced);
+      const shown = this.registry.get(this.model.panels).preview.shown;
+      preview.setAttribute("aria-pressed", String(shown));
+      preview.classList.toggle("is-active", shown);
     };
     const syncChrome = () => {
       this.#updateActions();
@@ -1840,8 +1828,23 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       : m.template_data_explorer_menu_export_json();
   }
 
+  /** Shows a side panel the leaf hides, or hides one it shows. */
+  togglePanel(side: PanelSide): void {
+    this.registry.update(this.model.panels, (panels) =>
+      showPanel(side, !panels[side].shown)(panels),
+    );
+  }
+
   override onPaneMenu(menu: Menu, source: string): void {
     super.onPaneMenu(menu, source);
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_show_preview())
+        .setIcon("panel-right")
+        .setChecked(this.registry.get(this.model.panels).preview.shown)
+        .onClick(() => this.togglePanel("preview")),
+    );
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.open)
@@ -1865,6 +1868,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .onClick(() => this.startAnnotationChoice()),
       );
     this.#addPartialsMenu(menu);
+    this.#addPreviewMenu(menu);
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.open)
@@ -1906,6 +1910,160 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setIcon("rotate-ccw")
           .onClick(() => this.#start(Effect.ignore(this.#restoreDefault()))),
       );
+  }
+  /**
+   * The Preview panel's settings (ADR 0048), while the panel shows: what the
+   * render reads beside the Item, which note it shows, and how it refreshes.
+   */
+  #addPreviewMenu(menu: Menu): void {
+    const { registry, model } = this;
+    if (!registry.get(model.panels).preview.shown) return;
+    const { kind } = registry.get(model.document);
+    const { mode, citationSet } = previewTarget(kind, this.#view.root);
+    const preview = registry.get(model.preview);
+    const setPreview = (value: Partial<typeof preview>) =>
+      registry.update(model.preview, patch(value));
+    const { variant, citationExample } = registry.get(model.picks);
+    const setCitation = (value: Parameters<typeof chooseCitation>[0]) =>
+      registry.update(model.picks, chooseCitation(value));
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.action)
+        .setTitle(m.workbench_refresh_item())
+        .setIcon("refresh-cw")
+        .onClick(() => this.refresh()),
+    );
+    if (!preview.live)
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.action)
+          .setTitle(m.workbench_preview_run())
+          .setIcon("play")
+          .onClick(() => registry.set(this.workbench.scheduler.run, undefined)),
+      );
+    if (citationSet)
+      menu.addItem((item) => {
+        item
+          .setSection(MENU_SECTION.action)
+          .setTitle(m.template_workbench_use_example())
+          .setIcon("list");
+        const submenu = item.setSubmenu().setNoIcon();
+        for (const id of CITATION_EXAMPLE_IDS)
+          submenu.addItem((entry) =>
+            entry
+              .setTitle(citationExampleLabel(m, id))
+              .setChecked(citationExample === id)
+              .onClick(() => setCitation({ citationExample: id })),
+          );
+      });
+    // The caller leads: it decides which set the Citation pair below it names.
+    if (mode === "partial") this.#addCallerMenu(menu);
+    if (citationSet)
+      for (const [value, title] of [
+        ["main", m.template_workbench_preview_main_citation()],
+        ["alt", m.template_workbench_preview_alt_citation()],
+      ] as const)
+        menu.addItem((item) =>
+          item
+            .setSection(MENU_SECTION.pane)
+            .setTitle(title)
+            .setIcon("quote")
+            .setChecked(variant === value)
+            .onClick(() => setCitation({ variant: value })),
+        );
+    if (mode === "note") {
+      const result = registry.get(this.workbench.scheduler.state).result;
+      for (const [value, title, icon] of [
+        ["create", m.workbench_preview_as_new_note(), "file-plus"],
+        ["update", m.workbench_preview_as_updated_note(), "file-pen"],
+      ] as const)
+        menu.addItem((item) =>
+          item
+            .setSection(MENU_SECTION.pane)
+            .setTitle(title)
+            .setIcon(icon)
+            .setChecked(preview.mode === value && !preview.showManaged)
+            // A Sample Item, or an Item with no note in the vault yet, has no
+            // existing note to update; until a result lands the choice stays open.
+            .setDisabled(
+              value === "update" && result !== null && !result.sourcePath,
+            )
+            .onClick(() => setPreview({ mode: value, showManaged: false })),
+        );
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.pane)
+          .setTitle(m.workbench_preview_updated_section())
+          .setIcon("rows-3")
+          .setChecked(preview.showManaged)
+          .onClick(() => setPreview({ showManaged: true })),
+      );
+    }
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_preview_auto_refresh())
+        .setIcon("zap")
+        .setChecked(preview.live)
+        .onClick(() => setPreview({ live: !preview.live })),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_show_markdown())
+        .setIcon("code")
+        .setChecked(preview.showMarkdown)
+        .onClick(() => setPreview({ showMarkdown: !preview.showMarkdown })),
+    );
+  }
+  /**
+   * The checked triple naming the caller a Shared Partial is rendered as called
+   * from, and — only where the vault holds more than one — the Profile whose
+   * bindings that caller's data is built with.
+   */
+  #addCallerMenu(menu: Menu): void {
+    const current = this.partialContext;
+    const profile = this.#partialProfile;
+    for (const [context, title, icon] of [
+      ["note", m.template_workbench_preview_as_note(), "file-text"],
+      [
+        "annotation",
+        m.template_workbench_preview_as_annotation(),
+        "highlighter",
+      ],
+      ["citation", m.template_workbench_preview_as_citation(), "quote"],
+    ] as const)
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.pane)
+          .setTitle(title)
+          .setIcon(icon)
+          .setChecked(current === context)
+          .onClick(() => this.setPartialSelection({ context, profile })),
+      );
+    // `profiles` holds the custom Profiles alone, so an empty list is the
+    // default Profile by itself: there is nothing to choose between.
+    const profiles = this.registry.get(profilesAtom);
+    if (profiles.length === 0) return;
+    menu.addItem((item) => {
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.template_workbench_use_profile())
+        .setIcon("book-user");
+      const submenu = item.setSubmenu().setNoIcon();
+      for (const [id, label] of [
+        [null, m.settings_profile_default_name()],
+        ...profiles.map(({ id, label }) => [id, label] as const),
+      ] as const)
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(label)
+            .setChecked(profile === id)
+            .onClick(() =>
+              this.setPartialSelection({ context: current, profile: id }),
+            ),
+        );
+    });
   }
   /**
    * The docs pages a template author returns to: the step-by-step guide, the
@@ -2533,11 +2691,7 @@ function EditorContent({
   const { result, trigger, attempt, busy, staleReason } = useAtomValue(
     workbench.scheduler.state,
   );
-  const previewProblems = usePreviewProblems(view);
-  const formatProblem = [
-    ...(result?.diagnostics ?? []),
-    ...previewProblems,
-  ].find(
+  const formatProblem = (result?.diagnostics ?? []).find(
     ({ part, engine }) =>
       part === "annotation" || engine?.template === "annotation",
   );
@@ -2628,7 +2782,6 @@ function EditorContent({
   const arrivalDiagnostic = arrival?.diagnostic;
   const diagnoses = workbenchDiagnoses(documentProblems, [
     ...(result?.diagnostics ?? []),
-    ...previewProblems,
     ...(arrivalDiagnostic === undefined ? [] : [arrivalDiagnostic]),
   ]);
   const [requestedOccurrence, setRequestedOccurrence] = useState<{
@@ -3204,24 +3357,30 @@ function EditorContent({
       value={selectedDiagnoses}
       onReveal={selectProblem}
     >
-      {content}
+      <WorkbenchPanels
+        model={view.model}
+        panels={{
+          preview: {
+            label: m.workbench_view_preview(),
+            resizeLabel: m.workbench_preview_resize(),
+            content: (
+              <PreviewPanel
+                view={view}
+                showProblem={(diagnostic) =>
+                  view.showProblem(
+                    diagnostic === null ? null : renderDiagnosis(diagnostic).id,
+                    false,
+                    diagnostic ?? undefined,
+                  )
+                }
+              />
+            ),
+          },
+        }}
+      >
+        {content}
+      </WorkbenchPanels>
     </WorkbenchDiagnosticsProvider>
-  );
-}
-
-/**
- * What every linked preview has found, so the editor's Problems area explains
- * a Note render failure the reader saw in another pane.
- */
-function usePreviewProblems(
-  view: TemplateWorkbenchView,
-): readonly RenderDiagnostic[] {
-  return useSyncExternalStore(
-    useCallback(
-      (listener: () => void) => view.subscribePreviewProblems(listener),
-      [view],
-    ),
-    useCallback(() => view.previewProblems, [view]),
   );
 }
 

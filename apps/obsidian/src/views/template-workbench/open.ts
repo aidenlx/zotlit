@@ -16,14 +16,14 @@ import type {
   NativeProfileTarget,
 } from "@/services/local-bridge/customize";
 import { Profile } from "@/services/profile/service";
+
+import type { WorkbenchOpened } from "./actions";
 import {
   findWorkbenchLayout,
   openWorkbenchLayout,
   setLeafState,
   WORKBENCH_WINDOW,
-} from "@/views/note-preview/layout";
-
-import type { WorkbenchOpened } from "./actions";
+} from "./layout";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
 /** An open that asks the reader to know nothing. */
