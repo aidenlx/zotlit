@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { m } from "@/paraglide/messages.js";
 
 import type { SampleItem } from "./fields";
+import { itemChoice } from "./page-model";
 
 export function SampleBar({
   sample,
@@ -44,10 +45,7 @@ export function SampleBar({
   const items = retained ? [...SAMPLE_ITEMS, retained] : SAMPLE_ITEMS;
   const options = items.map((item) => ({
     sample: item,
-    value:
-      item.provenance.kind === "connected"
-        ? `connected:${item.item.key}`
-        : item.item.key,
+    value: itemChoice(item).id,
     label: item.item.title ?? item.item.key,
     description: [
       item.provenance.kind === "connected"
@@ -69,7 +67,7 @@ export function SampleBar({
         id="workbench-sample"
         title={m.workbench_choose_item()}
         label={name}
-        selected={fromVault ? `connected:${sample.item.key}` : sample.item.key}
+        selected={itemChoice(sample).id}
         groups={[
           {
             heading: m.workbench_sample_examples(),
