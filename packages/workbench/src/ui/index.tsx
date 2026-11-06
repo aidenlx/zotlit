@@ -26,8 +26,9 @@ export type {
 // (ADR 0044). It renders structure and behaviour; the host supplies the look
 // through `WorkbenchThemeProvider` and its popups through
 // `WorkbenchHostProvider`, and each editor instance keeps its view state in
-// the store `WorkbenchEditorProvider` carries beside the document controller
-// and the one Render Scheduler its result surfaces share.
+// the Workbench model `WorkbenchEditorProvider` puts in context: the
+// document controller in use, the reader's choices, and the one Render
+// Scheduler its result surfaces share.
 
 export { WorkbenchMessagesProvider, useWorkbenchMessages } from "./messages";
 export type { WorkbenchMessages } from "./generated/messages";
@@ -42,9 +43,29 @@ export {
   useRenderState,
   useWorkbenchController,
   useWorkbenchEditor,
+  useWorkbenchModel,
   useWorkbenchStore,
 } from "./editor";
 export type { WorkbenchEditor, WorkbenchEditorInstance } from "./editor";
+export {
+  chooseAnnotation,
+  chooseCitation,
+  chooseItem,
+  choosePartial,
+  holdWorkbenchModel,
+  makeWorkbenchModel,
+  setAdvanced,
+  setPreview,
+  setRoot,
+  setTab,
+} from "./model";
+export type {
+  WorkbenchChoices,
+  WorkbenchItemData,
+  WorkbenchModel,
+  WorkbenchModelOptions,
+  WorkbenchPreviewSettings,
+} from "./model";
 export {
   NO_MATCH_DATA,
   WorkbenchClipboardError,
@@ -53,7 +74,7 @@ export {
   useTooltip,
   useWorkbenchHost,
 } from "./host";
-export { useFork, useForkedEffect } from "./run";
+export { forkOn, useFork, useForkedEffect, useRunner } from "./run";
 export { joinForked, observeExit } from "#/language/host-effects";
 export type { ExitHandlers, WorkbenchRunner } from "#/language/host-effects";
 export type {

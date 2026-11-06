@@ -1091,11 +1091,7 @@ function WorkbenchPage() {
         />
       }
       editor={
-        <WorkbenchEditorProvider
-          store={store}
-          controller={controller}
-          scheduler={scheduler}
-        >
+        <WorkbenchEditorProvider editor={editor}>
           <EditToolbar onModeChange={changeMode}>
             <AddFieldButton
               ref={addField}

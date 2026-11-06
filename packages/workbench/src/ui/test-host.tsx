@@ -1,10 +1,12 @@
 // A host for the shared suite: every adapter call is recorded, preferences
 // live in memory, and the theme names each part's class after the part.
 
+import type { WorkbenchRunner } from "#/language/host-effects";
 import type { RenderRequest } from "#/render/request";
 import type { TemplateRenderResult } from "#/render/result";
 import { render as renderUI } from "@testing-library/react";
 import { Effect } from "effect";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { ReactNode } from "react";
 
 import { createWorkbenchEditor, WorkbenchEditorProvider } from "./editor";
@@ -20,6 +22,7 @@ import type {
   WorkbenchSuggesterRequest,
 } from "./host";
 import { WorkbenchMessagesProvider } from "./messages";
+import type { WorkbenchModel } from "./model";
 import { makeWorkbenchRunner } from "./run";
 import type { RenderScheduler } from "./scheduler";
 import type { WorkbenchStore, WorkbenchViewState } from "./store";
@@ -40,6 +43,8 @@ export interface PendingRender {
   reject(error: unknown): void;
   /** Whether the tree interrupted the render before it was answered. */
   readonly interrupted: boolean;
+  /** Settles once the tree interrupts the render. */
+  readonly interruption: Promise<void>;
 }
 
 /** A request the host holds open while `hold` is set. */
@@ -57,9 +62,13 @@ export interface HeldRequest {
   fail(error: unknown): void;
   /** Whether the tree interrupted the request before it was answered. */
   readonly interrupted: boolean;
+  /** Settles once the tree interrupts the request. */
+  readonly interruption: Promise<void>;
 }
 
 export interface FakeHost extends WorkbenchHost {
+  /** A runner over a Scope of its own, for tests of the runner facade. */
+  readonly run: WorkbenchRunner;
   readonly calls: {
     menus: WorkbenchMenuRequest[];
     suggesters: WorkbenchSuggesterRequest[];
@@ -101,6 +110,7 @@ export function fakeHost(): FakeHost {
       host.hold
         ? Effect.callback<A, E>((resume) => {
             let interrupted = false;
+            const { promise, resolve } = Promise.withResolvers<void>();
             held.push({
               kind,
               answer: (value) => resume(Effect.succeed(value as A)),
@@ -108,9 +118,11 @@ export function fakeHost(): FakeHost {
               get interrupted() {
                 return interrupted;
               },
+              interruption: promise,
             });
             return Effect.sync(() => {
               interrupted = true;
+              resolve();
             });
           })
         : immediate(),
@@ -161,6 +173,7 @@ export function fakeHost(): FakeHost {
       Effect.callback<TemplateRenderResult, WorkbenchHostError>((resume) => {
         const identity = renderIdentity(request);
         let interrupted = false;
+        const { promise, resolve } = Promise.withResolvers<void>();
         renders.push({
           request,
           answer: (result) =>
@@ -176,9 +189,11 @@ export function fakeHost(): FakeHost {
           get interrupted() {
             return interrupted;
           },
+          interruption: promise,
         });
         return Effect.sync(() => {
           interrupted = true;
+          resolve();
         });
       }),
     markdown: ({ markdown }) => <div role="document">{markdown}</div>,
@@ -223,11 +238,16 @@ export const FAKE_THEME: WorkbenchTheme = {
   icon: (name) => <i data-icon={name} />,
 };
 
-/** Disposing it disposes the scheduler `mount` built, so bind it with `using`. */
+/** Disposing it disposes the editor and registry `mount` built, so bind it with `using`. */
 export interface Mounted extends Disposable {
   host: FakeHost;
+  /** The registry the editor's model lives in. */
+  registry: AtomRegistry.AtomRegistry;
+  model: WorkbenchModel;
+  /** The store facade a host reads; deleted in #1946. */
   store: WorkbenchStore;
   controller: WorkbenchDocumentController;
+  /** The scheduler facade a host feeds; deleted in #1946. */
   scheduler: RenderScheduler;
   ui: ReactNode;
 }
@@ -242,25 +262,28 @@ export function mount(
 ): Mounted {
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(source);
+  const registry = AtomRegistry.make({
+    defaultIdleTTL: 0,
+    timeoutResolution: 1,
+  });
   const editor = createWorkbenchEditor({
     host,
     controller,
-    state,
+    registry,
+    ...(state ? { state } : {}),
   });
-  const { store, scheduler } = editor;
+  const { model, store, scheduler } = editor;
   return {
     host,
+    registry,
+    model,
     store,
     controller,
     scheduler,
     ui: (
       <WorkbenchThemeProvider theme={FAKE_THEME}>
         <WorkbenchHostProvider host={host}>
-          <WorkbenchEditorProvider
-            store={store}
-            controller={controller}
-            scheduler={scheduler}
-          >
+          <WorkbenchEditorProvider editor={editor}>
             {children}
           </WorkbenchEditorProvider>
         </WorkbenchHostProvider>
@@ -268,6 +291,7 @@ export function mount(
     ),
     [Symbol.dispose]() {
       editor[Symbol.dispose]();
+      registry.dispose();
       host.close();
     },
   };

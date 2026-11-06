@@ -1,24 +1,31 @@
+import { RegistryContext } from "@effect/atom-react";
 import { act, cleanup, render } from "@testing-library/react";
 import { Effect } from "effect";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { afterEach, expect, it } from "vitest";
 
 import { useCustomFieldNames } from "./custom-fields";
 import { WorkbenchHostError } from "./host";
-import { makeWorkbenchRunner } from "./run";
 
 afterEach(cleanup);
 
-const runner = makeWorkbenchRunner();
+const registry = AtomRegistry.make({ defaultIdleTTL: 0, timeoutResolution: 1 });
 
 function Names(props: {
   read: Effect.Effect<readonly string[], unknown>;
   reading?: boolean;
 }) {
-  const names = useCustomFieldNames(props.read, {
-    run: runner.run,
-    reading: props.reading,
-  });
+  const names = useCustomFieldNames(props.read, { reading: props.reading });
   return <output>{names.join(",")}</output>;
+}
+
+/** The names in a registry that drops a read the moment nothing shows it. */
+function InRegistry(props: Parameters<typeof Names>[0]) {
+  return (
+    <RegistryContext.Provider value={registry}>
+      <Names {...props} />
+    </RegistryContext.Provider>
+  );
 }
 
 /** A read the test answers, which records whether it was interrupted. */
@@ -26,15 +33,20 @@ function heldRead() {
   const reads: {
     answer: (names: readonly string[]) => void;
     interrupted: boolean;
+    /** Settles once the read is interrupted. */
+    interruption: Promise<void>;
   }[] = [];
   const read = Effect.callback<readonly string[]>((resume) => {
+    const { promise, resolve } = Promise.withResolvers<void>();
     const entry = {
       answer: (names: readonly string[]) => resume(Effect.succeed(names)),
       interrupted: false,
+      interruption: promise,
     };
     reads.push(entry);
     return Effect.sync(() => {
       entry.interrupted = true;
+      resolve();
     });
   });
   return { read, reads };
@@ -43,24 +55,26 @@ function heldRead() {
 it("reads the names while reading, and interrupts the read when reading ends or the editor unmounts", async () => {
   const { read, reads } = heldRead();
   const { container, rerender, unmount } = render(
-    <Names read={read} reading={false} />,
+    <InRegistry read={read} reading={false} />,
   );
   expect(reads).toHaveLength(0);
 
-  await act(async () => rerender(<Names read={read} reading />));
+  await act(async () => rerender(<InRegistry read={read} reading />));
   expect(reads).toHaveLength(1);
   await act(async () => reads[0]!.answer(["Shelf"]));
   expect(container.textContent).toBe("Shelf");
 
   // A read that ends before its answer lands leaves the names as they were.
-  await act(async () => rerender(<Names read={read} reading={false} />));
-  await act(async () => rerender(<Names read={read} reading />));
+  await act(async () => rerender(<InRegistry read={read} reading={false} />));
+  await act(async () => rerender(<InRegistry read={read} reading />));
   expect(reads).toHaveLength(2);
-  await act(async () => rerender(<Names read={read} reading={false} />));
+  await act(async () => rerender(<InRegistry read={read} reading={false} />));
+  await reads[1]!.interruption;
   expect(reads[1]!.interrupted).toBe(true);
-  await act(async () => rerender(<Names read={read} reading />));
+  await act(async () => rerender(<InRegistry read={read} reading />));
   expect(reads).toHaveLength(3);
   await act(async () => unmount());
+  await reads[2]!.interruption;
   expect(reads[2]!.interrupted).toBe(true);
 });
 

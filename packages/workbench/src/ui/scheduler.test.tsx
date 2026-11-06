@@ -199,15 +199,6 @@ it("interrupts a pending render when the Workbench goes", async () => {
   expect(pending!.interrupted).toBe(true);
 });
 
-it("interrupts a pending render when the host closes its runner", async () => {
-  using mounted = open();
-  await advance(300);
-  mounted.host.close();
-  expect(mounted.host.renders[0]!.interrupted).toBe(true);
-  // A render the host stopped lands nothing.
-  expect(output().dataset["busy"]).toBe("true");
-});
-
 it("drops a queued render on selecting On demand and reports the result as behind", async () => {
   using mounted = open();
   const { host, controller } = mounted;

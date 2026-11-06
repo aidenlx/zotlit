@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useUniqueId } from "@zotlit/ui";
 
 import { useTooltip, useWorkbenchHost } from "./host";
-import { useFork } from "./run";
+import { forkOn, useRunner } from "./run";
 import { useIcon, useParts } from "./theme";
 
 export interface SampleOption {
@@ -35,7 +35,7 @@ export function SampleSuggester({
   const part = useParts("sampleSuggester");
   const icon = useIcon();
   const host = useWorkbenchHost();
-  const fork = useFork(host.run);
+  const run = useRunner();
   const labelTooltip = useTooltip(label);
   const triggerTooltip = useTooltip(title);
   const instanceId = useUniqueId();
@@ -55,7 +55,8 @@ export function SampleSuggester({
         aria-expanded={open}
         onClick={(event) => {
           setOpen(true);
-          fork(
+          forkOn(
+            run,
             host.suggester({
               anchor: event.currentTarget,
               title,

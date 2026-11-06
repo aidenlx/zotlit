@@ -721,7 +721,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     );
     this.#editor = createWorkbenchEditor({
       host: this.#host,
-      store: this.store,
+      registry: deps.registry,
+      view: this.model.state,
       controller: this.#controller,
       reportContext: () => this.reportContext(this.#defaultRoot),
       mapResult: nativeResult,
@@ -2399,9 +2400,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             <WorkbenchHostProvider host={this.#host}>
               <WorkbenchEditorProvider
                 key={this.#generation}
-                controller={this.#controller}
-                store={this.store}
-                scheduler={this.scheduler}
+                editor={this.#editor}
               >
                 {content}
               </WorkbenchEditorProvider>

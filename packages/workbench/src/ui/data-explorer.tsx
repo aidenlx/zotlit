@@ -19,7 +19,7 @@ import type {
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchMessageLabel } from "./messages";
-import { useFork } from "./run";
+import { forkOn, useRunner } from "./run";
 import type { TemplateRoot } from "./store";
 import { useParts } from "./theme";
 
@@ -126,7 +126,7 @@ export function DataExplorer({
   }, [restore, data, onRestored]);
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
-  const fork = useFork(host.run);
+  const run = useRunner();
   const part = useParts("dataExplorer");
   const insertNode =
     onInsertNode ??
@@ -180,7 +180,7 @@ export function DataExplorer({
     onCollapsedSectionsChange(next);
   };
   const copyMenu = (text: string) => {
-    fork(copy(text), {
+    forkOn(run, copy(text), {
       onSuccess: () => host.notice(m.workbench_field_copy_done()),
       onFailure: () => host.notice(m.workbench_field_copy_failed()),
     });

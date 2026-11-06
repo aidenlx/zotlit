@@ -10,17 +10,18 @@ import { setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
+import { useAtomValue } from "@effect/atom-react";
 import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { completionFields } from "./completion-fields";
-import { useDocumentRevision } from "./editor";
 import { HiddenName, useOptionalHost } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { partialSuggestions } from "./partial-suggestions";
+import { useRunner } from "./run";
 import {
   sourceDiagnostics,
   sourceProblemGutter,
@@ -31,6 +32,7 @@ import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 import { underlineOnlyLint } from "./underline-lint";
 
+import { documentRevision } from "#/document/atoms";
 import {
   workbenchSlice,
   sliceOffsets,
@@ -141,7 +143,7 @@ export function SliceEditor({
   onFocus,
 }: SliceEditorProps) {
   const onScreen = visible ?? useContext(Visible);
-  const revision = useDocumentRevision(controller);
+  const revision = useAtomValue(documentRevision(controller));
   const diagnoses = useSourceDiagnoses();
   const revealDiagnosis = useRevealSourceDiagnosis();
   const readOnly = controller.readOnly;
@@ -149,6 +151,7 @@ export function SliceEditor({
   const m = useWorkbenchMessages();
   const part = useParts("sliceEditor");
   const adapter = useOptionalHost();
+  const run = useRunner();
   const editorExtension = useEditorExtension();
   const nameId = useUniqueId();
   const host = useRef<HTMLDivElement>(null);
@@ -178,6 +181,7 @@ export function SliceEditor({
     onFocus,
     suggest,
     adapter,
+    run,
     editorExtension,
     syntax,
     m,
@@ -189,6 +193,7 @@ export function SliceEditor({
     onFocus,
     suggest,
     adapter,
+    run,
     editorExtension,
     syntax,
     m,
@@ -219,11 +224,10 @@ export function SliceEditor({
       const expression = region?.expression ?? false;
       const supplied = report.current.suggest?.(masterPosition);
       return {
-        ...partialSuggestions(
-          report.current.m,
-          controller.dependencies,
-          report.current.adapter,
-        ),
+        ...partialSuggestions(report.current.m, controller.dependencies, {
+          partials: report.current.adapter?.partials,
+          run: report.current.run,
+        }),
         ...supplied,
         root,
         language: language === "json-e" ? "json-e" : region?.language,

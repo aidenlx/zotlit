@@ -229,10 +229,10 @@ export interface WorkbenchPartials {
 export interface WorkbenchHost {
   readonly messages: WorkbenchMessages;
   /**
-   * Forks each host Effect the tree starts. It belongs to one mounted
-   * Workbench: closing it interrupts every Effect it still runs.
+   * Facade for host code that still forks on its own runner; the shared tree
+   * forks on the editor's runtime and reads none. Deleted in #1946.
    */
-  readonly run: WorkbenchRunner;
+  readonly run?: WorkbenchRunner;
   readonly toggle?: ComponentType<WorkbenchToggleProps>;
   /** The locale currently used by the host's displayed messages. */
   getLocale(): string;

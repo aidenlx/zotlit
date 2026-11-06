@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view";
+import { useAtomValue } from "@effect/atom-react";
 import {
   act,
   cleanup,
@@ -8,7 +9,6 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { useDocumentRevision } from "./editor";
 import { WorkbenchHostProvider } from "./host";
 import { NameFolderPane } from "./name-folder";
 import type { NameFolderPaneProps } from "./name-folder";
@@ -16,6 +16,7 @@ import type { NameFolderPaneProps } from "./name-folder";
 import { fakeHost, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
+import { documentRevision } from "#/document/atoms";
 import { WorkbenchDocumentController } from "#/document/index";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 
@@ -32,7 +33,7 @@ function ReactivePane({
   ...props
 }: Omit<NameFolderPaneProps, "manifest" | "filename" | "notePath"> &
   Partial<Pick<NameFolderPaneProps, "filename" | "notePath">>) {
-  useDocumentRevision(controller);
+  useAtomValue(documentRevision(controller));
   return (
     <NameFolderPane
       {...props}

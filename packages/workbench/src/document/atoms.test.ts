@@ -124,6 +124,22 @@ describe("workbenchDocumentAtoms", () => {
     expect(registry.get(atoms.problems)).toEqual([]);
   });
 
+  it("counts every update, the read-only toggle and history included", () => {
+    const controller = new WorkbenchDocumentController(PROFILE);
+    using held = hold(controller);
+    const { registry, atoms } = held;
+    const seen: number[] = [];
+    registry.subscribe(atoms.revision, (revision) => seen.push(revision));
+
+    controller.setReadOnly(true);
+    expect(controller.canUndo).toBe(false);
+    controller.setReadOnly(false);
+    noteEdit(controller, "one ");
+    controller.undo();
+
+    expect(seen).toEqual([1, 2, 3, 4]);
+  });
+
   it("reads the controller a host loads in place of the one it held", () => {
     const first = new WorkbenchDocumentController(PROFILE);
     using held = hold(first);

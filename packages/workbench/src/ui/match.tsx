@@ -1,5 +1,8 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import { Effect } from "effect";
+import { useAtomValue } from "@effect/atom-react";
+import { Effect, Option } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
@@ -9,7 +12,7 @@ import type { MatchTree } from "@zotlit/templates/facade";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
 import { useCustomFieldNames } from "./custom-fields";
-import { useWorkbenchStore } from "./editor";
+import { useWorkbenchModel } from "./editor";
 import { ExampleActions } from "./example-state";
 import { schemaLocale } from "./explorer-sections";
 import { useWorkbenchHost } from "./host";
@@ -49,7 +52,6 @@ import type { MatchReorder } from "./match.reorder";
 import { MatchSelect } from "./match.rows";
 // One Match tree over the document controller; rows write through the master history.
 import { useWorkbenchMessages } from "./messages";
-import { useForkedEffect } from "./run";
 import { TabDocsLink } from "./tab-bar";
 import { useParts, useIcon } from "./theme";
 
@@ -91,57 +93,61 @@ export function MatchPane({
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("match");
-  const item = useWorkbenchStore((state) => state.item);
-  const [match, setMatch] = useState<MatchTree | undefined>(
-    controller.document?.manifest.match,
+  const model = useWorkbenchModel();
+  const item = useAtomValue(model.item);
+  useAtomValue(model.document.revision);
+  const readable = controller.document !== null;
+  // The last filter that parsed, which stands while the draft does not.
+  const parsedMatch = useMemo(
+    () =>
+      Atom.make((get): MatchTree | undefined => {
+        get(model.document.revision);
+        const document = controller.document;
+        return document
+          ? document.manifest.match
+          : Option.getOrElse(
+              get.self<MatchTree | undefined>(),
+              () => undefined,
+            );
+      }),
+    [model, controller],
   );
-  const [readable, setReadable] = useState(controller.document !== null);
-  const [values, setValues] = useState<FilterValues>(NO_VALUES);
+  const match = useAtomValue(parsedMatch);
   const [writeProblem, setWriteProblem] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    const read = () => {
-      setReadable(controller.document !== null);
-      if (controller.document) setMatch(controller.document.manifest.match);
-    };
-    read();
-    return controller.subscribe(read);
-  }, [controller]);
-  useForkedEffect(
-    host.run,
-    () => {
-      setLoading(true);
-      return Effect.all(
-        [
-          host.matchData.tags,
-          host.matchData.collections,
-          host.matchData.libraries,
-        ],
-        { concurrency: "unbounded" },
-      );
-    },
-    {
-      deps: [host.matchData, vocabularyRevision, m, retry],
-      onSuccess: ([tags, collections, libraries]) => {
-        setValues({
-          tags,
-          collections: collections.map((path) => path.join("/")),
-          libraries: libraries.map(({ id, name }) => ({
-            id,
-            name: name ?? null,
+  const vocabularyRead = useMemo(
+    () =>
+      model.runtime.atom(
+        Effect.all(
+          [
+            host.matchData.tags,
+            host.matchData.collections,
+            host.matchData.libraries,
+          ],
+          { concurrency: "unbounded" },
+        ).pipe(
+          Effect.map(([tags, collections, libraries]): FilterValues => ({
+            tags,
+            collections: collections.map((path) => path.join("/")),
+            libraries: libraries.map(({ id, name }) => ({
+              id,
+              name: name ?? null,
+            })),
           })),
-        });
-        setProblem(null);
-        setLoading(false);
-      },
-      onFailure: () => {
-        setProblem(m.workbench_example_failed());
-        setLoading(false);
-      },
-    },
+        ),
+      ),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- a new revision or retry reads again
+    [model.runtime, host.matchData, vocabularyRevision, retry],
   );
+  const vocabularyResult = useAtomValue(vocabularyRead);
+  const loading =
+    AsyncResult.isInitial(vocabularyResult) || vocabularyResult.waiting;
+  const values = AsyncResult.isSuccess(vocabularyResult)
+    ? vocabularyResult.value
+    : NO_VALUES;
+  const problem = AsyncResult.isFailure(vocabularyResult)
+    ? m.workbench_example_failed()
+    : null;
   const filter = useMemo(
     () => (match === undefined ? null : composeFilterTree(match)),
     [match],
@@ -176,7 +182,6 @@ export function MatchPane({
   );
   const locale = host.getLocale();
   const custom = useCustomFieldNames(host.matchData.customFields, {
-    run: host.run,
     revision: vocabularyRevision,
   });
   // What a condition reads: the fields of an Item, labelled as Zotero labels
@@ -326,28 +331,21 @@ function useMatchTest(
     indexedKey === null || filter === null
       ? null
       : JSON.stringify([indexedKey, filter, revision]);
-  const [answer, setAnswer] = useState<{
-    key: string;
-    value: WorkbenchMatchResult | "failed";
-  } | null>(null);
-  useForkedEffect(
-    host.run,
+  const { runtime } = useWorkbenchModel();
+  const test = useMemo(
     () =>
-      key === null || indexedKey === null || filter === null
-        ? null
-        : host.matchData.matches(indexedKey, filter).pipe(
-            Effect.map((value) => ({ key, value })),
-            // A defect fails the test as a failure does.
-            Effect.catchCause(() =>
-              Effect.succeed({ key, value: "failed" as const }),
+      runtime.atom(
+        key === null || indexedKey === null || filter === null
+          ? Effect.succeed(undefined)
+          : host.matchData.matches(indexedKey, filter).pipe(
+              // A defect fails the test as a failure does.
+              Effect.catchCause(() => Effect.succeed("failed" as const)),
             ),
-          ),
-    {
-      deps: [host.matchData, key, indexedKey, filter],
-      onSuccess: setAnswer,
-    },
+      ),
+    [runtime, host.matchData, key, indexedKey, filter],
   );
-  return answer?.key === key ? answer.value : undefined;
+  const answer = useAtomValue(test);
+  return AsyncResult.isSuccess(answer) ? answer.value : undefined;
 }
 
 /**

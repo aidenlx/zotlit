@@ -47,7 +47,7 @@ import {
   problemText,
   renderDiagnosis,
 } from "./problems";
-import { useFork } from "./run";
+import { forkOn, useRunner } from "./run";
 import type { RenderTrigger } from "./scheduler";
 import { WorkbenchOption, WorkbenchSelect } from "./select";
 import { useParts, useIcon } from "./theme";
@@ -287,7 +287,7 @@ export function ProblemsFooter({
 }) {
   const m = useWorkbenchMessages();
   const host = useOptionalHost();
-  const fork = useFork(host?.run);
+  const run = useRunner();
   const part = useParts("problemsFooter");
   const icon = useIcon();
   const panel = useRef<HTMLElement>(null);
@@ -341,7 +341,7 @@ export function ProblemsFooter({
   function copyReport(text: string): void {
     if (host?.copy === undefined) return;
     setCopyFailed(false);
-    fork(host.copy(text), {
+    forkOn(run, host.copy(text), {
       onSuccess: () => host.notice(m.workbench_problems_copy_done()),
       onFailure: () => {
         // A denied clipboard leaves the reader the report itself: the

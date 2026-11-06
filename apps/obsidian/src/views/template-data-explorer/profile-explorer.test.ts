@@ -419,7 +419,7 @@ it("switches annotation data locally through the annotation chooser", async () =
                   run,
                 });
                 const id = await answerOf(
-                  chooser.run(
+                  run(
                     workbenchAnnotationChoice(
                       chooser,
                       state.annotations ?? [],

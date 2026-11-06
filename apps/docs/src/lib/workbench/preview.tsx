@@ -30,6 +30,7 @@ import { m } from "@/paraglide/messages.js";
 
 import type { SampleItem } from "./fields";
 import { WorkbenchHelp } from "./frame";
+import { usePageBridge } from "./runtime";
 
 interface PreviewState {
   mode: PreviewMode;
@@ -104,6 +105,7 @@ export function WebPreview({
     annotationChoice,
     onAnnotationChoice,
   ]);
+  const { run } = usePageBridge();
   const [scheduler, setScheduler] = useState<RenderScheduler | null>(null);
   const named = useRef(reportContext);
   named.current = reportContext;
@@ -111,13 +113,13 @@ export function WebPreview({
     const owner = createRenderScheduler({
       input: { source: "", snapshot: null, mode: "create", live: true },
       render: (request) => host.render(request),
-      run: host.run,
+      run,
       failed: (result) => result,
       reportContext: () => named.current(),
     });
     setScheduler(owner);
     return () => owner[Symbol.dispose]();
-  }, [host]);
+  }, [host, run]);
   useEffect(() => {
     scheduler?.setInput({
       source,

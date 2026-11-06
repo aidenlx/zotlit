@@ -1,17 +1,15 @@
 // The tab strip over the authoring panes and the panel each tab opens. The
 // strip owns the keyboard: arrow keys move through the tabs and choose as they
-// go, Home and End jump to the ends. The chosen tab lives in the editor's store.
+// go, Home and End jump to the ends. The chosen tab lives in the editor's model.
 
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
-import {
-  useDocumentRevision,
-  useOptionalEditor,
-  useWorkbenchStore,
-} from "./editor";
+import { useOptionalEditor, useWorkbenchModel } from "./editor";
 import { useContainerName, useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { setTab as tabTransition } from "./model";
 import { SliceEditorVisibility } from "./slice-editor";
 import { TABS, tabDocs, tabLabel, tabLede } from "./tabs";
 import type { WorkbenchTab } from "./tabs";
@@ -56,26 +54,30 @@ export function TabBar({
 } = {}) {
   const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
-  const tab = useWorkbenchStore((state) => state.tab);
-  const setTab = useWorkbenchStore((state) => state.setTab);
+  const model = useWorkbenchModel();
+  const tab = useAtomValue(model.tab);
+  const setView = useAtomSet(model.view);
+  const setTab = (next: WorkbenchTab) => setView(tabTransition(next));
   const part = useParts("tabBar");
   const name = useContainerName(m.workbench_title());
   const prefix = editor?.id ?? "";
-  useDocumentRevision(editor?.controller ?? null);
+  useAtomValue(model.document.revision);
+  const current = useAtomValue(model.controller);
+  const controller = editor === null ? undefined : current;
   const disabled = editor === null;
   const identity = useRef({
-    controller: editor?.controller,
-    id: editor?.controller.document?.manifest.id,
+    controller,
+    id: controller?.document?.manifest.id,
   });
-  if (identity.current.controller !== editor?.controller)
-    identity.current = { controller: editor?.controller, id: undefined };
-  if (editor?.controller.document)
-    identity.current.id = editor.controller.document.manifest.id;
+  if (identity.current.controller !== controller)
+    identity.current = { controller, id: undefined };
+  if (controller?.document)
+    identity.current.id = controller.document.manifest.id;
   const isDefault = defaultProfile ?? identity.current.id === "default";
   const enabledTabs = tabs.filter((id) => !(isDefault && id === "match"));
   useEffect(() => {
-    if (isDefault && tab === "match") setTab("note");
-  }, [isDefault, tab, setTab]);
+    if (isDefault && tab === "match") setView(tabTransition("note"));
+  }, [isDefault, tab, setView]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const target = keyTarget(
@@ -171,7 +173,7 @@ export function TabPanel({
 }) {
   const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
-  const active = useWorkbenchStore((state) => state.tab) === tab;
+  const active = useAtomValue(useWorkbenchModel().tab) === tab;
   const part = useParts("tabPanel");
   const prefix = editor?.id ?? "";
   // A tab's occupant is the tab itself, so the list never changes and a visit
