@@ -26,7 +26,49 @@ Everything you type is previewed, including bytes you have not saved yet. Editin
 
 The native Markdown view keeps working on the same file. Select <UiLabel name={m.template_workbench_open_markdown()} /> to open the document as Markdown, and right-click a template document in the file explorer for <UiLabel name={m.template_workbench_open()} />.
 
-![The Template Workbench layout for The Semantic Web: the Fields pane on the left, the Default profile in the middle with its shared-template notice and the template text, and the Note preview on the right](/img/how-to/template-workbench-layout.webp)
+{/* TODO screenshot: template-workbench-layout.webp — one Template Workbench View for The Semantic Web with both side panels shown: the Fields panel on the left, the Default profile's tabs in the middle, the Preview panel on the right, and the Show fields and Show preview actions pressed in the view header. */}
+
+![The Template Workbench View for The Semantic Web: the Fields panel on the left, the Default profile in the middle with its shared-template notice and the template text, and the Preview panel on the right](/img/how-to/template-workbench-layout.webp)
+
+## Side panels [#panels]
+
+The view has two side panels beside the editor. The Fields panel, on the left, lists the template data for the chosen paper. The Preview panel, on the right, shows what the document produces for that paper.
+
+The editor tabs and both panels use one chosen item and one chosen annotation. Choose an item in any of them, and the other two show the same item.
+
+### Show or hide a panel [#show-panels]
+
+Select **Show fields** or **Show preview** in the view header. The action looks pressed while its panel is shown, and you select it again to hide the panel. The same two entries are in the view's pane menu.
+
+Hiding a panel keeps your chosen item and annotation. The panel shows them again when you bring it back.
+
+### Resize a panel [#resize-panels]
+
+Drag the edge between a panel and the editor to make the panel wider or narrower. The resize handle also works from the keyboard. In a narrow window, the editor keeps room for the template text.
+
+### What the view remembers [#panel-state]
+
+Obsidian saves which panels are shown, and how wide they are, with the view. After a restart, the view opens the way you left it.
+
+A profile that you open from the file explorer, or from <UiLabel name={m.template_workbench_open()} />, opens with no panels for a quick edit. <UiLabel name={m.template_workbench_open_layout()} /> and <Command inline name={m.command_customize_note_template_name()} /> open the view in its own Workbench window with both panels shown.
+
+### The Fields panel [#fields-panel]
+
+The Fields panel is the [Template Data Explorer](/docs/how-to/explore-template-data) inside the view. It has the same filter, sections, roots, and copy actions. Its row menu adds <UiLabel name={m.workbench_fields_put_in_note()} />, which puts the field into the editor at your cursor.
+
+### The Preview panel [#preview-panel]
+
+While the Preview panel is shown, the view's pane menu has a Preview section with the choices that shape the preview:
+
+- <UiLabel name={m.workbench_preview_as_new_note()} />,
+  <UiLabel name={m.workbench_preview_as_updated_note()} />, or
+  <UiLabel name={m.workbench_preview_updated_section()} />.
+- <UiLabel name={m.workbench_preview_auto_refresh()} />. Turn it off to render
+  only when you select <UiLabel name={m.workbench_preview_run()} />.
+- <UiLabel name={m.workbench_show_markdown()} />, to read the note as Markdown
+  source.
+
+A problem that the preview finds appears in the editor's <UiLabel name={m.workbench_problems_heading()} /> area.
 
 ## A profile document [#profile]
 
@@ -55,7 +97,7 @@ its source in its one tab, so the toggle is offered for a profile document only.
 
 ### Preview data [#preview-data]
 
-The preview uses a Zotero item or built-in example. Opening the view from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data and <UiLabel name={m.template_workbench_open_layout()} /> to open the editor, fields, and preview together.
+The preview uses a Zotero item or built-in example. Opening the view from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data and <UiLabel name={m.template_workbench_open_layout()} /> to show both [side panels](#panels) in the Workbench window.
 
 The preview changes as you edit. A database or citation-style warning can limit the preview, but you can continue editing the profile.
 
@@ -77,15 +119,15 @@ Existing literature notes keep their current content. Run <Command name={m.comma
 
 The citation text opens on one <UiLabel name={m.workbench_tab_citation()} /> tab. Its tab title is the fixed <UiLabel name={m.template_workbench_title_citation()} />.
 
-The preview, headed <UiLabel name={m.workbench_citation_result_heading()} />, renders one citation. Its caption names the variant being previewed, <UiLabel name={m.workbench_citation_variant_main()} /> or <UiLabel name={m.workbench_citation_variant_alt()} />. The preview pane menu picks that variant, and offers <UiLabel name={m.template_workbench_use_example()} /> for a set of built-in citation shapes or <UiLabel name={m.workbench_choose_item()} /> for one of your own Zotero items.
+The preview, headed <UiLabel name={m.workbench_citation_result_heading()} />, renders one citation. Its caption names the variant being previewed, <UiLabel name={m.workbench_citation_variant_main()} /> or <UiLabel name={m.workbench_citation_variant_alt()} />. The view's pane menu picks that variant, and offers <UiLabel name={m.template_workbench_use_example()} /> for a set of built-in citation shapes or <UiLabel name={m.workbench_choose_item()} /> for one of your own Zotero items.
 
-Each pane keeps its own variant and example, and Obsidian remembers them with the pane. See [Customize the citation text](/docs/how-to/customize-a-template#citation-text) for the steps.
+The Preview panel uses the variant and example you pick. See [Customize the citation text](/docs/how-to/customize-a-template#citation-text) for the steps.
 
 ## A partial [#partial]
 
 A partial opens on one <UiLabel name={m.workbench_tab_partial()} /> tab. Its tab title is the partial's name, then `Partial`.
 
-A partial has no data of its own: it renders with the data of whichever template calls it. So its preview, headed <UiLabel name={m.workbench_partial_result_heading()} />, asks you which caller to render as. The pane menu offers <UiLabel name={m.template_workbench_preview_as_note()} />, <UiLabel name={m.template_workbench_preview_as_annotation()} />, and <UiLabel name={m.template_workbench_preview_as_citation()} />. It opens on Note, and remembers your choice per file. ZotLit never guesses the caller from the templates that call the partial.
+A partial has no data of its own: it renders with the data of whichever template calls it. So its preview, headed <UiLabel name={m.workbench_partial_result_heading()} />, asks you which caller to render as. The view's pane menu offers <UiLabel name={m.template_workbench_preview_as_note()} />, <UiLabel name={m.template_workbench_preview_as_annotation()} />, and <UiLabel name={m.template_workbench_preview_as_citation()} />. It opens on Note, and remembers your choice per file. ZotLit never guesses the caller from the templates that call the partial.
 
 While your vault holds a profile besides Default, the pane menu also offers <UiLabel name={m.template_workbench_use_profile()} /> to preview against that profile's data. Saving a partial re-renders every open preview that uses it.
 
