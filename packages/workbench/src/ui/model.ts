@@ -36,8 +36,14 @@ import type {
   WorkbenchMatchResult,
 } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
-import { INITIAL_PANELS, placePanels } from "./panel-layout";
-import type { PanelPlacement, ViewSize, WorkbenchPanels } from "./panel-layout";
+import { INITIAL_PANELS, placePanels, showPanel } from "./panel-layout";
+import type {
+  FieldsAction,
+  FieldsPicker,
+  PanelPlacement,
+  ViewSize,
+  WorkbenchPanels,
+} from "./panel-layout";
 import { patch, patchAt } from "./patch";
 import { makeRenderSchedulerAtoms } from "./scheduler-atoms";
 import type {
@@ -295,6 +301,17 @@ export interface WorkbenchModel<
   /** Where each panel goes in the view as it is now; never saved. */
   readonly placement: Atom.Atom<PanelPlacement>;
   /**
+   * The Fields picker standing open over the editor, or null while it is
+   * closed. It opens only while the Fields Panel's column does not fit, and
+   * closes when the column fits again; never saved.
+   */
+  readonly fieldsPicker: Atom.Writable<FieldsPicker | null>;
+  /**
+   * What the Fields action opens and whether that is open. A write presses
+   * the action: it shows or hides the column, or opens or closes the picker.
+   */
+  readonly fieldsAction: Atom.Writable<FieldsAction, void>;
+  /**
    * Makes an Item the choice. An Item the reader picked is the Citation set
    * they asked to see, so the built-in example that outranks it stands down.
    */
@@ -455,6 +472,15 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     };
   });
   const panels = Atom.make(initialPanels);
+  const placement = Atom.withEquality(
+    Atom.make((get) => placePanels(get(panels), get(viewSize))),
+    sameFields,
+  );
+  const picker = Atom.make<FieldsPicker | null>(null);
+  const fieldsPicker = Atom.writable(
+    (get) => (get(placement).fields === "popover" ? get(picker) : null),
+    (ctx, next: FieldsPicker | null) => ctx.set(picker, next),
+  );
   const matchRetry = Atom.make(0);
   const scheduler = makeRenderSchedulerAtoms({
     runtime,
@@ -472,9 +498,21 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     panels,
     panelDefaults: initialPanels,
     viewSize,
-    placement: Atom.withEquality(
-      Atom.make((get) => placePanels(get(panels), get(viewSize))),
-      sameFields,
+    placement,
+    fieldsPicker,
+    fieldsAction: Atom.writable(
+      (get): FieldsAction =>
+        get(placement).fields === "column"
+          ? { opens: "column", open: get(panels).fields.shown }
+          : { opens: "popover", open: get(fieldsPicker) !== null },
+      (ctx) => {
+        if (ctx.get(placement).fields === "popover")
+          ctx.set(fieldsPicker, ctx.get(fieldsPicker) ? null : { query: "" });
+        else {
+          const current = ctx.get(panels);
+          ctx.set(panels, showPanel("fields", !current.fields.shown)(current));
+        }
+      },
     ),
     pick: Atom.writable(
       (get) => get(item),
@@ -606,6 +644,12 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
     model.document.revision,
     model.scheduler.state,
   ].map((atom) => registry.mount(atom as Atom.Atom<unknown>));
+  // A picker the view closed by widening stays closed when it narrows again.
+  releases.push(
+    registry.subscribe(model.placement, ({ fields }) => {
+      if (fields === "column") registry.set(model.fieldsPicker, null);
+    }),
+  );
   return () => {
     for (const release of releases.reverse()) release();
   };

@@ -53,6 +53,7 @@ import {
   citationExampleLabel,
   entryDiagnostics,
   fieldSnippet,
+  fieldsActionKey,
   panelSizeMenus,
   routeDiagnosis,
   routeProblem,
@@ -179,10 +180,12 @@ import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
 import {
   FieldsPanel,
+  FieldsPicker,
   makeFieldsActions,
   makeFieldsPanelModel,
 } from "./fields-panel";
 import type { FieldsPanelModel } from "./fields-panel";
+import { fieldsActionHost } from "./fields-popover";
 import { createTemplateWorkbenchHost, hostEffect } from "./host";
 import { workbenchAnnotationChoice, workbenchItemChoice } from "./item-choice";
 import { openWorkbenchLayout, setLeafState } from "./layout";
@@ -366,6 +369,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
   #root: Root | null = null;
   #updateActions = () => {};
+  /** The Fields view action, which the Fields picker opens under. */
+  readonly #fieldsAnchor: { current: HTMLElement | null } = { current: null };
   #unsubscribe: (() => void) | null = null;
   #closed = false;
   /** Counts the documents this leaf loaded, so each one mounts a fresh tree. */
@@ -682,6 +687,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         extractPartial: (source) =>
           this.#runner.provide(this.#extractPartial(source)),
         hoverParent: this,
+        fieldsAction: fieldsActionHost(this.#fieldsAnchor),
       },
       (content) => this.provide(content),
     );
@@ -828,6 +834,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.#updateActions();
         this.app.workspace.requestSaveLayout();
       }),
+      // The Fields action shows whether its column or its picker is open.
+      registry.subscribe(this.workbench.fieldsAction, () =>
+        this.#updateActions(),
+      ),
     );
     stops.push(
       watch(registry, model.read, (next, previous) => {
@@ -1595,9 +1605,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       () => this.togglePanel("preview"),
     );
     // Added after the Preview's, so it sits to its left.
+    // It shows the Fields column, or opens the Fields picker where the column
+    // does not fit.
     const fields = this.addAction("panel-left", m.workbench_show_fields(), () =>
-      this.togglePanel("fields"),
+      this.registry.set(this.workbench.fieldsAction, undefined),
     );
+    this.#fieldsAnchor.current = fields;
+    // Where it opens the picker, an arrow opens it and a printable key opens
+    // it searching for that key, as a Bases combobox opens.
+    this.registerDomEvent(fields, "keydown", (event) => {
+      const action = this.registry.get(this.workbench.fieldsAction);
+      if (action.opens !== "popover" || action.open) return;
+      const query = fieldsActionKey(event);
+      if (query === null) return;
+      event.preventDefault();
+      this.registry.set(this.workbench.fieldsPicker, { query });
+    });
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
     });
@@ -1634,9 +1657,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       const shown = this.registry.get(this.workbench.panels).preview.shown;
       preview.setAttribute("aria-pressed", String(shown));
       preview.classList.toggle("is-active", shown);
-      const fieldsShown = this.registry.get(this.workbench.panels).fields.shown;
-      fields.setAttribute("aria-pressed", String(fieldsShown));
-      fields.classList.toggle("is-active", fieldsShown);
+      const action = this.registry.get(this.workbench.fieldsAction);
+      // A toggle for the column; a disclosure for the picker.
+      if (action.opens === "column") {
+        fields.setAttribute("aria-pressed", String(action.open));
+        fields.removeAttribute("aria-expanded");
+        fields.removeAttribute("aria-haspopup");
+      } else {
+        fields.removeAttribute("aria-pressed");
+        fields.setAttribute("aria-haspopup", "dialog");
+        fields.setAttribute("aria-expanded", String(action.open));
+      }
+      fields.classList.toggle("is-active", action.open);
     };
     const syncChrome = () => {
       this.#updateActions();
@@ -3202,6 +3234,7 @@ function EditorContent({
             label: m.workbench_view_fields(),
             resizeLabel: m.workbench_fields_resize(),
             content: <FieldsPanel view={view} actions={view.fieldsActions} />,
+            picker: <FieldsPicker view={view} />,
           },
           preview: {
             label: m.workbench_view_preview(),

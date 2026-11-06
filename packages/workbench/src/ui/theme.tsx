@@ -243,6 +243,21 @@ export interface WorkbenchParts {
     | "checkbox";
 
   panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split";
+  fieldPicker:
+    | "status"
+    | "picker"
+    | "search"
+    | "hint"
+    | "list"
+    | "group"
+    | "group-label"
+    | "option"
+    | "option-label"
+    | "option-value"
+    | "empty"
+    | "detail"
+    | "detail-path"
+    | "detail-value";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description" | "docs-link";
   editToolbar:

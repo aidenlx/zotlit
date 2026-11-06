@@ -213,6 +213,55 @@ export interface WorkbenchToggleProps {
   readonly onChange: (value: boolean) => void;
 }
 
+/** A step of the Fields picker's active row. */
+export type WorkbenchPickerMove =
+  | "next"
+  | "previous"
+  | "first"
+  | "last"
+  | "page-down"
+  | "page-up";
+
+/** The Fields picker's commands, which the host binds to keys while it stands. */
+export interface WorkbenchPickerKeys {
+  /** Moves the active row; the list wraps at either end. */
+  move(step: WorkbenchPickerMove): void;
+  /** Inserts the active row's field, as Enter does. */
+  choose(): void;
+}
+
+/**
+ * The surface the Fields picker opens in, which the host draws under its
+ * Fields action. The host mounts `children` as the surface opens and
+ * unmounts them as it closes; the picker moves focus into its search field
+ * as it mounts.
+ */
+export interface WorkbenchFieldsPopoverProps {
+  readonly open: boolean;
+  /**
+   * The host closed the surface: Escape, a press outside, or focus that
+   * left it. Focus the surface held at closing goes back to the Fields action.
+   */
+  readonly onClose: () => void;
+  readonly keys: WorkbenchPickerKeys;
+  /** The id of the element that names the surface. */
+  readonly labelledBy: string;
+  /**
+   * Whether focus the surface holds as it closes goes back to the Fields
+   * action. False once the picker inserted a field: the editor takes focus
+   * at the inserted text.
+   */
+  readonly returnFocus: boolean;
+  readonly children: ReactNode;
+}
+
+/** The host's Fields action, which opens the Fields Panel or its picker. */
+export interface WorkbenchFieldsAction {
+  readonly popover: ComponentType<WorkbenchFieldsPopoverProps>;
+  /** Moves focus to the action, as when a resize takes away the column that held it. */
+  focus(): void;
+}
+
 /** The partial registry and the create flow one host owns for its editors. */
 export interface WorkbenchPartials {
   /** The registered names, read per keystroke so a new file offers at once. */
@@ -288,6 +337,11 @@ export interface WorkbenchHost {
   matchData: WorkbenchMatchData;
   /** The focused slice editor, or `null` when none has had focus. */
   insertTarget(): WorkbenchInsertTarget | null;
+  /**
+   * The Fields action and the surface its picker opens in. A host that
+   * supplies none opens no picker in a narrow view.
+   */
+  readonly fieldsAction?: WorkbenchFieldsAction;
   persistence: WorkbenchPersistence;
 }
 

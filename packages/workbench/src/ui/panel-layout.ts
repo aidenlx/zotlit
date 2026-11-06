@@ -103,6 +103,18 @@ export interface PanelPlacement {
   readonly fields: "column" | "popover";
 }
 
+/** The Fields picker standing open, with the search it opened on. */
+export interface FieldsPicker {
+  /** The key the reader opened it with from the Fields action, or nothing. */
+  readonly query: string;
+}
+
+/** What the Fields action opens in the view as it is now, and whether that is open. */
+export interface FieldsAction {
+  readonly opens: PanelPlacement["fields"];
+  readonly open: boolean;
+}
+
 /**
  * Places the panels in a view of `size`; a view not measured yet places them
  * as columns. A panel is a column only while the editor keeps

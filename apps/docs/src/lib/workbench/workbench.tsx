@@ -16,7 +16,7 @@ import {
   Save,
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { entrySlice } from "@zotlit/workbench/document";
 import type {
@@ -44,6 +44,7 @@ import {
   diagnosticText,
   entryDiagnostics,
   fieldSnippet,
+  fieldsActionKey,
   renderDiagnosis,
   routeDiagnosis,
   routeProblem,
@@ -85,11 +86,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
+import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages.js";
 
 import { annotationHeaderMark } from "./annotation-mark";
 import { ConnectionBar, ConnectionNotice } from "./connection-bar";
-import { FieldList } from "./field-list";
+import { FieldList, FieldListPicker } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
 import { ProfileMenuLabel, WorkbenchFrame, WorkbenchHelp } from "./frame";
 import { ProfileHandoff } from "./handoff";
@@ -124,6 +126,10 @@ import { ViewMenu } from "./view-menu";
 const PRESSED_TOGGLE =
   "aria-pressed:border-fd-primary aria-pressed:bg-fd-muted aria-pressed:[&_svg]:text-fd-primary";
 
+/** The same marks while a view action's popover stands open. */
+const EXPANDED_TOGGLE =
+  "aria-expanded:border-fd-primary aria-expanded:bg-fd-muted aria-expanded:[&_svg]:text-fd-primary";
+
 /** The Workbench on a page runtime of its own, which closing the page disposes. */
 export function Workbench({
   layer,
@@ -150,7 +156,7 @@ function WorkbenchPage() {
   const sample = useAtomValue(page.chosen);
   // The editor's caret, read when the host asks for it.
   const reads = useRef<EditorReads>({ insertTarget: () => null });
-  const { host, overlays } = useWebHost({
+  const { host, overlays, fieldsAnchor } = useWebHost({
     snapshot: sample,
     notice: (text) => toast.add({ title: text, type: "info" }),
     insertTarget: () => reads.current.insertTarget(),
@@ -163,6 +169,7 @@ function WorkbenchPage() {
       host={host}
       overlays={overlays}
       reads={reads.current}
+      fieldsAnchor={fieldsAnchor}
     />
   );
 }
@@ -173,12 +180,14 @@ function WorkbenchSession({
   host,
   overlays,
   reads,
+  fieldsAnchor,
 }: {
   page: WebPage;
   workbench: WebWorkbench;
   host: WorkbenchHost;
   overlays: ReactNode;
   reads: EditorReads;
+  fieldsAnchor: RefObject<HTMLButtonElement | null>;
 }) {
   const { editor, model, show, chooseAnnotation } = workbench;
   const registry = editor.registry;
@@ -227,6 +236,7 @@ function WorkbenchSession({
   const save = useAtomSet(workbench.save);
   const { drafts, layout: layoutAtom } = workbench;
   const panels = useAtomValue(model.panels);
+  const fieldsAction = useAtomValue(model.fieldsAction);
   const togglePanel = (side: PanelSide) =>
     registry.update(model.panels, (state) =>
       showPanel(side, !state[side].shown)(state),
@@ -668,13 +678,32 @@ function WorkbenchSession({
           </DropdownMenu>
           <ViewMenu model={model} registry={registry} />
           {/* The view actions, as the Obsidian view has them: each shows or
-              hides its panel, wherever the panel goes at this width. */}
+              hides its panel, wherever the panel goes at this width. Where
+              the Fields column does not fit, Fields opens its picker. */}
           <Button
+            ref={fieldsAnchor}
             variant="ghost"
             size="xs"
-            aria-pressed={panels.fields.shown}
-            className={PRESSED_TOGGLE}
-            onClick={() => togglePanel("fields")}
+            aria-pressed={
+              fieldsAction.opens === "column" ? fieldsAction.open : undefined
+            }
+            aria-haspopup={
+              fieldsAction.opens === "popover" ? "dialog" : undefined
+            }
+            aria-expanded={
+              fieldsAction.opens === "popover" ? fieldsAction.open : undefined
+            }
+            className={cn(PRESSED_TOGGLE, EXPANDED_TOGGLE)}
+            onClick={() => registry.set(model.fieldsAction, undefined)}
+            // Where it opens the picker, an arrow opens it and a printable
+            // key opens it searching for that key.
+            onKeyDown={(event) => {
+              if (fieldsAction.opens !== "popover" || fieldsAction.open) return;
+              const query = fieldsActionKey(event);
+              if (query === null) return;
+              event.preventDefault();
+              registry.set(model.fieldsPicker, { query });
+            }}
           >
             <PanelLeft aria-hidden className="rtl:-scale-x-100" />
             {m.workbench_show_fields()}
@@ -988,6 +1017,17 @@ function WorkbenchSession({
               label: m.workbench_view_fields(),
               resizeLabel: m.workbench_fields_resize(),
               content: fields,
+              picker: (
+                <FieldListPicker
+                  root={root}
+                  sample={readSample}
+                  annotation={selectedAnnotation ?? undefined}
+                  citation={annotationResult?.annotationCitation}
+                  ready={ready}
+                  disabled={fieldDisabled}
+                  onInsertNode={insertNode}
+                />
+              ),
             },
             preview: {
               label: m.workbench_view_preview(),

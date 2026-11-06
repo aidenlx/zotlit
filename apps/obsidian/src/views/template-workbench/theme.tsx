@@ -430,6 +430,29 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       split:
         "zt:h-1 zt:shrink-0 zt:cursor-row-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
     },
+    // The Fields picker on its popover: the rows a Bases toolbar menu draws,
+    // with the active row's whole value in a scrolling area under them.
+    fieldPicker: {
+      status: "zt:sr-only",
+      picker: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col",
+      search: "zt:m-(--size-4-1) zt:shrink-0",
+      hint: "zt:shrink-0 zt:px-(--size-4-2) zt:pb-(--size-2-2) zt:text-xs zt:text-muted-foreground",
+      list: "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:overscroll-contain zt:p-(--menu-padding)",
+      "group-label":
+        "zt:ps-1.5 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground",
+      option:
+        "zt:flex zt:cursor-(--cursor) zt:items-baseline zt:gap-(--size-4-2) zt:rounded-sm zt:p-(--size-2-2) zt:ps-(--size-2-3) zt:text-sm zt:data-[state=active]:bg-muted",
+      "option-label": "zt:shrink-0 zt:text-foreground",
+      "option-value":
+        "zt:min-w-0 zt:flex-1 zt:truncate zt:text-end zt:text-xs zt:text-muted-foreground",
+      empty:
+        "zt:shrink-0 zt:px-2 zt:text-xs zt:text-muted-foreground zt:empty:hidden",
+      detail:
+        "zt:max-h-32 zt:shrink-0 zt:overflow-y-auto zt:overscroll-contain zt:border-t-(length:--border-width) zt:border-border zt:px-(--size-4-2) zt:py-(--size-2-3) zt:text-xs zt:empty:hidden",
+      "detail-path": "zt:block zt:font-mono zt:text-muted-foreground",
+      "detail-value":
+        "zt:mt-1 zt:block zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-foreground",
+    },
     tabBar: {
       "tab-bar":
         "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:pb-2",

@@ -91,6 +91,8 @@ export {
   showPanel,
 } from "./panel-layout";
 export type {
+  FieldsAction,
+  FieldsPicker,
   PanelPlacement,
   PanelSide,
   PreviewPanel,
@@ -100,6 +102,8 @@ export type {
 } from "./panel-layout";
 export { panelSizeMenus } from "./panel-menu";
 export { SidePanels } from "./panels";
+export { FieldPicker, fieldsActionKey } from "./field-picker";
+export type { FieldPickerProps } from "./field-picker";
 export type { SidePanel } from "./panels";
 export {
   NO_MATCH_DATA,
@@ -115,6 +119,8 @@ export type {
   WorkbenchConfirmRequest,
   WorkbenchDialogHandle,
   WorkbenchDialogRequest,
+  WorkbenchFieldsAction,
+  WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchInsertTarget,
   WorkbenchInputSuggestionsRequest,
@@ -124,6 +130,8 @@ export type {
   WorkbenchMenuItem,
   WorkbenchMenuRequest,
   WorkbenchPersistence,
+  WorkbenchPickerKeys,
+  WorkbenchPickerMove,
   WorkbenchPreferenceScope,
   WorkbenchSuggesterGroup,
   WorkbenchSuggesterOption,

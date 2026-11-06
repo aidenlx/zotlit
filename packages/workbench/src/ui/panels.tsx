@@ -4,7 +4,7 @@
 // which panels show and where they go; the host's theme draws the parts and
 // names the custom properties that carry each drawn size.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
@@ -32,6 +32,11 @@ export interface SidePanel {
   /** The resize handle's name. */
   readonly resizeLabel: string;
   readonly content: ReactNode;
+  /**
+   * The Fields Panel's content as a picker, a `FieldPicker`, which the Fields
+   * action opens where the column does not fit.
+   */
+  readonly picker?: ReactNode;
 }
 
 /**
@@ -54,11 +59,13 @@ export function SidePanels({
   const preview = panels.preview && state.preview.shown ? panels.preview : null;
   return (
     <div {...part("panels")}>
-      {/* A "popover" placement draws the Fields Panel as a column until the
-          popover picker draws it. */}
-      {fields && (
-        <Column side="fields" width={state.fields.width} {...fields} />
-      )}
+      {/* Where the column does not fit, the Fields action opens the picker
+          over the editor, shown or not. */}
+      {placement.fields === "popover"
+        ? panels.fields?.picker
+        : fields && (
+            <Column side="fields" width={state.fields.width} {...fields} />
+          )}
       <div {...part("stack")}>
         <div {...part("editor")}>{children}</div>
         {preview && placement.preview === "below" && (
@@ -189,6 +196,20 @@ function Column({
   const panels = useAtomValue(model.panels);
   const id = useUniqueId();
   const region = useRef<HTMLElement>(null);
+  const edge = useRef<HTMLDivElement>(null);
+  const host = useOptionalHost();
+  // The Fields column goes when a resize leaves it no room or the reader
+  // hides it. Focus it held then goes to the Fields action, which brings it
+  // back; the cleanup runs while the column still holds that focus.
+  useLayoutEffect(() => {
+    if (side !== "fields") return;
+    const parts = [region.current, edge.current];
+    return () => {
+      const focused = parts[0]?.ownerDocument.activeElement;
+      if (focused && parts.some((element) => element?.contains(focused)))
+        host?.fieldsAction?.focus();
+    };
+  }, [side, host]);
   /** The widest this panel may be while every column keeps its place. */
   const max = columnLimit(panels, side, size);
   const held = (next: number) => clampPanelWidth(next, max);
@@ -219,6 +240,7 @@ function Column({
   // within its own share.
   const handle = (
     <div
+      ref={edge}
       role="separator"
       tabIndex={0}
       aria-label={resizeLabel}
