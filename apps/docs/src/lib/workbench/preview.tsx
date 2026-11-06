@@ -39,7 +39,7 @@ export function WebPreview({
   onShowProblem: (id: string | null) => void;
 }) {
   const model = useWorkbenchModel();
-  const { result, retained, busy, stale, staleReason } = useAtomValue(
+  const { result, retained, busy, staleReason } = useAtomValue(
     model.scheduler.state,
   );
   const settings = useAtomValue(model.preview);
@@ -75,7 +75,6 @@ export function WebPreview({
         annotationResult={annotationResult}
         retained={retained}
         mode={mode}
-        stale={stale}
         staleReason={staleReason}
         showMarkdown={settings.showMarkdown}
         onShowMarkdown={(showMarkdown) => choose(setPreview({ showMarkdown }))}

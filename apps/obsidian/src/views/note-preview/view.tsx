@@ -926,7 +926,7 @@ export class NotePreviewView extends ItemView {
       !this.#root ||
       status !== "ready" ||
       !render?.result ||
-      render.stale ||
+      render.staleReason !== null ||
       !this.contentEl.firstElementChild ||
       this.contentEl.querySelector("[data-zotlit-preview-pending]") ||
       this.contentEl.firstElementChild.getAttribute(
@@ -1253,7 +1253,7 @@ function PreviewContent({
     occurrence?: RenderDiagnostic,
   ) => void;
 }) {
-  const { result, retained, busy, stale, staleReason, trigger, attempt } =
+  const { result, retained, busy, staleReason, trigger, attempt } =
     useRenderState(scheduler);
   const {
     context,
@@ -1417,7 +1417,6 @@ function PreviewContent({
             annotationResult={result}
             retained={retained}
             mode={mode}
-            stale={stale}
             staleReason={staleReason}
             showMarkdown={showMarkdown}
             showManaged={showManaged}

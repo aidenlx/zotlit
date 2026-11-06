@@ -1,16 +1,14 @@
 // The Reader Surface State: what the surfaces of one bound PDF view draw from,
-// held in one vanilla store per view.
+// held in one writable atom of the Reader Surface Model per view.
 //
-// The binding turns external signals into state through the reducers here, and
-// each renderer subscribes to its own selector with an equality, so a signal
-// that changes nothing on screen draws nothing.
-import { subscribeWithSelector } from "zustand/middleware";
-import { createStore } from "zustand/vanilla";
-
+// The binding turns external signals into state through the transitions here,
+// each a pure function from the state to the next one, which answers the same
+// state when nothing changes. Each renderer watches its own derived atom of
+// the model, whose equality holds it still while what it draws stands, so a
+// signal that changes nothing on screen draws nothing.
 import type { SelectedText } from "@zotlit/pdf-structure";
 
 import { offeredSwatches } from "@/lib/annotation-colors";
-import type { EffectBridge } from "@/lib/effect-bridge";
 import {
   capabilityReason,
   sameDeadline,
@@ -21,7 +19,6 @@ import type { CapabilityAffordance } from "@/services/annotation-repository/capa
 import { lockBlock } from "@/services/annotation-repository/lock";
 import type {
   AnnotationRecord,
-  AnnotationRepository,
   TextFieldDraft,
   AnnotationState,
   TagDraft,
@@ -62,7 +59,7 @@ import type {
 import { markPopupRow } from "./mark-popup";
 import type { MarkPopupRowInput, MarkPopupVerb } from "./mark-popup";
 import { gestureOf } from "./tools";
-import type { AnnotationTool, MarkTool, ToolColorStore } from "./tools";
+import type { AnnotationTool, MarkTool } from "./tools";
 
 /** Where the create popup hangs, as a fraction of its page box, so a zoom keeps it. */
 export interface AnchorAt {
@@ -254,33 +251,36 @@ export interface ReaderSurfaceState {
   tagDrafts: ReadonlyMap<string, TagDraft>;
 }
 
-export type ReaderSurfaceStore = ReturnType<typeof createReaderSurfaceState>;
+/** A change to the Reader Surface State: the same state when nothing changes. */
+export type Transition = (state: ReaderSurfaceState) => ReaderSurfaceState;
 
-export function createReaderSurfaceState({
+/** A change that also answers what the caller acts on next. */
+export type Step<A> = (state: ReaderSurfaceState) => [A, ReaderSurfaceState];
+
+/** The state a bound PDF view starts from: no tool armed, nothing floating. */
+export function initialReaderSurfaceState({
   colors,
   recentColors = [],
   capability,
   now,
 }: Pick<ReaderSurfaceState, "colors" | "capability" | "now"> &
-  Partial<Pick<ReaderSurfaceState, "recentColors">>) {
-  return createStore<ReaderSurfaceState>()(
-    subscribeWithSelector((): ReaderSurfaceState => ({
-      armed: null,
-      marksVisible: true,
-      colors,
-      recentColors,
-      capability,
-      capabilityAt: now,
-      now,
-      floating: NONE,
-      liveStroke: null,
-      pendingStrokes: [],
-      records: [],
-      mutations: new Map(),
-      commentDrafts: new Map(),
-      tagDrafts: new Map(),
-    })),
-  );
+  Partial<Pick<ReaderSurfaceState, "recentColors">>): ReaderSurfaceState {
+  return {
+    armed: null,
+    marksVisible: true,
+    colors,
+    recentColors,
+    capability,
+    capabilityAt: now,
+    now,
+    floating: NONE,
+    liveStroke: null,
+    pendingStrokes: [],
+    records: [],
+    mutations: new Map(),
+    commentDrafts: new Map(),
+    tagDrafts: new Map(),
+  };
 }
 
 /**
@@ -289,69 +289,51 @@ export function createReaderSurfaceState({
  * stands to take a press meant to place a mark or to draw. A Text Draft stays:
  * the tool change finishes it, which may save it.
  */
-export function arm(store: ReaderSurfaceStore, tool: MarkTool | null): void {
-  const gesture = gestureOf(tool);
-  store.setState(({ floating }) =>
-    (gesture === "click" || gesture === "stroke") &&
-    floating.kind !== "text-draft"
-      ? { armed: tool, floating: NONE }
-      : { armed: tool },
-  );
-}
+export const arm =
+  (tool: MarkTool | null): Transition =>
+  (state) => {
+    const gesture = gestureOf(tool);
+    const floating =
+      (gesture === "click" || gesture === "stroke") &&
+      state.floating.kind !== "text-draft"
+        ? NONE
+        : state.floating;
+    return state.armed === tool && state.floating === floating
+      ? state
+      : { ...state, armed: tool, floating };
+  };
 
-/**
- * Writes a tool's colour to the settings-backed store and to this view. The
- * choice is a use of that colour too.
- */
-export function setToolColor(
-  store: ReaderSurfaceStore,
-  toolColors: ToolColorStore,
-  { tool, color }: { tool: AnnotationTool; color: string },
-): void {
-  toolColors.set(tool, color);
-  store.setState({ colors: toolColors.current() });
-  recordColorUse(store, toolColors, color);
-}
-
-/**
- * Puts a colour first in the recent list every tool shares: a tool coloured,
- * a mark created, or a mark recoloured.
- */
-export function recordColorUse(
-  store: ReaderSurfaceStore,
-  toolColors: ToolColorStore,
-  color: string,
-): void {
-  toolColors.use(color);
-  store.setState({ recentColors: toolColors.recent() });
-}
-
-export function toggleMarks(store: ReaderSurfaceStore): void {
-  store.setState(({ marksVisible }) => ({ marksVisible: !marksVisible }));
-}
+export const toggleMarks: Transition = (state) => ({
+  ...state,
+  marksVisible: !state.marksVisible,
+});
 
 /**
  * Takes the capability the repository now answers. One with the same meaning
  * as the held one keeps the held object and only moves the clock, so a
  * repeated announcement changes no subscriber's slice.
  */
-export function ingestCapability(
-  store: ReaderSurfaceStore,
-  capability: EditingCapability,
-  now: Temporal.Instant,
-): void {
-  if (sameCapability(store.getState().capability, capability)) {
-    tick(store, now);
-    return;
-  }
-  store.setState({ capability, capabilityAt: now, now });
-}
+export const ingestCapability =
+  (capability: EditingCapability, now: Temporal.Instant): Transition =>
+  (state) =>
+    sameCapability(state.capability, capability)
+      ? tick(now)(state)
+      : { ...state, capability, capabilityAt: now, now };
 
-export function tick(store: ReaderSurfaceStore, now: Temporal.Instant): void {
-  store.setState({ now });
-}
+export const tick =
+  (now: Temporal.Instant): Transition =>
+  (state) =>
+    state.now === now ? state : { ...state, now };
 
 const NONE: Floating = { kind: "none" };
+
+/** The state with `floating` in place, or the same state if it already is. */
+function withFloating(
+  state: ReaderSurfaceState,
+  floating: Floating,
+): ReaderSurfaceState {
+  return state.floating === floating ? state : { ...state, floating };
+}
 
 /**
  * Takes an Annotation as the selection, or clears it for `null`. A repeat
@@ -363,27 +345,32 @@ const NONE: Floating = { kind: "none" };
  * @param options.commenting whether the comment editor opens with the
  *   selection, as it does for a note just placed.
  */
-export function selectMark(
-  store: ReaderSurfaceStore,
-  key: string | null,
-  {
-    stack,
-    quiet = false,
-    commenting = false,
-  }: { stack?: readonly string[]; quiet?: boolean; commenting?: boolean } = {},
-): void {
-  store.setState(({ floating }) => {
-    if (key === null) return { floating: NONE };
+export const selectMark =
+  (
+    key: string | null,
+    {
+      stack,
+      quiet = false,
+      commenting = false,
+    }: {
+      stack?: readonly string[];
+      quiet?: boolean;
+      commenting?: boolean;
+    } = {},
+  ): Transition =>
+  (state) => {
+    const { floating } = state;
+    if (key === null) return withFloating(state, NONE);
     const same = floating.kind === "selected" && floating.key === key;
-    return {
-      floating: selectedMark(key, stack, {
+    return withFloating(
+      state,
+      selectedMark(key, stack, {
         quiet,
         commenting: commenting || (same && floating.commenting),
         tagging: !commenting && same && floating.tagging,
       }),
-    };
-  });
-}
+    );
+  };
 
 /** The floating surface of one selected mark, its editors as given. */
 function selectedMark(
@@ -405,12 +392,10 @@ function selectedMark(
  * Takes two or more Annotations as one selection, which draws no popup and no
  * handles.
  */
-export function selectGroup(
-  store: ReaderSurfaceStore,
-  keys: readonly string[],
-): void {
-  store.setState({ floating: { kind: "group", keys: [...keys] } });
-}
+export const selectGroup =
+  (keys: readonly string[]): Transition =>
+  (state) =>
+    withFloating(state, { kind: "group", keys: [...keys] });
 
 /** A floating surface the Mark Popup never hangs over. */
 export type PopuplessFloating = Extract<
@@ -433,83 +418,75 @@ export function drawsNoPopup(
   );
 }
 
-export function clearFloating(store: ReaderSurfaceStore): void {
-  store.setState({ floating: NONE });
-}
+export const clearFloating: Transition = (state) => withFloating(state, NONE);
 
 /** A settled selection takes the floating surface, whatever held it. */
-export function captureSelection(
-  store: ReaderSurfaceStore,
-  { captured, anchorAt }: { captured: SelectedText; anchorAt: AnchorAt },
-): void {
-  store.setState({
-    floating: {
+export const captureSelection =
+  ({
+    captured,
+    anchorAt,
+  }: {
+    captured: SelectedText;
+    anchorAt: AnchorAt;
+  }): Transition =>
+  (state) =>
+    withFloating(state, {
       kind: "create",
       captured,
       anchorAt,
       commenting: false,
       inFlight: false,
-    },
-  });
-}
+    });
 
 /** Forward through the selected mark's stack, wrapping at its end. */
-export function stepStack(store: ReaderSurfaceStore): void {
-  const { floating } = store.getState();
-  if (floating.kind !== "selected" || floating.stack.length < 2) return;
+export const stepStack: Transition = (state) => {
+  const { floating } = state;
+  if (floating.kind !== "selected" || floating.stack.length < 2) return state;
   const index = (floating.index + 1) % floating.stack.length;
   // A Geometry Edit stands on the mark it began on, not on the next one.
   const { adjust: _adjust, ...selected } = floating;
-  store.setState({
-    floating: {
-      ...selected,
-      key: floating.stack[index]!,
-      index,
-      commenting: false,
-      tagging: false,
-    },
+  return withFloating(state, {
+    ...selected,
+    key: floating.stack[index]!,
+    index,
+    commenting: false,
+    tagging: false,
   });
-}
+};
 
 /**
  * Begins a Geometry Edit on the selected mark, proposing its confirmed
  * position. Nothing begins while no mark with a PDF rects, ink or text
  * position is selected.
  */
-export function beginAdjust(
-  store: ReaderSurfaceStore,
-  { grip, from }: Pick<Adjustment, "grip" | "from">,
-): void {
-  const { floating, records } = store.getState();
-  if (floating.kind !== "selected") return;
-  const position = records.find(({ key }) => key === floating.key)?.position;
-  if (!position || !isEditablePosition(position)) return;
-  store.setState({
-    floating: {
+export const beginAdjust =
+  ({ grip, from }: Pick<Adjustment, "grip" | "from">): Transition =>
+  (state) => {
+    const { floating, records } = state;
+    if (floating.kind !== "selected") return state;
+    const position = records.find(({ key }) => key === floating.key)?.position;
+    if (!position || !isEditablePosition(position)) return state;
+    return withFloating(state, {
       ...floating,
       adjust: { grip, from, proposal: position, phase: "pressed" },
-    },
-  });
-}
+    });
+  };
 
 /**
  * Takes the position the pointer now proposes, with the quoted text of a text
  * range's. A move that stores the same as the held proposal changes nothing,
  * so no subscriber redraws; a saving adjustment takes no more moves.
  */
-export function moveAdjust(
-  store: ReaderSurfaceStore,
-  proposal: EditablePosition,
-  text?: string,
-): void {
-  const { floating } = store.getState();
-  if (floating.kind !== "selected" || !floating.adjust) return;
-  const { adjust } = floating;
-  if (adjust.phase === "saving") return;
-  if (adjust.phase === "dragging" && sameGeometry(adjust.proposal, proposal))
-    return;
-  store.setState({
-    floating: {
+export const moveAdjust =
+  (proposal: EditablePosition, text?: string): Transition =>
+  (state) => {
+    const { floating } = state;
+    if (floating.kind !== "selected" || !floating.adjust) return state;
+    const { adjust } = floating;
+    if (adjust.phase === "saving") return state;
+    if (adjust.phase === "dragging" && sameGeometry(adjust.proposal, proposal))
+      return state;
+    return withFloating(state, {
       ...floating,
       adjust: {
         ...adjust,
@@ -517,102 +494,98 @@ export function moveAdjust(
         ...(text !== undefined && { text }),
         phase: "dragging",
       },
-    },
-  });
-}
+    });
+  };
 
 /** Ends the adjustment and draws the mark from its record again. */
-export function cancelAdjust(store: ReaderSurfaceStore): void {
-  const { floating } = store.getState();
-  if (floating.kind !== "selected" || !floating.adjust) return;
+export const cancelAdjust: Transition = (state) => {
+  const { floating } = state;
+  if (floating.kind !== "selected" || !floating.adjust) return state;
   const { adjust: _adjust, ...selected } = floating;
-  store.setState({ floating: selected });
-}
+  return withFloating(state, selected);
+};
 
 /**
  * Ends the drag at a release. A proposal that stores the same as the
  * confirmed record ends the adjustment; any other is held, `saving`, while
  * the caller writes it.
  *
- * @returns the proposal to save, or `null` for a release that changed nothing.
+ * Answers the proposal to save, or `null` for a release that changed nothing.
  */
-export function endAdjust(store: ReaderSurfaceStore): EditablePosition | null {
-  const { floating, records } = store.getState();
-  if (floating.kind !== "selected" || !floating.adjust) return null;
+export const endAdjust: Step<EditablePosition | null> = (state) => {
+  const { floating, records } = state;
+  if (floating.kind !== "selected" || !floating.adjust) return [null, state];
   const { adjust } = floating;
-  if (adjust.phase === "saving") return null;
+  if (adjust.phase === "saving") return [null, state];
   const confirmed = records.find(({ key }) => key === floating.key)?.position;
   if (
     !confirmed ||
     !isEditablePosition(confirmed) ||
     sameGeometry(confirmed, adjust.proposal)
-  ) {
-    cancelAdjust(store);
-    return null;
-  }
-  store.setState({
-    floating: { ...floating, adjust: { ...adjust, phase: "saving" } },
-  });
-  return adjust.proposal;
-}
+  )
+    return [null, cancelAdjust(state)];
+  return [
+    adjust.proposal,
+    withFloating(state, {
+      ...floating,
+      adjust: { ...adjust, phase: "saving" },
+    }),
+  ];
+};
 
 /**
  * Begins an image capture at a press on a page, which takes the floating
  * surface from whatever held it. Nothing begins while a capture stands.
  */
-export function beginCapture(
-  store: ReaderSurfaceStore,
-  { pageIndex, from }: Pick<Capture, "pageIndex" | "from">,
-): void {
-  if (store.getState().floating.kind === "capture") return;
-  store.setState({
-    floating: {
-      kind: "capture",
-      pageIndex,
-      from,
-      rect: [from[0], from[1], from[0], from[1]],
-      phase: "pressed",
-    },
-  });
-}
+export const beginCapture =
+  ({ pageIndex, from }: Pick<Capture, "pageIndex" | "from">): Transition =>
+  (state) =>
+    state.floating.kind === "capture"
+      ? state
+      : withFloating(state, {
+          kind: "capture",
+          pageIndex,
+          from,
+          rect: [from[0], from[1], from[0], from[1]],
+          phase: "pressed",
+        });
 
 /**
  * Takes the rectangle the pointer now drags out. A move to the held
  * rectangle changes nothing, so no subscriber redraws; a saving capture takes
  * no more moves.
  */
-export function moveCapture(store: ReaderSurfaceStore, rect: PdfRect): void {
-  const { floating } = store.getState();
-  if (floating.kind !== "capture" || floating.phase === "saving") return;
-  if (
-    floating.phase === "dragging" &&
-    floating.rect.every((value, index) => value === rect[index])
-  )
-    return;
-  store.setState({ floating: { ...floating, rect, phase: "dragging" } });
-}
+export const moveCapture =
+  (rect: PdfRect): Transition =>
+  (state) => {
+    const { floating } = state;
+    if (floating.kind !== "capture" || floating.phase === "saving")
+      return state;
+    if (
+      floating.phase === "dragging" &&
+      floating.rect.every((value, index) => value === rect[index])
+    )
+      return state;
+    return withFloating(state, { ...floating, rect, phase: "dragging" });
+  };
 
 /**
  * Ends the capture at a release. A rectangle big enough to keep is held,
  * `saving`, while the caller creates it; any other ends the capture.
  *
- * @returns the rectangle to create, or `null` for a release that keeps none.
+ * Answers the rectangle to create, or `null` for a release that keeps none.
  */
-export function endCapture(store: ReaderSurfaceStore): PdfRect | null {
-  const { floating } = store.getState();
-  if (floating.kind !== "capture" || floating.phase === "saving") return null;
-  if (!capturesImage(floating.rect)) {
-    cancelCapture(store);
-    return null;
-  }
-  store.setState({ floating: { ...floating, phase: "saving" } });
-  return floating.rect;
-}
+export const endCapture: Step<PdfRect | null> = (state) => {
+  const { floating } = state;
+  if (floating.kind !== "capture" || floating.phase === "saving")
+    return [null, state];
+  if (!capturesImage(floating.rect)) return [null, cancelCapture(state)];
+  return [floating.rect, withFloating(state, { ...floating, phase: "saving" })];
+};
 
 /** Ends the capture, whatever phase it stands in, and draws nothing for it. */
-export function cancelCapture(store: ReaderSurfaceStore): void {
-  if (store.getState().floating.kind === "capture") clearFloating(store);
-}
+export const cancelCapture: Transition = (state) =>
+  state.floating.kind === "capture" ? clearFloating(state) : state;
 
 /**
  * Opens a Text Draft at a click on a page, which takes the floating surface
@@ -622,9 +595,8 @@ export function cancelCapture(store: ReaderSurfaceStore): void {
  *
  * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js#L3123-L3151
  */
-export function openTextDraft(
-  store: ReaderSurfaceStore,
-  {
+export const openTextDraft =
+  ({
     pageIndex,
     at,
     fontSize,
@@ -632,24 +604,25 @@ export function openTextDraft(
   }: Pick<TextDraft, "pageIndex" | "fontSize" | "color"> & {
     /** Where the click fell, in PDF points on that page. */
     at: PdfPoint;
-  },
-): void {
-  const [x, y] = at;
-  const half = fontSize / 2;
-  store.setState({
-    armed: null,
-    floating: {
-      kind: "text-draft",
-      pageIndex,
-      fontSize,
-      color,
-      rotation: 0,
-      box: [x - half, y - half, x + half, y + half],
-      text: "",
-      phase: "typing",
-    },
-  });
-}
+  }): Transition =>
+  (state) => {
+    const [x, y] = at;
+    const half = fontSize / 2;
+    return {
+      ...state,
+      armed: null,
+      floating: {
+        kind: "text-draft",
+        pageIndex,
+        fontSize,
+        color,
+        rotation: 0,
+        box: [x - half, y - half, x + half, y + half],
+        text: "",
+        phase: "typing",
+      },
+    };
+  };
 
 /**
  * Takes what the Text Draft now holds, and refits its box to it from the box
@@ -658,72 +631,68 @@ export function openTextDraft(
  *
  * @param options.pageBox the page's view box, in PDF points.
  */
-export function refitTextDraft(
-  store: ReaderSurfaceStore,
-  text: string,
-  { measure, pageBox }: { measure: TextMeasure; pageBox: readonly number[] },
-): void {
-  const draft = selectTextDraft(store.getState());
-  if (draft?.phase !== "typing") return;
-  const box = fitStoredTextBox(
-    text,
-    {
-      rects: [[...draft.box]],
-      rotation: draft.rotation,
-      fontSize: draft.fontSize,
-    },
-    { measure, pageBox },
-  );
-  store.setState({ floating: { ...draft, text, box } });
-}
+export const refitTextDraft =
+  (
+    text: string,
+    { measure, pageBox }: { measure: TextMeasure; pageBox: readonly number[] },
+  ): Transition =>
+  (state) => {
+    const draft = selectTextDraft(state);
+    if (draft?.phase !== "typing") return state;
+    const box = fitStoredTextBox(
+      text,
+      {
+        rects: [[...draft.box]],
+        rotation: draft.rotation,
+        fontSize: draft.fontSize,
+      },
+      { measure, pageBox },
+    );
+    return withFloating(state, { ...draft, text, box });
+  };
 
 /**
  * Finishes the Text Draft. One holding text beyond whitespace is held,
  * `saving`, while the caller creates it; any other goes.
  *
- * @returns the draft to create, or `null` for one that creates nothing.
+ * Answers the draft to create, or `null` for one that creates nothing.
  */
-export function finishTextDraft(store: ReaderSurfaceStore): TextDraft | null {
-  const draft = selectTextDraft(store.getState());
-  if (draft?.phase !== "typing") return null;
-  if (draft.text.trim() === "") {
-    clearFloating(store);
-    return null;
-  }
+export const finishTextDraft: Step<TextDraft | null> = (state) => {
+  const draft = selectTextDraft(state);
+  if (draft?.phase !== "typing") return [null, state];
+  if (draft.text.trim() === "") return [null, clearFloating(state)];
   const saving: TextDraft = { ...draft, phase: "saving" };
-  store.setState({ floating: saving });
-  return saving;
-}
+  return [saving, withFloating(state, saving)];
+};
 
 /**
  * A create answered with the Annotation's Indexed Key. The draft goes at once
  * where a read already holds that record; otherwise it carries the key, and
  * the read that brings the record takes it.
  */
-export function settleTextDraft(store: ReaderSurfaceStore, key: string): void {
-  store.setState(({ floating, records }) => {
-    if (floating.kind !== "text-draft") return {};
-    return { floating: heldBy({ ...floating, key }, records) };
-  });
-}
+export const settleTextDraft =
+  (key: string): Transition =>
+  (state) =>
+    state.floating.kind === "text-draft"
+      ? withFloating(state, heldBy({ ...state.floating, key }, state.records))
+      : state;
 
 /** Takes a Text Draft whose create failed, or never ran, off the page. */
-export function dropTextDraft(store: ReaderSurfaceStore): void {
-  if (store.getState().floating.kind === "text-draft") clearFloating(store);
-}
+export const dropTextDraft: Transition = (state) =>
+  state.floating.kind === "text-draft" ? clearFloating(state) : state;
 
 /**
  * Opens or closes the comment editor or sheet of whatever is floating. The
  * comment editor opens in place of the tag editor.
  */
-export function setCommenting(
-  store: ReaderSurfaceStore,
-  commenting: boolean,
-): void {
-  const { floating } = store.getState();
-  if (drawsNoPopup(floating) || floating.commenting === commenting) return;
-  store.setState({
-    floating:
+export const setCommenting =
+  (commenting: boolean): Transition =>
+  (state) => {
+    const { floating } = state;
+    if (drawsNoPopup(floating) || floating.commenting === commenting)
+      return state;
+    return withFloating(
+      state,
       floating.kind === "selected"
         ? {
             ...floating,
@@ -731,48 +700,47 @@ export function setCommenting(
             tagging: commenting ? false : floating.tagging,
           }
         : { ...floating, commenting },
-  });
-}
+    );
+  };
 
 /**
  * Opens or closes the selected mark's tag editor. The tag editor opens in
  * place of the comment editor.
  */
-export function setTagging(store: ReaderSurfaceStore, tagging: boolean): void {
-  const { floating } = store.getState();
-  if (floating.kind !== "selected" || floating.tagging === tagging) return;
-  store.setState({
-    floating: {
+export const setTagging =
+  (tagging: boolean): Transition =>
+  (state) => {
+    const { floating } = state;
+    if (floating.kind !== "selected" || floating.tagging === tagging)
+      return state;
+    return withFloating(state, {
       ...floating,
       tagging,
       commenting: tagging ? false : floating.commenting,
-    },
-  });
-}
+    });
+  };
 
-export function setInFlight(
-  store: ReaderSurfaceStore,
-  inFlight: boolean,
-): void {
-  const { floating } = store.getState();
-  if (floating.kind !== "create" || floating.inFlight === inFlight) return;
-  store.setState({ floating: { ...floating, inFlight } });
-}
+export const setInFlight =
+  (inFlight: boolean): Transition =>
+  (state) => {
+    const { floating } = state;
+    if (floating.kind !== "create" || floating.inFlight === inFlight)
+      return state;
+    return withFloating(state, { ...floating, inFlight });
+  };
 
 /**
  * Takes the Attachment's Annotations as the last read answered them. A
  * selected Annotation the read no longer holds stands down in the same update.
  */
-export function ingestRecords(
-  store: ReaderSurfaceStore,
-  records: readonly AnnotationRecord[],
-): void {
-  store.setState(({ floating, pendingStrokes }) => ({
+export const ingestRecords =
+  (records: readonly AnnotationRecord[]): Transition =>
+  (state) => ({
+    ...state,
     records,
-    floating: heldBy(floating, records),
-    pendingStrokes: unheldStrokes(pendingStrokes, records),
-  }));
-}
+    floating: heldBy(state.floating, records),
+    pendingStrokes: unheldStrokes(state.pendingStrokes, records),
+  });
 
 /**
  * The Pending Strokes a read does not hold yet. A record takes a stroke's
@@ -811,52 +779,41 @@ function strokeIdentity(position: InkPosition, color: string): string {
 }
 
 /** Publishes the stroke as the pointer has drawn it by this frame. */
-export function publishLiveStroke(
-  store: ReaderSurfaceStore,
-  liveStroke: LiveStroke,
-): void {
-  store.setState({ liveStroke });
-}
+export const publishLiveStroke =
+  (liveStroke: LiveStroke): Transition =>
+  (state) => ({ ...state, liveStroke });
 
-export function clearLiveStroke(store: ReaderSurfaceStore): void {
-  if (store.getState().liveStroke !== null)
-    store.setState({ liveStroke: null });
-}
+export const clearLiveStroke: Transition = (state) =>
+  state.liveStroke === null ? state : { ...state, liveStroke: null };
 
-export function appendPendingStroke(
-  store: ReaderSurfaceStore,
-  stroke: PendingStroke,
-): void {
-  store.setState(({ pendingStrokes }) => ({
-    pendingStrokes: [...pendingStrokes, stroke],
-  }));
-}
+export const appendPendingStroke =
+  (stroke: PendingStroke): Transition =>
+  (state) => ({ ...state, pendingStrokes: [...state.pendingStrokes, stroke] });
 
 /**
  * A create answered with the Annotation's Indexed Key. The stroke goes at
  * once where a read already holds that record; otherwise it carries the key,
  * and the read that brings the record takes it.
  */
-export function settlePendingStroke(
-  store: ReaderSurfaceStore,
-  { id, key }: { id: number; key: string },
-): void {
-  store.setState(({ pendingStrokes, records }) => ({
+export const settlePendingStroke =
+  ({ id, key }: { id: number; key: string }): Transition =>
+  (state) => ({
+    ...state,
     pendingStrokes: unheldStrokes(
-      pendingStrokes.map((stroke) =>
+      state.pendingStrokes.map((stroke) =>
         stroke.id === id ? { ...stroke, key } : stroke,
       ),
-      records,
+      state.records,
     ),
-  }));
-}
+  });
 
 /** Takes a stroke whose create failed, or never ran, off the page. */
-export function dropPendingStroke(store: ReaderSurfaceStore, id: number): void {
-  store.setState(({ pendingStrokes }) => ({
-    pendingStrokes: pendingStrokes.filter((stroke) => stroke.id !== id),
-  }));
-}
+export const dropPendingStroke =
+  (id: number): Transition =>
+  (state) => ({
+    ...state,
+    pendingStrokes: state.pendingStrokes.filter((stroke) => stroke.id !== id),
+  });
 
 /**
  * What floats, stood down if it is a selection the records no longer hold, or
@@ -916,181 +873,120 @@ export function textDraftPosition({
  * An Annotation a complete read confirmed gone leaves at once, with what a
  * write and a draft held on it.
  */
-export function dropRecord(store: ReaderSurfaceStore, key: string): void {
-  store.setState(
-    ({ records, mutations, commentDrafts, tagDrafts, floating }) => {
-      const held = records.filter((record) => record.key !== key);
-      const heldMutations = new Map(mutations);
-      heldMutations.delete(key);
-      return {
-        records: held,
-        floating: heldBy(floating, held),
-        mutations: heldMutations,
-        commentDrafts: withDraft(commentDrafts, key, null),
-        tagDrafts: withDraft(tagDrafts, key, null),
-      };
-    },
-  );
-}
-
-/** What the per-Annotation facts are read and announced through. */
-export type AnnotationFacts = Pick<
-  AnnotationRepository["Service"],
-  "annotationState" | "annotationChanged"
->;
-
-/**
- * Takes a read's records, with the write state and the draft each one already
- * holds: those stood before this view could hear them announced.
- */
-export function ingestAnnotations(
-  store: ReaderSurfaceStore,
-  records: readonly AnnotationRecord[],
-  {
-    annotations,
-    bridge,
-  }: {
-    annotations: Pick<AnnotationRepository["Service"], "annotationState">;
-    bridge: Pick<EffectBridge, "runSync">;
-  },
-): void {
-  ingestRecords(store, records);
-  for (const { key } of records) {
-    ingestAnnotationState(
-      store,
-      key,
-      bridge.runSync(annotations.annotationState(key)),
-    );
-  }
-}
-
-/**
- * Takes what the repository announces about one Annotation — what a write left
- * on it, its drafts, and its deletion — into the state.
- *
- * @returns what stops the listening.
- */
-export function listenAnnotationEvents(
-  store: ReaderSurfaceStore,
-  annotations: AnnotationFacts,
-  bridge: Pick<EffectBridge, "runSync" | "subscribe">,
-): DisposableStack {
-  const listening = new DisposableStack();
-  listening.defer(
-    bridge.subscribe(annotations.annotationChanged, (key) =>
-      ingestAnnotationState(
-        store,
-        key,
-        bridge.runSync(annotations.annotationState(key)),
-      ),
-    ),
-  );
-  return listening;
-}
+export const dropRecord =
+  (key: string): Transition =>
+  ({ records, mutations, commentDrafts, tagDrafts, floating, ...state }) => {
+    const held = records.filter((record) => record.key !== key);
+    const heldMutations = new Map(mutations);
+    heldMutations.delete(key);
+    return {
+      ...state,
+      records: held,
+      floating: heldBy(floating, held),
+      mutations: heldMutations,
+      commentDrafts: withDraft(commentDrafts, key, null),
+      tagDrafts: withDraft(tagDrafts, key, null),
+    };
+  };
 
 /**
  * Takes one Annotation's whole state. A gone Annotation leaves with all it
  * held; a draft a database switch hid closes its editor, where a draft that
  * ended with its save leaves the editor as it stands.
  */
-function ingestAnnotationState(
-  store: ReaderSurfaceStore,
-  key: string,
-  state: AnnotationState,
-): void {
-  if (state.gone) {
-    dropRecord(store, key);
-    return;
-  }
-  // Only a draft this state still holds is hidden: the switch closes its
-  // editor once, not every editor opened on the Annotation after it.
-  if (state.hidden) {
-    const { commentDrafts, tagDrafts } = store.getState();
-    const comment = commentDrafts.get(key);
-    const tags = tagDrafts.get(key);
-    if (comment && hidden(comment, state.textDrafts.comment))
-      hideCommentDraft(store, key);
-    if (tags && hidden(tags, state.tagDraft)) hideTagDraft(store, key);
-  }
-  ingestMutation(store, key, state.mutation);
-  ingestCommentDraft(store, key, state.textDrafts.comment);
-  ingestTagDraft(store, key, state.tagDraft);
-}
+export const ingestAnnotationState =
+  (key: string, annotation: AnnotationState): Transition =>
+  (state) => {
+    if (annotation.gone) return dropRecord(key)(state);
+    let next = state;
+    // Only a draft this state still holds is hidden: the switch closes its
+    // editor once, not every editor opened on the Annotation after it.
+    if (annotation.hidden) {
+      const comment = next.commentDrafts.get(key);
+      const tags = next.tagDrafts.get(key);
+      if (comment && hidden(comment, annotation.textDrafts.comment))
+        next = hideCommentDraft(key)(next);
+      if (tags && hidden(tags, annotation.tagDraft))
+        next = hideTagDraft(key)(next);
+    }
+    next = ingestMutation(key, annotation.mutation)(next);
+    next = ingestCommentDraft(key, annotation.textDrafts.comment)(next);
+    return ingestTagDraft(key, annotation.tagDraft)(next);
+  };
 
 /**
  * Takes what a write now leaves on one Annotation. One equal to the held state
  * changes nothing, so a repeated announcement fires no subscriber.
  */
-export function ingestMutation(
-  store: ReaderSurfaceStore,
-  key: string,
-  mutation: MutationState,
-): void {
-  const held = store.getState().mutations;
-  if (sameFlat(held.get(key) ?? IDLE, mutation)) return;
-  const mutations = new Map(held);
-  if (mutation.kind === "idle") mutations.delete(key);
-  else mutations.set(key, mutation);
-  store.setState({ mutations });
-}
+export const ingestMutation =
+  (key: string, mutation: MutationState): Transition =>
+  (state) => {
+    const held = state.mutations;
+    if (sameFlat(held.get(key) ?? IDLE, mutation)) return state;
+    const mutations = new Map(held);
+    if (mutation.kind === "idle") mutations.delete(key);
+    else mutations.set(key, mutation);
+    return { ...state, mutations };
+  };
 
 /**
  * Takes one Annotation's comment draft, or its absence once a save settled it.
  * A draft that turns into a Write Conflict closes its editor in the same
  * update, so the row can offer the conflict's choices.
  */
-export function ingestCommentDraft(
-  store: ReaderSurfaceStore,
-  key: string,
-  draft: TextFieldDraft | null,
-): void {
-  const { commentDrafts, floating } = store.getState();
-  if (sameFlat(commentDrafts.get(key) ?? null, draft)) return;
-  store.setState({
-    commentDrafts: withDraft(commentDrafts, key, draft),
-    floating:
-      draft?.state.kind === "conflict" ? closedEditor(floating, key) : floating,
-  });
-}
+export const ingestCommentDraft =
+  (key: string, draft: TextFieldDraft | null): Transition =>
+  (state) => {
+    const { commentDrafts, floating } = state;
+    if (sameFlat(commentDrafts.get(key) ?? null, draft)) return state;
+    return {
+      ...state,
+      commentDrafts: withDraft(commentDrafts, key, draft),
+      floating:
+        draft?.state.kind === "conflict"
+          ? closedEditor(floating, key)
+          : floating,
+    };
+  };
 
 /**
  * Takes one Annotation's tag draft, or its absence once its save settled. The
  * repository hands back the same draft while it stands unchanged, so a comment
  * change announced on the same event leaves this one alone.
  */
-function ingestTagDraft(
-  store: ReaderSurfaceStore,
-  key: string,
-  draft: TagDraft | null,
-): void {
-  const { tagDrafts } = store.getState();
-  if ((tagDrafts.get(key) ?? null) === draft) return;
-  store.setState({ tagDrafts: withDraft(tagDrafts, key, draft) });
-}
+const ingestTagDraft =
+  (key: string, draft: TagDraft | null): Transition =>
+  (state) =>
+    (state.tagDrafts.get(key) ?? null) === draft
+      ? state
+      : { ...state, tagDrafts: withDraft(state.tagDrafts, key, draft) };
 
 /** A database switch hid this draft; its editor closes in the same update. */
-export function hideCommentDraft(store: ReaderSurfaceStore, key: string): void {
-  const { commentDrafts, floating } = store.getState();
-  store.setState({
-    commentDrafts: withDraft(commentDrafts, key, null),
-    floating: closedEditor(floating, key),
+export const hideCommentDraft =
+  (key: string): Transition =>
+  (state) => ({
+    ...state,
+    commentDrafts: withDraft(state.commentDrafts, key, null),
+    floating: closedEditor(state.floating, key),
   });
-}
 
 /**
  * A database switch hid this tag draft; its editor closes in the same update,
  * with nothing to save.
  */
-function hideTagDraft(store: ReaderSurfaceStore, key: string): void {
-  const { tagDrafts, floating } = store.getState();
-  store.setState({
-    tagDrafts: withDraft(tagDrafts, key, null),
-    floating:
-      floating.kind === "selected" && floating.key === key && floating.tagging
-        ? { ...floating, tagging: false }
-        : floating,
-  });
-}
+const hideTagDraft =
+  (key: string): Transition =>
+  (state) => {
+    const { tagDrafts, floating } = state;
+    return {
+      ...state,
+      tagDrafts: withDraft(tagDrafts, key, null),
+      floating:
+        floating.kind === "selected" && floating.key === key && floating.tagging
+          ? { ...floating, tagging: false }
+          : floating,
+    };
+  };
 
 /**
  * Whether the repository hid a held draft: it answers none for the Annotation,
@@ -1282,7 +1178,7 @@ export interface SelectedRowHead {
   color: string | null;
   stackIndex: number;
   stackTotal: number;
-  /** Held by identity: the store keeps the object while it means the same. */
+  /** Held by identity: the state keeps the object while it means the same. */
   mutation: MutationState;
   draft: TextFieldDraft | null;
   /** The stored comment the popup renders under its row. */

@@ -18,6 +18,7 @@ import type {
 
 import { NoteQueryHost } from "./note-host";
 import { inPreview, renderPreviewPlaceholder } from "./preview-placeholder";
+import { parseQueryFile } from "./query-file";
 import type { QueryViewDeps } from "./view";
 
 export class QueryFileEmbed extends Component implements EmbedComponent {
@@ -25,6 +26,12 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
   readonly #file: TFile;
   /** The view; `null` in a preview, where the embed shows a placeholder. */
   readonly #host: NoteQueryHost | null;
+  /** The placeholder's container and name; `null` outside a preview. */
+  readonly #placeholder: {
+    el: HTMLElement;
+    name: string;
+    viewName: string | null;
+  } | null = null;
   readonly #events: [{ offref(ref: EventRef): void }, EventRef][] = [];
 
   constructor(
@@ -46,7 +53,8 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
     if (inPreview(context.containerEl)) {
       const name =
         viewName === null ? file.basename : `${file.basename} › ${viewName}`;
-      renderPreviewPlaceholder(context.containerEl, name);
+      renderPreviewPlaceholder(context.containerEl, { name });
+      this.#placeholder = { el: context.containerEl, name, viewName };
       this.#host = null;
       return;
     }
@@ -87,7 +95,13 @@ export class QueryFileEmbed extends Component implements EmbedComponent {
    */
   async loadFile(): Promise<void> {
     const host = this.#host;
-    if (host === null) return;
+    if (host === null) {
+      const placeholder = this.#placeholder;
+      if (placeholder === null) return;
+      const file = parseQueryFile(await readLiveText(this.#app, this.#file));
+      renderPreviewPlaceholder(placeholder.el, { ...placeholder, file });
+      return;
+    }
     host.setText(await readLiveText(this.#app, this.#file));
     await host.shown();
   }

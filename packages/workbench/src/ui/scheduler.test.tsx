@@ -50,7 +50,7 @@ function Preview({ live = true }: { live?: boolean }) {
     })),
   );
   const preview = useStore(store);
-  const { result, retained, busy, stale, staleReason } = useRenderState();
+  const { result, retained, busy, staleReason } = useRenderState();
   return (
     <>
       <PreviewControls
@@ -65,7 +65,7 @@ function Preview({ live = true }: { live?: boolean }) {
       <div
         data-testid="result"
         data-busy={String(busy)}
-        data-stale={String(stale)}
+        data-stale={String(result !== null && staleReason !== null)}
         data-stale-reason={String(staleReason)}
         data-filename={result?.filename ?? ""}
       >
@@ -672,7 +672,7 @@ function IndependentPreview({
     })),
   );
   const { preview, showMarkdown, showManaged } = useStore(store);
-  const { result, busy, stale, staleReason } = useRenderState(scheduler);
+  const { result, busy, staleReason } = useRenderState(scheduler);
   useEffect(() => () => scheduler[Symbol.dispose](), [scheduler]);
   return (
     <>
@@ -690,7 +690,6 @@ function IndependentPreview({
       <ResultColumn
         result={result}
         mode="note"
-        stale={stale}
         staleReason={staleReason}
         showMarkdown={showMarkdown}
         onShowMarkdown={(value) => store.setState({ showMarkdown: value })}

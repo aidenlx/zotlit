@@ -1,3 +1,4 @@
+import type { RenderDiagnostic } from "#/render/index";
 import { useAtomValue } from "@effect/atom-react";
 import {
   act,
@@ -80,34 +81,6 @@ it("shows configuration before an Item is selected and distinguishes pending and
   expect(screen.getAllByText(m.workbench_example_failed())).toHaveLength(2);
 });
 
-it("marks the previous example stale after the source changes", async () => {
-  using mounted = mount(<Configuration />, {
-    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
-  });
-  render(mounted.ui);
-  act(() => {
-    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
-    mounted.scheduler.run();
-  });
-  await act(async () =>
-    mounted.host.renders[0]!.answer({
-      filename: "Research",
-      notePath: "Research",
-    }),
-  );
-  act(() => {
-    mounted.controller.setManifestKey("filename", "Updated");
-  });
-  expect(mounted.scheduler.getState()).toMatchObject({
-    stale: true,
-    busy: false,
-  });
-  expect(screen.queryByText(m.workbench_loading_item())).toBeNull();
-  expect(screen.getAllByText(m.workbench_example_awaiting_run())).toHaveLength(
-    2,
-  );
-});
-
 it("keeps Name and Properties examples when only Annotation fails", async () => {
   using mounted = mount(<Configuration />, {
     state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
@@ -159,7 +132,7 @@ it("marks a held live result as stale while rendering cannot run", async () => {
     mounted.scheduler.run();
   });
   expect(mounted.scheduler.getState()).toMatchObject({
-    stale: true,
+    staleReason: "hold",
     busy: false,
   });
   expect(mounted.host.renders).toHaveLength(1);
@@ -282,6 +255,126 @@ it("clears note-name and expanded spread results immediately when another item i
 /** The note name the tab shows now, whatever sentence stands beside it. */
 const noteName = (container: HTMLElement) =>
   container.querySelector('[data-part="filename-output"]')?.textContent;
+
+/** Renders the first example with a value on the first two rows. */
+async function renderFirstExample(
+  mounted: ReturnType<typeof mount>,
+  diagnostics: readonly RenderDiagnostic[] = [],
+) {
+  act(() => {
+    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
+    mounted.scheduler.run();
+  });
+  await act(async () =>
+    mounted.host.renders[0]!.answer({
+      filename: "Research",
+      notePath: "Research",
+      properties: [
+        { key: "title", position: 1, value: "A paper", missing: false },
+        { key: "related", position: 2, value: "Linked", missing: false },
+      ],
+      diagnostics,
+    }),
+  );
+}
+
+it("keeps the previous example on screen while a live render is queued", async () => {
+  using mounted = mount(<Configuration />, {
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  const dom = render(mounted.ui);
+  await renderFirstExample(mounted);
+  act(() => {
+    mounted.controller.setManifestKey("filename", "Updated");
+  });
+  expect(mounted.scheduler.getState()).toMatchObject({
+    staleReason: "live",
+    busy: false,
+  });
+  expect(
+    screen.queryAllByText(m.workbench_example_awaiting_run()),
+  ).toHaveLength(0);
+  expect(screen.queryByText(m.workbench_loading_item())).toBeNull();
+  expect(noteName(dom.container)).toBe("literatures/Research.md");
+  expect(screen.getByRole("button", { name: "title A paper" })).toBeTruthy();
+  // The render the edit queued is on its way: the example stays until it lands.
+  act(() => mounted.scheduler.run());
+  expect(screen.queryByText(m.workbench_loading_item())).toBeNull();
+  expect(screen.getByRole("button", { name: "title A paper" })).toBeTruthy();
+});
+
+it("keeps each row's own value while a reordered list renders again", async () => {
+  using mounted = mount(<Configuration />, {
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  const dom = render(mounted.ui);
+  await renderFirstExample(mounted);
+  act(() => {
+    mounted.controller.editManagedEntry({ action: "move", position: 1, by: 1 });
+  });
+  expect(
+    screen.queryAllByText(m.workbench_example_awaiting_run()),
+  ).toHaveLength(0);
+  const rows = [
+    ...dom.container.querySelectorAll('[data-part="row-toggle"]'),
+  ].map((row) => row.textContent);
+  expect(rows.slice(0, 2)).toEqual(["relatedLinked", "titleA paper"]);
+});
+
+it("names each row's problem at the row's new place until the next render lands", async () => {
+  using mounted = mount(<Configuration />, {
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  render(mounted.ui);
+  await renderFirstExample(mounted, [
+    { code: "property-error", position: 1, message: "The rule stopped." },
+  ]);
+  act(() => {
+    mounted.controller.editManagedEntry({ action: "move", position: 1, by: 1 });
+  });
+  // Every reader of the result — rows, Problems, the entry editor — reads the
+  // positions of the list on screen.
+  const { result } = mounted.scheduler.getState();
+  expect(result?.diagnostics.map(({ position }) => position)).toEqual([2]);
+  expect(
+    result?.properties.map(({ key, position }) => [key, position]),
+  ).toEqual([
+    ["title", 2],
+    ["related", 1],
+  ]);
+  act(() => {
+    mounted.controller.editManagedEntry({ action: "remove", position: 2 });
+  });
+  // The removed row's value leaves with it. Its problem still explains the
+  // attempt, so it stays, naming no row.
+  const removed = mounted.scheduler.getState().result;
+  expect(removed?.properties).toMatchObject([{ key: "related", position: 1 }]);
+  expect(removed?.diagnostics).toHaveLength(1);
+  expect(removed?.diagnostics[0]).toMatchObject({ code: "property-error" });
+  expect(removed?.diagnostics[0]).not.toHaveProperty("position");
+});
+
+it("asks for a run after the source changes while refresh is on demand", async () => {
+  using mounted = mount(<Configuration />, {
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  const dom = render(mounted.ui);
+  await renderFirstExample(mounted);
+  act(() => mounted.scheduler.setInput({ live: false }));
+  act(() => {
+    mounted.controller.setManifestKey("filename", "Updated");
+  });
+  expect(mounted.scheduler.getState()).toMatchObject({
+    staleReason: "demand",
+  });
+  expect(screen.getAllByText(m.workbench_example_awaiting_run())).toHaveLength(
+    2,
+  );
+  // The example the source left behind stands beside the notice, as the
+  // result column's output does.
+  expect(noteName(dom.container)).toBe("literatures/Research.md");
+  expect(screen.getByRole("button", { name: "title A paper" })).toBeTruthy();
+});
 
 it("tells a broken Filename Template from an empty note name", async () => {
   const show = vi.fn<(id: string) => void>();

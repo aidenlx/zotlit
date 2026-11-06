@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { entrySlice, WorkbenchDocumentController } from "./controller";
+import { followEntries } from "./manifest-patch";
 import type { ManagedEntryAction } from "./manifest-patch";
 
 /**
@@ -500,5 +501,54 @@ describe("Managed Frontmatter patching", () => {
     expect(controller.sliceText(entrySlice(3))).toBe(
       '[{"kind":{"$eval":"zt.itemType"}}',
     );
+  });
+});
+
+describe("followEntries", () => {
+  /** Every position of HAND_WRITTEN's three entries, read in `to`. */
+  const follow = (to: string) => {
+    const map = followEntries(HAND_WRITTEN, to);
+    return map && [1, 2, 3].map(map);
+  };
+
+  it("finds moved entries wherever they went", () => {
+    expect(
+      follow(edit(HAND_WRITTEN, { action: "move", position: 1, by: 1 }).source),
+    ).toEqual([2, 1, 3]);
+    // A Spread Entry swapped with a static one is found by its own text.
+    expect(
+      follow(
+        edit(HAND_WRITTEN, { action: "move", position: 3, by: -1 }).source,
+      ),
+    ).toEqual([1, 3, 2]);
+  });
+
+  it("maps a removed entry to nothing and gives an added one no old entry", () => {
+    expect(
+      follow(edit(HAND_WRITTEN, { action: "remove", position: 1 }).source),
+    ).toEqual([undefined, 1, 2]);
+    expect(
+      follow(
+        edit(HAND_WRITTEN, { action: "add", kind: "property", after: 1 })
+          .source,
+      ),
+    ).toEqual([1, 3, 4]);
+  });
+
+  it("keeps the place of the entry the reader is typing in", () => {
+    const moved = edit(HAND_WRITTEN, {
+      action: "move",
+      position: 1,
+      by: 1,
+    }).source;
+    expect(
+      followEntries(
+        HAND_WRITTEN,
+        moved.replace("zt.dateAdded", "zt.date"),
+      )?.call(null, 2),
+    ).toBe(1);
+    const typed = HAND_WRITTEN.replace("expr: zt.dateAdded", "expr: zt.date");
+    // Nothing moved, so there is nothing to translate.
+    expect(followEntries(HAND_WRITTEN, typed)).toBeNull();
   });
 });
