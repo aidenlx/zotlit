@@ -3690,6 +3690,36 @@ describe("the Fields panel of the Template Workbench View", () => {
     await act(async () => view.close());
   });
 
+  // #1955: where the column does not fit, the action opens the Fields picker.
+  it("opens the Fields picker from the view action in a narrow leaf, and keeps the panel's shown flag", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    const show = actionOf(view, m.workbench_show_fields());
+    await act(async () => show.click());
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 560, height: 800 }),
+    );
+    expect(fields(view)).toBeNull();
+    expect(show.getAttribute("aria-pressed")).toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    // Obsidian opens a popover only under an anchor in the document.
+    document.body.append(show);
+    await act(async () => show.click());
+    // The picker's rows, keys and focus are proved in the running app, with
+    // trusted input (template-workbench.e2e.ts).
+    expect(show.getAttribute("aria-expanded")).toBe("true");
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(view.getState()).toMatchObject({
+      panels: { fields: { shown: true } },
+    });
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1400, height: 800 }),
+    );
+    expect(fields(view)).not.toBeNull();
+    expect(show.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => view.close());
+  });
+
   const insertButtons = (panel: HTMLElement) =>
     [...panel.querySelectorAll<HTMLElement>('[role="button"]')].filter(
       (button) =>

@@ -444,6 +444,30 @@ export const WEB_THEME: WorkbenchTheme = {
       split:
         "relative h-3 shrink-0 cursor-row-resize touch-none outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-fd-muted-foreground hover:after:h-0.5 hover:after:bg-fd-primary focus-visible:after:h-0.5 focus-visible:after:bg-fd-primary",
     },
+    // The Fields picker on its popover: the rows of the page's other
+    // searchable pickers, with the active row's whole value in a scrolling
+    // area under them.
+    fieldPicker: {
+      status: "sr-only",
+      picker: "flex min-h-0 flex-1 flex-col",
+      search:
+        "m-1 h-8 shrink-0 rounded-md border border-fd-border bg-fd-background px-2 text-sm placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-fd-ring",
+      hint: "shrink-0 px-3 pb-1 text-xs text-pretty text-fd-muted-foreground",
+      list: "min-h-0 flex-1 overflow-y-auto overscroll-contain p-1",
+      "group-label":
+        "px-2 pt-2 pb-1 text-xs font-medium text-fd-muted-foreground",
+      option:
+        "flex min-h-9 cursor-pointer items-baseline gap-3 rounded-sm px-2 py-1.5 text-sm hover:bg-fd-muted data-[state=active]:bg-fd-muted",
+      "option-label": "shrink-0 text-fd-foreground",
+      "option-value":
+        "min-w-0 flex-1 truncate text-end text-xs text-fd-muted-foreground",
+      empty: "shrink-0 px-3 py-2 text-xs text-fd-muted-foreground empty:hidden",
+      detail:
+        "max-h-32 shrink-0 overflow-y-auto overscroll-contain border-t border-fd-border px-3 py-2 text-xs empty:hidden",
+      "detail-path": "block font-mono text-fd-muted-foreground",
+      "detail-value":
+        "mt-1 block whitespace-pre-wrap text-fd-foreground [overflow-wrap:anywhere]",
+    },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",
       tab: "disabled:cursor-default disabled:opacity-50 flex min-h-7 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-sm px-2 py-0.5 text-xs font-medium text-fd-muted-foreground data-[state=active]:bg-fd-card data-[state=active]:text-fd-foreground data-[state=active]:shadow-sm [&_svg]:size-4",

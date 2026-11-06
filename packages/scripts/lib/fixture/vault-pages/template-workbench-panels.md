@@ -147,11 +147,80 @@ width than a wide one.
 2. Make the tab about 1000 pixels wide, then about 1200 pixels wide.
 
 Expected: at about 1000 pixels the Preview is at the right, and the Fields
-panel shows as a column too. A popover takes this place in a later release;
-until then, the Fields column can make the editor narrower than 360 pixels.
-At about 1200 pixels all three columns fit with the editor 400 pixels wide.
-In a tab of 560 pixels, the Preview is under the editor and the Fields panel
-stays at the left.
+column goes away: the editor keeps at least 360 pixels of width.
+**Show fields** is not pressed now; it opens the Fields picker (see **Insert
+a field from the Fields picker**). At about 1200 pixels all three columns fit
+with the editor 400 pixels wide, and **Show fields** is pressed again. In a
+tab of 560 pixels, the Preview is under the editor and the Fields column goes
+away.
+
+## Insert a field from the Fields picker
+
+1. Hide the Preview. Choose "Alpha of the personal library", and place the
+   cursor in the note body.
+2. Make the tab narrower than 600 pixels, so the Fields column does not fit.
+3. Select the **Show fields** view action.
+4. Type `doi`, press `ArrowDown` and `ArrowUp`, then press `Enter`.
+
+Expected: step 3 opens the Fields picker under the action, in the style of
+Obsidian's suggesters, with the focus in its search field. **Show fields**
+reads as expanded. The first row is active, and the area under the list shows
+its path (`zt.title`) and its whole value. In step 4 the list keeps the
+fields that match `doi`, the arrow keys move the active row and wrap at the
+ends, and the area under the list follows the active row. `Enter` writes
+`{{ zt.DOI }}` at the cursor, closes the picker and gives the editor the
+focus. A screen reader reads each active row with its value, then "Inserted
+DOI".
+
+## Close the Fields picker
+
+1. Do steps 1 to 3 of the case above.
+2. Press `Escape`.
+3. Open the picker again. Select a place outside it, in the editor.
+4. Open the picker again. Press `Shift+Tab`.
+
+Expected: step 2 closes the picker and gives **Show fields** the focus. Steps
+3 and 4 close the picker too. Each opening starts with an empty search at the
+first row. A press on **Show fields** while the picker is open closes it.
+
+## The Fields picker without a cursor
+
+1. Open the Books Profile in a new tab narrower than 600 pixels, and do not
+   select the editor.
+2. Select **Show fields**, then press `Enter`.
+
+Expected: the picker says "Select a place in the template to insert a
+field." `Enter` inserts nothing, and the picker stays open.
+
+## A long value in the Fields picker
+
+1. Choose "Alpha of the personal library". Open the Fields picker in a
+   narrow tab.
+2. Type `abstract`.
+
+Expected: the row shows the start of the abstract on one line. The area under
+the list shows the whole abstract and scrolls when it is long; the arrow keys
+still move the active row.
+
+## Narrowing keeps the Fields picker closed
+
+1. Show the Fields in a wide tab. Select **Choose item** in the Fields
+   column, then press `Escape`, so the focus is in the column.
+2. Make the tab narrower than 600 pixels.
+3. Make it wide again.
+
+Expected: after step 2, the column goes away, the picker stays closed, and the
+focus moves to **Show fields**. After step 3, the column returns: the Fields
+stay shown while the tab is narrow.
+
+## Widening closes the Fields picker
+
+1. Open the Fields picker in a narrow tab.
+2. Make the tab wide.
+
+Expected: the picker closes and the focus moves to **Show fields**. If the
+Fields were shown, the column returns; otherwise **Show fields** is not
+pressed. Narrowing the tab again leaves the picker closed.
 
 ## Resize the Preview under the editor
 

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { expect, it } from "vitest";
 
@@ -81,4 +82,65 @@ it("sizes each panel with its handle", async () => {
   expect(split.getAttribute("aria-valuenow")).toBe("40");
   press(split, "ArrowUp");
   expect(split.getAttribute("aria-valuenow")).toBe("45");
+});
+
+/** The Fields picker's search field, on the popover over the page. */
+const pickerSearch = () =>
+  document.querySelector<HTMLInputElement>('[role="dialog"] [role="combobox"]');
+
+/** The text of every editor on the page. */
+const editorText = (host: HTMLElement) =>
+  [...host.querySelectorAll<HTMLElement>('[role="textbox"]')]
+    .map((box) => EditorView.findFromDOM(box)?.state.doc.toString() ?? "")
+    .join("\n");
+
+// #1955: where the Fields column does not fit, Fields opens its picker.
+it("opens the Fields picker from its header action in a narrow frame and inserts a field from the keyboard", async () => {
+  await using page = await open({ frame: { width: 560, height: 700 } });
+  await page.settle();
+  const fields = action(page.host, m.workbench_show_fields());
+  expect(region(page.host, m.workbench_view_fields())).toBeNull();
+  expect(fields.getAttribute("aria-expanded")).toBe("false");
+  expect(editorText(page.host)).not.toContain("zt.authors");
+  page.press(m.workbench_show_fields());
+  await page.settle();
+  const search = pickerSearch()!;
+  expect(search).not.toBeNull();
+  expect(document.activeElement).toBe(search);
+  expect(fields.getAttribute("aria-expanded")).toBe("true");
+  press(search, "ArrowDown");
+  const active = document.getElementById(
+    search.getAttribute("aria-activedescendant")!,
+  );
+  expect(active?.textContent).toContain(m.workbench_field_authors());
+  press(search, "Enter");
+  await page.settle();
+  expect(pickerSearch()).toBeNull();
+  expect(editorText(page.host)).toContain("zt.authors");
+  expect(page.host.textContent).toContain(
+    m.workbench_fields_inserted({ field: m.workbench_field_authors() }),
+  );
+});
+
+it("closes the Fields picker on Escape and returns focus to the Fields action", async () => {
+  await using page = await open({ frame: { width: 560, height: 700 } });
+  await page.settle();
+  page.press(m.workbench_show_fields());
+  await page.settle();
+  press(pickerSearch()!, "Escape");
+  await page.settle();
+  expect(pickerSearch()).toBeNull();
+  expect(document.activeElement).toBe(
+    action(page.host, m.workbench_show_fields()),
+  );
+});
+
+it("leaves the Fields picker closed as the frame narrows, and shows the column again as it widens", async () => {
+  await using page = await open({ frame: { width: 1200, height: 700 } });
+  await page.settle();
+  page.resizeFrame({ width: 560, height: 700 });
+  expect(region(page.host, m.workbench_view_fields())).toBeNull();
+  expect(pickerSearch()).toBeNull();
+  page.resizeFrame({ width: 1200, height: 700 });
+  expect(region(page.host, m.workbench_view_fields())).not.toBeNull();
 });

@@ -263,6 +263,47 @@ describe("the side panels", () => {
     expect(registry.get(model.panels)).toBe(panels);
   });
 
+  it("opens the Fields action's column in a wide view and its picker in a narrow one", () => {
+    const viewSize = Atom.make<ViewSize | null>({ width: 1200, height: 800 });
+    using opened = open({ viewSize });
+    const { registry, model } = opened;
+    expect(registry.get(model.fieldsAction)).toEqual({
+      opens: "column",
+      open: false,
+    });
+    registry.set(model.fieldsAction, undefined);
+    expect(registry.get(model.panels).fields.shown).toBe(true);
+    expect(registry.get(model.fieldsAction)).toEqual({
+      opens: "column",
+      open: true,
+    });
+    registry.set(viewSize, { width: 560, height: 800 });
+    // The column does not fit: the action opens the picker, and the panel
+    // keeps its shown flag for a wider view.
+    expect(registry.get(model.fieldsAction)).toEqual({
+      opens: "popover",
+      open: false,
+    });
+    registry.set(model.fieldsAction, undefined);
+    expect(registry.get(model.fieldsPicker)).toBe(true);
+    expect(registry.get(model.fieldsAction).open).toBe(true);
+    registry.set(model.fieldsAction, undefined);
+    expect(registry.get(model.fieldsPicker)).toBe(false);
+    expect(registry.get(model.panels).fields.shown).toBe(true);
+  });
+
+  it("closes the Fields picker when the view widens, and leaves it closed when it narrows again", () => {
+    const viewSize = Atom.make<ViewSize | null>({ width: 560, height: 800 });
+    using opened = open({ viewSize });
+    const { registry, model } = opened;
+    registry.set(model.fieldsAction, undefined);
+    expect(registry.get(model.fieldsPicker)).toBe(true);
+    registry.set(viewSize, { width: 1200, height: 800 });
+    expect(registry.get(model.fieldsPicker)).toBe(false);
+    registry.set(viewSize, { width: 560, height: 800 });
+    expect(registry.get(model.fieldsPicker)).toBe(false);
+  });
+
   it("draws a panel at most two fifths of its container, within the limits", () => {
     expect(panelLimit(1000)).toBe(400);
     expect(panelLimit(400)).toBe(PANEL_WIDTH.min);

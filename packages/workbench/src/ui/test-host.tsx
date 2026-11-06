@@ -16,8 +16,10 @@ import {
   WorkbenchHostProvider,
 } from "./host";
 import type {
+  WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchMenuRequest,
+  WorkbenchPickerMove,
   WorkbenchPreferenceScope,
   WorkbenchSuggesterRequest,
 } from "./host";
@@ -77,6 +79,8 @@ export interface FakeHost extends WorkbenchHost {
     confirms: string[];
     /** Every text handed to the clipboard, in order. */
     copies: string[];
+    /** How many times the tree moved focus to the Fields action. */
+    actionFocuses: number;
   };
   /** Every render asked for, in order, none of them answered yet. */
   readonly renders: PendingRender[];
@@ -132,7 +136,14 @@ export function fakeHost(): FakeHost {
   const host: FakeHost = {
     messages: m,
     getLocale: () => "en",
-    calls: { menus: [], suggesters: [], notices: [], confirms: [], copies: [] },
+    calls: {
+      menus: [],
+      suggesters: [],
+      notices: [],
+      confirms: [],
+      copies: [],
+      actionFocuses: 0,
+    },
     renders,
     started,
     hold: false,
@@ -216,6 +227,10 @@ export function fakeHost(): FakeHost {
       ),
     },
     insertTarget: () => null,
+    fieldsAction: {
+      popover: FakeFieldsPopover,
+      focus: () => void host.calls.actionFocuses++,
+    },
     persistence: {
       read: (scope, name) => preferences.get(key(scope, name)) ?? null,
       write: (scope, name, value) => {
@@ -225,6 +240,41 @@ export function fakeHost(): FakeHost {
     },
   };
   return host;
+}
+
+/** The picker's surface, which binds its keys as a host would and closes on Escape. */
+function FakeFieldsPopover({
+  open,
+  onClose,
+  keys,
+  labelledBy,
+  children,
+}: WorkbenchFieldsPopoverProps) {
+  if (!open) return null;
+  const moves: Record<string, WorkbenchPickerMove> = {
+    ArrowDown: "next",
+    ArrowUp: "previous",
+    Home: "first",
+    End: "last",
+    PageDown: "page-down",
+    PageUp: "page-up",
+  };
+  return (
+    <div
+      role="dialog"
+      aria-labelledby={labelledBy}
+      onKeyDown={(event) => {
+        const move = moves[event.key];
+        if (move) keys.move(move);
+        else if (event.key === "Enter") keys.choose();
+        else if (event.key === "Escape") onClose();
+        else return;
+        event.preventDefault();
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 /** Every part wears `part-<name>`, so a test can see the map land. */

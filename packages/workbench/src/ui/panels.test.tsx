@@ -54,11 +54,11 @@ const order = () =>
   );
 
 describe("the side panels", () => {
-  it("puts the Preview under the editor in a narrow view and beside it in a wide one", () => {
+  it("puts the Preview under the editor in a narrow view, with no Fields column, and beside it in a wide one", () => {
     using page = open({ width: 560, height: 800 });
     const split = screen.getByRole("separator", { name: "Resize preview" });
     expect(split.getAttribute("aria-orientation")).toBe("horizontal");
-    expect(order()).toEqual(["Fields", "Template source", "Preview"]);
+    expect(order()).toEqual(["Template source", "Preview"]);
     const panels = page.registry.get(page.model.panels);
     page.resize({ width: 1200, height: 800 });
     expect(

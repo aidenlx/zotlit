@@ -3,8 +3,12 @@ import { useMemo, useState } from "react";
 
 import { initialTreeState, setAnchor } from "@zotlit/workbench/explorer";
 import type { AnnotationExample } from "@zotlit/workbench/render";
-import { DataExplorer } from "@zotlit/workbench/ui";
-import type { DataExplorerProps, TemplateRoot } from "@zotlit/workbench/ui";
+import { DataExplorer, FieldPicker } from "@zotlit/workbench/ui";
+import type {
+  DataExplorerProps,
+  FieldPickerProps,
+  TemplateRoot,
+} from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
 
@@ -52,6 +56,44 @@ function restore(input: FieldListInput): {
     data.citation = input.citation ?? null;
   return { data, status: data && Object.keys(data).length ? "ready" : "empty" };
 }
+/** What the field list and the picker say while the paper has no fields to list. */
+function emptyText(
+  status: ReturnType<typeof restore>["status"],
+  root: TemplateRoot,
+): string | undefined {
+  if (status === "no-item")
+    return root === "annotation"
+      ? m.workbench_fields_choose_annotation()
+      : m.workbench_fields_choose_item();
+  return status === "loading" ? m.workbench_loading_item() : undefined;
+}
+
+/**
+ * The same fields as the picker the Fields action opens where the column
+ * does not fit.
+ */
+export function FieldListPicker({
+  sample,
+  annotation,
+  citation,
+  ready,
+  root,
+  ...props
+}: FieldListInput & Pick<FieldPickerProps, "disabled" | "onInsertNode">) {
+  const { data, status } = useMemo(
+    () => restore({ sample, annotation, citation, ready, root }),
+    [sample, annotation, citation, ready, root],
+  );
+  return (
+    <FieldPicker
+      {...props}
+      root={root}
+      data={data}
+      empty={emptyText(status, root)}
+    />
+  );
+}
+
 export function FieldList({
   sample,
   annotation,
@@ -89,15 +131,7 @@ export function FieldList({
     <DataExplorer
       {...props}
       data={data}
-      empty={
-        status === "no-item"
-          ? props.root === "annotation"
-            ? m.workbench_fields_choose_annotation()
-            : m.workbench_fields_choose_item()
-          : status === "loading"
-            ? m.workbench_loading_item()
-            : undefined
-      }
+      empty={emptyText(status, props.root)}
       collapsedSections={collapsedSections}
       onCollapsedSectionsChange={setCollapsedSections}
       navigation={navigation}

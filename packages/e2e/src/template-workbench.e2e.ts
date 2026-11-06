@@ -13,6 +13,7 @@ import {
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import * as suite from "./e2e-run-suite-helpers.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import type { CodeMirrorElement } from "./page-notes-types.ts";
 import { withWorkbenchSurfaces } from "./workbench-surfaces.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -183,13 +184,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       ),
     );
+    // Wide enough that the panels stand beside the editor as columns.
+    await suite.wideWindow(cleanup);
     await obRun(
       run.vaultId,
       async ({ app }, { path, showPreview, showFields }) => {
-        const leaf = app.workspace.createLeafInParent(
-          app.workspace.rootSplit,
-          0,
-        );
+        // A tab of the editor area's own, as wide as the window lets it be.
+        const leaf = app.workspace.getLeaf("tab");
         await leaf.setViewState({
           type: "zotlit-template-workbench",
           state: { file: path },
@@ -393,13 +394,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       ),
     );
+    // Wide enough that the panels stand beside the editor as columns.
+    await suite.wideWindow(cleanup);
     await obRun(
       run.vaultId,
       async ({ app }, { path, item }) => {
-        const leaf = app.workspace.createLeafInParent(
-          app.workspace.rootSplit,
-          0,
-        );
+        // A tab of the editor area's own, as wide as the window lets it be.
+        const leaf = app.workspace.getLeaf("tab");
         await leaf.setViewState({
           type: "zotlit-template-workbench",
           state: {
@@ -525,6 +526,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             state: { ...(JSON.parse(state) as object), file: path },
             active: true,
           });
+          // The leaf takes most of the window beside the tab group already
+          // there, so both panels stand as columns (#1955).
+          type Sized = { setDimension(share: number): void };
+          for (const child of (
+            app.workspace.rootSplit as unknown as { children: unknown[] }
+          ).children)
+            (child as Sized).setDimension(child === leaf ? 90 : 10);
         },
         { path, state },
       );
@@ -780,5 +788,210 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(restored.share).toBe("50");
     expect(restored.previewHeight).toBe(Math.round(restored.height * 0.5));
     expect(restored.saved).toEqual(chosen);
+  });
+
+  // #1955: where the Fields column does not fit, Fields opens its picker.
+  it("inserts a field from the Fields picker of a narrow leaf with the keyboard, and closes it on Escape", async () => {
+    const path = `templates/${booksProfile.document}`;
+    const documentPath = join(e2eVaultPath, path);
+    const original = await readFile(documentPath, "utf-8");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        ({ app }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          app.workspace.detachLeavesOfType("empty");
+        },
+        undefined,
+      );
+      await writeFile(documentPath, original);
+    });
+    await suite.wideWindow(cleanup);
+    // The Fields shown, in a leaf too narrow for their column beside an
+    // editor of 360 px.
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, key }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        app.workspace.detachLeavesOfType("empty");
+        const leaf = app.workspace.createLeafInParent(
+          app.workspace.rootSplit,
+          0,
+        );
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: {
+            file: path,
+            itemIndexedKey: key,
+            panels: { fields: { shown: true, width: 400 } },
+          },
+          active: true,
+        });
+        const other = app.workspace.createLeafBySplit(leaf, "vertical");
+        await other.setViewState({ type: "empty" });
+        // Each part's share of the split, as dragging its edge sets it.
+        type Sized = { setDimension(share: number): void };
+        for (const child of (
+          app.workspace.rootSplit as unknown as { children: unknown[] }
+        ).children)
+          (child as Sized).setDimension(
+            child === leaf || child === leaf.parent ? 30 : 70,
+          );
+      },
+      { path, key: targetItem.key },
+    );
+    const narrow = JSON.parse(
+      (await obRunUntil(
+        run.vaultId,
+        ({ page }, { path, label }) => {
+          const view = page.workbench({ path });
+          const action = view?.containerEl.querySelector<HTMLElement>(
+            `.view-action[aria-label="${label}"]`,
+          );
+          if (!view || !action || action.getAttribute("aria-expanded") === null)
+            return null;
+          return JSON.stringify({
+            width: view.contentEl.clientWidth,
+            column: page.fieldsPanel(view) !== null,
+            expanded: action.getAttribute("aria-expanded"),
+            pressed: action.getAttribute("aria-pressed"),
+            shown: view.getState().panels,
+          });
+        },
+        { path, label: run.m.workbench_show_fields() },
+        {
+          what: "a narrow leaf whose Fields action opens the picker",
+          ready: (value) => value !== null,
+        },
+      ))!,
+    ) as Record<string, unknown>;
+    // Narrowing left the picker closed and kept the Fields shown.
+    expect(narrow).toMatchObject({
+      column: false,
+      expanded: "false",
+      pressed: null,
+      shown: { fields: { shown: true } },
+    });
+    expect(narrow.width).toBeLessThan(600);
+
+    const walk = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label }) => {
+        const { until, trusted } = page;
+        const view = page.workbench({ path })!;
+        const el = view.contentEl;
+        const input = trusted(el.win);
+        const contents = (
+          el.win as Window & {
+            electronWindow: { webContents: import("electron").WebContents };
+          }
+        ).electronWindow.webContents;
+        contents.focus();
+        await until("the window takes keys", () => el.doc.hasFocus());
+        const action = view.containerEl.querySelector<HTMLElement>(
+          `.view-action[aria-label="${label}"]`,
+        )!;
+        // The cursor at the end of the note body.
+        const content = el.querySelector<CodeMirrorElement>(".cm-content")!;
+        const editor = content.cmTile!.root.view;
+        await input.click(content);
+        editor.dispatch({ selection: { anchor: editor.state.doc.length } });
+        const search = () =>
+          el.doc.querySelector<HTMLInputElement>(
+            '[role="dialog"] [role="combobox"]',
+          );
+        const activeRow = () =>
+          el.doc.getElementById(
+            search()?.getAttribute("aria-activedescendant") ?? "",
+          );
+        const detail = () =>
+          el.doc.getElementById(
+            search()?.getAttribute("aria-describedby") ?? "",
+          )?.textContent ?? "";
+        await input.click(action);
+        await until(
+          "focus in the picker's search field",
+          () => search() !== null && el.doc.activeElement === search(),
+        );
+        const surface = search()!.closest(".popover")!;
+        const opened = {
+          expanded: action.getAttribute("aria-expanded"),
+          onBody: surface.parentElement === el.doc.body,
+          menuLayer:
+            getComputedStyle(surface).zIndex ===
+            getComputedStyle(el.doc.body)
+              .getPropertyValue("--layer-menu")
+              .trim(),
+        };
+        await contents.insertText("doi");
+        await until("the search keeps the DOI", () =>
+          (activeRow()?.textContent ?? "").startsWith("DOI"),
+        );
+        const first = { row: activeRow()!.id, detail: detail() };
+        await input.key("Down");
+        const moved =
+          activeRow()!.id !== first.row && detail() !== first.detail;
+        await input.key("Up");
+        const back = activeRow()!.id === first.row;
+        await input.key("Enter");
+        await until(
+          "the field at the cursor, the picker closed and the editor focused",
+          () =>
+            search() === null &&
+            editor.state.doc.toString().endsWith("{{ zt.DOI }}") &&
+            editor.hasFocus,
+        );
+        const inserted = {
+          status: el.querySelector('[data-part="status"]')?.textContent ?? null,
+          editorFocused: editor.hasFocus,
+          expanded: action.getAttribute("aria-expanded"),
+        };
+        // Escape closes the next opening and hands focus to the action.
+        await input.click(action);
+        await until(
+          "the picker again",
+          () => el.doc.activeElement === search(),
+        );
+        const fresh = search()!.value;
+        await input.key("Escape");
+        await until("the picker closed", () => search() === null);
+        return JSON.stringify({
+          opened,
+          moved,
+          back,
+          inserted,
+          fresh,
+          escaped: el.doc.activeElement === action,
+        });
+      },
+      { path, label: run.m.workbench_show_fields() },
+    );
+    expect(JSON.parse(walk)).toEqual({
+      opened: { expanded: "true", onBody: true, menuLayer: true },
+      moved: true,
+      back: true,
+      inserted: {
+        status: run.m.workbench_fields_inserted({ field: "DOI" }),
+        editorFocused: true,
+        expanded: "false",
+      },
+      fresh: "",
+      escaped: true,
+    });
+
+    // Widening the leaf shows the column again.
+    await obRun(
+      run.vaultId,
+      ({ app }) => app.workspace.detachLeavesOfType("empty"),
+      undefined,
+    );
+    await obRunUntil(
+      run.vaultId,
+      ({ page }, { path }) =>
+        page.fieldsPanel(page.workbench({ path })) !== null,
+      { path },
+      { what: "the Fields column in the widened leaf" },
+    );
   });
 });
