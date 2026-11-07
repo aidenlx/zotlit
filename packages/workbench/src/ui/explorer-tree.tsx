@@ -9,9 +9,11 @@ import type {
 } from "#/explorer/index";
 import { regex } from "arkregex";
 import { createContext, useContext, useState } from "react";
+import type { ReactNode } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
+import type { ExplorerSectionId } from "./explorer-sections";
 import { useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { useIcon, useParts } from "./theme";
@@ -33,7 +35,7 @@ function activateOnEnterOrSpace<E extends React.KeyboardEvent>(
 
 /** One section of the tree: its heading, its top-level nodes, and the names those nodes show. */
 export interface DisplaySection {
-  readonly id: string;
+  readonly id: ExplorerSectionId;
   readonly label: string;
   readonly collapsed: boolean;
   readonly nodes: readonly DisplayNode[];
@@ -128,7 +130,11 @@ export function DisplayTree({
   );
 }
 
-/** The section's name and row count; its visible text is its accessible name. */
+/**
+ * The section's icon, name and count of its own fields, with the chevron at
+ * its end; its visible text is its accessible name. The host keeps it in
+ * view while its section scrolls past.
+ */
 function SectionHeader({
   section,
   labelId,
@@ -142,24 +148,29 @@ function SectionHeader({
   const part = useParts("explorerTree");
   const icon = useIcon();
   return (
-    <button
-      type="button"
-      aria-expanded={!section.collapsed}
-      aria-disabled={onToggle ? undefined : true}
-      onClick={onToggle}
-      {...part("section-header")}
-    >
-      <span
-        data-expanded={section.collapsed ? undefined : ""}
-        {...part("section-chevron")}
+    <div {...part("section-heading")}>
+      <button
+        type="button"
+        aria-expanded={!section.collapsed}
+        aria-disabled={onToggle ? undefined : true}
+        onClick={onToggle}
+        {...part("section-header")}
       >
-        <span {...part("chevron-icon")}>{icon("chevron-right")}</span>
-      </span>
-      <span id={labelId} {...part("section-label")}>
-        {section.label}
-      </span>{" "}
-      <span {...part("section-count")}>({section.nodes.length})</span>
-    </button>
+        <span aria-hidden="true" {...part("section-icon")}>
+          {icon(`section-${section.id}`)}
+        </span>
+        <span id={labelId} {...part("section-label")}>
+          {section.label}
+        </span>{" "}
+        <span {...part("section-count")}>{section.nodes.length}</span>
+        <span
+          data-expanded={section.collapsed ? undefined : ""}
+          {...part("section-chevron")}
+        >
+          <span {...part("chevron-icon")}>{icon("chevron-right")}</span>
+        </span>
+      </button>
+    </div>
   );
 }
 
@@ -167,6 +178,8 @@ interface TreeNodeProps {
   node: DisplayNode;
   /** The reader-facing name of a top-level field; nested keys show as written. */
   label?: string;
+  /** A field inside another field, whose label stands behind a guide line in the Fields Panel. */
+  nested?: boolean;
   matchedKeys: ReadonlySet<string> | null;
   onToggle: (key: string) => void;
   onInsert?: (node: DisplayNode, keepOpen: boolean) => void;
@@ -174,9 +187,19 @@ interface TreeNodeProps {
   onFieldContextMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }
 
+/**
+ * The label cell of a Fields Panel row: whether its field is nested, and the
+ * chevron that follows the label of a field that opens.
+ */
+const FieldLabelContext = createContext<{
+  readonly nested: boolean;
+  readonly chevron: ReactNode;
+} | null>(null);
+
 function TreeNode({
   node,
   label,
+  nested = false,
   matchedKeys,
   onToggle,
   onInsert,
@@ -202,6 +225,7 @@ function TreeNode({
         {...part("row", isMatched ? "matched" : undefined)}
         data-selected={selected ? "" : undefined}
         data-open={open ? "" : undefined}
+        data-line={rows ? "" : undefined}
         onContextMenu={(event) => {
           event.preventDefault();
           onFieldContextMenu(node, event);
@@ -218,14 +242,29 @@ function TreeNode({
             : undefined
         }
       >
-        {isExpandable ? (
-          <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />
-        ) : (
-          <span {...part("spacer")} />
-        )}
-        {/* The host lays the key and the value out as a wrapping row: one line while both fit, the value on its own line beneath the key when it does not. The space between them survives in text content only. */}
+        {!rows &&
+          (isExpandable ? (
+            <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />
+          ) : (
+            <span {...part("spacer")} />
+          ))}
+        {/* The host lays the key and the value out as a wrapping row: one line while both fit, the value on its own line beneath the key when it does not. The space between them survives in text content only. A Fields Panel row keeps one line, its label in a cell of its own with its chevron after it. */}
         <div {...part("contents", rows ? "line" : undefined)}>
-          <NodeRow node={node} label={label} />
+          <FieldLabelContext.Provider
+            value={
+              rows && {
+                nested,
+                chevron: isExpandable && (
+                  <Chevron
+                    expanded={isExpanded}
+                    onClick={() => onToggle(node.key)}
+                  />
+                ),
+              }
+            }
+          >
+            <NodeRow node={node} label={label} />
+          </FieldLabelContext.Provider>
         </div>
         <ActionCluster
           node={node}
@@ -234,11 +273,12 @@ function TreeNode({
         />
       </div>
       {node.kind === "value" && node.children && (
-        <ul role="group" {...part("group")}>
+        <ul role="group" {...part("group", rows ? "line" : undefined)}>
           {node.children.map((child) => (
             <TreeNode
               key={child.key}
               node={child}
+              nested
               matchedKeys={matchedKeys}
               onToggle={onToggle}
               onInsert={onInsert}
@@ -362,10 +402,20 @@ function NodeRow({ node, label }: { node: DisplayNode; label?: string }) {
 function KeyLabel({ node, label }: { node: DisplayNode; label?: string }) {
   const part = useParts("explorerTree");
   const tooltip = useTooltip(formatPath(node.path, "zt"));
-  if (label === undefined) return <span {...part("key")}>{node.label}</span>;
+  const cell = useContext(FieldLabelContext);
+  const key =
+    label === undefined ? (
+      <span {...part("key")}>{node.label}</span>
+    ) : (
+      <span {...tooltip} {...part("key", "labeled")}>
+        {label}
+      </span>
+    );
+  if (!cell) return key;
   return (
-    <span {...tooltip} {...part("key", "labeled")}>
-      {label}
+    <span {...part("field-label", cell.nested ? "nested" : undefined)}>
+      {key}
+      {cell.chevron}
     </span>
   );
 }

@@ -8,6 +8,7 @@ import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
 import type { ComponentType, ReactNode } from "react";
 
+import type { ExplorerSectionId } from "./explorer-sections";
 import type { SliceLanguage } from "./slice-editor";
 
 /**
@@ -61,13 +62,16 @@ export interface WorkbenchParts {
   explorerTree:
     | "sections"
     | "section"
+    | "section-heading"
     | "section-header"
+    | "section-icon"
     | "section-chevron"
     | "section-label"
     | "section-count"
     | "tree"
     | "spacer"
     | "contents"
+    | "field-label"
     | "group"
     | "chevron"
     | "chevron-icon"
@@ -252,6 +256,7 @@ export interface WorkbenchParts {
     | "header"
     | "icon"
     | "title"
+    | "actions"
     | "pin"
     | "close"
     | "note"
@@ -359,7 +364,8 @@ export type WorkbenchIcon =
   | "insert"
   | "result"
   | "pin"
-  | "unpin";
+  | "unpin"
+  | `section-${ExplorerSectionId}`;
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;

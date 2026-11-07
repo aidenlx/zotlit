@@ -64,7 +64,7 @@ describe("shared Data Explorer", () => {
     ).toBe(true);
     expect(screen.getByText("Extra")).toBeTruthy();
     const identifiers = screen.getByRole("button", {
-      name: `${m.workbench_explorer_section_identifiers()} (1)`,
+      name: `${m.workbench_explorer_section_identifiers()} 1`,
     });
     expect(identifiers.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(identifiers);
@@ -212,7 +212,7 @@ describe("shared Data Explorer", () => {
       render(ui);
       fireEvent.click(
         screen.getByRole("button", {
-          name: `${m.workbench_explorer_section_common()} (2)`,
+          name: `${m.workbench_explorer_section_common()} 2`,
         }),
       );
       expect(screen.queryByText("smith2026")).toBeNull();
@@ -225,7 +225,7 @@ describe("shared Data Explorer", () => {
       expect(
         screen
           .getByRole("button", {
-            name: `${m.workbench_explorer_section_common()} (1)`,
+            name: `${m.workbench_explorer_section_common()} 1`,
           })
           .getAttribute("aria-disabled"),
       ).toBe("true");
@@ -373,7 +373,7 @@ it("keeps two Explorer owners independent through display and filter changes", (
       .find((row) => row.dataset.workbenchField === "authors");
   expect(authorsRow(left)?.getAttribute("aria-expanded")).toBe("true");
   expect(authorsRow(right)?.getAttribute("aria-expanded")).toBe("false");
-  const common = `${m.workbench_explorer_section_common()} (2)`;
+  const common = `${m.workbench_explorer_section_common()} 2`;
   fireEvent.click(left.getByRole("button", { name: common }));
   expect(left.queryByText(m.workbench_field_title())).toBeNull();
   expect(right.getByText(m.workbench_field_title())).toBeTruthy();
