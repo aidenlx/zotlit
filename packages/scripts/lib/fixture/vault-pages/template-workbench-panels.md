@@ -3,14 +3,15 @@ title: Template workbench panels
 ---
 # Template workbench panels
 
-This page checks the Fields sheet and the Preview of the Template Workbench
-View, and the standalone Template Data Explorer. The Fields sheet lists the
-template fields of the chosen Item. It opens over the editor and the Preview,
-at the leading (left) edge of the view, at every width. The Preview sits on
-the right and shows the note that the editor's own render makes for that Item.
-Both are in the same tab as the editor, under one row that names the chosen
-Item. In a tab narrower than 896 pixels (56rem), the Preview moves under the
-editor. The Fields sheet does not move the editor or the Preview.
+This page checks the Fields popover and the Preview of the Template Workbench
+View, and the standalone Template Data Explorer. The Fields popover lists the
+template fields of the chosen Item. It floats at the right edge of the view,
+over the editor and the Preview, at every width. It is not modal: the editor
+and the Preview stay usable while it is open. The Preview sits on the right
+and shows the note that the editor's own render makes for that Item. Both are
+in the same tab as the editor, under one row that names the chosen Item. In a
+tab narrower than 896 pixels (56rem), the Preview moves under the editor. The
+Fields popover does not move the editor or the Preview.
 
 Use the Scope Case `all`. Open `templates/zotlit-profile.books.md` and run
 **Switch to template workbench view**. Close any other Template Workbench tab
@@ -21,7 +22,7 @@ before each case.
 1. Open the Books Profile as above.
 
 Expected: the editor fills the tab. The **Show preview** view action is not
-pressed, and no Fields sheet is open. The pane menu shows **Show fields** and,
+pressed, and no Fields popover is open. The pane menu shows **Show fields** and,
 below it, **Show preview**, both without a check mark, and has no Preview
 settings.
 
@@ -37,7 +38,7 @@ section only**, **Automatically refresh preview** and **Show Markdown**. The
 menu has no **Resize fields**.
 After step 2, the region closes, and the chosen Item stays chosen.
 
-## Open and close the Fields sheet at every width
+## Open and close the Fields popover at every width
 
 1. Make the tab 1200 pixels wide. Select the **Fields** view action. Select it
    again.
@@ -45,54 +46,75 @@ After step 2, the region closes, and the chosen Item stays chosen.
 
 Expected: the tooltip of the view action reads "Fields". In the web Workbench,
 the header button reads **Fields**. At each width, the first select opens one
-region named "Fields" at the left edge of the view. It slides in over the
-editor and the Preview, above a dimmed scrim. Its header shows the braces
-icon, the title "Fields" and a **Close** button. Under the header are the
-"Template fields" explorer and its search. The editor and the Preview keep
-their size. While the sheet is open, the pane menu shows **Show fields**
-checked. The second select closes the sheet and the scrim, and the chosen Item
-stays chosen. The web Workbench's **View** menu shows **Show fields** the same
-way.
+region named "Fields" at the right edge of the view. It floats over the
+editor and the Preview, as tall as the view, with a small gap between it and
+the view's top, right and bottom edges. Nothing under it is dimmed. Its
+header shows the braces icon, the title "Fields" and a **Close** button.
+Under the header are the "Template fields" explorer and its search. The
+editor and the Preview keep their size. While the popover is open, the pane
+menu shows **Show fields** checked. The second select closes the popover, and
+the chosen Item stays chosen. The web Workbench's **View** menu shows **Show
+fields** the same way.
 
-## Close the Fields sheet and return the focus
+## Close the Fields popover and return the focus
 
-1. Select **Fields**. Select the dimmed scrim, to the right of the sheet.
-2. Select **Fields**. Press `Escape`.
-3. Select **Fields**. Select **Close**.
-4. Select **Fields**. Select **Fields** again.
+1. Select **Fields**. Press `Escape`.
+2. Select **Fields**. Select **Close**.
+3. Select **Fields**. Select **Fields** again.
 
-Expected: each step closes the sheet. After steps 1, 2 and 3, the focus is on
+Expected: each step closes the popover. After steps 1 and 2, the focus is on
 the **Fields** view action. The web Workbench does the same steps, with the
 same outcome.
 
-## The Fields sheet keeps the focus
+## Click outside the Fields popover
 
-1. Show the Preview. Select **Fields**.
-2. Press `Tab` until the focus has gone through every control of the sheet and
-   comes back to the start. Press `Shift+Tab` from the first control.
-3. Select a place on the scrim over the editor, then open the sheet again and
-   select a place on the scrim over the Preview.
+1. Show the Preview in a wide tab. Select **Fields**.
+2. Select an empty place in the Preview, outside the popover.
+3. Select **Fields**. Select the row above the editor that names the Item,
+   away from **Choose item**.
 
-Expected: in step 1 the focus goes to the field search of the sheet. In step 2
-`Tab` goes from the last control of the sheet to its first control, and
-`Shift+Tab` goes from the first to the last: the focus never reaches the
-editor or the Preview. In step 3 each select closes the sheet. The cursor in
-the editor does not move, and no control of the Preview takes the select.
+Expected: in step 1 the focus goes to the field search of the popover. Steps 2
+and 3 each close the popover, and the focus is then on the **Fields** view
+action. The web Workbench does step 2 with the same outcome.
+
+## The editor and the Preview stay usable
+
+1. Show the Preview in a wide tab. Select **Source**, and place the cursor in
+   the note body.
+2. Select **Fields**. Press `Tab` from the last control of the popover.
+3. Select **Fields**. Select a place in the note body.
+
+Expected: in step 2 the focus leaves the popover and goes on through the view;
+it is not held inside the popover. Nothing behind the popover is dimmed, and
+the editor and the Preview stay at their size and place. In step 3 the
+popover closes and the editor takes the select.
+
+## Show problem while the Fields popover is open
+
+1. Show the Preview, and choose "Alpha of the personal library".
+2. In the note body, change `{% render "book-details" with zt as zt %}` to
+   `{% render "missing-partial" %}`.
+3. Select **Fields**. Select **Show problem** in the Preview panel.
+
+Expected: in step 3 **Show problem** can be selected while the popover is
+open. It closes the popover, the Problems area opens on the missing partial,
+and the editor selects `{% render "missing-partial" %}` with the focus on it.
+The focus does not go to the **Fields** view action.
 
 ## One Item in every surface
 
 1. Show the Preview.
 2. Select **Choose item** in the row above the editor, and choose "Alpha of
-   the personal library". Select **Fields**, and look at the sheet. Close it.
+   the personal library". Select **Fields**, and look at the popover. Close it.
 3. Select **Choose item** there again, and choose "Beta of the shared reading
-   group". Select **Fields**, and look at the sheet.
+   group". Select **Fields**, and look at the popover.
 
 Expected: one row above the editor and the Preview names the chosen Item; it
-holds the view's one **Choose item**. The sheet header and the view header hold
+holds the view's one **Choose item**. The popover header and the view header hold
 no other **Choose item**, and no other line names the Item. After each choice,
 the row, the Properties tab (`fixture-title`), the Name and folder tab
 (`books-personalAlpha2024`, then `books-sharedReadingBeta2022`), the Fields
-sheet (`title`) and the Preview panel ("Book profile: …") all show the same
+popover (`title`) and the Preview panel ("Book profile: …") all show the same
 Item.
 
 ## Help in the view header
@@ -106,7 +128,7 @@ each opens its page in the browser. The header actions read, from the right:
 More options, **Help**, **Show preview**, **Fields**, **Source**, Redo,
 Undo. In step 2, the pane menu holds no **Help**.
 
-## Collapse every section of the Fields sheet
+## Collapse every section of the Fields popover
 
 1. Select **Fields**.
 2. Select the button at the end of the field search row.
@@ -117,24 +139,24 @@ looks like Obsidian's other icon buttons. Its tooltip reads **Collapse all
 sections**; step 2 closes every section, and the tooltip then reads **Expand
 all sections**. Step 3 opens them all again.
 
-## The Fields sheet follows the editor
+## The Fields popover follows the editor
 
 1. Choose "Alpha of the personal library". Open the Annotation tab. Select
    **Fields**.
-2. In the sheet, select **Back to note root**. Close the sheet.
+2. In the popover, select **Back to note root**. Close the popover.
 3. Open the Name and folder tab, then the Annotation tab again. Select
    **Fields**.
-4. In the sheet, select **Back to note root**. Close the sheet, choose "Beta of
+4. In the popover, select **Back to note root**. Close the popover, choose "Beta of
    the shared reading group", and select **Fields**.
 
-Expected: after step 1, the sheet shows the Annotation root of the chosen
+Expected: after step 1, the popover shows the Annotation root of the chosen
 annotation. After step 2, it shows the Note root, and the editor stays on the
-Annotation tab. In step 3, the sheet follows the editor: it opens on the Note
+Annotation tab. In step 3, the popover follows the editor: it opens on the Note
 name root after the Name and folder tab, and on the Annotation root after the
-Annotation tab. After step 4, the new Item starts the sheet over at the
+Annotation tab. After step 4, the new Item starts the popover over at the
 editor's Annotation root.
 
-## Insert a field from the Fields sheet
+## Insert a field from the Fields popover
 
 1. Choose "Alpha of the personal library". Select **Source**, and place the
    cursor in the note body.
@@ -142,39 +164,39 @@ editor's Annotation root.
 3. Type `x`.
 4. Select **Fields** again. Open the row menu of `title`.
 
-Expected: step 2 writes `{{ zt.title }}` at the cursor, closes the sheet and
+Expected: step 2 writes `{{ zt.title }}` at the cursor, closes the popover and
 gives the editor the focus, after the inserted text. In step 3 the `x` follows
 the inserted `}}` with no space between them. In step 4, the menu offers
 **Copy path**, **Copy value** and the Template Snippets, each of which copies
 to the clipboard. The web Workbench does the same steps, with the same
 outcome.
 
-## A list field in the Fields sheet
+## A list field in the Fields popover
 
 1. Choose "Alpha of the personal library", and select **Fields**.
 2. Find the **All creators** row (Reference) and the **Tags** row (Common
    fields) without opening them.
-3. Close the sheet. Select **Source**, and place the cursor in the note body.
+3. Close the popover. Select **Source**, and place the cursor in the note body.
    Select **Fields**, open the row menu of **All creators**, and select
    **Insert field**.
 4. Select **Fields**, open the row menu of **All creators** again, and select
-   **Copy loop**. Close the sheet, and paste it on a new line of the note body.
+   **Copy loop**. Close the popover, and paste it on a new line of the note body.
 5. Select **Fields**, open the row menu of **Tags**, select **Copy joined**,
-   close the sheet, and paste it on a new line. Then select **Copy loop** in
+   close the popover, and paste it on a new line. Then select **Copy loop** in
    the same menu, and paste it under a line of text.
 
 Expected: in step 2, **All creators** shows `(3)` and every item in one
 line: "Ada Personal, Erin Editor, ZotLit Research Collective". **Tags**
 shows `(2)` and "fixture-core, read-later". In both row menus, **Copy joined**
 comes before **Copy loop**. Step 3 writes
-`{{ zt.creators | join: ", " }}` and closes the sheet, and the Preview shows
+`{{ zt.creators | join: ", " }}` and closes the popover, and the Preview shows
 the three names in one line. Step 4 pastes `{% for creator in zt.creators %}`
 and `- {{ creator }}{% endfor %}` on two lines; the Preview shows each name as
 its own list item. Step 5 pastes `{{ zt.tags | join: ", " }}`, then the tag
 loop, which the Preview shows as the two list items "fixture-core" and
 "read-later". No snippet that a list offers names one item, such as `[0]`.
 
-## Keep the Fields sheet open while inserting
+## Keep the Fields popover open while inserting
 
 1. Choose "Alpha of the personal library". Select **Source**, and place the
    cursor in the note body.
@@ -185,16 +207,17 @@ loop, which the Preview shows as the two list items "fixture-core" and
 4. Press `Escape`.
 
 Expected: steps 2 and 3 write `{{ zt.title }}` and `{{ zt.DOI }}` into the
-note body, and the sheet stays open each time. Step 4 closes the sheet and
-gives the focus to the **Fields** view action.
+note body, and the popover stays open each time. After each, the focus stays
+on that row's **Insert field** button. Step 4 closes the popover and gives the
+focus to the **Fields** view action.
 
-## The Fields sheet without a cursor
+## The Fields popover without a cursor
 
 1. Open the Books Profile in a new tab, and do not select the editor.
 2. Select **Fields**. Look at the rows. Open the row menu of `title`.
 3. Press `Escape`. Select **Source**, and do not select the editor. Select
    **Fields**, and look at the rows.
-4. Close the sheet. Place the cursor in the note body. Select **Fields**.
+4. Close the popover. Place the cursor in the note body. Select **Fields**.
 
 Expected: in steps 2 and 3 the rows have no **Insert field** button, and the
 note's heading and the front matter stay as they were. The row menu still
@@ -212,42 +235,44 @@ with the same outcome.
 4. Type `x`.
 
 Expected: step 2 keeps the fields that match `doi`. Step 3 writes
-`{{ zt.DOI }}` at the cursor, closes the sheet and gives the editor the focus.
+`{{ zt.DOI }}` at the cursor, closes the popover and gives the editor the focus.
 In step 4 the note body reads `{{ zt.DOI }}x`: the cursor is after the
 inserted text. The web Workbench does the same steps, with the same outcome.
 
-## Resizing never opens or closes the Fields sheet
+## Resizing never opens or closes the Fields popover
 
-1. With the sheet closed, show the Preview in a wide tab. Make the tab 320
+1. With the popover closed, show the Preview in a wide tab. Make the tab 320
    pixels wide, then 1200 pixels wide, then shorter than 400 pixels high, then
    tall again.
 2. Select **Fields**. Do the same resizes again.
 
-Expected: in step 1 the sheet stays closed at every size. In step 2 the sheet
-stays open at the left edge of the view at every size, and the Preview moves
-under the editor and back as in **A narrow tab puts the Preview under the
-editor**. The web Workbench does the same when the window changes size.
+Expected: in step 1 the popover stays closed at every size. In step 2 the
+popover stays open at the right edge of the view at every size, and follows
+the view as it resizes: it keeps the small gap to the view's top, right and
+bottom edges and fills the height. The Preview moves under the editor and
+back as in **A narrow tab puts the Preview under the editor**. The web
+Workbench does the same when the window changes size.
 
-## The Fields sheet is closed after a reload
+## The Fields popover is closed after a reload
 
 1. Select **Fields**.
 2. Reload Obsidian (**Reload app without saving**).
 
-Expected: the Books Profile opens with no Fields sheet. The pane menu shows
+Expected: the Books Profile opens with no Fields popover. The pane menu shows
 **Show fields** without a check mark.
 
-## Export from the Fields sheet
+## Export from the Fields popover
 
 1. Choose "Alpha of the personal library", and open the Annotation tab.
 2. Open the pane menu.
-3. Select **Fields**. In the sheet, select **Back to note root**. Open the pane
+3. Select **Fields**. In the popover, select **Back to note root**. Open the pane
    menu again, and select **Save template data as JSON**.
-4. Close the sheet, and open the pane menu.
+4. Close the popover, and open the pane menu.
 
 Expected: in step 2 the pane menu offers **Export selected paper data**, as
 the paper has no annotations. In step 3 it offers **Save template data as
-JSON**, and the saved file holds the Note root the sheet shows, not the
-editor's Annotation root. With the sheet closed (step 4), the entry exports
+JSON**, and the saved file holds the Note root the popover shows, not the
+editor's Annotation root. With the popover closed (step 4), the entry exports
 the editor's own root.
 
 ## Resize the Preview
@@ -331,13 +356,13 @@ its controls stay above the box.
 1. Show the Preview in a wide tab.
 2. Drag the tab out of the window, so it opens in a window of its own.
 3. Make the new window about 500 pixels wide. Select **Fields**, then close
-   the sheet.
+   the popover.
 4. Make the window wide again.
 
 Expected: at about 500 pixels the Preview moves under the editor, and
-**Fields** opens the same sheet at the left edge of the window as in a tab of
-the main window. When the window is wide again, the Preview returns to the
-right, and the sheet stays as the reader left it.
+**Fields** opens the same popover at the right edge of the window as in a tab
+of the main window. When the window is wide again, the Preview returns to the
+right, and the popover stays as the reader left it.
 
 ## Show fields in the pane menu
 
@@ -347,9 +372,9 @@ right, and the sheet stays as the reader left it.
 3. Select **Show fields**.
 4. In a tab wider than 1040 pixels, do steps 1 to 3 again.
 
-Expected: in step 1 the entry has no check mark. It opens the Fields sheet
+Expected: in step 1 the entry has no check mark. It opens the Fields popover
 with the focus in its field search, as the **Fields** view action does. In
-step 2 the entry shows a check mark. Step 3 closes the sheet. Step 4 gives the
+step 2 the entry shows a check mark. Step 3 closes the popover. Step 4 gives the
 same outcome in a wide tab. The web Workbench's **View** menu does the same.
 
 ## Resize the Preview under the editor
@@ -443,9 +468,9 @@ it had before.
 2. Show the Preview in a wide tab. Select **Fields**.
 3. Press `Escape`.
 
-Expected: the Preview is on the left of the editor. In step 2 the Fields sheet
-slides in from the right edge of the view, its leading edge, over the editor
-and the Preview. Step 3 closes it and gives the focus to **Fields**.
+Expected: the Preview is on the left of the editor. In step 2 the Fields
+popover opens at the right edge of the view, over the editor, as in a
+left-to-right view. Step 3 closes it and gives the focus to **Fields**.
 
 ## Preview settings
 
@@ -512,7 +537,7 @@ Expected: in step 2 the loop is added at the end of the note body, the Note
 tab stays chosen, and the cursor is after the loop. In step 3 the Annotation
 tab opens with the cursor at the start of the annotation format. The Preview
 stays under the editor in both steps, and **Show preview** stays pressed. No
-Fields sheet is open after either step. The web Workbench does the same steps.
+Fields popover is open after either step. The web Workbench does the same steps.
 
 ## Other document kinds
 
@@ -532,9 +557,9 @@ offers the example set and the two citation variants. The Shared Partial shows
 
 Expected: after step 1, the editor moves to a window of its own with the
 Preview shown, and no Template Data Explorer tab opens beside it. The Fields
-sheet stays closed. A second **Open template workbench** reveals that window
-and opens no second one. Step 2 opens the Fields sheet over the editor and the
-Preview.
+popover stays closed. A second **Open template workbench** reveals that window
+and opens no second one. Step 2 opens the Fields popover at the right edge of
+the view.
 
 ## The standalone Template Data Explorer
 
@@ -548,7 +573,7 @@ Preview.
 Expected: step 2 opens the explorer in the right sidebar on its own Item; the
 editor keeps "Alpha of the personal library". Step 3 leaves the explorer on
 "Beta of the shared reading group". In step 4 the explorer stays where it is.
-In step 5 the Fields sheet shows the editor's Item, "Within-library duplicate,
+In step 5 the Fields popover shows the editor's Item, "Within-library duplicate,
 first item". The explorer's rows offer copy and Template Snippets, and no
 **Insert field**. **Explore template data** on a Literature Note's file menu,
 and the Zotero `explore` action, open the same standalone explorer.
