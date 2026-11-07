@@ -211,7 +211,6 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
       box.win.getComputedStyle(box).getPropertyValue("--size-4-2"),
     );
     const { style } = this.hoverEl;
-    style.maxHeight = `${rect.height}px`;
     // The surface reads it to scroll inside that height.
     style.setProperty("--zt-pinned-max-height", `${rect.height}px`);
     const width = this.hoverEl.offsetWidth;

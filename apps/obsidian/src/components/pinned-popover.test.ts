@@ -113,7 +113,9 @@ it("stands beside a box, level with its anchor, on the side with more room", asy
   // Left of the panel at the window's right edge: 672 − 8 − 288.
   expect(shell()!.style.left).toBe("376px");
   expect(shell()!.style.top).toBe("120px");
-  expect(shell()!.style.maxHeight).toBe("400px");
+  expect(shell()!.style.getPropertyValue("--zt-pinned-max-height")).toBe(
+    "400px",
+  );
 });
 
 it("stays inside the box's height, and stands right of a box at the left edge", async () => {
