@@ -269,6 +269,11 @@ export interface WorkbenchFieldsAction {
   /** The id of the surface `popover` draws, which the action names while it stands. */
   readonly popoverId: string;
   /**
+   * Moves focus to the action, as when a resize or a hide takes away the
+   * docked panel that held it.
+   */
+  focus(): void;
+  /**
    * The popover a field's details open in, in a view wide enough for it
    * beside the panel; mounted while the details stand open. A host without
    * one shows the details in the bar at the panel's foot at every width.

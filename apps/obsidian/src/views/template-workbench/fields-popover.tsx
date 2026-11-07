@@ -96,7 +96,12 @@ export function fieldsActionHost(
       </PinnedPopover>
     );
   }
-  return { popover: FieldsPopover, popoverId, details: FieldDetailsPopover };
+  return {
+    popover: FieldsPopover,
+    popoverId,
+    focus: () => anchor.current?.focus({ preventScroll: true }),
+    details: FieldDetailsPopover,
+  };
 }
 
 /**

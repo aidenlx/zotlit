@@ -1,5 +1,6 @@
-// The Fields Panel, the chosen Item's fields in the host's non-modal Fields popover.
-import { useAtom, useAtomSet } from "@effect/atom-react";
+// The Fields Panel, the chosen Item's fields in the host's non-modal Fields
+// popover, or docked beside the editor while the reader has it pinned.
+import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react";
 import {
   createContext,
   useContext,
@@ -11,9 +12,10 @@ import type { ReactNode, RefObject } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
-import { useWorkbenchModel } from "./editor";
+import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
 import { useOptionalHost, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { pressFieldsPin } from "./model";
 import type { FieldsAction } from "./panel-layout";
 import { useIcon, useParts } from "./theme";
 
@@ -25,22 +27,31 @@ export interface FieldsPanelContent {
   readonly content: ReactNode;
 }
 
+/** The id of the docked Fields Panel, beside the Fields popover's `popoverId`. */
+export const fieldsDockId = (popoverId: string) => `${popoverId}-docked`;
+
 /**
  * The Fields action's ARIA state: a disclosure of the Fields popover
- * `popoverId` names, which it controls while the popover stands.
+ * `popoverId` names, or of the docked panel, which it controls while either
+ * stands.
  */
 export function fieldsActionAttributes(
   action: FieldsAction,
   popoverId: string,
 ): {
-  readonly "aria-haspopup": "dialog";
+  readonly "aria-haspopup": "dialog" | undefined;
   readonly "aria-expanded": "true" | "false";
   readonly "aria-controls": string | undefined;
 } {
+  const docked = action.placement === "docked";
   return {
-    "aria-haspopup": "dialog",
+    "aria-haspopup": docked ? undefined : "dialog",
     "aria-expanded": action.open ? "true" : "false",
-    "aria-controls": action.open ? popoverId : undefined,
+    "aria-controls": docked
+      ? fieldsDockId(popoverId)
+      : action.open
+        ? popoverId
+        : undefined,
   };
 }
 
@@ -70,57 +81,92 @@ export function FieldsPanel(props: FieldsPanelContent) {
   const model = useWorkbenchModel();
   const host = useOptionalHost();
   const [state, setState] = useAtom(model.fieldsPanel);
+  const { fields } = useAtomValue(model.placement);
   const titleId = useUniqueId();
   const escape = useRef<() => boolean>(() => false);
   const Popover = host?.fieldsAction?.popover;
   if (!Popover) return null;
   return (
     <Popover
-      open={state === "open"}
+      open={fields === "popover"}
       onClose={() => setState("closed")}
       labelledBy={titleId}
       returnFocus={state !== "to-editor"}
       onEscape={() => escape.current()}
     >
-      <FieldsPanelBody {...props} titleId={titleId} escape={escape} />
+      <FieldsPanelBody
+        {...props}
+        titleId={titleId}
+        placement="popover"
+        escape={escape}
+      />
     </Popover>
   );
 }
 
 /**
+ * The Fields Panel docked beside the editor, whose title `titleId` names its
+ * region. It takes focus in its search as it draws only after the reader
+ * pinned or showed it.
+ */
+export function DockedFieldsPanel(
+  props: FieldsPanelContent & { readonly titleId: string },
+) {
+  const escape = useRef<() => boolean>(() => false);
+  return <FieldsPanelBody {...props} placement="docked" escape={escape} />;
+}
+
+/**
  * The panel's header and fields. The popover mounts it as it opens, and it
- * moves focus into its search field as it mounts.
+ * moves focus into its search field as it mounts; the docked panel does so
+ * only where the reader asked for it.
  */
 function FieldsPanelBody({
   label,
   content,
   titleId,
+  placement,
   escape,
 }: FieldsPanelContent & {
   readonly titleId: string;
+  readonly placement: "popover" | "docked";
   readonly escape: RefObject<() => boolean>;
 }) {
-  const model = useWorkbenchModel();
+  const { model, registry } = useWorkbenchEditor();
   const m = useWorkbenchMessages();
   const part = useParts("fieldsPanel");
   const icon = useIcon();
   const setState = useAtomSet(model.fieldsPanel);
+  const { pinned, canPin } = useAtomValue(model.fieldsPin);
   const panel = useRef<HTMLDivElement>(null);
   const [rows] = useState<FieldsPanelRows>(() => ({ escape, panel }));
   const closeLabel = m.workbench_fields_close();
   const closeTooltip = useTooltip(closeLabel);
+  const pinLabel = !canPin
+    ? m.workbench_fields_pin_unavailable()
+    : pinned
+      ? m.workbench_fields_unpin()
+      : m.workbench_fields_pin();
+  const pinTooltip = useTooltip(pinLabel);
   useLayoutEffect(() => {
-    panel.current
-      ?.querySelector<HTMLElement>("[data-part=body] input")
-      ?.focus({ preventScroll: true });
-  }, []);
+    if (placement === "docked") {
+      if (!registry.get(model.fieldsFocus)) return;
+      registry.set(model.fieldsFocus, false);
+    }
+    // A panel with no search yet, as before an item is chosen, takes focus
+    // on its pin, so the focus the popover held does not fall to the page.
+    (
+      panel.current?.querySelector<HTMLElement>("[data-part=body] input") ??
+      panel.current?.querySelector<HTMLElement>("[data-part=pin]")
+    )?.focus({ preventScroll: true });
+  }, [placement, registry, model]);
   return (
     // Escape closes a field's details, then clears the search, before the
     // host closes the panel. A host that takes the key first asks the same
     // step through `onEscape`, and a key it took arrives here handled.
     <div
       ref={panel}
-      {...part("panel")}
+      {...part("panel", placement)}
       onKeyDown={(event) => {
         if (event.key !== "Escape" || event.defaultPrevented) return;
         // Escape that drops an input method's candidate is the method's.
@@ -140,16 +186,34 @@ function FieldsPanelBody({
         <span id={titleId} {...part("title")}>
           {label}
         </span>
+        {/* Disabled by aria-disabled, so the pin keeps its focus and its
+            tooltip says why it does not work. */}
         <button
           type="button"
-          aria-label={closeLabel}
-          onClick={() => setState("closed")}
-          {...closeTooltip}
-          {...part("close")}
+          aria-label={pinLabel}
+          aria-pressed={pinned && canPin}
+          aria-disabled={canPin ? undefined : true}
+          onClick={() => pressFieldsPin(registry, model)}
+          {...pinTooltip}
+          {...part("pin", pinned && canPin ? "pinned" : undefined)}
         >
-          {icon("close")}
+          {icon(pinned && canPin ? "unpin" : "pin")}
         </button>
+        {placement === "popover" && (
+          <button
+            type="button"
+            aria-label={closeLabel}
+            onClick={() => setState("closed")}
+            {...closeTooltip}
+            {...part("close")}
+          >
+            {icon("close")}
+          </button>
+        )}
       </div>
+      {pinned && !canPin && (
+        <p {...part("note")}>{m.workbench_fields_pinned_narrow()}</p>
+      )}
       <FieldsPanelRowsContext.Provider value={rows}>
         <div {...part("body")}>{content}</div>
       </FieldsPanelRowsContext.Provider>

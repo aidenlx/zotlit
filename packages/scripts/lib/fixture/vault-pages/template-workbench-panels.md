@@ -11,7 +11,9 @@ and the Preview stay usable while it is open. The Preview sits on the right
 and shows the note that the editor's own render makes for that Item. Both are
 in the same tab as the editor, under one row that names the chosen Item. In a
 tab narrower than 896 pixels (56rem), the Preview moves under the editor. The
-Fields popover does not move the editor or the Preview.
+Fields popover does not move the editor or the Preview. The reader can pin
+the Fields Panel: in a tab with room, it then docks as a column at the left
+edge of the view, before the editor.
 
 Use the Scope Case `all`. Open `templates/zotlit-profile.books.md` and run
 **Switch to template workbench view**. Close any other Template Workbench tab
@@ -346,6 +348,102 @@ Workbench does the same when the window changes size.
 Expected: the Books Profile opens with no Fields popover. The pane menu shows
 **Show fields** without a check mark.
 
+## Pin the Fields Panel in a wide tab
+
+1. Show the Preview in a tab 1200 pixels wide. Select **Fields**.
+2. In the popover header, select the pin button.
+
+Expected: in step 1 the pin button's tooltip reads "Pin to side" and the
+button is not pressed. After step 2 the popover closes, and the Fields Panel
+stands as a column at the left edge of the view, before the editor, 320
+pixels wide. The editor gets narrower and the Preview stays at the right. The
+focus is in the panel's field search. The pin button is pressed, shows the
+pin-off icon, and its tooltip reads "Unpin". The panel has no **Close**
+button and nothing in the view is dimmed. **Fields** is pressed, and the pane
+menu shows **Show fields** checked. The web Workbench does the same in a
+window 1400 pixels wide.
+
+## Insert and type beside the docked panel
+
+1. With the panel docked, put the cursor at the end of the note body.
+2. Search the panel for "doi", and select **Insert field** on the DOI row.
+3. Type a space.
+
+Expected: `{{ zt.DOI }}` goes in at the cursor, the panel stays docked, and
+the focus is in the editor after the field. The space goes in after the
+field. Shift-select on **Insert field** inserts the field and keeps the focus
+on the row's **Insert field**.
+
+## Resize the docked panel
+
+1. With the panel docked, drag the edge between the panel and the editor to
+   the right.
+2. Press `Tab` until the edge has the focus. Press `ArrowRight`, then
+   `ArrowLeft`, then `Home`, then `End`.
+3. Open the pane menu.
+
+Expected: the drag widens the panel. With the keyboard, `ArrowRight` widens it
+by 16 pixels and `ArrowLeft` narrows it by 16 pixels; `Home` makes it 240
+pixels wide, and `End` 480 pixels wide, or less where the editor would keep
+less than 360 pixels. In step 3 the pane menu shows **Resize fields** with
+**Make wider**, **Make narrower** and **Reset width** (320 pixels), beside
+**Resize preview**. The web Workbench's **View** menu shows the same group.
+
+## Hide and show the docked panel with Fields
+
+1. With the panel docked, select **Fields**.
+2. Select **Fields** again.
+
+Expected: step 1 hides the panel, the editor takes its room, and **Fields** is
+not pressed. The pin stays: step 2 shows the panel again at the same width,
+with the focus in its field search. No popover opens in either step.
+
+## Unpin the docked panel
+
+1. With the panel docked, select the pin button.
+
+Expected: the column closes, and the Fields popover opens at the right edge of
+the view with the focus in its field search. The pin button is not pressed.
+**Fields** opens and closes the popover from now on.
+
+## The pin is disabled in a narrow tab
+
+1. Make the tab 560 pixels wide, with no pin. Select **Fields**.
+2. Select the pin button.
+
+Expected: the popover opens at the right edge. The pin button is dimmed, and
+its tooltip reads "Widen the view to pin". Step 2 changes nothing. The popover
+shows no note under its header.
+
+## A pinned panel in a narrow tab
+
+1. Pin the panel in a wide tab, then make the tab 560 pixels wide.
+2. Select **Fields**.
+3. Make the tab 1200 pixels wide.
+4. Make the tab 560 pixels wide again.
+
+Expected: in step 1 the docked panel goes and no popover opens over the
+editor. In step 2 **Fields** opens the popover. The pin button is dimmed with
+the tooltip "Widen the view to pin", and the note "Pinned · opens over the
+editor in narrow views" shows under the header. In step 3 the popover closes
+and the panel docks again at the left edge, at the width it had, with the
+focus in its search. In step 4 the docked panel goes, and no popover opens.
+With the Preview beside the editor, a tab needs about 1010 pixels to dock the
+panel: the editor keeps 360 pixels beside a panel of 240 pixels and the
+Preview column.
+
+## The pin survives a restart
+
+1. Pin the panel and widen it to 352 pixels.
+2. Reload Obsidian (**Reload app without saving**).
+3. Hide the panel with **Fields**, and reload Obsidian again.
+
+Expected: after step 2 the Books Profile opens with the panel docked at the
+left edge, 352 pixels wide. The focus stays where Obsidian puts it, not in the
+panel. After step 3 the panel stays hidden, and **Fields** shows it again at
+352 pixels. The web Workbench keeps the pin and the width while the page is
+open, and a new page starts unpinned.
+
 ## Export from the Fields popover
 
 1. Choose "Alpha of the personal library", and open the Annotation tab.
@@ -556,6 +654,8 @@ it had before.
 Expected: the Preview is on the left of the editor. In step 2 the Fields
 popover opens at the right edge of the view, over the editor, as in a
 left-to-right view. Step 3 closes it and gives the focus to **Fields**.
+Pinned, the panel docks at the right edge, before the editor in reading
+order, and `ArrowLeft` on its edge widens it.
 
 ## Preview settings
 

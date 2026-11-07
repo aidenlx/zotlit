@@ -1,6 +1,8 @@
 import { EditorView } from "@codemirror/view";
 import {
   Braces,
+  Pin,
+  PinOff,
   Copy,
   Check,
   Code2,
@@ -87,6 +89,8 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   fields: Braces,
   insert: TextCursorInput,
   result: CornerDownRight,
+  pin: Pin,
+  unpin: PinOff,
 };
 
 /** A read-only Properties block: one row per property, key beside value. */
@@ -475,21 +479,31 @@ export const WEB_THEME: WorkbenchTheme = {
       status: "sr-only",
       editor: "flex min-h-0 min-w-0 flex-1 flex-col",
       panel:
-        "flex min-h-0 min-w-0 shrink-0 flex-col data-[state=preview]:w-(--workbench-panel-width) data-[state=below]:h-(--workbench-panel-height)",
+        "flex min-h-0 min-w-0 shrink-0 flex-col data-[state=fields]:w-(--workbench-panel-width) data-[state=preview]:w-(--workbench-panel-width) data-[state=below]:h-(--workbench-panel-height)",
       edge: "relative w-3 shrink-0 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:start-1/2 after:w-px after:bg-fd-muted-foreground hover:after:w-0.5 hover:after:bg-fd-primary focus-visible:after:w-0.5 focus-visible:after:bg-fd-primary",
       split:
         "relative h-3 shrink-0 cursor-row-resize touch-none outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-fd-muted-foreground hover:after:h-0.5 hover:after:bg-fd-primary focus-visible:after:h-0.5 focus-visible:after:bg-fd-primary",
     },
     // The Fields Panel in the Fields popover, which stands inset at the right
     // edge of the panels as tall as they are: it slides in from that edge,
-    // and a still motion setting shows it at once.
+    // and a still motion setting shows it at once. Docked, it is a card in
+    // its column, as the Preview is.
     fieldsPanel: {
-      panel:
-        "flex h-full w-80 max-w-full flex-col rounded-lg border border-fd-border bg-fd-card text-fd-card-foreground shadow-xl transition-[translate,opacity] duration-150 ease-out starting:translate-x-2 starting:opacity-0 motion-reduce:transition-none",
+      panel: cn(
+        "flex h-full min-w-0 flex-col rounded-lg border border-fd-border bg-fd-card text-fd-card-foreground",
+        "data-[state=popover]:w-80 data-[state=popover]:max-w-full data-[state=popover]:shadow-xl data-[state=popover]:transition-[translate,opacity] data-[state=popover]:duration-150 data-[state=popover]:ease-out motion-reduce:transition-none data-[state=popover]:starting:translate-x-2 data-[state=popover]:starting:opacity-0",
+      ),
       header: "flex shrink-0 items-center gap-1 px-2 pt-2",
       icon: "flex shrink-0 ps-1 text-fd-muted-foreground [&_svg]:size-4",
       title: "min-w-0 flex-1 truncate px-1 text-sm font-semibold",
+      // With no room to dock, the pin steps back and keeps its focus and
+      // its tooltip.
+      pin: cn(
+        historyButton,
+        "shrink-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 data-[state=pinned]:bg-fd-accent data-[state=pinned]:text-fd-accent-foreground",
+      ),
       close: cn(historyButton, "shrink-0"),
+      note: "shrink-0 px-3 pt-0.5 text-xs text-pretty text-fd-muted-foreground",
       body: "flex min-h-0 flex-1 flex-col overflow-auto",
     },
     fieldDetails: {

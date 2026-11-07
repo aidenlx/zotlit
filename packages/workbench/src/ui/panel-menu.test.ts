@@ -6,6 +6,7 @@ import { panelSizeMenus } from "./panel-menu";
 import { m } from "./test-messages";
 
 const BOTH: WorkbenchPanels = {
+  ...INITIAL_PANELS,
   preview: { ...INITIAL_PANELS.preview, shown: true },
 };
 

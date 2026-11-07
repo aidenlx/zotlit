@@ -31,7 +31,12 @@ const PAPER = {
 };
 
 const PREVIEW: WorkbenchPanels = {
+  ...INITIAL_PANELS,
   preview: { ...INITIAL_PANELS.preview, shown: true },
+};
+const PINNED: WorkbenchPanels = {
+  ...PREVIEW,
+  fields: { ...INITIAL_PANELS.fields, pinned: true },
 };
 
 /** The explorer the hosts put in the Fields Panel, over its own navigation. */
@@ -69,7 +74,13 @@ function open({
   size = { width: 560, height: 800 },
   refuse = false,
   disabled = false,
-}: { size?: ViewSize; refuse?: boolean; disabled?: boolean } = {}) {
+  panels = PREVIEW,
+}: {
+  size?: ViewSize;
+  refuse?: boolean;
+  disabled?: boolean;
+  panels?: WorkbenchPanels;
+} = {}) {
   const viewSize = Atom.make<ViewSize | null>(size);
   const inserted: string[] = [];
   const keptOpen: boolean[] = [];
@@ -78,6 +89,7 @@ function open({
       panels={{
         fields: {
           label: "Fields",
+          resizeLabel: "Resize fields",
           content: (
             <Fields
               disabled={disabled}
@@ -99,7 +111,7 @@ function open({
     >
       <textarea aria-label="Template source" />
     </SidePanels>,
-    { panels: PREVIEW, viewSize },
+    { panels, viewSize },
   );
   render(mounted.ui);
   return Object.assign(mounted, {
@@ -114,13 +126,20 @@ function open({
 
 /** The Fields Panel on the host's popover. */
 const panel = () => screen.queryByRole("dialog", { name: "Fields" });
+/** The Fields Panel docked beside the editor. */
+const docked = () => screen.queryByRole("region", { name: "Fields" });
+/** The pin in the header of the panel that stands. */
+const pin = () =>
+  within((panel() ?? docked())!).getByRole("button", {
+    name: /pin/i,
+  });
 /** Whether focus went back to the Fields action as the popover last closed. */
 const returnedFocus = () =>
   document
     .querySelector("[data-return-focus]")
     ?.getAttribute("data-return-focus");
 const titleRow = () =>
-  within(panel()!)
+  within((panel() ?? docked())!)
     .getAllByRole("treeitem")
     .find((row) => row.textContent?.includes("Title"))!;
 const insertTitle = (init?: MouseEventInit) =>
@@ -213,17 +232,146 @@ describe("the Fields Panel popover", () => {
   });
 });
 
+describe("the pinned Fields Panel", () => {
+  it("docks beside the editor once the reader pins it in a wide view", () => {
+    using page = open({ size: { width: 1200, height: 800 } });
+    page.pressAction();
+    expect(pin().getAttribute("aria-label")).toBe("Pin to side");
+    expect(pin().getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(pin());
+    expect(panel()).toBeNull();
+    expect(docked()).not.toBeNull();
+    expect(page.registry.get(page.model.placement).fields).toBe("docked");
+    // The region takes its name from the title it shows, so a host that
+    // draws aria-label as a tooltip shows none over the column.
+    expect(docked()!.hasAttribute("aria-label")).toBe(false);
+    expect(page.registry.get(page.model.panels).fields.pinned).toBe(true);
+    expect(pin().getAttribute("aria-label")).toBe("Unpin");
+    expect(pin().getAttribute("aria-pressed")).toBe("true");
+    // The docked panel takes over focus, in its search field.
+    expect(document.activeElement).toBe(
+      within(docked()!).getByRole("combobox"),
+    );
+    // Its edge sizes it; it has no Close button and is not modal.
+    expect(
+      screen.getByRole("separator", { name: "Resize fields" }),
+    ).not.toBeNull();
+    expect(
+      within(docked()!).queryByRole("button", { name: "Close" }),
+    ).toBeNull();
+    expect(document.querySelector("[inert]")).toBeNull();
+    expect(page.isOpen()).toBe(true);
+  });
+
+  it("stays docked as it inserts, and leaves focus to the editor", () => {
+    using page = open({ size: { width: 1200, height: 800 }, panels: PINNED });
+    insertTitle();
+    expect(page.inserted).toEqual(["title"]);
+    expect(page.keptOpen).toEqual([false]);
+    expect(docked()).not.toBeNull();
+  });
+
+  it("hides and shows from the Fields action, and keeps its pin", () => {
+    using page = open({ size: { width: 1200, height: 800 }, panels: PINNED });
+    expect(docked()).not.toBeNull();
+    // A docked panel restored with the view takes no focus.
+    expect(document.activeElement).toBe(document.body);
+    page.pressAction();
+    expect(docked()).toBeNull();
+    expect(panel()).toBeNull();
+    expect(page.isOpen()).toBe(false);
+    expect(page.registry.get(page.model.panels).fields).toMatchObject({
+      pinned: true,
+      hidden: true,
+    });
+    page.pressAction();
+    expect(docked()).not.toBeNull();
+    expect(page.registry.get(page.model.panels).fields.hidden).toBe(false);
+    expect(document.activeElement).toBe(
+      within(docked()!).getByRole("combobox"),
+    );
+  });
+
+  it("hands focus to the Fields action when a narrower view takes the docked panel that held it", () => {
+    using page = open({ size: { width: 1200, height: 800 }, panels: PINNED });
+    const search = within(docked()!).getByRole("combobox");
+    act(() => search.focus());
+    page.resize({ width: 560, height: 800 });
+    expect(docked()).toBeNull();
+    expect(page.host.calls.actionFocuses).toBe(1);
+    // A panel that held no focus leaves focus where it is.
+    page.resize({ width: 1200, height: 800 });
+    act(() => screen.getByRole("textbox", { name: "Template source" }).focus());
+    page.resize({ width: 560, height: 800 });
+    expect(page.host.calls.actionFocuses).toBe(1);
+  });
+
+  it("opens in the Fields popover once the reader unpins it", () => {
+    using page = open({ size: { width: 1200, height: 800 }, panels: PINNED });
+    fireEvent.click(pin());
+    expect(docked()).toBeNull();
+    expect(panel()).not.toBeNull();
+    expect(page.registry.get(page.model.panels).fields.pinned).toBe(false);
+  });
+
+  it("cannot be pinned in a narrow view, and opens in the Fields popover there", () => {
+    using page = open({ size: { width: 560, height: 800 } });
+    page.pressAction();
+    expect(pin().getAttribute("aria-label")).toBe("Widen the view to pin");
+    expect(pin().getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(pin());
+    expect(page.registry.get(page.model.panels).fields.pinned).toBe(false);
+    expect(panel()).not.toBeNull();
+    expect(
+      screen.queryByText("Pinned · opens over the editor in narrow views"),
+    ).toBeNull();
+  });
+
+  it("notes its pin in a narrow view, and docks again as the view widens", () => {
+    using page = open({ size: { width: 560, height: 800 }, panels: PINNED });
+    expect(docked()).toBeNull();
+    page.pressAction();
+    expect(panel()).not.toBeNull();
+    expect(pin().getAttribute("aria-label")).toBe("Widen the view to pin");
+    expect(
+      within(panel()!).getByText(
+        "Pinned · opens over the editor in narrow views",
+      ),
+    ).not.toBeNull();
+    page.resize({ width: 1200, height: 800 });
+    expect(panel()).toBeNull();
+    expect(docked()).not.toBeNull();
+    // A view that turns narrow again opens no popover by itself.
+    page.resize({ width: 560, height: 800 });
+    expect(docked()).toBeNull();
+    expect(panel()).toBeNull();
+    expect(page.isOpen()).toBe(false);
+  });
+});
+
 describe("the Fields action's state", () => {
   it("reads as a disclosure of the panel it opens", () => {
-    expect(fieldsActionAttributes({ open: false }, "fields")).toEqual({
+    expect(
+      fieldsActionAttributes({ open: false, placement: "closed" }, "fields"),
+    ).toEqual({
       "aria-haspopup": "dialog",
       "aria-expanded": "false",
       "aria-controls": undefined,
     });
-    expect(fieldsActionAttributes({ open: true }, "fields")).toEqual({
+    expect(
+      fieldsActionAttributes({ open: true, placement: "popover" }, "fields"),
+    ).toEqual({
       "aria-haspopup": "dialog",
       "aria-expanded": "true",
       "aria-controls": "fields",
+    });
+    // The docked panel is a region beside the editor, not a popup.
+    expect(
+      fieldsActionAttributes({ open: true, placement: "docked" }, "fields"),
+    ).toEqual({
+      "aria-haspopup": undefined,
+      "aria-expanded": "true",
+      "aria-controls": "fields-docked",
     });
   });
 });

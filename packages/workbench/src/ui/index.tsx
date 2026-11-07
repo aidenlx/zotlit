@@ -86,7 +86,9 @@ export {
   showPanel,
 } from "./panel-layout";
 export type {
+  FieldsDock,
   PanelSide,
+  ShowableSide,
   PreviewPanel,
   ViewSize,
   WorkbenchPanel,

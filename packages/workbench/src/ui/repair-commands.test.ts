@@ -13,6 +13,7 @@ import { m } from "./test-messages";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 
 const BOTH: WorkbenchPanels = {
+  ...INITIAL_PANELS,
   preview: { ...INITIAL_PANELS.preview, shown: true },
 };
 

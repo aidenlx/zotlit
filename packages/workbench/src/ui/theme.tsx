@@ -247,7 +247,15 @@ export interface WorkbenchParts {
 
   panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split" | "status";
   itemRow: "row" | "label";
-  fieldsPanel: "panel" | "header" | "icon" | "title" | "close" | "body";
+  fieldsPanel:
+    | "panel"
+    | "header"
+    | "icon"
+    | "title"
+    | "pin"
+    | "close"
+    | "note"
+    | "body";
   fieldDetails:
     | "details-bar"
     | "details"
@@ -349,7 +357,9 @@ export type WorkbenchIcon =
   | "collapse-all"
   | "fields"
   | "insert"
-  | "result";
+  | "result"
+  | "pin"
+  | "unpin";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;
