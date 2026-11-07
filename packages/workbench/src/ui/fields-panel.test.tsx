@@ -633,14 +633,6 @@ describe("a field's details in the docked panel", () => {
     expect(dockedDetails()).toBeNull();
     expect(docked()).not.toBeNull();
   });
-
-  it("asks the host to keep the panel's keys while it stands docked", () => {
-    using page = open(wide);
-    expect(page.host.calls.heldKeys).toEqual(["docked"]);
-    page.pressAction();
-    expect(docked()).toBeNull();
-    expect(page.host.calls.heldKeys).toEqual([]);
-  });
 });
 
 describe("a nested field", () => {

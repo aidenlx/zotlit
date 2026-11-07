@@ -374,7 +374,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   readonly #fieldsAction: WorkbenchFieldsAction = fieldsActionHost(
     this.#fieldsButton,
     { current: this.contentEl },
-    this.app,
   );
   #unsubscribe: (() => void) | null = null;
   #closed = false;

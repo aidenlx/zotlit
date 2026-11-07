@@ -2061,8 +2061,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   });
 
-  // #1967 in the docked panel (#1966): no popover holds the keys there, so
-  // the panel's own Scope keeps Mod+Enter and Escape from Obsidian's hotkeys.
+  // #1967 in the docked panel (#1966). No Scope of the panel's holds its keys
+  // there, and none is needed: a reader's hotkey on Mod+Enter, live in the
+  // editor, does not run while focus is in the panel's search.
   it("shows a field's details beside the docked Fields Panel, inserts with Mod+Enter and stays docked, and stops Escape after the search", async () => {
     const path = `templates/${booksProfile.document}`;
     const documentPath = join(e2eVaultPath, path);
@@ -2160,6 +2161,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "the docked panel with focus in its search",
           () => dock() !== null && el.doc.activeElement === search(),
         );
+        // A reader's own hotkey on Mod+Enter, live outside the panel: in the
+        // editor it toggles the left sidebar.
+        const hotkeys = (
+          app as unknown as {
+            hotkeyManager: {
+              getHotkeys(id: string): unknown;
+              setHotkeys(id: string, keys: unknown): void;
+              removeHotkeys(id: string): void;
+            };
+          }
+        ).hotkeyManager;
+        const command = "app:toggle-left-sidebar";
+        const saved = hotkeys.getHotkeys(command);
+        hotkeys.setHotkeys(command, [{ modifiers: ["Mod"], key: "Enter" }]);
+        const mod = process.platform === "darwin" ? "meta" : "control";
+        const sidebar = () => app.workspace.leftSplit.collapsed;
+        await input.click(content);
+        await until("the editor focused", () => editor.hasFocus);
+        const editorBefore = sidebar();
+        await input.key("Return", [mod]);
+        await new Promise((resolve) => el.win.setTimeout(resolve, 300));
+        const liveInEditor = sidebar() !== editorBefore;
+        if (liveInEditor) app.commands.executeCommandById(command);
+        await until("the sidebar as it was", () => sidebar() === editorBefore);
+        editor.dispatch({ selection: { anchor: editor.state.doc.length } });
+        await input.click(search()!);
+        await until(
+          "the search focused",
+          () => el.doc.activeElement === search(),
+        );
         // Enter on the row the arrows select shows its details, beside the
         // column on its trailing side, level with the row.
         await contents.insertText("doi");
@@ -2176,33 +2207,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             Math.abs(box.top - row("DOI")!.getBoundingClientRect().top) <= 1,
           focusInSearch: el.doc.activeElement === search(),
         };
-        // Mod+Enter inserts the selected field; the panel stays docked. A
-        // reader's own hotkey on Mod+Enter does not take it from the panel.
-        const hotkeys = (
-          app as unknown as {
-            hotkeyManager: {
-              getHotkeys(id: string): unknown;
-              setHotkeys(id: string, keys: unknown): void;
-              removeHotkeys(id: string): void;
-            };
-          }
-        ).hotkeyManager;
-        const command = "app:toggle-left-sidebar";
-        const saved = hotkeys.getHotkeys(command);
-        hotkeys.setHotkeys(command, [{ modifiers: ["Mod"], key: "Enter" }]);
-        const leftBefore = app.workspace.leftSplit.collapsed;
-        await input.key("Return", [
-          process.platform === "darwin" ? "meta" : "control",
-        ]);
-        await until("the DOI inserted", () =>
-          editor.state.doc.toString().endsWith("{{ zt.DOI }}"),
-        );
-        await new Promise((resolve) => el.win.setTimeout(resolve, 200));
+        // Mod+Enter in the panel inserts the selected field, the panel stays
+        // docked, and the reader's hotkey does not run.
+        const panelBefore = sidebar();
+        await input.key("Return", [mod]);
+        await new Promise((resolve) => el.win.setTimeout(resolve, 400));
         const inserted = {
+          field: editor.state.doc.toString().endsWith("{{ zt.DOI }}"),
           docked: dock() !== null,
           details: details(),
-          hotkeyRan: app.workspace.leftSplit.collapsed !== leftBefore,
+          hotkeyRan: sidebar() !== panelBefore,
         };
+        if (inserted.hotkeyRan) app.commands.executeCommandById(command);
         if (saved) hotkeys.setHotkeys(command, saved);
         else hotkeys.removeHotkeys(command);
         // Escape: the details, then the search, then nothing more.
@@ -2230,7 +2246,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         return JSON.stringify({
           opened,
+          liveInEditor,
           inserted: {
+            field: inserted.field,
             docked: inserted.docked,
             details: inserted.details === null,
             hotkeyRan: inserted.hotkeyRan,
@@ -2247,7 +2265,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         level: true,
         focusInSearch: true,
       },
-      inserted: { docked: true, details: true, hotkeyRan: false },
+      liveInEditor: true,
+      inserted: { field: true, docked: true, details: true, hotkeyRan: false },
       escape: {
         first: { query: "ti", docked: true },
         second: true,

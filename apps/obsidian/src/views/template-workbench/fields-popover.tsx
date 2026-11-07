@@ -4,10 +4,7 @@
 // Obsidian's own primitives"). PinnedPopover owns Escape, the press outside
 // and focus back to the action; the shared Fields Panel draws the contents.
 // A field's details in a wide view are a PinnedPopover inside this one,
-// beside the panel and level with the field's row. A docked panel has no
-// popover: a Scope of its own holds the panel's keys while focus is in it.
-import { Scope } from "obsidian";
-import type { App } from "obsidian";
+// beside the panel and level with the field's row.
 import { useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
@@ -36,7 +33,6 @@ let surfaces = 0;
 export function fieldsActionHost(
   anchor: RefObject<HTMLElement | null>,
   view: RefObject<HTMLElement | null>,
-  app: App,
 ): WorkbenchFieldsAction {
   const popoverId = `zt-fields-popover-${++surfaces}`;
   function FieldsPopover({
@@ -105,7 +101,6 @@ export function fieldsActionHost(
     popoverId,
     focus: () => anchor.current?.focus({ preventScroll: true }),
     details: FieldDetailsPopover,
-    holdKeys: (panel) => holdPanelKeys(app, panel),
   };
 }
 
@@ -152,43 +147,4 @@ function FieldDetailsPopover({
       {children}
     </PinnedPopover>
   );
-}
-
-/**
- * Holds the docked panel's keys while focus is in `panel`: Mod+Enter and
- * Escape end the keymap's search on a Scope of their own, so no hotkey of
- * Obsidian's takes them, and the panel's handlers hear them.
- *
- * @returns the release, which also pops the Scope a focused panel holds.
- */
-function holdPanelKeys(app: App, panel: HTMLElement): () => void {
-  const scope = new Scope(app.scope);
-  for (const { modifiers, key } of [
-    ...PANEL_KEYS,
-    { modifiers: [], key: "Escape" },
-  ])
-    scope.register(modifiers, key, () => true);
-  let held = false;
-  const hold = () => {
-    if (held) return;
-    app.keymap.pushScope(scope);
-    held = true;
-  };
-  const release = () => {
-    if (!held) return;
-    app.keymap.popScope(scope);
-    held = false;
-  };
-  const leave = ({ relatedTarget }: FocusEvent) => {
-    const next = relatedTarget as Node | null;
-    if (!next?.instanceOf(Node) || !panel.contains(next)) release();
-  };
-  panel.addEventListener("focusin", hold);
-  panel.addEventListener("focusout", leave);
-  if (panel.contains(panel.ownerDocument.activeElement)) hold();
-  return () => {
-    panel.removeEventListener("focusin", hold);
-    panel.removeEventListener("focusout", leave);
-    release();
-  };
 }

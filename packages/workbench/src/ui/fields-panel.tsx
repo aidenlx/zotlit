@@ -141,12 +141,6 @@ function FieldsPanelBody({
   const { pinned, canPin } = useAtomValue(model.fieldsPin);
   const panel = useRef<HTMLDivElement>(null);
   const [rows] = useState<FieldsPanelRows>(() => ({ escape, panel }));
-  const holdKeys = useOptionalHost()?.fieldsAction?.holdKeys;
-  // Docked, no popover keeps the panel's keys from the host's shortcuts.
-  useLayoutEffect(() => {
-    if (placement !== "docked" || !panel.current) return;
-    return holdKeys?.(panel.current);
-  }, [placement, holdKeys]);
   const closeLabel = m.workbench_fields_close();
   const closeTooltip = useTooltip(closeLabel);
   const pinLabel = !canPin
