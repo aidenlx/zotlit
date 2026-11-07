@@ -504,18 +504,20 @@
               )
               .join(", ");
             if (!r.count) r.kind = "empty";
-            r.children = (r.props ?? []).map((pr) => {
-              const values = r.items.map((it) => it[pr.key]).filter(Boolean);
-              return {
-                path: `${r.path}[].${pr.key}`,
-                label: pr.label,
-                kind: "listprop",
-                list: r.path,
-                prop: pr.key,
-                values,
-                value: values.join(" · "),
-              };
-            });
+            // A list of plain values (tags) has no properties, so it has nothing to open.
+            if (r.props?.length)
+              r.children = r.props.map((pr) => {
+                const values = r.items.map((it) => it[pr.key]).filter(Boolean);
+                return {
+                  path: `${r.path}[].${pr.key}`,
+                  label: pr.label,
+                  kind: "listprop",
+                  list: r.path,
+                  prop: pr.key,
+                  values,
+                  value: values.join(" · "),
+                };
+              });
           }
       const ALL_FIELDS = SECTIONS.flatMap((s) =>
         s.rows.flatMap((r) => [
