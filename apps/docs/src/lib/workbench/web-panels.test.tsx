@@ -202,6 +202,9 @@ it("keeps the popover open for the next field on a Shift-click of Insert", async
   await page.settle();
   expect(popover()).not.toBeNull();
   expect(note.state.doc.line(1).text).toContain("zt.authors");
+  // The popover keeps the focus for the next field.
+  expect(note.hasFocus).toBe(false);
+  expect(popover()!.contains(document.activeElement)).toBe(true);
 });
 
 it("closes the Fields popover on Escape and on a press outside it, and returns focus to the Fields action", async () => {

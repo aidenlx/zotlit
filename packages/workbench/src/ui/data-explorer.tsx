@@ -66,9 +66,13 @@ export interface DataExplorerProps {
   onInsert?: (snippet: string) => void;
   /**
    * Resolves insertion against the receiving editor at action time; `false`
-   * when the editor refused the field.
+   * when the editor refused the field. With `keepOpen`, Shift kept the Fields
+   * Panel open for the next field, so the editor takes no focus.
    */
-  onInsertNode?: (node: DisplayNode) => boolean | void;
+  onInsertNode?: (
+    node: DisplayNode,
+    options: { readonly keepOpen: boolean },
+  ) => boolean | void;
   copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
@@ -153,7 +157,8 @@ export function DataExplorer({
   const insertNode =
     insertField &&
     ((node: DisplayNode, keepOpen = false) => {
-      if (insertField(node) !== false && !keepOpen) setFields("to-editor");
+      if (insertField(node, { keepOpen }) !== false && !keepOpen)
+        setFields("to-editor");
     });
   const locale = host.getLocale();
   const reader = useMemo<ExplorerReader>(

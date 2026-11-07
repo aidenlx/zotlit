@@ -471,25 +471,31 @@ function WorkbenchSession({
     return { root: currentRoot, partials, ...(data ? { sample: data } : {}) };
   };
 
-  /** Puts a snippet where the reader left the caret, then hands focus back. */
+  /**
+   * Puts a snippet where the reader left the caret, then hands focus back
+   * unless the Fields Panel keeps it.
+   */
   const insert = useCallback(
-    (snippet: string) => {
+    (snippet: string, focus = true) => {
       if (fieldDisabled || insertAt === null) return;
       const head = insertSnippet(controller, slice, {
         target: insertAt,
         snippet,
       });
-      setReveal({ from: head, to: head });
+      setReveal({ from: head, to: head, focus });
     },
     [fieldDisabled, controller, slice, insertAt],
   );
 
   const insertion = useRef({ insert, mode: fieldMode });
   insertion.current = { insert, mode: fieldMode };
-  const insertNode = useCallback((node: DisplayNode) => {
-    const current = insertion.current;
-    current.insert(fieldSnippet(node, current.mode));
-  }, []);
+  const insertNode = useCallback(
+    (node: DisplayNode, { keepOpen }: { readonly keepOpen: boolean }) => {
+      const current = insertion.current;
+      current.insert(fieldSnippet(node, current.mode), !keepOpen);
+    },
+    [],
+  );
 
   function trackSelection(selection: WorkbenchSliceRange) {
     setCaret(selection);

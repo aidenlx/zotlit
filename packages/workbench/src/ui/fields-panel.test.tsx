@@ -33,25 +33,21 @@ const PREVIEW: WorkbenchPanels = {
   preview: { ...INITIAL_PANELS.preview, shown: true },
 };
 
-/**
- * The explorer the hosts put in the Fields Panel, over its own navigation.
- * With `redraw`, each insert draws the tree anew, as a host's can.
- */
+/** The explorer the hosts put in the Fields Panel, over its own navigation. */
 function Fields({
   onInsertNode,
-  redraw = false,
 }: {
-  onInsertNode: (node: DisplayNode) => boolean | void;
-  redraw?: boolean;
+  onInsertNode: (
+    node: DisplayNode,
+    options: { keepOpen: boolean },
+  ) => boolean | void;
 }) {
-  const [drawn, setDrawn] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState<
     ReadonlySet<string>
   >(() => new Set<string>());
   const [navigation, setNavigation] = useState(initialTreeState);
   return (
     <DataExplorer
-      key={drawn}
       root="note"
       data={PAPER}
       copy={() => Effect.void}
@@ -59,10 +55,7 @@ function Fields({
       onCollapsedSectionsChange={setCollapsedSections}
       navigation={navigation}
       onNavigationChange={setNavigation}
-      onInsertNode={(node) => {
-        if (redraw) setDrawn((count) => count + 1);
-        return onInsertNode(node);
-      }}
+      onInsertNode={onInsertNode}
     />
   );
 }
@@ -70,10 +63,10 @@ function Fields({
 function open({
   size = { width: 560, height: 800 },
   refuse = false,
-  redraw = false,
-}: { size?: ViewSize; refuse?: boolean; redraw?: boolean } = {}) {
+}: { size?: ViewSize; refuse?: boolean } = {}) {
   const viewSize = Atom.make<ViewSize | null>(size);
   const inserted: string[] = [];
+  const keptOpen: boolean[] = [];
   const mounted = mount(
     <SidePanels
       panels={{
@@ -81,10 +74,10 @@ function open({
           label: "Fields",
           content: (
             <Fields
-              redraw={redraw}
-              onInsertNode={(node) => {
+              onInsertNode={(node, { keepOpen }) => {
                 if (refuse) return false;
                 inserted.push(node.key);
+                keptOpen.push(keepOpen);
                 return true;
               }}
             />
@@ -104,6 +97,7 @@ function open({
   render(mounted.ui);
   return Object.assign(mounted, {
     inserted,
+    keptOpen,
     resize: (next: ViewSize) => act(() => mounted.registry.set(viewSize, next)),
     pressAction: () =>
       act(() => pressFieldsAction(mounted.registry, mounted.model)),
@@ -157,18 +151,8 @@ describe("the Fields Panel popover", () => {
     expect(document.activeElement).toBe(problem);
   });
 
-  it("closes on the host's Escape and outside press, and on its Close button, with focus back to the Fields action", () => {
+  it("closes on its Close button, with focus back to the Fields action", () => {
     using page = open();
-    page.pressAction();
-    fireEvent.keyDown(within(panel()!).getByRole("searchbox"), {
-      key: "Escape",
-    });
-    expect(panel()).toBeNull();
-    expect(returnedFocus()).toBe("true");
-    page.pressAction();
-    fireEvent.pointerDown(screen.getByLabelText("Template source"));
-    expect(panel()).toBeNull();
-    expect(returnedFocus()).toBe("true");
     page.pressAction();
     fireEvent.click(within(panel()!).getByRole("button", { name: "Close" }));
     expect(panel()).toBeNull();
@@ -180,6 +164,7 @@ describe("the Fields Panel popover", () => {
     page.pressAction();
     insertTitle();
     expect(page.inserted).toEqual(["title"]);
+    expect(page.keptOpen).toEqual([false]);
     expect(panel()).toBeNull();
     expect(returnedFocus()).toBe("false");
     // The next opening hands focus back again when it closes.
@@ -193,6 +178,8 @@ describe("the Fields Panel popover", () => {
     page.pressAction();
     insertTitle({ shiftKey: true });
     expect(page.inserted).toEqual(["title"]);
+    // The host keeps focus off the editor for the next field.
+    expect(page.keptOpen).toEqual([true]);
     expect(panel()).not.toBeNull();
     // Shift+Enter on the button keeps it open as well.
     fireEvent.keyDown(
@@ -201,20 +188,6 @@ describe("the Fields Panel popover", () => {
     );
     expect(page.inserted).toEqual(["title", "title"]);
     expect(panel()).not.toBeNull();
-  });
-
-  it("keeps focus on the field's Insert button when a Shift insert draws its row again", async () => {
-    using page = open({ redraw: true });
-    page.pressAction();
-    const insert = () =>
-      within(titleRow()).getByRole("button", { name: "Insert field" });
-    const first = insert();
-    act(() => first.focus());
-    fireEvent.keyDown(first, { key: "Enter", shiftKey: true });
-    // The row is a new element now, and focus followed it.
-    await act(async () => {});
-    expect(insert()).not.toBe(first);
-    expect(document.activeElement).toBe(insert());
   });
 
   it("stays open when the editor refuses the field", () => {

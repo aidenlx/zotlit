@@ -164,8 +164,13 @@ export function makeTemplateWorkbenchModel() {
   const origin = Atom.make<OriginatingNote | null>(null);
   /** Whether the originating note's update runs. */
   const updating = Atom.make(false);
-  /** The place a field insertion asks the editor to reveal. */
-  const insertRequest = Atom.make<WorkbenchInsertTarget | null>(null);
+  /**
+   * The place a field insertion asks the editor to reveal, and whether the
+   * editor takes focus there.
+   */
+  const insertRequest = Atom.make<
+    (WorkbenchInsertTarget & { readonly focus: boolean }) | null
+  >(null);
   const styles = Atom.make<CitationStyles>({ list: [], unavailable: false });
   /**
    * The Default Profile's bindings, which Name and folder shows where a
@@ -507,7 +512,7 @@ function readPanels(input: unknown): SavedWorkbench["panels"] {
     ? {
         preview: {
           shown: preview.shown,
-          width: savedPanelWidth("preview", preview.width),
+          width: savedPanelWidth(preview.width),
           ...(preview.height === undefined
             ? {}
             : { height: clampPreviewHeight(preview.height) }),

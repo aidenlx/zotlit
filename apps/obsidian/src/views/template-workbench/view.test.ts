@@ -9,7 +9,7 @@ import { Cause, Effect, Exit } from "effect";
 import { Stream } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import { SuggestModal, TFile } from "obsidian";
-import type { App, ViewState, WorkspaceLeaf } from "obsidian";
+import type { App, Scope, ViewState, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,7 +27,7 @@ import {
 } from "@zotlit/workbench/render";
 
 import { answerConfirmation } from "@/lib/__fixtures__/confirm";
-import { keymapApp } from "@/lib/__fixtures__/keymap";
+import { dispatchKey, keymapApp } from "@/lib/__fixtures__/keymap";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -3865,6 +3865,21 @@ describe("the Fields panel of the Template Workbench View", () => {
     await act(async () => view.close());
   });
 
+  it("closes the Fields popover on Escape", async () => {
+    const { view, app } = setup();
+    await act(async () => openView(view));
+    const show = actionOf(view, m.workbench_view_fields());
+    await act(async () => show.click());
+    expect(fields(view)).not.toBeNull();
+    const { scopes } = app as unknown as { scopes: Scope[] };
+    await act(async () => {
+      dispatchKey(scopes.at(-1)!, { key: "Escape" }, fields(view)!);
+    });
+    expect(fields(view)).toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => view.close());
+  });
+
   it("closes the Fields popover on a press outside it", async () => {
     const { view } = setup();
     await act(async () => openView(view));
@@ -4093,6 +4108,53 @@ describe("the Fields panel of the Template Workbench View", () => {
     } finally {
       await act(async () => view.close());
       view.contentEl.remove();
+    }
+  });
+
+  it("keeps the Fields popover, its Insert button and the focus on a Shift insert", async () => {
+    const { view } = setup();
+    try {
+      await act(async () => openView(view));
+      await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 3 } });
+      });
+      await act(async () => openFields(view));
+      const title = () =>
+        insertButtons(fields(view)!).find(
+          (button) =>
+            button
+              .closest("[data-workbench-field]")
+              ?.getAttribute("data-workbench-field") === "title",
+        );
+      await vi.waitFor(() => expect(title()).toBeDefined());
+      const button = title()!;
+      act(() => button.focus());
+      await act(async () => {
+        button.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, shiftKey: true }),
+        );
+      });
+      expect(view.getViewData()).toContain("A s{{ zt.title }}table note.");
+      // The row keeps its Insert button, and the button keeps the focus.
+      expect(fields(view)).not.toBeNull();
+      expect(title()).toBe(button);
+      expect(document.activeElement).toBe(button);
+      // The next field goes after the first.
+      await act(async () => {
+        button.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, shiftKey: true }),
+        );
+      });
+      expect(view.getViewData()).toContain(
+        "A s{{ zt.title }}{{ zt.title }}table note.",
+      );
+    } finally {
+      await act(async () => view.close());
     }
   });
 });

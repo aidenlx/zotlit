@@ -1282,7 +1282,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
   });
 
-  // #1955: where the Fields column does not fit, Fields opens its picker.
   // #1964: the Fields action opens the Fields popover at every width.
   it("inserts a field from the Fields popover of a narrow leaf with the keyboard, and closes it on Escape, a press outside and the action", async () => {
     const path = `templates/${booksProfile.document}`;
@@ -1458,6 +1457,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           editor.state.doc.toString().endsWith("{{ zt.DOI }}{{ zt.DOI }}"),
         );
         const kept = popover() !== null;
+        // Focus stays on the row's Insert button for the next field.
+        await new Promise((resolve) => el.win.setTimeout(resolve, 300));
+        const keptFocus = el.doc.activeElement === doiInsert();
         // Escape closes it and hands focus to the action.
         await input.key("Escape");
         await until("the popover closed by Escape", () => popover() === null);
@@ -1488,6 +1490,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           reached,
           inserted,
           kept,
+          keptFocus,
           escaped,
           outside,
           pressed: action.getAttribute("aria-expanded"),
@@ -1510,6 +1513,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       reached: true,
       inserted: { cursorAfter: true, expanded: "false" },
       kept: true,
+      keptFocus: true,
       escaped: true,
       outside: "false",
       pressed: "false",

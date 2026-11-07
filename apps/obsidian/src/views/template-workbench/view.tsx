@@ -836,7 +836,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.#updateActions();
         this.app.workspace.requestSaveLayout();
       }),
-      // The Fields action shows whether its column or its picker is open.
+      // The Fields action shows whether its Fields popover is open.
       registry.subscribe(this.workbench.fieldsAction, () =>
         this.#updateActions(),
       ),
@@ -1066,7 +1066,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   /** Inserts the field `node` names at the editor's insertion target. */
-  insertTemplateField(node: DisplayNode): boolean {
+  /** With `focus: false`, the editor takes no focus: the Fields Panel keeps it. */
+  insertTemplateField(
+    node: DisplayNode,
+    options: { readonly focus: boolean } = { focus: true },
+  ): boolean {
     if (this.#closed || this.#controller.readOnly) return false;
     const target = this.insertTarget;
     if (!target) return false;
@@ -1080,10 +1084,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         ? "json-e"
         : "template";
     const engine = this.#documentLanguage;
-    return this.insertField(fieldSnippet(node, mode, { engine }));
+    return this.insertField(fieldSnippet(node, mode, { engine }), options);
   }
 
-  insertField(snippet: string): boolean {
+  insertField(
+    snippet: string,
+    { focus }: { readonly focus: boolean } = { focus: true },
+  ): boolean {
     if (this.#controller.readOnly || this.#closed) return false;
     const target = this.insertTarget;
     if (!target) {
@@ -1111,16 +1118,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         Effect.annotateLogs({ slice: target.slice }),
       ),
     );
+    // The caret stays one the reader placed, so the next insert finds it.
     const cursor = from + snippet.length;
-    this.#focusTarget({
-      slice: target.slice,
-      range: { from: cursor, to: cursor },
-    });
+    this.#focusTarget(
+      {
+        slice: target.slice,
+        range: { from: cursor, to: cursor, placed: true },
+      },
+      focus,
+    );
     return true;
   }
 
-  #focusTarget(target: WorkbenchInsertTarget): void {
-    this.registry.set(this.model.insertRequest, target);
+  #focusTarget(target: WorkbenchInsertTarget, focus: boolean): void {
+    this.registry.set(this.model.insertRequest, { ...target, focus });
     this.setPresentation({ selection: target });
     const state = this.change;
     state.setAdvanced(target.slice === "advanced");
@@ -2683,7 +2694,7 @@ function EditorContent({
     const position = entryPosition(insertRequest.slice);
     view.setPresentation({
       ...(position === null ? {} : { selected: position }),
-      reveal: insertRequest.range,
+      reveal: { ...insertRequest.range, focus: insertRequest.focus },
     });
   }, [view, insertRequest]);
   // The last manifest that parsed, so a repair keeps the form's values.
