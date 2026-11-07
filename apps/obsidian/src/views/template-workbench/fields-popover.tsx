@@ -15,7 +15,13 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { PinnedPopover } from "@/components/pinned-popover";
-import type { PinnedPopoverHandle } from "@/components/pinned-popover";
+import type { PageKey, PinnedPopoverHandle } from "@/components/pinned-popover";
+
+/**
+ * Mod+Enter inserts the field selected in the panel's search, ahead of the
+ * hotkey Obsidian binds to it.
+ */
+const PANEL_KEYS: readonly PageKey[] = [{ modifiers: ["Mod"], key: "Enter" }];
 
 /** Each leaf's Fields popover gets an id of its own. */
 let surfaces = 0;
@@ -76,6 +82,7 @@ export function fieldsActionHost(
         role="dialog"
         aria-labelledby={labelledBy}
         onEscape={onEscape}
+        pageKeys={PANEL_KEYS}
         onOpenChange={(next) => {
           if (unmounted.current) return;
           setShown(next);
@@ -125,6 +132,8 @@ function FieldDetailsPopover({
       beside={beside}
       handle={handle}
       initialFocus={false}
+      // Its Scope stands over the Fields popover's: the panel's keys pass it.
+      pageKeys={PANEL_KEYS}
       aria-labelledby={labelledBy}
       onOpenChange={(next) => {
         if (!next && !unmounted.current) latest.current();

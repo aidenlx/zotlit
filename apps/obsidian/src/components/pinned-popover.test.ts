@@ -11,7 +11,7 @@ import { AppContext } from "@/lib/app-context";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { PinnedPopover } from "./pinned-popover";
-import type { PinnedPopoverHandle } from "./pinned-popover";
+import type { PageKey, PinnedPopoverHandle } from "./pinned-popover";
 
 let host: HTMLElement | null = null;
 afterEach(() => {
@@ -39,6 +39,7 @@ function mount(
     beside?: HTMLElement;
     onEscape?: () => boolean;
     initialFocus?: boolean;
+    pageKeys?: PageKey[];
   } = {},
 ) {
   host = document.body.appendChild(document.createElement("div"));
@@ -58,6 +59,7 @@ function mount(
           beside: options.beside ? { current: options.beside } : undefined,
           onEscape: options.onEscape,
           initialFocus: options.initialFocus,
+          pageKeys: options.pageKeys,
           className: "surface",
           children: h("input", { "aria-label": "Search" }),
         }),
@@ -156,4 +158,19 @@ it("leaves focus where it is as it opens, with initialFocus off", async () => {
   anchor.current!.focus();
   await act(() => handle.current!.show());
   expect(document.activeElement).toBe(anchor.current);
+});
+
+it("lets the page hear its page keys, which no hotkey behind it takes", async () => {
+  const hotkey = vi.fn(() => false);
+  const { app, handle, shell } = mount(undefined, {
+    pageKeys: [{ modifiers: ["Ctrl"], key: "Enter" }],
+  });
+  app.scope.register(["Ctrl"], "Enter", hotkey);
+  await act(() => handle.current!.show());
+  const heard = vi.fn();
+  shell()!.addEventListener("keydown", heard);
+  const pressed = pressTop(app, { key: "Enter", ctrlKey: true }, shell()!);
+  expect(hotkey).not.toHaveBeenCalled();
+  expect(pressed.defaultPrevented).toBe(false);
+  expect(heard).toHaveBeenCalledTimes(1);
 });

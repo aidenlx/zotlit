@@ -13,6 +13,8 @@
 // - Escape, on a Scope. A layer with keys of its own pushes a Scope over this
 //   one, and answers Escape itself when it wants the popover shut. With
 //   `onEscape`, the contents take Escape first when they have a use for it.
+//   `pageKeys` are keys the contents answer themselves: the Scope keeps them
+//   from Obsidian's hotkeys, and the page hears them.
 // - A press outside. A popover rendered inside another one counts as inside
 //   it, so a press in the outer one shuts the inner one alone. A press on the
 //   anchor stays the anchor's, which toggles the popover.
@@ -30,7 +32,7 @@
 //
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
 import { PopoverState, Scope } from "obsidian";
-import type { App, HoverParent } from "obsidian";
+import type { App, HoverParent, Modifier } from "obsidian";
 import {
   Fragment,
   createContext,
@@ -55,6 +57,12 @@ export interface PinnedPopoverHandle {
   toggle(): void;
   /** Whether a node stands in the popover or in a popover inside it. */
   contains(node: Node): boolean;
+}
+
+/** One key the contents of a popover answer themselves. */
+export interface PageKey {
+  readonly modifiers: Modifier[];
+  readonly key: string;
 }
 
 export interface PinnedPopoverProps extends Omit<
@@ -85,6 +93,12 @@ export interface PinnedPopoverProps extends Omit<
   onEscape?: () => boolean;
   /** Whether the popover takes focus as it opens; on by default. */
   initialFocus?: boolean;
+  /**
+   * Keys the contents answer in their own handlers, such as Mod+Enter in a
+   * search field. No hotkey of Obsidian's takes them while the popover
+   * stands, and the page hears them.
+   */
+  pageKeys?: readonly PageKey[];
   /** Called as the popover opens, and once it has closed. */
   onOpenChange?: (open: boolean) => void;
   ref?: Ref<HTMLDivElement>;
@@ -109,6 +123,7 @@ interface PinnedHoverPopoverOptions {
   /** Whether the contents take an Escape: `true` keeps the popover open. */
   onEscape: () => boolean;
   initialFocus: boolean;
+  pageKeys: readonly PageKey[];
   /** Whether a press on this element leaves the popover open. */
   holds: (element: Element) => boolean;
   onHidden: () => void;
@@ -136,6 +151,10 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
       if (!this.#options.onEscape()) this.hide();
       return false;
     });
+    // A keyed registration ends the search, so no hotkey behind it runs; an
+    // answer other than `false` leaves the key to the page.
+    for (const { modifiers, key } of this.#options.pageKeys)
+      this.#scope.register(modifiers, key, () => true);
     app.keymap.pushScope(this.#scope);
     this.register(() => app.keymap.popScope(this.#scope));
     // Obsidian's `watchResize` stops after ten changes; a list filtered by
@@ -228,6 +247,8 @@ class PopoverNode {
   }
 }
 
+const NO_PAGE_KEYS: readonly PageKey[] = [];
+
 const EnclosingPopover = createContext<PopoverNode | null>(null);
 
 export function PinnedPopover({
@@ -237,6 +258,7 @@ export function PinnedPopover({
   beside,
   onEscape,
   initialFocus = true,
+  pageKeys = NO_PAGE_KEYS,
   onOpenChange,
   ref,
   children,
@@ -287,6 +309,7 @@ export function PinnedPopover({
         beside: beside?.current ?? null,
         onEscape: () => escape.current?.() ?? false,
         initialFocus,
+        pageKeys,
         holds: (element) => node.contains(element),
         onHidden: () => {
           node.live = null;
@@ -303,7 +326,7 @@ export function PinnedPopover({
       toggle: () => (node.live ? hide() : show()),
       contains: (target) => node.contains(target),
     };
-  }, [anchor, app, beside, body, initialFocus, inset, node, parent]);
+  }, [anchor, app, beside, body, initialFocus, inset, node, pageKeys, parent]);
 
   return createPortal(
     <EnclosingPopover.Provider value={node}>
