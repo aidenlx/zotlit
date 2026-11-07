@@ -2061,6 +2061,201 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   });
 
+  // #1967 in the docked panel (#1966): no popover holds the keys there, so
+  // the panel's own Scope keeps Mod+Enter and Escape from Obsidian's hotkeys.
+  it("shows a field's details beside the docked Fields Panel, inserts with Mod+Enter and stays docked, and stops Escape after the search", async () => {
+    const path = `templates/${booksProfile.document}`;
+    const documentPath = join(e2eVaultPath, path);
+    const original = await readFile(documentPath, "utf-8");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        ({ app }) =>
+          app.workspace.detachLeavesOfType("zotlit-template-workbench"),
+        undefined,
+      );
+      await writeFile(documentPath, original);
+    });
+    await suite.wideWindow(cleanup);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, key }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        const leaf = app.workspace.createLeafInParent(
+          app.workspace.rootSplit,
+          0,
+        );
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: { file: path, itemIndexedKey: key },
+          active: true,
+        });
+        type Sized = { setDimension(share: number): void };
+        for (const child of (
+          app.workspace.rootSplit as unknown as { children: unknown[] }
+        ).children)
+          (child as Sized).setDimension(child === leaf ? 90 : 10);
+      },
+      { path, key: targetItem.key },
+    );
+    await obRunUntil(
+      run.vaultId,
+      ({ page }, { path }) => {
+        const view = page.workbench({ path });
+        return (
+          view !== undefined &&
+          view.contentEl.clientWidth >= 1000 &&
+          view.contentEl.querySelector(".cm-content") !== null
+        );
+      },
+      { path },
+      { what: "a wide leaf with its editor" },
+    );
+
+    const walk = await obRun(
+      run.vaultId,
+      async ({ app, page }, { path, label }) => {
+        const { until, trusted } = page;
+        const view = page.workbench({ path })!;
+        const el = view.contentEl;
+        const input = trusted(el.win);
+        const contents = (
+          el.win as Window & {
+            electronWindow: { webContents: import("electron").WebContents };
+          }
+        ).electronWindow.webContents;
+        contents.focus();
+        await until("the window takes keys", () => el.doc.hasFocus());
+        const action = view.containerEl.querySelector<HTMLElement>(
+          `.view-action[aria-label="${label}"]`,
+        )!;
+        const content = el.querySelector<CodeMirrorElement>(".cm-content")!;
+        const editor = content.cmTile!.root.view;
+        const dock = () => page.fieldsDock(view);
+        const search = () =>
+          dock()?.querySelector<HTMLInputElement>('input[type="search"]') ??
+          null;
+        const details = () =>
+          el.doc.querySelector<HTMLElement>("[data-part=details]");
+        const row = (key: string) =>
+          [
+            ...(dock()?.querySelectorAll<HTMLElement>(
+              "[data-workbench-field]",
+            ) ?? []),
+          ]
+            .find((item) => item.dataset.workbenchField === key)
+            ?.querySelector<HTMLElement>(":scope > [data-part=row]") ?? null;
+        // The reader pins the panel from the Fields popover.
+        await input.click(content);
+        editor.dispatch({ selection: { anchor: editor.state.doc.length } });
+        await input.click(action);
+        await until("the Fields popover", () => page.fieldsPopover(view));
+        await input.click(
+          page
+            .fieldsPopover(view)!
+            .querySelector<HTMLElement>('[data-part="pin"]')!,
+        );
+        await until(
+          "the docked panel with focus in its search",
+          () => dock() !== null && el.doc.activeElement === search(),
+        );
+        // Enter on the row the arrows select shows its details, beside the
+        // column on its trailing side, level with the row.
+        await contents.insertText("doi");
+        await until("the DOI", () => row("DOI") !== null);
+        await input.key("Down");
+        await input.key("Return");
+        await until("the DOI's details", () => details() !== null);
+        const box = details()!.getBoundingClientRect();
+        const column = dock()!.getBoundingClientRect();
+        const opened = {
+          state: details()!.dataset.state,
+          trailing: box.left >= column.right,
+          level:
+            Math.abs(box.top - row("DOI")!.getBoundingClientRect().top) <= 1,
+          focusInSearch: el.doc.activeElement === search(),
+        };
+        // Mod+Enter inserts the selected field; the panel stays docked. A
+        // reader's own hotkey on Mod+Enter does not take it from the panel.
+        const hotkeys = (
+          app as unknown as {
+            hotkeyManager: {
+              getHotkeys(id: string): unknown;
+              setHotkeys(id: string, keys: unknown): void;
+              removeHotkeys(id: string): void;
+            };
+          }
+        ).hotkeyManager;
+        const command = "app:toggle-left-sidebar";
+        const saved = hotkeys.getHotkeys(command);
+        hotkeys.setHotkeys(command, [{ modifiers: ["Mod"], key: "Enter" }]);
+        const leftBefore = app.workspace.leftSplit.collapsed;
+        await input.key("Return", [
+          process.platform === "darwin" ? "meta" : "control",
+        ]);
+        await until("the DOI inserted", () =>
+          editor.state.doc.toString().endsWith("{{ zt.DOI }}"),
+        );
+        await new Promise((resolve) => el.win.setTimeout(resolve, 200));
+        const inserted = {
+          docked: dock() !== null,
+          details: details(),
+          hotkeyRan: app.workspace.leftSplit.collapsed !== leftBefore,
+        };
+        if (saved) hotkeys.setHotkeys(command, saved);
+        else hotkeys.removeHotkeys(command);
+        // Escape: the details, then the search, then nothing more.
+        search()!.focus();
+        await until(
+          "the search focused",
+          () => el.doc.activeElement === search(),
+        );
+        search()!.select();
+        await contents.insertText("ti");
+        await until("the Title row", () => row("title") !== null);
+        await input.click(row("title")!, { x: 40, y: 8 });
+        await until("the Title's details", () => details() !== null);
+        await input.key("Escape");
+        await until("the details closed", () => details() === null);
+        const first = { query: search()!.value, docked: dock() !== null };
+        await input.key("Escape");
+        await until("the search cleared", () => search()!.value === "");
+        const second = dock() !== null;
+        await input.key("Escape");
+        await new Promise((resolve) => el.win.setTimeout(resolve, 200));
+        const third = {
+          docked: dock() !== null,
+          focusInSearch: el.doc.activeElement === search(),
+        };
+        return JSON.stringify({
+          opened,
+          inserted: {
+            docked: inserted.docked,
+            details: inserted.details === null,
+            hotkeyRan: inserted.hotkeyRan,
+          },
+          escape: { first, second, third },
+        });
+      },
+      { path, label: run.m.workbench_view_fields() },
+    );
+    expect(JSON.parse(walk)).toEqual({
+      opened: {
+        state: "popover",
+        trailing: true,
+        level: true,
+        focusInSearch: true,
+      },
+      inserted: { docked: true, details: true, hotkeyRan: false },
+      escape: {
+        first: { query: "ti", docked: true },
+        second: true,
+        third: { docked: true, focusInSearch: true },
+      },
+    });
+  });
+
   // #1957: the Preview's Show problem is the shared repair command, so the
   // problem round trip is the same in a narrow and a wide leaf.
   it("reveals the call from the Preview's Show problem in a narrow and a wide leaf, keeping the Preview in place", async () => {

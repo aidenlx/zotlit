@@ -255,7 +255,7 @@ menu button in the room they always hold. Each row holds the label and the
 value on one line, and a long value ends with "…". Step 3 opens the details
 in a popover to the left of the Fields popover, level with the row: the
 section, the name "Title", the full title, **Template path** with
-`zt.title`, and **In your note:** with `{{ zt.title }}` and the title it
+`zt.title`, and **In your note** with `{{ zt.title }}` and the title it
 writes, then **Insert** and **Copy**. The focus stays in the field search.
 Step 4 closes the details. The web Workbench does the same steps, with the
 same outcome.
@@ -268,8 +268,8 @@ same outcome.
 3. Scroll the field list.
 
 Expected: in step 2 the details open in a bar of fixed height at the foot of
-the Fields popover, above the line "Click or Enter: details · Ctrl+Enter:
-insert" ("Command+Enter" on macOS). The bar shows the details of the last
+the Fields popover, above the line "Select or press Enter: details ·
+Ctrl+Enter: insert" ("Command+Enter" on macOS). The bar shows the details of the last
 row you selected, and the rows above it do not move. In step 3 the bar stays
 where it is. The web Workbench does the same steps, with the same outcome.
 
@@ -324,7 +324,7 @@ details in the bar.
 2. Select a row that shows no value.
 
 Expected: the details show "Empty for this item" in place of the value and
-under **In your note:**. **Insert** and **Copy** still work.
+under **In your note**. **Insert** and **Copy** still work.
 
 ## Resizing never opens or closes the Fields popover
 
@@ -431,6 +431,25 @@ focus in its search. In step 4 the docked panel goes, and no popover opens.
 With the Preview beside the editor, a tab needs about 1010 pixels to dock the
 panel: the editor keeps 360 pixels beside a panel of 240 pixels and the
 Preview column.
+
+## Field details in the docked panel
+
+1. Pin the Fields Panel in a tab 1200 pixels wide, as in **Pin the Fields
+   Panel in a wide tab**. Choose "Alpha of the personal library", and place
+   the cursor at the end of the note body.
+2. In the docked panel's field search, type `doi`. Press `Down Arrow`, then
+   `Enter`.
+3. Press `Ctrl+Enter` (`Command+Enter` on macOS).
+4. Select the field search, and type `ti`. Select the row of `title`. Press
+   `Escape` three times, and look after each press.
+
+Expected: step 2 opens the details of the DOI row in a popover to the right
+of the docked panel, level with the row, and the focus stays in the field
+search. Step 3 writes `{{ zt.DOI }}` at the cursor, closes the details, and
+the panel stays docked; no command of Obsidian's runs, also when you have
+bound your own hotkey to Ctrl+Enter. In step 4, the first `Escape` closes the
+details, the second clears the search, and the third changes nothing: the
+panel stays docked and the focus stays in the field search.
 
 ## The pin survives a restart
 
