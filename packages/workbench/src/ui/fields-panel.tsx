@@ -71,12 +71,14 @@ export function FieldsPanel(props: FieldsPanelContent) {
 }
 
 /**
- * The Fields Panel docked beside the editor. It takes focus in its search as
- * it draws only after the reader pinned or showed it.
+ * The Fields Panel docked beside the editor, whose title `titleId` names its
+ * region. It takes focus in its search as it draws only after the reader
+ * pinned or showed it.
  */
-export function DockedFieldsPanel(props: FieldsPanelContent) {
-  const titleId = useUniqueId();
-  return <FieldsPanelBody {...props} titleId={titleId} placement="docked" />;
+export function DockedFieldsPanel(
+  props: FieldsPanelContent & { readonly titleId: string },
+) {
+  return <FieldsPanelBody {...props} placement="docked" />;
 }
 
 /**
@@ -113,9 +115,12 @@ function FieldsPanelBody({
       if (!registry.get(model.fieldsFocus)) return;
       registry.set(model.fieldsFocus, false);
     }
-    panel.current
-      ?.querySelector<HTMLElement>("[data-part=body] input")
-      ?.focus({ preventScroll: true });
+    // A panel with no search yet, as before an item is chosen, takes focus
+    // on its pin, so the focus the popover held does not fall to the page.
+    (
+      panel.current?.querySelector<HTMLElement>("[data-part=body] input") ??
+      panel.current?.querySelector<HTMLElement>("[data-part=pin]")
+    )?.focus({ preventScroll: true });
   }, [placement, registry, model]);
   return (
     <div ref={panel} {...part("panel", placement)}>

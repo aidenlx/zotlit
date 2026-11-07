@@ -11,9 +11,13 @@ import { chosenTab, keep, open } from "./page-test-host";
 
 /** The side panel the page shows under `label`, or null. */
 const region = (host: HTMLElement, label: string) =>
-  [...host.querySelectorAll<HTMLElement>("[role=region]")].find(
-    (element) => element.getAttribute("aria-label") === label,
-  ) ?? null;
+  [...host.querySelectorAll<HTMLElement>("[role=region]")].find((element) => {
+    const title = element.getAttribute("aria-labelledby");
+    const name = title
+      ? element.ownerDocument.getElementById(title)?.textContent
+      : element.getAttribute("aria-label");
+    return name === label;
+  }) ?? null;
 
 const handle = (host: HTMLElement, label: string) =>
   [...host.querySelectorAll<HTMLElement>("[role=separator]")].find(
@@ -296,6 +300,24 @@ it("docks the pinned Fields Panel in a wide frame, hides and shows it from its a
       "aria-valuenow",
     ),
   ).toBe("336");
+});
+
+it("hands focus to the Fields action when a narrower frame takes the docked panel that held it", async () => {
+  await using page = await open({ frame: { width: 1400, height: 700 } });
+  await page.settle();
+  const fields = action(page.host, m.workbench_view_fields());
+  page.press(m.workbench_view_fields());
+  await page.settle();
+  act(() =>
+    popover()!.querySelector<HTMLElement>('[data-part="pin"]')!.click(),
+  );
+  await page.settle();
+  const docked = () => region(page.host, m.workbench_view_fields());
+  expect(docked()!.contains(document.activeElement)).toBe(true);
+  page.resizeFrame({ width: 560, height: 700 });
+  await page.settle();
+  expect(docked()).toBeNull();
+  expect(document.activeElement).toBe(fields);
 });
 
 // #1956: the View menu sizes every handle without a drag, as the Obsidian

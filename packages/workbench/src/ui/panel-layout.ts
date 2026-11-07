@@ -6,6 +6,7 @@
 // at the view's right edge while the reader has it open, at every width.
 // Pinned, it docks as a column at the leading edge where the view has room.
 
+import type { WorkbenchMessages } from "./generated/messages";
 import { patchAt } from "./patch";
 
 /**
@@ -13,6 +14,11 @@ import { patchAt } from "./patch";
  * edge, the Preview at the trailing edge.
  */
 export type PanelSide = "fields" | "preview";
+/**
+ * The side panel a view action shows and hides. The Fields Panel opens from
+ * the Fields action instead, and docks while the reader has it pinned.
+ */
+export type ShowableSide = "preview";
 export interface WorkbenchPanel {
   readonly shown: boolean;
   /** The panel's width in pixels, which the reader sets with its edge. */
@@ -87,21 +93,20 @@ export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
   );
 
 /**
- * `width` as saved for `side`: the Fields Panel within {@link FIELDS_WIDTH},
- * the Preview at least its `min`, as the view holds it to the room the
- * editor leaves.
+ * `width` as saved for `side`: within its widths, as far as {@link PANEL_SIDES}
+ * holds a saved width; the view holds a Preview to the room the editor leaves.
  */
-export const savedPanelWidth = (side: PanelSide, width: number) =>
-  side === "fields"
-    ? Math.round(Math.min(FIELDS_WIDTH.max, Math.max(FIELDS_WIDTH.min, width)))
-    : Math.round(Math.max(PANEL_WIDTH.min, width));
+export const savedPanelWidth = (side: PanelSide, width: number) => {
+  const { width: widths, savedMax } = PANEL_SIDES[side];
+  return Math.round(Math.min(savedMax, Math.max(widths.min, width)));
+};
 
 /** `share` held within {@link PREVIEW_HEIGHT}. */
 export const clampPreviewHeight = (share: number) =>
   Math.round(Math.min(PREVIEW_HEIGHT.max, Math.max(PREVIEW_HEIGHT.min, share)));
 
-export const showPanel = (side: "preview", shown: boolean) =>
-  patchAt<WorkbenchPanels, "preview">(side, { shown });
+export const showPanel = (side: ShowableSide, shown: boolean) =>
+  patchAt<WorkbenchPanels, ShowableSide>(side, { shown });
 /** Sets a panel's width, held as {@link savedPanelWidth} says. */
 export const setPanelWidth = (side: PanelSide, width: number) =>
   patchAt<WorkbenchPanels, PanelSide>(side, {
@@ -223,15 +228,68 @@ const fieldsLimit = (panels: WorkbenchPanels, size: ViewSize | null) =>
       )
     : FIELDS_WIDTH.max;
 
+/** What sets one side column apart from the other. */
+export interface SideColumn {
+  /** The widths the column takes, in pixels. */
+  readonly width: {
+    readonly min: number;
+    readonly initial: number;
+    readonly max: number;
+  };
+  /** The widest width saved; a view holds what it draws within its own room. */
+  readonly savedMax: number;
+  /**
+   * The view's edge the column stands at: the leading edge, before the
+   * editor in document order, with its handle after it; or the trailing
+   * edge, after the editor, with its handle before it.
+   */
+  readonly edge: "leading" | "trailing";
+  /** The widest a host draws the column in a view of `size`, before the other column limits it. */
+  readonly limit: (panels: WorkbenchPanels, size: ViewSize | null) => number;
+  /** Whether `placement` puts the column beside the editor. */
+  readonly placed: (placement: PanelPlacement) => boolean;
+  /** The panel's name, as a size status reads it. */
+  readonly label: (m: WorkbenchMessages) => string;
+  /** The name of the handle and the size menu that size the column. */
+  readonly resizeLabel: (m: WorkbenchMessages) => string;
+}
+
+/** Each side column: the docked Fields Panel and the Preview. */
+export const PANEL_SIDES: Readonly<Record<PanelSide, SideColumn>> = {
+  fields: {
+    width: FIELDS_WIDTH,
+    savedMax: FIELDS_WIDTH.max,
+    edge: "leading",
+    limit: (panels, size) => fieldsLimit(panels, size),
+    placed: (placement) => placement.fields === "docked",
+    label: (m) => m.workbench_view_fields(),
+    resizeLabel: (m) => m.workbench_fields_resize(),
+  },
+  preview: {
+    width: PANEL_WIDTH,
+    savedMax: Number.POSITIVE_INFINITY,
+    edge: "trailing",
+    limit: (panels, size) => previewLimit(panels, size),
+    placed: (placement) => placement.preview === "side",
+    label: (m) => m.workbench_view_preview(),
+    resizeLabel: (m) => m.workbench_preview_resize(),
+  },
+};
+
+/** The column on the other side of the editor from `side`. */
+const otherSide = (side: PanelSide): PanelSide =>
+  (Object.keys(PANEL_SIDES) as PanelSide[]).find((other) => other !== side)!;
+
+/** The side panel a handle sizes: the split sizes the Preview under the editor. */
+export const handleSide = (handle: PanelHandle): PanelSide =>
+  handle === "split" ? "preview" : handle;
+
 /** `side`'s width as a column in a view of `size`, before the other column limits it. */
 const drawnWidth = (
   panels: WorkbenchPanels,
   side: PanelSide,
   size: ViewSize | null,
-) =>
-  side === "fields"
-    ? clampPanelWidth(panels.fields.width, fieldsLimit(panels, size))
-    : clampPanelWidth(panels.preview.width, previewLimit(panels, size));
+) => clampPanelWidth(panels[side].width, PANEL_SIDES[side].limit(panels, size));
 
 /**
  * Places the panels in a view of `size`; a view not measured yet places the
@@ -324,17 +382,22 @@ export function columnLimit(
   side: PanelSide,
   size: ViewSize | null,
 ): number {
-  if (side === "fields") return fieldsLimit(panels, size);
-  const limit = previewLimit(panels, size);
+  const limit = PANEL_SIDES[side].limit(panels, size);
   if (size === null) return limit;
-  // The Preview leaves the docked Fields Panel the room it is drawn at.
-  if (placePanels(panels, size, false).fields !== "docked") return limit;
+  const placement = placePanels(panels, size, false);
+  const other = otherSide(side);
+  // A column leaves the other column the room it is drawn at.
+  if (
+    !PANEL_SIDES[side].placed(placement) ||
+    !PANEL_SIDES[other].placed(placement)
+  )
+    return limit;
   const handle = size.handle ?? 0;
   return clampPanelWidth(
     size.width -
       EDITOR_MIN.width -
       handle -
-      (drawnWidth(panels, "fields", size) + handle),
+      (drawnWidth(panels, other, size) + handle),
     limit,
   );
 }

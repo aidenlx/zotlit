@@ -88,6 +88,7 @@ export {
 export type {
   FieldsDock,
   PanelSide,
+  ShowableSide,
   PreviewPanel,
   ViewSize,
   WorkbenchPanel,

@@ -232,6 +232,9 @@ describe("the pinned Fields Panel", () => {
     expect(panel()).toBeNull();
     expect(docked()).not.toBeNull();
     expect(page.registry.get(page.model.placement).fields).toBe("docked");
+    // The region takes its name from the title it shows, so a host that
+    // draws aria-label as a tooltip shows none over the column.
+    expect(docked()!.hasAttribute("aria-label")).toBe(false);
     expect(page.registry.get(page.model.panels).fields.pinned).toBe(true);
     expect(pin().getAttribute("aria-label")).toBe("Unpin");
     expect(pin().getAttribute("aria-pressed")).toBe("true");
@@ -277,6 +280,20 @@ describe("the pinned Fields Panel", () => {
     expect(document.activeElement).toBe(
       within(docked()!).getByRole("searchbox"),
     );
+  });
+
+  it("hands focus to the Fields action when a narrower view takes the docked panel that held it", () => {
+    using page = open({ size: { width: 1200, height: 800 }, panels: PINNED });
+    const search = within(docked()!).getByRole("searchbox");
+    act(() => search.focus());
+    page.resize({ width: 560, height: 800 });
+    expect(docked()).toBeNull();
+    expect(page.host.calls.actionFocuses).toBe(1);
+    // A panel that held no focus leaves focus where it is.
+    page.resize({ width: 1200, height: 800 });
+    act(() => screen.getByRole("textbox", { name: "Template source" }).focus());
+    page.resize({ width: 560, height: 800 });
+    expect(page.host.calls.actionFocuses).toBe(1);
   });
 
   it("opens in the Fields popover once the reader unpins it", () => {

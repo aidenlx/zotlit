@@ -79,6 +79,8 @@ export interface FakeHost extends WorkbenchHost {
     confirms: string[];
     /** Every text handed to the clipboard, in order. */
     copies: string[];
+    /** How many times the tree moved focus to the Fields action. */
+    actionFocuses: number;
   };
   /** Every render asked for, in order, none of them answered yet. */
   readonly renders: PendingRender[];
@@ -140,6 +142,7 @@ export function fakeHost(): FakeHost {
       notices: [],
       confirms: [],
       copies: [],
+      actionFocuses: 0,
     },
     renders,
     started,
@@ -227,6 +230,7 @@ export function fakeHost(): FakeHost {
     fieldsAction: {
       popover: FakeFieldsPopover,
       popoverId: "fake-fields-panel",
+      focus: () => void host.calls.actionFocuses++,
     },
     persistence: {
       read: (scope, name) => preferences.get(key(scope, name)) ?? null,

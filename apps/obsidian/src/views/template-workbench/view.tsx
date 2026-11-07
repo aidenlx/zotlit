@@ -104,6 +104,7 @@ import type {
   WorkbenchModel,
   WorkbenchViewState,
   TemplateRoot,
+  ShowableSide,
   WorkbenchPanels,
   PartialPlaceholderHost,
   ViewSize,
@@ -1767,7 +1768,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   /** Shows the Preview the leaf hides, or hides it. */
-  togglePanel(side: "preview"): void {
+  togglePanel(side: ShowableSide): void {
     this.registry.update(this.workbench.panels, (panels) =>
       showPanel(side, !panels[side].shown)(panels),
     );

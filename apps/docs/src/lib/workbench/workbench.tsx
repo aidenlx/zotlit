@@ -66,6 +66,7 @@ import type {
   WorkbenchTab,
   WorkbenchHost,
   WorkbenchInsertTarget,
+  ShowableSide,
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
@@ -233,7 +234,7 @@ function WorkbenchSession({
   const { drafts, layout: layoutAtom } = workbench;
   const panels = useAtomValue(model.panels);
   const fieldsAction = useAtomValue(model.fieldsAction);
-  const togglePanel = (side: "preview") =>
+  const togglePanel = (side: ShowableSide) =>
     registry.update(model.panels, (state) =>
       showPanel(side, !state[side].shown)(state),
     );

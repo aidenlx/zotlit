@@ -3870,11 +3870,19 @@ describe("the Fields panel of the Template Workbench View", () => {
   it("pins the Fields Panel beside the editor, and restores its pin, hidden state and width with the view state", async () => {
     const original = setup();
     await act(async () => openView(original.view));
-    const docked = (view: TemplateWorkbenchView) =>
-      [...view.contentEl.querySelectorAll<HTMLElement>("[role=region]")].find(
-        (element) =>
-          element.getAttribute("aria-label") === m.workbench_view_fields(),
-      ) ?? null;
+    /** The docked panel's region, which its visible title names. */
+    const docked = (view: TemplateWorkbenchView) => {
+      const region = view.contentEl.querySelector<HTMLElement>(
+        '[data-panel="fields"][role="region"]',
+      );
+      const title = region?.getAttribute("aria-labelledby");
+      return region &&
+        title &&
+        view.contentEl.ownerDocument.getElementById(title)?.textContent ===
+          m.workbench_view_fields()
+        ? region
+        : null;
+    };
     const edge = (view: TemplateWorkbenchView) =>
       [
         ...view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
@@ -3899,7 +3907,7 @@ describe("the Fields panel of the Template Workbench View", () => {
     expect(docked(original.view)).not.toBeNull();
     expect(show.getAttribute("aria-expanded")).toBe("true");
     expect(show.getAttribute("aria-controls")).toBe(docked(original.view)!.id);
-    // The docked panel sits at the leading edge, before the editor.
+    // The edge of a column at the leading edge widens it with ArrowRight.
     const handle = edge(original.view)!;
     await act(async () => {
       handle.dispatchEvent(
@@ -3933,6 +3941,31 @@ describe("the Fields panel of the Template Workbench View", () => {
     expect(docked(again.view)).not.toBeNull();
     expect(edge(again.view)!.getAttribute("aria-valuenow")).toBe("336");
     await act(async () => again.view.close());
+  });
+
+  it("hands focus to the Fields action when a narrower leaf takes the docked panel that held it", async () => {
+    const { view } = setup();
+    await act(async () => openView(view));
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    const show = actionOf(view, m.workbench_view_fields());
+    await act(async () => show.click());
+    const pin = [...fields(view)!.querySelectorAll("button")].find(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_pin(),
+    )!;
+    await act(async () => pin.click());
+    const dock = view.contentEl.querySelector<HTMLElement>(
+      '[data-panel="fields"]',
+    )!;
+    expect(dock.contains(document.activeElement)).toBe(true);
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 560, height: 800 }),
+    );
+    expect(view.contentEl.querySelector('[data-panel="fields"]')).toBeNull();
+    expect(document.activeElement).toBe(show);
+    await act(async () => view.close());
   });
 
   it("closes the Fields popover on Escape", async () => {

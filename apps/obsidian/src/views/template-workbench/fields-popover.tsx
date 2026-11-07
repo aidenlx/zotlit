@@ -84,5 +84,9 @@ export function fieldsActionHost(
       </PinnedPopover>
     );
   }
-  return { popover: FieldsPopover, popoverId };
+  return {
+    popover: FieldsPopover,
+    popoverId,
+    focus: () => anchor.current?.focus({ preventScroll: true }),
+  };
 }

@@ -6,7 +6,7 @@
 // theme draws the parts and names the custom properties that carry each
 // drawn size.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
@@ -19,7 +19,8 @@ import { useWorkbenchMessages } from "./messages";
 import {
   clampPanelWidth,
   clampPreviewHeight,
-  PANEL_WIDTH,
+  handleSide,
+  PANEL_SIDES,
   columnLimit,
   drawnShare,
   KEY_STEP,
@@ -32,6 +33,7 @@ import {
 import type {
   PanelHandle,
   PanelSide,
+  ShowableSide,
   ViewSize,
   WorkbenchPanels,
 } from "./panel-layout";
@@ -57,7 +59,7 @@ export function SidePanels({
   panels,
   children,
 }: {
-  panels: Partial<Record<"preview", SidePanel>> & {
+  panels: Partial<Record<ShowableSide, SidePanel>> & {
     readonly fields?: FieldsPanelContent & {
       /** The docked panel's resize handle's name. */
       readonly resizeLabel: string;
@@ -75,7 +77,9 @@ export function SidePanels({
   // row or a column, so a resize across the boundary moves the region
   // without mounting it again, and what the reader was doing in it stays.
   const below = placement.preview === "below";
-  const popoverId = useOptionalHost()?.fieldsAction?.popoverId;
+  const host = useOptionalHost();
+  const popoverId = host?.fieldsAction?.popoverId;
+  const fieldsTitle = useUniqueId();
   return (
     <div {...part("panels")}>
       {panels.fields && placement.fields === "docked" && (
@@ -85,9 +89,15 @@ export function SidePanels({
           width={state.fields.width}
           share={state.preview.height}
           label={panels.fields.label}
+          labelledBy={fieldsTitle}
           resizeLabel={panels.fields.resizeLabel}
           {...(popoverId === undefined ? {} : { id: fieldsDockId(popoverId) })}
-          content={<DockedFieldsPanel {...panels.fields} />}
+          // A resize or a hide that takes the column away hands the focus
+          // it held to the Fields action, which brings it back.
+          onLeave={() => host?.fieldsAction?.focus()}
+          content={
+            <DockedFieldsPanel {...panels.fields} titleId={fieldsTitle} />
+          }
         />
       )}
       <div {...part("stack", below ? "below" : "side")}>
@@ -103,7 +113,12 @@ export function SidePanels({
         )}
       </div>
       {panels.fields && <FieldsPanel {...panels.fields} />}
-      <SizeStatus />
+      <SizeStatus
+        labels={{
+          fields: panels.fields?.label ?? "",
+          preview: panels.preview?.label ?? "",
+        }}
+      />
     </div>
   );
 }
@@ -217,9 +232,9 @@ function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
 }
 
 /**
- * The Preview and its handle: a column beside the editor, or under it. It is
- * the same component in either place, so moving it across the boundary keeps
- * the region and its contents mounted.
+ * One side panel and its handle: a column beside the editor, or the Preview
+ * under it. The Preview is the same component in either place, so moving it
+ * across the boundary keeps the region and its contents mounted.
  */
 function Panel({
   side,
@@ -227,17 +242,27 @@ function Panel({
   width,
   share,
   label,
+  labelledBy,
   resizeLabel,
   content,
   id: givenId,
+  onLeave,
 }: {
   side: PanelSide;
   /** The Preview stands under the editor rather than beside it. */
   below: boolean;
   width: number;
   share: number;
+  /**
+   * The id of a title the region shows, which names it in place of `label`:
+   * a host that draws `aria-label` as a hover tooltip then shows none over
+   * the region.
+   */
+  labelledBy?: string;
   /** The region's id, where another control names it. */
   id?: string;
+  /** Takes the focus the region or its handle holds as the panel goes. */
+  onLeave?: () => void;
 } & SidePanel) {
   const model = useWorkbenchModel();
   const part = useParts("panels");
@@ -247,13 +272,28 @@ function Panel({
   const uniqueId = useUniqueId();
   const id = givenId ?? uniqueId;
   const region = useRef<HTMLElement>(null);
+  const edge = useRef<HTMLDivElement>(null);
+  const leave = useRef(onLeave);
+  useLayoutEffect(() => {
+    leave.current = onLeave;
+  });
+  // The cleanup runs while the panel still holds the focus it had.
+  useLayoutEffect(() => {
+    const parts = [region.current, edge.current];
+    return () => {
+      const focused = parts[0]?.ownerDocument.activeElement;
+      if (focused && parts.some((part) => part?.contains(focused)))
+        leave.current?.();
+    };
+  }, []);
+  const { edge: standsAt, width: widths } = PANEL_SIDES[side];
   /** The widest this panel may be while every column keeps its place. */
   const max = columnLimit(panels, side, size);
   const held = (next: number) => clampPanelWidth(next, max);
-  // Moving the edge away from the editor widens the panel: the Fields edge
-  // toward the trailing side, the Preview edge toward the leading side.
+  // Moving the edge away from the editor widens the panel: a leading column's
+  // edge toward the trailing side, a trailing column's toward the leading side.
   const outward = (handle: Element) =>
-    (side === "fields" ? 1 : -1) * (rightToLeft(handle) ? -1 : 1);
+    (standsAt === "leading" ? 1 : -1) * (rightToLeft(handle) ? -1 : 1);
   // Below is placed only in a measured view.
   const viewHeight = size?.height ?? 0;
   const column: Sizing = {
@@ -265,7 +305,7 @@ function Panel({
         ? { grow: "ArrowRight", shrink: "ArrowLeft" }
         : { grow: "ArrowLeft", shrink: "ArrowRight" },
     step: (event) => (event.shiftKey ? KEY_STEP.wideWidth : KEY_STEP.width),
-    min: PANEL_WIDTH.min,
+    min: widths.min,
     max,
     dragged: (handle, from, to) =>
       outward(handle) * (to.clientX - from.clientX),
@@ -295,6 +335,7 @@ function Panel({
   // within its own share.
   const handle = (
     <div
+      ref={edge}
       role="separator"
       tabIndex={0}
       aria-label={resizeLabel}
@@ -314,7 +355,7 @@ function Panel({
           }
         : {
             "aria-orientation": "vertical",
-            "aria-valuemin": PANEL_WIDTH.min,
+            "aria-valuemin": widths.min,
             "aria-valuemax": max,
             "aria-valuenow": held(width),
             "aria-valuetext": sizeText(side, panels, size),
@@ -325,12 +366,14 @@ function Panel({
   );
   return (
     <>
-      {side === "preview" && handle}
+      {standsAt === "trailing" && handle}
       <section
         ref={region}
         id={id}
         role="region"
-        aria-label={label}
+        {...(labelledBy === undefined
+          ? { "aria-label": label }
+          : { "aria-labelledby": labelledBy })}
         data-panel={side}
         style={
           below
@@ -343,7 +386,7 @@ function Panel({
       >
         {content}
       </section>
-      {side === "fields" && handle}
+      {standsAt === "leading" && handle}
     </>
   );
 }
@@ -375,7 +418,12 @@ function useSizeText(): (
  * "Preview: 50%": a menu entry moves no focus to the handle, whose own value
  * a screen reader would read. It stands empty otherwise.
  */
-function SizeStatus() {
+function SizeStatus({
+  labels,
+}: {
+  /** Each panel's name, as its region reads it. */
+  labels: Record<PanelSide, string>;
+}) {
   const model = useWorkbenchModel();
   const m = useWorkbenchMessages();
   const part = useParts("panels");
@@ -387,10 +435,7 @@ function SizeStatus() {
     <div role="status" {...part("status")}>
       {sized &&
         m.workbench_panel_size_status({
-          panel:
-            sized === "fields"
-              ? m.workbench_view_fields()
-              : m.workbench_view_preview(),
+          panel: labels[handleSide(sized)],
           size: sizeText(sized, panels, size),
         })}
     </div>

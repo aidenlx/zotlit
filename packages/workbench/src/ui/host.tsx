@@ -244,6 +244,11 @@ export interface WorkbenchFieldsAction {
   readonly popover: ComponentType<WorkbenchFieldsPopoverProps>;
   /** The id of the surface `popover` draws, which the action names while it stands. */
   readonly popoverId: string;
+  /**
+   * Moves focus to the action, as when a resize or a hide takes away the
+   * docked panel that held it.
+   */
+  focus(): void;
 }
 
 /** The partial registry and the create flow one host owns for its editors. */

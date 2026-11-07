@@ -7,7 +7,13 @@ import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import type { WorkbenchMessages } from "./generated/messages";
 import type { WorkbenchModel } from "./model";
-import { canResizePanel, panelHandles, resizePanel } from "./panel-layout";
+import {
+  canResizePanel,
+  handleSide,
+  PANEL_SIDES,
+  panelHandles,
+  resizePanel,
+} from "./panel-layout";
 import type {
   PanelBounds,
   PanelHandle,
@@ -59,10 +65,7 @@ export function panelSizeMenus(
     return {
       handle,
       axis,
-      label:
-        handle === "fields"
-          ? m.workbench_fields_resize()
-          : m.workbench_preview_resize(),
+      label: PANEL_SIDES[handleSide(handle)].resizeLabel(m),
       items: RESIZES.map((resize) => ({
         handle,
         resize,
