@@ -51,6 +51,9 @@
          and count. No separate section nav and no jump menu. (User: "D, no need menu to jump to
          diff group".) The merged sheet is the `// --- Merged ---` region (M_*).
          ROUND 4 QUESTION: which icon and label name the entry action and the sheet? */
+      /* VERDICT round 4 (entry): lucide `braces` with the name "Fields", for the view-header action
+         (icon + tooltip in Obsidian) and the sheet title. (User: "use B".)
+         FINAL: this file is trimmed to that winner; it is the visual reference for #1952. */
       /* DESIGN PLAN (utilitarian; the project's own system wins: Obsidian's default theme)
          ground #ffffff view; panel #f6f6f7 secondary panes / popover ground; ink #222222 text;
          muted #6b6b70; faint #a3a3a8; line #e3e3e6 hairlines; accent #7f5af0 Obsidian's interactive
@@ -1779,18 +1782,6 @@
       // --- Merged END ---
 
       // --- App ---
-      // --- Variant A ---
-      function VariantA() {
-        return (
-          <M_View
-            nav="headers"
-            entry={{ icon: L.TableProperties, label: "Item data" }}
-            title={'A \u00b7 Table icon, "Item data"'}
-          />
-        );
-      }
-      // --- Variant A END ---
-
       // --- Variant B ---
       function VariantB() {
         return (
@@ -1803,220 +1794,9 @@
       }
       // --- Variant B END ---
 
-      // --- Variant C ---
-      function VariantC() {
-        return (
-          <M_View
-            nav="headers"
-            entry={{ icon: L.LibraryBig, label: "Item data" }}
-            title={'C \u00b7 Library icon, "Item data"'}
-          />
-        );
-      }
-      // --- Variant C END ---
-
-      // --- Variant D ---
-      function VariantD() {
-        return (
-          <M_View
-            nav="headers"
-            entry={{ icon: L.TextCursorInput, label: "Insert field" }}
-            title={'D \u00b7 Text cursor icon, "Insert field"'}
-          />
-        );
-      }
-      // --- Variant D END ---
-
-      // --- Variant E ---
-      function VariantE() {
-        return (
-          <M_View
-            nav="headers"
-            entry={{ icon: L.ListTree, label: "Fields" }}
-            title={'E \u00b7 List tree icon, "Fields"'}
-          />
-        );
-      }
-      // --- Variant E END ---
-
-      // --- Switcher ---
-      const VARIANTS = [
-        { key: "A", name: "Table icon · Item data", component: VariantA },
-        { key: "B", name: "Braces · Fields", component: VariantB },
-        { key: "C", name: "Library · Item data", component: VariantC },
-        {
-          key: "D",
-          name: "Text cursor · Insert field",
-          component: VariantD,
-        },
-        { key: "E", name: "List tree · Fields", component: VariantE },
-      ];
-
-      // Scenario presets — buttons that jump the shared store to a telling state
-      // (e.g. "empty inbox", "3 selected"). Leave empty when the design has no such
-      // states; otherwise add { label, apply() } entries that mutate the store.
-      const SCENARIOS = [
-        {
-          label: "Wide view (1100)",
-          apply: () => setProto({ width: WIDTHS.wide }),
-        },
-        {
-          label: "Narrow view (420)",
-          apply: () => setProto({ width: WIDTHS.narrow }),
-        },
-        {
-          label: "Reset template",
-          apply: () =>
-            setProto({
-              source: INITIAL_SOURCE,
-              caret: INITIAL_SOURCE.indexOf("\n## Annotations"),
-            }),
-        },
-      ];
-
-      function App() {
-        const [idx, setIdx] = useState(() => {
-          const h = location.hash.slice(1);
-          const i = VARIANTS.findIndex((v) => v.key === h);
-          return i >= 0 ? i : 0;
-        });
-        const [pos, setPos] = useState({ right: 16, bottom: 16 });
-
-        useEffect(() => {
-          location.hash = VARIANTS[idx].key;
-          const onHash = () => {
-            const i = VARIANTS.findIndex(
-              (v) => v.key === location.hash.slice(1),
-            );
-            if (i >= 0) setIdx(i);
-          };
-          window.addEventListener("hashchange", onHash);
-          const onKey = (e) => {
-            if (
-              ["INPUT", "TEXTAREA"].includes(e.target.tagName) ||
-              e.target.isContentEditable
-            )
-              return;
-            if (e.key === "ArrowLeft")
-              setIdx((i) => (i - 1 + VARIANTS.length) % VARIANTS.length);
-            if (e.key === "ArrowRight")
-              setIdx((i) => (i + 1) % VARIANTS.length);
-          };
-          window.addEventListener("keydown", onKey);
-          return () => {
-            window.removeEventListener("hashchange", onHash);
-            window.removeEventListener("keydown", onKey);
-          };
-        }, [idx]);
-
-        const onDragStart = (e) => {
-          const start = { x: e.clientX, y: e.clientY, ...pos };
-          const onMove = (ev) => {
-            const dx = ev.clientX - start.x,
-              dy = ev.clientY - start.y;
-            setPos({
-              right: Math.max(8, start.right - dx),
-              bottom: Math.max(8, start.bottom - dy),
-            });
-          };
-          const onUp = () => {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
-          };
-          window.addEventListener("pointermove", onMove);
-          window.addEventListener("pointerup", onUp);
-        };
-
-        const V = VARIANTS[idx];
-        return (
-          <>
-            <V.component />
-            <div
-              style={{
-                position: "fixed",
-                right: pos.right,
-                bottom: pos.bottom,
-                background: "#1e293b",
-                color: "#f8fafc",
-                borderRadius: "0.75rem",
-                padding: "0.75rem",
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.5rem",
-                fontSize: "0.875rem",
-                zIndex: 9999,
-                boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-                minWidth: "9rem",
-              }}
-            >
-              <div
-                onPointerDown={onDragStart}
-                style={{
-                  cursor: "grab",
-                  fontSize: "0.75rem",
-                  opacity: 0.6,
-                  userSelect: "none",
-                  textAlign: "center",
-                }}
-              >
-                ⠿ drag
-              </div>
-              {VARIANTS.map((v, i) => (
-                <button
-                  key={v.key}
-                  onClick={() => setIdx(i)}
-                  style={{
-                    background: i === idx ? "#334155" : "none",
-                    border: "none",
-                    color: "inherit",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    padding: "0.375rem 0.5rem",
-                    borderRadius: "0.375rem",
-                  }}
-                >
-                  {v.key} — {v.name}
-                </button>
-              ))}
-              {SCENARIOS.length > 0 && (
-                <div
-                  style={{
-                    borderTop: "1px solid #334155",
-                    marginTop: "0.25rem",
-                    paddingTop: "0.5rem",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.25rem",
-                  }}
-                >
-                  {SCENARIOS.map((s, i) => (
-                    <button
-                      key={i}
-                      onClick={s.apply}
-                      style={{
-                        background: "none",
-                        border: "1px solid #334155",
-                        color: "inherit",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        padding: "0.25rem 0.5rem",
-                        borderRadius: "0.375rem",
-                        fontSize: "0.75rem",
-                      }}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        );
-      }
-      // --- Switcher END ---
       // --- App END ---
 
-      createRoot(document.getElementById("root")).render(<App />);
+      createRoot(document.getElementById("root")).render(<VariantB />);
     </script>
     <script type="module">
       import { transform } from "https://esm.sh/sucrase@3";
