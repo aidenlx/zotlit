@@ -184,6 +184,7 @@ import {
   makeFieldsPanelModel,
 } from "./fields-panel";
 import type { FieldsPanelModel } from "./fields-panel";
+import { fieldsActionHost } from "./fields-popover";
 import { createTemplateWorkbenchHost, hostEffect } from "./host";
 import { workbenchAnnotationChoice, workbenchItemChoice } from "./item-choice";
 import { ViewItemRow } from "./item-row";
@@ -308,9 +309,6 @@ export interface TemplateWorkbenchDeps {
   bridge: ItemSearchDeps["bridge"];
 }
 
-/** Each leaf's Fields sheet gets an id of its own. */
-let fieldsSheets = 0;
-
 export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The editor hover popover now open, which the next one replaces. */
   hoverPopover: HoverPopover | null = null;
@@ -368,13 +366,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
   #root: Root | null = null;
   #updateActions = () => {};
-  /** The Fields view action, which takes focus back as the Fields sheet closes. */
-  #fieldsButton: HTMLElement | null = null;
-  /** The Fields view action, as the Fields sheet names it. */
-  readonly #fieldsAction: WorkbenchFieldsAction = {
-    sheetId: `zt-fields-sheet-${++fieldsSheets}`,
-    focus: () => this.#fieldsButton?.focus({ preventScroll: true }),
-  };
+  /** The Fields view action, which takes focus back as the Fields popover closes. */
+  readonly #fieldsButton: { current: HTMLElement | null } = { current: null };
+  /** The Fields view action, and the Fields popover inset in the view. */
+  readonly #fieldsAction: WorkbenchFieldsAction = fieldsActionHost(
+    this.#fieldsButton,
+    { current: this.contentEl },
+  );
   #unsubscribe: (() => void) | null = null;
   #closed = false;
   /** Counts the documents this leaf loaded, so each one mounts a fresh tree. */
@@ -1631,11 +1629,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       () => this.togglePanel("preview"),
     );
     // Added after the Preview's, so it sits to its left.
-    // It opens the Fields sheet, and closes it again.
+    // It opens the Fields popover, and closes it again.
     const fields = this.addAction("braces", m.workbench_view_fields(), () =>
       pressFieldsAction(this.registry, this.workbench),
     );
-    this.#fieldsButton = fields;
+    this.#fieldsButton.current = fields;
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
     });
@@ -1663,9 +1661,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       preview.setAttribute("aria-pressed", String(shown));
       preview.classList.toggle("is-active", shown);
       const action = this.registry.get(this.workbench.fieldsAction);
-      // A disclosure of the sheet.
+      // A disclosure of the Fields popover.
       for (const [name, value] of Object.entries(
-        fieldsActionAttributes(action, this.#fieldsAction.sheetId),
+        fieldsActionAttributes(action, this.#fieldsAction.popoverId),
       ))
         if (value === undefined) fields.removeAttribute(name);
         else fields.setAttribute(name, value);
@@ -1764,7 +1762,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_fields())
         .setIcon("braces")
-        // The view action's own press: it opens or closes the Fields sheet.
+        // The view action's own press: it opens or closes the Fields popover.
         .setChecked(this.registry.get(this.workbench.fieldsAction).open)
         .onClick(() => pressFieldsAction(this.registry, this.workbench)),
     );
@@ -1809,9 +1807,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .onClick(() => this.#start(Effect.ignore(reportCitationTemplateOpen))),
     );
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
-    // With the Fields sheet open, the export saves the root the sheet shows.
+    // With the Fields popover open, the export saves the root it shows.
     const target = this.templateDataTarget();
-    if (this.registry.get(this.workbench.fieldsSheet))
+    if (this.registry.get(this.workbench.fieldsAction).open)
       this.fieldsActions.addExportMenuItem(menu);
     else if (target && this.#deps.pluginVersion)
       menu.addItem((item) =>
@@ -2860,7 +2858,7 @@ function EditorContent({
   // notice its host adapter shows.
   const repair = repairCommands({
     registry: view.registry,
-    model: { view: view.model.view, fieldsSheet: workbench.fieldsSheet },
+    model: { view: view.model.view, fieldsPanel: workbench.fieldsPanel },
     controller,
     host,
     problems,

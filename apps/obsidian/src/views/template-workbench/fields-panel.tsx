@@ -337,7 +337,7 @@ export function makeFieldsActions(
   });
 }
 
-/** The Explorer's tree in the leaf's Fields sheet. */
+/** The Explorer's tree in the leaf's Fields Panel. */
 export function FieldsPanel({
   view,
   actions,

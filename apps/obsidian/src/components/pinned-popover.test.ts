@@ -14,7 +14,8 @@ import type { PinnedPopoverHandle } from "./pinned-popover";
 
 let host: HTMLElement | null = null;
 afterEach(() => {
-  if (host) act(() => render(null, host));
+  const mounted = host;
+  if (mounted) act(() => render(null, mounted));
   host?.remove();
   host = null;
   vi.restoreAllMocks();

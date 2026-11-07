@@ -438,7 +438,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     // the width custom property; the Preview under the editor takes the
     // height the model computes.
     panels: {
-      panels: "zt:relative zt:flex zt:h-full zt:min-w-0",
+      panels: "zt:flex zt:h-full zt:min-w-0",
       stack:
         "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:data-[state=below]:flex-col",
       status: "zt:sr-only",
@@ -449,13 +449,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       split:
         "zt:h-1 zt:shrink-0 zt:cursor-row-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
     },
-    // The Fields sheet: it slides in from the leading edge over the panels,
-    // above Obsidian's modal cover, and a still motion setting shows it at once.
-    fieldsSheet: {
-      scrim:
-        "zt:absolute zt:inset-0 zt:z-10 zt:bg-(--background-modifier-cover) zt:transition-opacity zt:duration-150 zt:starting:opacity-0 zt:motion-reduce:transition-none",
-      sheet:
-        "zt:absolute zt:inset-y-0 zt:start-0 zt:z-20 zt:flex zt:w-80 zt:max-w-[88%] zt:flex-col zt:border-e zt:border-border zt:bg-(--background-secondary) zt:shadow-(--shadow-l) zt:transition-transform zt:duration-150 zt:ease-out zt:starting:-translate-x-full zt:rtl:starting:translate-x-full zt:motion-reduce:transition-none",
+    // The Fields Panel in the Fields popover, which stands inset at the
+    // view's right edge as tall as the view: it slides in from that edge,
+    // and a still motion setting shows it at once.
+    fieldsPanel: {
+      panel:
+        "zt:flex zt:h-full zt:w-80 zt:max-w-full zt:flex-col zt:rounded-(--radius-m) zt:border zt:border-border zt:bg-(--background-secondary) zt:text-foreground zt:shadow-(--shadow-l) zt:transition-[translate,opacity] zt:duration-150 zt:ease-out zt:starting:translate-x-2 zt:starting:opacity-0 zt:motion-reduce:transition-none",
       header:
         "zt:flex zt:shrink-0 zt:items-center zt:gap-1 zt:px-(--size-4-2) zt:pt-(--size-4-2)",
       icon: "zt:flex zt:shrink-0 zt:ps-1 zt:text-(--icon-color) zt:[&_svg]:size-(--icon-s)",
