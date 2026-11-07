@@ -276,15 +276,28 @@ it("round-trips the saved and ephemeral state through Schema", () => {
   expect(
     readSavedWorkbench({ preview: { mode: "draft", live: false } })?.preview,
   ).toEqual({ live: false });
-  // A bad side leaves the other, and a width outside the limits is held to them.
+  // A bad side leaves the other, and a width outside the limits is held to
+  // them. The Preview has no widest saved width: the view holds it to the
+  // room the editor leaves.
   expect(
     readSavedWorkbench({
       panels: {
         fields: { shown: "yes", width: 300 },
-        preview: { shown: true, width: 5000 },
+        preview: { shown: true, width: 100 },
       },
     })?.panels,
-  ).toEqual({ preview: { shown: true, width: 960 } });
+  ).toEqual({ preview: { shown: true, width: 240 } });
+  expect(
+    readSavedWorkbench({
+      panels: {
+        fields: { shown: true, width: 5000 },
+        preview: { shown: true, width: 1400 },
+      },
+    })?.panels,
+  ).toEqual({
+    fields: { shown: true, width: 960 },
+    preview: { shown: true, width: 1400 },
+  });
   // A Preview height outside its shares is held to them; a bad one fails its
   // side, as a bad width does.
   expect(

@@ -18,7 +18,7 @@ import type {
 } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import {
-  clampPanelWidth,
+  savedPanelWidth,
   clampPreviewHeight,
   INITIAL_VIEW,
   TABS,
@@ -512,14 +512,17 @@ function readPanels(input: unknown): SavedWorkbench["panels"] {
   return {
     ...(fields
       ? {
-          fields: { shown: fields.shown, width: clampPanelWidth(fields.width) },
+          fields: {
+            shown: fields.shown,
+            width: savedPanelWidth("fields", fields.width),
+          },
         }
       : {}),
     ...(preview
       ? {
           preview: {
             shown: preview.shown,
-            width: clampPanelWidth(preview.width),
+            width: savedPanelWidth("preview", preview.width),
             ...(preview.height === undefined
               ? {}
               : { height: clampPreviewHeight(preview.height) }),

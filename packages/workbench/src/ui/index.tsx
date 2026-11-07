@@ -78,7 +78,7 @@ export type {
   WorkbenchViewState,
 } from "./model";
 export {
-  clampPanelWidth,
+  savedPanelWidth,
   clampPreviewHeight,
   INITIAL_PANELS,
   setPanelWidth,
