@@ -191,6 +191,7 @@ describe("the side panels", () => {
     using opened = open();
     const { registry, model } = opened;
     expect(registry.get(model.panels)).toEqual({
+      fields: { pinned: false, hidden: false, width: 320 },
       preview: { shown: false, width: 400, height: 40 },
     });
     expect(registry.get(model.fieldsPanel)).toBe("closed");
@@ -201,6 +202,7 @@ describe("the side panels", () => {
     const { registry, model } = opened;
     registry.update(model.panels, showPanel("preview", true));
     expect(registry.get(model.panels)).toEqual({
+      fields: { pinned: false, hidden: false, width: 320 },
       preview: { shown: true, width: 400, height: 40 },
     });
   });
@@ -248,11 +250,13 @@ describe("the side panels", () => {
     expect(registry.get(model.placement)).toEqual({
       preview: "side",
       fields: "closed",
+      canPin: true,
     });
     registry.set(viewSize, { width: 560, height: 800 });
     expect(registry.get(model.placement)).toEqual({
       preview: "below",
       fields: "closed",
+      canPin: false,
     });
     // Resizing the view moves the panels; what the reader chose stands.
     expect(registry.get(model.panels)).toBe(panels);
@@ -262,9 +266,15 @@ describe("the side panels", () => {
     const viewSize = Atom.make<ViewSize | null>({ width: 1200, height: 800 });
     using opened = open({ viewSize });
     const { registry, model } = opened;
-    expect(registry.get(model.fieldsAction)).toEqual({ open: false });
+    expect(registry.get(model.fieldsAction)).toEqual({
+      open: false,
+      placement: "closed",
+    });
     registry.set(model.fieldsAction, undefined);
-    expect(registry.get(model.fieldsAction)).toEqual({ open: true });
+    expect(registry.get(model.fieldsAction)).toEqual({
+      open: true,
+      placement: "popover",
+    });
     expect(registry.get(model.placement).fields).toBe("popover");
     registry.set(viewSize, { width: 320, height: 600 });
     expect(registry.get(model.placement).fields).toBe("popover");

@@ -63,7 +63,6 @@ import {
   showPanel,
 } from "@zotlit/workbench/ui";
 import type {
-  PanelSide,
   WorkbenchTab,
   WorkbenchHost,
   WorkbenchInsertTarget,
@@ -234,7 +233,7 @@ function WorkbenchSession({
   const { drafts, layout: layoutAtom } = workbench;
   const panels = useAtomValue(model.panels);
   const fieldsAction = useAtomValue(model.fieldsAction);
-  const togglePanel = (side: PanelSide) =>
+  const togglePanel = (side: "preview") =>
     registry.update(model.panels, (state) =>
       showPanel(side, !state[side].shown)(state),
     );
@@ -655,13 +654,14 @@ function WorkbenchSession({
           <ViewMenu model={model} registry={registry} />
           <HelpMenu />
           {/* The view actions, as the Obsidian view has them: Fields opens
-              the Fields popover at every width, and Preview shows or hides its
-              panel, wherever the panel goes at this width. */}
+              the Fields popover, or hides and shows the pinned panel, and
+              Preview shows or hides its panel, wherever the panel goes at
+              this width. */}
           <Button
             ref={fieldsAnchor}
             variant="ghost"
             size="xs"
-            // A disclosure of the Fields popover.
+            // A disclosure of the Fields popover or the docked panel.
             {...fieldsActionAttributes(
               fieldsAction,
               host.fieldsAction?.popoverId ?? "",
@@ -987,6 +987,7 @@ function WorkbenchSession({
           panels={{
             fields: {
               label: m.workbench_view_fields(),
+              resizeLabel: m.workbench_fields_resize(),
               content: fields,
             },
             preview: {

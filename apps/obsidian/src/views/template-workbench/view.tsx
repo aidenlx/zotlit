@@ -52,6 +52,7 @@ import {
   entryDiagnostics,
   fieldSnippet,
   fieldsActionAttributes,
+  patchAt,
   pressFieldsAction,
   panelSizeMenus,
   pickPanelSize,
@@ -103,7 +104,7 @@ import type {
   WorkbenchModel,
   WorkbenchViewState,
   TemplateRoot,
-  PanelSide,
+  WorkbenchPanels,
   PartialPlaceholderHost,
   ViewSize,
 } from "@zotlit/workbench/ui";
@@ -1506,6 +1507,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         yield* restoreBase(state);
       }
       if (!value) return;
+      const { fields } = value.panels;
+      if (fields)
+        this.registry.update(
+          this.workbench.panels,
+          patchAt<WorkbenchPanels, "fields">("fields", fields),
+        );
       const panel = value.panels.preview;
       if (panel)
         this.registry.update(this.workbench.panels, (panels) =>
@@ -1672,7 +1679,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       preview.setAttribute("aria-pressed", String(shown));
       preview.classList.toggle("is-active", shown);
       const action = this.registry.get(this.workbench.fieldsAction);
-      // A disclosure of the Fields popover.
+      // A disclosure of the Fields popover or the docked panel.
       for (const [name, value] of Object.entries(
         fieldsActionAttributes(action, this.#fieldsAction.popoverId),
       ))
@@ -1759,8 +1766,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       : m.template_data_explorer_menu_export_json();
   }
 
-  /** Shows a side panel the leaf hides, or hides one it shows. */
-  togglePanel(side: PanelSide): void {
+  /** Shows the Preview the leaf hides, or hides it. */
+  togglePanel(side: "preview"): void {
     this.registry.update(this.workbench.panels, (panels) =>
       showPanel(side, !panels[side].shown)(panels),
     );
@@ -1773,7 +1780,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_fields())
         .setIcon("braces")
-        // The view action's own press: it opens or closes the Fields popover.
+        // The view action's own press: it opens or closes the Fields
+        // popover, or hides or shows the docked panel.
         .setChecked(this.registry.get(this.workbench.fieldsAction).open)
         .onClick(() => pressFieldsAction(this.registry, this.workbench)),
     );
@@ -3196,6 +3204,7 @@ function EditorContent({
             panels={{
               fields: {
                 label: m.workbench_view_fields(),
+                resizeLabel: m.workbench_fields_resize(),
                 content: (
                   <FieldsPanel view={view} actions={view.fieldsActions} />
                 ),

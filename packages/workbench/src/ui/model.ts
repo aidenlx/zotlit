@@ -36,10 +36,16 @@ import type {
   WorkbenchMatchResult,
 } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
-import { INITIAL_PANELS, placePanels } from "./panel-layout";
+import {
+  hideFields,
+  INITIAL_PANELS,
+  pinFields,
+  placePanels,
+} from "./panel-layout";
 import type {
   FieldsAction,
   FieldsPanelState,
+  FieldsPin,
   PanelHandle,
   PanelPlacement,
   ViewSize,
@@ -314,10 +320,23 @@ export interface WorkbenchModel<
    */
   readonly fieldsPanel: Atom.Writable<FieldsPanelState>;
   /**
-   * Whether the Fields Panel the action opens stands open. A write presses
-   * the action: it opens or closes the panel.
+   * Whether the Fields Panel the action opens stands open, and where. A
+   * write presses the action: it opens or closes the Fields popover, or
+   * hides or shows the docked panel, which keeps its pin.
    */
   readonly fieldsAction: Atom.Writable<FieldsAction, void>;
+  /**
+   * Whether the Fields Panel is pinned, and whether the view has room to
+   * dock it. A write presses the pin: it docks the panel, or unpins it into
+   * the Fields popover. A view with no room leaves the pin as it is.
+   */
+  readonly fieldsPin: Atom.Writable<FieldsPin, void>;
+  /**
+   * Whether the docked Fields Panel takes focus in its search as it next
+   * draws: after the reader pins or shows it, not as a wider view docks it.
+   * Never saved.
+   */
+  readonly fieldsFocus: Atom.Writable<boolean>;
   /**
    * Makes an Item the choice. An Item the reader picked is the Citation set
    * they asked to see, so the built-in example that outranks it stands down.
@@ -480,6 +499,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
   });
   const panels = Atom.make(initialPanels);
   const fieldsPanel = Atom.make<FieldsPanelState>("closed");
+  const fieldsFocus = Atom.make(false);
   const placement = Atom.withEquality(
     Atom.make((get) =>
       placePanels(get(panels), get(viewSize), get(fieldsPanel) === "open"),
@@ -507,13 +527,40 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     placement,
     fieldsPanel,
     fieldsAction: Atom.writable(
-      (get): FieldsAction => ({ open: get(fieldsPanel) === "open" }),
-      (ctx) =>
-        ctx.set(
-          fieldsPanel,
-          ctx.get(fieldsPanel) === "open" ? "closed" : "open",
-        ),
+      (get): FieldsAction => {
+        const { fields } = get(placement);
+        return { open: fields !== "closed", placement: fields };
+      },
+      (ctx) => {
+        const { fields, canPin } = ctx.get(placement);
+        if (fields === "docked")
+          ctx.set(panels, hideFields(true)(ctx.get(panels)));
+        else if (fields === "popover") ctx.set(fieldsPanel, "closed");
+        else if (canPin && ctx.get(panels).fields.pinned) {
+          ctx.set(fieldsFocus, true);
+          ctx.set(panels, hideFields(false)(ctx.get(panels)));
+        } else ctx.set(fieldsPanel, "open");
+      },
     ),
+    fieldsPin: Atom.writable(
+      (get): FieldsPin => ({
+        pinned: get(panels).fields.pinned,
+        canPin: get(placement).canPin,
+      }),
+      (ctx) => {
+        if (!ctx.get(placement).canPin) return;
+        if (ctx.get(panels).fields.pinned) {
+          ctx.set(panels, pinFields(false)(ctx.get(panels)));
+          ctx.set(fieldsPanel, "open");
+          return;
+        }
+        // The popover closes into the docked panel, which takes its focus.
+        ctx.set(fieldsFocus, true);
+        ctx.set(fieldsPanel, "to-editor");
+        ctx.set(panels, pinFields(true)(ctx.get(panels)));
+      },
+    ),
+    fieldsFocus,
     pick: Atom.writable(
       (get) => get(item),
       (ctx, choice: WorkbenchItemChoice) => {
@@ -637,7 +684,21 @@ export function pressFieldsAction(
 }
 
 /**
- * Keeps the model's writable state and its render alive in `registry`.
+ * Presses the Fields Panel's pin: docks the panel, or unpins it into the
+ * Fields popover.
+ */
+export function pressFieldsPin(
+  registry: AtomRegistry.AtomRegistry,
+  model: Pick<WorkbenchModel, "fieldsPin">,
+): void {
+  registry.set(model.fieldsPin, undefined);
+}
+
+/**
+ * Keeps the model's writable state and its render alive in `registry`. A
+ * Fields popover that stands open as a wider view docks the pinned panel
+ * closes, so a view that narrows again opens no popover by itself; the
+ * docked panel takes the focus it held.
  * @returns Releases them.
  */
 export function holdWorkbenchModel<R extends TemplateRenderResult>(
@@ -651,12 +712,25 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
     model.sizedFromMenu,
     model.viewSize,
     model.fieldsPanel,
+    model.fieldsFocus,
     model.itemData,
     model.controller,
     model.document.source,
     model.document.revision,
     model.scheduler.state,
   ].map((atom) => registry.mount(atom as Atom.Atom<unknown>));
+  releases.push(
+    registry.subscribe(
+      model.placement,
+      ({ fields }) => {
+        if (fields !== "docked" || registry.get(model.fieldsPanel) !== "open")
+          return;
+        registry.set(model.fieldsFocus, true);
+        registry.set(model.fieldsPanel, "to-editor");
+      },
+      { immediate: true },
+    ),
+  );
   return () => {
     for (const release of releases.reverse()) release();
   };

@@ -34,6 +34,7 @@ import type {
   WorkbenchItemData,
   WorkbenchItemDataInput,
   WorkbenchModel,
+  FieldsDock,
   WorkbenchPanel,
   WorkbenchPanels,
   WorkbenchPreviewSettings,
@@ -394,6 +395,7 @@ export interface SavedWorkbench {
    * and so does a Preview height it leaves out.
    */
   readonly panels: {
+    readonly fields?: FieldsDock;
     readonly preview?: WorkbenchPanel & { readonly height?: number };
   };
   /** The Preview's settings the state names; each one decodes alone. */
@@ -504,21 +506,44 @@ const savedPreview = Schema.Struct({
   height: Schema.optional(Schema.Finite),
 });
 
-/** The Preview decodes alone; its width and height are held within the limits. */
+/** The Fields Panel's pin, which docks it beside the editor. */
+const savedFields = Schema.Struct({
+  pinned: Schema.Boolean,
+  hidden: Schema.Boolean,
+  width: Schema.Finite,
+});
+
+/**
+ * Each panel decodes alone; its width and height are held within the limits.
+ * A Fields column an older workspace saved has no pin, so it restores no
+ * docked panel.
+ */
 function readPanels(input: unknown): SavedWorkbench["panels"] {
   const value = decode(record, input) ?? {};
+  const fields = decode(savedFields, value.fields);
   const preview = decode(savedPreview, value.preview);
-  return preview
-    ? {
-        preview: {
-          shown: preview.shown,
-          width: savedPanelWidth(preview.width),
-          ...(preview.height === undefined
-            ? {}
-            : { height: clampPreviewHeight(preview.height) }),
-        },
-      }
-    : {};
+  return {
+    ...(fields
+      ? {
+          fields: {
+            pinned: fields.pinned,
+            hidden: fields.hidden,
+            width: savedPanelWidth("fields", fields.width),
+          },
+        }
+      : {}),
+    ...(preview
+      ? {
+          preview: {
+            shown: preview.shown,
+            width: savedPanelWidth("preview", preview.width),
+            ...(preview.height === undefined
+              ? {}
+              : { height: clampPreviewHeight(preview.height) }),
+          },
+        }
+      : {}),
+  };
 }
 
 const position = Schema.Struct({ top: Schema.Finite, left: Schema.Finite });

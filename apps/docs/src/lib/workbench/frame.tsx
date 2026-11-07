@@ -49,6 +49,7 @@ export interface FrameParts {
 
 /** The panels a new page shows: the Preview at its initial width. */
 export const PAGE_PANELS: WorkbenchPanels = {
+  ...INITIAL_PANELS,
   preview: { ...INITIAL_PANELS.preview, shown: true },
 };
 

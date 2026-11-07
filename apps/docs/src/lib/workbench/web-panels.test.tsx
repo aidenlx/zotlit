@@ -244,6 +244,60 @@ it("never opens the Fields popover as the frame narrows", async () => {
   expect(popover()).toBeNull();
 });
 
+// #1966: pinned, the Fields Panel docks at the leading edge of a wide frame,
+// and the page keeps the pin and the width for its life.
+it("docks the pinned Fields Panel in a wide frame, hides and shows it from its action, and opens the popover in a narrow one", async () => {
+  await using page = await open({ frame: { width: 1400, height: 700 } });
+  await page.settle();
+  const fields = action(page.host, m.workbench_view_fields());
+  const pin = (within: HTMLElement) =>
+    within.querySelector<HTMLElement>(`[data-part="pin"]`)!;
+  page.press(m.workbench_view_fields());
+  await page.settle();
+  expect(pin(popover()!).getAttribute("aria-label")).toBe(
+    m.workbench_fields_pin(),
+  );
+  act(() => pin(popover()!).click());
+  await page.settle();
+  expect(popover()).toBeNull();
+  const docked = () => region(page.host, m.workbench_view_fields());
+  expect(docked()).not.toBeNull();
+  expect(fields.getAttribute("aria-expanded")).toBe("true");
+  // The docked panel stands before the editor, at the leading edge.
+  expect(
+    docked()!.compareDocumentPosition(
+      page.host.querySelector("#workbench-edit-pane")!,
+    ),
+  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  const edge = handle(page.host, m.workbench_fields_resize())!;
+  press(edge, "ArrowRight");
+  expect(edge.getAttribute("aria-valuenow")).toBe("336");
+  page.press(m.workbench_view_fields());
+  await page.settle();
+  expect(docked()).toBeNull();
+  expect(fields.getAttribute("aria-expanded")).toBe("false");
+  page.press(m.workbench_view_fields());
+  await page.settle();
+  expect(docked()).not.toBeNull();
+  // Too narrow to dock, the action opens the popover with the pin disabled.
+  page.resizeFrame({ width: 560, height: 700 });
+  await page.settle();
+  expect(docked()).toBeNull();
+  expect(popover()).toBeNull();
+  page.press(m.workbench_view_fields());
+  await page.settle();
+  expect(pin(popover()!).getAttribute("aria-disabled")).toBe("true");
+  expect(popover()!.textContent).toContain(m.workbench_fields_pinned_narrow());
+  page.resizeFrame({ width: 1400, height: 700 });
+  await page.settle();
+  expect(popover()).toBeNull();
+  expect(
+    handle(page.host, m.workbench_fields_resize())!.getAttribute(
+      "aria-valuenow",
+    ),
+  ).toBe("336");
+});
+
 // #1956: the View menu sizes every handle without a drag, as the Obsidian
 // view's pane menu does.
 it("shows, sizes and resets each panel from the View menu", async () => {

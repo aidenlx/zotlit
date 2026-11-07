@@ -3865,6 +3865,74 @@ describe("the Fields panel of the Template Workbench View", () => {
     await act(async () => view.close());
   });
 
+  it("pins the Fields Panel beside the editor, and restores its pin, hidden state and width with the view state", async () => {
+    const original = setup();
+    await act(async () => openView(original.view));
+    const docked = (view: TemplateWorkbenchView) =>
+      [...view.contentEl.querySelectorAll<HTMLElement>("[role=region]")].find(
+        (element) =>
+          element.getAttribute("aria-label") === m.workbench_view_fields(),
+      ) ?? null;
+    const edge = (view: TemplateWorkbenchView) =>
+      [
+        ...view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
+      ].find(
+        (element) =>
+          element.getAttribute("aria-label") === m.workbench_fields_resize(),
+      ) ?? null;
+    await act(async () =>
+      original.view.registry.set(original.view.viewSize, {
+        width: 1200,
+        height: 800,
+      }),
+    );
+    const show = actionOf(original.view, m.workbench_view_fields());
+    await act(async () => show.click());
+    const pin = [...fields(original.view)!.querySelectorAll("button")].find(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_pin(),
+    )!;
+    await act(async () => pin.click());
+    expect(fields(original.view)).toBeNull();
+    expect(docked(original.view)).not.toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("true");
+    expect(show.getAttribute("aria-controls")).toBe(docked(original.view)!.id);
+    // The docked panel sits at the leading edge, before the editor.
+    const handle = edge(original.view)!;
+    await act(async () => {
+      handle.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+    expect(handle.getAttribute("aria-valuenow")).toBe("336");
+    const pinned = original.view.getState();
+    // The action hides the docked panel and keeps its pin.
+    await act(async () => show.click());
+    expect(docked(original.view)).toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    const hidden = original.view.getState();
+    await act(async () => original.view.close());
+
+    const restored = setup();
+    await act(async () => restored.view.setState(pinned, { history: false }));
+    await act(async () => openView(restored.view));
+    expect(docked(restored.view)).not.toBeNull();
+    expect(edge(restored.view)!.getAttribute("aria-valuenow")).toBe("336");
+    expect(restored.view.getState()).toEqual(pinned);
+    await act(async () => restored.view.close());
+
+    const again = setup();
+    await act(async () => again.view.setState(hidden, { history: false }));
+    await act(async () => openView(again.view));
+    expect(docked(again.view)).toBeNull();
+    await act(async () =>
+      actionOf(again.view, m.workbench_view_fields()).click(),
+    );
+    expect(docked(again.view)).not.toBeNull();
+    expect(edge(again.view)!.getAttribute("aria-valuenow")).toBe("336");
+    await act(async () => again.view.close());
+  });
+
   it("closes the Fields popover on Escape", async () => {
     const { view, app } = setup();
     await act(async () => openView(view));

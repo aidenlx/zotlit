@@ -16,6 +16,7 @@ import { mount } from "./test-host";
 afterEach(cleanup);
 
 const BOTH: WorkbenchPanels = {
+  ...INITIAL_PANELS,
   preview: { ...INITIAL_PANELS.preview, shown: true },
 };
 
@@ -26,6 +27,7 @@ function open(size: ViewSize) {
       panels={{
         fields: {
           label: "Fields",
+          resizeLabel: "Resize fields",
           content: "Field list",
         },
         preview: {

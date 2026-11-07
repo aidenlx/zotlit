@@ -1,8 +1,10 @@
-// The side panels around the editor, headless: the Preview Panel at the
-// trailing edge or under the editor, a labelled region the reader sizes with
-// its handle, and the Fields Panel in the host's Fields popover while the
-// reader has it open. The model says which panels show and where they go; the host's theme
-// draws the parts and names the custom properties that carry each drawn size.
+// The side panels around the editor, headless: the pinned Fields Panel docked
+// at the leading edge, the Preview Panel at the trailing edge or under the
+// editor, each a labelled region the reader sizes with its handle, and the
+// Fields Panel in the host's Fields popover while the reader has it open
+// unpinned. The model says which panels show and where they go; the host's
+// theme draws the parts and names the custom properties that carry each
+// drawn size.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useRef } from "react";
 import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
@@ -10,7 +12,7 @@ import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
-import { FieldsPanel } from "./fields-panel";
+import { DockedFieldsPanel, fieldsDockId, FieldsPanel } from "./fields-panel";
 import type { FieldsPanelContent } from "./fields-panel";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
@@ -45,17 +47,21 @@ export interface SidePanel {
 }
 
 /**
- * The editor beside or above the Preview the reader shows, and the Fields
- * Panel in the host's Fields popover over both while it stands open.
- * Document order is editor, Preview Panel, Fields Panel at every placement,
- * so the layout needs no visual reordering.
+ * The editor beside or above the Preview the reader shows, the docked Fields
+ * Panel before both, and the Fields Panel in the host's Fields popover over
+ * them while it stands open. Document order is docked Fields Panel, editor,
+ * Preview Panel, Fields popover at every placement, so the layout needs no
+ * visual reordering.
  */
 export function SidePanels({
   panels,
   children,
 }: {
-  panels: Partial<Record<PanelSide, SidePanel>> & {
-    readonly fields?: FieldsPanelContent;
+  panels: Partial<Record<"preview", SidePanel>> & {
+    readonly fields?: FieldsPanelContent & {
+      /** The docked panel's resize handle's name. */
+      readonly resizeLabel: string;
+    };
   };
   children: ReactNode;
 }) {
@@ -69,8 +75,21 @@ export function SidePanels({
   // row or a column, so a resize across the boundary moves the region
   // without mounting it again, and what the reader was doing in it stays.
   const below = placement.preview === "below";
+  const popoverId = useOptionalHost()?.fieldsAction?.popoverId;
   return (
     <div {...part("panels")}>
+      {panels.fields && placement.fields === "docked" && (
+        <Panel
+          side="fields"
+          below={false}
+          width={state.fields.width}
+          share={state.preview.height}
+          label={panels.fields.label}
+          resizeLabel={panels.fields.resizeLabel}
+          {...(popoverId === undefined ? {} : { id: fieldsDockId(popoverId) })}
+          content={<DockedFieldsPanel {...panels.fields} />}
+        />
+      )}
       <div {...part("stack", below ? "below" : "side")}>
         <div {...part("editor")}>{children}</div>
         {preview && (
@@ -210,26 +229,31 @@ function Panel({
   label,
   resizeLabel,
   content,
+  id: givenId,
 }: {
   side: PanelSide;
   /** The Preview stands under the editor rather than beside it. */
   below: boolean;
   width: number;
   share: number;
+  /** The region's id, where another control names it. */
+  id?: string;
 } & SidePanel) {
   const model = useWorkbenchModel();
   const part = useParts("panels");
   const properties = usePanelProperties();
   const size = useAtomValue(model.viewSize);
   const panels = useAtomValue(model.panels);
-  const id = useUniqueId();
+  const uniqueId = useUniqueId();
+  const id = givenId ?? uniqueId;
   const region = useRef<HTMLElement>(null);
   /** The widest this panel may be while every column keeps its place. */
   const max = columnLimit(panels, side, size);
   const held = (next: number) => clampPanelWidth(next, max);
-  // Moving the edge away from the editor widens the panel: the Preview edge
-  // toward the leading side.
-  const outward = (handle: Element) => (rightToLeft(handle) ? 1 : -1);
+  // Moving the edge away from the editor widens the panel: the Fields edge
+  // toward the trailing side, the Preview edge toward the leading side.
+  const outward = (handle: Element) =>
+    (side === "fields" ? 1 : -1) * (rightToLeft(handle) ? -1 : 1);
   // Below is placed only in a measured view.
   const viewHeight = size?.height ?? 0;
   const column: Sizing = {
@@ -301,7 +325,7 @@ function Panel({
   );
   return (
     <>
-      {handle}
+      {side === "preview" && handle}
       <section
         ref={region}
         id={id}
@@ -319,6 +343,7 @@ function Panel({
       >
         {content}
       </section>
+      {side === "fields" && handle}
     </>
   );
 }
@@ -362,7 +387,10 @@ function SizeStatus() {
     <div role="status" {...part("status")}>
       {sized &&
         m.workbench_panel_size_status({
-          panel: m.workbench_view_preview(),
+          panel:
+            sized === "fields"
+              ? m.workbench_view_fields()
+              : m.workbench_view_preview(),
           size: sizeText(sized, panels, size),
         })}
     </div>
