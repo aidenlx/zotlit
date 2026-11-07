@@ -30,25 +30,25 @@ Select <UiLabel name={m.workbench_help()} /> in the view header for <UiLabel nam
 
 ![The Template Workbench View for The Semantic Web: the Fields panel on the left, the Default profile in the middle with its shared-template notice and the template text, and the Preview panel on the right](/img/how-to/template-workbench-layout.webp)
 
-## Side panels [#panels]
+## Panels and the Fields sheet [#panels]
 
-The view has two side panels beside the editor. The Fields panel, on the left, lists the template data for the chosen paper. The Preview panel, on the right, shows what the document produces for that paper. Both panels are available for a profile, the citation text, and a partial.
+The view has two parts beside the editor. The Preview panel shows what the document produces for the chosen paper. The Fields sheet lists the template data for that paper. Both are available for a profile, the citation text, and a partial.
 
-The editor tabs and both panels use one chosen item and one chosen annotation. The row above the panels names that item, or the annotation while you edit an annotation template, and holds <UiLabel name={m.workbench_choose_item()} /> to change it. The pane menu has the same entry. The web Workbench names the item in the same row, with its own example chooser.
+The editor tabs, the Preview panel and the Fields sheet use one chosen item and one chosen annotation. The row above the panels names that item, or the annotation while you edit an annotation template, and holds <UiLabel name={m.workbench_choose_item()} /> to change it. The pane menu has the same entry. The web Workbench names the item in the same row, with its own example chooser.
 
-### Show or hide a panel [#show-panels]
+### Show or hide the panels [#show-panels]
 
-Select <UiLabel name={m.workbench_show_fields()} /> or <UiLabel name={m.workbench_show_preview()} /> in the view header. The action looks pressed while its panel is shown. Select it again to hide the panel. The same two entries are in the view's pane menu, with a check mark while their panel is shown. The web Workbench has the same actions in its header, and the same entries in its <UiLabel name={m.workbench_view_menu()} /> menu.
+Select <UiLabel name={m.workbench_show_preview()} /> in the view header to show the Preview panel. The action looks pressed while the panel is shown. Select it again to hide the panel. The same entry is in the view's pane menu, with a check mark while the panel is shown. The web Workbench has the same action in its header, and the same entry in its <UiLabel name={m.workbench_view_menu()} /> menu.
 
-In a view too narrow for the Fields column, <UiLabel name={m.workbench_show_fields()} /> opens the Fields picker under the action instead, from the header or from the menu. See [Panels in a narrow view](#narrow-view).
+Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields sheet. The pane menu entry <UiLabel name={m.workbench_show_fields()} /> and the web Workbench's <UiLabel name={m.workbench_view_menu()} /> entry of the same name open and close the sheet too, with a check mark while it is open. See [The Fields sheet](#fields-panel).
 
-Hiding a panel keeps your chosen item and annotation. The panel shows them again when you bring it back.
+Hiding the Preview panel keeps your chosen item and annotation. The panel shows them again when you bring it back.
 
-### Resize a panel [#resize-panels]
+### Resize the Preview panel [#resize-panels]
 
-Drag the edge between a panel and the editor to make the panel wider or narrower. A panel is at least 240 pixels wide. The Fields panel takes at most 40% of the view, and never more than 960 pixels. The Preview panel can grow until the editor has 360 pixels left, so you can read a wide note beside its template.
+Drag the edge between the Preview panel and the editor to make the panel wider or narrower. The panel is at least 240 pixels wide. It can grow until the editor has 360 pixels left, so you can read a wide note beside its template.
 
-The edge also works from the keyboard. Press Tab to focus it; a screen reader names it <UiLabel name={m.workbench_fields_resize()} /> or <UiLabel name={m.workbench_preview_resize()} />.
+The edge also works from the keyboard. Press Tab to focus it; a screen reader names it <UiLabel name={m.workbench_preview_resize()} />.
 
 | Key                       | Effect                                     |
 | ------------------------- | ------------------------------------------ |
@@ -59,27 +59,25 @@ The edge also works from the keyboard. Press Tab to focus it; a screen reader na
 
 Double-click the edge to give the panel its default width again.
 
-You can also size a panel without the edge. In the view's pane menu, point to <UiLabel name={m.workbench_fields_resize()} /> or <UiLabel name={m.workbench_preview_resize()} />, and select <UiLabel name={m.workbench_panel_wider()} />, <UiLabel name={m.workbench_panel_narrower()} />, or <UiLabel name={m.workbench_panel_reset_width()} />. Each step is 64 pixels. In the web Workbench, the same entries are in the <UiLabel name={m.workbench_view_menu()} /> menu, which stays open so you can take several steps. After each step, a screen reader reads the panel and its new size, such as "Fields: 336 pixels".
-
-A panel never grows so wide that the other column loses its place: the editor keeps 360 pixels beside both columns and their edges.
+You can also size the panel without the edge. In the view's pane menu, point to <UiLabel name={m.workbench_preview_resize()} />, and select <UiLabel name={m.workbench_panel_wider()} />, <UiLabel name={m.workbench_panel_narrower()} />, or <UiLabel name={m.workbench_panel_reset_width()} />. Each step is 64 pixels. In the web Workbench, the same entries are in the <UiLabel name={m.workbench_view_menu()} /> menu, which stays open so you can take several steps. After each step, a screen reader reads the panel and its new size, such as "Preview: 464 pixels".
 
 ### Panels in a narrow view [#narrow-view]
 
-The Preview panel stands beside the editor in a view at least 896 pixels wide (56rem), so you can compare the template with its result as you edit. The Fields panel stands beside the editor while the editor keeps at least 360 pixels of width beside both panels; the Preview panel takes the side first.
+The Preview panel stands beside the editor in a view at least 896 pixels wide (56rem), so you can compare the template with its result as you edit.
 
 In a view narrower than 896 pixels, the Preview moves under the editor. It takes 40% of the view's height at first. Drag the edge above it, or focus the edge and press Up Arrow or Down Arrow, to give it more or less height; Home and End set its smallest and largest share. Double-click the edge to give it 40% again. In the pane menu, <UiLabel name={m.workbench_preview_resize()} /> then offers <UiLabel name={m.workbench_panel_taller()} />, <UiLabel name={m.workbench_panel_shorter()} />, and <UiLabel name={m.workbench_panel_reset_height()} />, in steps of 10%. The editor always keeps room for its toolbar, its tabs and at least five lines of your template; the Preview gets shorter first. Each step starts from the height you see. When the editor needs more room, it scrolls.
 
-Only the Preview goes under the editor. When the view is too narrow for the Fields column, <UiLabel name={m.workbench_show_fields()} /> opens the Fields picker: a list of the fields under the action, with a search field. Type to filter the list, use Up Arrow and Down Arrow to choose a field, and press Enter to put it into the editor at your cursor. The area under the list shows the whole value of the chosen field. To close the picker, press Escape or Tab, or select <UiLabel name={m.workbench_show_fields()} /> again; the focus goes back to the action. Place your cursor in the template before you open the picker: until you do, the picker says <UiLabel name={m.workbench_fields_choose_place()} /> and puts nothing in.
+The Fields sheet works the same at every width.
 
-Making the view narrower or wider moves the panels and changes nothing else: a panel you showed stays shown, and it gets its width back when the view is wide enough again. A narrower panel fits beside the editor in a narrower view. The Preview keeps your place as it moves: the control you were on and the scroll position stay. A view you move to another window follows that window's width.
+Making the view narrower or wider moves the Preview and changes nothing else: the panel stays shown, and it gets its width back when the view is wide enough again. A sheet you opened stays open, and a closed sheet stays closed. The Preview keeps your place as it moves: the control you were on and the scroll position stay. A view you move to another window follows that window's width.
 
 ### What the view remembers [#panel-state]
 
-Obsidian saves which panels are shown, how wide they are, and the Preview's height under the editor, with the view. After a restart, the view opens the way you left it.
+Obsidian saves whether the Preview panel is shown, how wide it is, and its height under the editor, with the view. After a restart, the view opens the way you left it. The Fields sheet is not saved: it is closed when the view opens.
 
-A new view starts with no panels, for a quick edit. That is the case when you open a template document from the file explorer, or with <UiLabel name={m.template_workbench_open()} />.
+A new view starts with no Preview panel, for a quick edit. That is the case when you open a template document from the file explorer, or with <UiLabel name={m.template_workbench_open()} />.
 
-These entry points open the Workbench window and show both panels:
+These entry points open the Workbench window and show the Preview panel. The Fields sheet stays closed until you select <UiLabel name={m.workbench_view_fields()} />:
 
 - <UiLabel name={m.template_workbench_open_layout()} />, from the command
   palette or the view's pane menu.
@@ -91,15 +89,28 @@ These entry points open the Workbench window and show both panels:
 
 <Command inline name={m.command_customize_citation_text_name()} /> opens the
 citation text like any other template document, so a new view starts with no
-panels.
+Preview panel.
 
-### The Fields panel [#fields-panel]
+### The Fields sheet [#fields-panel]
 
-The Fields panel is the [Template Data Explorer](/docs/how-to/explore-template-data) inside the view. It has the same filter, sections, roots, and copy actions. The button beside the filter collapses or expands every section at once. Its row menu adds <UiLabel name={m.workbench_fields_put_in_note()} />, which puts the field into the editor at your cursor.
+The Fields sheet is the [Template Data Explorer](/docs/how-to/explore-template-data) inside the view. It has the same filter, sections, roots, and copy actions. The button beside the filter collapses or expands every section at once. Each row has an insert button, and its row menu has <UiLabel name={m.workbench_fields_put_in_note()} />. Both put the field into the editor at your cursor.
 
-The panel opens on the same root as the editor, such as the note fields or the annotation fields. The citation text shows citation fields, and a partial shows the fields of the caller you preview it as. You can move the panel to another root, for example to an annotation. When the editor's root or the chosen item changes, the panel follows the editor again.
+The sheet opens at the left edge of the view, over the editor and the Preview panel, above a dimmed backdrop. It looks the same at every width. While it is open, it holds the focus: you cannot use the editor or the Preview under it.
 
-While the Fields panel is shown, <UiLabel name={m.template_data_explorer_menu_export_json()} /> in the pane menu saves the data of the root the panel shows.
+Close the sheet in any of these ways:
+
+- Select <UiLabel name={m.workbench_view_fields()} /> again.
+- Select the backdrop.
+- Select the sheet's <UiLabel name={m.workbench_fields_close()} /> button.
+- Press Escape.
+
+The focus goes back to <UiLabel name={m.workbench_view_fields()} />.
+
+Place your cursor in the template before you insert a field. Inserting puts the field at the cursor, closes the sheet, and puts the cursor back in the editor after the field. To insert several fields in a row, hold Shift while you select the insert button, or press Shift and Enter on it. The sheet then stays open.
+
+The sheet opens on the same root as the editor, such as the note fields or the annotation fields. The citation text shows citation fields, and a partial shows the fields of the caller you preview it as. You can move the sheet to another root, for example to an annotation. When the editor's root or the chosen item changes, the sheet follows the editor again.
+
+While the Fields sheet is open, <UiLabel name={m.template_data_explorer_menu_export_json()} /> in the pane menu saves the data of the root the sheet shows. Otherwise it saves the data of the editor's root.
 
 ### The Preview panel [#preview-panel]
 
@@ -145,7 +156,7 @@ its source in its one tab, so the toggle is offered for a profile document only.
 
 ### Preview data [#preview-data]
 
-The preview uses a Zotero item or built-in example. Opening the view from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data and <UiLabel name={m.template_workbench_open_layout()} /> to show both [side panels](#panels) in the Workbench window.
+The preview uses a Zotero item or built-in example. Opening the view from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data and <UiLabel name={m.template_workbench_open_layout()} /> to show the [Preview panel](#panels) in the Workbench window.
 
 The preview changes as you edit. A database or citation-style warning can limit the preview, but you can continue editing the profile.
 

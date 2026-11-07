@@ -182,25 +182,24 @@ and add actions align at its leading edge.
 
 ## Adaptation and access
 
-Lay out the Fields Panel, the editor, and the Preview Panel with the shared
-panels, as the Template Workbench View in Obsidian does. "Show fields" and
-"Show preview" in the header show and hide each panel at every width. One
+Lay out the editor and the Preview Panel with the shared panels, and the
+Fields sheet over them, as the Template Workbench View in Obsidian does.
+"Fields" in the header opens and closes the Fields sheet at every width, and
+"Show preview" shows and hides the Preview. One
 item row above the panels names the item they all read and holds the sample
 chooser; each panel's head keeps only what is its own. The shared placement
 rule measures the main area under that row. The Preview is a column in a
 main area 56rem (896 px) wide or wider, as wide as the reader drags it while
 the editor keeps 360 px. In a narrower main area the Preview goes under the
 editor, at its saved share of the height, as the same region: it keeps its
-focus and scroll across the move. The Fields Panel is a column while the
-editor keeps 360 px beside the columns and their 12 px handles, and takes
-at most 40% of the width. Only the Preview goes under
-the editor: where the Fields column does not fit, "Show fields" opens the
-Fields picker, a Base UI popover under the action, and reads as a
-disclosure rather than a toggle. The editor keeps its toolbar, tabs and five
+focus and scroll across the move. The Fields sheet slides in from the
+leading edge over a dimmed scrim, 20rem wide and at most 88% of the main
+area, and holds focus until the reader closes it; "Fields" reads as a
+disclosure of it. The editor keeps its toolbar, tabs and five
 source lines; the edit region is its one scroller, so the source grows to
 its text and a reveal scrolls the selected text into view. A pressed view
 action shows a primary border and icon over the muted fill. Document order
-is Fields Panel, editor, Preview Panel. A short viewport scrolls the page
+is Fields sheet, editor, Preview Panel. A short viewport scrolls the page
 while preserving several lines of editor space.
 
 The "View" header menu holds "Show fields", "Show preview" and one size group

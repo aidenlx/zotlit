@@ -77,3 +77,12 @@ Spec #1952, user feedback on PR #1960.
 - The Preview is a column in a view 896 px (56rem, Tailwind `@4xl` at the 16 px root font size) wide or wider, and goes under the editor in a narrower view. Its column grows until the editor keeps 360 px; the 40% share and the 960 px limit hold the Fields column alone. The Fields Panel keeps its rule: a column while the editor keeps 360 px beside the columns, the Fields picker otherwise. The default Preview width stays 400 px.
 - The Fields Panel's button that collapses or expands every section trails its field search, in the shared Data Explorer, drawn in each host's icon-button idiom.
 - Help is a view action in Obsidian and a header menu on the web. Both list the same docs pages from one shared list (`HELP_PAGES`) and the community page from the host's `communityUrl`; the Obsidian pane menu holds no Help.
+
+## Amendment (2026-11-08): one Fields sheet
+
+Spec #1962, ticket #1964. This amendment replaces the Fields column of the 2026-11-07 amendments and the Fields picker of #1955.
+
+- The Fields action ("Fields", lucide `braces`) opens one Fields sheet at the leading edge of the view, at every width, in both hosts. The sheet is modal: it stands over the editor and the Preview above a scrim, takes focus into its field search, keeps Tab inside, and makes the panels under it inert. A second press, the scrim, its close button, or Escape closes it; all but the press return focus to the action. An insert closes it and leaves focus to the editor after the inserted field; Shift on Insert keeps it open.
+- The sheet holds the Fields Panel's tree and search. The shared UI draws it (`FieldsSheet` in `@zotlit/workbench/ui`) and each host's theme styles its parts, so neither host supplies a popover surface: the host's `fieldsAction` names the sheet's id and takes focus back.
+- Its open state is the shared model's `fieldsSheet`, view state that is never saved. The placement rule's Fields part is `"sheet" | "closed"` and reads only that state, so no view size opens or closes the sheet. The saved panel state holds the Preview alone; a Fields column that an older workspace saved is not restored. Pinning the sheet as a docked panel follows in #1966.
+- "Open template workbench" and Customize show the Preview; the sheet waits for the reader.
