@@ -289,20 +289,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ) => {
             const view = page.workbench({ path });
             if (!view) return false;
-            // The Fields sheet stands over the editor and the Preview while
-            // it is open: it opens for its own check and closes for the rest.
-            const sheet = page.fieldsSheet(view);
+            // The Fields popover floats over the Preview while it is open:
+            // it opens for its own check and closes for the rest.
+            const popover = page.fieldsPopover(view);
             const action = view.containerEl.querySelector<HTMLElement>(
               `.view-action[aria-label="${fieldsLabel}"]`,
             );
             if (where === fields) {
-              if (!sheet) {
+              if (!popover) {
                 if (action) page.press(action, "the Fields action");
                 return false;
               }
-              return sheet.innerText.includes(text);
+              return popover.innerText.includes(text);
             }
-            if (sheet && where !== row) {
+            if (popover && where !== row) {
               if (action) page.press(action, "the Fields action");
               return false;
             }
@@ -442,7 +442,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           active: true,
         });
         await app.workspace.revealLeaf(leaf);
-        // The reader opens the Fields sheet from its view action.
+        // The reader opens the Fields popover from its view action.
         leaf.view.containerEl
           .querySelector<HTMLElement>(`.view-action[aria-label="${fields}"]`)
           ?.click();
@@ -454,10 +454,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         ({ page }, { path, title }) =>
           !!page
-            .fieldsSheet(page.workbench({ path }))
+            .fieldsPopover(page.workbench({ path }))
             ?.innerText.includes(title),
         { path, title },
-        { what: `the Fields sheet to name "${title}"` },
+        { what: `the Fields popover to name "${title}"` },
       );
     await fieldsName(targetItem.title);
 
@@ -527,8 +527,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   // #1945: the Preview is part of the view's saved state, and its edge
   // reports the width the view draws: the Preview column grows until the
-  // editor keeps its 360 px. The Fields sheet is never saved (#1964).
-  it("restores the Preview and its width with the workspace, and the Fields sheet closed", async () => {
+  // editor keeps its 360 px. The Fields popover is never saved (#1964).
+  it("restores the Preview and its width with the workspace, and the Fields popover closed", async () => {
     const path = `templates/${booksProfile.document}`;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(() =>
@@ -599,7 +599,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return JSON.stringify({
             edges,
             saved: view.getState().panels,
-            sheet: page.fieldsSheet(view) !== null,
+            popover: page.fieldsPopover(view) !== null,
           });
         },
         {
@@ -619,7 +619,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       return JSON.parse(read!) as {
         edges: Record<"preview", Edge>;
         saved: unknown;
-        sheet: boolean;
+        popover: boolean;
       };
     };
     const panels = {
@@ -638,22 +638,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The Preview grows until the editor keeps only its 360 px beside the
     // column and its 4 px handle (#1952).
     expect(preview.max).toBe(String(preview.container - 360 - 4));
-    expect(first.sheet).toBe(false);
-    // The reader opens the Fields sheet; the saved state leaves it out.
+    expect(first.popover).toBe(false);
+    // The reader opens the Fields popover; the saved state leaves it out.
     const saved = await obRun(
       run.vaultId,
       ({ page }, { path }) => {
         const view = page.workbench({ path })!;
-        view.registry.set(view.workbench.fieldsSheet, true);
+        view.registry.set(view.workbench.fieldsPanel, "open");
         return JSON.stringify(view.getState());
       },
       { path },
     );
     // The saved state of that leaf restores the Preview in a new leaf, with
-    // the Fields sheet closed.
+    // the Fields popover closed.
     const second = await read(saved);
     expect(second.edges.preview.now).toBe(String(preview.drawn));
-    expect(second.sheet).toBe(false);
+    expect(second.popover).toBe(false);
     // A state that names no Preview height leaves the leaf's own, 40%.
     expect(second.saved).toEqual({
       preview: { ...panels.preview, height: 40 },
@@ -1207,7 +1207,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const split = `${m.workbench_preview_resize()} horizontal`;
 
     // A wide leaf: the Preview column, sized from its submenu. The Fields
-    // sheet has no edge, so the pane menu sizes the Preview alone.
+    // popover has no edge, so the pane menu sizes the Preview alone.
     await open(
       { panels: { preview: { shown: true, width: 400, height: 40 } } },
       null,
@@ -1283,8 +1283,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   // #1955: where the Fields column does not fit, Fields opens its picker.
-  // #1964: the Fields action opens one modal Fields sheet at every width.
-  it("inserts a field from the Fields sheet of a narrow leaf with the keyboard, and closes it on Escape, the scrim and the action", async () => {
+  // #1964: the Fields action opens the Fields popover at every width.
+  it("inserts a field from the Fields popover of a narrow leaf with the keyboard, and closes it on Escape, a press outside and the action", async () => {
     const path = `templates/${booksProfile.document}`;
     const documentPath = join(e2eVaultPath, path);
     const original = await readFile(documentPath, "utf-8");
@@ -1340,7 +1340,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           if (!view || !action || view.contentEl.clientWidth >= 600)
             return null;
           return JSON.stringify({
-            sheet: page.fieldsSheet(view) !== null,
+            popover: page.fieldsPopover(view) !== null,
             haspopup: action.getAttribute("aria-haspopup"),
             expanded: action.getAttribute("aria-expanded"),
           });
@@ -1352,9 +1352,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
       ))!,
     ) as Record<string, unknown>;
-    // Narrowing opened no sheet.
+    // Narrowing opened no popover.
     expect(narrow).toEqual({
-      sheet: false,
+      popover: false,
       haspopup: "dialog",
       expanded: "false",
     });
@@ -1381,12 +1381,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const editor = content.cmTile!.root.view;
         await input.click(content);
         editor.dispatch({ selection: { anchor: editor.state.doc.length } });
-        const sheet = () => page.fieldsSheet(view);
+        const popover = () => page.fieldsPopover(view);
         const search = () =>
-          sheet()?.querySelector<HTMLInputElement>('input[type="search"]') ??
+          popover()?.querySelector<HTMLInputElement>('input[type="search"]') ??
           null;
         const doiInsert = () =>
-          sheet()?.querySelector<HTMLElement>(
+          popover()?.querySelector<HTMLElement>(
             `[data-workbench-field="DOI"] [role="button"][aria-label="${insert}"]`,
           ) ?? null;
         /** Tabs from the search field to the DOI row's Insert button. */
@@ -1399,30 +1399,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         await input.click(action);
         await until(
-          "focus in the sheet's search field",
+          "focus in the popover's search field",
           () => search() !== null && el.doc.activeElement === search(),
         );
-        const dialog = sheet()!;
+        const dialog = popover()!;
+        // The popover stands inset at the view's right edge, as tall as the
+        // view less Obsidian's gap on the top, right and bottom.
+        const gap = Number.parseFloat(
+          el.win.getComputedStyle(el).getPropertyValue("--size-4-2"),
+        );
+        const shell = dialog.closest<HTMLElement>(".zt-pinned-popover")!;
+        const box = el.getBoundingClientRect();
+        const at = shell.getBoundingClientRect();
+        const near = (a: number, b: number) => Math.abs(a - b) <= 1;
         const opened = {
           expanded: action.getAttribute("aria-expanded"),
           controls: action.getAttribute("aria-controls") === dialog.id,
           modal: dialog.getAttribute("aria-modal"),
-          // The sheet stands at the view's leading edge, over the editor; its
-          // offset leaves out the slide that brings it in.
-          leading:
-            dialog.offsetParent === el.querySelector('[data-part="panels"]') &&
-            dialog.offsetLeft === 0,
-          scrim: el.querySelector('[data-part="scrim"]') !== null,
-          editorInert: content.closest("[inert]") !== null,
+          inset:
+            gap > 0 &&
+            near(at.top - box.top, gap) &&
+            near(box.right - at.right, gap) &&
+            near(box.bottom - at.bottom, gap),
+          // Not modal: nothing under it turns inert.
+          inert: el.querySelector("[inert]") !== null,
         };
         await contents.insertText("doi");
         await until("the search finds the DOI", () => doiInsert() !== null);
         const reached = await tabToDoi();
         await input.key("Enter");
         await until(
-          "the field at the cursor, the sheet closed and the editor focused",
+          "the field at the cursor, the popover closed and the editor focused",
           () =>
-            sheet() === null &&
+            popover() === null &&
             editor.state.doc.toString().endsWith("{{ zt.DOI }}") &&
             editor.hasFocus,
         );
@@ -1432,9 +1441,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           cursorAfter: head === editor.state.doc.length,
           expanded: action.getAttribute("aria-expanded"),
         };
-        // Shift+Enter inserts and keeps the sheet open for the next field.
+        // Shift+Enter inserts and keeps the popover open for the next field.
         await input.click(action);
-        await until("the sheet again", () => el.doc.activeElement === search());
+        await until(
+          "the popover again",
+          () => el.doc.activeElement === search(),
+        );
         if (search()!.value !== "doi") {
           search()!.select();
           await contents.insertText("doi");
@@ -1445,29 +1457,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await until("the second DOI", () =>
           editor.state.doc.toString().endsWith("{{ zt.DOI }}{{ zt.DOI }}"),
         );
-        const kept = sheet() !== null;
+        const kept = popover() !== null;
         // Escape closes it and hands focus to the action.
         await input.key("Escape");
-        await until("the sheet closed by Escape", () => sheet() === null);
+        await until("the popover closed by Escape", () => popover() === null);
         const escaped = el.doc.activeElement === action;
-        // The scrim closes it and hands focus to the action.
+        // A press on the editor, left of the popover that covers most of
+        // the narrow leaf, closes it.
         await input.click(action);
-        await until("the sheet for the scrim", () => sheet() !== null);
-        await input.click(el.querySelector('[data-part="scrim"]')!);
-        await until("the sheet closed by the scrim", () => sheet() === null);
-        const scrimmed = el.doc.activeElement === action;
+        await until(
+          "the popover for the outside press",
+          () => popover() !== null,
+        );
+        await input.click(content, { x: 8, y: 8 });
+        await until(
+          "the popover closed by the outside press",
+          () => popover() === null,
+        );
+        const outside = action.getAttribute("aria-expanded");
         // A second press on the action closes it.
         await input.click(action);
-        await until("the sheet for the press", () => sheet() !== null);
+        await until("the popover for the press", () => popover() !== null);
         await input.click(action);
-        await until("the sheet closed by the press", () => sheet() === null);
+        await until(
+          "the popover closed by the press",
+          () => popover() === null,
+        );
         return JSON.stringify({
           opened,
           reached,
           inserted,
           kept,
           escaped,
-          scrimmed,
+          outside,
           pressed: action.getAttribute("aria-expanded"),
         });
       },
@@ -1481,20 +1503,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       opened: {
         expanded: "true",
         controls: true,
-        modal: "true",
-        leading: true,
-        scrim: true,
-        editorInert: true,
+        modal: null,
+        inset: true,
+        inert: false,
       },
       reached: true,
       inserted: { cursorAfter: true, expanded: "false" },
       kept: true,
       escaped: true,
-      scrimmed: true,
+      outside: "false",
       pressed: "false",
     });
 
-    // Widening the leaf opens no sheet.
+    // Widening the leaf opens no popover.
     await obRun(
       run.vaultId,
       ({ app }) => app.workspace.detachLeavesOfType("empty"),
@@ -1506,7 +1527,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ({ page }, { path }) => {
           const view = page.workbench({ path });
           return view && view.contentEl.clientWidth >= 600
-            ? page.fieldsSheet(view) === null
+            ? page.fieldsPopover(view) === null
             : null;
         },
         { path },

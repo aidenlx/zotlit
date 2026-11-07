@@ -211,11 +211,15 @@ export function createPageHelpers(app: PageApp) {
         contents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
         await up;
       },
-      click: async (el: Element) => {
+      /**
+       * Clicks the centre of `el`, or the point `offset` from its top-left
+       * corner, in CSS px.
+       */
+      click: async (el: Element, offset?: { x: number; y: number }) => {
         const b = el.getBoundingClientRect();
         const at = {
-          x: Math.round((b.left + b.width / 2) * zoom),
-          y: Math.round((b.top + b.height / 2) * zoom),
+          x: Math.round((b.left + (offset?.x ?? b.width / 2)) * zoom),
+          y: Math.round((b.top + (offset?.y ?? b.height / 2)) * zoom),
           button: "left",
           clickCount: 1,
         };
@@ -549,13 +553,15 @@ export function createPageHelpers(app: PageApp) {
       ? (app.workspace.activeLeaf.view as TemplateWorkbenchView)
       : undefined;
   }
-  /** The Fields sheet `view` shows, or null while it is closed. */
-  function fieldsSheet(view: TemplateWorkbenchView | undefined) {
-    return (
-      view?.contentEl.querySelector<HTMLElement>(
-        '[role="dialog"][aria-modal="true"]',
-      ) ?? null
-    );
+  /**
+   * The Fields popover `view` shows, or null while it is closed. It stands on
+   * the document's body; the view's Fields action names it while it is open.
+   */
+  function fieldsPopover(view: TemplateWorkbenchView | undefined) {
+    const id = view?.containerEl
+      .querySelector('.view-action[aria-controls^="zt-fields-popover-"]')
+      ?.getAttribute("aria-controls");
+    return (id && view?.contentEl.doc.getElementById(id)) || null;
   }
   /** The Preview panel `view` shows, or null while it hides the panel. */
   function previewPanel(view: TemplateWorkbenchView | undefined) {
@@ -985,7 +991,7 @@ export function createPageHelpers(app: PageApp) {
     restoreAnnotationPreparation,
     annotationOpenSubpath,
     workbench,
-    fieldsSheet,
+    fieldsPopover,
     previewPanel,
     itemRow,
     workbenchSurfaces,
