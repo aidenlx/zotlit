@@ -67,6 +67,7 @@ import type {
   WorkbenchTab,
   WorkbenchHost,
   WorkbenchInsertTarget,
+  WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
@@ -224,7 +225,7 @@ function WorkbenchSession({
     to: 0,
   };
   const setOpenRow = (selected: number | null) => present({ selected });
-  const setReveal = (next: WorkbenchSliceRange | null) =>
+  const setReveal = (next: WorkbenchViewState["presentation"]["reveal"]) =>
     present({ reveal: next });
   const setCaret = (range: WorkbenchSliceRange) =>
     present({ selection: { slice, range } });

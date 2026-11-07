@@ -4133,7 +4133,7 @@ describe("the Fields panel of the Template Workbench View", () => {
         );
       await vi.waitFor(() => expect(title()).toBeDefined());
       const button = title()!;
-      act(() => button.focus());
+      await act(async () => button.focus());
       await act(async () => {
         button.dispatchEvent(
           new MouseEvent("click", { bubbles: true, shiftKey: true }),
