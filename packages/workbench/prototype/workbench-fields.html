@@ -67,7 +67,14 @@
          AMENDMENT 3: each sticky section header is a button that collapses or expands its group
          (chevron + icon + label + count), as in the earlier Fields panel; the sheet header has
          "Collapse all sections" / "Expand all sections"; a search shows every matching group open.
-         The Note preview's header row is sticky at the top of the preview. */
+         The Note preview's header row is sticky at the top of the preview.
+         AMENDMENT 4: (1) Insert and Copy (row button, details flyout, details bar) close the details
+         popover, also in the pinned panel; Copy shows a "Copied …" notice. (2) The keyboard matches
+         the mouse: Enter shows/hides the highlighted row's details, Mod+Enter inserts it; no
+         Shift+Mod+Enter and no Ctrl/Cmd+I. (3) A view-header action (lucide `eye` / `eye-off`) shows
+         or hides the Note preview; hidden, the editor takes the room. (4) A click outside the details
+         (and outside their row) hides them. (5) Field rows indent one level inside their group: a
+         row's chevron sits under the group's icon; values stay on one line. */
       /* DESIGN PLAN (utilitarian; the project's own system wins: Obsidian's default theme)
          ground #ffffff view; panel #f6f6f7 secondary panes / popover ground; ink #222222 text;
          muted #6b6b70; faint #a3a3a8; line #e3e3e6 hairlines; accent #7f5af0 Obsidian's interactive
@@ -519,6 +526,7 @@
             source: s.source.slice(0, from) + text + s.source.slice(to),
             caret: from + text.length,
             lastInserted: path,
+            toast: null,
             insertCount: s.insertCount + 1,
           };
         });
@@ -773,7 +781,7 @@
 
       /** A short "Inserted …" notice after each insert. Place it once inside the view frame. */
       function InsertToast() {
-        const { lastInserted, insertCount } = useProto();
+        const { lastInserted, insertCount, toast } = useProto();
         const [shown, setShown] = useState(false);
         useEffect(() => {
           if (!insertCount) return;
@@ -781,13 +789,15 @@
           const t = setTimeout(() => setShown(false), 1400);
           return () => clearTimeout(t);
         }, [insertCount]);
-        if (!shown || !lastInserted) return null;
+        if (!shown || !(lastInserted || toast)) return null;
         return (
           <div
             role="status"
             className="pointer-events-none absolute top-12 left-1/2 z-50 -translate-x-1/2 rounded-md bg-ink px-3 py-1.5 text-xs text-ground shadow-lg"
           >
-            Inserted {findField(lastInserted)?.label ?? lastInserted}
+            {lastInserted
+              ? `Inserted ${findField(lastInserted)?.label ?? lastInserted}`
+              : toast}
           </div>
         );
       }
@@ -983,13 +993,12 @@
        * Narrow views: the details the reader asked for, in a fixed-height bar at the sheet's foot.
        * Hidden where the flyout shows (≥ 600 px).
        */
-      function M_DetailBar({ field, q, onClose }) {
+      function M_DetailBar({ field, q, onClose, onDone }) {
         const [copied, setCopied] = useState(false);
         useEffect(() => setCopied(false), [field?.path]);
         const copy = () => {
           navigator.clipboard?.writeText(snippetOf(field.path)).catch(() => {});
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
+          onDone?.("Copied " + field.label);
         };
         return (
           <div
@@ -1046,12 +1055,13 @@
         );
       }
 
-      function M_Detail({ field, q, inline, onInsert }) {
+      function M_Detail({ field, q, inline, onInsert, onDone }) {
         const [copied, setCopied] = useState(false);
         useEffect(() => setCopied(false), [field.path]);
         const parent = field.parent ? findField(field.parent) : null;
         const copy = () => {
           navigator.clipboard?.writeText(snippetOf(field.path)).catch(() => {});
+          if (onDone) return onDone("Copied " + field.label);
           setCopied(true);
           setTimeout(() => setCopied(false), 1200);
         };
@@ -1107,7 +1117,7 @@
               <button
                 type="button"
                 onClick={(e) => onInsert(field.path, e.shiftKey)}
-                title="Shift-click to insert and keep the sheet open"
+                title="Insert at the cursor (Mod+Enter) · Shift-click keeps the sheet open"
                 className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-ground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 <L.TextCursorInput size={14} /> Insert
@@ -1319,6 +1329,7 @@
         const rootRef = useRef(null);
         const listRef = useRef(null);
         const cardRef = useRef(null);
+        const barRef = useRef(null);
         const rowRefs = useRef({});
         const hoverT = useRef(0);
 
@@ -1338,6 +1349,33 @@
           : null;
         const toggleDetail = (path) =>
           setDetail((d) => (d === path ? null : path));
+        // Insert and Copy close the details popover; a modal sheet also closes on insert (see onInsert).
+        const act = (path, keepOpen) => {
+          setDetail(null);
+          onInsert(path, keepOpen);
+        };
+        const done = (msg) => {
+          setDetail(null);
+          setProto((st) => ({
+            lastInserted: null,
+            toast: msg,
+            insertCount: st.insertCount + 1,
+          }));
+        };
+        // A click outside the details (and outside the row that opened them) hides them.
+        useEffect(() => {
+          if (!detail) return;
+          const away = (e) => {
+            const inside = [
+              cardRef.current,
+              barRef.current,
+              rowRefs.current[detail],
+            ].some((el) => el && el.contains(e.target));
+            if (!inside) setDetail(null);
+          };
+          document.addEventListener("pointerdown", away, true);
+          return () => document.removeEventListener("pointerdown", away, true);
+        }, [detail]);
 
         useEffect(() => {
           searchRef.current?.focus({ preventScroll: true });
@@ -1433,20 +1471,23 @@
             return;
           }
           const inSearch = e.target === searchRef.current;
-          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i" && cur) {
-            e.preventDefault();
-            toggleDetail(cur.path);
-            return;
-          }
           if (inSearch && e.key === "ArrowDown") {
             e.preventDefault();
             move(1);
           } else if (inSearch && e.key === "ArrowUp") {
             e.preventDefault();
             move(-1);
+          } else if (
+            inSearch &&
+            e.key === "Enter" &&
+            cur &&
+            (e.metaKey || e.ctrlKey)
+          ) {
+            e.preventDefault();
+            act(cur.path);
           } else if (inSearch && e.key === "Enter" && cur) {
             e.preventDefault();
-            onInsert(cur.path, e.shiftKey);
+            toggleDetail(cur.path);
           } else if (
             inSearch &&
             (e.key === "ArrowRight" || e.key === "ArrowLeft") &&
@@ -1480,7 +1521,7 @@
           : pinned
             ? "Unpin"
             : "Pin to side";
-        const hint = "Click a field for details · Enter inserts";
+        const hint = "Click or Enter: details · Mod+Enter: insert";
 
         const list = (
           <div
@@ -1535,7 +1576,7 @@
                           }}
                           aria-expanded={detail === f.path}
                           title="Show details"
-                          className={`group flex h-8 scroll-mt-9 scroll-mb-2 cursor-pointer items-center gap-2 rounded-md pr-1 text-sm pl-1 ${on || detail === f.path ? "bg-accent-soft" : "hover:bg-ground"}`}
+                          className={`group flex h-8 scroll-mt-9 scroll-mb-2 cursor-pointer items-center gap-2 rounded-md pr-1 text-sm pl-7 ${on || detail === f.path ? "bg-accent-soft" : "hover:bg-ground"}`}
                         >
                           {f.children ? (
                             <button
@@ -1561,16 +1602,16 @@
                           >
                             <M_Mark text={f.label} q={q} />
                           </span>
-                          <span className="flex min-w-0 flex-1 text-[13px]">
+                          <span className="flex min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[13px] [&>*]:truncate">
                             <M_Value field={f} q={q} />
                           </span>
                           <button
                             type="button"
                             aria-label={`Insert ${f.label}`}
-                            title={`Insert ${snippetOf(f.path)} at the cursor (Enter) · Shift-click keeps this open`}
+                            title={`Insert ${snippetOf(f.path)} at the cursor (Mod+Enter) · Shift-click keeps this open`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              onInsert(f.path, e.shiftKey);
+                              act(f.path, e.shiftKey);
                             }}
                             className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md text-accent hover:bg-accent hover:text-ground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent ${on || detail === f.path ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                           >
@@ -1693,11 +1734,14 @@
               list
             )}
             {shown && (
-              <M_DetailBar
-                field={shown}
-                q={q}
-                onClose={() => setDetail(null)}
-              />
+              <div ref={barRef} className="contents">
+                <M_DetailBar
+                  field={shown}
+                  q={q}
+                  onClose={() => setDetail(null)}
+                  onDone={done}
+                />
+              </div>
             )}
             <div className="shrink-0 border-t border-line px-3 py-1.5 text-xs text-muted">
               {hint}
@@ -1717,7 +1761,7 @@
                   onClick={() => setDetail(null)}
                   className="absolute top-2 right-2"
                 />
-                <M_Detail field={shown} q={q} onInsert={onInsert} />
+                <M_Detail field={shown} q={q} onInsert={act} onDone={done} />
               </div>
             )}
 
@@ -1784,6 +1828,7 @@
           setJump((j) => ({ id, n: (j?.n ?? 0) + 1 }));
           openSheet();
         };
+        const [previewShown, setPreviewShown] = useState(true);
         const onInsert = (path, keepOpen) => {
           insertField(path);
           if (keepOpen) return;
@@ -1848,6 +1893,16 @@
           </button>
         );
 
+        const previewAction = (
+          <IconButton
+            key="preview"
+            icon={previewShown ? L.Eye : L.EyeOff}
+            active={previewShown}
+            label={previewShown ? "Hide note preview" : "Show note preview"}
+            onClick={() => setPreviewShown((v) => !v)}
+          />
+        );
+
         const sheetProps = {
           entry,
           nav,
@@ -1865,7 +1920,14 @@
         return (
           <Stage title={title ?? M_TITLES[nav]}>
             <style>{M_STYLE}</style>
-            <ViewHeader actions={action} />
+            <ViewHeader
+              actions={
+                <>
+                  {previewAction}
+                  {action}
+                </>
+              }
+            />
             <div className="flex min-h-0 flex-1">
               {rail && (
                 <M_Rail
@@ -1891,7 +1953,9 @@
                       <TabBar />
                       <SourceEditor taRef={taRef} className="min-h-32 flex-1" />
                     </div>
-                    <NotePreview className="h-[45%] shrink-0 border-t border-line @min-[56rem]/main:h-auto @min-[56rem]/main:w-[44%] @min-[56rem]/main:border-t-0 @min-[56rem]/main:border-l" />
+                    {previewShown && (
+                      <NotePreview className="h-[45%] shrink-0 border-t border-line @min-[56rem]/main:h-auto @min-[56rem]/main:w-[44%] @min-[56rem]/main:border-t-0 @min-[56rem]/main:border-l" />
+                    )}
                   </div>
                 </div>
                 {modal && (
