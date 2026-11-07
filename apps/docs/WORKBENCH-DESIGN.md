@@ -183,11 +183,16 @@ and add actions align at its leading edge.
 
 Lay out the Fields Panel, the editor, and the Preview Panel with the shared
 panels, as the Template Workbench View in Obsidian does. "Show fields" and
-"Show preview" in the header show and hide each panel at every width. The
-shared placement rule puts a panel beside the editor while the editor keeps
-360 px beside the columns and their 12 px handles. Otherwise the Preview
-goes under the editor, at its saved share of the height, as the same region:
-it keeps its focus and scroll across the move. Only the Preview goes under
+"Show preview" in the header show and hide each panel at every width. One
+item row above the panels names the item they all read and holds the sample
+chooser; each panel's head keeps only what is its own. The shared placement
+rule measures the main area under that row. The Preview is a column in a
+main area 56rem (896 px) wide or wider, as wide as the reader drags it while
+the editor keeps 360 px. In a narrower main area the Preview goes under the
+editor, at its saved share of the height, as the same region: it keeps its
+focus and scroll across the move. The Fields Panel is a column while the
+editor keeps 360 px beside the columns and their 12 px handles, and takes
+at most 40% of the width. Only the Preview goes under
 the editor: where the Fields column does not fit, "Show fields" opens the
 Fields picker, a Base UI popover under the action, and reads as a
 disclosure rather than a toggle. The editor keeps its toolbar, tabs and five
@@ -203,7 +208,11 @@ reader who cannot drag sizes every panel (WCAG 2.5.7). "Show fields" in the
 menu presses the same Fields action as the header, and opens the picker
 where the column does not fit. The menu stays open across size steps and
 closes when a step moves a panel to another place, so no entry moves under
-the pointer. A polite status reads each new size.
+the pointer. A polite status reads each new size. The "Help" header menu
+lists the template guide, the syntax and data references, and the community,
+the same pages as the Obsidian view's Help action; each opens in a new tab.
+The Fields Panel's button that collapses or expands every section trails its
+field search.
 
 Source and Problems share the editor pane. An open Problems area keeps the share the reader chooses by dragging its top
 divider. Arrow keys adjust the focused divider; Home and End select its size
