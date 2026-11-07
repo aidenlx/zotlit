@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { PreviewSettings } from "./model";
 import { PreviewControls } from "./preview-controls";
 import { PropertyList } from "./property-list";
-import { ResultBody, ResultColumn } from "./result-column";
+import { previewFilename, ResultBody, ResultColumn } from "./result-column";
 import type { ResultColumnProps } from "./result-column";
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
@@ -484,4 +484,44 @@ it("renders ResultBody with no heading", () => {
   render(mounted.ui);
   expect(screen.queryByRole("heading")).toBeNull();
   expect(screen.getByText("Papers/Reading.md")).toBeDefined();
+});
+
+// #1965: a host that names the file in its own sticky header row leaves the
+// region's file name out and reads the name the region would show.
+it("leaves the file name to the host's header row", () => {
+  using mounted = mount(
+    <ResultBody
+      result={result}
+      mode="note"
+      staleReason={null}
+      showMarkdown={false}
+      showManaged={false}
+      showFilename={false}
+    />,
+  );
+  render(mounted.ui);
+  expect(screen.queryByText("Papers/Reading.md")).toBeNull();
+  expect(screen.getByRole("region")).toBeDefined();
+});
+
+it("names the file a note preview shows, and none for a failure or another mode", () => {
+  const reading = {
+    result,
+    mode: "note",
+    staleReason: null,
+    showManaged: false,
+  } as const;
+  expect(previewFilename(reading)).toBe("Papers/Reading.md");
+  expect(previewFilename({ ...reading, mode: "annotation" })).toBeNull();
+  expect(
+    previewFilename({
+      ...reading,
+      result: {
+        ...result,
+        diagnostics: [
+          { code: "property-error", position: 2, message: "Invalid property" },
+        ],
+      },
+    }),
+  ).toBeNull();
 });
