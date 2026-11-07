@@ -204,11 +204,11 @@ its own 12 px handle, while the editor keeps 360 px beside it and the
 Preview column; "Fields" then hides and shows it and keeps the pin. A main
 area with less room disables the pin ("Widen the view to pin") and the
 action opens the popover. The page keeps the pin and the width for its
-life. The editor keeps its toolbar, tabs and five
-source lines; the edit region is its one scroller, so the source grows to
-its text and a reveal scrolls the selected text into view. A pressed view
-action shows a primary border and icon over the muted fill. Document order
-is docked Fields Panel, editor, Preview Panel, Fields popover. A short viewport scrolls the page
+life. The editor keeps its toolbar, tabs and five source lines; the edit
+region is its one scroller, so the source grows to its text and a reveal
+scrolls the selected text into view. A pressed view action shows a primary
+border and icon over the muted fill. Document order is docked Fields Panel,
+editor, Preview Panel, Fields popover. A short viewport scrolls the page
 while preserving several lines of editor space.
 
 The "View" header menu holds "Show fields", "Show preview" and one size group
