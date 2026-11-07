@@ -320,7 +320,10 @@ export const WEB_THEME: WorkbenchTheme = {
       "help-toggle": "ms-1 inline-block align-baseline",
       help: "mb-3 flex max-h-40 shrink-0 flex-col gap-1 overflow-auto text-xs leading-normal text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-fd-ring",
 
-      "sample-bar": "mb-2 flex shrink-0 items-center gap-2",
+      // The inline Note-tab chooser keeps its own space; the compact
+      // trigger sits in the item row, which spaces its controls.
+      "sample-bar":
+        "flex shrink-0 items-center gap-2 data-[state=labelled]:mb-2",
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",
       pane: "flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card",
@@ -443,14 +446,16 @@ export const WEB_THEME: WorkbenchTheme = {
       checkbox: "m-0 size-3.5 accent-fd-primary",
       empty: "text-fd-muted-foreground italic",
     },
+    // The one row above the panels that names the item they all read: its
+    // name and badge first, then its controls at the trailing end.
+    itemRow: {
+      row: "flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-fd-border px-3 py-1.5",
+      label: "min-w-0 flex-1 text-xs text-pretty text-fd-muted-foreground",
+    },
     // The side panels: the model places them, so the classes only draw each
     // placement. Each handle is the 12 px gap between two parts
     // (PANEL_HANDLE_WIDTH, which the placement counts), with a rule
     // down its middle that turns the primary color while it is used.
-    itemRow: {
-      row: "flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-fd-border px-3 py-1.5",
-      label: "min-w-0 text-xs text-fd-muted-foreground",
-    },
     panels: {
       panels: "flex min-h-0 min-w-0 flex-1",
       stack: "flex min-h-0 min-w-0 flex-1 data-[state=below]:flex-col",

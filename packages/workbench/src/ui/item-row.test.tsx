@@ -12,6 +12,8 @@ it("names the item beside the control that changes it", () => {
     </ItemRow>,
   );
   const row = container.firstElementChild!;
+  // A host and its tests find the row by its own attribute.
+  expect(row.hasAttribute("data-workbench-item-row")).toBe(true);
   expect(row.textContent).toBe("Example: Thinking, fast and slowChoose item");
   expect(
     screen.getByRole("button", { name: "Choose item" }).parentElement,

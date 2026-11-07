@@ -66,7 +66,6 @@ import {
   setRoot,
   setTab,
   showPanel,
-  HELP_COMMUNITY,
   HELP_PAGES,
 } from "@zotlit/workbench/ui";
 import {
@@ -169,6 +168,7 @@ import {
   retainNativeOutputs,
   makeNativeRenderer,
 } from "@/views/template-workbench/preview/render";
+import { COMMUNITY } from "@/views/welcome/links";
 
 import { templateWorkbenchAction } from "./actions";
 import {
@@ -2058,9 +2058,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     menu.addSeparator();
     menu.addItem((entry) =>
       entry
-        .setTitle(workbenchM[HELP_COMMUNITY.label]())
+        .setTitle(m.workbench_problems_community())
         .setIcon("messages-square")
-        .onClick(() => window.open(`${DOCS_SITE_URL}${HELP_COMMUNITY.path}`)),
+        .onClick(() => window.open(COMMUNITY)),
     );
     showMenuAtButton(menu, trigger, "end");
   }

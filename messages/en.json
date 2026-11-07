@@ -1612,6 +1612,7 @@
   "workbench_selected_label": "Selected",
   "workbench_sample_badge": "Example",
   "docs_workbench_sample_type_missing": "No example is available for {itemType}. Choose another item to test this profile.",
+  "docs_workbench_opens_new_tab": "(opens in a new tab)",
   "workbench_more_actions": "More actions",
   "workbench_undo": "Undo",
   "workbench_download": "Download profile",

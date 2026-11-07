@@ -2192,6 +2192,19 @@ language: liquid
     expect(sourceAction(view).style.display).toBe("none");
   });
 
+  it("names the Citation example set in the item row as an example", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const row = view.contentEl.querySelector("[data-workbench-item-row]");
+    expect(row?.textContent).toContain(
+      m.workbench_example_title({
+        name: m.workbench_citation_example_one_item(),
+      }),
+    );
+  });
+
   it("reveals a Citation Template problem in the one editor it opens with", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);

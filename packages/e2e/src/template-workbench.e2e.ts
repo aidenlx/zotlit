@@ -987,6 +987,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { path },
     );
+    // The menu closes whatever the case finds, before the leaf goes.
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        () => {
+          for (const menu of document.body.querySelectorAll(".menu"))
+            menu.remove();
+        },
+        undefined,
+      ),
+    );
     await obRunUntil(
       run.vaultId,
       ({ page }, { path, label }) => {
@@ -1030,14 +1041,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.m.workbench_docs_data(),
       run.m.workbench_problems_community(),
     ]);
-    await obRun(
-      run.vaultId,
-      () => {
-        for (const menu of document.body.querySelectorAll(".menu"))
-          menu.remove();
-      },
-      undefined,
-    );
   });
 
   // #1956: a reader who cannot drag sizes every handle from the pane menu

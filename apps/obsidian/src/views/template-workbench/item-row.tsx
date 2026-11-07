@@ -28,7 +28,10 @@ export function ViewItemRow({ view }: { view: TemplateWorkbenchView }) {
   const name = citationSet
     ? citationExample === null
       ? title
-      : citationExampleLabel(m, citationExample)
+      : // A built-in set reads as an example, as a built-in Item does.
+        m.workbench_example_title({
+          name: citationExampleLabel(m, citationExample),
+        })
     : selectionName({
         item: item && { id: item.id, title },
         annotation: example,

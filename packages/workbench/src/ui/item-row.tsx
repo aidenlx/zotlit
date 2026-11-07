@@ -18,7 +18,7 @@ export function ItemRow({
 }) {
   const part = useParts("itemRow");
   return (
-    <div {...part("row")}>
+    <div data-workbench-item-row="" {...part("row")}>
       {label ? <p {...part("label")}>{label}</p> : null}
       {children}
     </div>

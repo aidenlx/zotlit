@@ -423,14 +423,17 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       checkbox: "metadata-input-checkbox",
       empty: "metadata-input-longtext",
     },
-    // The side panels: the model places them, so the classes only draw each
-    // placement. A column holds its saved width within 2/5 of the view; the
-    // Preview under the editor takes the height the model computes.
+    // The one row above the panels that names the item they all read: its
+    // name first, then its chooser at the trailing end.
     itemRow: {
       row: "zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:border-b zt:border-border zt:px-3 zt:py-1",
       label:
         "zt:min-w-0 zt:flex-1 zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground",
     },
+    // The side panels: the model places them, so the classes only draw each
+    // placement. Each column draws the width the model holds it to, through
+    // the width custom property; the Preview under the editor takes the
+    // height the model computes.
     panels: {
       panels: "zt:flex zt:h-full zt:min-w-0",
       stack:

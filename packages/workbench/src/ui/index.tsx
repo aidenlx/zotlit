@@ -94,7 +94,7 @@ export type {
   WorkbenchPanels,
 } from "./panel-layout";
 export { panelSizeMenus, pickPanelSize } from "./panel-menu";
-export { HELP_COMMUNITY, HELP_PAGES } from "./help-pages";
+export { HELP_PAGES } from "./help-pages";
 export { ItemRow } from "./item-row";
 export { SidePanels } from "./panels";
 export {

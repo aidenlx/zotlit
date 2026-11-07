@@ -62,7 +62,6 @@ import {
   PropertiesPane,
   SliceEditor,
   SidePanels,
-  ItemRow,
   showPanel,
 } from "@zotlit/workbench/ui";
 import type {
@@ -952,30 +951,27 @@ function WorkbenchSession({
       }
       item={
         // One row names what every panel reads: the annotation while the
-        // view renders one, else the item. The item's bar stays mounted
-        // while it hides, so a pending load keeps its place.
-        <ItemRow>
-          {showAnnotation && (
-            <AnnotationSampleBar
-              current={itemAnnotations}
-              example={selectedAnnotation}
-              onSelect={chooseAnnotation}
-            />
-          )}
-          <div className={showAnnotation ? "hidden" : "contents"}>
-            <SampleBar
-              sample={sample}
-              retained={retained}
-              connection={connection}
-              {...(sampleItemType !== undefined && !bundledForType
-                ? { unmatchedItemType: sampleItemType }
-                : {})}
-              busy={itemBusy}
-              onShow={show}
-              onLoad={loadSelectedItem}
-            />
-          </div>
-        </ItemRow>
+        // view renders one, else the item.
+        <SampleBar
+          sample={sample}
+          retained={retained}
+          connection={connection}
+          {...(sampleItemType !== undefined && !bundledForType
+            ? { unmatchedItemType: sampleItemType }
+            : {})}
+          busy={itemBusy}
+          onShow={show}
+          onLoad={loadSelectedItem}
+          {...(showAnnotation
+            ? {
+                annotation: {
+                  current: itemAnnotations,
+                  example: selectedAnnotation,
+                  onSelect: chooseAnnotation,
+                },
+              }
+            : {})}
+        />
       }
       result={
         <WebPreview

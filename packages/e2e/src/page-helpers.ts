@@ -565,12 +565,10 @@ export function createPageHelpers(app: PageApp) {
   }
   /** The one row above `view`'s panels that names the item they all read. */
   function itemRow(view: TemplateWorkbenchView | undefined) {
-    // The row is an HTML element in any window; a pop-out has its own
-    // HTMLElement, so the check reads the element's own kind.
-    const row = view?.contentEl.querySelector(
-      "[data-workbench-panels]",
-    )?.previousElementSibling;
-    return row?.instanceOf(HTMLElement) ? row : null;
+    return (
+      view?.contentEl.querySelector<HTMLElement>("[data-workbench-item-row]") ??
+      null
+    );
   }
   function pdfView(path: string): PagePdfView | undefined {
     return app.workspace

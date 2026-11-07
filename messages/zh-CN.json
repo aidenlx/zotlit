@@ -2814,6 +2814,7 @@
   "query_view_filter_error": "筛选条件有错误。视图显示上一次的结果。",
   "docs_workbench_showing_label": "Preview with",
   "docs_workbench_sample_type_missing": "No example is available for {itemType}. Choose another item to test this profile.",
+  "docs_workbench_opens_new_tab": "(opens in a new tab)",
   "docs_workbench_status": "Workbench status",
   "docs_workbench_not_connected": "Not connected",
   "docs_workbench_connection_details": "Connection details",

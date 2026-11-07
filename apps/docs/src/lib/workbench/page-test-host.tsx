@@ -353,11 +353,28 @@ export function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
   return target;
 }
 
+/**
+ * Opens the item row's annotation chooser, which reads "Change annotation"
+ * once one is chosen.
+ */
+export function openAnnotationChooser(page: OpenPage): void {
+  const row = page.host.querySelector<HTMLElement>("[data-workbench-item-row]");
+  const names: readonly string[] = [
+    m.workbench_choose_annotation(),
+    m.workbench_change_annotation(),
+  ];
+  const target = [...(row?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+    (button) => names.includes(button.getAttribute("aria-label") ?? ""),
+  );
+  if (!target) throw new Error("The item row has no annotation chooser.");
+  act(() => target.click());
+}
+
 export async function chooseAnnotation(
   page: OpenPage,
   text: string,
 ): Promise<void> {
-  page.press(m.workbench_choose_annotation());
+  openAnnotationChooser(page);
   const option = [
     ...document.querySelectorAll<HTMLElement>(
       '[role="dialog"] [role="option"]',
@@ -443,8 +460,7 @@ export function title(host: HTMLElement): string {
 export function shownItem(host: HTMLElement): string {
   return (
     host
-      .querySelector("#workbench-sample")
-      ?.parentElement?.querySelector("span[title]")
+      .querySelector("[data-workbench-item-row] span[title]")
       ?.getAttribute("title") ?? ""
   );
 }
