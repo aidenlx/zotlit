@@ -111,6 +111,30 @@ Expected: step 3 writes `{{ zt.title }}` at the cursor and gives the editor
 the focus. In step 4, the menu also offers **Copy path**, **Copy value** and
 the Template Snippets, each of which copies to the clipboard.
 
+## A list field in the Fields
+
+1. Show the Fields, and choose "Alpha of the personal library".
+2. Find the **All creators** row (Reference) and the **Tags** row (Common
+   fields) without opening them.
+3. Select **Source**, and place the cursor in the note body. In the Fields
+   panel, open the row menu of **All creators**, and select **Insert field**.
+4. Open the row menu of **All creators** again, and select **Copy loop**.
+   Paste it on a new line of the note body.
+5. Open the row menu of **Tags**, select **Copy joined**, and paste it on a
+   new line. Then select **Copy loop** in the same menu, and paste it under a
+   line of text.
+
+Expected: in step 2, **All creators** shows `(3)` and every item in one
+line: "Ada Personal, Erin Editor, ZotLit Research Collective". **Tags**
+shows `(2)` and "fixture-core, read-later". In both row menus, **Copy joined**
+comes before **Copy loop**. Step 3 writes
+`{{ zt.creators | join: ", " }}`, and the Preview shows the three names in
+one line. Step 4 pastes `{% for creator in zt.creators %}` and
+`- {{ creator }}{% endfor %}` on two lines; the Preview shows each name as its
+own list item. Step 5 pastes `{{ zt.tags | join: ", " }}`, then the tag loop,
+which the Preview shows as the two list items "fixture-core" and
+"read-later". No snippet that a list offers names one item, such as `[0]`.
+
 ## Export from the Fields
 
 1. Show the Fields, choose "Alpha of the personal library", and open the
@@ -529,6 +553,23 @@ leaves the explorer on "Beta of the shared reading group". In step 4 the
 explorer stays where it is. Its rows offer copy and Template Snippets, and no
 **Insert field**. **Explore template data** on a Literature Note's file menu,
 and the Zotero `explore` action, open the same standalone explorer.
+
+## List snippets in the standalone explorer
+
+1. Run **Open template data explorer**, and choose "Alpha of the personal
+   library" in it.
+2. Open the row menu of **All creators**.
+3. Open the **All creators** row, and open the row menu of its first item.
+
+Expected: before step 2, the closed **All creators** row shows `(3)` and
+"Ada Personal, Erin Editor, ZotLit Research Collective". In step 2, the menu offers **Copy joined** before **Copy loop**.
+**Copy joined** copies `{{ zt.creators | join: ", " }}`; **Copy loop** copies
+the loop with each creator on its own `- ` line. With JavaScript templates
+on, the Eta submenu offers `<%= zt.creators.join(", ") %>` and
+`<% for (const creator of zt.creators) { %>` with `- <%= creator %><% } %>`.
+In step 3, the explorer still lists each item by its number, so **Explore
+annotation** keeps working for an annotation row; the item's own snippets
+name its path, as before.
 
 ## A saved Fields pane restores as the standalone explorer
 
