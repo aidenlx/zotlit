@@ -51,6 +51,8 @@ export function fieldsActionAttributes(
  */
 export interface FieldsPanelRows {
   readonly escape: RefObject<() => boolean>;
+  /** The panel, which a field's details popover stands beside. */
+  readonly panel: RefObject<HTMLElement | null>;
 }
 
 const FieldsPanelRowsContext = createContext<FieldsPanelRows | null>(null);
@@ -104,7 +106,7 @@ function FieldsPanelBody({
   const icon = useIcon();
   const setState = useAtomSet(model.fieldsPanel);
   const panel = useRef<HTMLDivElement>(null);
-  const [rows] = useState<FieldsPanelRows>(() => ({ escape }));
+  const [rows] = useState<FieldsPanelRows>(() => ({ escape, panel }));
   const closeLabel = m.workbench_fields_close();
   const closeTooltip = useTooltip(closeLabel);
   useLayoutEffect(() => {

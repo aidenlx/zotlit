@@ -299,6 +299,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       search: "zt:w-auto zt:min-w-0 zt:flex-1",
       "sections-toggle": "clickable-icon zt:shrink-0",
       body: "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-2 zt:pb-3",
+      "keys-hint":
+        "zt:shrink-0 zt:border-t zt:border-border zt:px-3 zt:py-1.5 zt:text-xs zt:text-muted-foreground",
       empty:
         "zt:px-1 zt:py-3 zt:text-muted-foreground zt:text-sm zt:leading-normal",
     },
@@ -313,9 +315,14 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "section-count": "zt:font-normal zt:tabular-nums zt:text-faint",
       tree: "zt:text-xs zt:leading-normal",
       spacer: "zt:w-6 zt:shrink-0",
-      /** Key and value share one line while both fit; a longer value drops to its own line beneath the key. */
+      /**
+       * Key and value share one line while both fit; a longer value drops to
+       * its own line beneath the key. A Fields Panel row (`line`) keeps both
+       * on one line, the value cut with an ellipsis, and a click on it shows
+       * its details.
+       */
       contents:
-        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:gap-x-1.5 zt:select-text zt:[overflow-wrap:anywhere]",
+        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:gap-x-1.5 zt:select-text zt:[overflow-wrap:anywhere] zt:data-[state=line]:cursor-pointer zt:data-[state=line]:flex-nowrap zt:data-[state=line]:overflow-hidden zt:data-[state=line]:whitespace-nowrap zt:data-[state=line]:*:data-[part=key]:max-w-1/2 zt:data-[state=line]:*:data-[part=key]:shrink-0 zt:data-[state=line]:*:data-[part=key]:truncate zt:data-[state=line]:*:data-[part=value]:truncate",
       group:
         "zt:ms-2.5 zt:border-s zt:border-(--nav-indentation-guide-color) zt:ps-2",
       chevron:
@@ -324,7 +331,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:flex zt:size-(--icon-size) zt:items-center zt:justify-center zt:in-data-[expanded]:rotate-90",
       /** Revealed by hover or focus; a touch device has neither, so it keeps them visible. */
       actions:
-        "zt:flex zt:shrink-0 zt:items-center zt:gap-0.5 zt:opacity-0 zt:group-hover/row:opacity-100 zt:group-focus-within/row:opacity-100 zt:[.is-mobile_&]:opacity-100",
+        "zt:flex zt:shrink-0 zt:items-center zt:gap-0.5 zt:opacity-0 zt:group-hover/row:opacity-100 zt:group-focus-within/row:opacity-100 zt:group-data-selected/row:opacity-100 zt:group-data-open/row:opacity-100 zt:[.is-mobile_&]:opacity-100",
       action:
         "clickable-icon zt:[--icon-size:var(--icon-xs)] zt:focus-visible:shadow-(--input-box-shadow-focus)",
       key: "zt:font-mono zt:text-foreground zt:data-[state=labeled]:font-sans zt:data-[state=labeled]:font-medium",
@@ -336,7 +343,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       link: "zt:[overflow-wrap:anywhere] zt:text-link zt:underline zt:decoration-dotted zt:hover:decoration-solid",
       "long-toggle":
         "zt:rounded-xs zt:ms-0.5 zt:cursor-pointer zt:px-1 zt:text-muted-foreground zt:underline zt:decoration-dotted zt:underline-offset-2 zt:select-none zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
-      row: "zt:group/row zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg)",
+      /** The row ↑/↓ selected, and the row whose details stand open, keep their own ground. */
+      row: "zt:group/row zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg) zt:data-selected:bg-muted zt:data-open:bg-accent",
       opaque: "zt:break-words zt:text-cyan",
       color: "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-green",
       string: "zt:text-green",
@@ -464,6 +472,32 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:min-w-0 zt:flex-1 zt:truncate zt:px-1 zt:text-sm zt:font-semibold",
       close: "clickable-icon zt:shrink-0",
       body: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-auto",
+    },
+    fieldDetails: {
+      /** A fixed height at the panel's foot, so the list above never moves. */
+      "details-bar":
+        "zt:h-48 zt:shrink-0 zt:overflow-y-auto zt:border-t zt:border-border zt:bg-(--background-primary)",
+      details:
+        "zt:flex zt:flex-col zt:gap-3 zt:p-3 zt:text-sm zt:data-[state=bar]:gap-2 zt:data-[state=bar]:p-2 zt:data-[state=popover]:max-h-(--zt-pinned-max-height) zt:data-[state=popover]:w-72 zt:data-[state=popover]:overflow-y-auto zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-primary) zt:data-[state=popover]:shadow-(--shadow-l)",
+      header: "zt:flex zt:items-start zt:gap-1",
+      heading: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col",
+      context: "zt:truncate zt:text-xs zt:text-muted-foreground",
+      title: "zt:truncate zt:font-semibold",
+      close: "clickable-icon zt:shrink-0",
+      value:
+        "zt:max-h-40 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-faint zt:data-[state=empty]:italic",
+      item: "zt:flex zt:flex-col zt:gap-0.5",
+      label: "zt:text-xs zt:text-muted-foreground",
+      path: "zt:font-mono zt:text-xs zt:break-all zt:text-muted-foreground",
+      snippet:
+        "zt:font-mono zt:text-xs zt:break-all zt:whitespace-pre-wrap zt:text-accent-foreground",
+      result:
+        "zt:flex zt:gap-1.5 zt:whitespace-pre-line zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-faint zt:data-[state=empty]:italic",
+      "result-icon":
+        "zt:mt-0.5 zt:flex zt:shrink-0 zt:text-faint zt:[&_svg]:size-3",
+      actions: "zt:flex zt:flex-wrap zt:gap-2",
+      insert: "mod-cta zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
+      copy: "zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
     },
     tabBar: {
       "tab-bar":

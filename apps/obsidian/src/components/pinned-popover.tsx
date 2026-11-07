@@ -7,14 +7,18 @@
 // Callers give an anchor and render the contents; the module owns the rest:
 // - Placement beside the anchor, and placing again as the contents resize.
 //   With `inset`, it stands inside that element's box at its right edge
-//   instead, as tall as the box, and places again as the box resizes.
+//   instead, as tall as the box, and places again as the box resizes. With
+//   `beside`, it stands outside that element's box on the side with more
+//   room, level with the anchor, and places again as the page scrolls.
 // - Escape, on a Scope. A layer with keys of its own pushes a Scope over this
-//   one, and answers Escape itself when it wants the popover shut.
+//   one, and answers Escape itself when it wants the popover shut. With
+//   `onEscape`, the contents take Escape first when they have a use for it.
 // - A press outside. A popover rendered inside another one counts as inside
 //   it, so a press in the outer one shuts the inner one alone. A press on the
 //   anchor stays the anchor's, which toggles the popover.
-// - Focus: the shell takes it on opening, so Tab reaches the contents. A
-//   caller may move it further. Focus held at closing goes back to the anchor.
+// - Focus: the shell takes it on opening, so Tab reaches the contents, unless
+//   `initialFocus` is off. A caller may move it further. Focus held at
+//   closing goes back to the anchor.
 //
 // The element with `className` is the surface, and the caller draws it with
 // utilities. The element around it is only a shell for Obsidian to place.
@@ -40,6 +44,7 @@ import type { HTMLAttributes, Ref, RefObject } from "react";
 import { createPortal } from "react-dom";
 
 import { useObsidianApp } from "@/lib/app-context";
+import { composing } from "@/lib/ime";
 import { PopoutAwareHoverPopover } from "@/lib/popout-aware-hover-popover";
 
 import "./pinned-popover.css";
@@ -66,6 +71,20 @@ export interface PinnedPopoverProps extends Omit<
    * follows the box as it resizes. The surface fills the height it is given.
    */
   inset?: RefObject<HTMLElement | null>;
+  /**
+   * In place of a place under the anchor: the popover stands outside this
+   * element's box, on the side of it with more room in the window, with
+   * `--size-4-2` between them. Its top is level with the anchor's, held
+   * inside the box's height, and it is no taller than the box.
+   */
+  beside?: RefObject<HTMLElement | null>;
+  /**
+   * Escape reached the popover; `true` when the contents took it, and the
+   * popover stays open.
+   */
+  onEscape?: () => boolean;
+  /** Whether the popover takes focus as it opens; on by default. */
+  initialFocus?: boolean;
   /** Called as the popover opens, and once it has closed. */
   onOpenChange?: (open: boolean) => void;
   ref?: Ref<HTMLDivElement>;
@@ -85,6 +104,11 @@ interface PinnedHoverPopoverOptions {
   body: HTMLElement;
   /** The box the popover stands inset in, in place of beside the anchor. */
   inset: HTMLElement | null;
+  /** The box the popover stands beside, level with the anchor. */
+  beside: HTMLElement | null;
+  /** Whether the contents take an Escape: `true` keeps the popover open. */
+  onEscape: () => boolean;
+  initialFocus: boolean;
   /** Whether a press on this element leaves the popover open. */
   holds: (element: Element) => boolean;
   onHidden: () => void;
@@ -106,8 +130,10 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
 
   override onload(): void {
     const { app, anchor, holds, body } = this.#options;
-    this.#scope.register([], "Escape", () => {
-      this.hide();
+    this.#scope.register([], "Escape", (event) => {
+      // Escape that drops an input method's candidate is the method's.
+      if (composing(event)) return;
+      if (!this.#options.onEscape()) this.hide();
       return false;
     });
     app.keymap.pushScope(this.#scope);
@@ -117,6 +143,13 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
     const resize = new ResizeObserver(() => this.position());
     resize.observe(body);
     if (this.#options.inset) resize.observe(this.#options.inset);
+    if (this.#options.beside) {
+      resize.observe(this.#options.beside);
+      // The anchor moves with the list it scrolls in.
+      this.registerDomEvent(this.hoverEl.doc, "scroll", () => this.position(), {
+        capture: true,
+      });
+    }
     this.register(() => resize.disconnect());
     this.registerDomEvent(
       this.hoverEl.doc,
@@ -129,11 +162,15 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
       },
       { capture: true },
     );
-    this.hoverEl.focus({ preventScroll: true });
+    if (this.#options.initialFocus) this.hoverEl.focus({ preventScroll: true });
   }
 
   override position(): void {
     super.position();
+    if (this.#options.beside) {
+      this.#placeBeside(this.#options.beside);
+      return;
+    }
     const box = this.#options.inset;
     if (!box) return;
     const rect = box.getBoundingClientRect();
@@ -145,6 +182,27 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
     style.height = `${Math.max(rect.height - 2 * gap, 0)}px`;
     style.maxWidth = `${Math.max(rect.width - 2 * gap, 0)}px`;
     style.left = `${rect.right - gap - this.hoverEl.offsetWidth}px`;
+  }
+
+  /** Outside `box` on its roomier side, level with the anchor and within the box's height. */
+  #placeBeside(box: HTMLElement): void {
+    const rect = box.getBoundingClientRect();
+    const row = this.#options.anchor.getBoundingClientRect();
+    const gap = Number.parseFloat(
+      box.win.getComputedStyle(box).getPropertyValue("--size-4-2"),
+    );
+    const { style } = this.hoverEl;
+    style.maxHeight = `${rect.height}px`;
+    // The surface reads it to scroll inside that height.
+    style.setProperty("--zt-pinned-max-height", `${rect.height}px`);
+    const width = this.hoverEl.offsetWidth;
+    const height = Math.min(this.hoverEl.offsetHeight, rect.height);
+    const leftRoom = rect.left;
+    const rightRoom = box.win.innerWidth - rect.right;
+    style.left = `${
+      leftRoom >= rightRoom ? rect.left - gap - width : rect.right + gap
+    }px`;
+    style.top = `${Math.max(rect.top, Math.min(row.top, rect.bottom - height))}px`;
   }
 
   override hide(): void {
@@ -176,6 +234,9 @@ export function PinnedPopover({
   anchor,
   handle,
   inset,
+  beside,
+  onEscape,
+  initialFocus = true,
   onOpenChange,
   ref,
   children,
@@ -199,6 +260,8 @@ export function PinnedPopover({
   } | null>(null);
   const notify = useRef(onOpenChange);
   notify.current = onOpenChange;
+  const escape = useRef(onEscape);
+  escape.current = onEscape;
 
   useEffect(() => {
     enclosing?.children.add(node);
@@ -221,6 +284,9 @@ export function PinnedPopover({
         anchor: anchor.current,
         body,
         inset: inset?.current ?? null,
+        beside: beside?.current ?? null,
+        onEscape: () => escape.current?.() ?? false,
+        initialFocus,
         holds: (element) => node.contains(element),
         onHidden: () => {
           node.live = null;
@@ -237,7 +303,7 @@ export function PinnedPopover({
       toggle: () => (node.live ? hide() : show()),
       contains: (target) => node.contains(target),
     };
-  }, [anchor, app, body, inset, node, parent]);
+  }, [anchor, app, beside, body, initialFocus, inset, node, parent]);
 
   return createPortal(
     <EnclosingPopover.Provider value={node}>

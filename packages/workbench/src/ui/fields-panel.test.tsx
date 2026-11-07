@@ -338,9 +338,15 @@ describe.each(PRESENTATIONS)(
       using page = open({ size });
       page.pressAction();
       clickRow("Title");
-      fireEvent.click(within(details()!).getByRole("button", { name: "Copy" }));
+      const copyButton = within(details()!).getByRole("button", {
+        name: "Copy",
+      });
+      act(() => copyButton.focus());
+      fireEvent.click(copyButton);
       expect(page.host.calls.copies).toEqual(["{{ zt.title }}"]);
       expect(details()).toBeNull();
+      // Focus the details held goes back to the search.
+      expect(document.activeElement).toBe(search());
       expect(page.host.calls.notices).toEqual(["Copied Title."]);
       // The Fields popover stays open.
       expect(panel()).not.toBeNull();

@@ -254,6 +254,8 @@ export interface WorkbenchFieldsPopoverProps {
 export interface WorkbenchFieldDetailsProps {
   /** The field's row, which the popover stands level with. */
   readonly anchor: HTMLElement;
+  /** The Fields Panel, which the popover stands beside. */
+  readonly panel: HTMLElement;
   /** The host closed the surface: Escape or a press outside. */
   readonly onClose: () => void;
   /** The id of the element that names the surface. */

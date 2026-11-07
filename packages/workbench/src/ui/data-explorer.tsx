@@ -232,6 +232,20 @@ export function DataExplorer({
   }, [rows.selected]);
   // A press outside the details and outside their row closes them.
   const openKey = rows.open?.node.key ?? null;
+  // Focus the details held as they closed goes back to the search.
+  const searchInput = useRef<HTMLInputElement>(null);
+  const shownBefore = useRef(false);
+  useLayoutEffect(() => {
+    const shown = openKey !== null;
+    if (shown || !shownBefore.current) {
+      shownBefore.current = shown;
+      return;
+    }
+    shownBefore.current = false;
+    const doc = body.current?.ownerDocument;
+    if (!doc || (doc.activeElement && doc.activeElement !== doc.body)) return;
+    searchInput.current?.focus({ preventScroll: true });
+  }, [openKey]);
   const { close: closeDetails } = rows;
   useEffect(() => {
     if (openKey === null) return;
@@ -392,6 +406,7 @@ export function DataExplorer({
       </div>
       <div {...part("search-row")}>
         <input
+          ref={searchInput}
           type="search"
           value={tree.filterQuery}
           aria-label={search}

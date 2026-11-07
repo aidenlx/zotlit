@@ -417,12 +417,14 @@ function FakeFieldsPopover({
  */
 function FakeFieldDetails({
   anchor,
+  panel,
   labelledBy,
   children,
 }: WorkbenchFieldDetailsProps) {
   return (
     <div
       data-fake-details=""
+      data-beside={panel.dataset.part}
       data-anchor={anchor
         .closest("[data-workbench-field]")
         ?.getAttribute("data-workbench-field")}

@@ -6,6 +6,7 @@ import { act } from "preact/test-utils";
 import { createElement as h, createRef } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { pressTop } from "@/lib/__fixtures__/keymap";
 import { AppContext } from "@/lib/app-context";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
@@ -32,13 +33,21 @@ function box() {
   return element;
 }
 
-function mount(inset?: HTMLElement) {
+function mount(
+  inset?: HTMLElement,
+  options: {
+    beside?: HTMLElement;
+    onEscape?: () => boolean;
+    initialFocus?: boolean;
+  } = {},
+) {
   host = document.body.appendChild(document.createElement("div"));
   const anchor = createRef<HTMLButtonElement>();
   const handle = createRef<PinnedPopoverHandle>();
+  const app = editorApp();
   render(
     h(AppContext, {
-      value: editorApp(),
+      value: app,
       children: [
         h("button", { key: "anchor", ref: anchor, type: "button" }, "Fields"),
         h(PinnedPopover, {
@@ -46,6 +55,9 @@ function mount(inset?: HTMLElement) {
           anchor,
           handle,
           inset: inset ? { current: inset } : undefined,
+          beside: options.beside ? { current: options.beside } : undefined,
+          onEscape: options.onEscape,
+          initialFocus: options.initialFocus,
           className: "surface",
           children: h("input", { "aria-label": "Search" }),
         }),
@@ -54,7 +66,17 @@ function mount(inset?: HTMLElement) {
     host,
   );
   const shell = () => document.querySelector<HTMLElement>(".zt-pinned-popover");
-  return { handle, shell };
+  return { app, anchor, handle, shell };
+}
+
+/** A box at `left`, 50 that measures 320 by 400: the panel a popover stands beside. */
+function panel(left: number) {
+  const element = document.body.appendChild(document.createElement("div"));
+  element.style.setProperty("--size-4-2", "8px");
+  vi.spyOn(element, "getBoundingClientRect").mockImplementation(
+    () => new DOMRect(left, 50, 320, 400),
+  );
+  return element;
 }
 
 it("stands inset in its box at the right edge, as tall as the box less the gap", async () => {
@@ -75,4 +97,63 @@ it("leaves its placement to Obsidian without an inset box", async () => {
   await act(() => handle.current!.show());
   expect(shell()!.style.height).toBe("");
   expect(shell()!.style.left).toBe("");
+});
+
+it("stands beside a box, level with its anchor, on the side with more room", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(288);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(200);
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(1000);
+  const { anchor, handle, shell } = mount(undefined, { beside: panel(672) });
+  vi.spyOn(anchor.current!, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(680, 120, 300, 28),
+  );
+  await act(() => handle.current!.show());
+  // Left of the panel at the window's right edge: 672 − 8 − 288.
+  expect(shell()!.style.left).toBe("376px");
+  expect(shell()!.style.top).toBe("120px");
+  expect(shell()!.style.maxHeight).toBe("400px");
+});
+
+it("stays inside the box's height, and stands right of a box at the left edge", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(288);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(200);
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(1000);
+  const { anchor, handle, shell } = mount(undefined, { beside: panel(0) });
+  vi.spyOn(anchor.current!, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(8, 420, 300, 28),
+  );
+  await act(() => handle.current!.show());
+  // 0 + 320 + 8
+  expect(shell()!.style.left).toBe("328px");
+  // The box ends at 450: 450 − 200.
+  expect(shell()!.style.top).toBe("250px");
+});
+
+it("asks onEscape first, and closes on an Escape it leaves", async () => {
+  let take = true;
+  const { app, handle, shell } = mount(undefined, { onEscape: () => take });
+  await act(() => handle.current!.show());
+  const pressed = pressTop(app, { key: "Escape" }, shell()!);
+  expect(pressed.defaultPrevented).toBe(true);
+  expect(shell()!.isConnected).toBe(true);
+  take = false;
+  await act(() => {
+    pressTop(app, { key: "Escape" }, shell()!);
+  });
+  expect(shell()).toBeNull();
+});
+
+it("leaves Escape to an input method composing", async () => {
+  const { app, handle, shell } = mount();
+  await act(() => handle.current!.show());
+  const pressed = pressTop(app, { key: "Escape", isComposing: true }, shell()!);
+  expect(pressed.defaultPrevented).toBe(false);
+  expect(shell()).not.toBeNull();
+});
+
+it("leaves focus where it is as it opens, with initialFocus off", async () => {
+  const { anchor, handle } = mount(undefined, { initialFocus: false });
+  anchor.current!.focus();
+  await act(() => handle.current!.show());
+  expect(document.activeElement).toBe(anchor.current);
 });

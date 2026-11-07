@@ -8,6 +8,7 @@ import type { Ref } from "react";
 import { useUniqueId } from "@zotlit/ui";
 
 import { fieldResult, fieldValueText } from "./explorer-fields";
+import { useFieldsPanelRows } from "./fields-panel";
 import { useOptionalHost, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import type { ViewSize } from "./panel-layout";
@@ -67,10 +68,16 @@ export function FieldDetails({
   const host = useOptionalHost();
   const part = useParts("fieldDetails");
   const titleId = useUniqueId();
+  const panel = useFieldsPanelRows()?.panel.current ?? null;
   const Popover = host?.fieldsAction?.details;
-  if (placement === "popover" && Popover && row)
+  if (placement === "popover" && Popover && row && panel)
     return (
-      <Popover anchor={row} onClose={content.onClose} labelledBy={titleId}>
+      <Popover
+        anchor={row}
+        panel={panel}
+        onClose={content.onClose}
+        labelledBy={titleId}
+      >
         <DetailsBody
           {...content}
           titleId={titleId}
