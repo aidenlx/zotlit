@@ -53,6 +53,7 @@ export {
   makeWorkbenchModel,
   patch,
   patchAt,
+  pressFieldsAction,
   setAdvanced,
   setPreview,
   setRoot,
@@ -77,6 +78,34 @@ export type {
   WorkbenchViewState,
 } from "./model";
 export {
+  savedPanelWidth,
+  clampPreviewHeight,
+  INITIAL_PANELS,
+  setPanelWidth,
+  setPreviewHeight,
+  showPanel,
+} from "./panel-layout";
+export type {
+  FieldsPicker,
+  PanelSide,
+  PreviewPanel,
+  ViewSize,
+  WorkbenchPanel,
+  WorkbenchPanels,
+} from "./panel-layout";
+export { panelSizeMenus, pickPanelSize } from "./panel-menu";
+export { HELP_PAGES } from "./help-pages";
+export { ItemRow } from "./item-row";
+export { SidePanels } from "./panels";
+export {
+  FieldPicker,
+  fieldsActionAttributes,
+  fieldsActionKey,
+  holdPickerFocus,
+  PICKER_MOVE_KEYS,
+} from "./field-picker";
+export type { FieldPickerProps } from "./field-picker";
+export {
   NO_MATCH_DATA,
   WorkbenchClipboardError,
   WorkbenchHostError,
@@ -90,6 +119,8 @@ export type {
   WorkbenchConfirmRequest,
   WorkbenchDialogHandle,
   WorkbenchDialogRequest,
+  WorkbenchFieldsAction,
+  WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchInsertTarget,
   WorkbenchInputSuggestionsRequest,
@@ -99,6 +130,8 @@ export type {
   WorkbenchMenuItem,
   WorkbenchMenuRequest,
   WorkbenchPersistence,
+  WorkbenchPickerKeys,
+  WorkbenchPickerMove,
   WorkbenchPreferenceScope,
   WorkbenchSuggesterGroup,
   WorkbenchSuggesterOption,
@@ -144,8 +177,18 @@ export { partialContextLabel } from "./partial-preview";
 export { TabBar, TabPanel } from "./tab-bar";
 export { isProfileProblem, TABS, tabLabel, tabLede, tabsFor } from "./tabs";
 export { routeDiagnosis, routeProblem } from "./problem-route";
+export {
+  insertionTarget,
+  repairCommands,
+  selectionInDocument,
+} from "./repair-commands";
 export type { WorkbenchTab } from "./tabs";
-export { WorkbenchThemeProvider, useIcon, useParts } from "./theme";
+export {
+  WorkbenchThemeProvider,
+  useIcon,
+  usePanelProperties,
+  useParts,
+} from "./theme";
 export type {
   PartAttributes,
   WorkbenchClassMap,

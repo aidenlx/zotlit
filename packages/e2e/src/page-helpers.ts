@@ -563,6 +563,13 @@ export function createPageHelpers(app: PageApp) {
       null
     );
   }
+  /** The one row above `view`'s panels that names the item they all read. */
+  function itemRow(view: TemplateWorkbenchView | undefined) {
+    return (
+      view?.contentEl.querySelector<HTMLElement>("[data-workbench-item-row]") ??
+      null
+    );
+  }
   function pdfView(path: string): PagePdfView | undefined {
     return app.workspace
       .getLeavesOfType("pdf")
@@ -979,6 +986,7 @@ export function createPageHelpers(app: PageApp) {
     workbench,
     fieldsPanel,
     previewPanel,
+    itemRow,
     workbenchSurfaces,
     pdfView,
     clientOfFirstPage,

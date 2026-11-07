@@ -1,4 +1,5 @@
 import type { RenderReport, WorkbenchReportContext } from "#/render/report";
+import type { RenderDiagnostic } from "#/render/result";
 // The editor's Problems area: one detected problem at a time, led by the
 // object it is about, and the disclosure the reader controls. Automatic checks
 // leave that choice alone; Show problem, a source marker, and a failed
@@ -40,6 +41,7 @@ import type { WorkbenchDiagnosis } from "./problems";
 import {
   diagnosisEngineSources,
   diagnosisExplanation,
+  diagnosisForOccurrence,
   diagnosisLabel,
   diagnosisLocated,
   diagnosisReport,
@@ -80,10 +82,20 @@ export interface WorkbenchProblemsState {
    * the reader moves the explanation on, so a check never selects it.
    */
   readonly next: WorkbenchDiagnosis | null;
-  /** Reads one problem in full, which a source marker and Show problem do. */
-  readonly select: (id: string) => void;
+  /**
+   * Reads one problem in full, which a source marker and Show problem do.
+   * `occurrence` is the one of its grouped occurrences the area reads, as the
+   * preview reported it.
+   */
+  readonly select: (id: string, occurrence?: RenderDiagnostic) => void;
   /** Opens or reclaims the area; reclaiming it also gives back the editor. */
   readonly setOpen: (open: boolean) => void;
+  /**
+   * What the area's polite status says: why a problem Show problem revealed
+   * fails, while focus is on the call in the editor rather than in the area.
+   */
+  readonly announcement: string;
+  readonly announce: (text: string) => void;
 }
 
 /**
@@ -101,7 +113,7 @@ export interface WorkbenchProblemCapture {
 }
 
 export function useWorkbenchProblems({
-  diagnoses,
+  diagnoses: found,
   trigger,
   attempt,
   capture,
@@ -114,7 +126,15 @@ export function useWorkbenchProblems({
   readonly capture?: WorkbenchProblemCapture;
 }): WorkbenchProblemsState {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [occurrence, setOccurrence] = useState<RenderDiagnostic | null>(null);
   const [open, setOpen] = useState(false);
+  const [announcement, announce] = useState("");
+  // The occurrence the reader asked about stands for its grouped problem while
+  // a check still reports it.
+  const diagnoses =
+    occurrence === null
+      ? found
+      : found.map((diagnosis) => diagnosisForOccurrence(diagnosis, occurrence));
   // Reclaiming the area hands the editor back whole, so the next Show problem
   // starts from the split rather than from the space the last reading took.
   // The reading is over with it: a compact area follows the first problem
@@ -124,7 +144,9 @@ export function useWorkbenchProblems({
   const openArea = useCallback((next: boolean) => {
     setOpen(next);
     if (!next) {
+      announce("");
       setSelectedId(null);
+      setOccurrence(null);
     }
   }, []);
   // Selection keys on the problem's identity rather than its place in the
@@ -211,11 +233,14 @@ export function useWorkbenchProblems({
     // Offered rather than taken: a check that resolves the selected problem
     // leaves the reader on its resolved state until they ask for the next one.
     next: selected === null ? first : null,
-    select(id) {
+    select(id, asked) {
       setSelectedId(id);
+      setOccurrence(asked ?? null);
       setOpen(true);
     },
     setOpen: openArea,
+    announcement,
+    announce,
   };
 }
 
@@ -453,6 +478,9 @@ export function ProblemsFooter({
         {!open && explanation !== null && (
           <p {...part("problems-text")}>{explanation.condition}</p>
         )}
+        <p role="status" {...part("problems-announcement")}>
+          {problems.announcement}
+        </p>
         {/* How much of the editor this reading takes, on the trailing edge and
             together: one grows the area, the other gives it all back. */}
         <div {...part("problems-space")}>

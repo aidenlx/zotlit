@@ -17,7 +17,13 @@ import type {
   PartialPreviewSelection,
 } from "@zotlit/workbench/render";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
-import { INITIAL_VIEW, TABS, patchAt } from "@zotlit/workbench/ui";
+import {
+  savedPanelWidth,
+  clampPreviewHeight,
+  INITIAL_VIEW,
+  TABS,
+  patchAt,
+} from "@zotlit/workbench/ui";
 import type {
   BUILT_IN_BINDING_DEFAULTS,
   NameFolderPaneProps,
@@ -28,6 +34,8 @@ import type {
   WorkbenchItemData,
   WorkbenchItemDataInput,
   WorkbenchModel,
+  WorkbenchPanel,
+  WorkbenchPanels,
   WorkbenchPreviewSettings,
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
@@ -92,52 +100,6 @@ export type WorkbenchItemRead =
       readonly snapshot: ItemSnapshot;
     };
 
-/** The side panels of the view: Fields on the left, Preview on the right. */
-export type PanelSide = "fields" | "preview";
-export interface WorkbenchPanel {
-  readonly shown: boolean;
-  /** The panel's width in pixels, which the reader sets with its edge. */
-  readonly width: number;
-}
-export type WorkbenchPanels = Readonly<Record<PanelSide, WorkbenchPanel>>;
-
-/** The widths a panel can take, in pixels. */
-export const PANEL_WIDTH = { min: 240, initial: 400, max: 960 } as const;
-
-/** A new view shows neither panel. */
-const INITIAL_PANELS: WorkbenchPanels = {
-  fields: { shown: false, width: PANEL_WIDTH.initial },
-  preview: { shown: false, width: PANEL_WIDTH.initial },
-};
-
-/**
- * The share of the panels' container one panel takes at most, so the source
- * stays in view; the panel's `max-w-2/5` draws it.
- */
-const PANEL_SHARE = 0.4;
-
-/**
- * The widest the view draws a panel in a container `container` pixels wide:
- * {@link PANEL_SHARE} of it, and never past {@link PANEL_WIDTH}.
- */
-export const panelLimit = (container: number) =>
-  clampPanelWidth(container * PANEL_SHARE);
-
-/**
- * `width` held within {@link PANEL_WIDTH}, and within `max` where the view
- * draws the panel narrower than that.
- */
-export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
-  Math.round(
-    Math.min(Math.max(PANEL_WIDTH.min, max), Math.max(PANEL_WIDTH.min, width)),
-  );
-
-export const showPanel = (side: PanelSide, shown: boolean) =>
-  patchAt<WorkbenchPanels, PanelSide>(side, { shown });
-/** Sets a panel's width, held within {@link PANEL_WIDTH}. */
-export const setPanelWidth = (side: PanelSide, width: number) =>
-  patchAt<WorkbenchPanels, PanelSide>(side, { width: clampPanelWidth(width) });
-
 const NO_DOCUMENT: WorkbenchDocumentFacts = {
   path: null,
   partialName: null,
@@ -194,8 +156,6 @@ export function makeTemplateWorkbenchModel() {
     },
   );
   const document = Atom.make(NO_DOCUMENT);
-  /** Which side panels the leaf shows, and how wide. */
-  const panels = Atom.make(INITIAL_PANELS);
   /** Progress of Customize, which creates the built-in Profile document. */
   const customization = Atom.make<Customization>("idle");
   /** Whether the leaf shows the built-in Default Profile rather than a file. */
@@ -300,7 +260,6 @@ export function makeTemplateWorkbenchModel() {
     view,
     fieldsRoot,
     document,
-    panels,
     customization,
     defaultDraft,
     origin,
@@ -392,7 +351,6 @@ export function holdTemplateWorkbenchModel(
     model.editor,
     model.view,
     model.document,
-    model.panels,
     model.customization,
     model.defaultDraft,
     model.origin,
@@ -426,8 +384,14 @@ export interface SavedWorkbench {
   readonly annotationId: string | null | undefined;
   readonly partialContext: PartialContext | null;
   readonly partialProfile: string | null;
-  /** The panels the state names; a side it leaves out keeps the leaf's own. */
-  readonly panels: Partial<WorkbenchPanels>;
+  /**
+   * The panels the state names; a side it leaves out keeps the leaf's own,
+   * and so does a Preview height it leaves out.
+   */
+  readonly panels: {
+    readonly fields?: WorkbenchPanel;
+    readonly preview?: WorkbenchPanel & { readonly height?: number };
+  };
   /** The Preview's settings the state names; each one decodes alone. */
   readonly preview: Partial<WorkbenchPreviewSettings>;
   /** The Citation Variant and example set the state names; each decodes alone. */
@@ -533,20 +497,39 @@ const savedPanel = Schema.Struct({
   shown: Schema.Boolean,
   width: Schema.Finite,
 });
+/** The Preview's side, which also holds its height under the editor. */
+const savedPreview = Schema.Struct({
+  shown: Schema.Boolean,
+  width: Schema.Finite,
+  height: Schema.optional(Schema.Finite),
+});
 
-/** Each side decodes alone; its width is held within the limits. */
-function readPanels(input: unknown): Partial<WorkbenchPanels> {
+/** Each side decodes alone; its width and height are held within the limits. */
+function readPanels(input: unknown): SavedWorkbench["panels"] {
   const value = decode(record, input) ?? {};
-  const panels: Partial<Record<PanelSide, WorkbenchPanel>> = {};
-  for (const side of ["fields", "preview"] as const) {
-    const panel = decode(savedPanel, value[side]);
-    if (panel)
-      panels[side] = {
-        shown: panel.shown,
-        width: clampPanelWidth(panel.width),
-      };
-  }
-  return panels;
+  const fields = decode(savedPanel, value.fields);
+  const preview = decode(savedPreview, value.preview);
+  return {
+    ...(fields
+      ? {
+          fields: {
+            shown: fields.shown,
+            width: savedPanelWidth("fields", fields.width),
+          },
+        }
+      : {}),
+    ...(preview
+      ? {
+          preview: {
+            shown: preview.shown,
+            width: savedPanelWidth("preview", preview.width),
+            ...(preview.height === undefined
+              ? {}
+              : { height: clampPreviewHeight(preview.height) }),
+          },
+        }
+      : {}),
+  };
 }
 
 const position = Schema.Struct({ top: Schema.Finite, left: Schema.Finite });

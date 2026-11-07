@@ -53,6 +53,8 @@ export interface WorkbenchParts {
     | "header"
     | "heading"
     | "search"
+    | "search-row"
+    | "sections-toggle"
     | "body"
     | "empty";
   explorerTree:
@@ -242,6 +244,23 @@ export interface WorkbenchParts {
     | "text"
     | "checkbox";
 
+  panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split" | "status";
+  itemRow: "row" | "label";
+  fieldPicker:
+    | "status"
+    | "picker"
+    | "search"
+    | "hint"
+    | "list"
+    | "group"
+    | "group-label"
+    | "option"
+    | "option-label"
+    | "option-value"
+    | "empty"
+    | "detail"
+    | "detail-path"
+    | "detail-value";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description" | "docs-link";
   editToolbar:
@@ -256,6 +275,7 @@ export interface WorkbenchParts {
     | "problems-summary"
     | "problems-heading"
     | "problems-count"
+    | "problems-announcement"
     | "problems-text"
     | "problems-space"
     | "problems-resize"
@@ -319,7 +339,9 @@ export type WorkbenchIcon =
   | "property-checkbox"
   | "property-date"
   | "property-datetime"
-  | "drag";
+  | "drag"
+  | "expand-all"
+  | "collapse-all";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;
@@ -347,7 +369,24 @@ export interface WorkbenchTheme {
    * every select of a host without one, is a native `<select>`.
    */
   readonly matchSelect?: ComponentType<MatchSelectProps>;
+  /**
+   * The custom properties a side panel's region carries its drawn width and
+   * height in, which the host's classes for the `panels` parts read. A host
+   * names them in its own namespace, such as Obsidian's `--zt-*`.
+   */
+  readonly panelProperties?: PanelProperties;
 }
+
+/** The custom properties of a side panel's drawn size. */
+export interface PanelProperties {
+  readonly width: string;
+  readonly height: string;
+}
+
+const PANEL_PROPERTIES: PanelProperties = {
+  width: "--workbench-panel-width",
+  height: "--workbench-panel-height",
+};
 
 /** One choice of a Match editor select. */
 export interface MatchSelectOption {
@@ -381,6 +420,11 @@ export interface MatchSelectProps {
   /** The part the select stands as, with the host's class for it. */
   "data-part"?: string;
   className?: string;
+}
+
+/** The custom properties a side panel's region carries its drawn size in. */
+export function usePanelProperties(): PanelProperties {
+  return useContext(ThemeContext).panelProperties ?? PANEL_PROPERTIES;
 }
 
 /** The host's control for a Match editor select, if it supplies one. */

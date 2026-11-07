@@ -5,10 +5,9 @@ import { Cause, Effect, Schema, Semaphore, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
-import { apiVersion, Scope, TextFileView } from "obsidian";
+import { apiVersion, Menu, Scope, TextFileView } from "obsidian";
 import type {
   App,
-  Menu,
   TFile,
   HoverParent,
   HoverPopover,
@@ -42,7 +41,6 @@ import {
 import type {
   PartialChoice,
   PartialContext,
-  RenderDiagnostic,
   WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import {
@@ -53,21 +51,29 @@ import {
   citationExampleLabel,
   entryDiagnostics,
   fieldSnippet,
-  routeDiagnosis,
-  routeProblem,
+  fieldsActionAttributes,
+  fieldsActionKey,
+  holdPickerFocus,
+  pressFieldsAction,
+  panelSizeMenus,
+  pickPanelSize,
+  repairCommands,
+  insertionTarget,
   setAdvanced,
+  setPanelWidth,
   setPreview,
+  setPreviewHeight,
   setRoot,
   setTab,
+  showPanel,
+  HELP_PAGES,
 } from "@zotlit/workbench/ui";
-import type { WorkbenchDiagnosis } from "@zotlit/workbench/ui";
 import {
   AnnotationPane,
   diagnosticText,
   AnnotationPointer,
   useWorkbenchHost,
   createWorkbenchEditor,
-  diagnosisForOccurrence,
   NameFolderPane,
   NotePane,
   PropertiesPane,
@@ -85,6 +91,7 @@ import {
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
+  SidePanels,
   useParts,
   AnnotationSampleBar,
 } from "@zotlit/workbench/ui";
@@ -97,7 +104,9 @@ import type {
   WorkbenchModel,
   WorkbenchViewState,
   TemplateRoot,
+  PanelSide,
   PartialPlaceholderHost,
+  ViewSize,
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -109,8 +118,8 @@ import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { loadedTextFileView } from "@/lib/live-text";
+import { showMenuAtButton } from "@/lib/menu";
 import { MENU_SECTION } from "@/lib/menu-section";
-import { BaseNotice } from "@/lib/notice";
 import { Notifier, withOutcome } from "@/lib/notifier";
 import type { NoticeMessage } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
@@ -172,12 +181,15 @@ import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
 import {
   FieldsPanel,
+  FieldsPicker,
   makeFieldsActions,
   makeFieldsPanelModel,
 } from "./fields-panel";
 import type { FieldsPanelModel } from "./fields-panel";
+import { fieldsActionHost } from "./fields-popover";
 import { createTemplateWorkbenchHost, hostEffect } from "./host";
 import { workbenchAnnotationChoice, workbenchItemChoice } from "./item-choice";
+import { ViewItemRow } from "./item-row";
 import { openWorkbenchLayout, setLeafState } from "./layout";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
@@ -189,13 +201,10 @@ import {
   readSavedWorkbench,
   savedWorkbench,
   setPresentation,
-  setPanelWidth,
-  showPanel,
 } from "./model";
-import type { PanelSide, TemplateWorkbenchModel } from "./model";
+import type { TemplateWorkbenchModel } from "./model";
 import type { CreateSharedPartialOptions } from "./new-partial";
 import { openTemplateWorkbench } from "./open";
-import { WorkbenchPanels } from "./panels";
 import { readPartialChoice, writePartialChoice } from "./partial-choice-memory";
 import { createSharedPartialEffect } from "./partial-command";
 import {
@@ -203,13 +212,12 @@ import {
   WorkbenchMarkdown,
   previewTarget,
 } from "./preview-panel";
-import { selectionName } from "./selection";
 import { getSampleItem } from "./selection-data";
 import {
   originatingNoteNotice,
+  PANEL_HANDLE_WIDTH,
   templateWorkbenchButton,
   templateWorkbenchTheme,
-  selectionBar,
   selectionHint,
 } from "./theme";
 
@@ -307,12 +315,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The editor hover popover now open, which the next one replaces. */
   hoverPopover: HoverPopover | null = null;
   readonly #editor: WorkbenchEditorInstance<NativeRenderResult>;
+  /**
+   * The leaf's size, which places the side panels; null until measured.
+   * Public so a test, whose document lays nothing out, can set it.
+   */
+  readonly viewSize = Atom.make<ViewSize | null>(null);
+  /** Measures the leaf in its own window, which a pop-out has apart. */
+  #sizeObserver: ResizeObserver | null = null;
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
-  readonly #showProblemListeners = new Set<
-    (id: string | null, occurrence?: RenderDiagnostic) => void
-  >();
+  readonly #openProblemsListeners = new Set<() => void>();
   /**
    * The captured failure a refused note operation asked this editor to explain.
    * Its report remains available even when this editor's own check differs.
@@ -355,6 +368,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
   #root: Root | null = null;
   #updateActions = () => {};
+  /** The Fields view action, which the Fields picker opens under. */
+  readonly #fieldsAnchor: { current: HTMLElement | null } = { current: null };
+  /** The Fields view action and the picker it opens where the column does not fit. */
+  readonly #fieldsAction = fieldsActionHost(this.#fieldsAnchor);
   #unsubscribe: (() => void) | null = null;
   #closed = false;
   /** Counts the documents this leaf loaded, so each one mounts a fresh tree. */
@@ -671,6 +688,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         extractPartial: (source) =>
           this.#runner.provide(this.#extractPartial(source)),
         hoverParent: this,
+        fieldsAction: this.#fieldsAction,
       },
       (content) => this.provide(content),
     );
@@ -681,6 +699,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       view: this.model.view,
       partialName: Atom.map(this.model.document, (facts) => facts.partialName),
       itemData: this.model.itemData,
+      viewSize: this.viewSize,
       controller: this.#controller,
       reportContext: () => this.reportContext(this.#defaultRoot),
       mapResult: nativeResult,
@@ -812,10 +831,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       registry.subscribe(this.workbench.choices, () =>
         this.app.workspace.requestSaveLayout(),
       ),
-      registry.subscribe(model.panels, () => {
+      registry.subscribe(this.workbench.panels, () => {
         this.#updateActions();
         this.app.workspace.requestSaveLayout();
       }),
+      // The Fields action shows whether its column or its picker is open.
+      registry.subscribe(this.workbench.fieldsAction, () =>
+        this.#updateActions(),
+      ),
     );
     stops.push(
       watch(registry, model.read, (next, previous) => {
@@ -942,6 +965,41 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       profile: this.partialProfile,
     });
   }
+  /**
+   * The box the side panels and the editor share, under the item row; the
+   * leaf's content until React draws that box.
+   */
+  #panelsBox: HTMLElement | null = null;
+  /** Measures `box`, the panels' own box, from now on. A ref callback. */
+  readonly measurePanels = (box: HTMLElement | null): void => {
+    this.#panelsBox = box;
+    if (!this.#closed) this.#observeSize(this.contentEl.win);
+  };
+  /** The one observer of the panels' size, made in the window `win` that shows it. */
+  #observeSize(win: Window): void {
+    this.#sizeObserver?.disconnect();
+    const { ResizeObserver } = win as typeof window;
+    const observer = new ResizeObserver(() => this.#measure());
+    observer.observe(this.#panelsBox ?? this.contentEl);
+    this.#sizeObserver = observer;
+    this.#measure();
+  }
+  /**
+   * Measures the panels' box, whose size places the side panels. A leaf in a
+   * background tab measures nothing and keeps the size it last had.
+   */
+  #measure(): void {
+    const { clientWidth: width, clientHeight: height } =
+      this.#panelsBox ?? this.contentEl;
+    if (width === 0 || height === 0) return;
+    const current = this.registry.get(this.viewSize);
+    if (current?.width !== width || current.height !== height)
+      this.registry.set(this.viewSize, {
+        width,
+        height,
+        handle: PANEL_HANDLE_WIDTH,
+      });
+  }
   override onResize(): void {
     super.onResize();
     for (const element of this.contentEl.querySelectorAll<HTMLElement>(
@@ -963,32 +1021,25 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     };
   }
   /**
-   * Reads one problem in the Problems area, which is what a preview's Show
-   * problem and a failed deliberate Run ask for. A null id opens the area on
-   * whatever it already has selected.
+   * Opens the Problems area on whatever it already has selected, which is
+   * what a failed note operation asks for.
    */
-  showProblem(
-    id: string | null,
-    reveal = true,
-    occurrence?: RenderDiagnostic,
-  ): void {
-    for (const listener of this.#showProblemListeners) listener(id, occurrence);
+  openProblems(reveal = true): void {
+    for (const listener of this.#openProblemsListeners) listener();
     // A deliberate request brings this editor forward; a failed automatic or
     // Run attempt leaves the reader's pane where they put it.
     if (reveal) void this.app.workspace.revealLeaf(this.leaf);
   }
-  subscribeShowProblem(
-    listener: (id: string | null, occurrence?: RenderDiagnostic) => void,
-  ): () => void {
-    this.#showProblemListeners.add(listener);
+  subscribeOpenProblems(listener: () => void): () => void {
+    this.#openProblemsListeners.add(listener);
     return () => {
-      this.#showProblemListeners.delete(listener);
+      this.#openProblemsListeners.delete(listener);
     };
   }
   /** Records the captured failure that brought the reader here, and opens Problems. */
   explainArrival(arrival: ArrivingProblem): void {
     this.#arrival = arrival;
-    this.showProblem(null, false);
+    this.openProblems(false);
   }
   /** Takes one arrival so it opens one explanation. */
   takeArrival(): ArrivingProblem | null {
@@ -1010,8 +1061,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The last focused slice remains the insertion target while a sidebar has focus. */
   get insertTarget(): WorkbenchInsertTarget | null {
-    const target = this.#view.presentation.selection;
-    return target && this.#controller.hasSlice(target.slice) ? target : null;
+    return insertionTarget(this.#view.presentation.selection, this.#controller);
   }
 
   /** Inserts the field `node` names at the editor's insertion target. */
@@ -1286,7 +1336,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         defaultDraft: this.#defaultDraft,
         view: this.#view,
         choices: this.registry.get(this.workbench.choices),
-        panels: this.registry.get(this.model.panels),
+        panels: this.registry.get(this.workbench.panels),
         partial:
           this.documentKind === "partial"
             ? { context: this.partialContext, profile: this.partialProfile }
@@ -1447,13 +1497,16 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       for (const side of ["fields", "preview"] as const) {
         const panel = value.panels[side];
         if (panel)
-          this.registry.update(this.model.panels, (panels) =>
+          this.registry.update(this.workbench.panels, (panels) =>
             setPanelWidth(
               side,
               panel.width,
             )(showPanel(side, panel.shown)(panels)),
           );
       }
+      const height = value.panels.preview?.height;
+      if (height !== undefined)
+        this.registry.update(this.workbench.panels, setPreviewHeight(height));
       this.registry.update(this.workbench.choices, setPreview(value.preview));
       this.registry.update(
         this.workbench.choices,
@@ -1540,6 +1593,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   protected override onOpen(): Promise<void> {
     this.#closed = false;
     this.#release ??= holdTemplateWorkbenchModel(this.registry, this.model);
+    this.#observeSize(this.contentEl.win);
+    // An observer hears only the window it was made in: a tab moved to
+    // another window watches its size from there.
+    const migrated = this.contentEl.onWindowMigrated((win) =>
+      this.#observeSize(win),
+    );
+    this.#cleanup.defer(migrated);
     this.registerDomEvent(
       this.contentEl,
       "scroll",
@@ -1557,21 +1617,39 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       true,
     );
     // Added first, so it sits nearest More options; Obsidian prepends actions.
+    // It opens the docs a template author returns to, at the button.
+    const help: HTMLElement = this.addAction(
+      "circle-help",
+      m.workbench_help(),
+      () => this.#showHelpMenu(help),
+    );
+    // Added after Help, so it sits to its left.
     const preview = this.addAction(
       "panel-right",
       m.workbench_show_preview(),
       () => this.togglePanel("preview"),
     );
     // Added after the Preview's, so it sits to its left.
+    // It shows the Fields column, or opens the Fields picker where the column
+    // does not fit.
     const fields = this.addAction("panel-left", m.workbench_show_fields(), () =>
-      this.togglePanel("fields"),
+      pressFieldsAction(this.registry, this.workbench),
+    );
+    this.#fieldsAnchor.current = fields;
+    // Where it opens the picker, an arrow opens it and a printable key opens
+    // it searching for that key, as a Bases combobox opens.
+    this.registerDomEvent(fields, "keydown", (event) => {
+      const action = this.registry.get(this.workbench.fieldsAction);
+      const query = fieldsActionKey(action, event);
+      if (query === null) return;
+      event.preventDefault();
+      this.registry.set(this.workbench.fieldsPicker, { query });
+    });
+    this.registerDomEvent(fields, "mousedown", (event) =>
+      holdPickerFocus(this.registry.get(this.workbench.fieldsAction), event),
     );
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
-    });
-    const choose = this.addAction("search", m.workbench_choose_item(), () => {
-      if (this.#view.root === "annotation") this.startAnnotationChoice();
-      else this.startItemChoice();
     });
     const redo = this.addAction("redo-2", m.workbench_redo(), () => {
       this.#controller.redo();
@@ -1580,12 +1658,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#controller.undo();
     });
     this.#updateActions = () => {
-      choose.setAttribute(
-        "aria-label",
-        this.#view.root === "annotation"
-          ? m.workbench_choose_annotation()
-          : m.workbench_choose_item(),
-      );
       for (const [action, enabled] of [
         [undo, this.#controller.canUndo],
         [redo, this.#controller.canRedo],
@@ -1599,12 +1671,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       const { advanced } = this.#view;
       source.setAttribute("aria-pressed", String(advanced));
       source.classList.toggle("is-active", advanced);
-      const shown = this.registry.get(this.model.panels).preview.shown;
+      const shown = this.registry.get(this.workbench.panels).preview.shown;
       preview.setAttribute("aria-pressed", String(shown));
       preview.classList.toggle("is-active", shown);
-      const fieldsShown = this.registry.get(this.model.panels).fields.shown;
-      fields.setAttribute("aria-pressed", String(fieldsShown));
-      fields.classList.toggle("is-active", fieldsShown);
+      const action = this.registry.get(this.workbench.fieldsAction);
+      // A toggle for the column; a disclosure for the picker.
+      for (const [name, value] of Object.entries(
+        fieldsActionAttributes(action, this.#fieldsAction.popoverId),
+      ))
+        if (value === undefined) fields.removeAttribute(name);
+        else fields.setAttribute(name, value);
+      fields.classList.toggle("is-active", action.open);
     };
     const syncChrome = () => {
       this.#updateActions();
@@ -1642,6 +1719,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     } finally {
       this.#root?.unmount();
       this.#root = null;
+      this.#sizeObserver?.disconnect();
+      this.#sizeObserver = null;
       this.#cleanup.dispose();
       // Interrupts what still runs before the host and the editor go.
       const stopped = this.#runner[Symbol.asyncDispose]();
@@ -1685,7 +1764,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
 
   /** Shows a side panel the leaf hides, or hides one it shows. */
   togglePanel(side: PanelSide): void {
-    this.registry.update(this.model.panels, (panels) =>
+    this.registry.update(this.workbench.panels, (panels) =>
       showPanel(side, !panels[side].shown)(panels),
     );
   }
@@ -1695,19 +1774,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.pane)
-        .setTitle(m.workbench_show_preview())
-        .setIcon("panel-right")
-        .setChecked(this.registry.get(this.model.panels).preview.shown)
-        .onClick(() => this.togglePanel("preview")),
+        .setTitle(m.workbench_show_fields())
+        .setIcon("panel-left")
+        // The view action's own press: the column, or the picker where the
+        // column does not fit.
+        .setChecked(this.registry.get(this.workbench.fieldsAction).open)
+        .onClick(() => pressFieldsAction(this.registry, this.workbench)),
     );
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.pane)
-        .setTitle(m.workbench_show_fields())
-        .setIcon("panel-left")
-        .setChecked(this.registry.get(this.model.panels).fields.shown)
-        .onClick(() => this.togglePanel("fields")),
+        .setTitle(m.workbench_show_preview())
+        .setIcon("panel-right")
+        .setChecked(this.registry.get(this.workbench.panels).preview.shown)
+        .onClick(() => this.togglePanel("preview")),
     );
+    this.#addPanelSizeMenu(menu);
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.open)
@@ -1742,7 +1824,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
     // With the Fields shown, the export saves the root the panel shows.
     const target = this.templateDataTarget();
-    if (this.registry.get(this.model.panels).fields.shown)
+    if (this.registry.get(this.workbench.panels).fields.shown)
       this.fieldsActions.addExportMenuItem(menu);
     else if (target && this.#deps.pluginVersion)
       menu.addItem((item) =>
@@ -1760,7 +1842,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setDisabled(!this.file)
         .onClick(() => this.#act("open-markdown", this.#openMarkdown())),
     );
-    this.#addHelpMenu(menu);
     if (this.file?.path === this.registry.get(defaultProfilePathAtom))
       menu.addItem((item) =>
         item
@@ -1772,12 +1853,44 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       );
   }
   /**
+   * One submenu per handle the leaf draws, named as the handle is, to grow,
+   * shrink or reset its panel without a drag (WCAG 2.5.7).
+   */
+  #addPanelSizeMenu(menu: Menu): void {
+    const { registry } = this;
+    const { panels, panelDefaults } = this.workbench;
+    const menus = panelSizeMenus(workbenchM, registry.get(panels), {
+      size: registry.get(this.viewSize),
+      defaults: panelDefaults,
+    });
+    for (const { axis, label, items } of menus)
+      menu.addItem((item) => {
+        item
+          .setSection(MENU_SECTION.pane)
+          .setTitle(label)
+          .setIcon(`move-${axis}`);
+        const submenu = item.setSubmenu();
+        for (const size of items)
+          submenu.addItem((entry) =>
+            entry
+              .setTitle(size.label)
+              .setIcon(
+                size.resize === "reset"
+                  ? "rotate-ccw"
+                  : `${size.resize === "grow" ? "unfold" : "fold"}-${axis}`,
+              )
+              .setDisabled(size.disabled)
+              .onClick(() => pickPanelSize(registry, this.workbench, size)),
+          );
+      });
+  }
+  /**
    * The Preview panel's settings (ADR 0048), while the panel shows: what the
    * render reads beside the Item, which note it shows, and how it refreshes.
    */
   #addPreviewMenu(menu: Menu): void {
-    const { registry, model } = this;
-    if (!registry.get(model.panels).preview.shown) return;
+    const { registry } = this;
+    if (!registry.get(this.workbench.panels).preview.shown) return;
     const { mode, citationSet } = previewTarget(
       this.documentKind,
       this.#view.root,
@@ -1930,34 +2043,26 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /**
    * The docs pages a template author returns to: the step-by-step guide, the
    * syntax and the field references, and the community for what they miss.
+   * The Help view action opens it under itself, as the web page's Help menu
+   * lists the same pages.
    */
-  #addHelpMenu(menu: Menu): void {
-    const pages: readonly [string, string][] = [
-      [m.template_workbench_docs_guide(), "/docs/how-to/customize-a-template"],
-      [m.workbench_docs_note(), "/docs/reference/templates/syntax"],
-      [m.template_workbench_docs_data(), "/docs/reference/templates/data"],
-    ];
-    menu.addItem((item) => {
-      item
-        .setSection(MENU_SECTION.info)
-        .setTitle(m.workbench_help())
-        .setIcon("circle-help");
-      const submenu = item.setSubmenu();
-      for (const [title, path] of pages)
-        submenu.addItem((entry) =>
-          entry
-            .setTitle(title)
-            .setIcon("book-open")
-            .onClick(() => window.open(`${DOCS_SITE_URL}${path}`)),
-        );
-      submenu.addSeparator();
-      submenu.addItem((entry) =>
+  #showHelpMenu(trigger: HTMLElement): void {
+    const menu = new Menu();
+    for (const { label, path } of HELP_PAGES)
+      menu.addItem((entry) =>
         entry
-          .setTitle(m.workbench_problems_community())
-          .setIcon("messages-square")
-          .onClick(() => window.open(COMMUNITY)),
+          .setTitle(workbenchM[label]())
+          .setIcon("book-open")
+          .onClick(() => window.open(`${DOCS_SITE_URL}${path}`)),
       );
-    });
+    menu.addSeparator();
+    menu.addItem((entry) =>
+      entry
+        .setTitle(m.workbench_problems_community())
+        .setIcon("messages-square")
+        .onClick(() => window.open(COMMUNITY)),
+    );
+    showMenuAtButton(menu, trigger, "end");
   }
   /**
    * Every Shared Partial the vault holds, so the reader moves between
@@ -2471,6 +2576,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
                         1,
                       ),
                     }),
+                // An edit moves the caret the reader put; it is still theirs.
+                ...(range.placed ? { placed: range.placed } : {}),
               },
             },
           });
@@ -2563,7 +2670,7 @@ function EditorContent({
   );
   // A render reads the selected example, so the inline preview waits on a
   // choice rather than on a render while the reader has made none.
-  const annotation = useSelectedAnnotation(view);
+  const annotation = useAtomValue(workbench.examples).example;
   const advanced = useAtomValue(workbench.advanced);
   const [sourceVisited, setSourceVisited] = useState(advanced);
   useEffect(() => {
@@ -2649,17 +2756,8 @@ function EditorContent({
     ...(result?.diagnostics ?? []),
     ...(arrivalDiagnostic === undefined ? [] : [arrivalDiagnostic]),
   ]);
-  const [requestedOccurrence, setRequestedOccurrence] = useState<{
-    readonly id: string;
-    readonly occurrence: RenderDiagnostic;
-  } | null>(null);
-  const selectedDiagnoses = diagnoses.map((diagnosis) =>
-    requestedOccurrence?.id === diagnosis.id
-      ? diagnosisForOccurrence(diagnosis, requestedOccurrence.occurrence)
-      : diagnosis,
-  );
   const problems = useWorkbenchProblems({
-    diagnoses: selectedDiagnoses,
+    diagnoses,
     trigger,
     attempt,
     // A parser problem never reached a render, so the area captures its report
@@ -2674,19 +2772,8 @@ function EditorContent({
   const selectProblem = problems.select;
   const openProblems = problems.setOpen;
   useEffect(
-    () =>
-      view.subscribeShowProblem((id, occurrence) => {
-        if (id === null) {
-          setRequestedOccurrence(null);
-          openProblems(true);
-        } else {
-          setRequestedOccurrence(
-            occurrence === undefined ? null : { id, occurrence },
-          );
-          selectProblem(id);
-        }
-      }),
-    [view, selectProblem, openProblems],
+    () => view.subscribeOpenProblems(() => openProblems(true)),
+    [view, openProblems],
   );
   // A refused note operation brings its own captured diagnosis here. Consume
   // the arrival once, then keep its report available even when this editor's
@@ -2782,34 +2869,17 @@ function EditorContent({
     kind,
   ]);
   const state = view.change;
-  /** Opens the pane a routing transition names, in the leaf's view state. */
-  const route = (
-    transition: (state: WorkbenchViewState) => WorkbenchViewState,
-  ) => view.registry.update(view.model.view, transition);
-  function openProblem(
-    problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
-  ) {
-    route(routeProblem(problem, controller));
-  }
-  /** The pane one selected problem is repaired in, whichever kind it is. */
-  function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
-    const transition = routeDiagnosis(diagnosis, controller);
-    if (transition) route(transition);
-    else new BaseNotice(m.workbench_problems_location_unknown());
-  }
-  /**
-   * Hands the reader the template back where they left it. The selection each
-   * pane reports as the reader moves through it is that place, so returning is
-   * revealing it again — with the caret and the focus that go with it.
-   */
-  function returnToTemplate(): void {
-    const target = view.insertTarget;
-    setReveal(
-      target ? { ...target.range, slice: target.slice } : { from: 0, to: 0 },
-    );
-  }
-  const revealHandler = useRef(openProblem);
-  revealHandler.current = openProblem;
+  // The repair commands both hosts share. The leaf supplies only the Obsidian
+  // notice its host adapter shows.
+  const repair = repairCommands({
+    registry: view.registry,
+    model: { view: view.model.view, fieldsPicker: workbench.fieldsPicker },
+    controller,
+    host,
+    problems,
+  });
+  const revealHandler = useRef(repair.goToProblem);
+  revealHandler.current = repair.goToProblem;
   useEffect(
     () => view.subscribeReveals((target) => revealHandler.current(target)),
     [view],
@@ -2822,9 +2892,6 @@ function EditorContent({
     // whether a reading fits beside the source is the pane's own question
     // rather than the window's.
     <div className="zt:@container-[size]/workbench-editor zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-sm">
-      {/* A Citation Template renders an example set, not the note of an Item,
-          so its selection is the preview pane's own. */}
-      {kind === "profile" && <EditorHeader view={view} />}
       {originatingNote && (
         <div
           data-part="originating-note"
@@ -2989,10 +3056,7 @@ function EditorContent({
                     <AnnotationSelection view={view} />
                   ) : null
                 }
-                onOpenAnnotation={() => {
-                  state.setTab("annotation");
-                  state.setRoot("annotation");
-                }}
+                onOpenAnnotation={repair.openAnnotationBox}
                 partials={partialsFor("note")}
                 reveal={advanced ? null : reveal}
                 onSelection={(range) => {
@@ -3002,13 +3066,7 @@ function EditorContent({
               {controller.noteRegions.annotationCalls.length === 0 && (
                 <AnnotationPointer
                   disabled={controller.readOnly}
-                  onInsert={() => {
-                    const { repaired, caret } =
-                      controller.insertAnnotationLoop();
-                    setReveal({ from: caret, to: caret });
-                    if (repaired)
-                      host.notice(m.workbench_annotation_section_added());
-                  }}
+                  onInsert={repair.insertAnnotationLoop}
                 />
               )}
             </TabPanel>
@@ -3119,44 +3177,48 @@ function EditorContent({
       </div>
       <ProblemsFooter
         problems={problems}
-        onOpen={openDiagnosis}
-        onReturn={returnToTemplate}
+        onOpen={repair.openDiagnosis}
+        onReturn={repair.returnToTemplate}
       />
     </div>
   );
   return (
     <WorkbenchDiagnosticsProvider
-      value={selectedDiagnoses}
+      value={problems.diagnoses}
       onReveal={selectProblem}
     >
-      <WorkbenchPanels
-        model={view.model}
-        panels={{
-          fields: {
-            label: m.workbench_view_fields(),
-            resizeLabel: m.workbench_fields_resize(),
-            content: <FieldsPanel view={view} actions={view.fieldsActions} />,
-          },
-          preview: {
-            label: m.workbench_view_preview(),
-            resizeLabel: m.workbench_preview_resize(),
-            content: (
-              <PreviewPanel
-                view={view}
-                showProblem={(diagnostic) =>
-                  view.showProblem(
-                    diagnostic === null ? null : renderDiagnosis(diagnostic).id,
-                    false,
-                    diagnostic ?? undefined,
-                  )
-                }
-              />
-            ),
-          },
-        }}
-      >
-        {content}
-      </WorkbenchPanels>
+      {/* The item row spans the panels; the box under it is the view the
+          panels and the editor share, which the view measures to place them. */}
+      <div className="zt:flex zt:h-full zt:min-h-0 zt:flex-col">
+        <ViewItemRow view={view} />
+        <div
+          ref={view.measurePanels}
+          data-workbench-panels=""
+          className="zt:min-h-0 zt:flex-1"
+        >
+          <SidePanels
+            panels={{
+              fields: {
+                label: m.workbench_view_fields(),
+                resizeLabel: m.workbench_fields_resize(),
+                content: (
+                  <FieldsPanel view={view} actions={view.fieldsActions} />
+                ),
+                picker: <FieldsPicker view={view} />,
+              },
+              preview: {
+                label: m.workbench_view_preview(),
+                resizeLabel: m.workbench_preview_resize(),
+                content: (
+                  <PreviewPanel view={view} showProblem={repair.showProblem} />
+                ),
+              },
+            }}
+          >
+            {content}
+          </SidePanels>
+        </div>
+      </div>
     </WorkbenchDiagnosticsProvider>
   );
 }
@@ -3173,46 +3235,5 @@ function AnnotationSelection({ view }: { view: TemplateWorkbenchView }) {
         view.registry.update(view.workbench.choices, chooseAnnotation(id))
       }
     />
-  );
-}
-
-/**
- * The example the render reads, live as the reader chooses another. The pane
- * title carries the file, so the header names the selected data itself.
- */
-function useSelectedAnnotation(view: TemplateWorkbenchView) {
-  return useAtomValue(view.workbench.examples).example;
-}
-
-function EditorHeader({ view }: { view: TemplateWorkbenchView }) {
-  const root = useAtomValue(view.workbench.root);
-  const item = useAtomValue(view.workbench.item);
-  const title = useAtomValue(view.model.title);
-  const annotation = useSelectedAnnotation(view);
-  const name = selectionName({
-    item: item && { id: item.id, title },
-    annotation,
-    annotationMode: root === "annotation",
-  });
-  const { row, caption, trigger } = selectionBar({ placement: "header" });
-  return (
-    <div className={row()}>
-      {name && <p className={caption()}>{name}</p>}
-      <button
-        className={trigger()}
-        onClick={() =>
-          root === "annotation"
-            ? view.startAnnotationChoice()
-            : view.startItemChoice()
-        }
-      >
-        <Icon name="search" />
-        <span>
-          {root === "annotation"
-            ? m.workbench_choose_annotation()
-            : m.workbench_choose_item()}
-        </span>
-      </button>
-    </div>
   );
 }

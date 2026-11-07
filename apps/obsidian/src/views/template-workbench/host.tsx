@@ -366,7 +366,7 @@ export function createTemplateWorkbenchHost(
   } & Partial<
       Pick<
         WorkbenchHost,
-        "markdown" | "partials" | "openCitationEngineSettings"
+        "markdown" | "partials" | "openCitationEngineSettings" | "fieldsAction"
       >
     > & {
       /** The view an editor hover popover belongs to; one popover shows at a time. */

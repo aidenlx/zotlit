@@ -10,12 +10,14 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { ReactNode } from "react";
 
 import { createWorkbenchEditor, WorkbenchEditorProvider } from "./editor";
+import { PICKER_MOVE_KEYS } from "./field-picker";
 import {
   WorkbenchClipboardError,
   WorkbenchHostError,
   WorkbenchHostProvider,
 } from "./host";
 import type {
+  WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchMenuRequest,
   WorkbenchPreferenceScope,
@@ -28,6 +30,7 @@ import type {
   WorkbenchModel,
   WorkbenchViewState,
 } from "./model";
+import type { ViewSize, WorkbenchPanels } from "./panel-layout";
 import { m } from "./test-messages";
 import { WorkbenchThemeProvider } from "./theme";
 import type { WorkbenchClassMap, WorkbenchTheme } from "./theme";
@@ -76,6 +79,8 @@ export interface FakeHost extends WorkbenchHost {
     confirms: string[];
     /** Every text handed to the clipboard, in order. */
     copies: string[];
+    /** How many times the tree moved focus to the Fields action. */
+    actionFocuses: number;
   };
   /** Every render asked for, in order, none of them answered yet. */
   readonly renders: PendingRender[];
@@ -131,7 +136,14 @@ export function fakeHost(): FakeHost {
   const host: FakeHost = {
     messages: m,
     getLocale: () => "en",
-    calls: { menus: [], suggesters: [], notices: [], confirms: [], copies: [] },
+    calls: {
+      menus: [],
+      suggesters: [],
+      notices: [],
+      confirms: [],
+      copies: [],
+      actionFocuses: 0,
+    },
     renders,
     started,
     hold: false,
@@ -215,6 +227,11 @@ export function fakeHost(): FakeHost {
       ),
     },
     insertTarget: () => null,
+    fieldsAction: {
+      popover: FakeFieldsPopover,
+      popoverId: "fake-fields-picker",
+      focus: () => void host.calls.actionFocuses++,
+    },
     persistence: {
       read: (scope, name) => preferences.get(key(scope, name)) ?? null,
       write: (scope, name, value) => {
@@ -224,6 +241,36 @@ export function fakeHost(): FakeHost {
     },
   };
   return host;
+}
+
+/** The picker's surface, which binds its keys as a host would and closes on Escape. */
+function FakeFieldsPopover({
+  open,
+  onClose,
+  keys,
+  labelledBy,
+  returnFocus,
+  children,
+}: WorkbenchFieldsPopoverProps) {
+  // A closed surface says whether its focus went back to the action.
+  if (!open) return <span hidden data-return-focus={String(returnFocus)} />;
+  return (
+    <div
+      id="fake-fields-picker"
+      role="dialog"
+      aria-labelledby={labelledBy}
+      onKeyDown={(event) => {
+        const move = PICKER_MOVE_KEYS[event.key];
+        if (move) keys.move(move);
+        else if (event.key === "Enter") keys.choose();
+        else if (event.key === "Escape") onClose();
+        else return;
+        event.preventDefault();
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 /** Every part wears `part-<name>`, so a test can see the map land. */
@@ -260,7 +307,14 @@ export function mount(
   {
     source = DEFAULT_PROFILE_SOURCE,
     state,
-  }: { source?: string; state?: Partial<WorkbenchViewState> } = {},
+    panels,
+    viewSize,
+  }: {
+    source?: string;
+    state?: Partial<WorkbenchViewState>;
+    panels?: WorkbenchPanels;
+    viewSize?: Atom.Atom<ViewSize | null>;
+  } = {},
 ): Mounted {
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(source);
@@ -274,6 +328,8 @@ export function mount(
     registry,
     runtime: TEST_RUNTIME,
     ...(state ? { state } : {}),
+    ...(panels ? { panels } : {}),
+    ...(viewSize ? { viewSize } : {}),
   });
   const { model } = editor;
   const wrap = (children: ReactNode) => (

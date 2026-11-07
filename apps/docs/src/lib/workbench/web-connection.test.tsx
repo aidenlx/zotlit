@@ -837,6 +837,12 @@ describe("a Workbench Connection", () => {
       expect(title(page.host)).toBe("Connected profile"),
     );
     const snippet = "{{ zt.title }}";
+    // The field goes where the reader puts the caret in the note.
+    const note = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>(".cm-editor")!,
+    )!;
+    act(() => note.focus());
+    await page.settle();
     press(
       fieldRow(page.host, m.workbench_field_title()),
       m.workbench_fields_put_in_note(),

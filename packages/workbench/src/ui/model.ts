@@ -1,6 +1,7 @@
 // The Workbench model: what one editor shows, as atoms that pure transitions change.
 // The document controller stays the authority on the document's text; the model
-// holds the controller in use, the reader's choices, and the render scheduler.
+// holds the controller in use, the reader's choices, the side panels, and the
+// render scheduler.
 
 import type { WorkbenchDocumentAtoms } from "#/document/atoms";
 import type { WorkbenchDocumentController } from "#/document/controller";
@@ -35,6 +36,16 @@ import type {
   WorkbenchMatchResult,
 } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
+import { INITIAL_PANELS, placePanels, showPanel } from "./panel-layout";
+import type {
+  FieldsAction,
+  FieldsPicker,
+  PanelHandle,
+  PanelPlacement,
+  ViewSize,
+  WorkbenchPanels,
+} from "./panel-layout";
+import { patch, patchAt } from "./patch";
 import { makeRenderSchedulerAtoms } from "./scheduler-atoms";
 import type {
   RenderSchedulerAtoms,
@@ -169,30 +180,7 @@ export const INITIAL_CHOICES: WorkbenchChoices = {
   },
 };
 
-/** Applies `changes`, or keeps `state` itself when every field already holds. */
-export const patch =
-  <S extends object>(changes: Partial<S>) =>
-  (state: S): S =>
-    (Object.keys(changes) as (keyof S)[]).every(
-      (key) => state[key] === changes[key],
-    )
-      ? state
-      : { ...state, ...changes };
-
-/**
- * Applies `changes` to the object `state` holds at `key`, or keeps `state`
- * itself when every field already holds.
- */
-export const patchAt =
-  <S extends object, K extends keyof S>(
-    key: K,
-    changes: Partial<S[K] & object>,
-  ) =>
-  (state: S): S => {
-    const current = state[key] as S[K] & object;
-    const next = patch(changes)(current);
-    return next === current ? state : { ...state, [key]: next };
-  };
+export { patch, patchAt };
 
 export const setTab = (tab: WorkbenchTab) => patch<WorkbenchViewState>({ tab });
 export const chooseItem = (item: WorkbenchItemChoice | null) =>
@@ -250,6 +238,13 @@ export interface WorkbenchModelOptions<R extends TemplateRenderResult> {
   readonly itemData?: (
     input: WorkbenchItemDataInput,
   ) => Atom.Atom<WorkbenchItemData>;
+  /** The panels to start from; a new editor shows neither. */
+  readonly panels?: WorkbenchPanels;
+  /**
+   * The size of the view the panels and the editor share, which the host
+   * measures from its own container; null until it has.
+   */
+  readonly viewSize?: Atom.Atom<ViewSize | null>;
   /** The host's one runtime; a host never builds one per editor. */
   readonly runtime: WorkbenchRuntime;
   /** The host whose Match reads the model runs, read at each read. */
@@ -298,6 +293,31 @@ export interface WorkbenchModel<
   readonly runtime: WorkbenchRuntime;
   readonly view: Atom.Writable<WorkbenchViewState>;
   readonly choices: Atom.Writable<WorkbenchChoices>;
+  /** Which side panels the editor shows, and how wide and tall; the host saves them. */
+  readonly panels: Atom.Writable<WorkbenchPanels>;
+  /** The panels the editor started from, whose sizes a reset returns to. */
+  readonly panelDefaults: WorkbenchPanels;
+  /**
+   * The handle a size menu entry last sized, whose new size the panels
+   * announce; null once the reader sizes a panel with its handle, whose own
+   * value a screen reader reads. Never saved.
+   */
+  readonly sizedFromMenu: Atom.Writable<PanelHandle | null>;
+  /** The size of the view the host measured, or null until it has. */
+  readonly viewSize: Atom.Atom<ViewSize | null>;
+  /** Where each panel goes in the view as it is now; never saved. */
+  readonly placement: Atom.Atom<PanelPlacement>;
+  /**
+   * The Fields picker standing open over the editor, or null while it is
+   * closed. It opens only while the Fields Panel's column does not fit, and
+   * closes when the column fits again; never saved.
+   */
+  readonly fieldsPicker: Atom.Writable<FieldsPicker | null>;
+  /**
+   * What the Fields action opens and whether that is open. A write presses
+   * the action: it shows or hides the column, or opens or closes the picker.
+   */
+  readonly fieldsAction: Atom.Writable<FieldsAction, void>;
   /**
    * Makes an Item the choice. An Item the reader picked is the Citation set
    * they asked to see, so the built-in example that outranks it stands down.
@@ -369,6 +389,8 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
   choices: initialChoices,
   partialName = Atom.make<string | null>(null),
   itemData: deriveItemData,
+  panels: initialPanels = INITIAL_PANELS,
+  viewSize = Atom.make<ViewSize | null>(null),
   runtime,
   host,
   render,
@@ -456,6 +478,16 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
       snapshot: get(snapshot),
     };
   });
+  const panels = Atom.make(initialPanels);
+  const placement = Atom.withEquality(
+    Atom.make((get) => placePanels(get(panels), get(viewSize))),
+    sameFields,
+  );
+  const picker = Atom.make<FieldsPicker | null>(null);
+  const fieldsPicker = Atom.writable(
+    (get) => (get(placement).fields === "popover" ? get(picker) : null),
+    (ctx, next: FieldsPicker | null) => ctx.set(picker, next),
+  );
   const matchRetry = Atom.make(0);
   const scheduler = makeRenderSchedulerAtoms({
     runtime,
@@ -470,6 +502,26 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     runtime,
     view,
     choices,
+    panels,
+    panelDefaults: initialPanels,
+    sizedFromMenu: Atom.make<PanelHandle | null>(null),
+    viewSize,
+    placement,
+    fieldsPicker,
+    fieldsAction: Atom.writable(
+      (get): FieldsAction =>
+        get(placement).fields === "column"
+          ? { opens: "column", open: get(panels).fields.shown }
+          : { opens: "popover", open: get(fieldsPicker) !== null },
+      (ctx) => {
+        if (ctx.get(placement).fields === "popover")
+          ctx.set(fieldsPicker, ctx.get(fieldsPicker) ? null : { query: "" });
+        else {
+          const current = ctx.get(panels);
+          ctx.set(panels, showPanel("fields", !current.fields.shown)(current));
+        }
+      },
+    ),
     pick: Atom.writable(
       (get) => get(item),
       (ctx, choice: WorkbenchItemChoice) => {
@@ -582,6 +634,18 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
 }
 
 /**
+ * Presses the Fields action: shows or hides the Fields column, or opens or
+ * closes the picker where the column does not fit. The view action, the
+ * pane menu and the web View menu each press it.
+ */
+export function pressFieldsAction(
+  registry: AtomRegistry.AtomRegistry,
+  model: Pick<WorkbenchModel, "fieldsAction">,
+): void {
+  registry.set(model.fieldsAction, undefined);
+}
+
+/**
  * Keeps the model's writable state and its render alive in `registry`.
  * @returns Releases them.
  */
@@ -592,12 +656,21 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
   const releases = [
     model.view,
     model.choices,
+    model.panels,
+    model.sizedFromMenu,
+    model.viewSize,
     model.itemData,
     model.controller,
     model.document.source,
     model.document.revision,
     model.scheduler.state,
   ].map((atom) => registry.mount(atom as Atom.Atom<unknown>));
+  // A picker the view closed by widening stays closed when it narrows again.
+  releases.push(
+    registry.subscribe(model.placement, ({ fields }) => {
+      if (fields === "column") registry.set(model.fieldsPicker, null);
+    }),
+  );
   return () => {
     for (const release of releases.reverse()) release();
   };

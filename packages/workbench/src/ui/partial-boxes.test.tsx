@@ -89,6 +89,27 @@ it("reveals the raw call while the selection touches it", () => {
   expect(view.contentDOM.textContent).not.toContain('{% render "authors" %}');
 });
 
+// The web Workbench supplies no partial host: its calls read as the source
+// they are, wherever the selection is.
+it("keeps every call as source in a pane with no partial host", () => {
+  const host = fakeHost();
+  const controller = new WorkbenchDocumentController(withCalls());
+  const { container } = render(
+    <WorkbenchHostProvider host={host}>
+      <NotePane
+        controller={controller}
+        preview={null}
+        formatProblem={null}
+        onOpenAnnotation={() => {}}
+      />
+    </WorkbenchHostProvider>,
+  );
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  act(() => view.dispatch({ selection: { anchor: 0 } }));
+  expect(view.contentDOM.textContent).toContain('{% render "authors" %}');
+  expect(view.contentDOM.textContent).toContain("{% include 'venue-line' %}");
+});
+
 it("opens the partial's own text under the call and routes Edit to its editor", async () => {
   const { actions, calls } = placeholders(withCalls());
   const toggles = screen.getAllByRole("button", {

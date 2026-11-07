@@ -52,6 +52,7 @@ import {
 import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "./__fixtures__";
 import { createSharedPartialEffect } from "./partial-command";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
+import { windowMigration } from "./test-window-migration";
 import {
   TemplateWorkbenchView,
   originatingNoteUpdateNotice,
@@ -1504,7 +1505,7 @@ An annotation.
       citationExample: "one-item",
       panels: {
         fields: { shown: false, width: 400 },
-        preview: { shown: false, width: 400 },
+        preview: { shown: false, width: 400, height: 40 },
       },
       preview: {
         mode: "create",
@@ -1634,6 +1635,25 @@ An annotation.
       view.contentEl.remove();
     }
     expect(view.insertTemplateField(node)).toBe(false);
+  });
+
+  // A pane that only came on screen reports where its caret starts; the
+  // start of the note is no place the reader chose.
+  it("refuses an insertion before the reader places the caret", async () => {
+    const { view } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => view.open());
+      const before = view.getViewData();
+      expect(view.registry.get(view.fields.canInsert)).toBe(false);
+      await act(() => {
+        expect(view.insertField("{{ zt.title }}")).toBe(false);
+      });
+      expect(view.getViewData()).toBe(before);
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
   });
 
   it("offers the Fields panel's insert while the editor takes edits", async () => {
@@ -2102,7 +2122,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     citationExample: "one-item",
     panels: {
       fields: { shown: false, width: 400 },
-      preview: { shown: false, width: 400 },
+      preview: { shown: false, width: 400, height: 40 },
     },
     preview: {
       mode: "create",
@@ -2170,6 +2190,19 @@ language: liquid
       advanced: false,
     });
     expect(sourceAction(view).style.display).toBe("none");
+  });
+
+  it("names the Citation example set in the item row as an example", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const row = view.contentEl.querySelector("[data-workbench-item-row]");
+    expect(row?.textContent).toContain(
+      m.workbench_example_title({
+        name: m.workbench_citation_example_one_item(),
+      }),
+    );
   });
 
   it("reveals a Citation Template problem in the one editor it opens with", async () => {
@@ -3424,6 +3457,108 @@ describe("the side panels of the Template Workbench View", () => {
     expect(restored.view.getState()).toEqual(saved);
     await act(async () => restored.view.close());
   });
+
+  // A ResizeObserver hears only the window it was made in, so a tab moved to
+  // another window watches its size from there (#1952).
+  it("measures the leaf from the window its tab moves to", async () => {
+    using migration = windowMigration();
+    const { view } = setup();
+    await act(async () => view.open());
+    // The box under the item row, which the panels and the editor share.
+    const box = view.contentEl.querySelector("[data-workbench-panels]")!;
+    expect(box).not.toBeNull();
+    const size = { width: 1200, height: 800 };
+    for (const [name, axis] of [
+      ["clientWidth", "width"],
+      ["clientHeight", "height"],
+    ] as const)
+      Object.defineProperty(box, name, {
+        configurable: true,
+        get: () => size[axis],
+      });
+    let resized: (() => void) | null = null;
+    const observed: Element[] = [];
+    class PopoutResizeObserver {
+      constructor(listener: () => void) {
+        resized = listener;
+      }
+      observe(element: Element) {
+        observed.push(element);
+      }
+      disconnect() {}
+    }
+    // The window the tab lands in brings its own observer.
+    vi.stubGlobal("ResizeObserver", PopoutResizeObserver);
+    await act(async () => migration.move(window));
+    vi.unstubAllGlobals();
+    expect(observed).toEqual([box]);
+    size.width = 520;
+    await act(async () => resized?.());
+    expect(view.registry.get(view.viewSize)).toMatchObject({
+      width: 520,
+      height: 800,
+    });
+    await act(async () => view.close());
+  });
+
+  // #1954: the leaf's size places the Preview; it never changes what shows.
+  it("puts the Preview under a narrow leaf and beside a wide one, keeping the saved panels", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const saved = view.getState();
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 560, height: 800 }),
+    );
+    const split = handleOf(view, m.workbench_preview_resize());
+    expect(split.getAttribute("aria-orientation")).toBe("horizontal");
+    expect(region(view, m.workbench_view_preview())).not.toBeNull();
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    expect(
+      handleOf(view, m.workbench_preview_resize()).getAttribute(
+        "aria-orientation",
+      ),
+    ).toBe("vertical");
+    expect(view.getState()).toEqual(saved);
+    await act(async () => view.close());
+  });
+
+  it("restores the Preview's height under the editor with the view state", async () => {
+    const original = setup();
+    await act(async () => original.view.open());
+    await act(async () =>
+      actionOf(original.view, m.workbench_show_preview()).click(),
+    );
+    await act(async () =>
+      original.view.registry.set(original.view.viewSize, {
+        width: 560,
+        height: 800,
+      }),
+    );
+    await press(
+      handleOf(original.view, m.workbench_preview_resize()),
+      "ArrowUp",
+    );
+    const saved = original.view.getState();
+    await act(async () => original.view.close());
+    const restored = setup();
+    await act(async () => restored.view.setState(saved, { history: false }));
+    await act(async () => restored.view.open());
+    await act(async () =>
+      restored.view.registry.set(restored.view.viewSize, {
+        width: 560,
+        height: 800,
+      }),
+    );
+    expect(
+      handleOf(restored.view, m.workbench_preview_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe("45");
+    await act(async () => restored.view.close());
+  });
   const paneMenu = (view: TemplateWorkbenchView) => {
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
@@ -3431,6 +3566,69 @@ describe("the side panels of the Template Workbench View", () => {
   };
   const entry = (view: TemplateWorkbenchView, title: string) =>
     paneMenu(view).find((item) => item.title === title);
+
+  it("opens the docs from the Help view action, which the pane menu leaves to it", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const actions = (view as unknown as MockItemView).actions.map((element) =>
+      element.getAttribute("aria-label"),
+    );
+    // The item row holds the item's chooser; the header holds Help.
+    expect(actions).toContain(m.workbench_help());
+    expect(actions).not.toContain(m.workbench_choose_item());
+    expect(entry(view, m.workbench_help())).toBeUndefined();
+    const before = Menu.instances.length;
+    await act(async () => actionOf(view, m.workbench_help()).click());
+    const menu = Menu.instances[before]!;
+    expect(menu.items.map((item) => item.title)).toEqual([
+      m.workbench_docs_guide(),
+      m.workbench_docs_note(),
+      m.workbench_docs_data(),
+      m.workbench_problems_community(),
+    ]);
+    expect(menu.position).not.toBeNull();
+  });
+
+  // #1956: the pane menu sizes a panel; the End-to-end Run walks every handle.
+  it("sizes a panel from the pane menu, and saves the size", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () => actionOf(view, m.workbench_show_fields()).click());
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    await act(async () =>
+      entry(view, m.workbench_fields_resize())!
+        .submenu!.items.find(
+          (item) => item.title === m.workbench_panel_narrower(),
+        )!
+        .click(),
+    );
+    expect(
+      handleOf(view, m.workbench_fields_resize()).getAttribute("aria-valuenow"),
+    ).toBe("336");
+    const restored = setup();
+    cleanup.defer(() => act(async () => restored.view.close()));
+    await act(async () =>
+      restored.view.setState(view.getState(), { history: false }),
+    );
+    await act(async () => restored.view.open());
+    await act(async () =>
+      restored.view.registry.set(restored.view.viewSize, {
+        width: 1200,
+        height: 800,
+      }),
+    );
+    expect(
+      handleOf(restored.view, m.workbench_fields_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe("336");
+  });
 
   it("shows the editor's own render of the chosen Item in the Preview panel", async () => {
     await using cleanup = new AsyncDisposableStack();
@@ -3460,7 +3658,15 @@ describe("the side panels of the Template Workbench View", () => {
     expect(panel.querySelector("h2")?.textContent).toBe(
       m.workbench_result_heading(),
     );
-    expect(panel.textContent).toContain(SAMPLE_ITEMS[0]!.item.title);
+    // The view's one item row names the Item; the panel's head holds only
+    // what is the Preview's own.
+    const title = SAMPLE_ITEMS[0]!.item.title!;
+    expect(panel.textContent).not.toContain(title);
+    expect(
+      view.contentEl.textContent.split(
+        m.workbench_example_title({ name: title }),
+      ),
+    ).toHaveLength(2);
     expect(panel.textContent).toContain(m.workbench_preview_on_demand());
     expect(panel.textContent).toContain("A rendered paper note");
   });
@@ -3628,6 +3834,36 @@ describe("the Fields panel of the Template Workbench View", () => {
     await act(async () => entry?.click());
     expect(fields(view)).toBeNull();
     expect(show.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => view.close());
+  });
+
+  // #1955: where the column does not fit, the action opens the Fields picker.
+  it("opens the Fields picker from the view action in a narrow leaf, and keeps the panel's shown flag", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    const show = actionOf(view, m.workbench_show_fields());
+    await act(async () => show.click());
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 560, height: 800 }),
+    );
+    expect(fields(view)).toBeNull();
+    expect(show.getAttribute("aria-pressed")).toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    // Obsidian opens a popover only under an anchor in the document.
+    document.body.append(show);
+    await act(async () => show.click());
+    // The picker's rows, keys and focus are proved in the running app, with
+    // trusted input (template-workbench.e2e.ts).
+    expect(show.getAttribute("aria-expanded")).toBe("true");
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(view.getState()).toMatchObject({
+      panels: { fields: { shown: true } },
+    });
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1400, height: 800 }),
+    );
+    expect(fields(view)).not.toBeNull();
+    expect(show.getAttribute("aria-pressed")).toBe("true");
     await act(async () => view.close());
   });
 

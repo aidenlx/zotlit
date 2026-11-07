@@ -6,8 +6,8 @@
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Effect } from "effect";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { testItemSeed } from "@zotlit/item-query";
 import type { RenderRequest } from "@zotlit/workbench/render";
@@ -47,6 +47,7 @@ import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
 import { webCompletion } from "./completion";
+import { webFieldsAction } from "./fields-popover";
 import { webHover } from "./hover";
 import { Rendering } from "./rendering";
 import { ResultSheet } from "./result-sheet";
@@ -135,7 +136,14 @@ export function useWebHost({
   /** Puts a sentence on the status line. */
   notice: (text: string) => void;
   insertTarget: () => WorkbenchInsertTarget | null;
-}): { host: WorkbenchHost; overlays: ReactNode } {
+}): {
+  host: WorkbenchHost;
+  overlays: ReactNode;
+  /** The header's Fields action, which the Fields picker opens under. */
+  fieldsAnchor: RefObject<HTMLButtonElement | null>;
+} {
+  const fieldsAnchor = useRef<HTMLButtonElement>(null);
+  const fieldsPopoverId = useId();
   const [menu, setMenu] = useState<WorkbenchMenuRequest | null>(null);
   const [dialog, setDialog] = useState<WorkbenchDialogRequest | null>(null);
   const [confirm, setConfirm] = useState<Pending<
@@ -202,6 +210,7 @@ export function useWebHost({
         customFields: Effect.suspend(() => latest.current.data.customFields),
       },
       insertTarget: () => latest.current.insertTarget(),
+      fieldsAction: webFieldsAction(fieldsAnchor, fieldsPopoverId),
       persistence: {
         read(scope, key) {
           try {
@@ -228,7 +237,7 @@ export function useWebHost({
         },
       },
     }),
-    [bridge],
+    [bridge, fieldsPopoverId],
   );
 
   function answerConfirm(value: boolean) {
@@ -412,5 +421,5 @@ export function useWebHost({
     </>
   );
 
-  return { host, overlays };
+  return { host, overlays, fieldsAnchor };
 }

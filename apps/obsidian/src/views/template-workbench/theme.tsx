@@ -52,6 +52,8 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   "property-date": "calendar",
   "property-datetime": "clock",
   drag: "grip-vertical",
+  "expand-all": "chevrons-up-down",
+  "collapse-all": "chevrons-down-up",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =
@@ -62,6 +64,12 @@ export const templateWorkbenchButton =
  * below it with the action. Template and note names come from the vault, so
  * each one wraps anywhere.
  */
+/**
+ * The width each column's handle takes between the column and the editor,
+ * in pixels: the `zt:w-1` of the `edge` part below. The placement counts it.
+ */
+export const PANEL_HANDLE_WIDTH = 4;
+
 export const originatingNoteNotice = {
   root: "zt:mx-3 zt:mb-2 zt:flex zt:min-w-0 zt:flex-col zt:gap-2 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal",
   guidance: "zt:min-w-0 zt:space-y-0.5",
@@ -106,7 +114,7 @@ export const selectionOptionContent = cn(
 export const selectionOptionLabel = "zt:font-medium zt:text-foreground";
 /**
  * A control row that names the selected data beside the control that changes it.
- * `placement` decides which part hides outside a sidebar: the whole row, or only the trigger.
+ * In a sidebar placement, the row shows only where Obsidian hides the view header.
  */
 export const selectionBar = tv({
   slots: {
@@ -118,11 +126,6 @@ export const selectionBar = tv({
   },
   variants: {
     placement: {
-      /** The pane header always names the selection; only the trigger waits for a sidebar. */
-      header: {
-        row: "zt:flex zt:shrink-0 zt:px-3",
-        trigger: "zt-workbench-sidebar-control zt:my-1",
-      },
       /** A row inside the result appears only where Obsidian hides the view header. */
       sidebar: { row: "zt-workbench-sidebar-control" },
     },
@@ -202,6 +205,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
   // tooltips above the popover or chooser page they sit in.
   expressionExtension: [hostedEditor, popoverTooltips],
   expressionCompletion: nativeCompletion(expressionOption),
+  // The side panels carry their drawn sizes in the plugin's own namespace.
+  panelProperties: { width: "--zt-panel-width", height: "--zt-panel-height" },
   classes: {
     match: {
       "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",
@@ -286,7 +291,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       header:
         "zt-workbench-sidebar-control zt:items-center zt:justify-between zt:gap-x-2 zt:px-3",
       heading: "",
-      search: "zt:mx-3 zt:w-auto zt:min-w-0 zt:shrink-0",
+      "search-row":
+        "zt:mx-3 zt:flex zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-1",
+      search: "zt:w-auto zt:min-w-0 zt:flex-1",
+      "sections-toggle": "clickable-icon zt:shrink-0",
       body: "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-2 zt:pb-3",
       empty:
         "zt:px-1 zt:py-3 zt:text-muted-foreground zt:text-sm zt:leading-normal",
@@ -414,6 +422,52 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "pill-text": "multi-select-pill-content",
       checkbox: "metadata-input-checkbox",
       empty: "metadata-input-longtext",
+    },
+    // The one row above the panels that names the item they all read: its
+    // name first, then its chooser at the trailing end.
+    itemRow: {
+      row: "zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:border-b zt:border-border zt:px-3 zt:py-1",
+      label:
+        "zt:min-w-0 zt:flex-1 zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground",
+    },
+    // The side panels: the model places them, so the classes only draw each
+    // placement. Each column draws the width the model holds it to, through
+    // the width custom property; the Preview under the editor takes the
+    // height the model computes.
+    panels: {
+      panels: "zt:flex zt:h-full zt:min-w-0",
+      stack:
+        "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:data-[state=below]:flex-col",
+      status: "zt:sr-only",
+      editor: "zt:min-h-0 zt:min-w-0 zt:flex-1",
+      panel:
+        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--zt-panel-width) zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=below]:h-(--zt-panel-height)",
+      edge: "zt:w-1 zt:shrink-0 zt:cursor-col-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
+      split:
+        "zt:h-1 zt:shrink-0 zt:cursor-row-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
+    },
+    // The Fields picker on its popover: the rows a Bases toolbar menu draws,
+    // with the active row's whole value in a scrolling area under them.
+    fieldPicker: {
+      status: "zt:sr-only",
+      picker: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col",
+      search: "zt:m-(--size-4-1) zt:shrink-0",
+      hint: "zt:shrink-0 zt:px-(--size-4-2) zt:pb-(--size-2-2) zt:text-xs zt:text-muted-foreground",
+      list: "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:overscroll-contain zt:p-(--menu-padding)",
+      "group-label":
+        "zt:ps-1.5 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground",
+      option:
+        "zt:flex zt:cursor-(--cursor) zt:items-baseline zt:gap-(--size-4-2) zt:rounded-sm zt:p-(--size-2-2) zt:ps-(--size-2-3) zt:text-sm zt:data-[state=active]:bg-muted",
+      "option-label": "zt:shrink-0 zt:text-foreground",
+      "option-value":
+        "zt:min-w-0 zt:flex-1 zt:truncate zt:text-end zt:text-xs zt:text-muted-foreground",
+      empty:
+        "zt:shrink-0 zt:px-2 zt:text-xs zt:text-muted-foreground zt:empty:hidden",
+      detail:
+        "zt:max-h-32 zt:shrink-0 zt:overflow-y-auto zt:overscroll-contain zt:border-t-(length:--border-width) zt:border-border zt:px-(--size-4-2) zt:py-(--size-2-3) zt:text-xs zt:empty:hidden",
+      "detail-path": "zt:block zt:font-mono zt:text-muted-foreground",
+      "detail-value":
+        "zt:mt-1 zt:block zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-foreground",
     },
     tabBar: {
       "tab-bar":
@@ -588,6 +642,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "problems-heading": "zt:font-semibold",
       // A value that changes as problems are repaired, so its digits hold
       // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-announcement": "zt:sr-only",
       "problems-count":
         "zt:shrink-0 zt:rounded-sm zt:bg-(--background-modifier-error)/10 zt:text-foreground zt:px-1.5 zt:font-medium zt:tabular-nums zt:whitespace-nowrap",
       "problems-text":
@@ -610,7 +665,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       // clears the outline every focus ring would otherwise draw, so the ring
       // is drawn inside.
       "problems-scroll": cn(
-        "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-1 zt:overflow-y-auto zt:overscroll-contain",
+        "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-1 zt:overflow-y-auto zt:overscroll-contain zt:pb-1",
         "zt:focus-visible:shadow-[inset_0_0_0_2px_var(--background-modifier-border-focus)]",
       ),
       // The chooser leads the explanation where the object line otherwise
@@ -635,9 +690,11 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:mt-1 zt:max-h-56 zt:overflow-auto zt:rounded-md zt:border zt:border-border zt:bg-(--background-secondary) zt:p-2 zt:font-mono zt:whitespace-pre zt:select-text",
       "problems-copy-failed": "zt:mt-1 zt:text-pretty zt:text-(--text-error)",
       // Under the scroll, never inside it: every one of these stays put while
-      // a long explanation and an open disclosure move past above them.
+      // a long explanation and an open disclosure move past above them. The
+      // rule over them marks where the explanation scrolls out of view, so a
+      // line cut at that edge reads as more to scroll, not as covered.
       "problems-controls":
-        "zt:mt-2 zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
+        "zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:border-t zt:border-border zt:pt-2 zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
       "problems-copy": templateWorkbenchButton,
       // Help, not an action: it reads as the link it is, aligned with the
       // buttons it shares the row with.

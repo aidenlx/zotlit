@@ -1850,7 +1850,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     // after its companion panes arrive in the same popout document.
     await obRunUntil(
       vaultId,
-      async ({ zotlit, page }, { actionSelector }) => {
+      async ({ zotlit, page }, { label }) => {
         const { press } = page;
         const view = page
           .leavesOfType("zotlit-template-workbench")
@@ -1863,17 +1863,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           )?.view;
         const doc = view?.contentEl?.ownerDocument;
         const ready = doc && doc !== document && !!page.previewPanel(view);
-        // A main-area pane shows the view header, so the reader presses its
-        // Choose item action; the in-pane trigger is for a sidebar alone.
+        // The reader presses Choose item in the view's item row.
         const trigger =
-          ready && view.containerEl.querySelector<HTMLElement>(actionSelector);
+          ready &&
+          Array.from(page.itemRow(view)?.querySelectorAll("button") ?? []).find(
+            (button) => button.textContent.trim() === label,
+          );
         if (!trigger) return false;
         press(trigger, "Choose item");
         return true;
       },
-      {
-        actionSelector: `.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`,
-      },
+      { label: m.workbench_choose_item() },
       {
         what: "the Choose item trigger to appear once the workbench shows its Preview panel",
       },

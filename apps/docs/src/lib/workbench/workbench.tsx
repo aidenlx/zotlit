@@ -11,10 +11,12 @@ import {
   ExternalLink,
   FilePlus2,
   FolderOpen,
+  PanelLeft,
+  PanelRight,
   Save,
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { entrySlice } from "@zotlit/workbench/document";
 import type {
@@ -38,13 +40,16 @@ import {
   WorkbenchThemeProvider,
   patch,
   setAdvanced as setViewAdvanced,
-  setTab as setViewTab,
   diagnosticText,
   entryDiagnostics,
   fieldSnippet,
+  fieldsActionAttributes,
+  fieldsActionKey,
+  holdPickerFocus,
+  pressFieldsAction,
   renderDiagnosis,
-  routeDiagnosis,
-  routeProblem,
+  insertionTarget,
+  repairCommands,
   useParts,
   useWorkbenchProblems,
   workbenchDiagnoses,
@@ -56,13 +61,14 @@ import {
   NotePane,
   PropertiesPane,
   SliceEditor,
+  SidePanels,
+  showPanel,
 } from "@zotlit/workbench/ui";
 import type {
+  PanelSide,
   WorkbenchTab,
-  WorkbenchDiagnosis,
   WorkbenchHost,
   WorkbenchInsertTarget,
-  WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
@@ -80,14 +86,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
+import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages.js";
 
 import { annotationHeaderMark } from "./annotation-mark";
 import { ConnectionBar, ConnectionNotice } from "./connection-bar";
-import { FieldList } from "./field-list";
+import { FieldList, FieldListPicker } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
 import { ProfileMenuLabel, WorkbenchFrame, WorkbenchHelp } from "./frame";
 import { ProfileHandoff } from "./handoff";
+import { HelpMenu } from "./help-menu";
 import { useWebHost } from "./host";
 import { makeWebPage } from "./page-model";
 import type {
@@ -100,7 +108,7 @@ import { WebPreview } from "./preview";
 import { PageRuntime, usePageBridge } from "./runtime";
 import type { PageServices } from "./runtime";
 import { SampleBar } from "./sample-bar";
-import { WEB_THEME } from "./theme";
+import { PANEL_HANDLE_WIDTH, WEB_THEME } from "./theme";
 import {
   downloadProfile,
   profileFileName,
@@ -108,8 +116,20 @@ import {
 } from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
+import { ViewMenu } from "./view-menu";
 
 /** The result becomes a column once both reading and editing have room. */
+
+/**
+ * A view toggle while its panel shows: a primary border and icon over the
+ * muted fill, so the state reads by more than the fill.
+ */
+const PRESSED_TOGGLE =
+  "aria-pressed:border-fd-primary aria-pressed:bg-fd-muted aria-pressed:[&_svg]:text-fd-primary";
+
+/** The same marks while a view action's popover stands open. */
+const EXPANDED_TOGGLE =
+  "aria-expanded:border-fd-primary aria-expanded:bg-fd-muted aria-expanded:[&_svg]:text-fd-primary";
 
 /** The Workbench on a page runtime of its own, which closing the page disposes. */
 export function Workbench({
@@ -137,7 +157,7 @@ function WorkbenchPage() {
   const sample = useAtomValue(page.chosen);
   // The editor's caret, read when the host asks for it.
   const reads = useRef<EditorReads>({ insertTarget: () => null });
-  const { host, overlays } = useWebHost({
+  const { host, overlays, fieldsAnchor } = useWebHost({
     snapshot: sample,
     notice: (text) => toast.add({ title: text, type: "info" }),
     insertTarget: () => reads.current.insertTarget(),
@@ -150,6 +170,7 @@ function WorkbenchPage() {
       host={host}
       overlays={overlays}
       reads={reads.current}
+      fieldsAnchor={fieldsAnchor}
     />
   );
 }
@@ -160,12 +181,14 @@ function WorkbenchSession({
   host,
   overlays,
   reads,
+  fieldsAnchor,
 }: {
   page: WebPage;
   workbench: WebWorkbench;
   host: WorkbenchHost;
   overlays: ReactNode;
   reads: EditorReads;
+  fieldsAnchor: RefObject<HTMLButtonElement | null>;
 }) {
   const { editor, model, show, chooseAnnotation } = workbench;
   const registry = editor.registry;
@@ -184,8 +207,6 @@ function WorkbenchSession({
   const annotationResult = useAtomValue(model.annotationResult);
   const tab = useAtomValue(model.tab);
   const advanced = useAtomValue(model.advanced);
-  const setTab = (next: WorkbenchTab) =>
-    registry.update(model.view, setViewTab(next));
   const setAdvanced = (next: boolean) =>
     registry.update(model.view, setViewAdvanced(next));
   const openInObsidianCommand = useAtomSet(workbench.openInObsidian);
@@ -213,6 +234,33 @@ function WorkbenchSession({
   const importFileCommand = useAtomSet(workbench.importFile);
   const save = useAtomSet(workbench.save);
   const { drafts, layout: layoutAtom } = workbench;
+  const panels = useAtomValue(model.panels);
+  const fieldsAction = useAtomValue(model.fieldsAction);
+  const togglePanel = (side: PanelSide) =>
+    registry.update(model.panels, (state) =>
+      showPanel(side, !state[side].shown)(state),
+    );
+  // The frame's content box is the view the panels share. A frame laid out
+  // at no size, such as one in a hidden tab, keeps the size it last had.
+  const { viewSize } = page;
+  const measureFrame = useCallback(
+    (main: HTMLElement | null) => {
+      const view = main?.ownerDocument.defaultView;
+      if (!main || !view) return;
+      const observer = new view.ResizeObserver(([entry]) => {
+        const { width, height } = entry!.contentRect;
+        if (width > 0 && height > 0)
+          registry.set(viewSize, {
+            width: Math.round(width),
+            height: Math.round(height),
+            handle: PANEL_HANDLE_WIDTH,
+          });
+      });
+      observer.observe(main);
+      return () => observer.disconnect();
+    },
+    [registry, viewSize],
+  );
   const dirty = useAtomValue(drafts.dirty);
   const restorable = useAtomValue(drafts.restorable);
   const location = useAtomValue(page.location);
@@ -242,7 +290,6 @@ function WorkbenchSession({
     reconnect,
     disconnect,
   } = useWorkbenchConnection(page);
-  reads.insertTarget = () => ({ slice, range: caret });
 
   // One reading of the problems behind both gates: the screen a refused Profile
   // gets, and the render it never starts (the model's Item data holds the
@@ -321,6 +368,10 @@ function WorkbenchSession({
         : tab === "annotation"
           ? "annotation"
           : "note";
+  // The caret the reader put in the pane on screen; none before they do.
+  const target = insertionTarget(presentation.selection, controller);
+  const insertAt = target?.slice === slice ? target.range : null;
+  reads.insertTarget = () => insertAt && { slice, range: insertAt };
   // The note itself, which is the one result an update rewrites part of, so the
   // update-only Managed Region is offered beside it and nowhere else.
   const showAnnotation = !advanced && tab === "annotation";
@@ -330,52 +381,20 @@ function WorkbenchSession({
     ({ part }) => part === "annotation",
   );
 
-  /** Opens the pane a routing transition names, in the model's view state. */
-  const route = (
-    transition: (state: WorkbenchViewState) => WorkbenchViewState,
-  ) => registry.update(model.view, transition);
+  // The repair commands both hosts share. This page supplies only the toast
+  // its host adapter shows a notice in.
+  const repair = repairCommands({
+    registry,
+    model,
+    controller,
+    host,
+    problems,
+  });
 
-  /** Reads one problem the result named, in the editor's Problems area. */
-  function showProblem(id: string | null) {
+  /** Reads one problem the editor named, in the editor's Problems area. */
+  function readProblem(id: string | null) {
     if (id === null) problems.setOpen(true);
     else problems.select(id);
-  }
-
-  /**
-   * Hands the reader the template back where they left it. Every pane reports
-   * its selection as the reader moves through it, so returning is revealing
-   * that place again — with the caret and the focus that go with it.
-   */
-  function returnToTemplate() {
-    setReveal({ ...caret });
-  }
-
-  /** The pane one selected problem is repaired in, whichever kind it is. */
-  function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
-    const transition = routeDiagnosis(diagnosis, controller);
-    if (transition) route(transition);
-    else
-      toast.add({
-        title: m.workbench_problems_location_unknown(),
-        type: "info",
-      });
-  }
-
-  function openAnnotation() {
-    route(routeProblem({ slice: "annotation" }, controller));
-  }
-
-  function insertAnnotations() {
-    const { repaired, caret } = controller.insertAnnotationLoop();
-    setReveal({ from: caret, to: caret });
-    if (repaired) {
-      toast.add({
-        title: m.workbench_annotation_section_added(),
-        type: "info",
-      });
-    }
-    setAdvanced(false);
-    setTab("note");
   }
 
   // The field list follows the pane the reader is in: the annotation box renders
@@ -417,6 +436,7 @@ function WorkbenchSession({
       ? undefined
       : controller.document?.manifest.frontmatter?.[row - 1];
   const fieldDisabled =
+    insertAt === null ||
     (showAnnotation && !controller.annotationSection) ||
     (!advanced &&
       tab === "properties" &&
@@ -457,14 +477,14 @@ function WorkbenchSession({
   /** Puts a snippet where the reader left the caret, then hands focus back. */
   const insert = useCallback(
     (snippet: string) => {
-      if (fieldDisabled) return;
+      if (fieldDisabled || insertAt === null) return;
       const head = insertSnippet(controller, slice, {
-        target: caret,
+        target: insertAt,
         snippet,
       });
       setReveal({ from: head, to: head });
     },
-    [fieldDisabled, controller, slice, caret],
+    [fieldDisabled, controller, slice, insertAt],
   );
 
   const insertion = useRef({ insert, mode: fieldMode });
@@ -628,6 +648,45 @@ function WorkbenchSession({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <ViewMenu model={model} registry={registry} />
+          <HelpMenu />
+          {/* The view actions, as the Obsidian view has them: each shows or
+              hides its panel, wherever the panel goes at this width. Where
+              the Fields column does not fit, Fields opens its picker. */}
+          <Button
+            ref={fieldsAnchor}
+            variant="ghost"
+            size="xs"
+            // A toggle for the column; a disclosure for the picker.
+            {...fieldsActionAttributes(
+              fieldsAction,
+              host.fieldsAction?.popoverId ?? "",
+            )}
+            className={cn(PRESSED_TOGGLE, EXPANDED_TOGGLE)}
+            onClick={() => pressFieldsAction(registry, model)}
+            onMouseDown={(event) => holdPickerFocus(fieldsAction, event)}
+            // Where it opens the picker, an arrow opens it and a printable
+            // key opens it searching for that key.
+            onKeyDown={(event) => {
+              const query = fieldsActionKey(fieldsAction, event);
+              if (query === null) return;
+              event.preventDefault();
+              registry.set(model.fieldsPicker, { query });
+            }}
+          >
+            <PanelLeft aria-hidden className="rtl:-scale-x-100" />
+            {m.workbench_show_fields()}
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            aria-pressed={panels.preview.shown}
+            className={PRESSED_TOGGLE}
+            onClick={() => togglePanel("preview")}
+          >
+            <PanelRight aria-hidden className="rtl:-scale-x-100" />
+            {m.workbench_show_preview()}
+          </Button>
           <Button
             size="xs"
             disabled={saveBusy || (canSaveToVault && draft)}
@@ -725,10 +784,13 @@ function WorkbenchSession({
       editor={
         <>
           <EditToolbar onModeChange={changeMode} />
-          {/* Everything the reader edits, as one region. A reading that takes
-              the whole pane leaves it no height, and it shows nothing rather
-              than spilling its tabs and source over the explanation. */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {/* Everything the reader edits, as one region and its one
+              scroller: the source grows to its text, as the Obsidian view's
+              does. When the pane is too short, as under a tall Problems area
+              or Preview, the region scrolls: no control is cut off, nothing
+              spills over the explanation, and a reveal scrolls the text it
+              selects into view. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
             {advanced && (
               <>
                 <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">
@@ -754,7 +816,7 @@ function WorkbenchSession({
                     controller={controller}
                     onGo={setReveal}
                   />
-                  <div className="flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
+                  <div className="flex min-h-30 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
                     <SliceEditor
                       controller={controller}
                       slice="advanced"
@@ -770,7 +832,7 @@ function WorkbenchSession({
             )}
             <div
               hidden={advanced}
-              className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
+              className="flex flex-1 flex-col [&[hidden]]:hidden"
             >
               <div className="mb-2 flex shrink-0 items-center gap-1">
                 <TabBar onTabChange={openTab} />
@@ -800,10 +862,10 @@ function WorkbenchSession({
                     noteCaret.current = selection;
                     if (!advanced && tab === "note") trackSelection(selection);
                   }}
-                  onOpenAnnotation={openAnnotation}
+                  onOpenAnnotation={repair.openAnnotationBox}
                 />
                 {controller.noteRegions.annotationCalls.length === 0 && (
-                  <AnnotationPointer onInsert={insertAnnotations} />
+                  <AnnotationPointer onInsert={repair.insertAnnotationLoop} />
                 )}
               </TabPanel>
               <TabPanel tab="match" modeActive={!advanced}>
@@ -818,7 +880,7 @@ function WorkbenchSession({
                 {formatProblem && (
                   <AnnotationProblemMarker
                     diagnostic={formatProblem}
-                    onShow={showProblem}
+                    onShow={readProblem}
                   />
                 )}
                 <AnnotationPane
@@ -849,7 +911,7 @@ function WorkbenchSession({
                       : {})}
                     reveal={reveal}
                     onSelection={trackSelection}
-                    onShowProblem={showProblem}
+                    onShowProblem={readProblem}
                   />
                 </TabPanel>
               ))}
@@ -879,7 +941,7 @@ function WorkbenchSession({
                     onSelect={setOpenRow}
                     reveal={reveal}
                     onSelection={trackSelection}
-                    onShowProblem={showProblem}
+                    onShowProblem={readProblem}
                   />
                 )}
               </TabPanel>
@@ -887,37 +949,73 @@ function WorkbenchSession({
           </div>
         </>
       }
+      item={
+        // One row names what every panel reads: the annotation while the
+        // view renders one, else the item.
+        <SampleBar
+          sample={sample}
+          retained={retained}
+          connection={connection}
+          {...(sampleItemType !== undefined && !bundledForType
+            ? { unmatchedItemType: sampleItemType }
+            : {})}
+          busy={itemBusy}
+          onShow={show}
+          onLoad={loadSelectedItem}
+          {...(showAnnotation
+            ? {
+                annotation: {
+                  current: itemAnnotations,
+                  example: selectedAnnotation,
+                  onSelect: chooseAnnotation,
+                },
+              }
+            : {})}
+        />
+      }
       result={
         <WebPreview
-          annotations={{
-            current: itemAnnotations,
-            example: selectedAnnotation,
-          }}
-          onAnnotationChoice={chooseAnnotation}
           mode={showAnnotation ? "annotation" : "note"}
-          onShowProblem={showProblem}
-          sampleBar={
-            <SampleBar
-              sample={sample}
-              retained={retained}
-              connection={connection}
-              {...(sampleItemType !== undefined && !bundledForType
-                ? { unmatchedItemType: sampleItemType }
-                : {})}
-              busy={itemBusy}
-              onShow={show}
-              onLoad={loadSelectedItem}
-            />
-          }
+          onShowProblem={repair.showProblem}
         />
       }
       problems={
         <ProblemsFooter
           problems={problems}
-          onOpen={openDiagnosis}
-          onReturn={returnToTemplate}
+          onOpen={repair.openDiagnosis}
+          onReturn={repair.returnToTemplate}
         />
       }
+      mainRef={measureFrame}
+      arrange={({ fields, edit, result }) => (
+        <SidePanels
+          panels={{
+            fields: {
+              label: m.workbench_view_fields(),
+              resizeLabel: m.workbench_fields_resize(),
+              content: fields,
+              picker: (
+                <FieldListPicker
+                  root={root}
+                  sample={readSample}
+                  annotation={selectedAnnotation ?? undefined}
+                  citation={annotationResult?.annotationCitation}
+                  ready={ready}
+                  disabled={fieldDisabled}
+                  onInsertNode={insertNode}
+                />
+              ),
+            },
+            preview: {
+              label: m.workbench_view_preview(),
+              resizeLabel: m.workbench_preview_resize(),
+              content: result,
+            },
+          }}
+        >
+          {edit}
+        </SidePanels>
+      )}
     >
       {filePicker}
       {replacementDialog}
@@ -929,7 +1027,7 @@ function WorkbenchSession({
       <WorkbenchHostProvider host={host}>
         <WorkbenchDiagnosticsProvider
           value={problems.diagnoses}
-          onReveal={showProblem}
+          onReveal={readProblem}
         >
           <WorkbenchEditorProvider editor={editor}>
             {frame}

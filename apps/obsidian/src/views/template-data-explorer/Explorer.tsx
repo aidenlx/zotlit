@@ -38,8 +38,6 @@ import {
 } from "./model";
 
 const sidebarBar = selectionBar({ placement: "sidebar" });
-/** In an editor's panel no view header names the Item, so the row always shows. */
-const panelBar = selectionBar();
 
 export function Explorer({
   explorer,
@@ -71,7 +69,6 @@ export function Explorer({
   const state = useAtomValue(model.state);
   const { root, status, error, data, navigation, collapsedSections } = state;
   const host = useWorkbenchHost();
-  const bar = placement === "panel" ? panelBar : sidebarBar;
   const shownSections = visibleSectionIds(data, {
     m: host.messages,
     root,
@@ -142,81 +139,84 @@ export function Explorer({
         )
       ) : (
         <>
-          <div
-            className={
-              anchor
-                ? "zt:flex zt:shrink-0 zt:flex-col zt:gap-3 zt:border-b zt:border-border zt:px-3 zt:py-2"
-                : cn(
-                    placement === "panel"
-                      ? "zt:flex"
-                      : "zt-workbench-sidebar-control",
-                    "zt:shrink-0 zt:justify-end zt:px-3 zt:py-2",
-                  )
-            }
-          >
-            <div className={bar.row({ className: "zt:flex-1" })}>
-              {name && <p className={bar.caption()}>{name}</p>}
-              <button
-                className={bar.trigger()}
-                aria-label={
-                  root === "annotation"
-                    ? m.workbench_choose_annotation()
-                    : m.workbench_choose_item()
-                }
-                onClick={
-                  root === "annotation"
-                    ? onChooseAnnotation
-                    : () => actions.onChooseItem()
-                }
-              >
-                <Icon name="search" />
-                <span>
-                  {root === "annotation"
-                    ? m.workbench_choose_annotation()
-                    : m.workbench_choose_item()}
-                </span>
-              </button>
-              <IconButton
-                icon={allCollapsed ? "chevrons-up-down" : "chevrons-down-up"}
-                className={selectionControl({ kind: "icon" })}
-                onClick={() => actions.onToggleSections()}
-                {...tooltipAttrs(
-                  allCollapsed
-                    ? m.workbench_explorer_expand_all()
-                    : m.workbench_explorer_collapse_all(),
-                )}
-              />
-            </div>
-            {anchor && (
-              <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-1.5">
-                <nav className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5">
+          {/* In a Workbench panel, the view's item row names the Item and
+              holds its chooser, and the sections button trails the search. */}
+          {(anchor || placement === "sidebar") && (
+            <div
+              className={
+                anchor
+                  ? "zt:flex zt:shrink-0 zt:flex-col zt:gap-3 zt:border-b zt:border-border zt:px-3 zt:py-2"
+                  : "zt-workbench-sidebar-control zt:shrink-0 zt:justify-end zt:px-3 zt:py-2"
+              }
+            >
+              {placement === "sidebar" && (
+                <div className={sidebarBar.row({ className: "zt:flex-1" })}>
+                  {name && <p className={sidebarBar.caption()}>{name}</p>}
+                  <button
+                    className={sidebarBar.trigger()}
+                    aria-label={
+                      root === "annotation"
+                        ? m.workbench_choose_annotation()
+                        : m.workbench_choose_item()
+                    }
+                    onClick={
+                      root === "annotation"
+                        ? onChooseAnnotation
+                        : () => actions.onChooseItem()
+                    }
+                  >
+                    <Icon name="search" />
+                    <span>
+                      {root === "annotation"
+                        ? m.workbench_choose_annotation()
+                        : m.workbench_choose_item()}
+                    </span>
+                  </button>
                   <IconButton
-                    icon="corner-left-up"
-                    className="zt:shrink-0"
-                    onClick={() => actions.onBackToNoteRoot()}
+                    icon={
+                      allCollapsed ? "chevrons-up-down" : "chevrons-down-up"
+                    }
+                    className={selectionControl({ kind: "icon" })}
+                    onClick={() => actions.onToggleSections()}
                     {...tooltipAttrs(
-                      m.template_data_explorer_back_to_note_root(),
+                      allCollapsed
+                        ? m.workbench_explorer_expand_all()
+                        : m.workbench_explorer_collapse_all(),
                     )}
                   />
-                  <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-xs">
-                    <span className="zt:shrink-0 zt:text-muted-foreground">
-                      {m.template_data_explorer_note_root()}
-                    </span>
-                    <Icon
-                      name="chevron-right"
-                      className="zt:size-3 zt:shrink-0 zt:text-faint"
+                </div>
+              )}
+              {anchor && (
+                <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-1.5">
+                  <nav className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5">
+                    <IconButton
+                      icon="corner-left-up"
+                      className="zt:shrink-0"
+                      onClick={() => actions.onBackToNoteRoot()}
+                      {...tooltipAttrs(
+                        m.template_data_explorer_back_to_note_root(),
+                      )}
                     />
-                    <span
-                      className="zt:min-w-0 zt:truncate zt:font-medium zt:text-accent-foreground"
-                      {...tooltipAttrs(anchor.label)}
-                    >
-                      {anchor.label}
-                    </span>
-                  </div>
-                </nav>
-              </div>
-            )}
-          </div>
+                    <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-xs">
+                      <span className="zt:shrink-0 zt:text-muted-foreground">
+                        {m.template_data_explorer_note_root()}
+                      </span>
+                      <Icon
+                        name="chevron-right"
+                        className="zt:size-3 zt:shrink-0 zt:text-faint"
+                      />
+                      <span
+                        className="zt:min-w-0 zt:truncate zt:font-medium zt:text-accent-foreground"
+                        {...tooltipAttrs(anchor.label)}
+                      >
+                        {anchor.label}
+                      </span>
+                    </div>
+                  </nav>
+                </div>
+              )}
+            </div>
+          )}
           {status === "loading" ? (
             <p role="status" className={cn(selectionHint, "zt:p-3")}>
               {m.workbench_loading_item()}
@@ -247,6 +247,7 @@ export function Explorer({
               }
               data={data}
               root={root}
+              sectionsToggle={placement === "panel"}
               navigation={navigation}
               collapsedSections={collapsedSections}
               onCollapsedSectionsChange={(collapsed) =>

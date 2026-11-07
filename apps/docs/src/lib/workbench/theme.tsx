@@ -19,6 +19,8 @@ import {
   ChevronUp,
   CircleAlert,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Ellipsis,
   TextAlignStart,
   Tags,
@@ -77,6 +79,8 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   "property-date": Calendar,
   "property-datetime": Clock,
   drag: GripVertical,
+  "expand-all": ChevronsUpDown,
+  "collapse-all": ChevronsDownUp,
 };
 
 /** A read-only Properties block: one row per property, key beside value. */
@@ -89,6 +93,12 @@ const nameInput = inputVariants({ size: "xs" });
 /** One card per row of the note path and binding groups. */
 const nameRow =
   "flex flex-col gap-2 rounded-md border border-fd-border bg-fd-card px-2.5 py-2";
+
+/**
+ * The width each column's handle takes between the column and the editor,
+ * in pixels: the `w-3` of the `edge` part below. The placement counts it.
+ */
+export const PANEL_HANDLE_WIDTH = 12;
 
 export const WEB_THEME: WorkbenchTheme = {
   editorExtension: (slice, language) => [
@@ -152,7 +162,9 @@ export const WEB_THEME: WorkbenchTheme = {
       explorer: "flex min-h-0 flex-1 flex-col gap-2 p-2",
       header: "flex flex-wrap items-center justify-between gap-2",
       heading: "text-xs font-semibold",
-      search: "w-full",
+      "search-row": "flex items-center gap-1",
+      search: "min-w-0 flex-1",
+      "sections-toggle": cn(historyButton, "shrink-0"),
       body: "min-h-0 flex-1 overflow-auto",
       empty: "text-fd-muted-foreground text-xs",
     },
@@ -308,7 +320,10 @@ export const WEB_THEME: WorkbenchTheme = {
       "help-toggle": "ms-1 inline-block align-baseline",
       help: "mb-3 flex max-h-40 shrink-0 flex-col gap-1 overflow-auto text-xs leading-normal text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-fd-ring",
 
-      "sample-bar": "mb-2 flex shrink-0 items-center gap-2",
+      // The inline Note-tab chooser keeps its own space; the compact
+      // trigger sits in the item row, which spaces its controls.
+      "sample-bar":
+        "flex shrink-0 items-center gap-2 data-[state=labelled]:mb-2",
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",
       pane: "flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card",
@@ -346,9 +361,9 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     sliceEditor: {
       "slice-editor":
-        "flex min-h-0 flex-1 flex-col rounded-md has-[.cm-content:focus-visible]:outline-2 has-[.cm-content:focus-visible]:outline-offset-2 has-[.cm-content:focus-visible]:outline-fd-ring",
+        "flex flex-1 flex-col rounded-md has-[.cm-content:focus-visible]:outline-2 has-[.cm-content:focus-visible]:outline-offset-2 has-[.cm-content:focus-visible]:outline-fd-ring",
       "slice-scroll":
-        "min-h-0 flex-1 overflow-auto rounded-md [&_.cm-content]:min-w-0 [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent",
+        "flex-1 rounded-md [&_.cm-content]:min-w-0 [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent",
     },
     notePane: {
       "annotation-toggle": cn(
@@ -356,8 +371,9 @@ export const WEB_THEME: WorkbenchTheme = {
         "aria-pressed:bg-fd-muted",
       ),
       "annotation-edit": buttonVariants({ variant: "ghost", size: "icon-2xs" }),
+      // At least five source lines; the tab scrolls when it needs more room.
       "note-pane":
-        "flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]",
+        "flex min-h-30 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]",
       "annotation-box":
         "inline-flex max-w-full items-center gap-1 rounded-md border border-fd-border bg-fd-card p-0.5 ps-2 align-middle text-xs font-medium text-fd-muted-foreground",
       "annotation-label": "min-w-0 whitespace-normal",
@@ -430,13 +446,58 @@ export const WEB_THEME: WorkbenchTheme = {
       checkbox: "m-0 size-3.5 accent-fd-primary",
       empty: "text-fd-muted-foreground italic",
     },
+    // The one row above the panels that names the item they all read: its
+    // name and badge first, then its controls at the trailing end.
+    itemRow: {
+      row: "flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-fd-border px-3 py-1.5",
+      label: "min-w-0 flex-1 text-xs text-pretty text-fd-muted-foreground",
+    },
+    // The side panels: the model places them, so the classes only draw each
+    // placement. Each handle is the 12 px gap between two parts
+    // (PANEL_HANDLE_WIDTH, which the placement counts), with a rule
+    // down its middle that turns the primary color while it is used.
+    panels: {
+      panels: "flex min-h-0 min-w-0 flex-1",
+      stack: "flex min-h-0 min-w-0 flex-1 data-[state=below]:flex-col",
+      status: "sr-only",
+      editor: "flex min-h-0 min-w-0 flex-1 flex-col",
+      panel:
+        "flex min-h-0 min-w-0 shrink-0 flex-col data-[state=fields]:w-(--workbench-panel-width) data-[state=preview]:w-(--workbench-panel-width) data-[state=below]:h-(--workbench-panel-height)",
+      edge: "relative w-3 shrink-0 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:start-1/2 after:w-px after:bg-fd-muted-foreground hover:after:w-0.5 hover:after:bg-fd-primary focus-visible:after:w-0.5 focus-visible:after:bg-fd-primary",
+      split:
+        "relative h-3 shrink-0 cursor-row-resize touch-none outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-fd-muted-foreground hover:after:h-0.5 hover:after:bg-fd-primary focus-visible:after:h-0.5 focus-visible:after:bg-fd-primary",
+    },
+    // The Fields picker on its popover: the rows of the page's other
+    // searchable pickers, with the active row's whole value in a scrolling
+    // area under them.
+    fieldPicker: {
+      status: "sr-only",
+      picker: "flex min-h-0 flex-1 flex-col",
+      search:
+        "m-1 h-8 shrink-0 rounded-md border border-fd-border bg-fd-background px-2 text-sm placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-fd-ring",
+      hint: "shrink-0 px-3 pb-1 text-xs text-pretty text-fd-muted-foreground",
+      list: "min-h-0 flex-1 overflow-y-auto overscroll-contain p-1",
+      "group-label":
+        "px-2 pt-2 pb-1 text-xs font-medium text-fd-muted-foreground",
+      option:
+        "flex min-h-9 cursor-pointer items-baseline gap-3 rounded-sm px-2 py-1.5 text-sm data-[state=active]:bg-fd-muted",
+      "option-label": "shrink-0 text-fd-foreground",
+      "option-value":
+        "min-w-0 flex-1 truncate text-end text-xs text-fd-muted-foreground",
+      empty: "shrink-0 px-3 py-2 text-xs text-fd-muted-foreground empty:hidden",
+      detail:
+        "max-h-32 shrink-0 overflow-y-auto overscroll-contain border-t border-fd-border px-3 py-2 text-xs empty:hidden",
+      "detail-path": "block font-mono text-fd-muted-foreground",
+      "detail-value":
+        "mt-1 block whitespace-pre-wrap text-fd-foreground [overflow-wrap:anywhere]",
+    },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",
       tab: "disabled:cursor-default disabled:opacity-50 flex min-h-7 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-sm px-2 py-0.5 text-xs font-medium text-fd-muted-foreground data-[state=active]:bg-fd-card data-[state=active]:text-fd-foreground data-[state=active]:shadow-sm [&_svg]:size-4",
     },
     tabPanel: {
       description: "mb-3 shrink-0 text-xs text-pretty text-fd-muted-foreground",
-      "tab-panel": "flex min-h-0 min-w-0 flex-1 flex-col [&[hidden]]:hidden",
+      "tab-panel": "flex min-w-0 flex-1 flex-col [&[hidden]]:hidden",
       "docs-link": "text-fd-primary underline underline-offset-2",
     },
     editToolbar: {
@@ -461,6 +522,7 @@ export const WEB_THEME: WorkbenchTheme = {
       "problems-heading": "font-semibold",
       // A value that changes as problems are repaired, so its digits hold
       // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-announcement": "sr-only",
       "problems-count":
         "shrink-0 rounded-sm bg-destructive/10 px-1.5 font-medium tabular-nums whitespace-nowrap",
       "problems-text": "min-w-0 text-pretty font-medium",
@@ -483,7 +545,7 @@ export const WEB_THEME: WorkbenchTheme = {
       // A reader with no pointer scrolls it from the keyboard, so it takes the
       // site's focus indicator the way the other focusable regions do.
       "problems-scroll":
-        "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary",
+        "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pb-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary",
       // The chooser leads the explanation where the object line otherwise
       // would, at its own width rather than stretched across the column.
       "problems-select": "min-w-0 max-w-full self-start",
@@ -505,9 +567,11 @@ export const WEB_THEME: WorkbenchTheme = {
         "mt-1 max-h-56 overflow-auto rounded-md border border-fd-border bg-fd-muted/60 p-2 font-mono whitespace-pre select-text",
       "problems-copy-failed": "mt-1 text-pretty text-destructive",
       // Under the scroll, never inside it: every one of these stays put while
-      // a long explanation and an open disclosure move past above them.
+      // a long explanation and an open disclosure move past above them. The
+      // rule over them marks where the explanation scrolls out of view, so a
+      // line cut at that edge reads as more to scroll, not as covered.
       "problems-controls":
-        "mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2 [&>*]:max-w-full [&>*]:min-w-0",
+        "flex min-w-0 shrink-0 flex-wrap border-t border-fd-border pt-2 items-center gap-2 [&>*]:max-w-full [&>*]:min-w-0",
       "problems-open": "cursor-pointer underline underline-offset-2",
       "problems-copy": "cursor-pointer underline underline-offset-2",
       "problems-community": "underline underline-offset-2",

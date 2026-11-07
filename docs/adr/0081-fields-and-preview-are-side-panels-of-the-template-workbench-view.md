@@ -52,3 +52,28 @@ The merge moves the Workbench's view state to Effect Atom (`effect/reactivity`),
 - The web Workbench converts in the same change, because it shares the model and scheduler. `@zotlit/workbench` takes `@effect/atom-react` as a peer dependency beside React.
 - The Template Workbench View joins the view-atom import bans in the Obsidian lint config when the conversion lands.
 - A saved workspace that holds a Note Preview leaf shows it as a tab of an unknown view type, which the reader closes. The Preview panel starts hidden, and the reader shows it from the view action.
+
+## Amendment (2026-11-07): the view size places the panels
+
+Spec #1952, tickets #1953 and #1954.
+
+- The panel state (each panel's shown flag and width, and the Preview's share of the height under the editor) lives in the shared Workbench model, not in the Obsidian host model. Both hosts own it the same way; the Obsidian view saves it with its state, and the web Workbench keeps it for the page's life.
+- Where a shown panel goes is derived, never saved: a pure rule in `@zotlit/workbench/ui` places each panel from the panel state and the view size, which each host measures from its own container. A panel is a column while the editor keeps 360 px beside it, and the Preview claims the side before the Fields Panel. A Preview that does not fit goes under the editor, which keeps at least 320 px of height: its toolbar and tab rows, the tab's task line and five source lines. Each host draws the source at least five lines tall and scrolls the editor when its content needs more, so no control is cut off.
+- Resizing a view changes only the placement, never what the reader chose to show. The stacked layout under 40rem is gone.
+
+## Amendment (2026-11-07): the Fields picker, menu sizing, and shared repair commands
+
+Spec #1952, tickets #1955, #1956 and #1957, and the final fix round.
+
+- #1955: where the Fields Panel's column does not fit, the Fields action opens the Fields Picker, the panel's fields as a searchable list in a popover under the action. The picker's open state lives in the shared model beside the panel state and is never saved; it closes when the column fits again. The shared UI draws the list and owns its keys (one key table for both hosts); each host supplies the popover surface through its adapter: Obsidian's `PinnedPopover` with a `Scope`, and a Base UI popover on the web. The Fields action is a toggle for the column and a disclosure for the picker, and the view action, the Obsidian pane menu and the web View menu all press the same action. While the picker stands, a press on the action keeps focus in it, and focus that leaves it by keyboard closes it and goes to the action.
+- #1956: every handle the view draws can be sized without a drag (WCAG 2.5.7): the Obsidian pane menu and the web View menu list a size group per drawn handle, built by one shared function. A column's widest width is the one that keeps every column in its place, past the handles the host draws; menu entries, keys and drags step from the size the view draws, and a menu entry's new size is announced.
+- #1957: the commands that take the reader from a problem to its repair are one shared set (`repairCommands`) over the shared routing. Each closes the Fields Picker and changes no panel; Show problem reveals the call and announces why it fails.
+
+## Amendment (2026-11-07): one item row, a 56rem Preview rule, and a Help action
+
+Spec #1952, user feedback on PR #1960.
+
+- The view names the item every panel reads once: one item row above the panels, across all of them, with the one chooser (`ItemRow` in `@zotlit/workbench/ui`). The Obsidian row carries the "Choose item" button, so the view header has no "Choose item" action; the web row carries the sample chooser. Each panel head keeps what is its own. Each host measures the box under the row, which the panels and the editor share.
+- The Preview is a column in a view 896 px (56rem, Tailwind `@4xl` at the 16 px root font size) wide or wider, and goes under the editor in a narrower view. Its column grows until the editor keeps 360 px; the 40% share and the 960 px limit hold the Fields column alone. The Fields Panel keeps its rule: a column while the editor keeps 360 px beside the columns, the Fields picker otherwise. The default Preview width stays 400 px.
+- The Fields Panel's button that collapses or expands every section trails its field search, in the shared Data Explorer, drawn in each host's icon-button idiom.
+- Help is a view action in Obsidian and a header menu on the web. Both list the same docs pages from one shared list (`HELP_PAGES`) and the community page from the host's `communityUrl`; the Obsidian pane menu holds no Help.

@@ -17,6 +17,14 @@ import {
   setTab,
 } from "./model";
 import type { WorkbenchItemData, WorkbenchViewState } from "./model";
+import {
+  panelLimit,
+  PANEL_WIDTH,
+  setPanelWidth,
+  setPreviewHeight,
+  showPanel,
+} from "./panel-layout";
+import type { ViewSize } from "./panel-layout";
 import { fakeHost, TEST_RUNTIME } from "./test-host";
 
 import { WorkbenchDocumentController } from "#/document/controller";
@@ -46,6 +54,7 @@ function open(
     view?: Atom.Writable<WorkbenchViewState>;
     kind?: WorkbenchDocumentKind;
     partialName?: Atom.Atom<string | null>;
+    viewSize?: Atom.Atom<ViewSize | null>;
   } = {},
 ) {
   const { kind, ...rest } = options;
@@ -175,6 +184,142 @@ describe("the Workbench model", () => {
       snapshot: CITATION_EXAMPLE_ITEM,
       citation: { variant: "alt", example: "one-item" },
     });
+  });
+});
+
+describe("the side panels", () => {
+  it("starts with both panels hidden at their initial width", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    expect(registry.get(model.panels)).toEqual({
+      fields: { shown: false, width: 400 },
+      preview: { shown: false, width: 400, height: 40 },
+    });
+  });
+
+  it("shows one panel and leaves the other hidden", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    registry.update(model.panels, showPanel("preview", true));
+    expect(registry.get(model.panels)).toEqual({
+      fields: { shown: false, width: 400 },
+      preview: { shown: true, width: 400, height: 40 },
+    });
+  });
+
+  it("sets a panel's width in whole pixels", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    registry.update(model.panels, setPanelWidth("preview", 520.4));
+    expect(registry.get(model.panels).preview.width).toBe(520);
+  });
+
+  it("holds a panel's width within the limits", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    registry.update(model.panels, setPanelWidth("fields", 5000));
+    expect(registry.get(model.panels).fields.width).toBe(PANEL_WIDTH.max);
+    registry.update(model.panels, setPanelWidth("fields", 10));
+    expect(registry.get(model.panels).fields.width).toBe(PANEL_WIDTH.min);
+  });
+
+  it("keeps the panels when a transition changes nothing", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    const panels = registry.get(model.panels);
+    registry.update(model.panels, showPanel("preview", false));
+    registry.update(model.panels, setPanelWidth("fields", 400));
+    expect(registry.get(model.panels)).toBe(panels);
+  });
+
+  it("holds the Preview's height under the editor within its shares", () => {
+    using opened = open();
+    const { registry, model } = opened;
+    registry.update(model.panels, setPreviewHeight(55.4));
+    expect(registry.get(model.panels).preview.height).toBe(55);
+    registry.update(model.panels, setPreviewHeight(95));
+    expect(registry.get(model.panels).preview.height).toBe(80);
+    registry.update(model.panels, setPreviewHeight(5));
+    expect(registry.get(model.panels).preview.height).toBe(20);
+  });
+
+  it("places the panels from the view size the host measures, and keeps the panels", () => {
+    const viewSize = Atom.make<ViewSize | null>({ width: 1200, height: 800 });
+    using opened = open({ viewSize });
+    const { registry, model } = opened;
+    registry.update(model.panels, showPanel("preview", true));
+    registry.update(model.panels, showPanel("fields", true));
+    const panels = registry.get(model.panels);
+    expect(registry.get(model.placement)).toEqual({
+      preview: "side",
+      fields: "column",
+    });
+    registry.set(viewSize, { width: 560, height: 800 });
+    expect(registry.get(model.placement)).toEqual({
+      preview: "below",
+      fields: "popover",
+    });
+    // Resizing the view moves the panels; what the reader chose stands.
+    expect(registry.get(model.panels)).toBe(panels);
+  });
+
+  it("opens the Fields action's column in a wide view and its picker in a narrow one", () => {
+    const viewSize = Atom.make<ViewSize | null>({ width: 1200, height: 800 });
+    using opened = open({ viewSize });
+    const { registry, model } = opened;
+    expect(registry.get(model.fieldsAction)).toEqual({
+      opens: "column",
+      open: false,
+    });
+    registry.set(model.fieldsAction, undefined);
+    expect(registry.get(model.panels).fields.shown).toBe(true);
+    expect(registry.get(model.fieldsAction)).toEqual({
+      opens: "column",
+      open: true,
+    });
+    registry.set(viewSize, { width: 560, height: 800 });
+    // The column does not fit: the action opens the picker, and the panel
+    // keeps its shown flag for a wider view.
+    expect(registry.get(model.fieldsAction)).toEqual({
+      opens: "popover",
+      open: false,
+    });
+    registry.set(model.fieldsAction, undefined);
+    expect(registry.get(model.fieldsPicker)).toEqual({ query: "" });
+    expect(registry.get(model.fieldsAction).open).toBe(true);
+    registry.set(model.fieldsAction, undefined);
+    expect(registry.get(model.fieldsPicker)).toBeNull();
+    expect(registry.get(model.panels).fields.shown).toBe(true);
+  });
+
+  it("closes the Fields picker when the view widens, and leaves it closed when it narrows again", () => {
+    const viewSize = Atom.make<ViewSize | null>({ width: 560, height: 800 });
+    using opened = open({ viewSize });
+    const { registry, model } = opened;
+    registry.set(model.fieldsAction, undefined);
+    expect(registry.get(model.fieldsPicker)).toEqual({ query: "" });
+    registry.set(viewSize, { width: 1200, height: 800 });
+    expect(registry.get(model.fieldsPicker)).toBeNull();
+    registry.set(viewSize, { width: 560, height: 800 });
+    expect(registry.get(model.fieldsPicker)).toBeNull();
+  });
+
+  it("opens the Fields picker on a search the reader started on the Fields action", () => {
+    const viewSize = Atom.make<ViewSize | null>({ width: 560, height: 800 });
+    using opened = open({ viewSize });
+    const { registry, model } = opened;
+    registry.set(model.fieldsPicker, { query: "d" });
+    expect(registry.get(model.fieldsAction)).toEqual({
+      opens: "popover",
+      open: true,
+    });
+    expect(registry.get(model.fieldsPicker)).toEqual({ query: "d" });
+  });
+
+  it("draws a panel at most two fifths of its container, within the limits", () => {
+    expect(panelLimit(1000)).toBe(400);
+    expect(panelLimit(400)).toBe(PANEL_WIDTH.min);
+    expect(panelLimit(4000)).toBe(PANEL_WIDTH.max);
   });
 });
 
