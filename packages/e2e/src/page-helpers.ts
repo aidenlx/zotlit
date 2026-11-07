@@ -549,11 +549,12 @@ export function createPageHelpers(app: PageApp) {
       ? (app.workspace.activeLeaf.view as TemplateWorkbenchView)
       : undefined;
   }
-  /** The Fields panel `view` shows, or null while it hides the panel. */
-  function fieldsPanel(view: TemplateWorkbenchView | undefined) {
+  /** The Fields sheet `view` shows, or null while it is closed. */
+  function fieldsSheet(view: TemplateWorkbenchView | undefined) {
     return (
-      view?.contentEl.querySelector<HTMLElement>('[data-panel="fields"]') ??
-      null
+      view?.contentEl.querySelector<HTMLElement>(
+        '[role="dialog"][aria-modal="true"]',
+      ) ?? null
     );
   }
   /** The Preview panel `view` shows, or null while it hides the panel. */
@@ -984,7 +985,7 @@ export function createPageHelpers(app: PageApp) {
     restoreAnnotationPreparation,
     annotationOpenSubpath,
     workbench,
-    fieldsPanel,
+    fieldsSheet,
     previewPanel,
     itemRow,
     workbenchSurfaces,

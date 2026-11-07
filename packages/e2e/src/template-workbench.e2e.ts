@@ -185,11 +185,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       ),
     );
-    // Wide enough that the panels stand beside the editor as columns.
+    // Wide enough that the Preview stands beside the editor as a column.
     await suite.wideWindow(cleanup);
     await obRun(
       run.vaultId,
-      async ({ app }, { path, showPreview, showFields }) => {
+      async ({ app }, { path, showPreview }) => {
         // A tab of the editor area's own, as wide as the window lets it be.
         const leaf = app.workspace.getLeaf("tab");
         await leaf.setViewState({
@@ -198,17 +198,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           active: true,
         });
         await app.workspace.revealLeaf(leaf);
-        // The reader shows both panels from their view actions.
-        for (const label of [showPreview, showFields])
-          leaf.view.containerEl
-            .querySelector<HTMLElement>(`.view-action[aria-label="${label}"]`)
-            ?.click();
+        // The reader shows the Preview from its view action.
+        leaf.view.containerEl
+          .querySelector<HTMLElement>(
+            `.view-action[aria-label="${showPreview}"]`,
+          )
+          ?.click();
       },
-      {
-        path,
-        showPreview: run.m.workbench_show_preview(),
-        showFields: run.m.workbench_show_fields(),
-      },
+      { path, showPreview: run.m.workbench_show_preview() },
     );
 
     // The item row holds the view's one Choose item; no panel and no view
@@ -221,7 +218,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           Array.from(root?.querySelectorAll("button") ?? []).filter(
             (button) => button.textContent.trim() === label,
           ).length;
-        if (!page.previewPanel(view) || !page.fieldsPanel(view)) return null;
+        if (!page.previewPanel(view)) return null;
         return {
           row: named(page.itemRow(view)),
           view: named(view?.contentEl),
@@ -231,7 +228,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
       },
       { path, label: run.m.workbench_choose_item() },
-      { what: "both panels", ready: (found) => found !== null },
+      { what: "the Preview", ready: (found) => found !== null },
     );
     expect(choosers).toEqual({ row: 1, view: 1, actions: 0 });
 
@@ -286,13 +283,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         obRunUntil(
           run.vaultId,
-          ({ page }, { path, where, text, preview, fields, row }) => {
+          (
+            { page },
+            { path, where, text, preview, fields, row, fieldsLabel },
+          ) => {
             const view = page.workbench({ path });
             if (!view) return false;
+            // The Fields sheet stands over the editor and the Preview while
+            // it is open: it opens for its own check and closes for the rest.
+            const sheet = page.fieldsSheet(view);
+            const action = view.containerEl.querySelector<HTMLElement>(
+              `.view-action[aria-label="${fieldsLabel}"]`,
+            );
+            if (where === fields) {
+              if (!sheet) {
+                if (action) page.press(action, "the Fields action");
+                return false;
+              }
+              return sheet.innerText.includes(text);
+            }
+            if (sheet && where !== row) {
+              if (action) page.press(action, "the Fields action");
+              return false;
+            }
             if (where === preview)
               return !!page.previewPanel(view)?.innerText.includes(text);
-            if (where === fields)
-              return !!page.fieldsPanel(view)?.innerText.includes(text);
             if (where === row)
               return !!page.itemRow(view)?.innerText.includes(text);
             const tab = Array.from(
@@ -314,6 +329,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             preview: "Preview",
             fields: "Fields",
             row: "Item row",
+            fieldsLabel: run.m.workbench_view_fields(),
           },
           { what: `${where} to name "${text}"` },
         ),
@@ -414,35 +430,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       ),
     );
-    // Wide enough that the panels stand beside the editor as columns.
     await suite.wideWindow(cleanup);
     await obRun(
       run.vaultId,
-      async ({ app }, { path, item }) => {
+      async ({ app }, { path, item, fields }) => {
         // A tab of the editor area's own, as wide as the window lets it be.
         const leaf = app.workspace.getLeaf("tab");
         await leaf.setViewState({
           type: "zotlit-template-workbench",
-          state: {
-            file: path,
-            itemIndexedKey: item,
-            panels: { fields: { shown: true, width: 400 } },
-          },
+          state: { file: path, itemIndexedKey: item },
           active: true,
         });
         await app.workspace.revealLeaf(leaf);
+        // The reader opens the Fields sheet from its view action.
+        leaf.view.containerEl
+          .querySelector<HTMLElement>(`.view-action[aria-label="${fields}"]`)
+          ?.click();
       },
-      { path, item: targetItem.key },
+      { path, item: targetItem.key, fields: run.m.workbench_view_fields() },
     );
     const fieldsName = (title: string) =>
       obRunUntil(
         run.vaultId,
         ({ page }, { path, title }) =>
           !!page
-            .fieldsPanel(page.workbench({ path }))
+            .fieldsSheet(page.workbench({ path }))
             ?.innerText.includes(title),
         { path, title },
-        { what: `the Fields panel to name "${title}"` },
+        { what: `the Fields sheet to name "${title}"` },
       );
     await fieldsName(targetItem.title);
 
@@ -510,11 +525,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(JSON.parse((await explorer())!)).toEqual(opened);
   });
 
-  // #1945: the panels are part of the view's saved state, and each edge
-  // reports the width the view draws: the Fields column takes at most 40% of
-  // the view and never more than 960 px; the Preview column grows until the
-  // editor keeps its 360 px.
-  it("restores the Fields and Preview panels and their widths with the workspace", async () => {
+  // #1945: the Preview is part of the view's saved state, and its edge
+  // reports the width the view draws: the Preview column grows until the
+  // editor keeps its 360 px. The Fields sheet is never saved (#1964).
+  it("restores the Preview and its width with the workspace, and the Fields sheet closed", async () => {
     const path = `templates/${booksProfile.document}`;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(() =>
@@ -548,7 +562,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             active: true,
           });
           // The leaf takes most of the window beside the tab group already
-          // there, so both panels stand as columns (#1955).
+          // there, so the Preview stands as a column (#1955).
           type Sized = { setDimension(share: number): void };
           for (const child of (
             app.workspace.rootSplit as unknown as { children: unknown[] }
@@ -564,10 +578,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           if (!view) return null;
           const edges: Record<string, Edge> = {};
           for (const [side, label] of Object.entries(labels)) {
-            const panel =
-              side === "fields"
-                ? page.fieldsPanel(view)
-                : page.previewPanel(view);
+            const panel = page.previewPanel(view);
             const handle = Array.from(
               view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
             ).find((element) => element.getAttribute("aria-label") === label);
@@ -585,17 +596,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               max: handle.getAttribute("aria-valuemax"),
             };
           }
-          return JSON.stringify({ edges, saved: view.getState().panels });
+          return JSON.stringify({
+            edges,
+            saved: view.getState().panels,
+            sheet: page.fieldsSheet(view) !== null,
+          });
         },
         {
           path,
-          labels: {
-            fields: run.m.workbench_fields_resize(),
-            preview: run.m.workbench_preview_resize(),
-          },
+          labels: { preview: run.m.workbench_preview_resize() },
         },
         {
-          what: "both panels restored, each edge naming its drawn width",
+          what: "the Preview restored, its edge naming its drawn width",
           // The edge has described its panel once it names the drawn width.
           ready: (value) =>
             value !== null &&
@@ -605,48 +617,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
       );
       return JSON.parse(read!) as {
-        edges: Record<"fields" | "preview", Edge>;
+        edges: Record<"preview", Edge>;
         saved: unknown;
+        sheet: boolean;
       };
     };
-    /** The widest the view draws the Fields column. */
-    const limit = (container: number) =>
-      Math.min(960, Math.floor(container * 0.4));
     const panels = {
-      fields: { shown: true, width: 260 },
       // Wider than 40% of the leaf: the Preview column has no share cap.
       preview: { shown: true, width: 700 },
     };
-    const first = await read(JSON.stringify({ panels }));
-    expect(first.edges.fields.now).toBe("260");
+    // A Fields column an older build saved has no place to restore to.
+    const first = await read(
+      JSON.stringify({
+        panels: { ...panels, fields: { shown: true, width: 260 } },
+      }),
+    );
     const { preview } = first.edges;
     expect(preview.drawn).toBe(700);
     expect(preview.drawn).toBeGreaterThan(preview.container * 0.4);
-    // The Preview grows until the editor keeps only its 360 px beside both
-    // columns and their 4 px handles (#1952).
-    expect(preview.max).toBe(String(preview.container - 360 - 4 - (260 + 4)));
-    // The Fields column grows only as far as keeps it a column beside the
-    // Preview and an editor of 360 px, past both columns' 4 px handles
-    // (#1956, #1952).
-    const { container } = first.edges.fields;
-    expect(first.edges.fields.max).toBe(
-      String(
-        Math.min(limit(container), container - preview.drawn - 360 - 2 * 4),
-      ),
-    );
-    // The saved state of that leaf restores both panels in a new leaf.
+    // The Preview grows until the editor keeps only its 360 px beside the
+    // column and its 4 px handle (#1952).
+    expect(preview.max).toBe(String(preview.container - 360 - 4));
+    expect(first.sheet).toBe(false);
+    // The reader opens the Fields sheet; the saved state leaves it out.
     const saved = await obRun(
       run.vaultId,
-      ({ page }, { path }) =>
-        JSON.stringify(page.workbench({ path })!.getState()),
+      ({ page }, { path }) => {
+        const view = page.workbench({ path })!;
+        view.registry.set(view.workbench.fieldsSheet, true);
+        return JSON.stringify(view.getState());
+      },
       { path },
     );
+    // The saved state of that leaf restores the Preview in a new leaf, with
+    // the Fields sheet closed.
     const second = await read(saved);
-    expect(second.edges.fields.now).toBe("260");
     expect(second.edges.preview.now).toBe(String(preview.drawn));
+    expect(second.sheet).toBe(false);
     // A state that names no Preview height leaves the leaf's own, 40%.
     expect(second.saved).toEqual({
-      ...panels,
       preview: { ...panels.preview, height: 40 },
     });
   });
@@ -669,7 +678,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await suite.wideWindow(cleanup);
     const panels = {
-      fields: { shown: false, width: 400 },
       preview: { shown: true, width: 400, height: 40 },
     };
     /**
@@ -861,7 +869,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             // A narrow Preview: the editor keeps its 360 px beside it either side
             // of the boundary, so the width alone moves it.
             panels: {
-              fields: { shown: false, width: 400 },
               preview: { shown: true, width: 240, height: 40 },
             },
           },
@@ -1045,7 +1052,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   // #1956: a reader who cannot drag sizes every handle from the pane menu
   // alone, and the sizes the menu sets are saved like dragged ones.
-  it("sizes and resets the panels through the pane menu alone, and restores the sizes", async () => {
+  it("sizes and resets the Preview through the pane menu alone, and restores the sizes", async () => {
     const path = `templates/${booksProfile.document}`;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(() =>
@@ -1196,22 +1203,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     };
     const { m } = run;
-    const fields = `${m.workbench_fields_resize()} vertical`;
     const preview = `${m.workbench_preview_resize()} vertical`;
     const split = `${m.workbench_preview_resize()} horizontal`;
 
-    // A wide leaf: both columns, each sized from its own submenu.
+    // A wide leaf: the Preview column, sized from its submenu. The Fields
+    // sheet has no edge, so the pane menu sizes the Preview alone.
     await open(
-      {
-        panels: {
-          fields: { shown: true, width: 400 },
-          preview: { shown: true, width: 400, height: 40 },
-        },
-      },
+      { panels: { preview: { shown: true, width: 400, height: 40 } } },
       null,
     );
-    await handles("both columns", (now) => now[fields] === "400");
-    expect(await submenu(m.workbench_fields_resize())).toBe(
+    await handles("the Preview column", (now) => now[preview] === "400");
+    expect(await submenu(m.workbench_preview_resize())).toBe(
       [
         m.workbench_panel_wider(),
         m.workbench_panel_narrower(),
@@ -1219,24 +1221,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ].join("|"),
     );
     await pick(m.workbench_panel_narrower());
-    await submenu(m.workbench_preview_resize());
-    await pick(m.workbench_panel_wider());
-    const sized = await handles(
-      "the Fields narrower and the Preview wider",
-      (now) => now[fields] === "336" && now[preview] === "464",
-    );
-    expect(sized.saved).toEqual({
-      fields: { shown: true, width: 336 },
-      preview: { shown: true, width: 464, height: 40 },
-    });
-    expect(await submenu(m.workbench_fields_resize())).toContain(
+    await handles("the Preview narrower", (now) => now[preview] === "336");
+    expect(await submenu(m.workbench_preview_resize())).toContain(
       `|${m.workbench_panel_reset_width()}`,
     );
     await pick(m.workbench_panel_reset_width());
     await handles(
-      "the Fields at its default width",
-      (now) => now[fields] === "400",
+      "the Preview at its default width",
+      (now) => now[preview] === "400",
     );
+    await submenu(m.workbench_preview_resize());
+    await pick(m.workbench_panel_wider());
+    const sized = await handles(
+      "the Preview wider",
+      (now) => now[preview] === "464",
+    );
+    expect(sized.saved).toEqual({
+      preview: { shown: true, width: 464, height: 40 },
+    });
 
     // A narrow leaf: the Preview under the editor, sized by its height.
     const state = (path: string) =>
@@ -1257,7 +1259,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await pick(m.workbench_panel_taller());
     const chosen = {
-      fields: { shown: true, width: 400 },
       preview: { shown: true, width: 464, height: 50 },
     };
     const taller = await handles(
@@ -1282,7 +1283,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   // #1955: where the Fields column does not fit, Fields opens its picker.
-  it("inserts a field from the Fields picker of a narrow leaf with the keyboard, and closes it on Escape, Tab and a press on the action", async () => {
+  // #1964: the Fields action opens one modal Fields sheet at every width.
+  it("inserts a field from the Fields sheet of a narrow leaf with the keyboard, and closes it on Escape, the scrim and the action", async () => {
     const path = `templates/${booksProfile.document}`;
     const documentPath = join(e2eVaultPath, path);
     const original = await readFile(documentPath, "utf-8");
@@ -1299,8 +1301,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await writeFile(documentPath, original);
     });
     await suite.wideWindow(cleanup);
-    // The Fields shown, in a leaf too narrow for their column beside an
-    // editor of 360 px.
+    // A leaf too narrow for a side panel beside an editor of 360 px.
     await obRun(
       run.vaultId,
       async ({ app }, { path, key }) => {
@@ -1312,11 +1313,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         await leaf.setViewState({
           type: "zotlit-template-workbench",
-          state: {
-            file: path,
-            itemIndexedKey: key,
-            panels: { fields: { shown: true, width: 400 } },
-          },
+          state: { file: path, itemIndexedKey: key },
           active: true,
         });
         const other = app.workspace.createLeafBySplit(leaf, "vertical");
@@ -1340,35 +1337,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const action = view?.containerEl.querySelector<HTMLElement>(
             `.view-action[aria-label="${label}"]`,
           );
-          if (!view || !action || action.getAttribute("aria-expanded") === null)
+          if (!view || !action || view.contentEl.clientWidth >= 600)
             return null;
           return JSON.stringify({
-            width: view.contentEl.clientWidth,
-            column: page.fieldsPanel(view) !== null,
+            sheet: page.fieldsSheet(view) !== null,
+            haspopup: action.getAttribute("aria-haspopup"),
             expanded: action.getAttribute("aria-expanded"),
-            pressed: action.getAttribute("aria-pressed"),
-            shown: view.getState().panels,
           });
         },
-        { path, label: run.m.workbench_show_fields() },
+        { path, label: run.m.workbench_view_fields() },
         {
-          what: "a narrow leaf whose Fields action opens the picker",
+          what: "a narrow leaf with its Fields action",
           ready: (value) => value !== null,
         },
       ))!,
     ) as Record<string, unknown>;
-    // Narrowing left the picker closed and kept the Fields shown.
-    expect(narrow).toMatchObject({
-      column: false,
+    // Narrowing opened no sheet.
+    expect(narrow).toEqual({
+      sheet: false,
+      haspopup: "dialog",
       expanded: "false",
-      pressed: null,
-      shown: { fields: { shown: true } },
     });
-    expect(narrow.width).toBeLessThan(600);
 
     const walk = await obRun(
       run.vaultId,
-      async ({ page }, { path, label }) => {
+      async ({ page }, { path, label, insert }) => {
         const { until, trusted } = page;
         const view = page.workbench({ path })!;
         const el = view.contentEl;
@@ -1388,181 +1381,146 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const editor = content.cmTile!.root.view;
         await input.click(content);
         editor.dispatch({ selection: { anchor: editor.state.doc.length } });
+        const sheet = () => page.fieldsSheet(view);
         const search = () =>
-          el.doc.querySelector<HTMLInputElement>(
-            '[role="dialog"] [role="combobox"]',
-          );
-        const activeRow = () =>
-          el.doc.getElementById(
-            search()?.getAttribute("aria-activedescendant") ?? "",
-          );
-        const detail = () =>
-          el.doc.getElementById(
-            search()?.getAttribute("aria-describedby") ?? "",
-          )?.textContent ?? "";
+          sheet()?.querySelector<HTMLInputElement>('input[type="search"]') ??
+          null;
+        const doiInsert = () =>
+          sheet()?.querySelector<HTMLElement>(
+            `[data-workbench-field="DOI"] [role="button"][aria-label="${insert}"]`,
+          ) ?? null;
+        /** Tabs from the search field to the DOI row's Insert button. */
+        const tabToDoi = async () => {
+          for (let step = 0; step < 12; step++) {
+            if (el.doc.activeElement === doiInsert()) return true;
+            await input.key("Tab");
+          }
+          return el.doc.activeElement === doiInsert();
+        };
         await input.click(action);
         await until(
-          "focus in the picker's search field",
+          "focus in the sheet's search field",
           () => search() !== null && el.doc.activeElement === search(),
         );
-        const surface = search()!.closest(".popover")!;
+        const dialog = sheet()!;
         const opened = {
           expanded: action.getAttribute("aria-expanded"),
-          onBody: surface.parentElement === el.doc.body,
-          menuLayer:
-            getComputedStyle(surface).zIndex ===
-            getComputedStyle(el.doc.body)
-              .getPropertyValue("--layer-menu")
-              .trim(),
+          controls: action.getAttribute("aria-controls") === dialog.id,
+          modal: dialog.getAttribute("aria-modal"),
+          // The sheet stands at the view's leading edge, over the editor; its
+          // offset leaves out the slide that brings it in.
+          leading:
+            dialog.offsetParent === el.querySelector('[data-part="panels"]') &&
+            dialog.offsetLeft === 0,
+          scrim: el.querySelector('[data-part="scrim"]') !== null,
+          editorInert: content.closest("[inert]") !== null,
         };
         await contents.insertText("doi");
-        await until("the search keeps the DOI", () =>
-          (activeRow()?.textContent ?? "").startsWith("DOI"),
-        );
-        const first = { row: activeRow()!.id, detail: detail() };
-        await input.key("Down");
-        const moved =
-          activeRow()!.id !== first.row && detail() !== first.detail;
-        await input.key("Up");
-        const back = activeRow()!.id === first.row;
+        await until("the search finds the DOI", () => doiInsert() !== null);
+        const reached = await tabToDoi();
         await input.key("Enter");
         await until(
-          "the field at the cursor, the picker closed and the editor focused",
+          "the field at the cursor, the sheet closed and the editor focused",
           () =>
-            search() === null &&
+            sheet() === null &&
             editor.state.doc.toString().endsWith("{{ zt.DOI }}") &&
             editor.hasFocus,
         );
+        const { head } = editor.state.selection.main;
         const inserted = {
-          status: el.querySelector('[data-part="status"]')?.textContent ?? null,
-          editorFocused: editor.hasFocus,
+          // The cursor stands after the inserted field.
+          cursorAfter: head === editor.state.doc.length,
           expanded: action.getAttribute("aria-expanded"),
         };
-        // Escape closes the next opening and hands focus to the action.
+        // Shift+Enter inserts and keeps the sheet open for the next field.
         await input.click(action);
-        await until(
-          "the picker again",
-          () => el.doc.activeElement === search(),
+        await until("the sheet again", () => el.doc.activeElement === search());
+        if (search()!.value !== "doi") {
+          search()!.select();
+          await contents.insertText("doi");
+        }
+        await until("the DOI again", () => doiInsert() !== null);
+        await tabToDoi();
+        await input.key("Enter", ["shift"]);
+        await until("the second DOI", () =>
+          editor.state.doc.toString().endsWith("{{ zt.DOI }}{{ zt.DOI }}"),
         );
-        const fresh = search()!.value;
+        const kept = sheet() !== null;
+        // Escape closes it and hands focus to the action.
         await input.key("Escape");
-        await until("the picker closed", () => search() === null);
+        await until("the sheet closed by Escape", () => sheet() === null);
         const escaped = el.doc.activeElement === action;
-        // From the action, a printable key opens the picker searching for
-        // it, and End and Home reach the last and the first row.
-        await input.key("d");
-        await until(
-          "the picker on the typed key",
-          () => search()?.value === "d",
-        );
-        const rows = () =>
-          el.doc.querySelectorAll('[role="dialog"] [role="option"]');
-        await input.key("End");
-        const end = activeRow() === rows()[rows().length - 1];
-        await input.key("Home");
-        const home = activeRow() === rows()[0];
-        // A picker opened again at once after an insertion keeps focus when
-        // the editor takes the focus the insertion asked for (#1955).
-        await contents.insertText("oi");
-        await until("the DOI again", () =>
-          (activeRow()?.textContent ?? "").startsWith("DOI"),
-        );
-        let editorFocused = false;
-        content.addEventListener("focusin", () => (editorFocused = true), {
-          once: true,
-        });
-        await input.key("Enter");
-        await until(
-          "the picker closed by the insertion",
-          () => search() === null,
-        );
+        // The scrim closes it and hands focus to the action.
         await input.click(action);
-        await until(
-          "the picker reopened",
-          () => el.doc.activeElement === search(),
-        );
-        await until(
-          "the editor took the inserted text's focus and handed it back",
-          () =>
-            editorFocused &&
-            editor.state.doc.toString().endsWith("{{ zt.DOI }}{{ zt.DOI }}") &&
-            el.doc.activeElement === search(),
-        );
-        const reopened = el.doc.activeElement === search();
-        // Tab leaves the picker: it closes, and focus goes to the action with
-        // the picker's keys gone, so Enter no longer inserts a field (#1952).
-        const kept = editor.state.doc.toString();
-        await input.key("Tab");
-        await until("the picker closed by Tab", () => search() === null);
-        const tabbed = el.doc.activeElement === action;
-        // The key reaches the action, whose keys handle it as it goes down.
-        await input.key("Enter");
-        const untouched =
-          search() === null && editor.state.doc.toString() === kept;
-        // A press on the action while the picker stands closes it and hands
-        // focus to the action.
+        await until("the sheet for the scrim", () => sheet() !== null);
+        await input.click(el.querySelector('[data-part="scrim"]')!);
+        await until("the sheet closed by the scrim", () => sheet() === null);
+        const scrimmed = el.doc.activeElement === action;
+        // A second press on the action closes it.
         await input.click(action);
-        await until(
-          "the picker opened by the press",
-          () => el.doc.activeElement === search(),
-        );
+        await until("the sheet for the press", () => sheet() !== null);
         await input.click(action);
-        await until("the picker closed by the press", () => search() === null);
-        const pressed = el.doc.activeElement === action;
+        await until("the sheet closed by the press", () => sheet() === null);
         return JSON.stringify({
           opened,
-          moved,
-          back,
+          reached,
           inserted,
-          fresh,
+          kept,
           escaped,
-          end,
-          home,
-          reopened,
-          tabbed,
-          untouched,
-          pressed,
+          scrimmed,
+          pressed: action.getAttribute("aria-expanded"),
         });
       },
-      { path, label: run.m.workbench_show_fields() },
+      {
+        path,
+        label: run.m.workbench_view_fields(),
+        insert: run.m.workbench_fields_put_in_note(),
+      },
     );
     expect(JSON.parse(walk)).toEqual({
-      opened: { expanded: "true", onBody: true, menuLayer: true },
-      moved: true,
-      back: true,
-      inserted: {
-        status: run.m.workbench_fields_inserted({ field: "DOI" }),
-        editorFocused: true,
-        expanded: "false",
+      opened: {
+        expanded: "true",
+        controls: true,
+        modal: "true",
+        leading: true,
+        scrim: true,
+        editorInert: true,
       },
-      fresh: "",
+      reached: true,
+      inserted: { cursorAfter: true, expanded: "false" },
+      kept: true,
       escaped: true,
-      end: true,
-      home: true,
-      reopened: true,
-      tabbed: true,
-      untouched: true,
-      pressed: true,
+      scrimmed: true,
+      pressed: "false",
     });
 
-    // Widening the leaf shows the column again.
+    // Widening the leaf opens no sheet.
     await obRun(
       run.vaultId,
       ({ app }) => app.workspace.detachLeavesOfType("empty"),
       undefined,
     );
-    await obRunUntil(
-      run.vaultId,
-      ({ page }, { path }) =>
-        page.fieldsPanel(page.workbench({ path })) !== null,
-      { path },
-      { what: "the Fields column in the widened leaf" },
-    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        ({ page }, { path }) => {
+          const view = page.workbench({ path });
+          return view && view.contentEl.clientWidth >= 600
+            ? page.fieldsSheet(view) === null
+            : null;
+        },
+        { path },
+        {
+          what: "the widened leaf",
+          ready: (value) => value !== null,
+        },
+      ),
+    ).toBe(true);
   });
 
   // #1957: the Preview's Show problem is the shared repair command, so the
   // problem round trip is the same in a narrow and a wide leaf.
-  it("reveals the call from the Preview's Show problem in a narrow and a wide leaf, closing the Fields picker and keeping the Preview in place", async () => {
+  it("reveals the call from the Preview's Show problem in a narrow and a wide leaf, keeping the Preview in place", async () => {
     const path = `templates/${booksProfile.document}`;
     const documentPath = join(e2eVaultPath, path);
     const original = await readFile(documentPath, "utf-8");
@@ -1581,11 +1539,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await suite.wideWindow(cleanup);
     const call = '{% render "missing-partial" %}';
     const panels = {
-      fields: { shown: true, width: 400 },
       preview: { shown: true, width: 400, height: 40 },
     };
     /**
-     * Opens the editor with both panels in `share` percent of the window, or
+     * Opens the editor with the Preview in `share` percent of the window, or
      * the whole window when `share` is null, with the call to a partial no
      * vault holds in the note body and the cursor at its start.
      */
@@ -1662,25 +1619,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { what: "the Preview's Show problem on the missing partial" },
       );
     };
-    /** Opens the picker when the column does not fit, then presses Show problem. */
+    /** Presses Show problem in the Preview. */
     const showProblem = async () =>
       JSON.parse(
         await obRun(
           run.vaultId,
-          async ({ page }, { path, call, label }) => {
+          async ({ page }, { path, call }) => {
             const { until } = page;
             const view = page.workbench({ path })!;
             const el = view.contentEl;
-            const search = () =>
-              el.doc.querySelector('[role="dialog"] [role="combobox"]');
-            const action = view.containerEl.querySelector<HTMLElement>(
-              `.view-action[aria-label="${label}"]`,
-            )!;
-            const popover = action.getAttribute("aria-expanded") !== null;
-            if (popover) {
-              action.click();
-              await until("the Fields picker", () => search() !== null);
-            }
             const panel = page.previewPanel(view)!;
             const box = () => {
               const { left, top, width, height } =
@@ -1723,8 +1670,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             return JSON.stringify({
               inView,
               announced: announced.includes("missing-partial"),
-              popover,
-              picker: search() !== null,
               problems:
                 el.querySelector('[data-part="problems-open"]') !== null,
               samePreview:
@@ -1733,28 +1678,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               saved: view.getState().panels,
             });
           },
-          { path, call, label: run.m.workbench_show_fields() },
+          { path, call },
         ),
       ) as Record<string, unknown>;
 
-    // A narrow leaf: the Preview under the editor, the Fields picker open.
+    // A narrow leaf: the Preview under the editor.
     await open(30);
     expect(await showProblem()).toEqual({
       inView: true,
       announced: true,
-      popover: true,
-      picker: false,
       problems: true,
       samePreview: true,
       saved: panels,
     });
-    // A wide leaf: three columns, the same round trip.
+    // A wide leaf: the Preview beside the editor, the same round trip.
     await open(null);
     expect(await showProblem()).toEqual({
       inView: true,
       announced: true,
-      popover: false,
-      picker: false,
       problems: true,
       samePreview: true,
       saved: panels,
