@@ -31,7 +31,6 @@ import { Explorer } from "@/views/template-data-explorer/Explorer";
 import { exportTarget } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import {
-  annotationKeyOfNode,
   ExplorerModelContext,
   NO_PRESENTATION,
   toggleSections,
@@ -256,20 +255,30 @@ export function makeFieldsPanelModel(
   };
 }
 
-/** The annotation example a row of the note root's `annotations` names. */
+/**
+ * The annotation example the note root's `annotations` row explores. The
+ * panel shows that list by its items' properties, with no row for one
+ * annotation, so the row explores the view's chosen annotation, else the
+ * Item's first; the view's "Choose annotation" picks another from there.
+ */
 function annotationOfNode(
   view: TemplateWorkbenchView,
   node: DisplayNode,
 ): string | null {
-  const key = annotationKeyOfNode(
-    view.registry.get(view.fields.state).root,
-    node,
+  const { root } = view.registry.get(view.fields.state);
+  if (
+    root !== "note" ||
+    node.kind !== "value" ||
+    node.path.length !== 1 ||
+    node.path[0] !== "annotations"
+  )
+    return null;
+  const { current, example } = view.registry.get(view.workbench.examples);
+  return (
+    current.find((entry) => entry.id === example?.id)?.id ??
+    current[0]?.id ??
+    null
   );
-  return key === null
-    ? null
-    : (view.registry
-        .get(view.workbench.examples)
-        .current.find((example) => example.root.key === key)?.id ?? null);
 }
 
 /** Shows `root` in the Fields panel of `view`. */
