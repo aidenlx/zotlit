@@ -2,6 +2,7 @@
 
 import { formatAccessorPath, isAccessorIdentifier } from "./accessor-path";
 import type { DisplayNode, ListPropertyNode } from "./display-tree";
+import { listLineProperty, listReadsAsText } from "./list-items";
 
 export type TemplateEngine = "liquid" | "eta";
 
@@ -20,7 +21,7 @@ export function snippetKindsFor(node: DisplayNode): SnippetKind[] {
     return ["output", "if-present"];
   }
   if (node.valueType === "array") {
-    return arrayJoinable(node.value) ? ["joined", "loop"] : ["loop"];
+    return listReadsAsText(itemsOf(node)) ? ["joined", "loop"] : ["loop"];
   }
   return ["output", "if-present"];
 }
@@ -41,8 +42,7 @@ export function renderSnippet(
       return guard(engine, callForm(node, engine, accessor), show);
     case "loop": {
       const item = loopVariable(node.path);
-      const value = node.kind === "value" ? node.value : undefined;
-      const property = arrayJoinable(value) ? undefined : firstProperty(value);
+      const property = listLineProperty(itemsOf(node));
       const body =
         property === undefined ? item : formatAccessorPath([property], item);
       return loop(engine, accessor, { item, body });
@@ -119,14 +119,9 @@ function loop(
     : `<% for (const ${item} of ${accessor}) { %>\n- <%= ${body} %><% } %>`;
 }
 
-/** The first key, in the display tree's order, of the first record in a list: what a loop line shows for items with no text of their own. */
-function firstProperty(value: unknown): string | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const item: unknown = value.find(
-    (entry: unknown) => entry !== null && typeof entry === "object",
-  );
-  if (item === undefined) return undefined;
-  return Object.keys(item as object).sort((a, b) => a.localeCompare(b))[0];
+/** The items of a list node; none for any other node. */
+function itemsOf(node: DisplayNode): readonly unknown[] {
+  return node.kind === "value" && Array.isArray(node.value) ? node.value : [];
 }
 
 function joined(engine: TemplateEngine, accessor: string): string {
@@ -147,14 +142,4 @@ export function loopVariable(path: DisplayNode["path"]): string {
     return last.slice(0, -1);
   }
   return "item";
-}
-
-/** Joins to a meaningful string when elements are primitive or carry their own `toString` (creators, tags, collections); a plain-object array would only yield `[object Object]`. Empty arrays are permissive — their element shape is unknown. */
-function arrayJoinable(value: unknown): boolean {
-  if (!Array.isArray(value)) return false;
-  if (value.length === 0) return true;
-  const first: unknown = value[0];
-  if (first === null || first === undefined) return false;
-  if (typeof first !== "object") return true;
-  return Object.hasOwn(first, "toString");
 }

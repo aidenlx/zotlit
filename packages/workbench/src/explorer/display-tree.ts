@@ -1,8 +1,15 @@
 // Pure value-walker mapping an anchor root object + expansion set to typed display nodes.
 
-import { formatAccessorPath } from "./accessor-path";
+import { formatAccessorPath, memberAccessor } from "./accessor-path";
 import type { TemplatePathSegment } from "./accessor-path";
 import { inertPlaceholderReason } from "./inert-placeholder";
+import {
+  isPlainObject,
+  itemReadsAsText,
+  listLineProperty,
+  listPropertyNames,
+  listRecords,
+} from "./list-items";
 import { coerceToString } from "./string-coercion";
 
 export type PathSegment = TemplatePathSegment;
@@ -88,7 +95,7 @@ export type ListLayout = "items" | "shape";
 
 export interface BuildDisplayTreeOptions {
   readonly expanded: ReadonlySet<string>;
-  /** Defaults to `items`. */
+  /** @default "items" */
   readonly lists?: ListLayout;
 }
 
@@ -248,7 +255,7 @@ function classifyValue(
     : Object.keys(container).length;
   const expandable =
     walk.lists === "shape" && Array.isArray(container)
-      ? recordKeys(container).length > 0
+      ? listPropertyNames(container).length > 0
       : size > 0;
   const preview = containerPreview(container);
 
@@ -269,11 +276,6 @@ function classifyValue(
   }
 
   return node;
-}
-
-function isPlainObject(value: object): boolean {
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
 }
 
 function valueTypeOf(value: unknown): DisplayValueType {
@@ -305,13 +307,11 @@ export function previewLine(text: string): string {
 function containerPreview(value: object): string | undefined {
   if (Array.isArray(value)) {
     if (value.length === 0) return undefined;
-    const first = recordKeys(value)[0];
+    const line = listLineProperty(value);
     return previewLine(
       value
         .map((item: unknown) =>
-          itemReadsAsText(item) || first === undefined
-            ? textOf(item)
-            : textOf(propertyOf(item, first)),
+          textOf(line === undefined ? item : propertyOf(item, line)),
         )
         .filter((text) => text !== "")
         .join(", "),
@@ -321,31 +321,6 @@ function containerPreview(value: object): string | undefined {
   const rendered = previewLine(coerceToString(value));
   if (!rendered || rendered === "[object Object]") return undefined;
   return rendered;
-}
-
-/** True for an item a template prints as itself: a primitive, or a record with its own `toString`. */
-function itemReadsAsText(item: unknown): boolean {
-  if (item === null || typeof item !== "object") return true;
-  return Object.hasOwn(item, "toString") || !isPlainObject(item);
-}
-
-/** Plain records among a list's items. */
-function recordsOf(list: readonly unknown[]): object[] {
-  return list.filter(
-    (item): item is object =>
-      item !== null &&
-      typeof item === "object" &&
-      !Array.isArray(item) &&
-      isPlainObject(item),
-  );
-}
-
-/** Every key the list's records have, in the tree's order. */
-function recordKeys(list: readonly unknown[]): string[] {
-  const keys = new Set<string>();
-  for (const record of recordsOf(list))
-    for (const key of Object.keys(record)) keys.add(key);
-  return [...keys].sort((a, b) => a.localeCompare(b));
 }
 
 /** An item's own value for `key`; an unread getter stays unread, as the tree leaves it. */
@@ -378,16 +353,17 @@ function listProperties(
   list: readonly unknown[],
   listPath: readonly PathSegment[],
 ): ListPropertyNode[] {
-  const records = recordsOf(list);
+  const records = listRecords(list);
   const listKey = formatPath(listPath);
-  return recordKeys(list).map((property) => {
+  return listPropertyNames(list).map((property) => {
     const values = records
       .map((record) => textOf(propertyOf(record, property)))
       .filter((text) => text !== "");
     return {
       kind: "list-property",
       path: [...listPath, property],
-      key: `${listKey}[]${formatAccessorPath([property], "_").slice(1)}`,
+      // `[]` marks the step over every item, as in `authors[].family`.
+      key: `${listKey}[]${memberAccessor(property)}`,
       label: property,
       list: listPath,
       property,
@@ -481,7 +457,7 @@ export interface BuildFilteredDisplayTreeOptions {
   readonly collapsed?: ReadonlySet<string>;
   /** Extra searchable text per key, such as the reader-facing name of a top-level field. */
   readonly aliases?: ReadonlyMap<string, string>;
-  /** Defaults to `items`; see {@link ListLayout}. */
+  /** See {@link ListLayout}. @default "items" */
   readonly lists?: ListLayout;
 }
 
@@ -603,7 +579,7 @@ function filterNode(
   // A list of plain values has no sub-nodes, so it matches on its items.
   const itemsMatch =
     shape &&
-    recordKeys(container as unknown[]).length === 0 &&
+    listPropertyNames(container as unknown[]).length === 0 &&
     (container as unknown[]).some((item) =>
       textOf(item).toLowerCase().includes(ctx.lowerQuery),
     );

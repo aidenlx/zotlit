@@ -6,6 +6,7 @@ import type {
   DisplayValueType,
   PathSegment,
 } from "./display-tree";
+import { buildDisplayTree } from "./display-tree";
 import { renderSnippet, snippetKindsFor } from "./snippets";
 
 function value(
@@ -199,6 +200,32 @@ describe("renderSnippet — loop", () => {
     );
     expect(renderSnippet(node, "eta", "loop")).toBe(
       "<% for (const line of zt.lines) { %>\n- <%= line.page %><% } %>",
+    );
+  });
+});
+
+describe("a list's preview and its loop line", () => {
+  // Items with different keys: the first item has no `a`.
+  it("show the same property for each item", () => {
+    const [node] = buildDisplayTree(
+      { lines: [{ b: "first" }, { a: "second", b: "third" }] },
+      { expanded: new Set() },
+    );
+    expect(node).toMatchObject({ preview: "second" });
+    expect(renderSnippet(node!, "liquid", "loop")).toBe(
+      "{% for line in zt.lines %}\n- {{ line.a }}{% endfor %}",
+    );
+  });
+
+  it("show the item itself when every item reads as text", () => {
+    const [node] = buildDisplayTree(
+      { tags: ["physics", "methods"] },
+      { expanded: new Set() },
+    );
+    expect(node).toMatchObject({ preview: "physics, methods" });
+    expect(snippetKindsFor(node!)).toEqual(["joined", "loop"]);
+    expect(renderSnippet(node!, "liquid", "loop")).toBe(
+      "{% for tag in zt.tags %}\n- {{ tag }}{% endfor %}",
     );
   });
 });
