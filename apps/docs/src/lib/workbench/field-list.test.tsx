@@ -71,6 +71,11 @@ function mount() {
 it("retains note navigation across editor modes and restores it after an annotation root", () => {
   using view = mount();
   const { container } = view;
+  // A closed list row previews its items too, so the row's state tells open from closed.
+  const authorsOpen = () =>
+    container
+      .querySelector('[data-workbench-field="authors"]')
+      ?.getAttribute("aria-expanded");
   view.show();
   act(() =>
     container
@@ -79,7 +84,7 @@ it("retains note navigation across editor modes and restores it after an annotat
       )!
       .click(),
   );
-  expect(container.textContent).toContain("Ada");
+  expect(authorsOpen()).toBe("true");
   view.filter("title");
   expect(container.textContent).not.toContain("Ada");
   view.show({ mode: "expression", annotation: SAMPLE_ANNOTATIONS[1]! });
@@ -87,16 +92,16 @@ it("retains note navigation across editor modes and restores it after an annotat
     container.querySelector<HTMLInputElement>('input[type="search"]')!.value,
   ).toBe("title");
   view.filter("");
-  expect(container.textContent).toContain("Ada");
+  expect(authorsOpen()).toBe("true");
   const annotation = SAMPLE_ANNOTATIONS[0]!;
   view.show({ root: "annotation", annotation });
   expect(container.textContent).toContain(annotation.root.text);
   view.show();
-  expect(container.textContent).toContain("Ada");
+  expect(authorsOpen()).toBe("true");
   view.show({
     sample: { ...sample, item: { ...sample.item, indexedKey: "PAPER234" } },
   });
-  expect(container.textContent).not.toContain("Ada");
+  expect(authorsOpen()).toBe("false");
 });
 it("owns restored data for each view and distinguishes no Item, pending data, and no annotations", () => {
   using first = mount();

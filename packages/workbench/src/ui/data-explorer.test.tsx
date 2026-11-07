@@ -367,8 +367,12 @@ it("keeps two Explorer owners independent through display and filter changes", (
   fireEvent.click(
     left.getByRole("button", { name: m.workbench_explorer_toggle_node() }),
   );
-  expect(left.getByText("Ada")).toBeTruthy();
-  expect(right.queryByText("Grace")).toBeNull();
+  const authorsRow = (explorer: typeof left) =>
+    explorer
+      .getAllByRole("treeitem")
+      .find((row) => row.dataset.workbenchField === "authors");
+  expect(authorsRow(left)?.getAttribute("aria-expanded")).toBe("true");
+  expect(authorsRow(right)?.getAttribute("aria-expanded")).toBe("false");
   const common = `${m.workbench_explorer_section_common()} (2)`;
   fireEvent.click(left.getByRole("button", { name: common }));
   expect(left.queryByText(m.workbench_field_title())).toBeNull();

@@ -410,7 +410,9 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     resultRegion: {
       region:
-        "group flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-fd-border bg-fd-card p-4",
+        // The scroll padding keeps a focused control clear of the sticky file
+        // name at the top of the region.
+        "group flex min-h-0 flex-1 scroll-pt-10 flex-col overflow-auto rounded-md border border-fd-border bg-fd-card p-4",
     },
     resultColumn: {
       stale: "mb-2 text-xs font-medium",
@@ -418,8 +420,11 @@ export const WEB_THEME: WorkbenchTheme = {
         "mb-2 flex flex-wrap items-center justify-between gap-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
       "behind-text": "text-pretty",
       run: buttonVariants({ variant: "outline", size: "xs" }),
+      // The file name stays at the top of the region while the note scrolls
+      // under it: the muted tint lies over the card colour, so nothing shows
+      // through.
       filename:
-        "-mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-muted/40 px-3 py-1.5 text-xs font-medium",
+        "sticky -top-4 z-10 -mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-card bg-linear-to-b from-fd-muted/40 to-fd-muted/40 px-3 py-1.5 text-xs font-medium",
       "filename-text": "truncate",
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",

@@ -1,8 +1,15 @@
 // Pure value-walker mapping an anchor root object + expansion set to typed display nodes.
 
-import { formatAccessorPath } from "./accessor-path";
+import { formatAccessorPath, memberAccessor } from "./accessor-path";
 import type { TemplatePathSegment } from "./accessor-path";
 import { inertPlaceholderReason } from "./inert-placeholder";
+import {
+  isPlainObject,
+  itemReadsAsText,
+  listLineProperty,
+  listPropertyNames,
+  listRecords,
+} from "./list-items";
 import { coerceToString } from "./string-coercion";
 
 export type PathSegment = TemplatePathSegment;
@@ -50,16 +57,51 @@ export interface HelperNode extends DisplayNodeBase {
   readonly evaluated: string | null;
 }
 
+/**
+ * One property that a list's items have, holding that property's value for
+ * every item: the shape view of a list of records, in place of one node for
+ * each index. Its `path` is the list's path followed by the property; its
+ * `key` marks the step over the items, as in `authors[].family`.
+ */
+export interface ListPropertyNode extends DisplayNodeBase {
+  readonly kind: "list-property";
+  /** Path of the list whose items carry the property. */
+  readonly list: readonly PathSegment[];
+  readonly property: string;
+  /** Each item's value as text, in item order; an item with no value is left out. */
+  readonly values: readonly string[];
+  /** The values in one compact line. */
+  readonly preview: string;
+}
+
 /** Inert "not imported" node, standing in for a helper that would otherwise queue a vault write. */
 export interface PlaceholderNode extends DisplayNodeBase {
   readonly kind: "placeholder";
   readonly reason: string;
 }
 
-export type DisplayNode = ValueNode | HelperNode | PlaceholderNode;
+export type DisplayNode =
+  | ValueNode
+  | HelperNode
+  | PlaceholderNode
+  | ListPropertyNode;
+
+/**
+ * How a list opens: `items` gives one node for each index; `shape` gives a
+ * list of records one {@link ListPropertyNode} for each property its items
+ * have, and a list of plain values no sub-nodes.
+ */
+export type ListLayout = "items" | "shape";
 
 export interface BuildDisplayTreeOptions {
   readonly expanded: ReadonlySet<string>;
+  /** @default "items" */
+  readonly lists?: ListLayout;
+}
+
+interface Walk {
+  readonly expanded: ReadonlySet<string>;
+  readonly lists: ListLayout;
 }
 
 /** `null` when `annotationKey` matches no annotation (e.g. the annotation vanished since the tree was last built). */
@@ -86,7 +128,10 @@ export function buildDisplayTree(
   root: object,
   options: BuildDisplayTreeOptions,
 ): readonly DisplayNode[] {
-  return buildChildren(root, [], options.expanded);
+  return buildChildren(root, [], {
+    expanded: options.expanded,
+    lists: options.lists ?? "items",
+  });
 }
 
 /** Format a display path, optionally rooted at the Template alias. */
@@ -120,22 +165,24 @@ function entriesOf(container: object): Entry[] {
 function buildChildren(
   container: object,
   parentPath: readonly PathSegment[],
-  expanded: ReadonlySet<string>,
+  walk: Walk,
 ): DisplayNode[] {
+  if (walk.lists === "shape" && Array.isArray(container))
+    return listProperties(container, parentPath);
   return entriesOf(container).map((entry) =>
-    buildNode(entry, parentPath, expanded),
+    buildNode(entry, parentPath, walk),
   );
 }
 
 function buildNode(
   entry: Entry,
   parentPath: readonly PathSegment[],
-  expanded: ReadonlySet<string>,
+  walk: Walk,
 ): DisplayNode {
   const path = [...parentPath, entry.segment];
   const key = formatPath(path);
   const label = String(entry.segment);
-  const isExpanded = expanded.has(key);
+  const isExpanded = walk.expanded.has(key);
 
   if (entry.isGetter && !isExpanded) {
     return {
@@ -150,13 +197,13 @@ function buildNode(
   }
 
   const value = entry.read();
-  return classifyValue(value, { path, key, label }, expanded);
+  return classifyValue(value, { path, key, label }, walk);
 }
 
 function classifyValue(
   value: unknown,
   { path, key, label }: DisplayNodeBase,
-  expanded: ReadonlySet<string>,
+  walk: Walk,
 ): DisplayNode {
   if (typeof value === "function") {
     const reason = inertPlaceholderReason(value);
@@ -206,7 +253,10 @@ function classifyValue(
   const size = Array.isArray(container)
     ? container.length
     : Object.keys(container).length;
-  const expandable = size > 0;
+  const expandable =
+    walk.lists === "shape" && Array.isArray(container)
+      ? listPropertyNames(container).length > 0
+      : size > 0;
   const preview = containerPreview(container);
 
   const node: ValueNode = {
@@ -221,16 +271,11 @@ function classifyValue(
     ...(preview !== undefined ? { preview } : {}),
   };
 
-  if (expanded.has(key) && size > 0) {
-    return { ...node, children: buildChildren(container, path, expanded) };
+  if (walk.expanded.has(key) && expandable) {
+    return { ...node, children: buildChildren(container, path, walk) };
   }
 
   return node;
-}
-
-function isPlainObject(value: object): boolean {
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
 }
 
 function valueTypeOf(value: unknown): DisplayValueType {
@@ -260,10 +305,72 @@ export function previewLine(text: string): string {
  * plain record with only the inherited toString, so it falls back to its size hint.
  */
 function containerPreview(value: object): string | undefined {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return undefined;
+    const line = listLineProperty(value);
+    return previewLine(
+      value
+        .map((item: unknown) =>
+          textOf(line === undefined ? item : propertyOf(item, line)),
+        )
+        .filter((text) => text !== "")
+        .join(", "),
+    );
+  }
   if (!Object.hasOwn(value, "toString")) return undefined;
   const rendered = previewLine(coerceToString(value));
   if (!rendered || rendered === "[object Object]") return undefined;
   return rendered;
+}
+
+/** An item's own value for `key`; an unread getter stays unread, as the tree leaves it. */
+function propertyOf(item: unknown, key: string): unknown {
+  if (item === null || typeof item !== "object") return undefined;
+  const desc = Object.getOwnPropertyDescriptor(item, key);
+  if (!desc || desc.get) return undefined;
+  return desc.value;
+}
+
+/**
+ * One value as the text a note shows: a helper's zero-argument result, a
+ * record's own `toString`; empty for nothing, an inert helper, or a record
+ * with no text of its own.
+ */
+function textOf(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "function") {
+    if (inertPlaceholderReason(value) !== undefined) return "";
+    return evaluateHelper(value as (...args: unknown[]) => unknown) ?? "";
+  }
+  if (typeof value !== "object") return coerceToString(value);
+  if (!itemReadsAsText(value)) return "";
+  const text = coerceToString(value);
+  return text === "[object Object]" ? "" : text;
+}
+
+/** The shape view of a list: one node for each property its records have. */
+function listProperties(
+  list: readonly unknown[],
+  listPath: readonly PathSegment[],
+): ListPropertyNode[] {
+  const records = listRecords(list);
+  const listKey = formatPath(listPath);
+  return listPropertyNames(list).map((property) => {
+    const values = records
+      .map((record) => textOf(propertyOf(record, property)))
+      .filter((text) => text !== "");
+    return {
+      kind: "list-property",
+      path: [...listPath, property],
+      // `[]` marks the step over every item, as in `authors[].family`.
+      key: `${listKey}[]${memberAccessor(property)}`,
+      label: property,
+      list: listPath,
+      property,
+      values,
+      preview: previewLine(values.join(", ")),
+    };
+  });
 }
 
 /** Labels of the template contract's `TemplateLink`/`FallibleTemplateLink` helpers, which all share the `(alias?, subpath?)` signature. */
@@ -299,6 +406,7 @@ function evaluateHelper(fn: (...args: unknown[]) => unknown): string | null {
 export function copyValue(node: DisplayNode): string | null {
   if (node.kind === "placeholder") return null;
   if (node.kind === "helper") return node.evaluated;
+  if (node.kind === "list-property") return node.values.join("\n");
 
   switch (node.valueType) {
     case "getter":
@@ -349,6 +457,8 @@ export interface BuildFilteredDisplayTreeOptions {
   readonly collapsed?: ReadonlySet<string>;
   /** Extra searchable text per key, such as the reader-facing name of a top-level field. */
   readonly aliases?: ReadonlyMap<string, string>;
+  /** See {@link ListLayout}. @default "items" */
+  readonly lists?: ListLayout;
 }
 
 export function buildFilteredDisplayTree(
@@ -365,6 +475,7 @@ export function buildFilteredDisplayTree(
     activeContainers: new WeakSet(),
     collapsed: options?.collapsed ?? new Set(),
     aliases: options?.aliases ?? new Map(),
+    lists: options?.lists ?? "items",
   };
   const nodes = filterChildren(root, [], ctx);
   return { nodes, matchedKeys: ctx.matchedKeys };
@@ -376,6 +487,7 @@ interface FilterContext {
   readonly activeContainers: WeakSet<object>;
   readonly collapsed: ReadonlySet<string>;
   readonly aliases: ReadonlyMap<string, string>;
+  readonly lists: ListLayout;
 }
 
 function filterChildren(
@@ -424,7 +536,10 @@ function filterNode(
   if (typeof value === "function") {
     if (!labelMatches) return null;
     ctx.matchedKeys.add(key);
-    return classifyValue(value, nodeBase, new Set());
+    return classifyValue(value, nodeBase, {
+      expanded: new Set(),
+      lists: ctx.lists,
+    });
   }
 
   const valueType = valueTypeOf(value);
@@ -435,13 +550,19 @@ function filterNode(
       .includes(ctx.lowerQuery);
     if (!labelMatches && !valueMatches) return null;
     ctx.matchedKeys.add(key);
-    return classifyValue(value, nodeBase, new Set());
+    return classifyValue(value, nodeBase, {
+      expanded: new Set(),
+      lists: ctx.lists,
+    });
   }
 
   if (valueType === "object" && !isPlainObject(value as object)) {
     if (!labelMatches) return null;
     ctx.matchedKeys.add(key);
-    return classifyValue(value, nodeBase, new Set());
+    return classifyValue(value, nodeBase, {
+      expanded: new Set(),
+      lists: ctx.lists,
+    });
   }
 
   const container = value as object;
@@ -449,9 +570,21 @@ function filterNode(
     ? container.length
     : Object.keys(container).length;
 
-  const children = size > 0 ? filterChildren(container, path, ctx) : [];
-  if (!labelMatches && children.length === 0) return null;
-  if (labelMatches) ctx.matchedKeys.add(key);
+  const shape = ctx.lists === "shape" && Array.isArray(container);
+  const children = shape
+    ? filterListProperties(container as unknown[], path, ctx)
+    : size > 0
+      ? filterChildren(container, path, ctx)
+      : [];
+  // A list of plain values has no sub-nodes, so it matches on its items.
+  const itemsMatch =
+    shape &&
+    listPropertyNames(container as unknown[]).length === 0 &&
+    (container as unknown[]).some((item) =>
+      textOf(item).toLowerCase().includes(ctx.lowerQuery),
+    );
+  if (!labelMatches && !itemsMatch && children.length === 0) return null;
+  if (labelMatches || itemsMatch) ctx.matchedKeys.add(key);
 
   const preview = containerPreview(container);
   const expandable = children.length > 0;
@@ -466,6 +599,21 @@ function filterNode(
     ...(preview !== undefined ? { preview } : {}),
     ...(expandable && !isCollapsed ? { children } : {}),
   };
+}
+
+/** The list's properties whose name or any item's value contains the query. */
+function filterListProperties(
+  list: readonly unknown[],
+  listPath: readonly PathSegment[],
+  ctx: FilterContext,
+): ListPropertyNode[] {
+  return listProperties(list, listPath).filter((node) => {
+    const matches =
+      node.label.toLowerCase().includes(ctx.lowerQuery) ||
+      node.values.some((value) => value.toLowerCase().includes(ctx.lowerQuery));
+    if (matches) ctx.matchedKeys.add(node.key);
+    return matches;
+  });
 }
 
 function stringifyPrimitive(value: unknown): string {

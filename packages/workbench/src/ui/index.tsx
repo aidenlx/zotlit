@@ -205,6 +205,8 @@ export { COMMON_FIELDS, completionFields } from "./completion-fields";
 export type { CommonField } from "./completion-fields";
 export { tagDescription } from "./tag-help";
 export {
+  PreviewFilenameLabel,
+  previewFilename,
   ResultBody,
   ResultColumn,
   ResultHeader,

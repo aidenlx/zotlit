@@ -149,6 +149,31 @@ the inserted `}}` with no space between them. In step 4, the menu offers
 to the clipboard. The web Workbench does the same steps, with the same
 outcome.
 
+## A list field in the Fields sheet
+
+1. Choose "Alpha of the personal library", and select **Fields**.
+2. Find the **All creators** row (Reference) and the **Tags** row (Common
+   fields) without opening them.
+3. Close the sheet. Select **Source**, and place the cursor in the note body.
+   Select **Fields**, open the row menu of **All creators**, and select
+   **Insert field**.
+4. Select **Fields**, open the row menu of **All creators** again, and select
+   **Copy loop**. Close the sheet, and paste it on a new line of the note body.
+5. Select **Fields**, open the row menu of **Tags**, select **Copy joined**,
+   close the sheet, and paste it on a new line. Then select **Copy loop** in
+   the same menu, and paste it under a line of text.
+
+Expected: in step 2, **All creators** shows `(3)` and every item in one
+line: "Ada Personal, Erin Editor, ZotLit Research Collective". **Tags**
+shows `(2)` and "fixture-core, read-later". In both row menus, **Copy joined**
+comes before **Copy loop**. Step 3 writes
+`{{ zt.creators | join: ", " }}` and closes the sheet, and the Preview shows
+the three names in one line. Step 4 pastes `{% for creator in zt.creators %}`
+and `- {{ creator }}{% endfor %}` on two lines; the Preview shows each name as
+its own list item. Step 5 pastes `{{ zt.tags | join: ", " }}`, then the tag
+loop, which the Preview shows as the two list items "fixture-core" and
+"read-later". No snippet that a list offers names one item, such as `[0]`.
+
 ## Keep the Fields sheet open while inserting
 
 1. Choose "Alpha of the personal library". Select **Source**, and place the
@@ -276,6 +301,30 @@ tab width as a wide one: the tab's width alone decides.
 Expected: the Preview moves under the editor and back to the right, and the
 same control keeps the focus each time. The rendered note keeps its scroll
 position. The web Workbench does the same when the window narrows and widens.
+
+## The Preview's header row stays in view
+
+1. Show the Preview in a wide tab, with the first Item of the personal library
+   chosen. Scroll the rendered note to its end.
+2. Make the tab narrower than 896 pixels, then scroll the Preview under the
+   editor to its end.
+3. Select the **Annotation** tab and scroll the Preview.
+4. Select the **Note** tab and type `{{ zt.title | nofilter }}` in the source,
+   so that the render fails.
+5. In the web Workbench, choose a sample paper and scroll the rendered note.
+
+Expected: after step 1, the row "Note preview", "New note" and "File name:
+books-personalAlpha2024" stays at the top of the Preview while the note
+scrolls under it, and a rule marks its bottom edge. The editor's tab row
+(**Note**, **Properties**, …) stands above the template source only, so the
+Preview starts right under the item row and takes the full height beside the
+editor. After step 2, the same row stays at the top of the Preview under the
+editor, and the tab row stays above the source. After step 3, the row reads
+"Annotation example" with no file name and stays at the top. After step 4,
+the row shows no file name, and the problem notice stands below the row.
+After step 5, the file name, such as `ioannidisWhyMost2005`, stays at the top
+of the result box while the note scrolls, and the "Note preview" heading and
+its controls stay above the box.
 
 ## A tab moved to its own window
 
@@ -503,6 +552,23 @@ In step 5 the Fields sheet shows the editor's Item, "Within-library duplicate,
 first item". The explorer's rows offer copy and Template Snippets, and no
 **Insert field**. **Explore template data** on a Literature Note's file menu,
 and the Zotero `explore` action, open the same standalone explorer.
+
+## List snippets in the standalone explorer
+
+1. Run **Open template data explorer**, and choose "Alpha of the personal
+   library" in it.
+2. Open the row menu of **All creators**.
+3. Open the **All creators** row, and open the row menu of its first item.
+
+Expected: before step 2, the closed **All creators** row shows `(3)` and
+"Ada Personal, Erin Editor, ZotLit Research Collective". In step 2, the menu offers **Copy joined** before **Copy loop**.
+**Copy joined** copies `{{ zt.creators | join: ", " }}`; **Copy loop** copies
+the loop with each creator on its own `- ` line. With JavaScript templates
+on, the Eta submenu offers `<%= zt.creators.join(", ") %>` and
+`<% for (const creator of zt.creators) { %>` with `- <%= creator %><% } %>`.
+In step 3, the explorer still lists each item by its number, so **Explore
+annotation** keeps working for an annotation row; the item's own snippets
+name its path, as before.
 
 ## A saved Fields pane restores as the standalone explorer
 

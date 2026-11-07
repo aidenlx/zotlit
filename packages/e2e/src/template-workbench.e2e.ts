@@ -1701,4 +1701,137 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       saved: panels,
     });
   });
+
+  // #1965: the Preview's header row stays at the top of the panel while the
+  // preview scrolls, beside the editor and under it, and the editor's tabs
+  // stand above the template source only.
+  it("keeps the Preview's header row in view while the preview scrolls, beside and under the editor", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          app.workspace.detachLeavesOfType("empty");
+        },
+        undefined,
+      ),
+    );
+    await suite.wideWindow(cleanup);
+    /**
+     * Opens the editor with the Preview shown in `share` percent of the
+     * window, or the whole window when `share` is null, scrolls the preview
+     * to its end, and reads where its header row and the editor's tabs stand.
+     */
+    const scrolled = async (share: number | null) => {
+      await obRun(
+        run.vaultId,
+        async ({ app }, { path, key, share }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          app.workspace.detachLeavesOfType("empty");
+          const leaf = app.workspace.createLeafInParent(
+            app.workspace.rootSplit,
+            0,
+          );
+          await leaf.setViewState({
+            type: "zotlit-template-workbench",
+            state: {
+              file: path,
+              itemIndexedKey: key,
+              panels: {
+                preview: { shown: true, width: 400, height: 30 },
+              },
+            },
+            active: true,
+          });
+          if (share === null) return;
+          const other = app.workspace.createLeafBySplit(leaf, "vertical");
+          await other.setViewState({ type: "empty" });
+          type Sized = { setDimension(share: number): void };
+          for (const child of (
+            app.workspace.rootSplit as unknown as { children: unknown[] }
+          ).children)
+            (child as Sized).setDimension(
+              child === leaf || child === leaf.parent ? share : 100 - share,
+            );
+        },
+        { path, key: targetItem.key, share },
+      );
+      return await obRunUntil(
+        run.vaultId,
+        ({ page }, { path, filename }) => {
+          const view = page.workbench({ path });
+          const panel = page.previewPanel(view);
+          const scroller = panel?.querySelector<HTMLElement>(
+            '[data-workbench-scroll="preview"]',
+          );
+          const header = scroller?.querySelector<HTMLElement>(
+            "[data-workbench-preview-header]",
+          );
+          const tabs =
+            view?.contentEl.querySelector<HTMLElement>('[role="tablist"]');
+          const editor = view?.contentEl.querySelector<HTMLElement>(
+            '[data-part="editor"]',
+          );
+          const shared = view?.contentEl.querySelector<HTMLElement>(
+            "[data-workbench-panels]",
+          );
+          if (!panel || !scroller || !header || !tabs || !editor || !shared)
+            return null;
+          if (!header.textContent.includes(`${filename}:`)) return null;
+          scroller.scrollTop = scroller.scrollHeight;
+          const box = panel.getBoundingClientRect();
+          const source = editor.getBoundingClientRect();
+          const row = header.getBoundingClientRect();
+          const tabRow = tabs.getBoundingClientRect();
+          const top = scroller.getBoundingClientRect().top;
+          return {
+            below: box.top >= source.bottom - 1,
+            scrolled: scroller.scrollTop > 0,
+            // The header row sits at the top of the scroll area, painted over
+            // the note that scrolled under it.
+            pinned:
+              Math.abs(row.top - top) <= 1 &&
+              header.contains(
+                header.ownerDocument.elementFromPoint(
+                  row.left + row.width / 2,
+                  row.top + row.height / 2,
+                ),
+              ),
+            // The tabs stand inside the editor's column, so the Preview
+            // beside it starts at the top of the panels' box.
+            tabsInEditor:
+              tabRow.left >= source.left - 1 &&
+              tabRow.right <= source.right + 1 &&
+              tabRow.top >= source.top - 1,
+            fullHeight:
+              box.top >= source.bottom - 1 ||
+              Math.abs(box.top - shared.getBoundingClientRect().top) <= 1,
+          };
+        },
+        { path, filename: run.m.workbench_result_filename() },
+        {
+          what: "the Preview scrolled to its end under its header row",
+          ready: (read) => read !== null && read.scrolled,
+        },
+      );
+    };
+    // A wide leaf: the Preview beside the editor, the full panels' height.
+    expect(await scrolled(null)).toEqual({
+      below: false,
+      scrolled: true,
+      pinned: true,
+      tabsInEditor: true,
+      fullHeight: true,
+    });
+    // A narrow leaf: the Preview under the editor and its tabs.
+    expect(await scrolled(30)).toEqual({
+      below: true,
+      scrolled: true,
+      pinned: true,
+      tabsInEditor: true,
+      fullHeight: true,
+    });
+  });
 });

@@ -35,6 +35,7 @@
     "./dist/**/*",
     "./src/**/*.test.ts",
     "./src/**/*.test.tsx",
+    "./src/explorer/test-records.ts",
     "./src/render/test-profiles.ts",
     "./src/ui/test-host.tsx",
     "./src/ui/test-messages.ts",
