@@ -80,7 +80,18 @@
          field's chevron follows its label; sub-fields indent a little behind a thin guide line.
          The group count counts top-level fields only. (b) The Fields action toggles: a second
          click closes the modal sheet, or hides the pinned panel without unpinning it (the next
-         click shows the panel again). */
+         click shows the panel again).
+         AMENDMENT 6 (lists, "shape view"; user picked it over numbered items and chips): a list
+         row shows its item count and every item in one line. Opening it shows each property its
+         items have once (First name, Last name), with that property's value for every item. No
+         field ever inserts one item's index (`[0]`). A list or a list property goes into the note
+         in one of two forms, chosen in its details ("In one line" / "Each item"):
+           joined: {{ zt.authors | join: ", " }}  ·  {{ zt.authors | map: "lastName" | join: ", " }}
+           loop:   {% for author in zt.authors %}\n- {{ author.lastName }}{% endfor %}
+         Lists whose items do not read as text (attachments, annotations) offer the loop only.
+         The loop body puts each item on its own Markdown list line — a proposal: the real
+         Workbench loop snippet repeats `{{ item }}` with no separator. The details show a list's
+         values one per line, numbered. */
       /* DESIGN PLAN (utilitarian; the project's own system wins: Obsidian's default theme)
          ground #ffffff view; panel #f6f6f7 secondary panes / popover ground; ink #222222 text;
          muted #6b6b70; faint #a3a3a8; line #e3e3e6 hairlines; accent #7f5af0 Obsidian's interactive
@@ -246,20 +257,14 @@
             {
               path: "authors",
               label: "Authors",
-              value: "John P. A. Ioannidis",
               kind: "list",
-              children: [
-                {
-                  path: "authors[0].firstName",
-                  label: "First name",
-                  value: "John P. A.",
-                },
-                {
-                  path: "authors[0].lastName",
-                  label: "Last name",
-                  value: "Ioannidis",
-                },
+              joinable: true,
+              props: [
+                { key: "firstName", label: "First name" },
+                { key: "lastName", label: "Last name" },
               ],
+              items: [{ firstName: "John P. A.", lastName: "Ioannidis" }],
+              text: (a) => `${a.firstName} ${a.lastName}`,
             },
             { path: "date", label: "Date", value: "2005" },
             {
@@ -279,19 +284,21 @@
               label: "Citation key",
               value: "ioannidisWhyMost2005",
             },
-            { path: "tags", label: "Tags", value: "", kind: "empty" },
+            {
+              path: "tags",
+              label: "Tags",
+              kind: "list",
+              joinable: true,
+              items: ["meta-research", "reproducibility"],
+            },
             {
               path: "collections",
               label: "Collections",
-              value: "Shared key",
               kind: "list",
-              children: [
-                {
-                  path: "collections[0].name",
-                  label: "Name",
-                  value: "Shared key",
-                },
-              ],
+              joinable: true,
+              props: [{ key: "name", label: "Name" }],
+              items: [{ name: "Shared key" }, { name: "Methods" }],
+              text: (c) => c.name,
             },
             {
               path: "backlink",
@@ -302,43 +309,43 @@
             {
               path: "attachments",
               label: "Attached files",
-              value: "ioannidis-2005.pdf",
               kind: "list",
-              children: [
+              props: [
+                { key: "filename", label: "File name" },
+                { key: "fileLink", label: "File link" },
+              ],
+              items: [
                 {
-                  path: "attachments[0].filename",
-                  label: "File name",
-                  value: "ioannidis-2005.pdf",
+                  filename: "ioannidis-2005.pdf",
+                  fileLink: "[[ioannidis-2005.pdf]]",
                 },
-                {
-                  path: "attachments[0].fileLink",
-                  label: "File link",
-                  value: "[[ioannidis-2005.pdf]]",
-                  kind: "link",
-                },
+                { filename: "Snapshot.html", fileLink: "[[Snapshot.html]]" },
               ],
             },
             {
               path: "annotations",
               label: "Annotations",
-              value: "3 annotations",
               kind: "list",
-              children: [
+              props: [
+                { key: "text", label: "Highlighted text" },
+                { key: "comment", label: "Your comment" },
+                { key: "pageLabel", label: "Page" },
+              ],
+              items: [
                 {
-                  path: "annotations[0].text",
-                  label: "Highlighted text",
-                  value:
-                    "most research findings are false for most research designs",
+                  text: "most research findings are false for most research designs",
+                  comment: "Core claim",
+                  pageLabel: "696",
                 },
                 {
-                  path: "annotations[0].comment",
-                  label: "Your comment",
-                  value: "Core claim",
+                  text: "the smaller the studies conducted in a scientific field, the less likely the research findings are to be true",
+                  comment: "",
+                  pageLabel: "697",
                 },
                 {
-                  path: "annotations[0].pageLabel",
-                  label: "Page",
-                  value: "696",
+                  text: "the hotter a scientific field, the less likely the research findings are to be true",
+                  comment: "Corollary 6",
+                  pageLabel: "698",
                 },
               ],
             },
@@ -362,8 +369,14 @@
             {
               path: "creators",
               label: "All creators",
-              value: "John P. A. Ioannidis",
               kind: "list",
+              joinable: true,
+              props: [
+                { key: "firstName", label: "First name" },
+                { key: "lastName", label: "Last name" },
+              ],
+              items: [{ firstName: "John P. A.", lastName: "Ioannidis" }],
+              text: (a) => `${a.firstName} ${a.lastName}`,
             },
             {
               path: "primaryCreatorType",
@@ -404,8 +417,9 @@
             {
               path: "notes",
               label: "Zotero notes",
-              value: "1 note",
               kind: "list",
+              props: [{ key: "title", label: "Title" }],
+              items: [{ title: "Reading notes" }],
             },
           ],
         },
@@ -468,6 +482,41 @@
           ],
         },
       ];
+      /** One item of a list as text: primitives as is, else the list's own `text` (or "[object Object]"). */
+      const itemText = (list, item) =>
+        typeof item !== "object"
+          ? String(item)
+          : list.text
+            ? list.text(item)
+            : "[object Object]";
+      /** The singular loop name for a list: tags → tag, the real Workbench's rule. */
+      const loopName = (path) =>
+        path.length > 1 && path.endsWith("s") ? path.slice(0, -1) : "item";
+      // A list row shows how many items it has and all of them in one line; its sub-rows are the
+      // properties each item has (shape view), with that property's value for every item.
+      for (const sec of SECTIONS)
+        for (const r of sec.rows)
+          if (r.kind === "list") {
+            r.count = r.items.length;
+            r.value = r.items
+              .map((it) =>
+                r.joinable || !r.props ? itemText(r, it) : it[r.props[0].key],
+              )
+              .join(", ");
+            if (!r.count) r.kind = "empty";
+            r.children = (r.props ?? []).map((pr) => {
+              const values = r.items.map((it) => it[pr.key]).filter(Boolean);
+              return {
+                path: `${r.path}[].${pr.key}`,
+                label: pr.label,
+                kind: "listprop",
+                list: r.path,
+                prop: pr.key,
+                values,
+                value: values.join(" · "),
+              };
+            });
+          }
       const ALL_FIELDS = SECTIONS.flatMap((s) =>
         s.rows.flatMap((r) => [
           { ...r, section: s.label },
@@ -487,8 +536,41 @@
           `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t),
         );
       };
-      /** The text a field puts into the template. */
-      const snippetOf = (path) => `{{ zt.${path} }}`;
+      /** The forms a field can go into the note in: lists and their properties offer both. */
+      const formsOf = (path) => {
+        const f = findField(path);
+        if (f?.kind === "list")
+          return f.joinable ? ["joined", "loop"] : ["loop"];
+        if (f?.kind === "listprop") return ["joined", "loop"];
+        return ["value"];
+      };
+      /**
+       * The text a field puts into the template. A list never inserts one item's index: "joined"
+       * puts every item in one line, "loop" repeats for each item (Liquid, as the real snippets do).
+       */
+      const snippetOf = (path, form) => {
+        const f = findField(path);
+        const kind = form ?? formsOf(path)[0];
+        if (f?.kind === "list") {
+          const v = loopName(f.path);
+          if (kind === "joined") return `{{ zt.${f.path} | join: ", " }}`;
+          const body = f.joinable || !f.props ? v : `${v}.${f.props[0].key}`;
+          // Each item on its own Markdown list line (a proposal: the real loop snippet has no separator).
+          return `{% for ${v} in zt.${f.path} %}\n- {{ ${body} }}{% endfor %}`;
+        }
+        if (f?.kind === "listprop") {
+          if (kind === "joined")
+            return `{{ zt.${f.list} | map: "${f.prop}" | join: ", " }}`;
+          const v = loopName(f.list);
+          return `{% for ${v} in zt.${f.list} %}\n- {{ ${v}.${f.prop} }}{% endfor %}`;
+        }
+        return `{{ zt.${path} }}`;
+      };
+      /** How a field's template path reads to the reader. */
+      const pathLabel = (f) =>
+        f.kind === "listprop"
+          ? `zt.${f.list} → each item's ${f.prop}`
+          : `zt.${f.path}`;
 
       // One module-level store. Flipping variants keeps width, source and caret.
       const WIDTHS = { wide: 1100, medium: 760, narrow: 420 };
@@ -523,9 +605,9 @@
           () => state,
         );
       /** Insert a field at the caret (or replace [from,to) when given), and move the caret after it. */
-      const insertField = (path, range) =>
+      const insertField = (path, range, form) =>
         setProto((s) => {
-          const text = snippetOf(path);
+          const text = snippetOf(path, form);
           const from = range ? range[0] : s.caret,
             to = range ? range[1] : s.caret;
           return {
@@ -728,20 +810,53 @@
         return r;
       }
 
-      /** Value for a `{{ zt.path | … }}` expression in the preview (filters ignored). */
-      const evalExpr = (expr) => {
-        const path = expr
-          .replace(/^\s*zt\./, "")
-          .split("|")[0]
-          .trim();
-        const f = findField(path);
-        return f ? f.value || "" : `⟨${path}⟩`;
+      /** Value for `{{ zt.path | map: "k" | join: "sep" }}` in the preview; `scope` holds loop variables. */
+      const evalExpr = (expr, scope = {}) => {
+        const [head, ...filters] = expr.split("|").map((x) => x.trim());
+        let val;
+        const [base, ...rest] = head.split(".");
+        if (base in scope) {
+          const { list, item } = scope[base];
+          val = rest.length ? item?.[rest.join(".")] : itemText(list, item);
+        } else {
+          const f = findField(head.replace(/^zt\./, ""));
+          if (!f) return `⟨${head}⟩`;
+          val = f.kind === "list" ? f.items : f.value || "";
+          for (const flt of filters) {
+            const m = flt.match(/^(map|join):\s*"([^"]*)"/);
+            if (!m || !Array.isArray(val)) continue;
+            val =
+              m[1] === "map"
+                ? val.map((it) => it?.[m[2]])
+                : val.map((it) => itemText(f, it)).join(m[2]);
+          }
+          if (Array.isArray(val))
+            val = val.map((it) => itemText(f, it)).join("");
+        }
+        return val ?? "";
       };
+      /** Renders the template subset the prototype uses: for-loops over lists, then outputs. */
+      const renderTemplate = (src) =>
+        src
+          .replace(
+            /\{%\s*for (\w+) in zt\.(\w+)\s*%\}([\s\S]*?)\{%\s*endfor\s*%\}/g,
+            (_, v, path, body) => {
+              const list = findField(path);
+              return (list?.items ?? [])
+                .map((item) =>
+                  body.replace(/\{\{([^}]*)\}\}/g, (__, e) =>
+                    evalExpr(e, { [v]: { list, item } }),
+                  ),
+                )
+                .join(""); // as Liquid does: the body repeats with nothing added between items
+            },
+          )
+          .replace(/\{\{([^}]*)\}\}/g, (_, e) => evalExpr(e));
 
       /** The note the template makes for the sample item. */
       function NotePreview({ className = "" }) {
         const { source } = useProto();
-        const out = source.replace(/\{\{([^}]*)\}\}/g, (_, e) => evalExpr(e));
+        const out = renderTemplate(source);
         return (
           <div
             className={`min-h-0 overflow-auto p-5 text-sm leading-6 ${className}`}
@@ -764,6 +879,13 @@
                   <h2 key={i} className="mb-2 text-2xl font-bold text-balance">
                     {line.slice(2)}
                   </h2>
+                );
+              if (line.startsWith("- "))
+                return (
+                  <p key={i} className="flex gap-2 pl-1 break-words">
+                    <span className="text-faint">•</span>
+                    <span>{line.slice(2)}</span>
+                  </p>
                 );
               if (line.startsWith("> "))
                 return (
@@ -950,10 +1072,44 @@
       function M_Value({ field, q, full }) {
         if (M_isEmpty(field))
           return <span className="italic text-faint">Empty for this item</span>;
+        // In the details, a list (or one property of its items) shows one value per line, numbered.
+        const many =
+          full &&
+          (field.values ??
+            (field.kind === "list"
+              ? field.items.map((it) =>
+                  field.joinable || !field.props
+                    ? itemText(field, it)
+                    : it[field.props[0].key],
+                )
+              : null));
+        if (many && many.length > 1)
+          return (
+            <ol className="flex flex-col gap-1 text-value">
+              {many.map((v, i) => (
+                <li key={i} className="flex gap-2 break-words">
+                  <span className="w-4 shrink-0 text-right text-xs leading-6 text-faint tabular-nums">
+                    {i + 1}
+                  </span>
+                  <span className="min-w-0">
+                    <M_Mark text={v} q={q} />
+                  </span>
+                </li>
+              ))}
+            </ol>
+          );
         return (
           <span
             className={`text-value ${full ? "break-words whitespace-pre-wrap" : "truncate"}`}
           >
+            {field.kind === "list" && (
+              <span
+                className="mr-1.5 rounded bg-panel px-1 text-xs text-muted tabular-nums"
+                title={`${field.count} items`}
+              >
+                {field.count}
+              </span>
+            )}
             <M_Mark text={field.value} q={q} />
           </span>
         );
@@ -1063,10 +1219,17 @@
 
       function M_Detail({ field, q, inline, onInsert, onDone }) {
         const [copied, setCopied] = useState(false);
-        useEffect(() => setCopied(false), [field.path]);
+        const forms = formsOf(field.path);
+        const [form, setForm] = useState(forms[0]);
+        useEffect(() => {
+          setCopied(false);
+          setForm(formsOf(field.path)[0]);
+        }, [field.path]);
         const parent = field.parent ? findField(field.parent) : null;
+        const snippet = snippetOf(field.path, form);
+        const result = renderTemplate(snippet);
         const copy = () => {
-          navigator.clipboard?.writeText(snippetOf(field.path)).catch(() => {});
+          navigator.clipboard?.writeText(snippet).catch(() => {});
           if (onDone) return onDone("Copied " + field.label);
           setCopied(true);
           setTimeout(() => setCopied(false), 1200);
@@ -1093,28 +1256,48 @@
             <div>
               <div className="mb-0.5 text-xs text-muted">Template path</div>
               <code className="font-mono text-xs break-all text-muted">
-                zt.{field.path}
+                {pathLabel(field)}
               </code>
             </div>
             <div>
-              <div className="mb-0.5 text-xs text-muted">In your note:</div>
+              <div className="mb-1 flex items-center gap-2 text-xs text-muted">
+                In your note:
+                {forms.length > 1 && (
+                  <span
+                    role="radiogroup"
+                    aria-label="How the list goes into the note"
+                    className="ml-auto inline-flex rounded-md border border-line p-0.5"
+                  >
+                    {forms.map((k) => (
+                      <button
+                        key={k}
+                        type="button"
+                        role="radio"
+                        aria-checked={form === k}
+                        onClick={() => setForm(k)}
+                        className={`rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-accent ${form === k ? "bg-accent-soft text-accent" : "text-muted hover:text-ink"}`}
+                      >
+                        {k === "joined" ? "In one line" : "Each item"}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </div>
               <div className="font-mono text-xs break-all text-accent">
-                {snippetOf(field.path)}
+                {snippet}
               </div>
               <div className="mt-0.5 flex gap-1.5 break-words">
                 <L.CornerDownRight
                   size={13}
                   className="mt-0.5 shrink-0 text-faint"
                 />
-                {M_isEmpty(field) ? (
+                {M_isEmpty(field) || !result ? (
                   <span className="italic text-faint">
                     Nothing — this item has no value here
                   </span>
                 ) : (
-                  <span className="text-value">
-                    {field.value.length > 90
-                      ? field.value.slice(0, 90) + "…"
-                      : field.value}
+                  <span className="whitespace-pre-line text-value">
+                    {result.length > 160 ? result.slice(0, 160) + "…" : result}
                   </span>
                 )}
               </div>
@@ -1122,7 +1305,7 @@
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={(e) => onInsert(field.path, e.shiftKey)}
+                onClick={(e) => onInsert(field.path, e.shiftKey, form)}
                 title="Insert at the cursor (Mod+Enter) · Shift-click keeps the sheet open"
                 className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-ground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
@@ -1360,9 +1543,9 @@
         const toggleDetail = (path) =>
           setDetail((d) => (d === path ? null : path));
         // Insert and Copy close the details popover; a modal sheet also closes on insert (see onInsert).
-        const act = (path, keepOpen) => {
+        const act = (path, keepOpen, form) => {
           setDetail(null);
-          onInsert(path, keepOpen);
+          onInsert(path, keepOpen, form);
         };
         const done = (msg) => {
           setDetail(null);
@@ -1436,6 +1619,14 @@
           setCardTop(Math.max(8, Math.min(top - 8, host.clientHeight - h - 8)));
         }, [flyout, shown?.path]);
         useLayoutEffect(place, [place]);
+        // Place it again when its height settles (the browser Tailwind build styles new classes late).
+        useEffect(() => {
+          const card = cardRef.current;
+          if (!card) return;
+          const ro = new ResizeObserver(() => place());
+          ro.observe(card);
+          return () => ro.disconnect();
+        }, [place]);
 
         const select = (path, scroll) => {
           setSel(path);
@@ -1766,7 +1957,7 @@
                 ref={cardRef}
                 role="region"
                 aria-label={`${shown.label} details`}
-                className="m-pop hidden @min-[600px]:block absolute left-full z-50 ml-2 w-72 rounded-lg border border-line bg-raise p-4 shadow-xl"
+                className="m-pop hidden @min-[600px]:block absolute left-full z-50 ml-2 max-h-[calc(100%-1rem)] w-72 overflow-auto rounded-lg border border-line bg-raise p-4 shadow-xl"
                 style={{ top: cardTop }}
               >
                 <IconButton
@@ -1862,8 +2053,8 @@
           openSheet();
         };
         const [previewShown, setPreviewShown] = useState(true);
-        const onInsert = (path, keepOpen) => {
-          insertField(path);
+        const onInsert = (path, keepOpen, form) => {
+          insertField(path, null, form);
           if (keepOpen) return;
           if (modal) {
             setOpen(false);
