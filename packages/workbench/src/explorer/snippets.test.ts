@@ -214,3 +214,60 @@ describe("renderSnippet — joined", () => {
     );
   });
 });
+
+function listProperty(list: PathSegment[], property: string): DisplayNode {
+  return {
+    kind: "list-property",
+    path: [...list, property],
+    key: `${formatPath(list)}[].${property}`,
+    label: property,
+    list,
+    property,
+    values: ["Rivera", "Chen"],
+    preview: "Rivera, Chen",
+  };
+}
+
+describe("list snippets never use an item index", () => {
+  const authors = value(["authors"], "array", [tag, tag]);
+  const family = listProperty(["authors"], "family");
+
+  it("offers joined, then loop, for a list property", () => {
+    expect(snippetKindsFor(family)).toEqual(["joined", "loop"]);
+  });
+
+  it("joins a list property's values in each engine", () => {
+    expect(renderSnippet(family, "liquid", "joined")).toBe(
+      '{{ zt.authors | map: "family" | join: ", " }}',
+    );
+    expect(renderSnippet(family, "eta", "joined")).toBe(
+      '<%= zt.authors.map((author) => author.family).join(", ") %>',
+    );
+  });
+
+  it("puts a list property's value for each item on its own line in each engine", () => {
+    expect(renderSnippet(family, "liquid", "loop")).toBe(
+      "{% for author in zt.authors %}\n- {{ author.family }}{% endfor %}",
+    );
+    expect(renderSnippet(family, "eta", "loop")).toBe(
+      "<% for (const author of zt.authors) { %>\n- <%= author.family %><% } %>",
+    );
+  });
+
+  it("quotes a property name that is not an identifier", () => {
+    const node = listProperty(["attachments"], "file-name");
+    expect(renderSnippet(node, "liquid", "joined")).toBe(
+      '{{ zt.attachments | map: "file-name" | join: ", " }}',
+    );
+    expect(renderSnippet(node, "eta", "loop")).toBe(
+      '<% for (const attachment of zt.attachments) { %>\n- <%= attachment["file-name"] %><% } %>',
+    );
+  });
+
+  it("has no index in any form a list or a list property offers", () => {
+    for (const node of [authors, family])
+      for (const engine of ["liquid", "eta"] as const)
+        for (const kind of snippetKindsFor(node))
+          expect(renderSnippet(node, engine, kind)).not.toMatch(/\[\d+\]/);
+  });
+});

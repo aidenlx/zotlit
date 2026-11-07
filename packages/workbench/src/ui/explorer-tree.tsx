@@ -3,6 +3,7 @@
 import type {
   DisplayNode,
   HelperNode,
+  ListPropertyNode,
   PlaceholderNode,
   ValueNode,
 } from "#/explorer/index";
@@ -300,6 +301,8 @@ function NodeRow({ node, label }: { node: DisplayNode; label?: string }) {
       return <HelperRow node={node} label={label} />;
     case "placeholder":
       return <PlaceholderRow node={node} label={label} />;
+    case "list-property":
+      return <ListPropertyRow node={node} label={label} />;
   }
 }
 
@@ -423,6 +426,25 @@ function PlaceholderRow({
       <KeyLabel node={node} label={label} />{" "}
       <span {...part("value")}>
         <span {...part("placeholder")}>{node.reason}</span>
+      </span>
+    </>
+  );
+}
+
+/** A property every item of a list has, with the values of all items in one line. */
+function ListPropertyRow({
+  node,
+  label,
+}: {
+  node: ListPropertyNode;
+  label?: string;
+}) {
+  const part = useParts("explorerTree");
+  return (
+    <>
+      <KeyLabel node={node} label={label} />{" "}
+      <span {...part("value")}>
+        <span {...part("placeholder")}>{node.preview}</span>
       </span>
     </>
   );

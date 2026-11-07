@@ -9,7 +9,12 @@ import { COMMON_FIELDS } from "./completion-fields";
 import type { WorkbenchMessages } from "./generated/messages";
 import type { TemplateRoot } from "./model";
 
-import { formatAccessorPath, renderSnippet } from "#/explorer/index";
+import {
+  formatAccessorPath,
+  loopVariable,
+  renderSnippet,
+  snippetKindsFor,
+} from "#/explorer/index";
 
 export interface FieldRow {
   readonly node: DisplayNode;
@@ -50,9 +55,9 @@ export function rowMatches(row: FieldRow, query: string): boolean {
 export function fieldValueText(node: DisplayNode): string {
   if (node.kind === "placeholder") return node.reason;
   if (node.kind === "helper") return node.evaluated ?? "";
+  if (node.kind === "list-property") return node.preview;
   switch (node.valueType) {
     case "array":
-      return (node.value as unknown[]).map(String).join(", ");
     case "object":
       return node.preview ?? "";
     case "getter":
@@ -70,11 +75,23 @@ export function fieldSnippet(
   node: DisplayNode,
   mode: FieldInsertionMode,
   {
-    kind = "output",
+    kind,
     engine = "liquid",
   }: { kind?: SnippetKind; engine?: TemplateEngine } = {},
 ): string {
-  if (mode === "template") return renderSnippet(node, engine, kind);
+  if (mode === "template")
+    return renderSnippet(node, engine, kind ?? snippetKindsFor(node)[0]!);
+  if (node.kind === "list-property") {
+    // A frontmatter value takes the property of every item as a list.
+    const list = formatAccessorPath(node.list, "zt");
+    if (mode === "expression")
+      return `${list} | map: ${JSON.stringify(node.property)}`;
+    const item = loopVariable(node.list);
+    return JSON.stringify({
+      $map: { $eval: list },
+      [`each(${item})`]: { $eval: formatAccessorPath([node.property], item) },
+    });
+  }
   const path = formatAccessorPath(node.path, "zt");
   return mode === "expression" ? path : JSON.stringify({ $eval: path });
 }

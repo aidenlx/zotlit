@@ -1,15 +1,21 @@
 // Pure paste-ready template-snippet generation for Template Data Explorer nodes.
 
 import { formatAccessorPath, isAccessorIdentifier } from "./accessor-path";
-import type { DisplayNode } from "./display-tree";
+import type { DisplayNode, ListPropertyNode } from "./display-tree";
 
 export type TemplateEngine = "liquid" | "eta";
 
 /** Output = interpolate; if-present = guard surrounding content on truthiness; loop/joined = array forms. */
 export type SnippetKind = "output" | "if-present" | "loop" | "joined";
 
-/** Snippet kinds offered for a node, gated by its kind: arrays get joined (when their elements stringify meaningfully), then loop; everything else gets output + if-present. The first kind is the one an insert uses. */
+/**
+ * Snippet kinds offered for a node, gated by its kind: arrays get joined (when
+ * their elements stringify meaningfully), then loop; a list property gets
+ * joined, then loop; everything else gets output + if-present. The first kind
+ * is the one an insert uses. No list form names one item's index.
+ */
 export function snippetKindsFor(node: DisplayNode): SnippetKind[] {
+  if (node.kind === "list-property") return ["joined", "loop"];
   if (node.kind === "helper" || node.kind === "placeholder") {
     return ["output", "if-present"];
   }
@@ -24,6 +30,8 @@ export function renderSnippet(
   engine: TemplateEngine,
   kind: SnippetKind,
 ): string {
+  if (node.kind === "list-property")
+    return listPropertySnippet(node, engine, kind);
   const accessor = formatAccessorPath(node.path, "zt");
   const show = isBacklink(node) ? asZoteroLink : (output: string) => output;
   switch (kind) {
@@ -32,7 +40,7 @@ export function renderSnippet(
     case "if-present":
       return guard(engine, callForm(node, engine, accessor), show);
     case "loop": {
-      const item = loopVar(node);
+      const item = loopVariable(node.path);
       const value = node.kind === "value" ? node.value : undefined;
       const property = arrayJoinable(value) ? undefined : firstProperty(value);
       const body =
@@ -42,6 +50,25 @@ export function renderSnippet(
     case "joined":
       return joined(engine, accessor);
   }
+}
+
+/**
+ * A list property goes into the note for every item: its values joined in one
+ * line, or one Markdown list line per item. Neither form takes the list
+ * property's output or if-present kinds, so those fall back to joined.
+ */
+function listPropertySnippet(
+  node: ListPropertyNode,
+  engine: TemplateEngine,
+  kind: SnippetKind,
+): string {
+  const accessor = formatAccessorPath(node.list, "zt");
+  const item = loopVariable(node.list);
+  const value = formatAccessorPath([node.property], item);
+  if (kind === "loop") return loop(engine, accessor, { item, body: value });
+  return engine === "liquid"
+    ? `{{ ${accessor} | map: ${JSON.stringify(node.property)} | join: ", " }}`
+    : `<%= ${accessor}.map((${item}) => ${value}).join(", ") %>`;
 }
 
 /**
@@ -109,8 +136,8 @@ function joined(engine: TemplateEngine, accessor: string): string {
 }
 
 /** Element name for a loop/join: the array's key with a trailing "s" stripped (tags→tag, lines→line), falling back to "item" for an index/bracket-key/non-plural segment. */
-function loopVar(node: DisplayNode): string {
-  const last = node.path.at(-1);
+export function loopVariable(path: DisplayNode["path"]): string {
+  const last = path.at(-1);
   if (
     typeof last === "string" &&
     isAccessorIdentifier(last) &&
