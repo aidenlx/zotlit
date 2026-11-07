@@ -6,6 +6,8 @@
 //
 // Callers give an anchor and render the contents; the module owns the rest:
 // - Placement beside the anchor, and placing again as the contents resize.
+//   With `inset`, it stands inside that element's box at its right edge
+//   instead, as tall as the box, and places again as the box resizes.
 // - Escape, on a Scope. A layer with keys of its own pushes a Scope over this
 //   one, and answers Escape itself when it wants the popover shut.
 // - A press outside. A popover rendered inside another one counts as inside
@@ -57,6 +59,13 @@ export interface PinnedPopoverProps extends Omit<
   /** The element the popover opens beside, and hands focus back to. */
   anchor: RefObject<HTMLElement | null>;
   handle?: Ref<PinnedPopoverHandle>;
+  /**
+   * In place of a place beside the anchor: the popover stands in this
+   * element's box at its right edge, as tall as the box, with Obsidian's
+   * `--size-4-2` between it and the box's top, right and bottom edges. It
+   * follows the box as it resizes. The surface fills the height it is given.
+   */
+  inset?: RefObject<HTMLElement | null>;
   /** Called as the popover opens, and once it has closed. */
   onOpenChange?: (open: boolean) => void;
   ref?: Ref<HTMLDivElement>;
@@ -74,6 +83,8 @@ interface PinnedHoverPopoverOptions {
   parent: HoverParent;
   anchor: HTMLElement;
   body: HTMLElement;
+  /** The box the popover stands inset in, in place of beside the anchor. */
+  inset: HTMLElement | null;
   /** Whether a press on this element leaves the popover open. */
   holds: (element: Element) => boolean;
   onHidden: () => void;
@@ -89,6 +100,7 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
     this.#scope = new Scope(options.app.scope);
     this.setIsFocused(true);
     this.hoverEl.addClasses(["zt-root", "zt-pinned-popover"]);
+    if (options.inset) this.hoverEl.addClass("zt-pinned-popover-inset");
     this.hoverEl.tabIndex = -1;
     this.hoverEl.append(options.body);
   }
@@ -105,6 +117,7 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
     // typing goes past that.
     const resize = new ResizeObserver(() => this.position());
     resize.observe(body);
+    if (this.#options.inset) resize.observe(this.#options.inset);
     this.register(() => resize.disconnect());
     this.registerDomEvent(
       this.hoverEl.doc,
@@ -118,6 +131,22 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
       { capture: true },
     );
     this.hoverEl.focus({ preventScroll: true });
+  }
+
+  override position(): void {
+    super.position();
+    const box = this.#options.inset;
+    if (!box) return;
+    const rect = box.getBoundingClientRect();
+    const gap =
+      Number.parseFloat(
+        box.win.getComputedStyle(box).getPropertyValue("--size-4-2"),
+      ) || 8;
+    const { style } = this.hoverEl;
+    style.top = `${rect.top + gap}px`;
+    style.height = `${Math.max(rect.height - 2 * gap, 0)}px`;
+    style.maxWidth = `${Math.max(rect.width - 2 * gap, 0)}px`;
+    style.left = `${rect.right - gap - this.hoverEl.offsetWidth}px`;
   }
 
   override hide(): void {
@@ -148,6 +177,7 @@ const EnclosingPopover = createContext<PopoverNode | null>(null);
 export function PinnedPopover({
   anchor,
   handle,
+  inset,
   onOpenChange,
   ref,
   children,
@@ -189,6 +219,7 @@ export function PinnedPopover({
         parent,
         anchor: anchor.current,
         body,
+        inset: inset?.current ?? null,
         holds: (element) => node.contains(element),
         onHidden: () => {
           node.live = null;
@@ -205,7 +236,7 @@ export function PinnedPopover({
       toggle: () => (node.live ? hide() : show()),
       contains: (target) => node.contains(target),
     };
-  }, [anchor, app, body, node, parent]);
+  }, [anchor, app, body, inset, node, parent]);
 
   return createPortal(
     <EnclosingPopover.Provider value={node}>

@@ -24,3 +24,8 @@
 .popover.hover-popover.zt-pinned-popover > .zt-pinned-popover-body {
   width: auto;
 }
+
+/* Inset in a box, the popover takes the box's height: the surface fills it. */
+.popover.hover-popover.zt-pinned-popover-inset > .zt-pinned-popover-body {
+  height: 100%;
+}
