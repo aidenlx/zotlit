@@ -1460,7 +1460,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         // Focus stays on the row's Insert button for the next field.
         await new Promise((resolve) => el.win.setTimeout(resolve, 300));
         const keptFocus = el.doc.activeElement === doiInsert();
-        // Escape closes it and hands focus to the action.
+        // Escape clears the search first (#1967), then closes the popover
+        // and hands focus to the action.
+        await input.key("Escape");
+        await until(
+          "the search cleared by Escape",
+          () => popover() !== null && search()!.value === "",
+        );
         await input.key("Escape");
         await until("the popover closed by Escape", () => popover() === null);
         const escaped = el.doc.activeElement === action;
