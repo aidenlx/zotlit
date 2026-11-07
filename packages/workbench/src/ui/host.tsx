@@ -218,54 +218,11 @@ export interface WorkbenchToggleProps {
   readonly onChange: (value: boolean) => void;
 }
 
-/** A step of the Fields picker's active row. */
-export type WorkbenchPickerMove =
-  | "next"
-  | "previous"
-  | "first"
-  | "last"
-  | "page-down"
-  | "page-up";
-
-/** The Fields picker's commands, which the host binds to keys while it stands. */
-export interface WorkbenchPickerKeys {
-  /** Moves the active row; the list wraps at either end. */
-  move(step: WorkbenchPickerMove): void;
-  /** Inserts the active row's field, as Enter does. */
-  choose(): void;
-}
-
-/**
- * The surface the Fields picker opens in, which the host draws under its
- * Fields action. The host mounts `children` as the surface opens and
- * unmounts them as it closes; the picker moves focus into its search field
- * as it mounts.
- */
-export interface WorkbenchFieldsPopoverProps {
-  readonly open: boolean;
-  /**
-   * The host closed the surface: Escape, a press outside, or focus that
-   * left it. Focus the surface held at closing goes back to the Fields action.
-   */
-  readonly onClose: () => void;
-  readonly keys: WorkbenchPickerKeys;
-  /** The id of the element that names the surface. */
-  readonly labelledBy: string;
-  /**
-   * Whether focus the surface holds as it closes goes back to the Fields
-   * action. False once the picker inserted a field: the editor takes focus
-   * at the inserted text.
-   */
-  readonly returnFocus: boolean;
-  readonly children: ReactNode;
-}
-
-/** The host's Fields action, which opens the Fields Panel or its picker. */
+/** The host's Fields action, which opens and closes the Fields sheet. */
 export interface WorkbenchFieldsAction {
-  readonly popover: ComponentType<WorkbenchFieldsPopoverProps>;
-  /** The id of the surface `popover` draws, which the action names while it stands. */
-  readonly popoverId: string;
-  /** Moves focus to the action, as when a resize takes away the column that held it. */
+  /** The id the sheet takes, which the action names while the sheet stands. */
+  readonly sheetId: string;
+  /** Moves focus to the action, as when the reader closes the sheet without inserting. */
   focus(): void;
 }
 
@@ -345,8 +302,8 @@ export interface WorkbenchHost {
   /** The focused slice editor, or `null` when none has had focus. */
   insertTarget(): WorkbenchInsertTarget | null;
   /**
-   * The Fields action and the surface its picker opens in. A host that
-   * supplies none opens no picker in a narrow view.
+   * The Fields action, which the sheet names and returns focus to. A host
+   * that supplies none opens the sheet from its own control alone.
    */
   readonly fieldsAction?: WorkbenchFieldsAction;
   persistence: WorkbenchPersistence;

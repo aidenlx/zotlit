@@ -22,7 +22,7 @@ import type { WorkbenchProblemsState } from "./problems-footer";
  * They route the reader and leave the repair to the reader's own edit (ADR
  * 0056); the one edit among them is the annotation loop the reader asks for
  * with Add to template. Each applies a routing transition to the view state,
- * reveals the place in the editor, and closes the Fields picker so nothing
+ * reveals the place in the editor, and closes the Fields sheet so nothing
  * covers it. None changes which panels show. The host supplies only how a
  * notice reaches the reader, through its adapter.
  */
@@ -58,7 +58,7 @@ export interface RepairCommands {
 
 export interface RepairCommandsInput {
   readonly registry: AtomRegistry.AtomRegistry;
-  readonly model: Pick<WorkbenchModel, "view" | "fieldsPicker">;
+  readonly model: Pick<WorkbenchModel, "view" | "fieldsSheet">;
   readonly controller: RoutedDocument &
     Pick<WorkbenchDocumentController, "insertAnnotationLoop" | "hasSlice">;
   readonly host: Pick<WorkbenchHost, "notice" | "messages">;
@@ -101,12 +101,12 @@ export function repairCommands({
   host,
   problems,
 }: RepairCommandsInput): RepairCommands {
-  const closePicker = () => registry.set(model.fieldsPicker, null);
+  const closeSheet = () => registry.set(model.fieldsSheet, false);
   const route = (transition: Transition) =>
     registry.update(model.view, transition);
   /** Opens the place `transition` names, with nothing over the editor. */
   const go = (transition: Transition) => {
-    closePicker();
+    closeSheet();
     route(transition);
   };
   const goToProblem = (problem: ProblemTarget) =>
@@ -119,7 +119,7 @@ export function repairCommands({
       else host.notice(host.messages.workbench_problems_location_unknown());
     },
     showProblem(diagnostic) {
-      closePicker();
+      closeSheet();
       const unknown = host.messages.workbench_problems_location_unknown();
       if (diagnostic === null) {
         problems.setOpen(true);

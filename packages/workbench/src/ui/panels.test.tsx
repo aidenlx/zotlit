@@ -16,7 +16,6 @@ import { mount } from "./test-host";
 afterEach(cleanup);
 
 const BOTH: WorkbenchPanels = {
-  fields: { ...INITIAL_PANELS.fields, shown: true },
   preview: { ...INITIAL_PANELS.preview, shown: true },
 };
 
@@ -27,7 +26,6 @@ function open(size: ViewSize) {
       panels={{
         fields: {
           label: "Fields",
-          resizeLabel: "Resize fields",
           content: "Field list",
         },
         preview: {
@@ -54,7 +52,7 @@ const order = () =>
   );
 
 describe("the side panels", () => {
-  it("puts the Preview under the editor in a narrow view, with no Fields column, and beside it in a wide one", () => {
+  it("puts the Preview under the editor in a narrow view, and beside it in a wide one, with no Fields column", () => {
     using page = open({ width: 560, height: 800 });
     const split = screen.getByRole("separator", { name: "Resize preview" });
     expect(split.getAttribute("aria-orientation")).toBe("horizontal");
@@ -66,7 +64,7 @@ describe("the side panels", () => {
         .getByRole("separator", { name: "Resize preview" })
         .getAttribute("aria-orientation"),
     ).toBe("vertical");
-    expect(order()).toEqual(["Fields", "Template source", "Preview"]);
+    expect(order()).toEqual(["Template source", "Preview"]);
     // The resize moved the Preview and kept what the reader chose.
     expect(page.registry.get(page.model.panels)).toBe(panels);
   });
@@ -108,35 +106,21 @@ describe("the side panels", () => {
     doubleClick(split);
     expect(page.registry.get(page.model.panels).preview.height).toBe(40);
     page.resize({ width: 1200, height: 800 });
-    const edge = screen.getByRole("separator", { name: "Resize fields" });
+    const edge = screen.getByRole("separator", { name: "Resize preview" });
     fireEvent.keyDown(edge, { key: "Home" });
+    expect(page.registry.get(page.model.panels).preview.width).toBe(240);
     doubleClick(edge);
-    expect(page.registry.get(page.model.panels).fields.width).toBe(400);
-  });
-
-  it("describes a column's edge at the width the view draws it", () => {
-    using page = open({ width: 1200, height: 800 });
-    const edge = screen.getByRole("separator", { name: "Resize fields" });
-    // 1200 px less the 400 px Preview and the editor's 360 px.
-    expect(edge.getAttribute("aria-valuemax")).toBe("440");
-    expect(edge.getAttribute("aria-valuenow")).toBe("400");
-    fireEvent.keyDown(edge, { key: "ArrowRight" });
-    expect(page.registry.get(page.model.panels).fields.width).toBe(416);
-  });
-
-  it("keeps a column beside the editor however far its edge moves", () => {
-    using page = open({ width: 1200, height: 800 });
-    const edge = screen.getByRole("separator", { name: "Resize fields" });
-    fireEvent.keyDown(edge, { key: "End" });
-    expect(page.registry.get(page.model.panels).fields.width).toBe(440);
-    expect(page.registry.get(page.model.placement).fields).toBe("column");
-    // The Preview's edge now has no room to grow into.
-    const preview = screen.getByRole("separator", { name: "Resize preview" });
-    expect(preview.getAttribute("aria-valuemax")).toBe("400");
-    fireEvent.keyDown(preview, { key: "End" });
     expect(page.registry.get(page.model.panels).preview.width).toBe(400);
-    expect(
-      screen.getByRole("separator", { name: "Resize fields" }),
-    ).toBeTruthy();
+  });
+
+  it("describes the Preview's edge at the width the view draws it", () => {
+    using page = open({ width: 1200, height: 800 });
+    const edge = screen.getByRole("separator", { name: "Resize preview" });
+    // 1200 px less the editor's 360 px.
+    expect(edge.getAttribute("aria-valuemax")).toBe("840");
+    expect(edge.getAttribute("aria-valuenow")).toBe("400");
+    // The Preview's edge grows toward the leading side.
+    fireEvent.keyDown(edge, { key: "ArrowLeft" });
+    expect(page.registry.get(page.model.panels).preview.width).toBe(416);
   });
 });

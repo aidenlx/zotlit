@@ -64,8 +64,11 @@ export interface DataExplorerProps {
   engines?: () => readonly TemplateEngine[];
   disabled?: boolean;
   onInsert?: (snippet: string) => void;
-  /** Resolves insertion against the receiving editor at action time. */
-  onInsertNode?: (node: DisplayNode) => void;
+  /**
+   * Resolves insertion against the receiving editor at action time; `false`
+   * when the editor refused the field.
+   */
+  onInsertNode?: (node: DisplayNode) => boolean | void;
   copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
@@ -136,13 +139,22 @@ export function DataExplorer({
   }, [restore, data, onRestored]);
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
-  const startCopy = useAtomSet(useWorkbenchModel().copy(useUniqueId()));
+  const model = useWorkbenchModel();
+  const startCopy = useAtomSet(model.copy(useUniqueId()));
+  const closeSheet = useAtomSet(model.fieldsSheet);
   const part = useParts("dataExplorer");
-  const insertNode =
+  const insertField =
     onInsertNode ??
     (onInsert
       ? (node: DisplayNode) => onInsert(fieldSnippet(node, mode, { engine }))
       : undefined);
+  // An insert closes the Fields sheet and leaves focus to the editor, at the
+  // inserted text; Shift keeps the sheet open for the next field.
+  const insertNode =
+    insertField &&
+    ((node: DisplayNode, keepOpen = false) => {
+      if (insertField(node) !== false && !keepOpen) closeSheet(false);
+    });
   const locale = host.getLocale();
   const reader = useMemo<ExplorerReader>(
     () => ({ m, root, locale }),

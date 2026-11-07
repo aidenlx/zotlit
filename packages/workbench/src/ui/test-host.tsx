@@ -10,14 +10,12 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { ReactNode } from "react";
 
 import { createWorkbenchEditor, WorkbenchEditorProvider } from "./editor";
-import { PICKER_MOVE_KEYS } from "./field-picker";
 import {
   WorkbenchClipboardError,
   WorkbenchHostError,
   WorkbenchHostProvider,
 } from "./host";
 import type {
-  WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchMenuRequest,
   WorkbenchPreferenceScope,
@@ -228,8 +226,7 @@ export function fakeHost(): FakeHost {
     },
     insertTarget: () => null,
     fieldsAction: {
-      popover: FakeFieldsPopover,
-      popoverId: "fake-fields-picker",
+      sheetId: "fake-fields-sheet",
       focus: () => void host.calls.actionFocuses++,
     },
     persistence: {
@@ -241,36 +238,6 @@ export function fakeHost(): FakeHost {
     },
   };
   return host;
-}
-
-/** The picker's surface, which binds its keys as a host would and closes on Escape. */
-function FakeFieldsPopover({
-  open,
-  onClose,
-  keys,
-  labelledBy,
-  returnFocus,
-  children,
-}: WorkbenchFieldsPopoverProps) {
-  // A closed surface says whether its focus went back to the action.
-  if (!open) return <span hidden data-return-focus={String(returnFocus)} />;
-  return (
-    <div
-      id="fake-fields-picker"
-      role="dialog"
-      aria-labelledby={labelledBy}
-      onKeyDown={(event) => {
-        const move = PICKER_MOVE_KEYS[event.key];
-        if (move) keys.move(move);
-        else if (event.key === "Enter") keys.choose();
-        else if (event.key === "Escape") onClose();
-        else return;
-        event.preventDefault();
-      }}
-    >
-      {children}
-    </div>
-  );
 }
 
 /** Every part wears `part-<name>`, so a test can see the map land. */

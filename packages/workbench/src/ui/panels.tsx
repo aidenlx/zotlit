@@ -1,15 +1,17 @@
-// The side panels around the editor, headless: the Fields Panel at the
-// leading edge, the Preview Panel at the trailing edge or under the editor,
-// each a labelled region the reader sizes with its handle. The model says
-// which panels show and where they go; the host's theme draws the parts and
-// names the custom properties that carry each drawn size.
+// The side panels around the editor, headless: the Preview Panel at the
+// trailing edge or under the editor, a labelled region the reader sizes with
+// its handle, and the Fields sheet over them all while the reader has it
+// open. The model says which panels show and where they go; the host's theme
+// draws the parts and names the custom properties that carry each drawn size.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { useLayoutEffect, useRef } from "react";
+import { useRef } from "react";
 import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
+import { FieldsSheet } from "./fields-sheet";
+import type { FieldsSheetContent } from "./fields-sheet";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import {
@@ -40,31 +42,30 @@ export interface SidePanel {
   /** The resize handle's name. */
   readonly resizeLabel: string;
   readonly content: ReactNode;
-  /**
-   * The Fields Panel's content as a picker, a `FieldPicker`, which the Fields
-   * action opens where the column does not fit.
-   */
-  readonly picker?: ReactNode;
 }
 
 /**
- * The editor between the panels the reader shows. Document order is Fields
- * Panel, editor, Preview Panel at every placement, so the layout needs no
- * visual reordering.
+ * The editor beside or above the Preview the reader shows, and the Fields
+ * sheet over both while it stands open. Document order is Fields sheet,
+ * editor, Preview Panel at every placement, so the layout needs no visual
+ * reordering.
  */
 export function SidePanels({
   panels,
   children,
 }: {
-  panels: Partial<Record<PanelSide, SidePanel>>;
+  panels: Partial<Record<PanelSide, SidePanel>> & {
+    readonly fields?: FieldsSheetContent;
+  };
   children: ReactNode;
 }) {
   const model = useWorkbenchModel();
   const part = useParts("panels");
   const state = useAtomValue(model.panels);
   const placement = useAtomValue(model.placement);
-  const fields = panels.fields && state.fields.shown ? panels.fields : null;
   const preview = panels.preview && state.preview.shown ? panels.preview : null;
+  // The open sheet holds focus: what it covers takes no focus or pointer.
+  const sheet = placement.fields === "sheet" ? panels.fields : undefined;
   // The Preview stands at one place in the tree, after the editor, whether
   // it is a column beside it or under it: the stack lays the two out in a
   // row or a column, so a resize across the boundary moves the region
@@ -72,20 +73,11 @@ export function SidePanels({
   const below = placement.preview === "below";
   return (
     <div {...part("panels")}>
-      {/* Where the column does not fit, the Fields action opens the picker
-          over the editor, shown or not. */}
-      {placement.fields === "popover"
-        ? panels.fields?.picker
-        : fields && (
-            <Panel
-              side="fields"
-              below={false}
-              width={state.fields.width}
-              share={state.preview.height}
-              {...fields}
-            />
-          )}
-      <div {...part("stack", below ? "below" : "side")}>
+      {sheet && <FieldsSheet {...sheet} />}
+      <div
+        inert={sheet ? true : undefined}
+        {...part("stack", below ? "below" : "side")}
+      >
         <div {...part("editor")}>{children}</div>
         {preview && (
           <Panel
@@ -211,9 +203,9 @@ function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
 }
 
 /**
- * One side panel and its handle: a column beside the editor, or the Preview
- * under it. The Preview is the same component in either place, so moving it
- * across the boundary keeps the region and its contents mounted.
+ * The Preview and its handle: a column beside the editor, or under it. It is
+ * the same component in either place, so moving it across the boundary keeps
+ * the region and its contents mounted.
  */
 function Panel({
   side,
@@ -237,27 +229,12 @@ function Panel({
   const panels = useAtomValue(model.panels);
   const id = useUniqueId();
   const region = useRef<HTMLElement>(null);
-  const edge = useRef<HTMLDivElement>(null);
-  const host = useOptionalHost();
-  // The Fields column goes when a resize leaves it no room or the reader
-  // hides it. Focus it held then goes to the Fields action, which brings it
-  // back; the cleanup runs while the column still holds that focus.
-  useLayoutEffect(() => {
-    if (side !== "fields") return;
-    const parts = [region.current, edge.current];
-    return () => {
-      const focused = parts[0]?.ownerDocument.activeElement;
-      if (focused && parts.some((element) => element?.contains(focused)))
-        host?.fieldsAction?.focus();
-    };
-  }, [side, host]);
   /** The widest this panel may be while every column keeps its place. */
   const max = columnLimit(panels, side, size);
   const held = (next: number) => clampPanelWidth(next, max);
-  // Moving the edge away from the editor widens the panel: the Fields edge
-  // toward the trailing side, the Preview edge toward the leading side.
-  const outward = (handle: Element) =>
-    (side === "fields" ? 1 : -1) * (rightToLeft(handle) ? -1 : 1);
+  // Moving the edge away from the editor widens the panel: the Preview edge
+  // toward the leading side.
+  const outward = (handle: Element) => (rightToLeft(handle) ? 1 : -1);
   // Below is placed only in a measured view.
   const viewHeight = size?.height ?? 0;
   const column: Sizing = {
@@ -299,7 +276,6 @@ function Panel({
   // within its own share.
   const handle = (
     <div
-      ref={edge}
       role="separator"
       tabIndex={0}
       aria-label={resizeLabel}
@@ -330,7 +306,7 @@ function Panel({
   );
   return (
     <>
-      {side === "preview" && handle}
+      {handle}
       <section
         ref={region}
         id={id}
@@ -348,7 +324,6 @@ function Panel({
       >
         {content}
       </section>
-      {side === "fields" && handle}
     </>
   );
 }
@@ -392,10 +367,7 @@ function SizeStatus() {
     <div role="status" {...part("status")}>
       {sized &&
         m.workbench_panel_size_status({
-          panel:
-            sized === "fields"
-              ? m.workbench_view_fields()
-              : m.workbench_view_preview(),
+          panel: m.workbench_view_preview(),
           size: sizeText(sized, panels, size),
         })}
     </div>

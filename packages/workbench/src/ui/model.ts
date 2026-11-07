@@ -36,10 +36,9 @@ import type {
   WorkbenchMatchResult,
 } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
-import { INITIAL_PANELS, placePanels, showPanel } from "./panel-layout";
+import { INITIAL_PANELS, placePanels } from "./panel-layout";
 import type {
   FieldsAction,
-  FieldsPicker,
   PanelHandle,
   PanelPlacement,
   ViewSize,
@@ -308,14 +307,13 @@ export interface WorkbenchModel<
   /** Where each panel goes in the view as it is now; never saved. */
   readonly placement: Atom.Atom<PanelPlacement>;
   /**
-   * The Fields picker standing open over the editor, or null while it is
-   * closed. It opens only while the Fields Panel's column does not fit, and
-   * closes when the column fits again; never saved.
+   * Whether the Fields sheet stands open over the editor. Only the reader
+   * opens it, at every width; never saved.
    */
-  readonly fieldsPicker: Atom.Writable<FieldsPicker | null>;
+  readonly fieldsSheet: Atom.Writable<boolean>;
   /**
-   * What the Fields action opens and whether that is open. A write presses
-   * the action: it shows or hides the column, or opens or closes the picker.
+   * Whether the Fields sheet the action opens stands open. A write presses
+   * the action: it opens or closes the sheet.
    */
   readonly fieldsAction: Atom.Writable<FieldsAction, void>;
   /**
@@ -479,14 +477,12 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     };
   });
   const panels = Atom.make(initialPanels);
+  const fieldsSheet = Atom.make(false);
   const placement = Atom.withEquality(
-    Atom.make((get) => placePanels(get(panels), get(viewSize))),
+    Atom.make((get) =>
+      placePanels(get(panels), get(viewSize), get(fieldsSheet)),
+    ),
     sameFields,
-  );
-  const picker = Atom.make<FieldsPicker | null>(null);
-  const fieldsPicker = Atom.writable(
-    (get) => (get(placement).fields === "popover" ? get(picker) : null),
-    (ctx, next: FieldsPicker | null) => ctx.set(picker, next),
   );
   const matchRetry = Atom.make(0);
   const scheduler = makeRenderSchedulerAtoms({
@@ -507,20 +503,10 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     sizedFromMenu: Atom.make<PanelHandle | null>(null),
     viewSize,
     placement,
-    fieldsPicker,
+    fieldsSheet,
     fieldsAction: Atom.writable(
-      (get): FieldsAction =>
-        get(placement).fields === "column"
-          ? { opens: "column", open: get(panels).fields.shown }
-          : { opens: "popover", open: get(fieldsPicker) !== null },
-      (ctx) => {
-        if (ctx.get(placement).fields === "popover")
-          ctx.set(fieldsPicker, ctx.get(fieldsPicker) ? null : { query: "" });
-        else {
-          const current = ctx.get(panels);
-          ctx.set(panels, showPanel("fields", !current.fields.shown)(current));
-        }
-      },
+      (get): FieldsAction => ({ open: get(fieldsSheet) }),
+      (ctx) => ctx.set(fieldsSheet, !ctx.get(fieldsSheet)),
     ),
     pick: Atom.writable(
       (get) => get(item),
@@ -634,9 +620,8 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
 }
 
 /**
- * Presses the Fields action: shows or hides the Fields column, or opens or
- * closes the picker where the column does not fit. The view action, the
- * pane menu and the web View menu each press it.
+ * Presses the Fields action: opens or closes the Fields sheet. The view
+ * action, the pane menu and the web View menu each press it.
  */
 export function pressFieldsAction(
   registry: AtomRegistry.AtomRegistry,
@@ -659,18 +644,13 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
     model.panels,
     model.sizedFromMenu,
     model.viewSize,
+    model.fieldsSheet,
     model.itemData,
     model.controller,
     model.document.source,
     model.document.revision,
     model.scheduler.state,
   ].map((atom) => registry.mount(atom as Atom.Atom<unknown>));
-  // A picker the view closed by widening stays closed when it narrows again.
-  releases.push(
-    registry.subscribe(model.placement, ({ fields }) => {
-      if (fields === "column") registry.set(model.fieldsPicker, null);
-    }),
-  );
   return () => {
     for (const release of releases.reverse()) release();
   };

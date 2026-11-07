@@ -246,21 +246,14 @@ export interface WorkbenchParts {
 
   panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split" | "status";
   itemRow: "row" | "label";
-  fieldPicker:
-    | "status"
-    | "picker"
-    | "search"
-    | "hint"
-    | "list"
-    | "group"
-    | "group-label"
-    | "option"
-    | "option-label"
-    | "option-value"
-    | "empty"
-    | "detail"
-    | "detail-path"
-    | "detail-value";
+  fieldsSheet:
+    | "scrim"
+    | "sheet"
+    | "header"
+    | "icon"
+    | "title"
+    | "close"
+    | "body";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description" | "docs-link";
   editToolbar:
@@ -341,7 +334,8 @@ export type WorkbenchIcon =
   | "property-datetime"
   | "drag"
   | "expand-all"
-  | "collapse-all";
+  | "collapse-all"
+  | "fields";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;
