@@ -52,8 +52,6 @@ import {
   entryDiagnostics,
   fieldSnippet,
   fieldsActionAttributes,
-  fieldsActionKey,
-  holdPickerFocus,
   pressFieldsAction,
   panelSizeMenus,
   pickPanelSize,
@@ -98,6 +96,7 @@ import {
 import type {
   WorkbenchHostError,
   WorkbenchEditorInstance,
+  WorkbenchFieldsAction,
   WorkbenchHost,
   WorkbenchInsertTarget,
   WorkbenchItemChoice,
@@ -181,12 +180,10 @@ import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
 import {
   FieldsPanel,
-  FieldsPicker,
   makeFieldsActions,
   makeFieldsPanelModel,
 } from "./fields-panel";
 import type { FieldsPanelModel } from "./fields-panel";
-import { fieldsActionHost } from "./fields-popover";
 import { createTemplateWorkbenchHost, hostEffect } from "./host";
 import { workbenchAnnotationChoice, workbenchItemChoice } from "./item-choice";
 import { ViewItemRow } from "./item-row";
@@ -311,6 +308,9 @@ export interface TemplateWorkbenchDeps {
   bridge: ItemSearchDeps["bridge"];
 }
 
+/** Each leaf's Fields sheet gets an id of its own. */
+let fieldsSheets = 0;
+
 export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The editor hover popover now open, which the next one replaces. */
   hoverPopover: HoverPopover | null = null;
@@ -368,10 +368,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
   #root: Root | null = null;
   #updateActions = () => {};
-  /** The Fields view action, which the Fields picker opens under. */
-  readonly #fieldsAnchor: { current: HTMLElement | null } = { current: null };
-  /** The Fields view action and the picker it opens where the column does not fit. */
-  readonly #fieldsAction = fieldsActionHost(this.#fieldsAnchor);
+  /** The Fields view action, which takes focus back as the Fields sheet closes. */
+  #fieldsButton: HTMLElement | null = null;
+  /** The Fields view action, as the Fields sheet names it. */
+  readonly #fieldsAction: WorkbenchFieldsAction = {
+    sheetId: `zt-fields-sheet-${++fieldsSheets}`,
+    focus: () => this.#fieldsButton?.focus({ preventScroll: true }),
+  };
   #unsubscribe: (() => void) | null = null;
   #closed = false;
   /** Counts the documents this leaf loaded, so each one mounts a fresh tree. */
@@ -1494,16 +1497,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         yield* restoreBase(state);
       }
       if (!value) return;
-      for (const side of ["fields", "preview"] as const) {
-        const panel = value.panels[side];
-        if (panel)
-          this.registry.update(this.workbench.panels, (panels) =>
-            setPanelWidth(
-              side,
-              panel.width,
-            )(showPanel(side, panel.shown)(panels)),
-          );
-      }
+      const panel = value.panels.preview;
+      if (panel)
+        this.registry.update(this.workbench.panels, (panels) =>
+          setPanelWidth(
+            "preview",
+            panel.width,
+          )(showPanel("preview", panel.shown)(panels)),
+        );
       const height = value.panels.preview?.height;
       if (height !== undefined)
         this.registry.update(this.workbench.panels, setPreviewHeight(height));
@@ -1630,24 +1631,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       () => this.togglePanel("preview"),
     );
     // Added after the Preview's, so it sits to its left.
-    // It shows the Fields column, or opens the Fields picker where the column
-    // does not fit.
-    const fields = this.addAction("panel-left", m.workbench_show_fields(), () =>
+    // It opens the Fields sheet, and closes it again.
+    const fields = this.addAction("braces", m.workbench_view_fields(), () =>
       pressFieldsAction(this.registry, this.workbench),
     );
-    this.#fieldsAnchor.current = fields;
-    // Where it opens the picker, an arrow opens it and a printable key opens
-    // it searching for that key, as a Bases combobox opens.
-    this.registerDomEvent(fields, "keydown", (event) => {
-      const action = this.registry.get(this.workbench.fieldsAction);
-      const query = fieldsActionKey(action, event);
-      if (query === null) return;
-      event.preventDefault();
-      this.registry.set(this.workbench.fieldsPicker, { query });
-    });
-    this.registerDomEvent(fields, "mousedown", (event) =>
-      holdPickerFocus(this.registry.get(this.workbench.fieldsAction), event),
-    );
+    this.#fieldsButton = fields;
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
     });
@@ -1675,9 +1663,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       preview.setAttribute("aria-pressed", String(shown));
       preview.classList.toggle("is-active", shown);
       const action = this.registry.get(this.workbench.fieldsAction);
-      // A toggle for the column; a disclosure for the picker.
+      // A disclosure of the sheet.
       for (const [name, value] of Object.entries(
-        fieldsActionAttributes(action, this.#fieldsAction.popoverId),
+        fieldsActionAttributes(action, this.#fieldsAction.sheetId),
       ))
         if (value === undefined) fields.removeAttribute(name);
         else fields.setAttribute(name, value);
@@ -1775,9 +1763,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       item
         .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_fields())
-        .setIcon("panel-left")
-        // The view action's own press: the column, or the picker where the
-        // column does not fit.
+        .setIcon("braces")
+        // The view action's own press: it opens or closes the Fields sheet.
         .setChecked(this.registry.get(this.workbench.fieldsAction).open)
         .onClick(() => pressFieldsAction(this.registry, this.workbench)),
     );
@@ -1822,9 +1809,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .onClick(() => this.#start(Effect.ignore(reportCitationTemplateOpen))),
     );
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
-    // With the Fields shown, the export saves the root the panel shows.
+    // With the Fields sheet open, the export saves the root the sheet shows.
     const target = this.templateDataTarget();
-    if (this.registry.get(this.workbench.panels).fields.shown)
+    if (this.registry.get(this.workbench.fieldsSheet))
       this.fieldsActions.addExportMenuItem(menu);
     else if (target && this.#deps.pluginVersion)
       menu.addItem((item) =>
@@ -2873,7 +2860,7 @@ function EditorContent({
   // notice its host adapter shows.
   const repair = repairCommands({
     registry: view.registry,
-    model: { view: view.model.view, fieldsPicker: workbench.fieldsPicker },
+    model: { view: view.model.view, fieldsSheet: workbench.fieldsSheet },
     controller,
     host,
     problems,
@@ -3200,11 +3187,9 @@ function EditorContent({
             panels={{
               fields: {
                 label: m.workbench_view_fields(),
-                resizeLabel: m.workbench_fields_resize(),
                 content: (
                   <FieldsPanel view={view} actions={view.fieldsActions} />
                 ),
-                picker: <FieldsPicker view={view} />,
               },
               preview: {
                 label: m.workbench_view_preview(),

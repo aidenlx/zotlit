@@ -389,7 +389,6 @@ export interface SavedWorkbench {
    * and so does a Preview height it leaves out.
    */
   readonly panels: {
-    readonly fields?: WorkbenchPanel;
     readonly preview?: WorkbenchPanel & { readonly height?: number };
   };
   /** The Preview's settings the state names; each one decodes alone. */
@@ -493,10 +492,6 @@ function readPreview(input: unknown): Partial<WorkbenchPreviewSettings> {
   };
 }
 
-const savedPanel = Schema.Struct({
-  shown: Schema.Boolean,
-  width: Schema.Finite,
-});
 /** The Preview's side, which also holds its height under the editor. */
 const savedPreview = Schema.Struct({
   shown: Schema.Boolean,
@@ -504,32 +499,21 @@ const savedPreview = Schema.Struct({
   height: Schema.optional(Schema.Finite),
 });
 
-/** Each side decodes alone; its width and height are held within the limits. */
+/** The Preview decodes alone; its width and height are held within the limits. */
 function readPanels(input: unknown): SavedWorkbench["panels"] {
   const value = decode(record, input) ?? {};
-  const fields = decode(savedPanel, value.fields);
   const preview = decode(savedPreview, value.preview);
-  return {
-    ...(fields
-      ? {
-          fields: {
-            shown: fields.shown,
-            width: savedPanelWidth("fields", fields.width),
-          },
-        }
-      : {}),
-    ...(preview
-      ? {
-          preview: {
-            shown: preview.shown,
-            width: savedPanelWidth("preview", preview.width),
-            ...(preview.height === undefined
-              ? {}
-              : { height: clampPreviewHeight(preview.height) }),
-          },
-        }
-      : {}),
-  };
+  return preview
+    ? {
+        preview: {
+          shown: preview.shown,
+          width: savedPanelWidth("preview", preview.width),
+          ...(preview.height === undefined
+            ? {}
+            : { height: clampPreviewHeight(preview.height) }),
+        },
+      }
+    : {};
 }
 
 const position = Schema.Struct({ top: Schema.Finite, left: Schema.Finite });

@@ -138,12 +138,12 @@ const arrangeWorkbench = Effect.fn("TemplateWorkbench.arrangeWorkbench")(
   },
 );
 
-/** Show both side panels of `editor`, reveal its leaf and give it the focus. */
+/** Show the Preview of `editor`, reveal its leaf and give it the focus. */
 const showWorkbench = Effect.fn("TemplateWorkbench.showWorkbench")(function* (
   editor: TemplateWorkbenchView,
 ) {
   editor.registry.update(editor.workbench.panels, (panels) =>
-    showPanel("preview", true)(showPanel("fields", true)(panels)),
+    showPanel("preview", true)(panels),
   );
   const workspace = yield* Workspace;
   yield* workspace.revealLeaf(editor.leaf);

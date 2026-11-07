@@ -1504,7 +1504,6 @@ An annotation.
       variant: "main",
       citationExample: "one-item",
       panels: {
-        fields: { shown: false, width: 400 },
         preview: { shown: false, width: 400, height: 40 },
       },
       preview: {
@@ -2121,7 +2120,6 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     variant: "main",
     citationExample: "one-item",
     panels: {
-      fields: { shown: false, width: 400 },
       preview: { shown: false, width: 400, height: 40 },
     },
     preview: {
@@ -3597,19 +3595,21 @@ describe("the side panels of the Template Workbench View", () => {
     const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
-    await act(async () => actionOf(view, m.workbench_show_fields()).click());
+    await act(async () => view.togglePanel("preview"));
     await act(async () =>
       view.registry.set(view.viewSize, { width: 1200, height: 800 }),
     );
     await act(async () =>
-      entry(view, m.workbench_fields_resize())!
+      entry(view, m.workbench_preview_resize())!
         .submenu!.items.find(
           (item) => item.title === m.workbench_panel_narrower(),
         )!
         .click(),
     );
     expect(
-      handleOf(view, m.workbench_fields_resize()).getAttribute("aria-valuenow"),
+      handleOf(view, m.workbench_preview_resize()).getAttribute(
+        "aria-valuenow",
+      ),
     ).toBe("336");
     const restored = setup();
     cleanup.defer(() => act(async () => restored.view.close()));
@@ -3624,7 +3624,7 @@ describe("the side panels of the Template Workbench View", () => {
       }),
     );
     expect(
-      handleOf(restored.view, m.workbench_fields_resize()).getAttribute(
+      handleOf(restored.view, m.workbench_preview_resize()).getAttribute(
         "aria-valuenow",
       ),
     ).toBe("336");
@@ -3810,21 +3810,34 @@ describe("the Fields panel of the Template Workbench View", () => {
     (view as unknown as MockItemView).actions.find(
       (element) => element.getAttribute("aria-label") === title,
     )!;
+  /** The Fields sheet, while it stands open. */
   const fields = (view: TemplateWorkbenchView) =>
-    [...view.contentEl.querySelectorAll<HTMLElement>("[role=region]")].find(
-      (element) =>
-        element.getAttribute("aria-label") === m.workbench_view_fields(),
-    ) ?? null;
+    view.contentEl.querySelector<HTMLElement>(
+      '[role="dialog"][aria-modal="true"]',
+    );
+  const openFields = (view: TemplateWorkbenchView) =>
+    view.registry.set(view.workbench.fieldsSheet, true);
 
-  it("shows and hides the Fields panel from its pressed view action and the pane menu", async () => {
+  it("opens and closes the Fields sheet from its view action and the pane menu, at every width", async () => {
     const { view } = setup();
     await act(async () => view.open());
-    const show = actionOf(view, m.workbench_show_fields());
-    expect(show.getAttribute("aria-pressed")).toBe("false");
+    const show = actionOf(view, m.workbench_view_fields());
+    expect(show.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(show.getAttribute("aria-expanded")).toBe("false");
     expect(fields(view)).toBeNull();
+    for (const width of [320, 1200]) {
+      await act(async () =>
+        view.registry.set(view.viewSize, { width, height: 800 }),
+      );
+      await act(async () => show.click());
+      expect(show.getAttribute("aria-expanded")).toBe("true");
+      const sheet = fields(view)!;
+      expect(sheet.getAttribute("aria-modal")).toBe("true");
+      expect(show.getAttribute("aria-controls")).toBe(sheet.id);
+      await act(async () => show.click());
+      expect(fields(view)).toBeNull();
+    }
     await act(async () => show.click());
-    expect(show.getAttribute("aria-pressed")).toBe("true");
-    expect(fields(view)).not.toBeNull();
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
     const entry = menu.items.find(
@@ -3833,37 +3846,9 @@ describe("the Fields panel of the Template Workbench View", () => {
     expect(entry?.checked).toBe(true);
     await act(async () => entry?.click());
     expect(fields(view)).toBeNull();
-    expect(show.getAttribute("aria-pressed")).toBe("false");
-    await act(async () => view.close());
-  });
-
-  // #1955: where the column does not fit, the action opens the Fields picker.
-  it("opens the Fields picker from the view action in a narrow leaf, and keeps the panel's shown flag", async () => {
-    const { view } = setup();
-    await act(async () => view.open());
-    const show = actionOf(view, m.workbench_show_fields());
-    await act(async () => show.click());
-    await act(async () =>
-      view.registry.set(view.viewSize, { width: 560, height: 800 }),
-    );
-    expect(fields(view)).toBeNull();
-    expect(show.getAttribute("aria-pressed")).toBeNull();
     expect(show.getAttribute("aria-expanded")).toBe("false");
-    // Obsidian opens a popover only under an anchor in the document.
-    document.body.append(show);
-    await act(async () => show.click());
-    // The picker's rows, keys and focus are proved in the running app, with
-    // trusted input (template-workbench.e2e.ts).
-    expect(show.getAttribute("aria-expanded")).toBe("true");
-    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(view.getState()).toMatchObject({
-      panels: { fields: { shown: true } },
-    });
-    await act(async () =>
-      view.registry.set(view.viewSize, { width: 1400, height: 800 }),
-    );
-    expect(fields(view)).not.toBeNull();
-    expect(show.getAttribute("aria-pressed")).toBe("true");
+    // The sheet is view state, never saved.
+    expect(JSON.stringify(view.getState())).not.toContain("fieldsSheet");
     await act(async () => view.close());
   });
 
@@ -3877,7 +3862,7 @@ describe("the Fields panel of the Template Workbench View", () => {
     const { view } = setup();
     const [first, second] = SAMPLE_ITEMS;
     await act(async () => view.open());
-    await act(async () => view.togglePanel("fields"));
+    await act(async () => openFields(view));
     await act(async () => chooseSample(view, first!));
     await vi.waitFor(() =>
       expect(fields(view)?.textContent).toContain(first!.item.title),
@@ -3895,7 +3880,7 @@ describe("the Fields panel of the Template Workbench View", () => {
     // The conference paper carries annotations of its own.
     const paper = SAMPLE_ITEMS[1]!;
     await act(async () => view.open());
-    await act(async () => view.togglePanel("fields"));
+    await act(async () => openFields(view));
     await act(async () => chooseSample(view, paper));
     const back = () =>
       [...fields(view)!.querySelectorAll<HTMLElement>("[aria-label]")].find(
@@ -3930,7 +3915,7 @@ describe("the Fields panel of the Template Workbench View", () => {
   it("shows the annotation the editor chose on its Annotation root", async () => {
     const { view } = setup();
     await act(async () => view.open());
-    await act(async () => view.togglePanel("fields"));
+    await act(async () => openFields(view));
     await act(async () => chooseSample(view, SAMPLE_ITEMS[1]!));
     await act(async () => view.change.setRoot("annotation"));
     await vi.waitFor(() =>
@@ -4007,7 +3992,7 @@ describe("the Fields panel of the Template Workbench View", () => {
     try {
       await act(async () => view.open());
       await act(async () => {
-        view.togglePanel("fields");
+        openFields(view);
         setViewItem(view, { id: "FIRST234", title: "First paper" });
         view.change.setRoot("annotation");
       });
@@ -4046,18 +4031,13 @@ describe("the Fields panel of the Template Workbench View", () => {
     }
   });
 
-  it("inserts a field from its row at the editor's caret", async () => {
+  it("inserts a field from its row at the editor's caret, and closes the sheet", async () => {
     const { view } = setup();
     document.body.append(view.contentEl);
     try {
       await act(async () => view.open());
-      await act(async () => view.togglePanel("fields"));
       await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
-      await vi.waitFor(() =>
-        expect(fields(view)?.textContent).toContain(
-          SAMPLE_ITEMS[0]!.item.title,
-        ),
-      );
+      // The reader places the caret, then opens the sheet over the editor.
       const editor = EditorView.findFromDOM(
         view.contentEl.querySelector(".cm-editor")!,
       )!;
@@ -4065,6 +4045,12 @@ describe("the Fields panel of the Template Workbench View", () => {
         editor.focus();
         editor.dispatch({ selection: { anchor: 3 } });
       });
+      await act(async () => openFields(view));
+      await vi.waitFor(() =>
+        expect(fields(view)?.textContent).toContain(
+          SAMPLE_ITEMS[0]!.item.title,
+        ),
+      );
       const title = insertButtons(fields(view)!).find(
         (button) =>
           button
@@ -4074,6 +4060,8 @@ describe("the Fields panel of the Template Workbench View", () => {
       expect(title).toBeDefined();
       await act(async () => title!.click());
       expect(view.getViewData()).toContain("A s{{ zt.title }}table note.");
+      // The insert closes the Fields sheet.
+      expect(fields(view)).toBeNull();
     } finally {
       await act(async () => view.close());
       view.contentEl.remove();
