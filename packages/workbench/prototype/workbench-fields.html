@@ -59,7 +59,11 @@
          highlighted row — never on hover. Wide: a flyout beside the sheet with a close button.
          Narrow: a fixed-height details bar at the sheet's foot with a close button. Hover changes
          no layout. (User: hover in the narrow view caused a large, unexpected layout shift;
-         "preview should be explicitly triggered".) */
+         "preview should be explicitly triggered".)
+         AMENDMENT 2: a click on a row shows (or hides) its details; the row's Insert button
+         (lucide `text-cursor-input`, shown on row hover/focus/highlight) or Enter inserts the field;
+         Shift-click on Insert keeps the modal sheet open. Ctrl/Cmd+I still toggles details for the
+         highlighted row. (User: "click to show details, button to insert".) */
       /* DESIGN PLAN (utilitarian; the project's own system wins: Obsidian's default theme)
          ground #ffffff view; panel #f6f6f7 secondary panes / popover ground; ink #222222 text;
          muted #6b6b70; faint #a3a3a8; line #e3e3e6 hairlines; accent #7f5af0 Obsidian's interactive
@@ -1444,9 +1448,7 @@
           : pinned
             ? "Unpin"
             : "Pin to side";
-        const hint = modal
-          ? "Click to insert · Shift-click keeps this open"
-          : "Click a field to insert it at the cursor";
+        const hint = "Click a field for details · Enter inserts";
 
         const list = (
           <div
@@ -1489,9 +1491,13 @@
                         id={`m-opt-${f.path}`}
                         role="option"
                         aria-selected={on}
-                        onClick={(e) => onInsert(f.path, e.shiftKey)}
-                        title={`Insert ${snippetOf(f.path)} at the cursor`}
-                        className={`group flex h-8 scroll-mt-9 scroll-mb-2 cursor-pointer items-center gap-2 rounded-md pr-1 text-sm pl-1 ${on ? "bg-accent-soft" : "hover:bg-ground"}`}
+                        onClick={() => {
+                          setSel(f.path);
+                          toggleDetail(f.path);
+                        }}
+                        aria-expanded={detail === f.path}
+                        title="Show details"
+                        className={`group flex h-8 scroll-mt-9 scroll-mb-2 cursor-pointer items-center gap-2 rounded-md pr-1 text-sm pl-1 ${on || detail === f.path ? "bg-accent-soft" : "hover:bg-ground"}`}
                       >
                         {f.children ? (
                           <button
@@ -1522,16 +1528,15 @@
                         </span>
                         <button
                           type="button"
-                          aria-label={`Details for ${f.label}`}
-                          aria-pressed={detail === f.path}
-                          title="Show details (Ctrl/Cmd+I)"
+                          aria-label={`Insert ${f.label}`}
+                          title={`Insert ${snippetOf(f.path)} at the cursor (Enter) · Shift-click keeps this open`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            toggleDetail(f.path);
+                            onInsert(f.path, e.shiftKey);
                           }}
-                          className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent ${detail === f.path ? "bg-accent text-ground opacity-100" : `text-muted hover:bg-panel hover:text-ink ${on ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}`}
+                          className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md text-accent hover:bg-accent hover:text-ground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent ${on || detail === f.path ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                         >
-                          <L.Info size={14} strokeWidth={1.75} />
+                          <L.TextCursorInput size={14} strokeWidth={1.75} />
                         </button>
                       </div>
                     </div>
