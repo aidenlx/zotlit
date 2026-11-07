@@ -1885,9 +1885,12 @@
                 )}
                 <div className="@container/main flex min-w-0 flex-1 flex-col">
                   <ItemRow onTitleClick={openSheet} />
-                  <TabBar />
                   <div className="flex min-h-0 flex-1 flex-col @min-[56rem]/main:flex-row">
-                    <SourceEditor taRef={taRef} className="min-h-32 flex-1" />
+                    {/* The tabs belong to the editor; the Preview takes the full height beside it. */}
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                      <TabBar />
+                      <SourceEditor taRef={taRef} className="min-h-32 flex-1" />
+                    </div>
                     <NotePreview className="h-[45%] shrink-0 border-t border-line @min-[56rem]/main:h-auto @min-[56rem]/main:w-[44%] @min-[56rem]/main:border-t-0 @min-[56rem]/main:border-l" />
                   </div>
                 </div>
