@@ -53,7 +53,13 @@
          ROUND 4 QUESTION: which icon and label name the entry action and the sheet? */
       /* VERDICT round 4 (entry): lucide `braces` with the name "Fields", for the view-header action
          (icon + tooltip in Obsidian) and the sheet title. (User: "use B".)
-         FINAL: this file is trimmed to that winner; it is the visual reference for #1952. */
+         FINAL: this file is trimmed to that winner; it is the visual reference for #1952.
+         AMENDMENT (after round 4): field details open only on an explicit request — the row's
+         Details button (lucide `info`, shown on row hover/focus/highlight) or Ctrl/Cmd+I for the
+         highlighted row — never on hover. Wide: a flyout beside the sheet with a close button.
+         Narrow: a fixed-height details bar at the sheet's foot with a close button. Hover changes
+         no layout. (User: hover in the narrow view caused a large, unexpected layout shift;
+         "preview should be explicitly triggered".) */
       /* DESIGN PLAN (utilitarian; the project's own system wins: Obsidian's default theme)
          ground #ffffff view; panel #f6f6f7 secondary panes / popover ground; ink #222222 text;
          muted #6b6b70; faint #a3a3a8; line #e3e3e6 hairlines; accent #7f5af0 Obsidian's interactive
@@ -965,6 +971,73 @@
       }
 
       /** The detail card: full value, path, what the note gets, Insert and Copy. */
+      /**
+       * Narrow views: the details the reader asked for, in a fixed-height bar at the sheet's foot.
+       * Hidden where the flyout shows (≥ 600 px).
+       */
+      function M_DetailBar({ field, q, onClose }) {
+        const [copied, setCopied] = useState(false);
+        useEffect(() => setCopied(false), [field?.path]);
+        const copy = () => {
+          navigator.clipboard?.writeText(snippetOf(field.path)).catch(() => {});
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        };
+        return (
+          <div
+            role="region"
+            aria-label="Field details"
+            aria-live="polite"
+            className="h-[6.5rem] shrink-0 overflow-hidden border-t border-line bg-ground px-3 py-2 text-sm @min-[600px]:hidden"
+          >
+            {
+              <div className="flex h-full flex-col gap-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="truncate font-semibold text-ink">
+                    {field.label}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-faint">
+                    {field.section}
+                  </span>
+                  <IconButton
+                    icon={L.X}
+                    label="Close details"
+                    onClick={onClose}
+                    className="-mr-1 size-6"
+                  />
+                </div>
+                <div
+                  className="line-clamp-2 min-h-0 leading-5"
+                  title={field.value || undefined}
+                >
+                  {M_isEmpty(field) ? (
+                    <span className="italic text-faint">
+                      This item has no value here
+                    </span>
+                  ) : (
+                    <M_Value field={field} q={q} full />
+                  )}
+                </div>
+                <div className="mt-auto flex items-center gap-1">
+                  <code className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
+                    {snippetOf(field.path)}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={copy}
+                    aria-label="Copy template text"
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-panel hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                  >
+                    {copied ? <L.Check size={12} /> : <L.Copy size={12} />}{" "}
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+        );
+      }
+
       function M_Detail({ field, q, inline, onInsert }) {
         const [copied, setCopied] = useState(false);
         useEffect(() => setCopied(false), [field.path]);
@@ -1222,12 +1295,20 @@
         const counts = useMemo(() => M_counts(q), [q]);
         const flat = groups.flatMap((g) => g.rows);
         const cur = flat.find((f) => f.path === sel) ?? null;
+        // Details open only on an explicit request (the row's Details button or Mod+I), never on hover.
+        const [detail, setDetail] = useState(null);
+        const shown = detail
+          ? (flat.find((f) => f.path === detail) ?? findField(detail))
+          : null;
+        const toggleDetail = (path) =>
+          setDetail((d) => (d === path ? null : path));
 
         useEffect(() => {
           searchRef.current?.focus({ preventScroll: true });
         }, []);
         useEffect(() => {
           setSel(null);
+          setDetail(null);
         }, [q, filter]);
 
         const spy = (id) => {
@@ -1251,14 +1332,8 @@
 
         const onScroll = () => {
           const box = listRef.current;
-          // A detail card for a row that scrolled out of the list goes away.
-          const row = cur && rowRefs.current[cur.path];
-          if (row && box) {
-            const r = row.getBoundingClientRect(),
-              b = box.getBoundingClientRect();
-            if (r.bottom < b.top + 28 || r.top > b.bottom) setSel(null);
-            else place();
-          }
+          // The flyout follows its row while the list scrolls.
+          if (shown) place();
           let id = groups[0]?.section.id;
           for (const h of box.querySelectorAll("[data-m-section]"))
             if (h.offsetTop <= box.scrollTop + 8) id = h.dataset.mSection;
@@ -1267,15 +1342,15 @@
 
         // The flyout sits beside the selected row, kept inside the sheet's height.
         const place = useCallback(() => {
-          if (!flyout || !cur) return;
-          const row = rowRefs.current[cur.path],
+          if (!flyout || !shown) return;
+          const row = rowRefs.current[shown.path],
             host = rootRef.current;
           if (!row || !host) return;
           const top =
             row.getBoundingClientRect().top - host.getBoundingClientRect().top;
           const h = cardRef.current?.offsetHeight ?? 260;
           setCardTop(Math.max(8, Math.min(top - 8, host.clientHeight - h - 8)));
-        }, [flyout, cur?.path]);
+        }, [flyout, shown?.path]);
         useLayoutEffect(place, [place]);
 
         const select = (path, scroll) => {
@@ -1309,24 +1384,24 @@
             n.has(path) ? n.delete(path) : n.add(path);
             return n;
           });
-        const onRowHover = (path) => {
-          clearTimeout(hoverT.current);
-          // Narrow: a short delay so the inline detail does not jump under a passing pointer.
-          if (flyout) setSel(path);
-          else hoverT.current = setTimeout(() => setSel(path), 220);
-        };
 
         const onKeyDown = (e) => {
           if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation();
             if (menuFor) setMenuFor(null);
+            else if (detail) setDetail(null);
             else if (q) setQ("");
             else if (modal) onClose();
             else setSel(null);
             return;
           }
           const inSearch = e.target === searchRef.current;
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i" && cur) {
+            e.preventDefault();
+            toggleDetail(cur.path);
+            return;
+          }
           if (inSearch && e.key === "ArrowDown") {
             e.preventDefault();
             move(1);
@@ -1406,7 +1481,7 @@
                   const on = cur?.path === f.path;
                   const isOpen = expanded.has(f.path) || (q && f.children);
                   return (
-                    <div key={f.path} onMouseEnter={() => onRowHover(f.path)}>
+                    <div key={f.path}>
                       <div
                         ref={(el) => {
                           rowRefs.current[f.path] = el;
@@ -1445,22 +1520,20 @@
                         <span className="flex min-w-0 flex-1 text-[13px]">
                           <M_Value field={f} q={q} />
                         </span>
-                        <L.CornerDownLeft
-                          size={13}
-                          aria-hidden="true"
-                          className={`shrink-0 text-accent ${on ? "opacity-100" : "opacity-0 group-hover:opacity-60"}`}
-                        />
+                        <button
+                          type="button"
+                          aria-label={`Details for ${f.label}`}
+                          aria-pressed={detail === f.path}
+                          title="Show details (Ctrl/Cmd+I)"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleDetail(f.path);
+                          }}
+                          className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent ${detail === f.path ? "bg-accent text-ground opacity-100" : `text-muted hover:bg-panel hover:text-ink ${on ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}`}
+                        >
+                          <L.Info size={14} strokeWidth={1.75} />
+                        </button>
                       </div>
-                      {on && (
-                        <div className="mx-1 mb-1.5 rounded-b-md @min-[600px]:hidden border border-t-0 border-line bg-ground px-3 py-3">
-                          <M_Detail
-                            field={f}
-                            q={q}
-                            inline
-                            onInsert={onInsert}
-                          />
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -1480,10 +1553,6 @@
             aria-label={entry.label}
             onKeyDown={onKeyDown}
             {...(modal ? { role: "dialog", "aria-modal": "true" } : {})}
-            onMouseLeave={() => {
-              clearTimeout(hoverT.current);
-              if (flyout) setSel(null);
-            }}
             className={`flex min-h-0 flex-col border-r border-line bg-panel ${modal ? "m-slide absolute inset-y-0 left-0 z-40 shadow-xl" : "relative z-20 shrink-0"}`}
             style={{ width, maxWidth: modal ? "88%" : undefined }}
           >
@@ -1573,19 +1642,32 @@
             ) : (
               list
             )}
+            {shown && (
+              <M_DetailBar
+                field={shown}
+                q={q}
+                onClose={() => setDetail(null)}
+              />
+            )}
             <div className="shrink-0 border-t border-line px-3 py-1.5 text-xs text-muted">
               {hint}
             </div>
 
-            {cur && (
+            {shown && (
               <div
                 ref={cardRef}
                 role="region"
-                aria-label={`${cur.label} details`}
+                aria-label={`${shown.label} details`}
                 className="m-pop hidden @min-[600px]:block absolute left-full z-50 ml-2 w-72 rounded-lg border border-line bg-raise p-4 shadow-xl"
                 style={{ top: cardTop }}
               >
-                <M_Detail field={cur} q={q} onInsert={onInsert} />
+                <IconButton
+                  icon={L.X}
+                  label="Close details"
+                  onClick={() => setDetail(null)}
+                  className="absolute top-2 right-2"
+                />
+                <M_Detail field={shown} q={q} onInsert={onInsert} />
               </div>
             )}
 
