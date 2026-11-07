@@ -67,13 +67,13 @@ The Preview panel stands beside the editor in a view at least 896 pixels wide (5
 
 In a view narrower than 896 pixels, the Preview moves under the editor. It takes 40% of the view's height at first. Drag the edge above it, or focus the edge and press Up Arrow or Down Arrow, to give it more or less height; Home and End set its smallest and largest share. Double-click the edge to give it 40% again. In the pane menu, <UiLabel name={m.workbench_preview_resize()} /> then offers <UiLabel name={m.workbench_panel_taller()} />, <UiLabel name={m.workbench_panel_shorter()} />, and <UiLabel name={m.workbench_panel_reset_height()} />, in steps of 10%. The editor always keeps room for its toolbar, its tabs and at least five lines of your template; the Preview gets shorter first. Each step starts from the height you see. When the editor needs more room, it scrolls.
 
-The Fields popover works the same at every width.
+The Fields popover works the same at every width. A pinned Fields panel docks only where the view has room for it; see [Pin the Fields panel](#pin-fields).
 
 Making the view narrower or wider moves the Preview and changes nothing else: the panel stays shown, and it gets its width back when the view is wide enough again. A popover you opened stays open, and a closed popover stays closed. The Preview keeps your place as it moves: the control you were on and the scroll position stay. A view you move to another window follows that window's width.
 
 ### What the view remembers [#panel-state]
 
-Obsidian saves whether the Preview panel is shown, how wide it is, and its height under the editor, with the view. After a restart, the view opens the way you left it. The Fields popover is not saved: it is closed when the view opens.
+Obsidian saves whether the Preview panel is shown, how wide it is, and its height under the editor, with the view. It also saves whether the Fields panel is pinned, whether you hid it, and how wide it is. After a restart, the view opens the way you left it. The Fields popover is not saved: it is closed when the view opens. The web Workbench keeps the pin and the width while the page is open.
 
 A new view starts with no Preview panel, for a quick edit. That is the case when you open a template document from the file explorer, or with <UiLabel name={m.template_workbench_open()} />.
 
@@ -114,6 +114,18 @@ Place your cursor in the template before you insert a field. Inserting puts the 
 The popover opens on the same root as the editor, such as the note fields or the annotation fields. The citation text shows citation fields, and a partial shows the fields of the caller you preview it as. You can move the popover to another root, for example to an annotation. When the editor's root or the chosen item changes, the popover follows the editor again.
 
 While the Fields popover is open, <UiLabel name={m.template_data_explorer_menu_export_json()} /> in the pane menu saves the data of the root the popover shows. Otherwise it saves the data of the editor's root.
+
+### Pin the Fields panel [#pin-fields]
+
+Pin the Fields panel to keep your paper's data in view while you write. Select <UiLabel name={m.workbench_fields_pin()} /> in the popover's header. The popover closes, and the Fields panel stands as a column at the left edge of the view, before the editor. The editor gets narrower to make room.
+
+The pinned panel stays open while you type and insert fields. Inserting puts the cursor back in the editor after the field, and the panel stays where it is.
+
+- Select <UiLabel name={m.workbench_view_fields()} /> to hide the pinned panel and give its room to the editor. Select it again to show the panel. The pin stays.
+- Drag the edge between the panel and the editor to resize the panel, from 240 to 480 pixels. The edge works from the keyboard as the Preview's edge does, and the pane menu has <UiLabel name={m.workbench_fields_resize()} />.
+- Select <UiLabel name={m.workbench_fields_unpin()} /> to unpin the panel. It opens in the Fields popover again.
+
+The pinned panel needs a view that keeps the editor at least 360 pixels wide beside a panel of 240 pixels, after the Preview panel takes its column. In a narrower view, the pin is disabled with the tooltip <UiLabel name={m.workbench_fields_pin_unavailable()} />, and <UiLabel name={m.workbench_view_fields()} /> opens the Fields popover. A pinned panel shows the note <UiLabel name={m.workbench_fields_pinned_narrow()} /> there. When the view is wide again, the panel docks again. A view that gets narrow never opens the popover over your editor by itself.
 
 ### The Preview panel [#preview-panel]
 
