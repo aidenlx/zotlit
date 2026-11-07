@@ -12,6 +12,7 @@ import { m } from "@/paraglide/messages.js";
 import {
   open,
   openMenu,
+  openFieldsPopover,
   importFile,
   KEPT,
   renderInThread,
@@ -88,10 +89,10 @@ it("keeps independent Preview and Explorer choices when a new document opens", a
     refresh().value = "demand";
     refresh().dispatchEvent(new Event("input", { bubbles: true }));
   });
-  // The field list stands in the Fields sheet.
+  // The field list stands in the Fields popover, on the document's body.
   page.press(m.workbench_view_fields());
   const section = () =>
-    page.host.querySelector<HTMLButtonElement>('[data-part="section-header"]')!;
+    document.querySelector<HTMLButtonElement>('[data-part="section-header"]')!;
   expect(section().getAttribute("aria-expanded")).toBe("true");
   page.press(section().textContent);
   importFile(page.host, KEPT);
@@ -144,6 +145,8 @@ it("shows one chosen Item on every surface, from one render", async () => {
   page.press(m.workbench_view_fields());
   renderInThread.mockClear();
   await page.show("NW2CPDTC");
+  // Choosing the paper is a press outside the Fields popover, which closes it.
+  openFieldsPopover(page.host);
   // The new paper's result has landed once the Preview shows it.
   await page.waitFor(() => {
     expect(shownItem(page.host)).toBe("Thinking, fast and slow");
@@ -192,6 +195,8 @@ it("interrupts the read of an Item the reader chose away from", async () => {
   expect(fieldText(page.host)).toBe("");
   await page.show("NW2CPDTC");
   await page.settle();
+  // Choosing the paper is a press outside the Fields popover, which closes it.
+  openFieldsPopover(page.host);
   expect(reads.slice(0, first).every((read) => read.interrupted)).toBe(true);
   for (const read of reads.slice(first)) act(() => read.release());
   await page.waitFor(() =>

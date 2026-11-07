@@ -55,7 +55,7 @@ export const PAGE_PANELS: WorkbenchPanels = {
 /**
  * The parts as a new page first paints them, before it measures its frame:
  * the Preview of {@link PAGE_PANELS} as a column, drawn with the live panels'
- * parts and custom properties. The Fields sheet stays closed until the
+ * parts and custom properties. The Fields popover stays closed until the
  * reader opens it.
  */
 function FirstPaint({ edit, result }: FrameParts) {

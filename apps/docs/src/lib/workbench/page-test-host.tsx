@@ -344,13 +344,13 @@ export function press(scope: HTMLElement, label: string): void {
 
 /**
  * Finds the field row named `label`, including its insertion controls. The
- * rows stand in the Fields sheet, which it opens from the header's Fields
- * action, as the reader does, while the sheet is closed.
+ * rows stand in the Fields popover, which it opens from the header's Fields
+ * action, as the reader does, while the popover is closed.
  */
 export function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
-  openFieldsSheet(scope);
+  const popover = openFieldsPopover(scope);
   const target = [
-    ...scope.querySelectorAll('[role="treeitem"] [data-part="key"]'),
+    ...(popover?.querySelectorAll('[role="treeitem"] [data-part="key"]') ?? []),
   ]
     .find((span) => span.textContent === label)
     ?.closest("li");
@@ -358,13 +358,19 @@ export function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
   return target;
 }
 
-/** Opens the Fields sheet from the header's Fields action, unless it stands open. */
-export function openFieldsSheet(scope: HTMLElement): void {
-  if (scope.querySelector('[role="dialog"][aria-modal="true"]')) return;
+/**
+ * Opens the Fields popover from the header's Fields action, unless it stands
+ * open, and returns it. The popover stands on the document's body.
+ */
+export function openFieldsPopover(scope: HTMLElement): HTMLElement | null {
   const action = [...scope.querySelectorAll("header button")].find(
     (button) => button.textContent === m.workbench_view_fields(),
   );
-  if (action) act(() => (action as HTMLButtonElement).click());
+  if (!action) return null;
+  if (action.getAttribute("aria-expanded") !== "true")
+    act(() => (action as HTMLButtonElement).click());
+  const id = action.getAttribute("aria-controls");
+  return id ? scope.ownerDocument.getElementById(id) : null;
 }
 
 /**

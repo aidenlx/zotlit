@@ -47,6 +47,7 @@ import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
 import { webCompletion } from "./completion";
+import { webFieldsAction } from "./fields-popover";
 import { webHover } from "./hover";
 import { Rendering } from "./rendering";
 import { ResultSheet } from "./result-sheet";
@@ -138,11 +139,11 @@ export function useWebHost({
 }): {
   host: WorkbenchHost;
   overlays: ReactNode;
-  /** The header's Fields action, which takes focus back as the Fields sheet closes. */
+  /** The header's Fields action, which takes focus back as the Fields popover closes. */
   fieldsAnchor: RefObject<HTMLButtonElement | null>;
 } {
   const fieldsAnchor = useRef<HTMLButtonElement>(null);
-  const fieldsSheetId = useId();
+  const fieldsPopoverId = useId();
   const [menu, setMenu] = useState<WorkbenchMenuRequest | null>(null);
   const [dialog, setDialog] = useState<WorkbenchDialogRequest | null>(null);
   const [confirm, setConfirm] = useState<Pending<
@@ -209,10 +210,7 @@ export function useWebHost({
         customFields: Effect.suspend(() => latest.current.data.customFields),
       },
       insertTarget: () => latest.current.insertTarget(),
-      fieldsAction: {
-        sheetId: fieldsSheetId,
-        focus: () => fieldsAnchor.current?.focus({ preventScroll: true }),
-      },
+      fieldsAction: webFieldsAction(fieldsAnchor, fieldsPopoverId),
       persistence: {
         read(scope, key) {
           try {
@@ -239,7 +237,7 @@ export function useWebHost({
         },
       },
     }),
-    [bridge, fieldsSheetId],
+    [bridge, fieldsPopoverId],
   );
 
   function answerConfirm(value: boolean) {

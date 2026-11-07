@@ -648,16 +648,16 @@ function WorkbenchSession({
           <ViewMenu model={model} registry={registry} />
           <HelpMenu />
           {/* The view actions, as the Obsidian view has them: Fields opens
-              the Fields sheet at every width, and Preview shows or hides its
+              the Fields popover at every width, and Preview shows or hides its
               panel, wherever the panel goes at this width. */}
           <Button
             ref={fieldsAnchor}
             variant="ghost"
             size="xs"
-            // A disclosure of the sheet.
+            // A disclosure of the Fields popover.
             {...fieldsActionAttributes(
               fieldsAction,
-              host.fieldsAction?.sheetId ?? "",
+              host.fieldsAction?.popoverId ?? "",
             )}
             className={EXPANDED_TOGGLE}
             onClick={() => pressFieldsAction(registry, model)}

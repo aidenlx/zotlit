@@ -31,14 +31,14 @@ const press = (element: HTMLElement, key: string) =>
   });
 
 // #1954: the web Workbench lays out the shared panels as Obsidian does.
-it("starts with the Preview shown and the Fields sheet closed, and shows and hides the Preview from its header action", async () => {
+it("starts with the Preview shown and the Fields popover closed, and shows and hides the Preview from its header action", async () => {
   await using page = await open({ frame: { width: 1200, height: 700 } });
   await page.settle();
   const fields = action(page.host, m.workbench_view_fields());
   const preview = action(page.host, m.workbench_show_preview());
   expect(fields.getAttribute("aria-expanded")).toBe("false");
   expect(preview.getAttribute("aria-pressed")).toBe("true");
-  expect(sheet()).toBeNull();
+  expect(popover()).toBeNull();
   expect(region(page.host, m.workbench_view_preview())).not.toBeNull();
   page.press(m.workbench_show_preview());
   expect(preview.getAttribute("aria-pressed")).toBe("false");
@@ -60,11 +60,11 @@ it("puts the Preview under the editor in a narrow frame and beside it in a wide 
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   page.resizeFrame({ width: 1200, height: 700 });
   expect(split().getAttribute("aria-orientation")).toBe("vertical");
-  // Resizing moved the Preview, which still shows, and opened no sheet.
+  // Resizing moved the Preview, which still shows, and opened no popover.
   expect(
     action(page.host, m.workbench_show_preview()).getAttribute("aria-pressed"),
   ).toBe("true");
-  expect(sheet()).toBeNull();
+  expect(popover()).toBeNull();
 });
 
 // The Preview moves between the side and the place under the editor as one
@@ -118,15 +118,17 @@ it("sizes the Preview with its handle", async () => {
   expect(split.getAttribute("aria-valuenow")).toBe("45");
 });
 
-/** The Fields sheet, while it stands open. */
-const sheet = () =>
-  document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
-/** The Fields sheet's field search. */
-const sheetSearch = () =>
-  sheet()?.querySelector<HTMLInputElement>('input[type="search"]') ?? null;
-/** The Insert button of the top-level field `key` in the open sheet. */
+/** The Fields popover, while it stands open on the document's body. */
+const popover = () =>
+  document.querySelector<HTMLElement>(
+    '[data-slot="popover-content"][role="dialog"]',
+  );
+/** The Fields popover's field search. */
+const popoverSearch = () =>
+  popover()?.querySelector<HTMLInputElement>('input[type="search"]') ?? null;
+/** The Insert button of the top-level field `key` in the open popover. */
 const insertButton = (key: string) =>
-  sheet()!.querySelector<HTMLElement>(
+  popover()!.querySelector<HTMLElement>(
     `[data-workbench-field="${key}"] [role="button"][aria-label="${m.workbench_fields_put_in_note()}"]`,
   )!;
 
@@ -148,27 +150,30 @@ const placeCaret = (host: HTMLElement) => {
   return note;
 };
 
-// #1964: Fields opens the Fields sheet at every width.
+// #1964: Fields opens the Fields popover at every width.
 it.each([320, 560, 760, 960, 1200])(
-  "opens the Fields sheet from its header action in a %i px frame, and a second press closes it",
+  "opens the Fields popover from its header action in a %i px frame, and a second press closes it",
   async (width) => {
     await using page = await open({ frame: { width, height: 700 } });
     await page.settle();
     const fields = action(page.host, m.workbench_view_fields());
     page.press(m.workbench_view_fields());
     await page.settle();
-    expect(sheet()).not.toBeNull();
+    expect(popover()).not.toBeNull();
     expect(fields.getAttribute("aria-expanded")).toBe("true");
-    expect(fields.getAttribute("aria-controls")).toBe(sheet()!.id);
-    expect(document.activeElement).toBe(sheetSearch());
+    expect(fields.getAttribute("aria-controls")).toBe(popover()!.id);
+    expect(document.activeElement).toBe(popoverSearch());
+    // A popover, not a modal: the editor and the Preview stay in reach.
+    expect(popover()!.getAttribute("aria-modal")).not.toBe("true");
+    expect(page.host.querySelector("[inert]")).toBeNull();
     page.press(m.workbench_view_fields());
     await page.settle();
-    expect(sheet()).toBeNull();
+    expect(popover()).toBeNull();
     expect(fields.getAttribute("aria-expanded")).toBe("false");
   },
 );
 
-it("inserts a field from the sheet at the caret, closes the sheet and leaves focus in the editor", async () => {
+it("inserts a field from the popover at the caret, closes the popover and leaves focus in the editor", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
   const note = placeCaret(page.host);
@@ -177,13 +182,13 @@ it("inserts a field from the sheet at the caret, closes the sheet and leaves foc
   await page.settle();
   act(() => insertButton("authors").click());
   await page.settle();
-  expect(sheet()).toBeNull();
+  expect(popover()).toBeNull();
   // The field goes where the reader left the caret.
   expect(note.state.doc.line(1).text).toContain("zt.authors");
   expect(note.hasFocus).toBe(true);
 });
 
-it("keeps the sheet open for the next field on a Shift-click of Insert", async () => {
+it("keeps the popover open for the next field on a Shift-click of Insert", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
   const note = placeCaret(page.host);
@@ -195,36 +200,45 @@ it("keeps the sheet open for the next field on a Shift-click of Insert", async (
     );
   });
   await page.settle();
-  expect(sheet()).not.toBeNull();
+  expect(popover()).not.toBeNull();
   expect(note.state.doc.line(1).text).toContain("zt.authors");
 });
 
-it("closes the Fields sheet on Escape and on its scrim, and returns focus to the Fields action", async () => {
+it("closes the Fields popover on Escape and on a press outside it, and returns focus to the Fields action", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
   const fields = action(page.host, m.workbench_view_fields());
   page.press(m.workbench_view_fields());
   await page.settle();
-  press(sheetSearch()!, "Escape");
+  press(popoverSearch()!, "Escape");
   await page.settle();
-  expect(sheet()).toBeNull();
+  expect(popover()).toBeNull();
   expect(document.activeElement).toBe(fields);
   page.press(m.workbench_view_fields());
   await page.settle();
-  act(() =>
-    page.host.querySelector<HTMLElement>('[data-part="scrim"]')!.click(),
-  );
+  // The Preview stands outside the popover.
+  const outside = region(page.host, m.workbench_view_preview())!;
+  act(() => {
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"])
+      outside.dispatchEvent(
+        new (type.startsWith("pointer") ? PointerEvent : MouseEvent)(type, {
+          bubbles: true,
+          button: 0,
+        }),
+      );
+    outside.click();
+  });
   await page.settle();
-  expect(sheet()).toBeNull();
+  expect(popover()).toBeNull();
   expect(document.activeElement).toBe(fields);
 });
 
-it("never opens the Fields sheet as the frame narrows", async () => {
+it("never opens the Fields popover as the frame narrows", async () => {
   await using page = await open({ frame: { width: 1200, height: 700 } });
   await page.settle();
   page.resizeFrame({ width: 320, height: 500 });
   await page.settle();
-  expect(sheet()).toBeNull();
+  expect(popover()).toBeNull();
 });
 
 // #1956: the View menu sizes every handle without a drag, as the Obsidian
@@ -310,7 +324,7 @@ it("shows, sizes and resets each panel from the View menu", async () => {
 });
 
 // The View menu presses the same Fields action as the header.
-it("opens the Fields sheet from the View menu's Show fields", async () => {
+it("opens the Fields popover from the View menu's Show fields", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
   page.press(m.workbench_view_menu());
@@ -320,12 +334,12 @@ it("opens the Fields sheet from the View menu's Show fields", async () => {
   const show = [
     ...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]'),
   ].find((element) => element.textContent === m.workbench_show_fields())!;
-  // The sheet is closed, so the entry reads unchecked.
+  // The popover is closed, so the entry reads unchecked.
   expect(show.getAttribute("aria-checked")).toBe("false");
   act(() => show.click());
-  await page.waitFor(() => expect(sheetSearch()).not.toBeNull());
+  await page.waitFor(() => expect(popoverSearch()).not.toBeNull());
   await page.settle();
-  expect(document.activeElement).toBe(sheetSearch());
+  expect(document.activeElement).toBe(popoverSearch());
   expect(
     action(page.host, m.workbench_view_fields()).getAttribute("aria-expanded"),
   ).toBe("true");

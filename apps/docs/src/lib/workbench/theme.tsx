@@ -464,7 +464,7 @@ export const WEB_THEME: WorkbenchTheme = {
     // (PANEL_HANDLE_WIDTH, which the placement counts), with a rule
     // down its middle that turns the primary color while it is used.
     panels: {
-      panels: "relative flex min-h-0 min-w-0 flex-1",
+      panels: "flex min-h-0 min-w-0 flex-1",
       stack: "flex min-h-0 min-w-0 flex-1 data-[state=below]:flex-col",
       status: "sr-only",
       editor: "flex min-h-0 min-w-0 flex-1 flex-col",
@@ -474,13 +474,12 @@ export const WEB_THEME: WorkbenchTheme = {
       split:
         "relative h-3 shrink-0 cursor-row-resize touch-none outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-fd-muted-foreground hover:after:h-0.5 hover:after:bg-fd-primary focus-visible:after:h-0.5 focus-visible:after:bg-fd-primary",
     },
-    // The Fields sheet: it slides in from the leading edge over the panels,
-    // above a dimmed scrim, and a still motion setting shows it at once.
-    fieldsSheet: {
-      scrim:
-        "absolute inset-0 z-10 bg-fd-foreground/25 transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none",
-      sheet:
-        "absolute inset-y-0 start-0 z-20 flex w-80 max-w-[88%] flex-col border-e border-fd-border bg-fd-card shadow-xl transition-transform duration-150 ease-out starting:-translate-x-full rtl:starting:translate-x-full motion-reduce:transition-none",
+    // The Fields Panel in the Fields popover, which stands inset at the right
+    // edge of the panels as tall as they are: it slides in from that edge,
+    // and a still motion setting shows it at once.
+    fieldsPanel: {
+      panel:
+        "flex h-full w-80 max-w-full flex-col rounded-lg border border-fd-border bg-fd-card text-fd-card-foreground shadow-xl transition-[translate,opacity] duration-150 ease-out starting:translate-x-2 starting:opacity-0 motion-reduce:transition-none",
       header: "flex shrink-0 items-center gap-1 px-2 pt-2",
       icon: "flex shrink-0 ps-1 text-fd-muted-foreground [&_svg]:size-4",
       title: "min-w-0 flex-1 truncate px-1 text-sm font-semibold",
