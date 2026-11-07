@@ -513,7 +513,9 @@ export const WEB_THEME: WorkbenchTheme = {
         "flex gap-1.5 whitespace-pre-line [overflow-wrap:anywhere] text-emerald-700 dark:text-emerald-400 data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
       "result-icon":
         "mt-0.5 flex shrink-0 text-fd-muted-foreground [&_svg]:size-3",
-      actions: "flex flex-wrap gap-2",
+      /** In the bar they stay in view at its foot while the details scroll. */
+      actions:
+        "flex flex-wrap gap-2 in-data-[state=bar]:sticky in-data-[state=bar]:bottom-0 in-data-[state=bar]:-mx-2 in-data-[state=bar]:bg-fd-background in-data-[state=bar]:px-2 in-data-[state=bar]:py-2",
       insert: buttonVariants({ size: "xs" }),
       copy: buttonVariants({ variant: "outline", size: "xs" }),
     },

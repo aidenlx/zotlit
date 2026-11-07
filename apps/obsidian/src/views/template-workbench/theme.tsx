@@ -495,7 +495,9 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:flex zt:gap-1.5 zt:whitespace-pre-line zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-faint zt:data-[state=empty]:italic",
       "result-icon":
         "zt:mt-0.5 zt:flex zt:shrink-0 zt:text-faint zt:[&_svg]:size-3",
-      actions: "zt:flex zt:flex-wrap zt:gap-2",
+      /** In the bar they stay in view at its foot while the details scroll. */
+      actions:
+        "zt:flex zt:flex-wrap zt:gap-2 zt:in-data-[state=bar]:sticky zt:in-data-[state=bar]:bottom-0 zt:in-data-[state=bar]:-mx-2 zt:in-data-[state=bar]:bg-(--background-primary) zt:in-data-[state=bar]:px-2 zt:in-data-[state=bar]:py-2",
       insert: "mod-cta zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
       copy: "zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
     },
