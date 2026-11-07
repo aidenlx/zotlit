@@ -83,7 +83,8 @@ keeps its existing save and preview behavior.
 - Start editing and rendered content within one control row of the pane top.
   Use the same density in the loading frame and interactive panes.
 - Keep the Profile name and file actions in the header. Put the example picker
-  beside the result it changes. Put connection state, draft state, and lasting
+  in the item row above the panels, after the item's name and its badge, since
+  every panel reads that item. Put connection state, draft state, and lasting
   action failures below the panes, where short viewports still show them.
 - In the wide Note view, align the field list, editor, and preview at their
   top edges. Use 12 px outer insets and column gaps. The control rows above

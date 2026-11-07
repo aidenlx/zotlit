@@ -377,7 +377,7 @@ and **Make shorter** makes it shorter at once.
 
 1. Show the Preview, and widen it with its edge.
 2. Double-click the edge.
-3. Make the tab narrower than 600 pixels, and drag the handle above the
+3. Make the tab narrower than 896 pixels, and drag the handle above the
    Preview up.
 4. Double-click the handle.
 
