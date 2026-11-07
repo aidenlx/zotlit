@@ -1,7 +1,7 @@
 import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
-import { useAtomSet } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { Effect } from "effect";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
@@ -12,13 +12,16 @@ import type { FieldInsertionMode } from "./explorer-fields";
 import { explorerSections } from "./explorer-sections";
 import type { ExplorerReader } from "./explorer-sections";
 import { DisplayTree } from "./explorer-tree";
-import type { DisplaySection } from "./explorer-tree";
+import type { DisplaySection, FieldRowState } from "./explorer-tree";
+import { FieldDetails, placeFieldDetails } from "./field-details";
+import { useFieldsPanelRows } from "./fields-panel";
 import { useTooltip, useWorkbenchHost } from "./host";
 import type {
   WorkbenchClipboardError,
   WorkbenchMenuItem,
   WorkbenchMenuRequest,
 } from "./host";
+import { composing } from "./ime";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
@@ -124,6 +127,7 @@ export function DataExplorer({
   sectionsToggle = false,
 }: DataExplorerProps) {
   const body = useRef<HTMLDivElement>(null);
+  const bodyId = useUniqueId();
   const field = useRef<string | null>(null);
   useEffect(() => {
     if (!restore || !body.current || !data) return;
@@ -154,11 +158,15 @@ export function DataExplorer({
       : undefined);
   // An insert closes the Fields Panel and leaves focus to the editor, at the
   // inserted text; Shift keeps the panel open for the next field.
+  // It names the field it inserted to a screen reader.
   const insertNode =
     insertField &&
     ((node: DisplayNode, keepOpen = false) => {
-      if (insertField(node, { keepOpen }) !== false && !keepOpen)
-        setFields("to-editor");
+      if (insertField(node, { keepOpen }) === false) return;
+      host.notice(
+        m.workbench_fields_inserted({ field: fieldLabel(node, labels) }),
+      );
+      if (!keepOpen) setFields("to-editor");
     });
   const locale = host.getLocale();
   const reader = useMemo<ExplorerReader>(
@@ -200,6 +208,107 @@ export function DataExplorer({
       })),
     [visible, reader, filtering, collapsedSections],
   );
+  const panelRows = useFieldsPanelRows();
+  const rows = useFieldRows({
+    enabled: panelRows !== null,
+    sections,
+    labels,
+    query: tree.filterQuery,
+  });
+  const detailsSurface = useRef<HTMLElement>(null);
+  const [openRow, setOpenRow] = useState<HTMLElement | null>(null);
+  const viewSize = useAtomValue(model.viewSize);
+  // The row the open details stand level with, once it is drawn.
+  useLayoutEffect(() => {
+    const key = rows.open?.node.key ?? null;
+    setOpenRow(key === null ? null : rowElement(body.current, key));
+  }, [rows.open]);
+  // The selected row stays in view as ↑/↓ move it.
+  useLayoutEffect(() => {
+    if (rows.selected === null) return;
+    rowElement(body.current, rows.selected)?.scrollIntoView({
+      block: "nearest",
+    });
+  }, [rows.selected]);
+  // A press outside the details and outside their row closes them.
+  const openKey = rows.open?.node.key ?? null;
+  // Focus the details held as they closed goes back to the search.
+  const searchInput = useRef<HTMLInputElement>(null);
+  const shownBefore = useRef(false);
+  useLayoutEffect(() => {
+    const shown = openKey !== null;
+    if (shown || !shownBefore.current) {
+      shownBefore.current = shown;
+      return;
+    }
+    shownBefore.current = false;
+    const doc = body.current?.ownerDocument;
+    if (!doc || (doc.activeElement && doc.activeElement !== doc.body)) return;
+    searchInput.current?.focus({ preventScroll: true });
+  }, [openKey]);
+  const { close: closeDetails } = rows;
+  useEffect(() => {
+    if (openKey === null) return;
+    const doc = body.current?.ownerDocument;
+    if (!doc) return;
+    const away = (event: Event) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      const inside = [
+        detailsSurface.current,
+        rowElement(body.current, openKey),
+      ].some((element) => element?.contains(target));
+      if (!inside) closeDetails();
+    };
+    doc.addEventListener("pointerdown", away, true);
+    return () => doc.removeEventListener("pointerdown", away, true);
+  }, [openKey, closeDetails]);
+  // Escape closes the details, then clears the search, before the panel.
+  useLayoutEffect(() => {
+    if (!panelRows) return;
+    const { escape } = panelRows;
+    escape.current = () => {
+      if (rows.open) {
+        rows.close();
+        return true;
+      }
+      if (tree.filterQuery === "") return false;
+      onNavigationChange(setFilter(tree, ""));
+      return true;
+    };
+    return () => {
+      escape.current = () => false;
+    };
+  });
+  const insertEntry = (entry: FieldEntry, keepOpen = false) => {
+    rows.close();
+    insertNode?.(entry.node, keepOpen);
+  };
+  const copyEntry = (entry: FieldEntry, snippet: string) => {
+    rows.close();
+    startCopy({
+      copy: copy(snippet),
+      copied: () =>
+        host.notice(m.workbench_fields_copied({ field: entry.label })),
+      failed: () => host.notice(m.workbench_field_copy_failed()),
+    });
+  };
+  /** ↑/↓ move the selection; Enter shows or hides its details; Mod+Enter inserts it. */
+  const onSearchKey = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!panelRows || composing(event)) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      rows.move(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (event.key !== "Enter") return;
+    const entry = rows.entries.find((row) => row.node.key === rows.selected);
+    if (!entry) return;
+    event.preventDefault();
+    if (event.metaKey || event.ctrlKey) {
+      if (!disabled) insertEntry(entry);
+    } else rows.toggle(entry.node.key);
+  };
   // Every section shown closed reads as collapsed; the button opens them all
   // then, and closes them all otherwise. A filter holds its sections open.
   const sectionIds = sections.map((section) => section.id);
@@ -287,6 +396,8 @@ export function DataExplorer({
     });
   };
   const search = m[SEARCH_LABELS[root]]();
+  /** What an insert of `node` puts into the note. */
+  const snippetOf = (node: DisplayNode) => fieldSnippet(node, mode, { engine });
   return (
     <section {...part("explorer")}>
       <div {...part("header")}>
@@ -295,11 +406,21 @@ export function DataExplorer({
       </div>
       <div {...part("search-row")}>
         <input
+          ref={searchInput}
           type="search"
           value={tree.filterQuery}
           aria-label={search}
           placeholder={search}
+          {...(panelRows && {
+            role: "combobox",
+            "aria-expanded": true,
+            "aria-autocomplete": "list" as const,
+            "aria-controls": bodyId,
+            "aria-activedescendant":
+              rows.selected === null ? undefined : rows.idOf(rows.selected),
+          })}
           {...part("search")}
+          onKeyDown={onSearchKey}
           onChange={(event) =>
             onNavigationChange(setFilter(tree, event.currentTarget.value))
           }
@@ -323,6 +444,7 @@ export function DataExplorer({
       </div>
       <div
         ref={body}
+        id={bodyId}
         {...part("body")}
         onScroll={(event) =>
           onPresentationChange?.({
@@ -360,12 +482,178 @@ export function DataExplorer({
             onInsert={!disabled ? insertNode : undefined}
             onTemplateMenu={openTemplateMenu}
             onFieldContextMenu={openFieldContextMenu}
+            rows={
+              panelRows
+                ? {
+                    ...rows.state,
+                    // The search keeps the keys: a press on a row, which
+                    // takes no focus itself, hands it back there.
+                    onRowClick: (node) => {
+                      rows.state.onRowClick(node);
+                      searchInput.current?.focus({ preventScroll: true });
+                    },
+                  }
+                : undefined
+            }
           />
         )}
       </div>
+      {rows.open && (
+        <FieldDetails
+          key={rows.open.node.key}
+          placement={placeFieldDetails(viewSize)}
+          row={openRow}
+          surface={detailsSurface}
+          node={rows.open.node}
+          label={rows.open.label}
+          context={rows.open.context}
+          snippet={snippetOf(rows.open.node)}
+          onInsert={
+            insertNode && !disabled
+              ? (keepOpen) => insertEntry(rows.open!, keepOpen)
+              : undefined
+          }
+          onCopy={() => copyEntry(rows.open!, snippetOf(rows.open!.node))}
+          onClose={rows.close}
+        />
+      )}
       {trigger && (
         <p {...part("hint")}>{m.workbench_fields_trigger_hint({ trigger })}</p>
       )}
+      {panelRows && (
+        <p {...part("keys-hint")}>
+          {m.workbench_fields_details_hint({ insert: insertShortcut() })}
+        </p>
+      )}
     </section>
   );
+}
+
+/** One row the reader can select in the Fields Panel, as its row names it. */
+interface FieldEntry {
+  readonly node: DisplayNode;
+  readonly label: string;
+  /** Its section, and the field it belongs to. */
+  readonly context: string;
+}
+
+/**
+ * The name a field goes by on every surface of the Fields Panel: its row, its
+ * details, and what an insert or a copy announces. A top-level field has its
+ * reader-facing name in `labels`; a nested one shows its key.
+ */
+export function fieldLabel(
+  node: DisplayNode,
+  labels: ReadonlyMap<string, string>,
+): string {
+  return labels.get(node.key) ?? node.label;
+}
+
+/** Every row the sections show, in order, with the names its details show. */
+function fieldEntries(
+  sections: readonly DisplaySection[],
+  labels: ReadonlyMap<string, string>,
+): FieldEntry[] {
+  const entries: FieldEntry[] = [];
+  const visit = (nodes: readonly DisplayNode[], context: string) => {
+    for (const node of nodes) {
+      const label = fieldLabel(node, labels);
+      entries.push({ node, label, context });
+      if (node.kind === "value" && node.children)
+        visit(node.children, `${context} · ${label}`);
+    }
+  };
+  for (const section of sections)
+    if (!section.collapsed) visit(section.nodes, section.label);
+  return entries;
+}
+
+/**
+ * The selected row and the row whose details stand open in the Fields Panel.
+ * A new search starts both over; a row the sections no longer show has
+ * neither.
+ */
+function useFieldRows({
+  enabled,
+  sections,
+  labels,
+  query,
+}: {
+  enabled: boolean;
+  sections: readonly DisplaySection[];
+  labels: ReadonlyMap<string, string>;
+  query: string;
+}) {
+  const prefix = useUniqueId();
+  const [state, setState] = useState({
+    query,
+    selected: null as string | null,
+    open: null as string | null,
+  });
+  let { selected, open } = state;
+  if (state.query !== query) {
+    selected = null;
+    open = null;
+    setState({ query, selected, open });
+  }
+  const entries = useMemo(
+    () => (enabled ? fieldEntries(sections, labels) : []),
+    [enabled, sections, labels],
+  );
+  const index = new Map(entries.map((entry, at) => [entry.node.key, at]));
+  if (selected !== null && !index.has(selected)) selected = null;
+  const openEntry =
+    open === null ? null : (entries[index.get(open) ?? -1] ?? null);
+  const idOf = (key: string) => `${prefix}-row-${index.get(key) ?? -1}`;
+  const [close] = useState(
+    () => () => setState((last) => ({ ...last, open: null })),
+  );
+  const toggle = (key: string) =>
+    setState((last) => ({
+      ...last,
+      selected: key,
+      open: last.open === key ? null : key,
+    }));
+  const move = (step: 1 | -1) => {
+    if (entries.length === 0) return;
+    const at = selected === null ? -1 : index.get(selected)!;
+    const next =
+      at < 0
+        ? step > 0
+          ? 0
+          : entries.length - 1
+        : Math.min(entries.length - 1, Math.max(0, at + step));
+    setState((last) => ({ ...last, selected: entries[next]!.node.key }));
+  };
+  const rowState: FieldRowState = {
+    selected,
+    open: openEntry?.node.key ?? null,
+    idOf,
+    onRowClick: (node) => toggle(node.key),
+  };
+  return {
+    entries,
+    selected,
+    open: openEntry,
+    idOf,
+    close,
+    toggle,
+    move,
+    state: rowState,
+  };
+}
+
+/** The element of the row for `key` in `body`. */
+function rowElement(body: HTMLElement | null, key: string): HTMLElement | null {
+  const item = [
+    ...(body?.querySelectorAll<HTMLElement>("[data-workbench-field]") ?? []),
+  ].find((element) => element.dataset.workbenchField === key);
+  return item?.querySelector<HTMLElement>(":scope > [data-part=row]") ?? null;
+}
+
+/** The shortcut that inserts the selected field, as the platform names it. */
+function insertShortcut(): string {
+  return /Mac|iPhone|iPad/.test(navigator.userAgent)
+    ? "Command+Enter"
+    : "Ctrl+Enter";
 }

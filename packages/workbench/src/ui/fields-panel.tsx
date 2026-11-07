@@ -1,13 +1,20 @@
 // The Fields Panel, the chosen Item's fields in the host's non-modal Fields
 // popover, or docked beside the editor while the reader has it pinned.
 import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react";
-import { useLayoutEffect, useRef } from "react";
-import type { ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
 import { useOptionalHost, useTooltip } from "./host";
+import { composing } from "./ime";
 import { useWorkbenchMessages } from "./messages";
 import { pressFieldsPin } from "./model";
 import type { FieldsAction } from "./panel-layout";
@@ -49,6 +56,27 @@ export function fieldsActionAttributes(
   };
 }
 
+/**
+ * What the field rows share with the Fields Panel they stand in: the step
+ * Escape takes inside the panel before the Fields popover closes, which
+ * answers `true` when it took the key.
+ */
+export interface FieldsPanelRows {
+  readonly escape: RefObject<() => boolean>;
+  /** The panel, which a field's details popover stands beside. */
+  readonly panel: RefObject<HTMLElement | null>;
+}
+
+const FieldsPanelRowsContext = createContext<FieldsPanelRows | null>(null);
+
+/**
+ * The Fields Panel the field rows stand in, or `null` outside one, as in the
+ * standalone Template Data Explorer, whose rows keep no details.
+ */
+export function useFieldsPanelRows(): FieldsPanelRows | null {
+  return useContext(FieldsPanelRowsContext);
+}
+
 /** The Fields Panel in the host's Fields popover. */
 export function FieldsPanel(props: FieldsPanelContent) {
   const model = useWorkbenchModel();
@@ -56,6 +84,7 @@ export function FieldsPanel(props: FieldsPanelContent) {
   const [state, setState] = useAtom(model.fieldsPanel);
   const { fields } = useAtomValue(model.placement);
   const titleId = useUniqueId();
+  const escape = useRef<() => boolean>(() => false);
   const Popover = host?.fieldsAction?.popover;
   if (!Popover) return null;
   return (
@@ -64,8 +93,14 @@ export function FieldsPanel(props: FieldsPanelContent) {
       onClose={() => setState("closed")}
       labelledBy={titleId}
       returnFocus={state !== "to-editor"}
+      onEscape={() => escape.current()}
     >
-      <FieldsPanelBody {...props} titleId={titleId} placement="popover" />
+      <FieldsPanelBody
+        {...props}
+        titleId={titleId}
+        placement="popover"
+        escape={escape}
+      />
     </Popover>
   );
 }
@@ -78,7 +113,8 @@ export function FieldsPanel(props: FieldsPanelContent) {
 export function DockedFieldsPanel(
   props: FieldsPanelContent & { readonly titleId: string },
 ) {
-  return <FieldsPanelBody {...props} placement="docked" />;
+  const escape = useRef<() => boolean>(() => false);
+  return <FieldsPanelBody {...props} placement="docked" escape={escape} />;
 }
 
 /**
@@ -91,9 +127,11 @@ function FieldsPanelBody({
   content,
   titleId,
   placement,
+  escape,
 }: FieldsPanelContent & {
   readonly titleId: string;
   readonly placement: "popover" | "docked";
+  readonly escape: RefObject<() => boolean>;
 }) {
   const { model, registry } = useWorkbenchEditor();
   const m = useWorkbenchMessages();
@@ -102,6 +140,7 @@ function FieldsPanelBody({
   const setState = useAtomSet(model.fieldsPanel);
   const { pinned, canPin } = useAtomValue(model.fieldsPin);
   const panel = useRef<HTMLDivElement>(null);
+  const [rows] = useState<FieldsPanelRows>(() => ({ escape, panel }));
   const closeLabel = m.workbench_fields_close();
   const closeTooltip = useTooltip(closeLabel);
   const pinLabel = !canPin
@@ -123,7 +162,21 @@ function FieldsPanelBody({
     )?.focus({ preventScroll: true });
   }, [placement, registry, model]);
   return (
-    <div ref={panel} {...part("panel", placement)}>
+    // Escape closes a field's details, then clears the search, before the
+    // host closes the panel. A host that takes the key first asks the same
+    // step through `onEscape`, and a key it took arrives here handled.
+    <div
+      ref={panel}
+      {...part("panel", placement)}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        // Escape that drops an input method's candidate is the method's.
+        if (composing(event)) return;
+        if (!escape.current()) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
       <div {...part("header")}>
         <span aria-hidden="true" {...part("icon")}>
           {icon("fields")}
@@ -161,7 +214,9 @@ function FieldsPanelBody({
       {pinned && !canPin && (
         <p {...part("note")}>{m.workbench_fields_pinned_narrow()}</p>
       )}
-      <div {...part("body")}>{content}</div>
+      <FieldsPanelRowsContext.Provider value={rows}>
+        <div {...part("body")}>{content}</div>
+      </FieldsPanelRowsContext.Provider>
     </div>
   );
 }

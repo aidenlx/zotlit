@@ -236,6 +236,30 @@ export interface WorkbenchFieldsPopoverProps {
    * text.
    */
   readonly returnFocus: boolean;
+  /**
+   * Escape reached the surface. The panel answers `true` when it took the
+   * key: it closed a field's details or cleared the search, and the surface
+   * stays open. `false` leaves the key to the surface, which closes.
+   */
+  readonly onEscape: () => boolean;
+  readonly children: ReactNode;
+}
+
+/**
+ * One field's details in a wide view: a popover beside the Fields Panel, level
+ * with the field's row. Inside the Fields popover it is a popover in that one,
+ * so a press in either is inside both. The host closes it on Escape and on a
+ * press outside it and its row, and leaves focus where it is as it opens.
+ */
+export interface WorkbenchFieldDetailsProps {
+  /** The field's row, which the popover stands level with. */
+  readonly anchor: HTMLElement;
+  /** The Fields Panel, which the popover stands beside. */
+  readonly panel: HTMLElement;
+  /** The host closed the surface: Escape or a press outside. */
+  readonly onClose: () => void;
+  /** The id of the element that names the surface. */
+  readonly labelledBy: string;
   readonly children: ReactNode;
 }
 
@@ -249,6 +273,12 @@ export interface WorkbenchFieldsAction {
    * docked panel that held it.
    */
   focus(): void;
+  /**
+   * The popover a field's details open in, in a view wide enough for it
+   * beside the panel; mounted while the details stand open. A host without
+   * one shows the details in the bar at the panel's foot at every width.
+   */
+  readonly details?: ComponentType<WorkbenchFieldDetailsProps>;
 }
 
 /** The partial registry and the create flow one host owns for its editors. */

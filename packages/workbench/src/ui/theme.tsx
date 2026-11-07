@@ -48,6 +48,7 @@ export interface WorkbenchParts {
     | "error";
   dataExplorer:
     | "hint"
+    | "keys-hint"
     | "root-label"
     | "explorer"
     | "header"
@@ -255,6 +256,24 @@ export interface WorkbenchParts {
     | "close"
     | "note"
     | "body";
+  fieldDetails:
+    | "details-bar"
+    | "details"
+    | "header"
+    | "heading"
+    | "context"
+    | "title"
+    | "close"
+    | "value"
+    | "item"
+    | "label"
+    | "path"
+    | "snippet"
+    | "result"
+    | "result-icon"
+    | "actions"
+    | "insert"
+    | "copy";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description" | "docs-link";
   editToolbar:
@@ -337,6 +356,8 @@ export type WorkbenchIcon =
   | "expand-all"
   | "collapse-all"
   | "fields"
+  | "insert"
+  | "result"
   | "pin"
   | "unpin";
 

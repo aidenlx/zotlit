@@ -3,16 +3,25 @@
 // Fields view action opens and closes (ADR 0044, "Menus and popovers are
 // Obsidian's own primitives"). PinnedPopover owns Escape, the press outside
 // and focus back to the action; the shared Fields Panel draws the contents.
+// A field's details in a wide view are a PinnedPopover inside this one,
+// beside the panel and level with the field's row.
 import { useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 import type {
+  WorkbenchFieldDetailsProps,
   WorkbenchFieldsAction,
   WorkbenchFieldsPopoverProps,
 } from "@zotlit/workbench/ui";
 
 import { PinnedPopover } from "@/components/pinned-popover";
-import type { PinnedPopoverHandle } from "@/components/pinned-popover";
+import type { PageKey, PinnedPopoverHandle } from "@/components/pinned-popover";
+
+/**
+ * Mod+Enter inserts the field selected in the panel's search, ahead of the
+ * hotkey Obsidian binds to it.
+ */
+const PANEL_KEYS: readonly PageKey[] = [{ modifiers: ["Mod"], key: "Enter" }];
 
 /** Each leaf's Fields popover gets an id of its own. */
 let surfaces = 0;
@@ -31,6 +40,7 @@ export function fieldsActionHost(
     onClose,
     labelledBy,
     returnFocus,
+    onEscape,
     children,
   }: WorkbenchFieldsPopoverProps) {
     const handle = useRef<PinnedPopoverHandle>(null);
@@ -71,6 +81,8 @@ export function fieldsActionHost(
         id={popoverId}
         role="dialog"
         aria-labelledby={labelledBy}
+        onEscape={onEscape}
+        pageKeys={PANEL_KEYS}
         onOpenChange={(next) => {
           if (unmounted.current) return;
           setShown(next);
@@ -88,5 +100,51 @@ export function fieldsActionHost(
     popover: FieldsPopover,
     popoverId,
     focus: () => anchor.current?.focus({ preventScroll: true }),
+    details: FieldDetailsPopover,
   };
+}
+
+/**
+ * A field's details beside the Fields Panel. It opens as it mounts and leaves
+ * focus in the panel's search; its Scope takes Escape before the Fields
+ * popover's, and a press on its row stays the row's, which toggles it.
+ */
+function FieldDetailsPopover({
+  anchor,
+  panel,
+  onClose,
+  labelledBy,
+  children,
+}: WorkbenchFieldDetailsProps) {
+  const handle = useRef<PinnedPopoverHandle>(null);
+  const [row] = useState(() => ({ current: anchor }));
+  const [beside] = useState(() => ({ current: panel }));
+  const latest = useRef(onClose);
+  useLayoutEffect(() => {
+    latest.current = onClose;
+  });
+  // Unmounting hides it: the panel closed the details itself.
+  const unmounted = useRef(false);
+  useLayoutEffect(() => {
+    handle.current?.show();
+    return () => {
+      unmounted.current = true;
+    };
+  }, []);
+  return (
+    <PinnedPopover
+      anchor={row}
+      beside={beside}
+      handle={handle}
+      initialFocus={false}
+      // Its Scope stands over the Fields popover's: the panel's keys pass it.
+      pageKeys={PANEL_KEYS}
+      aria-labelledby={labelledBy}
+      onOpenChange={(next) => {
+        if (!next && !unmounted.current) latest.current();
+      }}
+    >
+      {children}
+    </PinnedPopover>
+  );
 }

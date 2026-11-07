@@ -17,6 +17,7 @@ import {
   WorkbenchHostProvider,
 } from "./host";
 import type {
+  WorkbenchFieldDetailsProps,
   WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchMenuRequest,
@@ -230,6 +231,7 @@ export function fakeHost(): FakeHost {
     fieldsAction: {
       popover: FakeFieldsPopover,
       popoverId: "fake-fields-panel",
+      details: FakeFieldDetails,
       focus: () => void host.calls.actionFocuses++,
     },
     persistence: {
@@ -372,8 +374,8 @@ export function renderWithMessages(
 }
 
 /**
- * The fake host's Fields popover: it closes on Escape and on a press outside,
- * as a host's does. Closed, it records whether focus went back to the Fields
+ * The fake host's Fields popover: it closes on Escape the panel leaves to it,
+ * and on a press outside, as a host's does. Closed, it records whether focus went back to the Fields
  * action in `data-return-focus`.
  */
 function FakeFieldsPopover({
@@ -381,6 +383,7 @@ function FakeFieldsPopover({
   onClose,
   labelledBy,
   returnFocus,
+  onEscape,
   children,
 }: WorkbenchFieldsPopoverProps) {
   const surface = useRef<HTMLDivElement>(null);
@@ -402,8 +405,34 @@ function FakeFieldsPopover({
       role="dialog"
       aria-labelledby={labelledBy}
       onKeyDown={(event) => {
-        if (event.key === "Escape") onClose();
+        if (event.key === "Escape" && !event.defaultPrevented && !onEscape())
+          onClose();
       }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The fake host's popover for a field's details: it stands inside the Fields
+ * popover, so a press in it is inside that one, and names the row it stands
+ * level with in `data-anchor`.
+ */
+function FakeFieldDetails({
+  anchor,
+  panel,
+  labelledBy,
+  children,
+}: WorkbenchFieldDetailsProps) {
+  return (
+    <div
+      data-fake-details=""
+      data-beside={panel.dataset.state}
+      data-anchor={anchor
+        .closest("[data-workbench-field]")
+        ?.getAttribute("data-workbench-field")}
+      aria-labelledby={labelledBy}
     >
       {children}
     </div>

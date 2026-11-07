@@ -241,6 +241,91 @@ Expected: step 2 keeps the fields that match `doi`. Step 3 writes
 In step 4 the note body reads `{{ zt.DOI }}x`: the cursor is after the
 inserted text. The web Workbench does the same steps, with the same outcome.
 
+## Show a field's details in a wide tab
+
+1. Make the tab at least 600 pixels wide. Choose "Alpha of the personal
+   library", and select **Fields**.
+2. Move the pointer over the rows of `title`, `DOI` and **All creators**.
+3. Select the row of `title`, away from its buttons.
+4. Select the row of `title` again.
+
+Expected: in step 2 no details open and no row moves; the row under the
+pointer shows its **Insert field** button (a text cursor icon) and its row
+menu button in the room they always hold. Each row holds the label and the
+value on one line, and a long value ends with "…". Step 3 opens the details
+in a popover to the left of the Fields popover, level with the row: the
+section, the name "Title", the full title, **Template path** with
+`zt.title`, and **In your note** with `{{ zt.title }}` and the title it
+writes, then **Insert** and **Copy**. The focus stays in the field search.
+Step 4 closes the details. The web Workbench does the same steps, with the
+same outcome.
+
+## Show a field's details in a narrow tab
+
+1. Make the tab about 500 pixels wide. Choose "Alpha of the personal
+   library", and select **Fields**.
+2. Select the row of `title`, then the row of **All creators**.
+3. Scroll the field list.
+
+Expected: in step 2 the details open in a bar of fixed height at the foot of
+the Fields popover, above the line "Select or press Enter: details ·
+Ctrl+Enter: insert" ("Command+Enter" on macOS). The bar shows the details of the last
+row you selected, and the rows above it do not move. In step 3 the bar stays
+where it is. The web Workbench does the same steps, with the same outcome.
+
+## Insert and copy from a field's details
+
+1. Choose "Alpha of the personal library". Select **Source**, and place the
+   cursor in the note body.
+2. Select **Fields**, select the row of `title`, and select **Copy** in its
+   details.
+3. Select the row of `DOI`, and select **Insert** in its details.
+
+Expected: step 2 copies `{{ zt.title }}`, closes the details, keeps the Fields
+popover open with the focus in the field search, and shows the notice
+"Copied Title.". Step 3 writes `{{ zt.DOI }}` at the cursor, closes the
+details and the popover, gives the editor the focus after the inserted text,
+and shows the notice "Inserted DOI.". A screen reader reads both notices.
+
+## Choose a field with the keyboard
+
+1. Choose "Alpha of the personal library", and place the cursor in the note
+   body. Select **Fields**.
+2. Type `doi`. Press `Down Arrow`, then `Up Arrow` and `Down Arrow`.
+3. Press `Enter`, then `Enter` again.
+4. Press `Ctrl+Enter` (`Command+Enter` on macOS).
+
+Expected: in step 2 the selected row is marked and shows its **Insert field**
+button, and a screen reader reads it as the search's active option. Step 3
+opens, then closes, the details of the selected row. Step 4 writes the
+selected field at the cursor, closes the popover and gives the editor the
+focus. The web Workbench does the same steps, with the same outcome.
+
+## Close a field's details
+
+1. Make the tab at least 600 pixels wide. Choose "Alpha of the personal
+   library", and select **Fields**. Type `ti` in the field search, and select
+   the row of `title`.
+2. Select inside the details, away from their buttons.
+3. Select the field search.
+4. Select the row of `title` again. Press `Escape` three times, and look
+   after each press.
+5. Repeat steps 1 to 4 in a tab about 500 pixels wide.
+
+Expected: step 2 keeps the details open. Step 3 closes them and keeps the
+Fields popover open. In step 4, the first `Escape` closes the details, the
+second clears the search and keeps the popover open, and the third closes the
+popover with the focus on **Fields**. Step 5 gives the same outcome with the
+details in the bar.
+
+## A field this item has no value for
+
+1. Choose "Alpha of the personal library", and select **Fields**.
+2. Select a row that shows no value.
+
+Expected: the details show "Empty for this item" in place of the value and
+under **In your note**. **Insert** and **Copy** still work.
+
 ## Resizing never opens or closes the Fields popover
 
 1. With the popover closed, show the Preview in a wide tab. Make the tab 320
@@ -346,6 +431,25 @@ focus in its search. In step 4 the docked panel goes, and no popover opens.
 With the Preview beside the editor, a tab needs about 1010 pixels to dock the
 panel: the editor keeps 360 pixels beside a panel of 240 pixels and the
 Preview column.
+
+## Field details in the docked panel
+
+1. Pin the Fields Panel in a tab 1200 pixels wide, as in **Pin the Fields
+   Panel in a wide tab**. Choose "Alpha of the personal library", and place
+   the cursor at the end of the note body.
+2. In the docked panel's field search, type `doi`. Press `Down Arrow`, then
+   `Enter`.
+3. Press `Ctrl+Enter` (`Command+Enter` on macOS).
+4. Select the field search, and type `ti`. Select the row of `title`. Press
+   `Escape` three times, and look after each press.
+
+Expected: step 2 opens the details of the DOI row in a popover to the right
+of the docked panel, level with the row, and the focus stays in the field
+search. Step 3 writes `{{ zt.DOI }}` at the cursor, closes the details, and
+the panel stays docked; no command of Obsidian's runs, also when you have
+bound your own hotkey to Ctrl+Enter. In step 4, the first `Escape` closes the
+details, the second clears the search, and the third changes nothing: the
+panel stays docked and the focus stays in the field search.
 
 ## The pin survives a restart
 

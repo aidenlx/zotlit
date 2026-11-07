@@ -12,6 +12,7 @@ import type { TemplateRoot } from "./model";
 import {
   formatAccessorPath,
   loopVariable,
+  outputText,
   renderSnippet,
   snippetKindsFor,
 } from "#/explorer/index";
@@ -53,20 +54,13 @@ export function rowMatches(row: FieldRow, query: string): boolean {
 
 /** This paper's value for one row, as the single line a row shows. */
 export function fieldValueText(node: DisplayNode): string {
-  if (node.kind === "placeholder") return node.reason;
-  if (node.kind === "helper") return node.evaluated ?? "";
   if (node.kind === "list-property") return node.preview;
-  switch (node.valueType) {
-    case "array":
-    case "object":
-      return node.preview ?? "";
-    case "getter":
-    case "null":
-    case "undefined":
-      return "";
-    default:
-      return String(node.value);
-  }
+  if (
+    node.kind === "value" &&
+    (node.valueType === "array" || node.valueType === "object")
+  )
+    return node.preview ?? "";
+  return outputText(node);
 }
 
 export type FieldInsertionMode = "template" | "expression" | "json-e";

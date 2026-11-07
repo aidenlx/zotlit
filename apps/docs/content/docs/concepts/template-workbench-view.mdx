@@ -95,6 +95,12 @@ Preview panel.
 
 The Fields popover is the [Template Data Explorer](/docs/how-to/explore-template-data) inside the view. It has the same filter, sections, roots, and copy actions. The button beside the filter collapses or expands every section at once. Each row has an insert button, and its row menu has <UiLabel name={m.workbench_fields_put_in_note()} />. Both put the field into the editor at your cursor.
 
+Each row shows the field's name and the chosen paper's value on one line. Select a row to see its details, and select it again to hide them. The details show the full value, the template path, and, under <UiLabel name={m.workbench_fields_details_in_note()} />, the text that goes into the template and what it writes for this paper. Use <UiLabel name={m.workbench_fields_insert()} /> or <UiLabel name={m.workbench_fields_copy()} /> to put that text into the editor or on the clipboard. Both close the details. In a view 600 pixels wide or wider, the details open beside the popover, level with the row. In a narrower view, they open in a bar at the foot of the popover, so the list does not move. Pointing at a row opens nothing.
+
+You can also use the keyboard in the filter. Press Down Arrow or Up Arrow to select a row, Enter to show or hide its details, and Ctrl+Enter (Command+Enter on macOS) to insert it.
+
+Select a place outside the details, or press Escape, to close them. Escape first closes the details, then clears the filter, and then closes the popover. In the pinned panel, the details open beside the panel, and Escape stops after it clears the filter, because the panel stays.
+
 The popover opens at the right edge of the view and fills its height. It looks the same at every width. The editor and the Preview panel stay usable while it is open, so you can read the preview and write in the template beside it.
 
 Close the popover in any of these ways:

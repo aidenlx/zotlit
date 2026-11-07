@@ -7,13 +7,13 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { Effect } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DataExplorer } from "./data-explorer";
 import { fieldsActionAttributes } from "./fields-panel";
+import { useWorkbenchHost } from "./host";
 import { pressFieldsAction } from "./model";
 import { INITIAL_PANELS } from "./panel-layout";
 import type { ViewSize, WorkbenchPanels } from "./panel-layout";
@@ -27,6 +27,8 @@ afterEach(cleanup);
 const PAPER = {
   title: "Linked notes in practice",
   DOI: "10.1000/linked-notes",
+  abstract: "",
+  shelf: { label: "Methods" },
 };
 
 const PREVIEW: WorkbenchPanels = {
@@ -41,7 +43,9 @@ const PINNED: WorkbenchPanels = {
 /** The explorer the hosts put in the Fields Panel, over its own navigation. */
 function Fields({
   onInsertNode,
+  disabled = false,
 }: {
+  disabled?: boolean;
   onInsertNode: (
     node: DisplayNode,
     options: { keepOpen: boolean },
@@ -51,16 +55,18 @@ function Fields({
     ReadonlySet<string>
   >(() => new Set<string>());
   const [navigation, setNavigation] = useState(initialTreeState);
+  const host = useWorkbenchHost();
   return (
     <DataExplorer
       root="note"
       data={PAPER}
-      copy={() => Effect.void}
+      copy={(text) => host.copy!(text)}
       collapsedSections={collapsedSections}
       onCollapsedSectionsChange={setCollapsedSections}
       navigation={navigation}
       onNavigationChange={setNavigation}
       onInsertNode={onInsertNode}
+      disabled={disabled}
     />
   );
 }
@@ -68,8 +74,14 @@ function Fields({
 function open({
   size = { width: 560, height: 800 },
   refuse = false,
+  disabled = false,
   panels = PREVIEW,
-}: { size?: ViewSize; refuse?: boolean; panels?: WorkbenchPanels } = {}) {
+}: {
+  size?: ViewSize;
+  refuse?: boolean;
+  disabled?: boolean;
+  panels?: WorkbenchPanels;
+} = {}) {
   const viewSize = Atom.make<ViewSize | null>(size);
   const inserted: string[] = [];
   const keptOpen: boolean[] = [];
@@ -81,6 +93,7 @@ function open({
           resizeLabel: "Resize fields",
           content: (
             <Fields
+              disabled={disabled}
               onInsertNode={(node, { keepOpen }) => {
                 if (refuse) return false;
                 inserted.push(node.key);
@@ -154,9 +167,7 @@ describe("the Fields Panel popover", () => {
   it("puts focus in its search field, and leaves the editor and the Preview in reach", () => {
     using page = open();
     page.pressAction();
-    expect(document.activeElement).toBe(
-      within(panel()!).getByRole("searchbox"),
-    );
+    expect(document.activeElement).toBe(within(panel()!).getByRole("combobox"));
     // A popover, not a modal: nothing under it turns inert.
     expect(panel()!.hasAttribute("aria-modal")).toBe(false);
     expect(document.querySelector("[inert]")).toBeNull();
@@ -240,7 +251,7 @@ describe("the pinned Fields Panel", () => {
     expect(pin().getAttribute("aria-pressed")).toBe("true");
     // The docked panel takes over focus, in its search field.
     expect(document.activeElement).toBe(
-      within(docked()!).getByRole("searchbox"),
+      within(docked()!).getByRole("combobox"),
     );
     // Its edge sizes it; it has no Close button and is not modal.
     expect(
@@ -278,13 +289,13 @@ describe("the pinned Fields Panel", () => {
     expect(docked()).not.toBeNull();
     expect(page.registry.get(page.model.panels).fields.hidden).toBe(false);
     expect(document.activeElement).toBe(
-      within(docked()!).getByRole("searchbox"),
+      within(docked()!).getByRole("combobox"),
     );
   });
 
   it("hands focus to the Fields action when a narrower view takes the docked panel that held it", () => {
     using page = open({ size: { width: 1200, height: 800 }, panels: PINNED });
-    const search = within(docked()!).getByRole("searchbox");
+    const search = within(docked()!).getByRole("combobox");
     act(() => search.focus());
     page.resize({ width: 560, height: 800 });
     expect(docked()).toBeNull();
@@ -363,5 +374,296 @@ describe("the Fields action's state", () => {
       "aria-expanded": "true",
       "aria-controls": "fields-docked",
     });
+  });
+});
+
+/** A view wide enough for the details beside the panel, and one too narrow. */
+const PRESENTATIONS = [
+  { presentation: "popover", size: { width: 760, height: 800 } },
+  { presentation: "bar", size: { width: 420, height: 800 } },
+] as const;
+
+const doiRow = () =>
+  within(panel()!)
+    .getAllByRole("treeitem")
+    .find((row) => row.textContent?.includes("DOI"))!;
+const search = () => within(panel()!).getByRole("combobox");
+/** The details of the field `label`, wherever the view shows them. */
+const details = (label = "Title") =>
+  within(panel()!).queryByRole("region", { name: label });
+/** Where the details stand: the host's popover, or the panel's bar. */
+const shownAs = (region: HTMLElement) =>
+  region.closest("[data-fake-details]")
+    ? "popover"
+    : region.closest("[data-part=details-bar]")
+      ? "bar"
+      : "elsewhere";
+const rowOf = (label: string) =>
+  within(panel()!)
+    .getAllByRole("treeitem")
+    .find((row) => row.textContent?.includes(label))!;
+const clickRow = (label: string) =>
+  fireEvent.click(rowOf(label).querySelector("[data-part=row]")!);
+
+describe.each(PRESENTATIONS)(
+  "a field's details as a $presentation",
+  ({ presentation, size }) => {
+    it("open on a click on the row, never on hover, and a second click hides them", () => {
+      using page = open({ size });
+      page.pressAction();
+      const row = rowOf("Title").querySelector("[data-part=row]")!;
+      fireEvent.pointerEnter(row);
+      fireEvent.mouseOver(row);
+      expect(details()).toBeNull();
+      // A press on the row leaves focus to the search, where ↑/↓ work.
+      act(() => (document.activeElement as HTMLElement).blur());
+      clickRow("Title");
+      expect(document.activeElement).toBe(search());
+      expect(shownAs(details()!)).toBe(presentation);
+      expect(row.hasAttribute("data-open")).toBe(true);
+      clickRow("Title");
+      expect(details()).toBeNull();
+      expect(row.hasAttribute("data-open")).toBe(false);
+    });
+
+    it("show the full value, the template path, and what the note gets", () => {
+      using page = open({ size });
+      page.pressAction();
+      clickRow("Title");
+      const region = within(details()!);
+      // The value, and what the note gets from it.
+      expect(region.getAllByText("Linked notes in practice")).toHaveLength(2);
+      expect(region.getByText("Template path")).toBeTruthy();
+      expect(region.getByText("zt.title")).toBeTruthy();
+      expect(region.getByText("In your note")).toBeTruthy();
+      expect(region.getByText("{{ zt.title }}")).toBeTruthy();
+      expect(region.getByRole("button", { name: "Insert" })).toBeTruthy();
+      expect(region.getByRole("button", { name: "Copy" })).toBeTruthy();
+    });
+
+    it("mark a field this item has no value for", () => {
+      using page = open({ size });
+      page.pressAction();
+      clickRow("Abstract");
+      expect(
+        within(details("Abstract")!).getAllByText("Empty for this item"),
+      ).not.toHaveLength(0);
+    });
+
+    it("toggle with Enter on the row ↑/↓ selected, and Mod+Enter inserts it", () => {
+      using page = open({ size });
+      page.pressAction();
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      const selected = search().getAttribute("aria-activedescendant")!;
+      const first = document.getElementById(selected)!;
+      expect(first.getAttribute("aria-selected")).toBe("true");
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "ArrowUp" });
+      expect(search().getAttribute("aria-activedescendant")).toBe(selected);
+      // The first row is the common section's Title.
+      const label = "Title";
+      expect(first.textContent).toContain(label);
+      fireEvent.keyDown(search(), { key: "Enter" });
+      expect(details(label)).not.toBeNull();
+      fireEvent.keyDown(search(), { key: "Enter" });
+      expect(details(label)).toBeNull();
+      fireEvent.keyDown(search(), { key: "Enter", ctrlKey: true });
+      expect(page.inserted).toHaveLength(1);
+      expect(page.host.calls.notices).toEqual([`Inserted ${label}.`]);
+      expect(panel()).toBeNull();
+    });
+
+    it("close as Insert inserts the field and announces it", () => {
+      using page = open({ size });
+      page.pressAction();
+      clickRow("Title");
+      fireEvent.click(
+        within(details()!).getByRole("button", { name: "Insert" }),
+        { shiftKey: true },
+      );
+      expect(page.inserted).toEqual(["title"]);
+      expect(details()).toBeNull();
+      expect(page.host.calls.notices).toEqual(["Inserted Title."]);
+    });
+
+    it("close as Copy copies the snippet and announces it", () => {
+      using page = open({ size });
+      page.pressAction();
+      clickRow("Title");
+      const copyButton = within(details()!).getByRole("button", {
+        name: "Copy",
+      });
+      act(() => copyButton.focus());
+      fireEvent.click(copyButton);
+      expect(page.host.calls.copies).toEqual(["{{ zt.title }}"]);
+      expect(details()).toBeNull();
+      // Focus the details held goes back to the search.
+      expect(document.activeElement).toBe(search());
+      expect(page.host.calls.notices).toEqual(["Copied Title."]);
+      // The Fields popover stays open.
+      expect(panel()).not.toBeNull();
+    });
+
+    it("close on a press outside them and their row, and stay on a press inside", () => {
+      using page = open({ size });
+      page.pressAction();
+      clickRow("Title");
+      fireEvent.pointerDown(details()!);
+      expect(details()).not.toBeNull();
+      fireEvent.pointerDown(rowOf("Title").querySelector("[data-part=row]")!);
+      expect(details()).not.toBeNull();
+      fireEvent.pointerDown(doiRow());
+      expect(details()).toBeNull();
+      expect(panel()).not.toBeNull();
+    });
+
+    it("close on Escape first, then Escape clears the search, then closes the popover", () => {
+      using page = open({ size });
+      page.pressAction();
+      fireEvent.change(search(), { target: { value: "ti" } });
+      clickRow("Title");
+      fireEvent.keyDown(search(), { key: "Escape" });
+      expect(details()).toBeNull();
+      expect(search()).toHaveProperty("value", "ti");
+      fireEvent.keyDown(search(), { key: "Escape" });
+      expect(search()).toHaveProperty("value", "");
+      expect(panel()).not.toBeNull();
+      fireEvent.keyDown(search(), { key: "Escape" });
+      expect(panel()).toBeNull();
+    });
+  },
+);
+
+describe("a field row", () => {
+  it("inserts from its Insert button, which draws the insert icon", () => {
+    using page = open();
+    page.pressAction();
+    const button = within(titleRow()).getByRole("button", {
+      name: "Insert field",
+    });
+    expect(button.querySelector("[data-icon=insert]")).not.toBeNull();
+    insertTitle();
+    expect(page.inserted).toEqual(["title"]);
+    expect(page.host.calls.notices).toEqual(["Inserted Title."]);
+  });
+
+  it("offers no Insert where the editor takes no field", () => {
+    using page = open({ disabled: true });
+    page.pressAction();
+    clickRow("Title");
+    expect(
+      within(titleRow()).queryByRole("button", { name: "Insert field" }),
+    ).toBeNull();
+    expect(
+      within(details()!).getByRole("button", { name: "Insert" }),
+    ).toHaveProperty("disabled", true);
+    fireEvent.keyDown(search(), { key: "ArrowDown" });
+    fireEvent.keyDown(search(), { key: "Enter", metaKey: true });
+    expect(page.inserted).toEqual([]);
+  });
+
+  it("leaves Enter to an input method composing in the search", () => {
+    using page = open();
+    page.pressAction();
+    fireEvent.keyDown(search(), { key: "ArrowDown" });
+    fireEvent.keyDown(search(), { key: "Enter", isComposing: true });
+    fireEvent.keyDown(search(), { key: "Enter", keyCode: 229, ctrlKey: true });
+    expect(details()).toBeNull();
+    expect(details("DOI")).toBeNull();
+    expect(page.inserted).toEqual([]);
+  });
+
+  it("names the keys in the panel's footer", () => {
+    using page = open();
+    page.pressAction();
+    expect(
+      within(panel()!).getByText(
+        /^Select or press Enter: details · (Ctrl|Command)\+Enter: insert$/,
+      ),
+    ).toBeTruthy();
+  });
+});
+
+describe("a field's details in the docked panel", () => {
+  const wide = { size: { width: 1200, height: 800 }, panels: PINNED };
+  const dockedRow = (label: string) =>
+    within(docked()!)
+      .getAllByRole("treeitem")
+      .find((row) => row.textContent?.includes(label))!
+      .querySelector<HTMLElement>("[data-part=row]")!;
+  const dockedSearch = () => within(docked()!).getByRole("combobox");
+  const dockedDetails = (label = "Title") =>
+    within(docked()!).queryByRole("region", { name: label });
+
+  it("open in the host's popover beside the docked panel", () => {
+    using _page = open(wide);
+    fireEvent.click(dockedRow("Title"));
+    const region = dockedDetails()!;
+    const popover = region.closest<HTMLElement>("[data-fake-details]")!;
+    expect(popover.dataset.beside).toBe("docked");
+    expect(popover.dataset.anchor).toBe("title");
+  });
+
+  it("close on Escape, then Escape clears the search, and the panel stays", () => {
+    using page = open(wide);
+    fireEvent.change(dockedSearch(), { target: { value: "ti" } });
+    fireEvent.click(dockedRow("Title"));
+    fireEvent.keyDown(dockedSearch(), { key: "Escape" });
+    expect(dockedDetails()).toBeNull();
+    expect(dockedSearch()).toHaveProperty("value", "ti");
+    fireEvent.keyDown(dockedSearch(), { key: "Escape" });
+    expect(dockedSearch()).toHaveProperty("value", "");
+    // No popover to close: the panel stays docked.
+    const third = fireEvent.keyDown(dockedSearch(), { key: "Escape" });
+    expect(third).toBe(true);
+    expect(docked()).not.toBeNull();
+    expect(page.isOpen()).toBe(true);
+  });
+
+  it("insert with Mod+Enter on the selected row and with Insert, and the panel stays", () => {
+    using page = open(wide);
+    fireEvent.keyDown(dockedSearch(), { key: "ArrowDown" });
+    fireEvent.keyDown(dockedSearch(), { key: "Enter", metaKey: true });
+    expect(page.inserted).toEqual(["title"]);
+    fireEvent.click(dockedRow("Title"));
+    fireEvent.click(
+      within(dockedDetails()!).getByRole("button", { name: "Insert" }),
+    );
+    expect(page.inserted).toEqual(["title", "title"]);
+    expect(dockedDetails()).toBeNull();
+    expect(docked()).not.toBeNull();
+  });
+});
+
+describe("a nested field", () => {
+  it("goes by one name in its details and in what Insert and Copy announce", () => {
+    using page = open({ size: { width: 760, height: 800 } });
+    page.pressAction();
+    fireEvent.click(
+      within(rowOf("shelf")).getByRole("button", { name: "Toggle node" }),
+    );
+    const nested = () =>
+      within(panel()!)
+        .getAllByRole("treeitem")
+        .find(
+          (row) => row.getAttribute("data-workbench-field") === "shelf.label",
+        )!
+        .querySelector<HTMLElement>("[data-part=row]")!;
+    // The details title the nested field by its key.
+    const name = "label";
+    fireEvent.click(nested());
+    expect(details(name)).not.toBeNull();
+    fireEvent.click(
+      within(details(name)!).getByRole("button", { name: "Copy" }),
+    );
+    fireEvent.click(nested());
+    fireEvent.click(
+      within(details(name)!).getByRole("button", { name: "Insert" }),
+      { shiftKey: true },
+    );
+    expect(page.host.calls.notices).toEqual([
+      `Copied ${name}.`,
+      `Inserted ${name}.`,
+    ]);
   });
 });
