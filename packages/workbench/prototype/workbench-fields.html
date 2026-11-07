@@ -35,6 +35,12 @@
       }
     </style>
     <style>
+      /* VERDICT round 1 (overall design): the item's data lives in ONE left sheet at every width.
+         The reader can pin it to dock as a side panel beside the editor; where the view is too
+         narrow to dock, the pinned panel shows as the sheet again. Same edge, same content, same
+         entry at every width. (User: today's column-vs-popover switch across widths is
+         counterintuitive, and the entry icon carries no meaning.)
+         ROUND 2 QUESTION: how does the left sheet behave — modal or not, how it opens, how pin works? */
       /* DESIGN PLAN (utilitarian; the project's own system wins: Obsidian's default theme)
          ground #ffffff view; panel #f6f6f7 secondary panes / popover ground; ink #222222 text;
          muted #6b6b70; faint #a3a3a8; line #e3e3e6 hairlines; accent #7f5af0 Obsidian's interactive
@@ -826,10 +832,13 @@
 
       // --- App ---
       // --- Variant A ---
-      // Variant A — "Item data beside the Preview". The trailing pane holds two tabs, Preview and
-      // Item data. It sits beside the editor when the view is wide (>= 56rem) and below it otherwise,
-      // so the reader learns one place for both. One header toggle shows or hides the pane.
-      const A_STACK_BELOW = 896; // 56rem: below this the pane goes under the editor
+      // Variant A — "Modal sheet". Item data is one left sheet at every width.
+      // Unpinned: a modal sheet over a dimmed scrim. Scrim click or Escape closes it; an insert closes
+      // it and puts focus back in the editor at the new caret (Shift+click / Shift+Enter keeps it open).
+      // Pinned (wide view): a docked, non-modal side panel that stays open while you type.
+      // Pinned (narrow view): no auto-open; the header action opens it as the modal sheet again.
+      const A_PREVIEW_BESIDE_MIN = 896; // 56rem of room for editor + preview
+      const A_SHEET_W = 320;
 
       function A_matches(f, t) {
         return `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t);
@@ -874,7 +883,14 @@
         );
       }
 
-      function A_FieldRow({ field, depth = 0, expandable, open, onToggle }) {
+      function A_FieldRow({
+        field,
+        depth = 0,
+        expandable,
+        open,
+        onToggle,
+        onInsert,
+      }) {
         const [more, setMore] = useState(false);
         const long = (field.value ?? "").length > 90;
         return (
@@ -882,7 +898,7 @@
             <div className="flex items-start">
               <div
                 className="flex w-5 shrink-0 justify-center pt-2"
-                style={{ marginLeft: depth * 16 }}
+                style={{ marginLeft: depth * 14 }}
               >
                 {expandable && (
                   <button
@@ -902,18 +918,22 @@
               <button
                 type="button"
                 data-a-row
-                onClick={() => insertField(field.path)}
+                onClick={(e) => onInsert(field.path, e.shiftKey)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onInsert(field.path, e.shiftKey);
+                  }
+                }}
                 title={`Insert ${snippetOf(field.path)} at the cursor`}
-                className="grid min-w-0 flex-1 grid-cols-1 gap-x-3 gap-y-0.5 py-1.5 pr-16 text-left text-sm outline-none focus-visible:outline-2 focus-visible:outline-accent rounded-md @min-[22rem]/pane:grid-cols-[8.5rem_1fr]"
+                className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-md py-1.5 pr-16 text-left text-sm outline-none focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <span className="text-muted">{field.label}</span>
-                <span className="min-w-0">
-                  <span className="block">
-                    <A_Value field={field} clampable={long && !more} />
-                  </span>
-                  <span className="block truncate font-mono text-[11px] text-faint">
-                    zt.{field.path}
-                  </span>
+                <span className="block">
+                  <A_Value field={field} clampable={long && !more} />
+                </span>
+                <span className="block truncate font-mono text-[11px] text-faint">
+                  zt.{field.path}
                 </span>
               </button>
             </div>
@@ -921,7 +941,7 @@
               <button
                 type="button"
                 onClick={() => setMore((m) => !m)}
-                className="mb-1 ml-5 rounded px-1 text-xs text-muted hover:text-accent focus-visible:outline-2 focus-visible:outline-accent @min-[22rem]/pane:ml-[10.25rem]"
+                className="mb-1 ml-5 rounded px-1 text-xs text-muted hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
               >
                 {more ? "Show less" : "Show more"}
               </button>
@@ -929,8 +949,8 @@
             <button
               type="button"
               tabIndex={-1}
-              onClick={() => insertField(field.path)}
               aria-hidden="true"
+              onClick={(e) => onInsert(field.path, e.shiftKey)}
               className="absolute top-1 right-1 hidden items-center gap-1 rounded-md border border-line bg-raise px-2 py-0.5 text-xs text-ink shadow-sm hover:text-accent group-hover:inline-flex group-focus-within:inline-flex"
             >
               <L.CornerDownLeft size={12} /> Insert
@@ -939,7 +959,7 @@
         );
       }
 
-      function A_ListRow({ entry }) {
+      function A_ListRow({ entry, onInsert }) {
         const [userOpen, setUserOpen] = useState(false);
         const { row, kids, forceOpen } = entry;
         const expandable = kids.length > 0;
@@ -951,21 +971,29 @@
               expandable={expandable}
               open={open}
               onToggle={() => setUserOpen((o) => !o)}
+              onInsert={onInsert}
             />
             {open &&
-              kids.map((c) => <A_FieldRow key={c.path} field={c} depth={1} />)}
+              kids.map((c) => (
+                <A_FieldRow
+                  key={c.path}
+                  field={c}
+                  depth={1}
+                  onInsert={onInsert}
+                />
+              ))}
           </>
         );
       }
 
-      function A_ItemData({ searchRef }) {
+      /** The Item data inspector: search, then collapsible sections of rows. */
+      function A_Inspector({ searchRef, onInsert, hint }) {
         const [q, setQ] = useState("");
         const [closed, setClosed] = useState({});
         const sections = A_filter(q);
         const searching = q.trim() !== "";
         const listRef = useRef(null);
 
-        // Arrow keys move between rows; Home/End jump. Escape in the list returns to the search.
         const onListKey = (e) => {
           const rows = [
             ...(listRef.current?.querySelectorAll("[data-a-row]") ?? []),
@@ -990,15 +1018,12 @@
           } else if (e.key === "End") {
             e.preventDefault();
             rows.at(-1)?.focus();
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            searchRef.current?.focus();
           }
         };
 
         return (
-          <div className="@container/pane flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-line p-2">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-line px-2 pb-2">
               <label className="flex items-center gap-2 rounded-md border border-line bg-ground px-2 py-1 text-sm focus-within:border-accent">
                 <L.Search size={14} className="shrink-0 text-faint" />
                 <input
@@ -1031,9 +1056,7 @@
                   </button>
                 )}
               </label>
-              <p className="mt-1.5 px-1 text-xs text-muted">
-                Select a field to insert it at the cursor.
-              </p>
+              <p className="mt-1.5 px-1 text-xs text-muted">{hint}</p>
             </div>
             <div
               ref={listRef}
@@ -1070,7 +1093,11 @@
                     {isOpen && (
                       <div className="pb-2">
                         {s.rows.map((e) => (
-                          <A_ListRow key={e.row.path} entry={e} />
+                          <A_ListRow
+                            key={e.row.path}
+                            entry={e}
+                            onInsert={onInsert}
+                          />
                         ))}
                       </div>
                     )}
@@ -1082,109 +1109,273 @@
         );
       }
 
-      function A_Pane({ tab, setTab, searchRef }) {
-        const tabs = [
-          { id: "preview", label: "Preview", icon: L.Eye },
-          { id: "data", label: "Item data", icon: L.TableProperties },
-        ];
-        const onTabKey = (e) => {
-          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-          e.preventDefault();
-          e.stopPropagation();
-          const next = tab === "preview" ? "data" : "preview";
-          setTab(next);
-          e.currentTarget.querySelector(`[data-a-tab="${next}"]`)?.focus();
-        };
+      /** The sheet's own header: title, pin toggle, and (modal only) close. */
+      function A_SheetHeader({ docked, pinned, narrow, onPin, onClose }) {
+        const pinLabel = narrow
+          ? "Widen the view to pin"
+          : pinned
+            ? "Unpin"
+            : "Pin to side";
+        const PinIcon = pinned && !narrow ? L.PinOff : L.Pin;
         return (
-          <div className="flex min-h-0 flex-col bg-ground">
-            <div
-              role="tablist"
-              aria-label="Pane"
-              onKeyDown={onTabKey}
-              className="flex shrink-0 items-center gap-1 border-b border-line px-2 py-1.5"
-            >
-              {tabs.map((t) => {
-                const sel = tab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    role="tab"
-                    data-a-tab={t.id}
-                    aria-selected={sel}
-                    tabIndex={sel ? 0 : -1}
-                    onClick={() => setTab(t.id)}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-accent ${sel ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
-                  >
-                    <t.icon size={14} strokeWidth={1.75} /> {t.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
-              {tab === "preview" ? (
-                <NotePreview className="flex-1" />
-              ) : (
-                <A_ItemData searchRef={searchRef} />
+          <div className="shrink-0 px-2 pt-2 pb-2">
+            <div className="flex items-center gap-1">
+              <L.TableProperties
+                size={15}
+                strokeWidth={1.75}
+                className="ml-1 text-muted"
+              />
+              <h2
+                id="a-sheet-title"
+                className="flex-1 px-1 text-sm font-semibold"
+              >
+                Item data
+              </h2>
+              <button
+                type="button"
+                onClick={onPin}
+                disabled={narrow}
+                aria-pressed={pinned}
+                aria-label={pinLabel}
+                title={pinLabel}
+                className={`inline-flex size-7 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40 ${pinned && !narrow ? "bg-accent-soft text-accent" : "text-muted enabled:hover:bg-panel enabled:hover:text-ink"}`}
+              >
+                <PinIcon size={16} strokeWidth={1.75} />
+              </button>
+              {!docked && (
+                <IconButton icon={L.X} label="Close" onClick={onClose} />
               )}
             </div>
+            {narrow && pinned && (
+              <p className="mt-0.5 px-1 text-xs text-faint">
+                Pinned · shows as a sheet in narrow views
+              </p>
+            )}
           </div>
         );
       }
 
       function VariantA() {
-        const width = useViewWidth();
+        const { width, caret } = useProto();
         const narrow = useNarrow();
-        const below = width < A_STACK_BELOW;
-        const [open, setOpen] = useState(true);
-        const [tab, setTab] = useState("data");
-        const searchRef = useRef(null);
-        const PaneIcon = below ? L.PanelBottom : L.PanelRight;
+        const [open, setOpen] = useState(false); // the modal sheet
+        const [pinned, setPinned] = useState(false);
+        const [panelW, setPanelW] = useState(A_SHEET_W);
+        const docked = pinned && !narrow;
+        const modal = open && !docked;
 
-        const showData = () => {
+        const taRef = useRef(null);
+        const searchRef = useRef(null);
+        const sheetRef = useRef(null);
+        const triggerRef = useRef(null);
+        const returnTo = useRef(null); // "editor" | element | null
+        const wasNarrow = useRef(narrow);
+
+        // A pinned panel does not auto-open as a sheet when the view turns narrow.
+        useEffect(() => {
+          if (narrow && !wasNarrow.current) setOpen(false);
+          wasNarrow.current = narrow;
+        }, [narrow]);
+
+        // After the sheet closes (or after an insert), move focus where it belongs.
+        useEffect(() => {
+          const target = returnTo.current;
+          if (!target) return;
+          returnTo.current = null;
+          if (target === "editor") {
+            const ta = taRef.current;
+            ta?.focus();
+            ta?.setSelectionRange(caret, caret);
+          } else target.focus?.();
+        });
+
+        const openSheet = () => {
+          if (docked) {
+            searchRef.current?.focus();
+            return;
+          }
           setOpen(true);
-          setTab("data");
+          setTimeout(() => searchRef.current?.focus(), 0);
+        };
+        const closeSheet = (to) => {
+          returnTo.current = to ?? triggerRef.current;
+          setOpen(false);
+        };
+
+        const onInsert = (path, keepOpen) => {
+          insertField(path);
+          if (keepOpen) return;
+          if (modal) closeSheet("editor");
+          else returnTo.current = "editor";
+        };
+
+        const onPin = () => {
+          if (narrow) return;
+          if (pinned) {
+            setPinned(false);
+            setOpen(true);
+          } else {
+            setPinned(true);
+            setOpen(false);
+          }
           setTimeout(() => searchRef.current?.focus(), 0);
         };
 
-        const toggle = (
+        // Modal keyboard: Escape closes, Tab stays inside the sheet.
+        const onSheetKey = (e) => {
+          if (!modal) return;
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            closeSheet();
+            return;
+          }
+          if (e.key === "Tab") {
+            const els = [
+              ...sheetRef.current.querySelectorAll(
+                "button:not([disabled]):not([tabindex='-1']), input",
+              ),
+            ];
+            const first = els[0],
+              last = els.at(-1);
+            if (e.shiftKey && document.activeElement === first) {
+              e.preventDefault();
+              last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
+        };
+
+        const onResize = (e) => {
+          e.preventDefault();
+          const x0 = e.clientX,
+            w0 = panelW;
+          const move = (ev) =>
+            setPanelW(
+              Math.max(240, Math.min(480, Math.round(w0 + ev.clientX - x0))),
+            );
+          const up = () => {
+            removeEventListener("pointermove", move);
+            removeEventListener("pointerup", up);
+          };
+          addEventListener("pointermove", move);
+          addEventListener("pointerup", up);
+        };
+        const onResizeKey = (e) => {
+          if (e.key === "ArrowLeft") setPanelW((w) => Math.max(240, w - 16));
+          if (e.key === "ArrowRight") setPanelW((w) => Math.min(480, w + 16));
+        };
+
+        const room = width - (docked ? panelW : 0);
+        const previewBeside = room >= A_PREVIEW_BESIDE_MIN;
+
+        const hint = docked
+          ? "Select a field to insert it at the cursor."
+          : "Select a field to insert it at the cursor. Shift-click to insert several.";
+
+        const action = (
           <button
-            key="pane"
+            key="item-data"
+            ref={triggerRef}
             type="button"
-            aria-pressed={open}
-            onClick={() => setOpen((o) => !o)}
-            title={
-              open ? "Hide preview and item data" : "Show preview and item data"
-            }
-            aria-label={
-              open ? "Hide preview and item data" : "Show preview and item data"
-            }
-            className={`inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
+            onClick={openSheet}
+            aria-haspopup="dialog"
+            aria-expanded={modal || docked}
+            title="Item data"
+            aria-label="Item data"
+            className={`inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm focus-visible:outline-2 focus-visible:outline-accent ${modal || docked ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
           >
-            <PaneIcon size={16} strokeWidth={1.75} />
-            {!narrow && <span className="pr-0.5">Preview and item data</span>}
+            <L.TableProperties size={16} strokeWidth={1.75} />
+            {!narrow && <span className="pr-0.5">Item data</span>}
           </button>
         );
 
+        const sheetBody = (
+          <>
+            <A_SheetHeader
+              docked={docked}
+              pinned={pinned}
+              narrow={narrow}
+              onPin={onPin}
+              onClose={() => closeSheet()}
+            />
+            <A_Inspector
+              searchRef={searchRef}
+              onInsert={onInsert}
+              hint={hint}
+            />
+          </>
+        );
+
         return (
-          <Stage title="A · Item data beside the Preview">
-            <ViewHeader actions={toggle} />
-            <ItemRow onTitleClick={showData} />
-            <TabBar />
-            <div
-              className={`flex min-h-0 flex-1 ${below ? "flex-col" : "flex-row"}`}
-            >
-              <SourceEditor className="min-h-32 flex-1" />
-              {open && (
-                <div
-                  className={
-                    below
-                      ? "flex h-[58%] min-h-0 shrink-0 flex-col border-t border-line"
-                      : "flex w-[44%] min-w-0 shrink-0 flex-col border-l border-line"
-                  }
+          <Stage title="A · Modal sheet">
+            <style>{`
+                    @keyframes a-slide { from { transform: translateX(-100%); } }
+                    @keyframes a-fade { from { opacity: 0; } }
+                    .a-slide { animation: a-slide 150ms ease-out; }
+                    .a-fade { animation: a-fade 150ms ease-out; }
+                    @media (prefers-reduced-motion: reduce) { .a-slide, .a-fade { animation: none; } }
+                  `}</style>
+            <ViewHeader actions={action} />
+            <div className="relative flex min-h-0 flex-1">
+              {docked && (
+                <aside
+                  aria-label="Item data"
+                  className="relative flex shrink-0 flex-col border-r border-line bg-ground"
+                  style={{ width: panelW }}
                 >
-                  <A_Pane tab={tab} setTab={setTab} searchRef={searchRef} />
+                  {sheetBody}
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize item data"
+                    aria-valuemin={240}
+                    aria-valuemax={480}
+                    aria-valuenow={panelW}
+                    tabIndex={0}
+                    onPointerDown={onResize}
+                    onKeyDown={onResizeKey}
+                    className="absolute top-0 -right-1 bottom-0 w-2 cursor-col-resize hover:bg-accent/30 focus-visible:bg-accent/40 focus-visible:outline-none"
+                  />
+                </aside>
+              )}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <ItemRow onTitleClick={openSheet} />
+                <TabBar />
+                <div
+                  className={`flex min-h-0 flex-1 ${previewBeside ? "flex-row" : "flex-col"}`}
+                >
+                  <SourceEditor taRef={taRef} className="min-h-32 flex-1" />
+                  <NotePreview
+                    className={
+                      previewBeside
+                        ? "w-[44%] shrink-0 border-l border-line"
+                        : "h-[45%] shrink-0 border-t border-line"
+                    }
+                  />
                 </div>
+              </div>
+              {modal && (
+                <>
+                  <div
+                    className="a-fade absolute inset-0 z-30 bg-ink/25"
+                    onClick={() => closeSheet()}
+                    aria-hidden="true"
+                  />
+                  <div
+                    ref={sheetRef}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="a-sheet-title"
+                    onKeyDown={onSheetKey}
+                    className="a-slide absolute top-0 bottom-0 left-0 z-40 flex flex-col border-r border-line bg-ground shadow-xl"
+                    style={{ width: A_SHEET_W, maxWidth: "88%" }}
+                  >
+                    {sheetBody}
+                  </div>
+                </>
               )}
             </div>
           </Stage>
@@ -1193,18 +1384,19 @@
       // --- Variant A END ---
 
       // --- Variant B ---
-      // Variant B — "Fields live at the caret". No fields panel: one completion popup anchored at the
-      // caret, opened by typing `{{`, the "Insert field" toolbar button, or Ctrl/Cmd+Space. An empty
-      // query browses every field by section, so the same popup is also the item-data inspector.
+      // Variant B (round 2) — "The editor drives the sheet". One left sheet for item data. It is
+      // non-modal (no scrim). Typing `{{` in the template (or Ctrl/Cmd+Space) opens it, or uses it when
+      // it is already docked; the text typed after `{{` is the sheet's search, live, while the editor
+      // keeps focus. Arrows move the highlight, Enter inserts, Escape ends. Pin docks it at the left.
 
-      /** What a field puts into the note for the sample item, as one line. */
-      const B_inNote = (f) =>
-        f.value ? f.value : "nothing, this item has no value here";
+      const B_SHEET_W = 320;
+      const B_EDITOR_MIN = 360;
+      const B_PREVIEW_BESIDE_MIN = 896;
 
-      /** The rows the popup lists: browse by section when the query is empty, flat matches otherwise. */
-      function B_buildList(query) {
-        const q = query.trim();
-        if (!q) {
+      /** Rows the inspector shows: sections with expandable list fields, or ranked matches for a query. */
+      function B_buildRows(query, expanded) {
+        const t = query.trim().toLowerCase();
+        if (!t) {
           const out = [];
           for (const s of SECTIONS) {
             out.push({ header: s.label, key: `h:${s.id}` });
@@ -1213,19 +1405,19 @@
                 field: { ...r, section: s.label },
                 key: r.path,
                 depth: 0,
+                hasKids: !!r.children?.length,
               });
-              for (const c of r.children ?? [])
-                out.push({
-                  field: { ...c, section: s.label, parent: r.path },
-                  key: c.path,
-                  depth: 1,
-                });
+              if (expanded.has(r.path))
+                for (const c of r.children ?? [])
+                  out.push({
+                    field: { ...c, section: s.label, parent: r.path },
+                    key: c.path,
+                    depth: 1,
+                  });
             }
           }
           return out;
         }
-        // Label matches first, then path, then sample-value matches.
-        const t = q.toLowerCase();
         const rank = (f) => {
           const l = f.label.toLowerCase();
           if (l.startsWith(t)) return 0;
@@ -1233,7 +1425,7 @@
           if (f.path.toLowerCase().includes(t)) return 2;
           return 3;
         };
-        return searchFields(q)
+        return searchFields(query)
           .map((f, i) => ({ f, i, r: rank(f) }))
           .sort((a, b) => a.r - b.r || a.i - b.i)
           .map(({ f }) => ({ field: f, key: f.path, depth: 0, flat: true }));
@@ -1241,88 +1433,182 @@
 
       function B_Kbd({ children }) {
         return (
-          <kbd className="rounded border border-line bg-panel px-1 font-body text-[10px] leading-4 text-muted">
+          <kbd className="rounded border border-line bg-ground px-1 font-body text-[10px] leading-4 text-muted">
             {children}
           </kbd>
         );
       }
 
-      function B_Row({ item, selected, onPick, onHover, id }) {
+      function B_Row({ item, active, open, onToggle, onInsert, onHover }) {
         const f = item.field;
         const ref = useRef(null);
         useLayoutEffect(() => {
-          if (selected) ref.current?.scrollIntoView({ block: "nearest" });
-        }, [selected]);
+          if (active) ref.current?.scrollIntoView({ block: "nearest" });
+        }, [active]);
+        const parentLabel =
+          item.flat && f.parent ? findField(f.parent)?.label : null;
         return (
           <div
             ref={ref}
-            id={id}
             role="option"
-            aria-selected={selected}
+            aria-selected={active}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={onPick}
+            onClick={onInsert}
             onMouseMove={onHover}
-            className={`flex cursor-pointer items-baseline gap-2 rounded px-2 py-1 text-[13px] ${selected ? "bg-accent-soft" : "hover:bg-panel"}`}
-            style={{ paddingLeft: 8 + item.depth * 14 }}
+            className={`group relative flex cursor-pointer gap-1 rounded-md py-1.5 pr-2 ${active ? "bg-accent-soft" : "hover:bg-raise"}`}
+            style={{ paddingLeft: 4 + item.depth * 16 }}
           >
-            <span
-              className={`shrink-0 ${selected ? "text-accent" : "text-ink"}`}
-            >
-              {f.label}
+            <span className="flex h-5 w-4 shrink-0 items-center justify-center self-start">
+              {item.hasKids && (
+                <button
+                  type="button"
+                  aria-label={
+                    open ? `Collapse ${f.label}` : `Expand ${f.label}`
+                  }
+                  aria-expanded={open}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle();
+                  }}
+                  className="flex rounded text-faint hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  {open ? (
+                    <L.ChevronDown size={14} />
+                  ) : (
+                    <L.ChevronRight size={14} />
+                  )}
+                </button>
+              )}
             </span>
-            <span
-              className={`min-w-0 flex-1 truncate ${f.value ? "text-value" : "italic text-faint"}`}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span
+                  className={`min-w-0 truncate text-[13px] font-medium ${active ? "text-accent" : "text-ink"}`}
+                >
+                  {parentLabel && (
+                    <span className="font-normal text-muted">
+                      {parentLabel} ›{" "}
+                    </span>
+                  )}
+                  {f.label}
+                </span>
+                {item.flat && (
+                  <span className="ml-auto shrink-0 text-[11px] text-faint">
+                    {f.section}
+                  </span>
+                )}
+              </div>
+              <div
+                className={`line-clamp-2 text-[13px] leading-5 break-words ${f.value ? "text-value" : "italic text-faint"}`}
+              >
+                {f.value || "Empty for this item"}
+              </div>
+              <div className="truncate font-mono text-[11px] text-faint">
+                zt.{f.path}
+              </div>
+            </div>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onInsert();
+              }}
+              className={`absolute right-1.5 bottom-1.5 items-center gap-1 rounded-md bg-accent px-1.5 py-0.5 text-[11px] text-ground focus-visible:flex focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${active ? "flex" : "hidden group-hover:flex"}`}
             >
-              {f.value || "empty"}
-            </span>
-            {item.flat && (
-              <span className="shrink-0 text-[11px] text-faint">
-                {f.section}
-              </span>
-            )}
+              <L.CornerDownLeft size={11} /> Insert
+            </button>
           </div>
         );
       }
 
-      function B_Detail({ field, onInsert, stacked }) {
-        if (!field)
-          return (
-            <div className="p-3 text-xs text-muted">No field selected.</div>
-          );
+      /** The "Item data" inspector: search, then sections of fields with sample values. */
+      function B_Inspector({
+        query,
+        onQuery,
+        session,
+        rows,
+        picks,
+        activeIdx,
+        setActive,
+        expanded,
+        toggle,
+        onInsert,
+        searchRef,
+        onSearchKey,
+        onSearchFocus,
+      }) {
         return (
-          <div
-            className={`flex min-h-0 flex-col gap-2 overflow-auto p-3 text-[13px] ${stacked ? "max-h-40" : ""}`}
-          >
-            <div className="flex items-baseline gap-2">
-              <span className="font-semibold text-ink">{field.label}</span>
-              <span className="text-[11px] text-faint">{field.section}</span>
-            </div>
-            <div
-              className={`break-words leading-5 ${field.value ? "text-value" : "italic text-faint"}`}
-            >
-              {field.value || "Empty for this item"}
-            </div>
-            <div className="font-mono text-[11px] text-muted">
-              zt.{field.path}
-            </div>
-            <div
-              className="truncate text-xs text-muted"
-              title={B_inNote(field)}
-            >
-              In your note: <span className="text-ink">{B_inNote(field)}</span>
-            </div>
-            <div className="mt-auto flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={onInsert}
-                className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs text-ground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 px-2 pt-2 pb-1">
+              <label
+                className={`flex h-8 items-center gap-2 rounded-md border px-2 text-[13px] ${session ? "border-accent bg-accent-soft/50" : "border-line bg-ground focus-within:border-accent"}`}
               >
-                <L.CornerDownLeft size={12} /> Insert
-              </button>
-              <span className="font-mono text-[11px] text-faint">
-                {snippetOf(field.path)}
-              </span>
+                {session ? (
+                  <L.TextCursorInput
+                    size={14}
+                    className="shrink-0 text-accent"
+                  />
+                ) : (
+                  <L.Search size={14} className="shrink-0 text-muted" />
+                )}
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(e) => onQuery(e.target.value)}
+                  onKeyDown={onSearchKey}
+                  onFocus={onSearchFocus}
+                  placeholder={
+                    session ? "Type after {{ in the template" : "Search fields"
+                  }
+                  aria-label="Search fields"
+                  className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-faint"
+                />
+              </label>
+              {session && (
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-0.5 text-[11px] text-muted">
+                  <span>Searching from the template</span>
+                  <span className="flex items-center gap-1">
+                    <B_Kbd>↑↓</B_Kbd> move <B_Kbd>Enter</B_Kbd> insert{" "}
+                    <B_Kbd>Esc</B_Kbd> end
+                  </span>
+                </div>
+              )}
+            </div>
+            <div
+              role="listbox"
+              aria-label="Item data fields"
+              className="min-h-0 flex-1 overflow-auto px-1.5 pb-3"
+            >
+              {picks.length === 0 && (
+                <div className="px-2 py-4 text-xs text-muted">
+                  No field matches "{query.trim()}".
+                </div>
+              )}
+              {rows.map((item) => {
+                if (item.header)
+                  return (
+                    <div
+                      key={item.key}
+                      className="sticky top-0 z-10 bg-panel px-2 pt-3 pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase"
+                    >
+                      {item.header}
+                    </div>
+                  );
+                const i = picks.indexOf(item);
+                return (
+                  <B_Row
+                    key={item.key}
+                    item={item}
+                    active={i === activeIdx}
+                    open={expanded.has(item.field.path)}
+                    onToggle={() => toggle(item.field.path)}
+                    onInsert={() => onInsert(item.field)}
+                    onHover={() => i !== activeIdx && setActive(i)}
+                  />
+                );
+              })}
             </div>
           </div>
         );
@@ -1332,90 +1618,74 @@
         const { source, caret, width } = useProto();
         const narrow = useNarrow();
         const taRef = useRef(null);
-        const frameRef = useRef(null);
-        const popRef = useRef(null);
-        const btnRef = useRef(null);
-        // open: { from, lead } — `from` starts the range an insert replaces; `lead` is 2 after a typed `{{`.
-        const [open, setOpen] = useState(null);
-        const [sel, setSel] = useState(0);
-        const [pos, setPos] = useState(null);
-        const [tick, setTick] = useState(0);
+        const searchRef = useRef(null);
 
-        const rawQuery = open ? source.slice(open.from + open.lead, caret) : "";
-        const query = rawQuery.trim();
-        const list = useMemo(() => B_buildList(query), [query]);
-        const picks = list.filter((i) => i.field);
-        const selIdx = Math.min(sel, Math.max(0, picks.length - 1));
-        const selected = picks[selIdx]?.field;
+        const [open, setOpen] = useState(false);
+        const [pinned, setPinned] = useState(false);
+        const [via, setVia] = useState(null); // "header" | "editor"
+        const [session, setSession] = useState(null); // { from, lead } while the editor drives the sheet
+        const [ownQuery, setOwnQuery] = useState("");
+        const [active, setActive] = useState(0);
+        const [expanded, setExpanded] = useState(() => new Set());
+        const [panelW, setPanelW] = useState(B_SHEET_W);
 
-        // Close when the caret leaves the query range or the query stops being a field name.
+        const frameW = width - 2;
+        const docked = pinned && !narrow && open;
+        const asSheet = open && !docked;
+        const dockW = Math.max(
+          240,
+          Math.min(panelW, 480, frameW - B_EDITOR_MIN),
+        );
+        const mainW = frameW - (docked ? dockW : 0);
+        const previewBeside = mainW >= B_PREVIEW_BESIDE_MIN;
+
+        const sessionRaw = session
+          ? source.slice(session.from + session.lead, caret)
+          : "";
+        const query = session ? sessionRaw.trimStart() : ownQuery;
+        const rows = useMemo(
+          () => B_buildRows(query, expanded),
+          [query, expanded],
+        );
+        const picks = rows.filter((r) => r.field);
+        const activeIdx = Math.min(active, Math.max(0, picks.length - 1));
+        const activeField = picks[activeIdx]?.field;
+
+        useEffect(() => setActive(0), [query.trim()]);
+
+        // A pinned panel steps aside in a narrow view and docks again when the view widens.
+        const prevNarrow = useRef(narrow);
         useEffect(() => {
-          if (!open) return;
-          if (
-            caret < open.from + open.lead ||
-            /[\n}]/.test(rawQuery) ||
-            (open.lead && source.slice(open.from, open.from + 2) !== "{{")
-          )
-            setOpen(null);
-        }, [open, caret, source, rawQuery]);
-        useEffect(() => setSel(0), [query, open?.from]);
+          if (prevNarrow.current !== narrow && pinned) setOpen(!narrow);
+          prevNarrow.current = narrow;
+        }, [narrow, pinned]);
 
-        // Click outside closes; scrolling the editor repositions.
-        useEffect(() => {
-          if (!open) return;
-          const down = (e) => {
-            if (
-              popRef.current?.contains(e.target) ||
-              btnRef.current?.contains(e.target)
-            )
-              return;
-            setOpen(null);
-          };
-          const scroll = () => setTick((t) => t + 1);
-          document.addEventListener("pointerdown", down);
-          const frame = frameRef.current?.parentElement;
-          frame?.addEventListener("scroll", scroll, true);
-          return () => {
-            document.removeEventListener("pointerdown", down);
-            frame?.removeEventListener("scroll", scroll, true);
-          };
-        }, [open]);
-
-        const popW = narrow ? width - 2 - 16 : Math.min(640, width - 2 - 16);
-
-        useLayoutEffect(() => {
-          if (!open || !taRef.current || !frameRef.current) {
-            setPos(null);
-            return;
-          }
-          const fr = frameRef.current.getBoundingClientRect();
-          const tr = taRef.current.getBoundingClientRect();
-          const c = caretCoords(taRef.current, open.from);
-          const x = tr.left - fr.left + c.left;
-          const y = tr.top - fr.top + c.top;
-          const h = popRef.current?.offsetHeight ?? 300;
-          const below = y + c.height + 4;
-          const above = y - h - 4;
-          let top = below + h <= fr.height - 8 || above < 8 ? below : above;
-          top = Math.max(8, Math.min(top, fr.height - h - 8));
-          const left = narrow
-            ? 8
-            : Math.max(8, Math.min(x - 10, fr.width - popW - 8));
-          setPos({ top, left, flipped: top < y });
-        }, [open, caret, source, width, narrow, popW, query, selIdx, tick]);
-
-        const openAt = (from, lead) => {
-          setOpen({ from, lead });
-          setSel(0);
+        const endSession = (closeSheet) => {
+          setSession(null);
+          if (closeSheet && via === "editor" && !docked) setOpen(false);
         };
 
-        const commit = (field) => {
-          if (!field || !open) return;
-          const from = open.from,
-            to = caret;
-          insertField(field.path, [from, to]);
-          setOpen(null);
-          const c = from + snippetOf(field.path).length;
+        // The session ends when the caret leaves the typed range or the text stops being a field name.
+        useEffect(() => {
+          if (!session) return;
+          const broke =
+            caret < session.from + session.lead ||
+            /[\n}]/.test(sessionRaw) ||
+            (session.lead &&
+              source.slice(session.from, session.from + 2) !== "{{");
+          if (broke) endSession(true);
+        }, [session, caret, source, sessionRaw]);
+
+        const startSession = (from, lead) => {
+          setSession({ from, lead });
+          setActive(0);
+          if (!open) {
+            setOpen(true);
+            setVia("editor");
+          }
+        };
+
+        const focusEditorAt = (c) =>
           requestAnimationFrame(() => {
             const ta = taRef.current;
             if (!ta) return;
@@ -1423,361 +1693,561 @@
             ta.setSelectionRange(c, c);
             setProto({ caret: c });
           });
+
+        const insert = (field) => {
+          if (!field) return;
+          const from = session ? session.from : caret;
+          insertField(field.path, session ? [session.from, caret] : undefined);
+          const closeAfter = via === "editor" && !docked;
+          setSession(null);
+          if (closeAfter) setOpen(false);
+          focusEditorAt(from + snippetOf(field.path).length);
         };
 
-        const onKeyDown = (e, ta) => {
-          if (open) {
+        const move = (d) =>
+          setActive((activeIdx + d + picks.length) % Math.max(1, picks.length));
+
+        const onEditorKey = (e, ta) => {
+          if (session) {
             if (e.key === "ArrowDown") {
               e.preventDefault();
-              setSel((selIdx + 1) % Math.max(1, picks.length));
+              move(1);
               return;
             }
             if (e.key === "ArrowUp") {
               e.preventDefault();
-              setSel((selIdx - 1 + picks.length) % Math.max(1, picks.length));
+              move(-1);
               return;
             }
-            if (e.key === "PageDown") {
+            if ((e.key === "Enter" || e.key === "Tab") && activeField) {
               e.preventDefault();
-              setSel(Math.min(picks.length - 1, selIdx + 8));
-              return;
-            }
-            if (e.key === "PageUp") {
-              e.preventDefault();
-              setSel(Math.max(0, selIdx - 8));
-              return;
-            }
-            if ((e.key === "Enter" || e.key === "Tab") && selected) {
-              e.preventDefault();
-              commit(selected);
+              insert(activeField);
               return;
             }
             if (e.key === "Escape") {
               e.preventDefault();
-              setOpen(null);
+              endSession(true);
               return;
             }
           }
           if (e.key === " " && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
-            if (!open) openAt(ta.selectionStart, 0);
+            if (!session) startSession(ta.selectionStart, 0);
           }
         };
 
-        const onInput = (ta) => {
+        const onEditorInput = (ta) => {
           const c = ta.selectionStart;
           if (
-            !open &&
+            !session &&
             ta.value.slice(c - 2, c) === "{{" &&
             ta.value[c - 3] !== "{"
           )
-            openAt(c - 2, 2);
+            startSession(c - 2, 2);
         };
 
-        const onButton = () => {
+        const onSearchKey = (e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            move(1);
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            move(-1);
+          } else if (e.key === "Enter" && activeField) {
+            e.preventDefault();
+            insert(activeField);
+          }
+        };
+        // Clicking into the search takes the query over from the template.
+        const onSearchFocus = () => {
+          if (!session) return;
+          setOwnQuery(sessionRaw.trim());
+          setSession(null);
+          setVia("header");
+        };
+
+        const onHeaderAction = () => {
           if (open) {
-            setOpen(null);
+            setOpen(false);
+            setSession(null);
             return;
           }
-          const ta = taRef.current;
-          if (!ta) return;
-          ta.focus();
-          ta.setSelectionRange(caret, caret);
-          openAt(caret, 0);
+          setOpen(true);
+          setVia("header");
+          requestAnimationFrame(() => searchRef.current?.focus());
+        };
+        const close = () => {
+          setOpen(false);
+          setSession(null);
+        };
+        const onPanelKey = (e) => {
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          if (docked) focusEditorAt(caret);
+          else {
+            close();
+            focusEditorAt(caret);
+          }
         };
 
-        const stacked = narrow;
-        const listEl = (
+        const toggle = (path) =>
+          setExpanded((s) => {
+            const n = new Set(s);
+            n.has(path) ? n.delete(path) : n.add(path);
+            return n;
+          });
+
+        const onResize = (e) => {
+          e.preventDefault();
+          const x0 = e.clientX,
+            w0 = dockW;
+          const mv = (ev) =>
+            setPanelW(Math.max(240, Math.min(480, w0 + ev.clientX - x0)));
+          const up = () => {
+            removeEventListener("pointermove", mv);
+            removeEventListener("pointerup", up);
+          };
+          addEventListener("pointermove", mv);
+          addEventListener("pointerup", up);
+        };
+
+        const panel = (
           <div
-            role="listbox"
-            aria-label="Fields"
-            id="b-fields"
-            className={`min-h-0 overflow-auto p-1 ${stacked ? "max-h-44" : "max-h-72 min-h-44 w-[46%] shrink-0 border-r border-line"}`}
+            onKeyDown={onPanelKey}
+            role="complementary"
+            aria-label="Item data"
+            className={`flex min-h-0 flex-col bg-panel ${docked ? "relative shrink-0 border-r border-line" : "b-sheet absolute inset-y-0 left-0 z-30 border-r border-line shadow-2xl"}`}
+            style={
+              docked ? { width: dockW } : { width: B_SHEET_W, maxWidth: "88%" }
+            }
           >
-            {picks.length === 0 && (
-              <div className="px-2 py-3 text-xs text-muted">
-                No field matches "{query}".
-              </div>
-            )}
-            {list.map((item) => {
-              if (item.header)
-                return (
-                  <div
-                    key={item.key}
-                    className="px-2 pt-2 pb-0.5 text-[11px] font-medium text-muted first:pt-1"
-                  >
-                    {item.header}
+            <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line pr-1 pl-3">
+              <L.TableProperties size={15} className="shrink-0 text-muted" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-semibold">
+                  Item data
+                </div>
+                {pinned && narrow && (
+                  <div className="truncate text-[11px] leading-3 text-muted">
+                    Pinned · docks again in a wider view
                   </div>
-                );
-              const i = picks.indexOf(item);
-              return (
-                <B_Row
-                  key={item.key}
-                  id={`b-opt-${i}`}
-                  item={item}
-                  selected={i === selIdx}
-                  onPick={() => commit(item.field)}
-                  onHover={() => i !== selIdx && setSel(i)}
-                />
-              );
-            })}
+                )}
+              </div>
+              <IconButton
+                icon={pinned ? L.PinOff : L.Pin}
+                label={pinned ? "Unpin" : "Pin to side"}
+                active={pinned}
+                onClick={() => {
+                  setPinned(!pinned);
+                  setVia("header");
+                }}
+              />
+              <IconButton
+                icon={L.X}
+                label="Close"
+                onClick={() => {
+                  close();
+                  focusEditorAt(caret);
+                }}
+              />
+            </div>
+            <B_Inspector
+              query={query}
+              onQuery={setOwnQuery}
+              session={session}
+              rows={rows}
+              picks={picks}
+              activeIdx={activeIdx}
+              setActive={setActive}
+              expanded={expanded}
+              toggle={toggle}
+              onInsert={insert}
+              searchRef={searchRef}
+              onSearchKey={onSearchKey}
+              onSearchFocus={onSearchFocus}
+            />
+            {docked && (
+              <div
+                onPointerDown={onResize}
+                title="Drag to resize"
+                role="separator"
+                aria-orientation="vertical"
+                className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize hover:bg-accent/30"
+              />
+            )}
           </div>
         );
 
         return (
-          <Stage title="B · Fields live at the caret">
-            <div
-              ref={frameRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0"
+          <Stage title="B · The editor drives the sheet">
+            <style>{`@keyframes b-slide{from{transform:translateX(-100%)}to{transform:none}}
+              .b-sheet{animation:b-slide 150ms ease-out}
+              @media (prefers-reduced-motion: reduce){.b-sheet{animation:none}}`}</style>
+            <ViewHeader
+              actions={
+                <button
+                  type="button"
+                  onClick={onHeaderAction}
+                  aria-pressed={open}
+                  aria-label="Item data"
+                  title="Item data"
+                  className={`inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[13px] focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
+                >
+                  <L.TableProperties size={16} strokeWidth={1.75} />
+                  {!narrow && <span>Item data</span>}
+                </button>
+              }
             />
-            <ViewHeader />
-            <ItemRow />
-            <TabBar />
-            <div className="flex min-h-0 flex-1 flex-col @min-[56rem]:flex-row">
+            <div className="relative flex min-h-0 flex-1">
+              {docked && panel}
               <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-2 text-xs">
-                  <button
-                    ref={btnRef}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={onButton}
-                    aria-expanded={!!open}
-                    aria-controls="b-fields"
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
-                  >
-                    <L.Braces size={15} strokeWidth={1.75} /> Insert field
-                  </button>
-                  <span className="hidden min-w-0 truncate text-faint @min-[28rem]:inline">
-                    or type <span className="font-mono text-muted">{"{{"}</span>{" "}
-                    in the template · <B_Kbd>Ctrl</B_Kbd> <B_Kbd>Space</B_Kbd>
-                  </span>
-                </div>
-                <SourceEditor
-                  className="flex-1"
-                  taRef={taRef}
-                  onKeyDown={onKeyDown}
-                  onInput={onInput}
-                />
-              </div>
-              <NotePreview className="flex-1 border-t border-line bg-panel/40 @min-[56rem]:border-t-0 @min-[56rem]:border-l" />
-            </div>
-
-            {open && (
-              <div
-                ref={popRef}
-                role="dialog"
-                aria-label="Insert field"
-                className="absolute z-40 flex flex-col overflow-hidden rounded-lg border border-line bg-raise font-body shadow-xl"
-                style={{
-                  top: pos?.top ?? 0,
-                  left: pos?.left ?? 8,
-                  width: popW,
-                  visibility: pos ? "visible" : "hidden",
-                }}
-              >
-                <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-2 text-xs text-muted">
-                  <L.Braces size={13} className="text-accent" />
-                  {query ? (
-                    <span className="min-w-0 truncate">
-                      Fields matching{" "}
-                      <span className="font-mono text-ink">{query}</span> ·{" "}
-                      {picks.length}
-                    </span>
-                  ) : (
-                    <span className="min-w-0 truncate">
-                      Item data · type to search fields
-                    </span>
-                  )}
-                  <span className="ml-auto hidden shrink-0 items-center gap-1 @min-[30rem]:flex">
-                    <B_Kbd>↑↓</B_Kbd> move <B_Kbd>Enter</B_Kbd> insert{" "}
-                    <B_Kbd>Esc</B_Kbd> close
-                  </span>
-                </div>
-                <div className={stacked ? "flex flex-col" : "flex"}>
-                  {listEl}
-                  <div
-                    className={`min-w-0 flex-1 ${stacked ? "border-t border-line" : "flex max-h-72 flex-col"} bg-panel/50`}
-                  >
-                    <B_Detail
-                      field={selected}
-                      stacked={stacked}
-                      onInsert={() => commit(selected)}
+                <ItemRow />
+                <TabBar />
+                <div
+                  className={`mt-2 flex min-h-0 flex-1 border-t border-line ${previewBeside ? "flex-row" : "flex-col"}`}
+                >
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <div className="flex h-8 shrink-0 items-center gap-2 px-3 text-[11px] text-faint">
+                      <span className="truncate">
+                        Type{" "}
+                        <span className="font-mono text-muted">{"{{"}</span> or
+                        press <B_Kbd>Ctrl</B_Kbd> <B_Kbd>Space</B_Kbd> to insert
+                        a field
+                      </span>
+                    </div>
+                    <SourceEditor
+                      className="flex-1"
+                      taRef={taRef}
+                      onKeyDown={onEditorKey}
+                      onInput={onEditorInput}
                     />
                   </div>
+                  <NotePreview
+                    className={`flex-1 bg-panel/40 ${previewBeside ? "border-l border-line" : "border-t border-line"}`}
+                  />
                 </div>
               </div>
-            )}
+              {asSheet && panel}
+            </div>
           </Stage>
         );
       }
       // --- Variant B END ---
 
       // --- Variant C ---
-      // Variant C — "The item row opens the item's record".
-      // The item row carries an "Item data" disclosure. It opens a record sheet under the row that
-      // pushes the tabs and editor down. The sheet is a grid of label/value cells (3 / 2 / 1 columns
-      // by container width) with search and section chips; a click inserts the field at the cursor.
+      // Variant C — "Edge rail". A 32 px rail runs down the view's left edge under the header at every
+      // width: the "Item data" icon, the vertical label, and one jump icon per section. A click slides
+      // the Item data sheet out next to the rail and scrolls it to that section. The sheet is
+      // non-modal; a click in the editor closes it unless it is pinned. Pinned + wide: it docks between
+      // the rail and the editor and the rail stays as jump links. Pinned + narrow: it acts as a sheet,
+      // and a dot on the rail shows that it is pinned. There is no header action: the rail is the entry.
 
-      const C_SHEET_MIN = 140;
-      const C_SHEET_MAX = 560;
+      const C_RAIL = 32;
+      const C_SHEET_W = 320;
+      const C_DOCK_MIN = 240;
+      const C_DOCK_MAX = 480;
+      const C_STACK_MIN = 896; // editor + preview side by side from this width
 
-      /** The item row with the record disclosure. */
-      function C_ItemRow({ open, onToggle, toggleRef }) {
+      const C_SECTION_ICONS = {
+        common: L.LayoutList,
+        reference: L.BookMarked,
+        identifiers: L.Fingerprint,
+        content: L.Paperclip,
+        organization: L.FolderTree,
+        links: L.Link,
+        record: L.Database,
+      };
+
+      const C_STYLE = `
+      @keyframes c-slide-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+      .c-slide { animation: c-slide-in 150ms ease-out; }
+      @media (prefers-reduced-motion: reduce) { .c-slide { animation: none; } }
+      `;
+
+      const C_hit = (f, t) =>
+        `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t);
+
+      /** The rail: entry icon, vertical label, section jump icons. */
+      function C_Rail({
+        open,
+        pinned,
+        docked,
+        activeSection,
+        onOpen,
+        onJump,
+        entryRef,
+      }) {
+        return (
+          <nav
+            aria-label="Item data"
+            className="flex shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2"
+            style={{ width: C_RAIL }}
+          >
+            <button
+              ref={entryRef}
+              type="button"
+              onClick={onOpen}
+              aria-expanded={open}
+              aria-controls="c-sheet"
+              title={
+                docked
+                  ? "Item data (pinned)"
+                  : open
+                    ? "Close item data"
+                    : "Open item data"
+              }
+              className={`group flex flex-col items-center gap-2 rounded-md px-1 py-1.5 focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-ground hover:text-ink"}`}
+            >
+              <span className="relative">
+                <L.TableProperties size={16} strokeWidth={1.75} />
+                {pinned && (
+                  <span
+                    aria-label="Pinned"
+                    className="absolute -top-1 -right-1 size-2 rounded-full bg-accent ring-2 ring-panel"
+                  />
+                )}
+              </span>
+              <span className="text-xs font-medium tracking-wide [writing-mode:vertical-rl] rotate-180 select-none">
+                Item data
+              </span>
+            </button>
+            <div className="my-1 h-px w-4 bg-line" />
+            {SECTIONS.map((s) => {
+              const Icon = C_SECTION_ICONS[s.id] ?? L.Circle;
+              const on = open && activeSection === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onJump(s.id)}
+                  aria-label={s.label}
+                  title={s.label}
+                  className={`inline-flex size-6 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-accent ${on ? "text-accent" : "text-faint hover:bg-ground hover:text-ink"}`}
+                >
+                  <Icon size={14} strokeWidth={1.75} />
+                </button>
+              );
+            })}
+          </nav>
+        );
+      }
+
+      /** One field row: the main button inserts; a list row has a chevron for its sub-fields. */
+      function C_Row({ field, depth = 0, expandable, expanded, onToggle }) {
+        const empty = field.kind === "empty" || !field.value;
         return (
           <div
-            className={`flex min-h-9 shrink-0 items-center gap-2 border-b border-line px-3 text-sm ${open ? "bg-panel" : ""}`}
+            className="group relative flex items-start"
+            style={{ paddingLeft: depth * 14 }}
           >
-            <L.BookOpenText size={15} className="shrink-0 text-muted" />
+            <span className="flex w-5 shrink-0 justify-center pt-2">
+              {expandable && (
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  aria-expanded={expanded}
+                  aria-label={`${expanded ? "Hide" : "Show"} ${field.label} sub-fields`}
+                  className="rounded-sm text-faint hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  {expanded ? (
+                    <L.ChevronDown size={14} />
+                  ) : (
+                    <L.ChevronRight size={14} />
+                  )}
+                </button>
+              )}
+            </span>
             <button
               type="button"
-              onClick={onToggle}
-              title={ITEM_LABEL}
-              className="min-w-0 flex-1 truncate rounded-sm text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+              data-c-row=""
+              onClick={() => insertField(field.path)}
+              title={`Insert ${field.label} at the cursor`}
+              className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left hover:bg-ground focus-visible:bg-ground focus-visible:outline-2 focus-visible:outline-accent"
             >
-              <span className="text-muted">Example: </span>
-              {ITEM_LABEL}
-            </button>
-            <button
-              ref={toggleRef}
-              type="button"
-              onClick={onToggle}
-              aria-expanded={open}
-              aria-controls="c-record-sheet"
-              className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-ground hover:text-ink"}`}
-            >
-              Item data{" "}
-              {open ? <L.ChevronUp size={14} /> : <L.ChevronDown size={14} />}
-            </button>
-            <button
-              type="button"
-              title="Choose item"
-              className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-muted hover:bg-ground hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              <L.Search size={14} />{" "}
-              <span className="hidden @min-[520px]:inline">Choose item</span>
+              <span className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-xs text-muted">
+                  {field.label}
+                </span>
+                <span className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-accent-soft px-1.5 text-xs text-accent opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+                  <L.Plus size={12} /> Insert
+                </span>
+              </span>
+              <span
+                className={`line-clamp-2 text-[13px] leading-5 break-words ${empty ? "text-faint italic" : "text-value"}`}
+              >
+                {empty ? "Empty for this item" : field.value}
+              </span>
+              <span className="truncate font-mono text-[11px] text-faint">
+                zt.{field.path}
+              </span>
             </button>
           </div>
         );
       }
 
-      /** One label/value cell. The whole cell is the insert button. */
-      function C_Cell({ field, parentLabel }) {
-        const empty = field.kind === "empty" || !field.value;
+      /** The Item data inspector: search, then sections of rows. Scrolls to `jump.id` when it changes. */
+      function C_Inspector({ jump, onSection, searchRef }) {
+        const [query, setQuery] = useState("");
+        const [expanded, setExpanded] = useState({});
+        const scroller = useRef(null);
+        const t = query.trim().toLowerCase();
+
+        useLayoutEffect(() => {
+          const box = scroller.current;
+          const el = box?.querySelector(`[data-c-section="${jump.id}"]`);
+          if (box && el) box.scrollTop = el.offsetTop;
+        }, [jump]);
+
+        const onScroll = () => {
+          const box = scroller.current;
+          if (box.scrollTop + box.clientHeight >= box.scrollHeight - 2) return; // keep the jumped-to section at the end
+          const heads = [...box.querySelectorAll("[data-c-section]")];
+          let cur = heads[0]?.dataset.cSection;
+          for (const h of heads)
+            if (h.offsetTop <= box.scrollTop + 8) cur = h.dataset.cSection;
+          onSection(cur);
+        };
+
+        const onKeyDown = (e) => {
+          if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+          const rows = [...scroller.current.querySelectorAll("[data-c-row]")];
+          const i = rows.indexOf(document.activeElement);
+          if (i < 0) return;
+          e.preventDefault();
+          const next = rows[i + (e.key === "ArrowDown" ? 1 : -1)];
+          if (next) next.focus();
+          else if (e.key === "ArrowUp") searchRef.current?.focus();
+        };
+
+        const groups = SECTIONS.map((s) => ({
+          ...s,
+          rows: s.rows
+            .map((r) => {
+              const kids = (r.children ?? []).filter((c) => !t || C_hit(c, t));
+              const self = !t || C_hit(r, t);
+              return self || kids.length
+                ? { row: r, kids: t ? kids : (r.children ?? []) }
+                : null;
+            })
+            .filter(Boolean),
+        })).filter((g) => g.rows.length);
+
         return (
-          <button
-            type="button"
-            data-c-cell=""
-            onClick={() => insertField(field.path)}
-            title={`Insert ${field.label} at the cursor`}
-            className="group flex min-w-0 flex-col gap-0.5 rounded-md border border-line bg-raise px-2.5 py-1.5 text-left hover:border-accent focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            <span className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-xs text-muted">
-                {parentLabel && (
-                  <span className="text-faint">{parentLabel} › </span>
-                )}
-                {field.label}
-                {field.kind === "list" && (
-                  <span className="text-faint"> · list</span>
-                )}
-              </span>
-              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-accent-soft px-1.5 text-xs text-accent opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">
-                <L.Plus size={12} /> Insert
-              </span>
-            </span>
-            <span
-              className={`line-clamp-2 text-[13px] leading-5 break-words ${empty ? "text-faint italic" : "text-value"}`}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 px-3 pb-2">
+              <label className="flex items-center gap-1.5 rounded-md border border-line bg-ground px-2 py-1 focus-within:border-accent">
+                <L.Search size={14} className="shrink-0 text-faint" />
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={query}
+                  placeholder="Search fields"
+                  aria-label="Search fields"
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      scroller.current.querySelector("[data-c-row]")?.focus();
+                    }
+                    if (e.key === "Enter") {
+                      const g = groups[0];
+                      if (g) {
+                        e.preventDefault();
+                        insertField(
+                          (g.rows[0].kids[0] && !C_hit(g.rows[0].row, t)
+                            ? g.rows[0].kids[0]
+                            : g.rows[0].row
+                          ).path,
+                        );
+                      }
+                    }
+                    if (e.key === "Escape" && query) {
+                      e.stopPropagation();
+                      setQuery("");
+                    }
+                  }}
+                  className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint"
+                />
+              </label>
+            </div>
+            <div
+              ref={scroller}
+              onScroll={onScroll}
+              onKeyDown={onKeyDown}
+              className="relative min-h-0 flex-1 overflow-auto px-2 pb-6"
             >
-              {empty ? "Empty for this item" : field.value}
-            </span>
-            <span className="truncate font-mono text-[11px] text-faint opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">
-              zt.{field.path}
-            </span>
-          </button>
+              {groups.length === 0 && (
+                <div className="py-6 text-center text-sm text-muted">
+                  No fields match “{query}”.
+                </div>
+              )}
+              {groups.map((g) => {
+                const Icon = C_SECTION_ICONS[g.id] ?? L.Circle;
+                return (
+                  <section
+                    key={g.id}
+                    data-c-section={g.id}
+                    aria-label={g.label}
+                  >
+                    <h3 className="sticky top-0 z-10 flex items-center gap-1.5 bg-panel px-1 pt-3 pb-1 text-xs font-semibold text-muted">
+                      <Icon size={13} className="text-faint" /> {g.label}
+                    </h3>
+                    {g.rows.map(({ row, kids }) => {
+                      const open = t ? kids.length > 0 : !!expanded[row.path];
+                      return (
+                        <div key={row.path}>
+                          <C_Row
+                            field={row}
+                            expandable={kids.length > 0}
+                            expanded={open}
+                            onToggle={() =>
+                              setExpanded((x) => ({
+                                ...x,
+                                [row.path]: !x[row.path],
+                              }))
+                            }
+                          />
+                          {open &&
+                            kids.map((c) => (
+                              <C_Row key={c.path} field={c} depth={1} />
+                            ))}
+                        </div>
+                      );
+                    })}
+                  </section>
+                );
+              })}
+            </div>
+          </div>
         );
       }
 
-      /** Move focus between cells by their on-screen position. */
-      function C_moveFocus(e, root) {
-        const cells = [...root.querySelectorAll("[data-c-cell]")];
-        const i = cells.indexOf(document.activeElement);
-        if (i < 0) return;
-        let next = null;
-        if (e.key === "ArrowRight") next = cells[i + 1];
-        else if (e.key === "ArrowLeft") next = cells[i - 1];
-        else if (e.key === "Home") next = cells[0];
-        else if (e.key === "End") next = cells[cells.length - 1];
-        else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          const r = cells[i].getBoundingClientRect();
-          const down = e.key === "ArrowDown";
-          const rows = cells
-            .map((c) => [c, c.getBoundingClientRect()])
-            .filter(([, b]) => (down ? b.top > r.top + 2 : b.top < r.top - 2));
-          if (rows.length) {
-            const rowTop = down
-              ? Math.min(...rows.map(([, b]) => b.top))
-              : Math.max(...rows.map(([, b]) => b.top));
-            const inRow = rows.filter(([, b]) => Math.abs(b.top - rowTop) < 2);
-            next = inRow.reduce((best, cur) =>
-              Math.abs(cur[1].left - r.left) < Math.abs(best[1].left - r.left)
-                ? cur
-                : best,
-            )[0];
-          } else if (!down) {
-            root.querySelector("[data-c-search]")?.focus();
-            e.preventDefault();
-            return;
-          }
-        } else return;
-        e.preventDefault();
-        if (next) {
-          next.focus();
-          next.scrollIntoView({ block: "nearest" });
-        }
-      }
-
-      /** The record sheet: search, section chips, the cell grid, a resize edge. */
-      function C_RecordSheet({ height, setHeight, maxHeight, onClose }) {
-        const [query, setQuery] = useState("");
-        const [section, setSection] = useState("all");
-        const root = useRef(null);
+      /** The sheet or docked panel: header with pin toggle and close, then the inspector. */
+      function C_Panel({
+        mode,
+        pinned,
+        narrow,
+        onPin,
+        onClose,
+        jump,
+        onSection,
+        width,
+        setWidth,
+      }) {
         const searchRef = useRef(null);
         useEffect(() => {
-          searchRef.current?.focus();
+          if (mode === "sheet")
+            searchRef.current?.focus({ preventScroll: true });
         }, []);
-
-        const t = query.trim().toLowerCase();
-        const groups = SECTIONS.filter(
-          (s) => section === "all" || s.id === section,
-        )
-          .map((s) => {
-            const cells = s.rows.flatMap((r) => [
-              { field: r },
-              ...(r.children ?? []).map((c) => ({
-                field: c,
-                parentLabel: r.label,
-              })),
-            ]);
-            const hit = (c) =>
-              !t ||
-              `${c.parentLabel ?? ""} ${c.field.label} ${c.field.path} ${c.field.value}`
-                .toLowerCase()
-                .includes(t);
-            return { ...s, cells: cells.filter(hit) };
-          })
-          .filter((g) => g.cells.length);
-        const count = groups.reduce((n, g) => n + g.cells.length, 0);
-
         const onDrag = (e) => {
           e.preventDefault();
-          const y0 = e.clientY,
-            h0 = height;
+          const x0 = e.clientX,
+            w0 = width;
           const move = (ev) =>
-            setHeight(
+            setWidth(
               Math.max(
-                C_SHEET_MIN,
-                Math.min(maxHeight, Math.round(h0 + ev.clientY - y0)),
+                C_DOCK_MIN,
+                Math.min(C_DOCK_MAX, Math.round(w0 + ev.clientX - x0)),
               ),
             );
           const up = () => {
@@ -1787,186 +2257,163 @@
           addEventListener("pointermove", move);
           addEventListener("pointerup", up);
         };
-        const onHandleKey = (e) => {
-          const step = e.shiftKey ? 80 : 24;
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setHeight(Math.min(maxHeight, height + step));
-          }
-          if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setHeight(Math.max(C_SHEET_MIN, height - step));
-          }
-        };
-
-        const chip = (id, label) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={section === id}
-            onClick={() => setSection(id)}
-            className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs focus-visible:outline-2 focus-visible:outline-accent ${section === id ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:text-ink"}`}
-          >
-            {label}
-          </button>
-        );
-
+        const sheet = mode === "sheet";
         return (
-          <section
-            id="c-record-sheet"
-            ref={root}
+          <aside
+            id="c-sheet"
             aria-label="Item data"
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault();
-                onClose();
-                return;
-              }
-              if (e.target.matches?.("[data-c-cell]"))
-                C_moveFocus(e, root.current);
-            }}
-            className="relative flex shrink-0 flex-col border-b border-line bg-panel"
-            style={{ height }}
+            className={
+              sheet
+                ? "c-slide absolute inset-y-0 left-0 z-30 flex max-w-[88cqw] flex-col border-r border-line bg-panel shadow-[4px_0_24px_rgba(0,0,0,0.14)]"
+                : "relative flex shrink-0 flex-col border-r border-line bg-panel"
+            }
+            style={{ width: sheet ? C_SHEET_W : width }}
           >
-            <div className="flex shrink-0 flex-col gap-2 px-3 pt-2 pb-2">
-              <div className="flex items-center gap-2">
-                <label className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-line bg-ground px-2 py-1 focus-within:border-accent">
-                  <L.Search size={14} className="shrink-0 text-faint" />
-                  <input
-                    ref={searchRef}
-                    data-c-search=""
-                    type="search"
-                    value={query}
-                    placeholder="Search fields"
-                    aria-label="Search fields"
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "ArrowDown") {
-                        e.preventDefault();
-                        root.current.querySelector("[data-c-cell]")?.focus();
-                      }
-                      if (e.key === "Enter") {
-                        const c = groups[0]?.cells[0];
-                        if (c) {
-                          e.preventDefault();
-                          insertField(c.field.path);
-                        }
-                      }
-                      if (e.key === "Escape" && query) {
-                        e.stopPropagation();
-                        setQuery("");
-                      }
-                    }}
-                    className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint"
-                  />
-                </label>
-                <span className="hidden shrink-0 text-xs text-muted @min-[560px]:inline">
-                  Click a field to insert it at the cursor
-                </span>
+            <div className="flex shrink-0 items-center gap-1 px-3 pt-2 pb-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold">Item data</div>
+                <div className="truncate text-xs text-muted">
+                  {pinned && narrow
+                    ? "Pinned · widen the view to dock it"
+                    : "Click a field to insert it at the cursor"}
+                </div>
+              </div>
+              <IconButton
+                icon={pinned ? L.PinOff : L.Pin}
+                label={pinned ? "Unpin" : "Pin to side"}
+                active={pinned}
+                onClick={onPin}
+              />
+              {sheet && (
                 <IconButton
                   icon={L.X}
                   label="Close item data"
                   onClick={onClose}
                 />
-              </div>
-              <div
-                className="flex gap-1.5 overflow-x-auto pb-0.5"
-                role="group"
-                aria-label="Sections"
-              >
-                {chip("all", "All")}
-                {SECTIONS.map((s) => chip(s.id, s.label))}
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto px-3 pb-3">
-              {count === 0 && (
-                <div className="py-6 text-center text-sm text-muted">
-                  No fields match “{query}”.
-                </div>
               )}
-              <div className="grid grid-cols-1 gap-1.5 @min-[560px]:grid-cols-2 @min-[860px]:grid-cols-3">
-                {groups.map((g) => (
-                  <React.Fragment key={g.id}>
-                    <h3 className="col-span-full mt-2 flex items-baseline gap-2 text-xs font-semibold text-muted first:mt-0">
-                      {g.label}{" "}
-                      <span className="font-normal text-faint">
-                        {g.cells.length}
-                      </span>
-                    </h3>
-                    {g.cells.map((c) => (
-                      <C_Cell
-                        key={c.field.path}
-                        field={c.field}
-                        parentLabel={c.parentLabel}
-                      />
-                    ))}
-                  </React.Fragment>
-                ))}
-              </div>
             </div>
-            <div
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize item data"
-              tabIndex={0}
-              aria-valuemin={C_SHEET_MIN}
-              aria-valuemax={maxHeight}
-              aria-valuenow={height}
-              onPointerDown={onDrag}
-              onKeyDown={onHandleKey}
-              className="group absolute inset-x-0 -bottom-1.5 z-10 flex h-3 cursor-row-resize items-center justify-center focus-visible:outline-none"
-            >
-              <div className="h-1 w-10 rounded-full bg-faint/60 group-hover:bg-accent group-focus-visible:bg-accent" />
-            </div>
-          </section>
+            <C_Inspector
+              jump={jump}
+              onSection={onSection}
+              searchRef={searchRef}
+            />
+            {!sheet && (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize item data"
+                tabIndex={0}
+                aria-valuemin={C_DOCK_MIN}
+                aria-valuemax={C_DOCK_MAX}
+                aria-valuenow={width}
+                onPointerDown={onDrag}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowRight") {
+                    e.preventDefault();
+                    setWidth(Math.min(C_DOCK_MAX, width + 16));
+                  }
+                  if (e.key === "ArrowLeft") {
+                    e.preventDefault();
+                    setWidth(Math.max(C_DOCK_MIN, width - 16));
+                  }
+                }}
+                className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize hover:bg-accent/40 focus-visible:bg-accent/60 focus-visible:outline-none"
+              />
+            )}
+          </aside>
         );
       }
 
       function VariantC() {
+        const narrow = useNarrow();
         const [open, setOpen] = useState(false);
-        const [height, setHeight] = useState(280);
-        const [frameH, setFrameH] = useState(700);
-        const frame = useRef(null);
-        const toggleRef = useRef(null);
+        const [pinned, setPinned] = useState(false);
+        const [dockW, setDockW] = useState(C_SHEET_W);
+        const [jump, setJump] = useState({ id: "common", n: 0 });
+        const [section, setSection] = useState("common");
+        const [mainW, setMainW] = useState(800);
+        const main = useRef(null);
+        const entryRef = useRef(null);
+
         useLayoutEffect(() => {
-          const el = frame.current;
+          const el = main.current;
           if (!el) return;
-          const ro = new ResizeObserver(() => setFrameH(el.clientHeight));
+          const ro = new ResizeObserver(() => setMainW(el.clientWidth));
           ro.observe(el);
           return () => ro.disconnect();
         }, []);
-        // Keep at least ~220 px for tabs and editor under the sheet.
-        const maxHeight = Math.max(
-          C_SHEET_MIN,
-          Math.min(C_SHEET_MAX, frameH - 40 - 36 - 220),
-        );
-        const shown = Math.min(height, maxHeight);
+
+        const docked = open && pinned && !narrow;
+        const asSheet = open && !docked;
         const close = () => {
           setOpen(false);
-          toggleRef.current?.focus();
+          entryRef.current?.focus();
         };
+        const jumpTo = (id) => {
+          setOpen(true);
+          setSection(id);
+          setJump((j) => ({ id, n: j.n + 1 }));
+        };
+        const sideBySide = mainW >= C_STACK_MIN;
 
         return (
-          <Stage title="C — Item row opens the record">
-            <div ref={frame} className="flex min-h-0 flex-1 flex-col">
-              <ViewHeader />
-              <C_ItemRow
+          <Stage title="C — Edge rail">
+            <style>{C_STYLE}</style>
+            <ViewHeader />
+            <div
+              className="flex min-h-0 flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && asSheet) {
+                  e.preventDefault();
+                  close();
+                }
+              }}
+            >
+              <C_Rail
                 open={open}
-                onToggle={() => setOpen((o) => !o)}
-                toggleRef={toggleRef}
+                pinned={pinned}
+                docked={docked}
+                activeSection={section}
+                entryRef={entryRef}
+                onOpen={() =>
+                  docked ? jumpTo(section) : open ? close() : jumpTo(section)
+                }
+                onJump={jumpTo}
               />
-              {open && (
-                <C_RecordSheet
-                  height={shown}
-                  setHeight={setHeight}
-                  maxHeight={maxHeight}
-                  onClose={close}
-                />
-              )}
-              <TabBar />
-              <div className="flex min-h-0 flex-1 flex-col @min-[56rem]:flex-row">
-                <SourceEditor className="min-h-[160px] flex-1 @min-[56rem]:basis-1/2" />
-                <NotePreview className="flex-1 border-t border-line @min-[56rem]:basis-1/2 @min-[56rem]:border-t-0 @min-[56rem]:border-l" />
+              <div className="relative flex min-w-0 flex-1">
+                {open && (
+                  <C_Panel
+                    mode={docked ? "dock" : "sheet"}
+                    pinned={pinned}
+                    narrow={narrow}
+                    onPin={() => setPinned((p) => !p)}
+                    onClose={close}
+                    jump={jump}
+                    onSection={setSection}
+                    width={dockW}
+                    setWidth={setDockW}
+                  />
+                )}
+                <div
+                  ref={main}
+                  className="flex min-w-0 flex-1 flex-col"
+                  onPointerDown={() => {
+                    if (asSheet) setOpen(false);
+                  }}
+                >
+                  <ItemRow />
+                  <TabBar />
+                  <div
+                    className={`flex min-h-0 flex-1 ${sideBySide ? "flex-row" : "flex-col"}`}
+                  >
+                    <SourceEditor
+                      className={`min-h-[160px] flex-1 ${sideBySide ? "basis-1/2" : ""}`}
+                    />
+                    <NotePreview
+                      className={`flex-1 border-line ${sideBySide ? "basis-1/2 border-l" : "border-t"}`}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </Stage>
@@ -1975,74 +2422,86 @@
       // --- Variant C END ---
 
       // --- Variant D ---
-      // --- Variant D: field drawer docked at the bottom of the view ---
-      const D_PEEK = 44;
+      // --- Variant D: push when it fits, overlay when it does not ---
+      // One sheet at the left edge. Width decides only push (beside the editor) vs overlay (over it).
+      // The pin means only "keep it open after an insert or a click elsewhere".
+      const D_SHEET_W = 320;
+      const D_STACK_BELOW = 896; // room for editor + preview side by side
       const D_FILLED = ALL_FIELDS.filter((f) => f.value).length;
 
-      /** Visible rows for a query and a section filter, grouped by section. */
-      function D_rows(query, sectionId) {
-        const t = query.trim().toLowerCase();
-        return SECTIONS.filter((s) => !sectionId || s.id === sectionId)
-          .map((s) => ({
-            id: s.id,
-            label: s.label,
-            rows: s.rows
-              .flatMap((r) => [
-                { ...r },
-                ...(r.children ?? []).map((c) => ({
-                  ...c,
-                  parentLabel: r.label,
-                })),
-              ])
-              .filter(
-                (f) =>
-                  !t ||
-                  `${f.label} ${f.parentLabel ?? ""} ${f.path} ${f.value}`
-                    .toLowerCase()
-                    .includes(t),
-              ),
-          }))
-          .filter((s) => s.rows.length);
+      function D_match(f, t) {
+        return `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t);
       }
 
-      function D_FieldRow({ field, active, id, onInsert, onHover }) {
+      /** Sections with rows that match `q`; a list row stays when a sub-field matches. */
+      function D_filter(q) {
+        const t = q.trim().toLowerCase();
+        return SECTIONS.map((s) => ({
+          ...s,
+          rows: s.rows
+            .map((r) => {
+              if (!t) return r;
+              const kids = (r.children ?? []).filter((c) => D_match(c, t));
+              if (D_match(r, t) || kids.length)
+                return {
+                  ...r,
+                  children: r.children,
+                  matchKids: kids.length > 0,
+                };
+              return null;
+            })
+            .filter(Boolean),
+        })).filter((s) => s.rows.length);
+      }
+
+      function D_Row({ field, depth = 0, open, onToggle, onInsert }) {
         const empty = !field.value;
+        const kids = field.children?.length;
         return (
           <div
-            id={id}
-            role="option"
-            aria-selected={active}
-            onMouseEnter={onHover}
-            onClick={onInsert}
-            title={
-              empty
-                ? `${field.label}: no value for this item`
-                : `${field.label}: ${field.value}`
-            }
-            className={`group flex min-w-0 cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 ${active ? "bg-accent-soft" : "hover:bg-panel"}`}
+            className="group relative flex items-start gap-1 rounded-md hover:bg-panel"
+            style={{ paddingLeft: depth * 16 }}
           >
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-baseline gap-2">
-                <span
-                  className={`shrink-0 text-sm ${field.parentLabel ? "text-muted" : "text-ink"}`}
-                >
-                  {field.parentLabel && (
-                    <span className="text-faint">{field.parentLabel} › </span>
-                  )}
-                  {field.label}
-                </span>
-                <span
-                  className={`min-w-0 truncate text-sm ${empty ? "italic text-faint" : "text-value"}`}
-                >
-                  {empty ? "Empty" : field.value}
-                </span>
+            {kids ? (
+              <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={open}
+                aria-label={`${open ? "Hide" : "Show"} sub-fields of ${field.label}`}
+                className="mt-1.5 inline-flex size-5 shrink-0 items-center justify-center rounded text-faint hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <L.ChevronRight
+                  size={14}
+                  className={`transition-transform ${open ? "rotate-90" : ""}`}
+                />
+              </button>
+            ) : (
+              <span className="w-5 shrink-0" />
+            )}
+            <button
+              type="button"
+              data-d-row
+              onClick={() => onInsert(field.path)}
+              title={
+                empty
+                  ? `${field.label}: no value for this item`
+                  : `Insert ${field.label}`
+              }
+              className="min-w-0 flex-1 rounded-md py-1.5 pr-16 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+            >
+              <div className="text-sm text-ink">{field.label}</div>
+              <div
+                className={`line-clamp-2 text-sm break-words ${empty ? "italic text-faint" : "text-value"}`}
+              >
+                {empty ? "Empty for this item" : field.value}
               </div>
               <div className="truncate font-mono text-[11px] text-faint">
                 zt.{field.path}
               </div>
-            </div>
+            </button>
             <span
-              className={`shrink-0 rounded-md border px-2 py-0.5 text-xs ${active ? "border-accent bg-accent text-ground" : "border-line text-muted group-hover:border-accent group-hover:text-accent"}`}
+              aria-hidden="true"
+              className="pointer-events-none absolute top-2 right-2 rounded-md border border-line bg-ground px-2 py-0.5 text-xs text-muted opacity-0 group-focus-within:opacity-100 group-hover:border-accent group-hover:text-accent group-hover:opacity-100"
             >
               Insert
             </span>
@@ -2050,302 +2509,293 @@
         );
       }
 
+      function D_Inspector({ onInsert, searchRef }) {
+        const [q, setQ] = useState("");
+        const [openRows, setOpenRows] = useState({});
+        const sections = D_filter(q);
+        const searching = q.trim() !== "";
+        const listRef = useRef(null);
+
+        const rows = () => [
+          ...(listRef.current?.querySelectorAll("[data-d-row]") ?? []),
+        ];
+        const onListKey = (e) => {
+          if (
+            e.key !== "ArrowDown" &&
+            e.key !== "ArrowUp" &&
+            e.key !== "Home" &&
+            e.key !== "End"
+          )
+            return;
+          const all = rows();
+          const i = all.indexOf(document.activeElement);
+          if (i < 0 && e.target !== searchRef.current) return;
+          e.preventDefault();
+          let n =
+            e.key === "ArrowDown"
+              ? i + 1
+              : e.key === "ArrowUp"
+                ? i - 1
+                : e.key === "Home"
+                  ? 0
+                  : all.length - 1;
+          if (n < 0) return searchRef.current?.focus();
+          all[Math.min(n, all.length - 1)]?.focus();
+        };
+
+        return (
+          <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onListKey}>
+            <div className="shrink-0 px-3 pb-2">
+              <div className="relative">
+                <L.Search
+                  size={14}
+                  className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-faint"
+                />
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={q}
+                  placeholder="Search fields"
+                  aria-label="Search fields"
+                  onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const first = sections[0]?.rows[0];
+                      if (first)
+                        onInsert(
+                          first.matchKids
+                            ? first.children.find((c) =>
+                                D_match(c, q.trim().toLowerCase()),
+                              ).path
+                            : first.path,
+                        );
+                    }
+                  }}
+                  className="h-8 w-full rounded-md border border-line bg-panel pr-2 pl-7 text-sm outline-none placeholder:text-faint focus:border-accent"
+                />
+              </div>
+            </div>
+            <div
+              ref={listRef}
+              className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+            >
+              {sections.length === 0 && (
+                <div className="p-3 text-sm text-muted">
+                  No fields match “{q}”.
+                </div>
+              )}
+              {sections.map((s) => (
+                <section key={s.id} aria-label={s.label} className="mb-2">
+                  <h3 className="sticky top-0 z-[1] bg-ground px-2 pt-2 pb-1 text-xs font-medium text-faint">
+                    {s.label}
+                  </h3>
+                  {s.rows.map((r) => {
+                    const open =
+                      !!r.children?.length &&
+                      (openRows[r.path] ?? (searching && r.matchKids));
+                    return (
+                      <div key={r.path}>
+                        <D_Row
+                          field={r}
+                          open={open}
+                          onInsert={onInsert}
+                          onToggle={() =>
+                            setOpenRows((o) => ({ ...o, [r.path]: !open }))
+                          }
+                        />
+                        {open &&
+                          r.children.map((c) => (
+                            <D_Row
+                              key={c.path}
+                              field={c}
+                              depth={1}
+                              onInsert={onInsert}
+                            />
+                          ))}
+                      </div>
+                    );
+                  })}
+                </section>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
       function VariantD() {
         const width = useViewWidth();
+        const narrow = useNarrow();
         const [open, setOpen] = useState(false);
-        const [pct, setPct] = useState(0.5);
-        const [query, setQuery] = useState("");
-        const [section, setSection] = useState(null);
-        const [sel, setSel] = useState(0);
-        const areaRef = useRef(null);
-        const listRef = useRef(null);
+        const [pinned, setPinned] = useState(false);
+        const [panelW, setPanelW] = useState(D_SHEET_W);
+        const taRef = useRef(null);
         const searchRef = useRef(null);
-        const [areaH, setAreaH] = useState(500);
+        const toggleRef = useRef(null);
 
-        useLayoutEffect(() => {
-          const el = areaRef.current;
-          if (!el) return;
-          const ro = new ResizeObserver(() => setAreaH(el.clientHeight));
-          ro.observe(el);
-          return () => ro.disconnect();
-        }, []);
-
-        const groups = useMemo(() => D_rows(query, section), [query, section]);
-        const flat = useMemo(() => groups.flatMap((g) => g.rows), [groups]);
-        const twoCol = width >= 720;
+        const pushes = open && !narrow;
+        const overlays = open && narrow;
+        const dockW = Math.max(240, Math.min(panelW, width - 360));
+        const mainW = width - (pushes ? dockW : 0);
+        const previewBeside = mainW >= D_STACK_BELOW;
 
         useEffect(() => {
-          setSel(0);
-        }, [query, section]);
-        useEffect(() => {
-          if (!open) return;
-          listRef.current
-            ?.querySelector(`#d-opt-${sel}`)
-            ?.scrollIntoView({ block: "nearest" });
-        }, [sel, open]);
+          if (open) searchRef.current?.focus();
+        }, [open]);
 
-        const insertAt = (i) => {
-          const f = flat[i];
-          if (f) {
-            setSel(i);
-            insertField(f.path);
-          }
+        const close = (focusEditor) => {
+          setOpen(false);
+          requestAnimationFrame(() =>
+            (focusEditor ? taRef.current : toggleRef.current)?.focus(),
+          );
+        };
+        const onInsert = (path) => {
+          insertField(path);
+          if (!pinned) close(true);
+        };
+        const onEditorDown = () => {
+          if (open && !pinned && pushes) setOpen(false);
         };
 
-        const onKeys = (e) => {
-          if (e.key === "Escape") {
-            if (open) {
-              e.preventDefault();
-              setOpen(false);
-            }
-            return;
-          }
-          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-            e.preventDefault();
-            setOpen(true);
-            return;
-          }
-          if (!open) return;
-          const step = 1;
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setSel((s) => Math.min(flat.length - 1, s + step));
-          }
-          if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setSel((s) => Math.max(0, s - step));
-          }
-          if (e.key === "Home" && e.currentTarget === listRef.current) {
-            e.preventDefault();
-            setSel(0);
-          }
-          if (e.key === "End" && e.currentTarget === listRef.current) {
-            e.preventDefault();
-            setSel(flat.length - 1);
-          }
-          if (e.key === "Enter") {
-            e.preventDefault();
-            insertAt(sel);
-          }
-        };
-
-        const onDrag = (e) => {
+        const onResize = (e) => {
           e.preventDefault();
-          const rect = areaRef.current.getBoundingClientRect();
-          let moved = false;
-          const y0 = e.clientY;
-          const move = (ev) => {
-            if (Math.abs(ev.clientY - y0) > 3) moved = true;
-            if (!moved) return;
-            const p = (rect.bottom - ev.clientY) / rect.height;
-            setOpen(true);
-            setPct(Math.max(0.25, Math.min(0.8, p)));
-          };
+          const x0 = e.clientX,
+            w0 = dockW;
+          const move = (ev) =>
+            setPanelW(Math.max(240, Math.min(480, w0 + ev.clientX - x0)));
           const up = () => {
             removeEventListener("pointermove", move);
             removeEventListener("pointerup", up);
-            if (!moved) setOpen((o) => !o);
           };
           addEventListener("pointermove", move);
           addEventListener("pointerup", up);
         };
-        const onHandleKey = (e) => {
-          if (e.key === "ArrowUp") {
+        const onResizeKey = (e) => {
+          if (e.key === "ArrowLeft") {
             e.preventDefault();
-            setOpen(true);
-            setPct((p) => Math.min(0.8, p + 0.05));
+            setPanelW(Math.max(240, dockW - 16));
           }
-          if (e.key === "ArrowDown") {
+          if (e.key === "ArrowRight") {
             e.preventDefault();
-            if (!open) return;
-            setPct((p) => Math.max(0.25, p - 0.05));
-          }
-          if (e.key === "Escape" && open) {
-            e.preventDefault();
-            setOpen(false);
+            setPanelW(Math.min(480, dockW + 16));
           }
         };
 
-        const height = open
-          ? Math.max(D_PEEK, Math.round(areaH * pct))
-          : D_PEEK;
-        const toggle = () => setOpen((o) => !o);
-        let idx = -1;
-
-        const headerToggle = (
+        const action = (
           <button
+            ref={toggleRef}
             type="button"
-            onClick={toggle}
-            aria-pressed={open}
-            aria-controls="d-drawer"
+            onClick={() => (open ? close(false) : setOpen(true))}
+            aria-expanded={open}
+            aria-controls="d-sheet"
             title="Item data"
             className={`inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
           >
-            {open ? (
-              <L.PanelBottomClose size={16} strokeWidth={1.75} />
-            ) : (
-              <L.PanelBottomOpen size={16} strokeWidth={1.75} />
-            )}
-            <span className="@max-[32rem]:sr-only">Item data</span>
+            <L.Database size={16} strokeWidth={1.75} />
+            <span className={narrow ? "sr-only" : ""}>Item data</span>
           </button>
         );
 
-        return (
-          <Stage title="D · Field drawer">
-            <ViewHeader actions={headerToggle} />
-            <ItemRow onTitleClick={() => setOpen(true)} />
-            <TabBar />
-            <div
-              ref={areaRef}
-              className="relative mt-2 flex min-h-0 flex-1 flex-col border-t border-line @min-[56rem]:flex-row"
-            >
-              {/* Both panes pad their bottom by the drawer's peek height, so the caret line stays above the bar. */}
-              <SourceEditor className="min-h-0 flex-1 pb-11 @min-[56rem]:basis-1/2" />
-              <NotePreview className="min-h-0 flex-1 pb-14 border-t border-line bg-panel/40 @min-[56rem]:basis-1/2 @min-[56rem]:border-t-0 @min-[56rem]:border-l" />
-
-              <section
-                id="d-drawer"
-                aria-label="Item data"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape" && open) {
-                    e.preventDefault();
-                    setOpen(false);
-                    searchRef.current?.blur();
-                  }
-                }}
-                style={{ height, transition: "height 160ms ease" }}
-                className={`absolute inset-x-0 bottom-0 z-20 flex flex-col border-t border-line bg-ground ${open ? "shadow-[0_-8px_24px_-6px_rgba(0,0,0,0.18)]" : ""}`}
+        const sheet = open && (
+          <aside
+            id="d-sheet"
+            aria-label="Item data"
+            role={overlays && !pinned ? "dialog" : undefined}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                close(false);
+              }
+            }}
+            style={
+              pushes ? { width: dockW } : { width: D_SHEET_W, maxWidth: "88%" }
+            }
+            className={`d-slide flex min-h-0 flex-col bg-ground ${pushes ? "relative shrink-0 border-r border-line" : "absolute inset-y-0 left-0 z-30 border-r border-line shadow-[8px_0_24px_-6px_rgba(0,0,0,0.25)]"}`}
+          >
+            <div className="flex h-11 shrink-0 items-center gap-2 pr-2 pl-3">
+              <L.Database size={15} className="text-muted" />
+              <h2 className="text-sm font-medium">Item data</h2>
+              <span
+                className="rounded-full bg-panel px-1.5 text-xs tabular-nums text-muted"
+                title={`${D_FILLED} fields have a value for this item`}
               >
-                {/* Grab handle */}
+                {D_FILLED}
+              </span>
+              <div className="ml-auto flex items-center gap-0.5">
+                <IconButton
+                  icon={pinned ? L.PinOff : L.Pin}
+                  label={
+                    pinned
+                      ? "Unpin"
+                      : "Pin open: stays open after you insert or click elsewhere"
+                  }
+                  active={pinned}
+                  onClick={() => setPinned((p) => !p)}
+                />
+                <IconButton
+                  icon={L.X}
+                  label="Close"
+                  onClick={() => close(false)}
+                />
+              </div>
+            </div>
+            <D_Inspector onInsert={onInsert} searchRef={searchRef} />
+            <div className="shrink-0 border-t border-line px-3 py-1.5 text-[11px] text-faint">
+              {pushes
+                ? "Beside the editor"
+                : "Over the editor · widen the view to keep it beside"}
+              {pinned && " · pinned open"}
+            </div>
+            {pushes && (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize item data"
+                tabIndex={0}
+                aria-valuemin={240}
+                aria-valuemax={480}
+                aria-valuenow={dockW}
+                onPointerDown={onResize}
+                onKeyDown={onResizeKey}
+                className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize hover:bg-accent/30 focus-visible:bg-accent/40 focus-visible:outline-none"
+              />
+            )}
+          </aside>
+        );
+
+        return (
+          <Stage title="D · Push when it fits, overlay when it does not">
+            <style>{`@keyframes d-slide-in { from { transform: translateX(-24px); opacity: 0; } }
+              @media (prefers-reduced-motion: no-preference) { .d-slide { animation: d-slide-in 150ms ease-out; } }`}</style>
+            <ViewHeader actions={action} />
+            <div className="relative flex min-h-0 flex-1">
+              {sheet}
+              <div
+                className="flex min-w-0 flex-1 flex-col"
+                onPointerDown={onEditorDown}
+              >
+                <ItemRow onTitleClick={() => setOpen(true)} />
+                <TabBar />
                 <div
-                  role="separator"
-                  aria-orientation="horizontal"
-                  aria-label="Resize item data"
-                  tabIndex={0}
-                  aria-valuemin={25}
-                  aria-valuemax={80}
-                  aria-valuenow={open ? Math.round(pct * 100) : 0}
-                  onPointerDown={onDrag}
-                  onKeyDown={onHandleKey}
-                  className="absolute inset-x-0 -top-1.5 z-10 flex h-3 cursor-row-resize justify-center focus-visible:outline-2 focus-visible:outline-accent"
+                  className={`mt-2 flex min-h-0 flex-1 border-t border-line ${previewBeside ? "flex-row" : "flex-col"}`}
                 >
-                  <div className="mt-1.5 h-1 w-10 rounded-full bg-faint/70" />
+                  <SourceEditor
+                    taRef={taRef}
+                    className="min-h-0 flex-1 basis-1/2"
+                  />
+                  <NotePreview
+                    className={`min-h-0 flex-1 basis-1/2 bg-panel/40 ${previewBeside ? "border-l border-line" : "border-t border-line"}`}
+                  />
                 </div>
-                {/* Bar */}
-                <div className="flex h-11 shrink-0 items-center gap-2 px-3">
-                  <button
-                    type="button"
-                    onClick={toggle}
-                    aria-expanded={open}
-                    aria-controls="d-drawer-body"
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm hover:bg-panel focus-visible:outline-2 focus-visible:outline-accent"
-                  >
-                    <L.Database size={15} className="text-muted" />
-                    <span className="font-medium">Item data</span>
-                    <span
-                      className="rounded-full bg-panel px-1.5 text-xs tabular-nums text-muted"
-                      title={`${D_FILLED} fields have a value for this item`}
-                    >
-                      {D_FILLED}
-                    </span>
-                    <L.ChevronUp
-                      size={14}
-                      className={`text-faint transition-transform ${open ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  <div className="relative ml-auto min-w-0 flex-1 @min-[40rem]:max-w-80">
-                    <L.Search
-                      size={14}
-                      className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-faint"
-                    />
-                    <input
-                      ref={searchRef}
-                      type="search"
-                      value={query}
-                      placeholder="Search fields"
-                      role="combobox"
-                      aria-expanded={open}
-                      aria-controls="d-list"
-                      aria-activedescendant={
-                        open && flat.length ? `d-opt-${sel}` : undefined
-                      }
-                      onChange={(e) => {
-                        setQuery(e.target.value);
-                        if (e.target.value) setOpen(true);
-                      }}
-                      onKeyDown={onKeys}
-                      className="h-7 w-full rounded-md border border-line bg-panel pr-2 pl-7 text-sm outline-none placeholder:text-faint focus:border-accent"
-                    />
-                  </div>
-                </div>
-                {open && (
-                  <div
-                    id="d-drawer-body"
-                    className="flex min-h-0 flex-1 flex-col"
-                  >
-                    <div
-                      className="flex shrink-0 gap-1 overflow-x-auto px-3 pb-2"
-                      role="toolbar"
-                      aria-label="Sections"
-                    >
-                      {[{ id: null, label: "All" }, ...SECTIONS].map((s) => (
-                        <button
-                          key={s.id ?? "all"}
-                          type="button"
-                          onClick={() => setSection(s.id)}
-                          aria-pressed={section === s.id}
-                          className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs focus-visible:outline-2 focus-visible:outline-accent ${section === s.id ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:text-ink"}`}
-                        >
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div
-                      id="d-list"
-                      ref={listRef}
-                      role="listbox"
-                      aria-label="Fields"
-                      tabIndex={0}
-                      onKeyDown={onKeys}
-                      aria-activedescendant={
-                        flat.length ? `d-opt-${sel}` : undefined
-                      }
-                      className="min-h-0 flex-1 overflow-y-auto border-t border-line px-2 pt-1 pb-3 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
-                    >
-                      {groups.length === 0 && (
-                        <div className="p-4 text-sm text-muted">
-                          No fields match “{query}”.
-                        </div>
-                      )}
-                      {groups.map((g) => (
-                        <div key={g.id} role="group" aria-label={g.label}>
-                          <div className="sticky top-0 z-[1] bg-ground px-2 pt-2 pb-1 text-xs font-medium text-faint">
-                            {g.label}
-                          </div>
-                          <div
-                            className={`grid gap-x-4 ${twoCol ? "grid-cols-2" : "grid-cols-1"}`}
-                          >
-                            {g.rows.map((f) => {
-                              idx += 1;
-                              const i = idx;
-                              return (
-                                <D_FieldRow
-                                  key={f.path}
-                                  id={`d-opt-${i}`}
-                                  field={f}
-                                  active={i === sel}
-                                  onHover={() => setSel(i)}
-                                  onInsert={() => insertAt(i)}
-                                />
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </section>
+              </div>
+              {overlays && !pinned && (
+                <div
+                  aria-hidden="true"
+                  onPointerDown={() => setOpen(false)}
+                  className="absolute inset-0 z-20 bg-ink/25"
+                />
+              )}
             </div>
           </Stage>
         );
@@ -2353,13 +2803,11 @@
       // --- Variant D END ---
 
       // --- Variant E ---
-      // Variant E — "Item data" browser: one modal like Obsidian's command palette, at every width.
-      const E_IS_MAC =
-        typeof navigator !== "undefined" &&
-        /Mac|iPhone|iPad/.test(navigator.platform);
-      const E_MOD = E_IS_MAC ? "⌘" : "Ctrl";
+      // Variant E (round 2) — "Sheet with a detail flyout".
+      // A non-modal left sheet. Rows stay compact (label + one-line value); the selected row's detail
+      // flies out to the right of the sheet (wide) or expands under the row (narrow).
 
-      /** Text with every case-insensitive match of `q` emphasised. */
+      /** Text with every case-insensitive match of `q` emphasised (round-1 highlighting). */
       function E_Mark({ text, q }) {
         const t = q.trim();
         if (!t || !text) return text;
@@ -2386,8 +2834,10 @@
         return out;
       }
 
+      const E_isEmpty = (f) => f.kind === "empty" || !f.value;
+
       function E_Value({ field, q, full }) {
-        if (field.kind === "empty" || !field.value)
+        if (E_isEmpty(field))
           return <span className="italic text-faint">Empty for this item</span>;
         return (
           <span
@@ -2398,19 +2848,20 @@
         );
       }
 
-      /** Label, full value, path, what the note would get, and the two actions. */
-      function E_Detail({ field, q, onInsert, onCopy, copied, compact }) {
-        if (!field)
-          return (
-            <div className="p-4 text-sm text-muted">No field selected.</div>
-          );
-        const empty = field.kind === "empty" || !field.value;
+      /** The detail card: full value, path, what the note gets, Insert and Copy. */
+      function E_Detail({ field, q, inline }) {
+        const [copied, setCopied] = useState(false);
+        useEffect(() => setCopied(false), [field.path]);
         const parent = field.parent ? findField(field.parent) : null;
+        const copy = () => {
+          navigator.clipboard?.writeText(snippetOf(field.path)).catch(() => {});
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        };
+        const showValue = !inline || (field.value ?? "").length > 30;
         return (
-          <div
-            className={`flex flex-col gap-3 text-sm ${compact ? "" : "p-4"}`}
-          >
-            {!compact && (
+          <div className="flex flex-col gap-3 text-sm">
+            {!inline && (
               <div>
                 <div className="text-xs text-muted">
                   {field.section}
@@ -2421,7 +2872,7 @@
                 </div>
               </div>
             )}
-            {(!compact || (field.value ?? "").length > 32) && (
+            {showValue && (
               <div className="max-h-40 overflow-auto rounded-md border border-line bg-ground p-2 leading-6">
                 <E_Value field={field} q={q} full />
               </div>
@@ -2442,12 +2893,12 @@
                   size={13}
                   className="mt-0.5 shrink-0 text-faint"
                 />
-                {empty ? (
-                  <span className="font-body italic text-faint">
-                    (nothing — this item has no value)
+                {E_isEmpty(field) ? (
+                  <span className="italic text-faint">
+                    Nothing — this item has no value here
                   </span>
                 ) : (
-                  <span className="font-body text-value">
+                  <span className="text-value">
                     {field.value.length > 90
                       ? field.value.slice(0, 90) + "…"
                       : field.value}
@@ -2458,14 +2909,14 @@
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={onInsert}
+                onClick={() => insertField(field.path)}
                 className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-ground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 <L.TextCursorInput size={14} /> Insert
               </button>
               <button
                 type="button"
-                onClick={onCopy}
+                onClick={copy}
                 className="inline-flex items-center gap-1.5 rounded-md border border-line bg-raise px-3 py-1.5 text-sm text-ink hover:bg-panel focus-visible:outline-2 focus-visible:outline-accent"
               >
                 {copied ? <L.Check size={14} /> : <L.Copy size={14} />}{" "}
@@ -2476,331 +2927,411 @@
         );
       }
 
-      function E_Row({ field, q, active, onPick, onInsert, rowRef, children }) {
-        return (
-          <li
-            ref={rowRef}
-            role="option"
-            aria-selected={active}
-            id={`e-opt-${field.path}`}
-          >
-            <div
-              onClick={onPick}
-              onDoubleClick={onInsert}
-              className={`flex cursor-pointer items-baseline gap-3 rounded-md px-3 py-1.5 text-sm ${active ? "bg-accent-soft" : "hover:bg-panel"}`}
-            >
-              <span
-                className={`w-32 shrink-0 truncate ${field.parent ? "pl-3" : ""} ${active ? "text-accent" : "text-ink"}`}
-              >
-                {field.parent && <span className="text-faint">└ </span>}
-                <E_Mark text={field.label} q={q} />
-              </span>
-              <span className="flex min-w-0 flex-1">
-                <E_Value field={field} q={q} />
-              </span>
-            </div>
-            {children}
-          </li>
-        );
+      /** Visible rows in order: sections, top-level rows, and sub-fields of expanded (or matching) lists. */
+      function E_visibleRows(q, expanded) {
+        const t = q.trim().toLowerCase();
+        const hit = (f) =>
+          `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t);
+        const out = [];
+        for (const s of SECTIONS) {
+          const rows = [];
+          for (const r of s.rows) {
+            const kids = (r.children ?? []).map((c) => ({
+              ...c,
+              section: s.label,
+              parent: r.path,
+            }));
+            const kidHits = t
+              ? kids.filter(hit)
+              : expanded.has(r.path)
+                ? kids
+                : [];
+            if (t && !hit(r) && kidHits.length === 0) continue;
+            rows.push({ ...r, section: s.label });
+            rows.push(...kidHits);
+          }
+          if (rows.length) out.push({ section: s, rows });
+        }
+        return out;
       }
 
-      function E_FieldBrowser({ onClose, onInsertPath }) {
-        const width = useViewWidth();
-        const dialogW = Math.min(720, width - 24);
-        const wide = dialogW >= 600;
+      /** The "Item data" inspector: search, then sections of compact rows. Owns selection and the flyout. */
+      function E_Inspector({ flyout, onClose, sheetRef }) {
         const [q, setQ] = useState("");
-        const [section, setSection] = useState("all");
-        const [hi, setHi] = useState(0);
-        const [copied, setCopied] = useState(null);
+        const [expanded, setExpanded] = useState(() => new Set());
+        const [sel, setSel] = useState(null);
+        const [cardTop, setCardTop] = useState(0);
         const inputRef = useRef(null);
+        const listRef = useRef(null);
+        const cardRef = useRef(null);
         const rowRefs = useRef({});
 
-        const matches = useMemo(() => {
-          const t = q.trim().toLowerCase();
-          return t
-            ? ALL_FIELDS.filter((f) =>
-                `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t),
-              )
-            : ALL_FIELDS;
-        }, [q]);
-        const counts = useMemo(() => {
-          const c = {};
-          for (const f of matches) c[f.section] = (c[f.section] ?? 0) + 1;
-          return c;
-        }, [matches]);
-        const rows =
-          section === "all"
-            ? matches
-            : matches.filter((f) => f.section === section);
-        const cur = rows[Math.min(hi, rows.length - 1)] ?? null;
+        const groups = useMemo(() => E_visibleRows(q, expanded), [q, expanded]);
+        const flat = groups.flatMap((g) => g.rows);
+        const cur = flat.find((f) => f.path === sel) ?? null;
 
         useEffect(() => {
           inputRef.current?.focus();
         }, []);
         useEffect(() => {
-          setHi(0);
-        }, [q, section]);
-        useEffect(() => {
-          if (cur)
-            rowRefs.current[cur.path]?.scrollIntoView({ block: "nearest" });
-        }, [cur?.path, wide]);
+          if (sel && !flat.some((f) => f.path === sel)) setSel(null);
+        }, [q]);
 
-        const copy = (f) => {
-          navigator.clipboard?.writeText(snippetOf(f.path)).catch(() => {});
-          setCopied(f.path);
-          setTimeout(() => setCopied(null), 1200);
+        // Place the flyout beside the selected row, kept inside the sheet's height.
+        const place = useCallback(() => {
+          if (!flyout || !cur) return;
+          const row = rowRefs.current[cur.path],
+            host = sheetRef.current;
+          if (!row || !host) return;
+          const top =
+            row.getBoundingClientRect().top - host.getBoundingClientRect().top;
+          const h = cardRef.current?.offsetHeight ?? 260;
+          setCardTop(Math.max(8, Math.min(top - 8, host.clientHeight - h - 8)));
+        }, [flyout, cur?.path]);
+        useLayoutEffect(place, [place]);
+
+        const move = (d) => {
+          if (!flat.length) return;
+          const i = flat.findIndex((f) => f.path === sel);
+          const next =
+            flat[
+              i < 0
+                ? d > 0
+                  ? 0
+                  : flat.length - 1
+                : Math.max(0, Math.min(flat.length - 1, i + d))
+            ];
+          setSel(next.path);
+          rowRefs.current[next.path]?.scrollIntoView({ block: "nearest" });
         };
-        const tabs = [
-          { id: "all", label: "All fields", n: matches.length },
-          ...SECTIONS.map((s) => ({
-            id: s.label,
-            label: s.label,
-            n: counts[s.label] ?? 0,
-          })),
-        ];
+        const toggle = (path) =>
+          setExpanded((s) => {
+            const n = new Set(s);
+            n.has(path) ? n.delete(path) : n.add(path);
+            return n;
+          });
 
         const onKeyDown = (e) => {
           if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation();
-            onClose();
+            if (sel) setSel(null);
+            else onClose();
           } else if (e.key === "ArrowDown") {
             e.preventDefault();
-            setHi((i) => Math.min(rows.length - 1, i + 1));
+            move(1);
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            setHi((i) => Math.max(0, i - 1));
+            move(-1);
           } else if (
             e.key === "Enter" &&
             cur &&
             e.target === inputRef.current
           ) {
             e.preventDefault();
-            onInsertPath(cur.path, !e.shiftKey);
+            insertField(cur.path);
+          } else if (
+            (e.key === "ArrowRight" || e.key === "ArrowLeft") &&
+            cur?.children &&
+            e.target === inputRef.current &&
+            !q
+          ) {
+            if ((e.key === "ArrowRight") !== expanded.has(cur.path)) {
+              e.preventDefault();
+              toggle(cur.path);
+            }
           }
         };
 
-        const detail = (f, compact) => (
-          <E_Detail
-            field={f}
-            q={q}
-            compact={compact}
-            copied={copied === f?.path}
-            onInsert={() => onInsertPath(f.path, true)}
-            onCopy={() => copy(f)}
-          />
-        );
-
         return (
-          <div className="absolute inset-0 z-40" onKeyDown={onKeyDown}>
-            <div className="absolute inset-0 bg-ink/30" onClick={onClose} />
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="Item data"
-              className="absolute left-1/2 top-[12%] flex max-h-[80%] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-line bg-raise shadow-2xl"
-              style={{ width: dialogW }}
-            >
-              {/* Search */}
-              <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
-                <L.Search size={16} className="shrink-0 text-muted" />
-                <input
-                  ref={inputRef}
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search fields and values…"
-                  role="combobox"
-                  aria-expanded="true"
-                  aria-controls="e-list"
-                  aria-activedescendant={cur ? `e-opt-${cur.path}` : undefined}
-                  className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-faint"
+          <div
+            className="flex min-h-0 flex-1 flex-col"
+            onKeyDown={onKeyDown}
+            onMouseLeave={() => flyout && setSel(null)}
+          >
+            <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+              <L.Search size={14} className="shrink-0 text-muted" />
+              <input
+                ref={inputRef}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search fields"
+                role="combobox"
+                aria-expanded="true"
+                aria-controls="e-list"
+                aria-activedescendant={cur ? `e-opt-${cur.path}` : undefined}
+                className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint"
+              />
+              {q && (
+                <IconButton
+                  icon={L.X}
+                  label="Clear search"
+                  onClick={() => {
+                    setQ("");
+                    inputRef.current?.focus();
+                  }}
                 />
-                <IconButton icon={L.X} label="Close" onClick={onClose} />
-              </div>
+              )}
+            </div>
 
-              {/* Sections: chips when narrow */}
-              {!wide && (
-                <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line px-3 py-2">
-                  {tabs.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setSection(t.id)}
-                      disabled={t.n === 0 && t.id !== section}
-                      className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 ${section === t.id ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:text-ink"}`}
-                    >
-                      {t.label}{" "}
-                      <span className="tabular-nums opacity-70">{t.n}</span>
-                    </button>
-                  ))}
+            <div
+              ref={listRef}
+              onScroll={place}
+              id="e-list"
+              role="listbox"
+              aria-label="Fields"
+              className="min-h-0 flex-1 overflow-auto px-1.5 pb-3"
+            >
+              {groups.length === 0 && (
+                <div className="px-3 py-6 text-center text-sm text-muted">
+                  No fields match “{q}”.
                 </div>
               )}
-
-              <div className="flex min-h-0 flex-1">
-                {wide && (
-                  <nav
-                    aria-label="Sections"
-                    className="w-40 shrink-0 overflow-auto border-r border-line bg-panel p-1.5"
-                  >
-                    {tabs.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setSection(t.id)}
-                        className={`flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent ${section === t.id ? "bg-accent-soft text-accent" : t.n ? "text-ink hover:bg-ground" : "text-faint"}`}
-                      >
-                        <span className="truncate">{t.label}</span>
-                        <span className="ml-2 text-xs tabular-nums text-muted">
-                          {t.n}
-                        </span>
-                      </button>
-                    ))}
-                  </nav>
-                )}
-
-                <ul
-                  id="e-list"
-                  role="listbox"
-                  aria-label="Fields"
-                  className="min-h-[12rem] min-w-0 flex-1 overflow-auto p-1.5"
-                >
-                  {rows.length === 0 && (
-                    <li className="px-3 py-6 text-center text-sm text-muted">
-                      No fields match “{q}”
-                      {section !== "all" ? ` in ${section}` : ""}.
-                      {section !== "all" && (
-                        <button
-                          type="button"
-                          className="ml-1 text-accent underline"
-                          onClick={() => setSection("all")}
-                        >
-                          Search all fields
-                        </button>
-                      )}
-                    </li>
-                  )}
-                  {rows.map((f, i) => {
+              {groups.map(({ section, rows }) => (
+                <div key={section.id} role="group" aria-label={section.label}>
+                  <div className="sticky top-0 z-[1] bg-panel px-2 pt-3 pb-1 text-xs font-medium text-muted">
+                    {section.label}
+                  </div>
+                  {rows.map((f) => {
                     const active = cur?.path === f.path;
+                    const isOpen = expanded.has(f.path) || (q && f.children);
                     return (
-                      <E_Row
-                        key={f.path}
-                        field={f}
-                        q={q}
-                        active={active}
-                        rowRef={(el) => {
-                          rowRefs.current[f.path] = el;
-                        }}
-                        onPick={() => {
-                          setHi(i);
-                          inputRef.current?.focus();
-                        }}
-                        onInsert={() => onInsertPath(f.path, true)}
-                      >
-                        {!wide && active && (
-                          <div className="mx-1 mb-1.5 rounded-b-md border border-t-0 border-line bg-panel px-3 py-3">
-                            {detail(f, true)}
+                      <div key={f.path}>
+                        <div
+                          ref={(el) => {
+                            rowRefs.current[f.path] = el;
+                          }}
+                          id={`e-opt-${f.path}`}
+                          role="option"
+                          aria-selected={active}
+                          onMouseEnter={() => flyout && setSel(f.path)}
+                          onClick={() => {
+                            setSel(flyout || !active ? f.path : null);
+                            inputRef.current?.focus({ preventScroll: true });
+                          }}
+                          onDoubleClick={() => insertField(f.path)}
+                          className={`group flex h-8 cursor-pointer items-center gap-2 rounded-md pr-1 text-sm ${f.parent ? "pl-6" : "pl-1"} ${active ? "bg-accent-soft" : "hover:bg-ground"}`}
+                        >
+                          {f.children ? (
+                            <button
+                              type="button"
+                              aria-label={isOpen ? "Collapse" : "Expand"}
+                              aria-expanded={!!isOpen}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggle(f.path);
+                              }}
+                              className="inline-flex size-4 shrink-0 items-center justify-center rounded text-muted hover:text-ink"
+                            >
+                              <L.ChevronRight
+                                size={13}
+                                className={`transition-transform motion-reduce:transition-none ${isOpen ? "rotate-90" : ""}`}
+                              />
+                            </button>
+                          ) : (
+                            <span className="size-4 shrink-0" />
+                          )}
+                          <span
+                            className={`w-[38%] shrink-0 truncate ${active ? "text-accent" : "text-ink"}`}
+                          >
+                            <E_Mark text={f.label} q={q} />
+                          </span>
+                          <span className="flex min-w-0 flex-1 text-[13px]">
+                            <E_Value field={f} q={q} />
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Insert ${f.label}`}
+                            title="Insert at the caret"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              insertField(f.path);
+                            }}
+                            className={`inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-accent hover:text-ground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent ${active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                          >
+                            <L.Plus size={14} />
+                          </button>
+                        </div>
+                        {!flyout && active && (
+                          <div className="mx-1 mb-1.5 rounded-b-md border border-t-0 border-line bg-ground px-3 py-3">
+                            <E_Detail field={f} q={q} inline />
                           </div>
                         )}
-                      </E_Row>
+                      </div>
                     );
                   })}
-                </ul>
-
-                {wide && (
-                  <aside
-                    aria-label="Field details"
-                    className="w-60 shrink-0 overflow-auto border-l border-line bg-panel"
-                  >
-                    {detail(cur, false)}
-                  </aside>
-                )}
-              </div>
-
-              {/* Key hints, like Obsidian's palette */}
-              <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 py-1.5 text-xs text-muted">
-                <span>
-                  <kbd className="font-mono">↑↓</kbd> to navigate
-                </span>
-                <span>
-                  <kbd className="font-mono">↵</kbd> to insert
-                </span>
-                <span>
-                  <kbd className="font-mono">⇧↵</kbd> insert and stay
-                </span>
-                <span>
-                  <kbd className="font-mono">esc</kbd> to close
-                </span>
-              </div>
+                </div>
+              ))}
             </div>
+
+            <div className="shrink-0 border-t border-line px-3 py-1.5 text-xs text-muted">
+              ↑↓ select · ↵ insert at the caret · esc {sel ? "clear" : "close"}
+            </div>
+
+            {flyout && cur && (
+              <div
+                ref={cardRef}
+                role="region"
+                aria-label={`${cur.label} details`}
+                className="e-fly absolute left-full z-30 ml-2 w-72 rounded-lg border border-line bg-raise p-4 shadow-xl"
+                style={{ top: cardTop }}
+              >
+                <E_Detail field={cur} q={q} />
+              </div>
+            )}
           </div>
         );
       }
 
       function VariantE() {
+        const width = useViewWidth();
+        const narrow = useNarrow();
         const [open, setOpen] = useState(false);
-        const taRef = useRef(null);
+        const [pinned, setPinned] = useState(false);
+        const [dockW, setDockW] = useState(320);
+        const sheetRef = useRef(null);
 
-        const close = useCallback(() => {
-          setOpen(false);
-          requestAnimationFrame(() => {
-            const ta = taRef.current;
-            if (!ta) return;
-            ta.focus();
-            const c = state.caret;
-            ta.setSelectionRange(c, c);
-          });
-        }, []);
+        const docked = open && pinned && !narrow;
+        const asSheet = open && !docked;
+        const autoOpen = pinned && narrow;
 
+        // Pinned + narrow → the pin becomes "auto-open": the sheet opens with the view.
         useEffect(() => {
+          if (autoOpen) setOpen(true);
+        }, [autoOpen]);
+
+        // Escape closes the floating sheet from anywhere in the view (non-modal, so the editor keeps focus).
+        useEffect(() => {
+          if (!asSheet) return;
           const onKey = (e) => {
-            if (
-              (e.metaKey || e.ctrlKey) &&
-              e.shiftKey &&
-              e.key.toLowerCase() === "i"
-            ) {
-              e.preventDefault();
-              setOpen((o) => !o);
-            }
+            if (e.key === "Escape" && !e.defaultPrevented) setOpen(false);
           };
           window.addEventListener("keydown", onKey);
           return () => window.removeEventListener("keydown", onKey);
-        }, []);
+        }, [asSheet]);
 
-        const onInsertPath = (path, andClose) => {
-          insertField(path);
-          if (andClose) close();
+        const onResize = (e) => {
+          const x0 = e.clientX,
+            w0 = dockW;
+          const mv = (ev) =>
+            setDockW(Math.max(240, Math.min(480, w0 + ev.clientX - x0)));
+          const up = () => {
+            removeEventListener("pointermove", mv);
+            removeEventListener("pointerup", up);
+          };
+          addEventListener("pointermove", mv);
+          addEventListener("pointerup", up);
         };
+
+        const room = width - (docked ? dockW : 0);
+        const sideBySide = room >= 896;
 
         const action = (
           <button
             key="item-data"
             type="button"
-            onClick={() => setOpen(true)}
-            aria-haspopup="dialog"
+            onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
-            title={`Item data (${E_MOD}+Shift+I)`}
+            aria-controls="e-sheet"
+            title="Item data"
+            aria-label="Item data"
             className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-sm focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
           >
-            <L.Braces size={16} strokeWidth={1.75} />{" "}
-            <span className="@max-[360px]:hidden">Item data</span>
+            <L.TableProperties size={16} strokeWidth={1.75} />
+            {!narrow && <span>Item data</span>}
           </button>
         );
 
+        const pinLabel = autoOpen
+          ? "Turn off auto-open"
+          : pinned
+            ? "Unpin"
+            : "Pin to side";
+
         return (
-          <Stage title="E — Item data browser (palette)">
+          <Stage title="E — Sheet with a detail flyout">
+            <style>{`
+              @keyframes e-slide { from { transform: translateX(-100%); } to { transform: none; } }
+              @keyframes e-pop { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+              .e-sheet-in { animation: e-slide 150ms ease-out; }
+              .e-fly { animation: e-pop 120ms ease-out; }
+              @media (prefers-reduced-motion: reduce) { .e-sheet-in, .e-fly { animation: none; } }
+            `}</style>
             <ViewHeader actions={action} />
-            <ItemRow onTitleClick={() => setOpen(true)} />
-            <TabBar />
-            <div className="flex min-h-0 flex-1 flex-col @min-[56rem]:flex-row">
-              <SourceEditor
-                taRef={taRef}
-                className="min-h-[10rem] flex-1 border-b border-line @min-[56rem]:border-b-0 @min-[56rem]:border-r"
-              />
-              <NotePreview className="flex-1" />
+            <div className="relative flex min-h-0 flex-1">
+              {open && (
+                <aside
+                  id="e-sheet"
+                  ref={sheetRef}
+                  aria-label="Item data"
+                  className={`flex min-h-0 flex-col border-r border-line bg-panel ${docked ? "relative z-20 shrink-0" : "e-sheet-in absolute inset-y-0 left-0 z-20 shadow-2xl"}`}
+                  style={
+                    docked ? { width: dockW } : { width: "min(320px, 88%)" }
+                  }
+                >
+                  <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line pl-3 pr-1.5">
+                    <L.TableProperties
+                      size={15}
+                      className="shrink-0 text-muted"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      Item data
+                    </span>
+                    <IconButton
+                      icon={
+                        autoOpen ? L.PanelLeftOpen : pinned ? L.PinOff : L.Pin
+                      }
+                      label={pinLabel}
+                      active={pinned}
+                      onClick={() => setPinned((p) => !p)}
+                    />
+                    <IconButton
+                      icon={L.X}
+                      label="Close"
+                      onClick={() => setOpen(false)}
+                    />
+                  </div>
+                  {autoOpen && (
+                    <div className="flex shrink-0 gap-2 border-b border-line bg-accent-soft px-3 py-2 text-xs text-ink">
+                      <L.Info
+                        size={14}
+                        className="mt-px shrink-0 text-accent"
+                      />
+                      <span>
+                        Pinned. The view is too narrow to dock this panel, so it
+                        opens as a sheet with the view. Widen the view to dock
+                        it.
+                      </span>
+                    </div>
+                  )}
+                  <E_Inspector
+                    flyout={!narrow}
+                    onClose={() => setOpen(false)}
+                    sheetRef={sheetRef}
+                  />
+                  {docked && (
+                    <div
+                      onPointerDown={onResize}
+                      title="Drag to resize"
+                      className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize hover:bg-accent/30"
+                    />
+                  )}
+                </aside>
+              )}
+
+              <div className="flex min-w-0 flex-1 flex-col">
+                <ItemRow />
+                <TabBar />
+                <div
+                  className={`flex min-h-0 flex-1 ${sideBySide ? "flex-row" : "flex-col"}`}
+                >
+                  <SourceEditor
+                    className={`min-h-[10rem] flex-1 border-line ${sideBySide ? "border-r" : "border-b"}`}
+                  />
+                  <NotePreview className="flex-1" />
+                </div>
+              </div>
             </div>
-            {open && (
-              <E_FieldBrowser onClose={close} onInsertPath={onInsertPath} />
-            )}
           </Stage>
         );
       }
@@ -2808,11 +3339,15 @@
 
       // --- Switcher ---
       const VARIANTS = [
-        { key: "A", name: "Item data beside Preview", component: VariantA },
-        { key: "B", name: "Fields at the caret", component: VariantB },
-        { key: "C", name: "Item row opens record", component: VariantC },
-        { key: "D", name: "Bottom drawer", component: VariantD },
-        { key: "E", name: "Field browser dialog", component: VariantE },
+        { key: "A", name: "Modal sheet", component: VariantA },
+        { key: "B", name: "Editor drives the sheet", component: VariantB },
+        { key: "C", name: "Edge rail", component: VariantC },
+        {
+          key: "D",
+          name: "Push or overlay, pin = keep open",
+          component: VariantD,
+        },
+        { key: "E", name: "Sheet + detail flyout", component: VariantE },
       ];
 
       // Scenario presets — buttons that jump the shared store to a telling state
