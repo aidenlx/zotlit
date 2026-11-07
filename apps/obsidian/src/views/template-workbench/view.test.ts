@@ -1506,6 +1506,7 @@ An annotation.
       variant: "main",
       citationExample: "one-item",
       panels: {
+        fields: { pinned: false, hidden: false, width: 320 },
         preview: { shown: false, width: 400, height: 40 },
       },
       preview: {
@@ -2122,6 +2123,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     variant: "main",
     citationExample: "one-item",
     panels: {
+      fields: { pinned: false, hidden: false, width: 320 },
       preview: { shown: false, width: 400, height: 40 },
     },
     preview: {
