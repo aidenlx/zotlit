@@ -1506,6 +1506,7 @@ An annotation.
       variant: "main",
       citationExample: "one-item",
       panels: {
+        fields: { pinned: false, hidden: false, width: 320 },
         preview: { shown: false, width: 400, height: 40 },
       },
       preview: {
@@ -2122,6 +2123,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     variant: "main",
     citationExample: "one-item",
     panels: {
+      fields: { pinned: false, hidden: false, width: 320 },
       preview: { shown: false, width: 400, height: 40 },
     },
     preview: {
@@ -3862,6 +3864,107 @@ describe("the Fields panel of the Template Workbench View", () => {
     expect(show.getAttribute("aria-expanded")).toBe("false");
     // The popover is view state, never saved.
     expect(JSON.stringify(view.getState())).not.toContain("fieldsPanel");
+    await act(async () => view.close());
+  });
+
+  it("pins the Fields Panel beside the editor, and restores its pin, hidden state and width with the view state", async () => {
+    const original = setup();
+    await act(async () => openView(original.view));
+    /** The docked panel's region, which its visible title names. */
+    const docked = (view: TemplateWorkbenchView) => {
+      const region = view.contentEl.querySelector<HTMLElement>(
+        '[data-panel="fields"][role="region"]',
+      );
+      const title = region?.getAttribute("aria-labelledby");
+      return region &&
+        title &&
+        view.contentEl.ownerDocument.getElementById(title)?.textContent ===
+          m.workbench_view_fields()
+        ? region
+        : null;
+    };
+    const edge = (view: TemplateWorkbenchView) =>
+      [
+        ...view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
+      ].find(
+        (element) =>
+          element.getAttribute("aria-label") === m.workbench_fields_resize(),
+      ) ?? null;
+    await act(async () =>
+      original.view.registry.set(original.view.viewSize, {
+        width: 1200,
+        height: 800,
+      }),
+    );
+    const show = actionOf(original.view, m.workbench_view_fields());
+    await act(async () => show.click());
+    const pin = [...fields(original.view)!.querySelectorAll("button")].find(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_pin(),
+    )!;
+    await act(async () => pin.click());
+    expect(fields(original.view)).toBeNull();
+    expect(docked(original.view)).not.toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("true");
+    expect(show.getAttribute("aria-controls")).toBe(docked(original.view)!.id);
+    // The edge of a column at the leading edge widens it with ArrowRight.
+    const handle = edge(original.view)!;
+    await act(async () => {
+      handle.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+    expect(handle.getAttribute("aria-valuenow")).toBe("336");
+    const pinned = original.view.getState();
+    // The action hides the docked panel and keeps its pin.
+    await act(async () => show.click());
+    expect(docked(original.view)).toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    const hidden = original.view.getState();
+    await act(async () => original.view.close());
+
+    const restored = setup();
+    await act(async () => restored.view.setState(pinned, { history: false }));
+    await act(async () => openView(restored.view));
+    expect(docked(restored.view)).not.toBeNull();
+    expect(edge(restored.view)!.getAttribute("aria-valuenow")).toBe("336");
+    expect(restored.view.getState()).toEqual(pinned);
+    await act(async () => restored.view.close());
+
+    const again = setup();
+    await act(async () => again.view.setState(hidden, { history: false }));
+    await act(async () => openView(again.view));
+    expect(docked(again.view)).toBeNull();
+    await act(async () =>
+      actionOf(again.view, m.workbench_view_fields()).click(),
+    );
+    expect(docked(again.view)).not.toBeNull();
+    expect(edge(again.view)!.getAttribute("aria-valuenow")).toBe("336");
+    await act(async () => again.view.close());
+  });
+
+  it("hands focus to the Fields action when a narrower leaf takes the docked panel that held it", async () => {
+    const { view } = setup();
+    await act(async () => openView(view));
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    const show = actionOf(view, m.workbench_view_fields());
+    await act(async () => show.click());
+    const pin = [...fields(view)!.querySelectorAll("button")].find(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_pin(),
+    )!;
+    await act(async () => pin.click());
+    const dock = view.contentEl.querySelector<HTMLElement>(
+      '[data-panel="fields"]',
+    )!;
+    expect(dock.contains(document.activeElement)).toBe(true);
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 560, height: 800 }),
+    );
+    expect(view.contentEl.querySelector('[data-panel="fields"]')).toBeNull();
+    expect(document.activeElement).toBe(show);
     await act(async () => view.close());
   });
 

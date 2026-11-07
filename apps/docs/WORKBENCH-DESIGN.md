@@ -198,11 +198,17 @@ an 8 px gap to its top, right and bottom edges, and follows the main area
 as it resizes. It has no backdrop and is not modal: the editor and the
 Preview stay usable beside it. Escape, a press outside it and its close
 button close it and return focus to "Fields", which reads as a disclosure
-of it. The editor keeps its toolbar, tabs and five
-source lines; the edit region is its one scroller, so the source grows to
-its text and a reveal scrolls the selected text into view. A pressed view
-action shows a primary border and icon over the muted fill. Document order
-is editor, Preview Panel, Fields popover. A short viewport scrolls the page
+of it. The pin in the panel header docks the panel as a card column at the
+leading edge of the main area, before the editor, 240 to 480 px wide with
+its own 12 px handle, while the editor keeps 360 px beside it and the
+Preview column; "Fields" then hides and shows it and keeps the pin. A main
+area with less room disables the pin ("Widen the view to pin") and the
+action opens the popover. The page keeps the pin and the width for its
+life. The editor keeps its toolbar, tabs and five source lines; the edit
+region is its one scroller, so the source grows to its text and a reveal
+scrolls the selected text into view. A pressed view action shows a primary
+border and icon over the muted fill. Document order is docked Fields Panel,
+editor, Preview Panel, Fields popover. A short viewport scrolls the page
 while preserving several lines of editor space.
 
 The "View" header menu holds "Show fields", "Show preview" and one size group

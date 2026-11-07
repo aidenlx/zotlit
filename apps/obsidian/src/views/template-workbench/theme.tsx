@@ -55,6 +55,8 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   "expand-all": "chevrons-up-down",
   "collapse-all": "chevrons-down-up",
   fields: "braces",
+  pin: "pin",
+  unpin: "pin-off",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =
@@ -444,23 +446,31 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       status: "zt:sr-only",
       editor: "zt:min-h-0 zt:min-w-0 zt:flex-1",
       panel:
-        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=below]:h-(--zt-panel-height)",
+        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--zt-panel-width) zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=below]:h-(--zt-panel-height)",
       edge: "zt:w-1 zt:shrink-0 zt:cursor-col-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
       split:
         "zt:h-1 zt:shrink-0 zt:cursor-row-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
     },
     // The Fields Panel in the Fields popover, which stands inset at the
     // view's right edge as tall as the view: it slides in from that edge,
-    // and a still motion setting shows it at once.
+    // and a still motion setting shows it at once. Docked, it fills its
+    // column on the view's own ground.
     fieldsPanel: {
-      panel:
-        "zt:flex zt:h-full zt:w-80 zt:max-w-full zt:flex-col zt:rounded-(--radius-m) zt:border zt:border-border zt:bg-(--background-secondary) zt:text-foreground zt:shadow-(--shadow-l) zt:transition-[translate,opacity] zt:duration-150 zt:ease-out zt:starting:translate-x-2 zt:starting:opacity-0 zt:motion-reduce:transition-none",
+      panel: cn(
+        "zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-foreground",
+        "zt:data-[state=popover]:w-80 zt:data-[state=popover]:max-w-full zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-secondary) zt:data-[state=popover]:shadow-(--shadow-l)",
+        "zt:data-[state=popover]:transition-[translate,opacity] zt:data-[state=popover]:duration-150 zt:data-[state=popover]:ease-out zt:motion-reduce:transition-none zt:data-[state=popover]:starting:translate-x-2 zt:data-[state=popover]:starting:opacity-0",
+      ),
       header:
         "zt:flex zt:shrink-0 zt:items-center zt:gap-1 zt:px-(--size-4-2) zt:pt-(--size-4-2)",
       icon: "zt:flex zt:shrink-0 zt:ps-1 zt:text-(--icon-color) zt:[&_svg]:size-(--icon-s)",
       title:
         "zt:min-w-0 zt:flex-1 zt:truncate zt:px-1 zt:text-sm zt:font-semibold",
+      // Pinned, the pin wears the accent; with no room to dock, it steps
+      // back and keeps its focus and its tooltip.
+      pin: "clickable-icon zt:shrink-0 zt:data-[state=pinned]:text-(--icon-color-active) zt:aria-disabled:cursor-not-allowed zt:aria-disabled:opacity-50",
       close: "clickable-icon zt:shrink-0",
+      note: "zt:shrink-0 zt:px-(--size-4-3) zt:pt-(--size-2-1) zt:text-xs zt:text-muted-foreground",
       body: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-auto",
     },
     tabBar: {

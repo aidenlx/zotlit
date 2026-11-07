@@ -654,8 +654,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const second = await read(saved);
     expect(second.edges.preview.now).toBe(String(preview.drawn));
     expect(second.popover).toBe(false);
-    // A state that names no Preview height leaves the leaf's own, 40%.
+    // A state that names no Preview height leaves the leaf's own, 40%; the
+    // Fields Panel was never pinned.
     expect(second.saved).toEqual({
+      fields: { pinned: false, hidden: false, width: 320 },
       preview: { ...panels.preview, height: 40 },
     });
   });
@@ -678,6 +680,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await suite.wideWindow(cleanup);
     const panels = {
+      // The Fields Panel was never pinned.
+      fields: { pinned: false, hidden: false, width: 320 },
       preview: { shown: true, width: 400, height: 40 },
     };
     /**
@@ -1237,6 +1241,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (now) => now[preview] === "464",
     );
     expect(sized.saved).toEqual({
+      // The Fields Panel was never pinned.
+      fields: { pinned: false, hidden: false, width: 320 },
       preview: { shown: true, width: 464, height: 40 },
     });
 
@@ -1259,6 +1265,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await pick(m.workbench_panel_taller());
     const chosen = {
+      // The Fields Panel was never pinned.
+      fields: { pinned: false, hidden: false, width: 320 },
       preview: { shown: true, width: 464, height: 50 },
     };
     const taller = await handles(
@@ -1543,6 +1551,244 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
+  // #1966: pinned in a wide leaf, the Fields Panel docks at the leading edge
+  // beside the editor. It stays while the reader inserts, the action hides
+  // and shows it without unpinning it, and the workspace keeps the pin, the
+  // hidden state and the width.
+  it("pins the Fields Panel in a wide leaf, inserts while docked, hides and shows it, and restores the pin and width with the workspace", async () => {
+    const path = `templates/${booksProfile.document}`;
+    const documentPath = join(e2eVaultPath, path);
+    const original = await readFile(documentPath, "utf-8");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        ({ app }) =>
+          app.workspace.detachLeavesOfType("zotlit-template-workbench"),
+        undefined,
+      );
+      await writeFile(documentPath, original);
+    });
+    await suite.wideWindow(cleanup);
+    /** Opens the Profile in a leaf that takes most of the window, from `state`. */
+    const openLeaf = (state: string) =>
+      obRun(
+        run.vaultId,
+        async ({ app }, { path, state }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          const leaf = app.workspace.createLeafInParent(
+            app.workspace.rootSplit,
+            0,
+          );
+          await leaf.setViewState({
+            type: "zotlit-template-workbench",
+            state: { ...(JSON.parse(state) as object), file: path },
+            active: true,
+          });
+          type Sized = { setDimension(share: number): void };
+          for (const child of (
+            app.workspace.rootSplit as unknown as { children: unknown[] }
+          ).children)
+            (child as Sized).setDimension(child === leaf ? 90 : 10);
+        },
+        { path, state },
+      );
+    await openLeaf(JSON.stringify({ itemIndexedKey: targetItem.key }));
+    await obRunUntil(
+      run.vaultId,
+      ({ page }, { path }) => {
+        const view = page.workbench({ path });
+        return (
+          view !== undefined &&
+          view.contentEl.clientWidth >= 1000 &&
+          view.contentEl.querySelector(".cm-content") !== null
+        );
+      },
+      { path },
+      { what: "a wide leaf with its editor" },
+    );
+
+    const walk = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label, insert, resize }) => {
+        const { until, trusted } = page;
+        const view = page.workbench({ path })!;
+        const el = view.contentEl;
+        const input = trusted(el.win);
+        const contents = (
+          el.win as Window & {
+            electronWindow: { webContents: import("electron").WebContents };
+          }
+        ).electronWindow.webContents;
+        contents.focus();
+        await until("the window takes keys", () => el.doc.hasFocus());
+        const action = view.containerEl.querySelector<HTMLElement>(
+          `.view-action[aria-label="${label}"]`,
+        )!;
+        const content = el.querySelector<CodeMirrorElement>(".cm-content")!;
+        const editor = content.cmTile!.root.view;
+        const editorPart = content.closest<HTMLElement>(
+          '[data-part="editor"]',
+        )!;
+        const editorWidth = editorPart.offsetWidth;
+        const dock = () => page.fieldsDock(view);
+        const search = (surface: HTMLElement | null) =>
+          surface?.querySelector<HTMLInputElement>('input[type="search"]') ??
+          null;
+        const pinOf = (surface: HTMLElement | null) =>
+          surface?.querySelector<HTMLElement>('[data-part="pin"]') ?? null;
+        // The reader opens the Fields popover and pins it.
+        await input.click(action);
+        await until(
+          "the Fields popover",
+          () => search(page.fieldsPopover(view)) === el.doc.activeElement,
+        );
+        const offered = pinOf(page.fieldsPopover(view))?.getAttribute(
+          "aria-label",
+        );
+        await input.click(pinOf(page.fieldsPopover(view))!);
+        await until(
+          "the docked panel with focus in its search",
+          () =>
+            page.fieldsPopover(view) === null &&
+            dock() !== null &&
+            el.doc.activeElement === search(dock()),
+        );
+        const docked = dock()!;
+        const pinned = {
+          offered,
+          label: pinOf(docked)?.getAttribute("aria-label"),
+          pressed: pinOf(docked)?.getAttribute("aria-pressed"),
+          expanded: action.getAttribute("aria-expanded"),
+          // The docked panel stands at the leading edge, before the editor,
+          // and the editor gives it the room.
+          leading:
+            docked.getBoundingClientRect().right <=
+            editorPart.getBoundingClientRect().left,
+          narrower: editorPart.offsetWidth < editorWidth,
+          inert: el.querySelector("[inert]") !== null,
+        };
+        // An insert while docked keeps the panel and hands the editor focus.
+        await input.click(content);
+        editor.dispatch({ selection: { anchor: editor.state.doc.length } });
+        search(dock())!.focus();
+        await contents.insertText("doi");
+        const doiInsert = () =>
+          dock()?.querySelector<HTMLElement>(
+            `[data-workbench-field="DOI"] [role="button"][aria-label="${insert}"]`,
+          ) ?? null;
+        await until("the search finds the DOI", () => doiInsert() !== null);
+        await input.click(doiInsert()!);
+        await until(
+          "the field at the cursor and the editor focused",
+          () =>
+            editor.state.doc.toString().endsWith("{{ zt.DOI }}") &&
+            editor.hasFocus,
+        );
+        // The reader types on, beside the docked panel.
+        await contents.insertText(" ");
+        const inserted = {
+          docked: dock() !== null,
+          typed: editor.state.doc.toString().endsWith("{{ zt.DOI }} "),
+        };
+        // Its edge widens it from the keyboard: two steps of 16 px.
+        const edge = Array.from(
+          el.querySelectorAll<HTMLElement>("[role=separator]"),
+        ).find((handle) => handle.getAttribute("aria-label") === resize)!;
+        edge.focus();
+        for (let step = 0; step < 2; step++)
+          edge.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+          );
+        await until(
+          "the wider docked panel",
+          () => edge.getAttribute("aria-valuenow") === "352",
+        );
+        const width = dock()!.offsetWidth;
+        // The action hides the docked panel and keeps its pin.
+        await input.click(action);
+        await until("the hidden panel", () => dock() === null);
+        const hidden = {
+          expanded: action.getAttribute("aria-expanded"),
+          popover: page.fieldsPopover(view) !== null,
+          saved: view.getState().panels,
+        };
+        await input.click(action);
+        await until(
+          "the panel shown again with focus in its search",
+          () => dock() !== null && el.doc.activeElement === search(dock()),
+        );
+        return JSON.stringify({
+          pinned,
+          inserted,
+          width,
+          hidden,
+          shown: action.getAttribute("aria-expanded"),
+          state: JSON.stringify(view.getState()),
+        });
+      },
+      {
+        path,
+        label: run.m.workbench_view_fields(),
+        insert: run.m.workbench_fields_put_in_note(),
+        resize: run.m.workbench_fields_resize(),
+      },
+    );
+    const result = JSON.parse(walk) as {
+      width: number;
+      state: string;
+    } & Record<string, unknown>;
+    expect(result).toMatchObject({
+      pinned: {
+        offered: run.m.workbench_fields_pin(),
+        label: run.m.workbench_fields_unpin(),
+        pressed: "true",
+        expanded: "true",
+        leading: true,
+        narrower: true,
+        inert: false,
+      },
+      inserted: { docked: true, typed: true },
+      width: 352,
+      hidden: {
+        expanded: "false",
+        popover: false,
+        saved: { fields: { pinned: true, hidden: true, width: 352 } },
+      },
+      shown: "true",
+    });
+
+    // The saved state restores the docked panel at its width in a new leaf.
+    await openLeaf(result.state);
+    const restored = await obRunUntil(
+      run.vaultId,
+      ({ page }, { path, resize }) => {
+        const view = page.workbench({ path });
+        const dock = page.fieldsDock(view);
+        const edge = Array.from(
+          view?.contentEl.querySelectorAll<HTMLElement>("[role=separator]") ??
+            [],
+        ).find((handle) => handle.getAttribute("aria-label") === resize);
+        if (!view || !dock || !edge) return null;
+        return JSON.stringify({
+          width: dock.offsetWidth,
+          now: edge.getAttribute("aria-valuenow"),
+          saved: view.getState().panels,
+        });
+      },
+      { path, resize: run.m.workbench_fields_resize() },
+      {
+        what: "the docked Fields Panel restored with its width",
+        ready: (value) => value !== null,
+      },
+    );
+    expect(JSON.parse(restored!)).toMatchObject({
+      width: 352,
+      now: "352",
+      saved: { fields: { pinned: true, hidden: false, width: 352 } },
+    });
+  });
+
   // #1957: the Preview's Show problem is the shared repair command, so the
   // problem round trip is the same in a narrow and a wide leaf.
   it("reveals the call from the Preview's Show problem in a narrow and a wide leaf, keeping the Preview in place", async () => {
@@ -1564,6 +1810,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await suite.wideWindow(cleanup);
     const call = '{% render "missing-partial" %}';
     const panels = {
+      // The Fields Panel was never pinned.
+      fields: { pinned: false, hidden: false, width: 320 },
       preview: { shown: true, width: 400, height: 40 },
     };
     /**

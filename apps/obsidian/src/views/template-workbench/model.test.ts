@@ -239,6 +239,7 @@ it("round-trips the saved and ephemeral state through Schema", () => {
           },
         },
         panels: {
+          fields: { pinned: true, hidden: true, width: 360 },
           preview: { shown: true, width: 520, height: 55 },
         },
         partial: { context: "citation", profile: "books" },
@@ -255,6 +256,7 @@ it("round-trips the saved and ephemeral state through Schema", () => {
     partialContext: "citation",
     partialProfile: "books",
     panels: {
+      fields: { pinned: true, hidden: true, width: 360 },
       preview: { shown: true, width: 520, height: 55 },
     },
     preview: {
@@ -295,6 +297,24 @@ it("round-trips the saved and ephemeral state through Schema", () => {
   ).toEqual({
     preview: { shown: true, width: 1400 },
   });
+  // The docked Fields Panel's width is held within 240 to 480 px; a bad pin
+  // fails its panel, and leaves the Preview.
+  expect(
+    readSavedWorkbench({
+      panels: {
+        fields: { pinned: true, hidden: false, width: 900 },
+        preview: { shown: false, width: 400 },
+      },
+    })?.panels,
+  ).toEqual({
+    fields: { pinned: true, hidden: false, width: 480 },
+    preview: { shown: false, width: 400 },
+  });
+  expect(
+    readSavedWorkbench({
+      panels: { fields: { pinned: "yes", hidden: false, width: 300 } },
+    })?.panels,
+  ).toEqual({});
   // A Preview height outside its shares is held to them; a bad one fails its
   // side, as a bad width does.
   expect(

@@ -91,5 +91,9 @@ export function webFieldsAction(
       </>
     );
   }
-  return { popover: FieldsPopover, popoverId };
+  return {
+    popover: FieldsPopover,
+    popoverId,
+    focus: () => anchor.current?.focus({ preventScroll: true }),
+  };
 }

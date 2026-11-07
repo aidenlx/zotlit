@@ -4,12 +4,21 @@
 // size and never saved, so resizing a view changes only the placement. The
 // Fields Panel takes no side while it is not pinned: it opens as a popover
 // at the view's right edge while the reader has it open, at every width.
-// Pinned (#1966), it docks as a column at the leading edge.
+// Pinned, it docks as a column at the leading edge where the view has room.
 
+import type { WorkbenchMessages } from "./generated/messages";
 import { patchAt } from "./patch";
 
-/** The side panels beside the editor: the Preview at the trailing edge. */
-export type PanelSide = "preview";
+/**
+ * The side panels beside the editor: the docked Fields Panel at the leading
+ * edge, the Preview at the trailing edge.
+ */
+export type PanelSide = "fields" | "preview";
+/**
+ * The side panel a view action shows and hides. The Fields Panel opens from
+ * the Fields action instead, and docks while the reader has it pinned.
+ */
+export type ShowableSide = "preview";
 export interface WorkbenchPanel {
   readonly shown: boolean;
   /** The panel's width in pixels, which the reader sets with its edge. */
@@ -22,7 +31,17 @@ export interface PreviewPanel extends WorkbenchPanel {
    */
   readonly height: number;
 }
+/** The Fields Panel's saved facts, which dock it beside the editor. */
+export interface FieldsDock {
+  /** The reader pinned the panel, which docks it where the view has room. */
+  readonly pinned: boolean;
+  /** The Fields action hid the pinned panel; the pin stays. */
+  readonly hidden: boolean;
+  /** The docked panel's width in pixels, within {@link FIELDS_WIDTH}. */
+  readonly width: number;
+}
 export interface WorkbenchPanels {
+  readonly fields: FieldsDock;
   readonly preview: PreviewPanel;
 }
 
@@ -51,8 +70,12 @@ export const PREVIEW_HEIGHT = { min: 20, initial: 40, max: 80 } as const;
  */
 export const EDITOR_MIN = { width: 360, height: 320 } as const;
 
+/** The widths the docked Fields Panel takes, in pixels. */
+export const FIELDS_WIDTH = { min: 240, initial: 320, max: 480 } as const;
+
 /** A new editor shows no panel. */
 export const INITIAL_PANELS: WorkbenchPanels = {
+  fields: { pinned: false, hidden: false, width: FIELDS_WIDTH.initial },
   preview: {
     shown: false,
     width: PANEL_WIDTH.initial,
@@ -70,23 +93,31 @@ export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
   );
 
 /**
- * `width` as saved: at least its `min`, as the view holds it to the room the
- * editor leaves.
+ * `width` as saved for `side`: within its widths, as far as {@link PANEL_SIDES}
+ * holds a saved width; the view holds a Preview to the room the editor leaves.
  */
-export const savedPanelWidth = (width: number) =>
-  Math.round(Math.max(PANEL_WIDTH.min, width));
+export const savedPanelWidth = (side: PanelSide, width: number) => {
+  const { width: widths, savedMax } = PANEL_SIDES[side];
+  return Math.round(Math.min(savedMax, Math.max(widths.min, width)));
+};
 
 /** `share` held within {@link PREVIEW_HEIGHT}. */
 export const clampPreviewHeight = (share: number) =>
   Math.round(Math.min(PREVIEW_HEIGHT.max, Math.max(PREVIEW_HEIGHT.min, share)));
 
-export const showPanel = (side: PanelSide, shown: boolean) =>
-  patchAt<WorkbenchPanels, PanelSide>(side, { shown });
+export const showPanel = (side: ShowableSide, shown: boolean) =>
+  patchAt<WorkbenchPanels, ShowableSide>(side, { shown });
 /** Sets a panel's width, held as {@link savedPanelWidth} says. */
 export const setPanelWidth = (side: PanelSide, width: number) =>
   patchAt<WorkbenchPanels, PanelSide>(side, {
-    width: savedPanelWidth(width),
+    width: savedPanelWidth(side, width),
   });
+/** Pins or unpins the Fields Panel; either way it is no longer hidden. */
+export const pinFields = (pinned: boolean) =>
+  patchAt<WorkbenchPanels, "fields">("fields", { pinned, hidden: false });
+/** Hides or shows the pinned Fields Panel, which keeps its pin. */
+export const hideFields = (hidden: boolean) =>
+  patchAt<WorkbenchPanels, "fields">("fields", { hidden });
 /** Sets the Preview's share of the view height, held within {@link PREVIEW_HEIGHT}. */
 export const setPreviewHeight = (share: number) =>
   patchAt<WorkbenchPanels, "preview">("preview", {
@@ -105,72 +136,188 @@ export interface ViewSize {
   readonly handle?: number;
 }
 
-/** Where the Fields Panel goes: a popover at the view's right edge, or nowhere. */
-export type FieldsPlacement = "popover" | "closed";
+/**
+ * Where the Fields Panel goes: docked at the view's leading edge, a popover
+ * at its right edge, or nowhere.
+ */
+export type FieldsPlacement = "docked" | "popover" | "closed";
 
 /**
  * Where each panel goes. The Preview stands beside the editor, under it, or
- * nowhere while it is hidden. The Fields Panel stands as a popover over the
- * editor while the reader has it open, at every width.
+ * nowhere while it is hidden. The Fields Panel docks while it is pinned,
+ * shown and the view has room, and otherwise stands as a popover over the
+ * editor while the reader has it open.
  */
 export interface PanelPlacement {
   readonly preview: "side" | "below" | "hidden";
   readonly fields: FieldsPlacement;
+  /** Whether the view has room to dock the Fields Panel, so its pin works. */
+  readonly canPin: boolean;
 }
 
 /**
  * Whether the Fields Panel's popover is open, and where focus goes when it
  * closed: `closed` hands it back to the Fields action, `to-editor` leaves it
- * to the editor, as after an insert or a repair command. Never saved.
+ * to the surface that takes it next: the editor after an insert or a repair
+ * command, the docked panel after a pin. Never saved.
  */
 export type FieldsPanelState = "open" | "closed" | "to-editor";
 
-/** Whether the Fields Panel the Fields action opens stands open. */
-export interface FieldsAction {
-  readonly open: boolean;
+/** Whether the Fields Panel is pinned, and whether the view has room to dock it. */
+export interface FieldsPin {
+  readonly pinned: boolean;
+  readonly canPin: boolean;
 }
 
+/** Whether the Fields Panel the Fields action opens stands open, and where. */
+export interface FieldsAction {
+  readonly open: boolean;
+  readonly placement: FieldsPlacement;
+}
+
+/** Where the Preview goes in a view of `size`; a view not measured yet draws it as a column. */
+const previewPlace = (
+  panels: WorkbenchPanels,
+  size: ViewSize | null,
+): PanelPlacement["preview"] =>
+  !panels.preview.shown
+    ? "hidden"
+    : size === null || size.width >= PREVIEW_SIDE_MIN
+      ? "side"
+      : "below";
+
 /**
- * The widest a host draws `side`'s column in a view of `size`: as wide as
- * the editor keeps {@link EDITOR_MIN} beside it. A view not measured yet
+ * The widest a host draws the Preview column in a view of `size`: as wide
+ * as the editor keeps {@link EDITOR_MIN} beside it. A view not measured yet
  * holds it to {@link PANEL_WIDTH}'s `max`, and draws a Preview saved wider
  * at its saved width.
  */
-const sideLimit = (
-  panels: WorkbenchPanels,
-  side: PanelSide,
-  size: ViewSize | null,
-) =>
+const previewLimit = (panels: WorkbenchPanels, size: ViewSize | null) =>
   size
     ? Math.max(
         PANEL_WIDTH.min,
         size.width - EDITOR_MIN.width - (size.handle ?? 0),
       )
-    : Math.max(PANEL_WIDTH.max, panels[side].width);
+    : Math.max(PANEL_WIDTH.max, panels.preview.width);
 
-/** `side`'s width as a column in a view of `size`. */
+/**
+ * The room the docked Fields Panel and the editor share in a view of `size`:
+ * the view less the Preview column and its handle, which claim the side
+ * first.
+ */
+const fieldsRoom = (panels: WorkbenchPanels, size: ViewSize) =>
+  size.width -
+  (previewPlace(panels, size) === "side"
+    ? clampPanelWidth(panels.preview.width, previewLimit(panels, size)) +
+      (size.handle ?? 0)
+    : 0);
+
+/**
+ * The widest a host draws the docked Fields Panel in a view of `size`:
+ * within {@link FIELDS_WIDTH}, and as wide as the editor keeps
+ * {@link EDITOR_MIN} beside it.
+ */
+const fieldsLimit = (panels: WorkbenchPanels, size: ViewSize | null) =>
+  size
+    ? Math.min(
+        FIELDS_WIDTH.max,
+        Math.max(
+          FIELDS_WIDTH.min,
+          fieldsRoom(panels, size) - (size.handle ?? 0) - EDITOR_MIN.width,
+        ),
+      )
+    : FIELDS_WIDTH.max;
+
+/** What sets one side column apart from the other. */
+export interface SideColumn {
+  /** The widths the column takes, in pixels. */
+  readonly width: {
+    readonly min: number;
+    readonly initial: number;
+    readonly max: number;
+  };
+  /** The widest width saved; a view holds what it draws within its own room. */
+  readonly savedMax: number;
+  /**
+   * The view's edge the column stands at: the leading edge, before the
+   * editor in document order, with its handle after it; or the trailing
+   * edge, after the editor, with its handle before it.
+   */
+  readonly edge: "leading" | "trailing";
+  /** The widest a host draws the column in a view of `size`, before the other column limits it. */
+  readonly limit: (panels: WorkbenchPanels, size: ViewSize | null) => number;
+  /** Whether `placement` puts the column beside the editor. */
+  readonly placed: (placement: PanelPlacement) => boolean;
+  /** The panel's name, as a size status reads it. */
+  readonly label: (m: WorkbenchMessages) => string;
+  /** The name of the handle and the size menu that size the column. */
+  readonly resizeLabel: (m: WorkbenchMessages) => string;
+}
+
+/** Each side column: the docked Fields Panel and the Preview. */
+export const PANEL_SIDES: Readonly<Record<PanelSide, SideColumn>> = {
+  fields: {
+    width: FIELDS_WIDTH,
+    savedMax: FIELDS_WIDTH.max,
+    edge: "leading",
+    limit: (panels, size) => fieldsLimit(panels, size),
+    placed: (placement) => placement.fields === "docked",
+    label: (m) => m.workbench_view_fields(),
+    resizeLabel: (m) => m.workbench_fields_resize(),
+  },
+  preview: {
+    width: PANEL_WIDTH,
+    savedMax: Number.POSITIVE_INFINITY,
+    edge: "trailing",
+    limit: (panels, size) => previewLimit(panels, size),
+    placed: (placement) => placement.preview === "side",
+    label: (m) => m.workbench_view_preview(),
+    resizeLabel: (m) => m.workbench_preview_resize(),
+  },
+};
+
+/** The column on the other side of the editor from `side`. */
+const otherSide = (side: PanelSide): PanelSide =>
+  (Object.keys(PANEL_SIDES) as PanelSide[]).find((other) => other !== side)!;
+
+/** The side panel a handle sizes: the split sizes the Preview under the editor. */
+export const handleSide = (handle: PanelHandle): PanelSide =>
+  handle === "split" ? "preview" : handle;
+
+/** `side`'s width as a column in a view of `size`, before the other column limits it. */
 const drawnWidth = (
   panels: WorkbenchPanels,
   side: PanelSide,
   size: ViewSize | null,
-) => clampPanelWidth(panels[side].width, sideLimit(panels, side, size));
+) => clampPanelWidth(panels[side].width, PANEL_SIDES[side].limit(panels, size));
 
 /**
  * Places the panels in a view of `size`; a view not measured yet places the
- * Preview as a column. The Preview is a column in a view
- * {@link PREVIEW_SIDE_MIN} wide or wider. The Fields Panel stands as a
- * popover while `fieldsOpen` says so: no view size opens or closes it.
+ * Preview as a column and docks a pinned Fields Panel. The Preview is a
+ * column in a view {@link PREVIEW_SIDE_MIN} wide or wider, and claims the
+ * side first. A pinned, shown Fields Panel docks while the editor keeps
+ * {@link EDITOR_MIN} beside the panel's least width; otherwise it stands as
+ * a popover while `fieldsOpen` says so. No view size opens the popover.
  */
 export function placePanels(
   panels: WorkbenchPanels,
   size: ViewSize | null,
   fieldsOpen: boolean,
 ): PanelPlacement {
-  const fields = fieldsOpen ? "popover" : "closed";
-  if (!panels.preview.shown) return { preview: "hidden", fields };
+  const canPin =
+    size === null ||
+    fieldsRoom(panels, size) - (size.handle ?? 0) >=
+      FIELDS_WIDTH.min + EDITOR_MIN.width;
+  const { pinned, hidden } = panels.fields;
   return {
-    preview: size === null || size.width >= PREVIEW_SIDE_MIN ? "side" : "below",
-    fields,
+    preview: previewPlace(panels, size),
+    fields:
+      pinned && !hidden && canPin
+        ? "docked"
+        : fieldsOpen
+          ? "popover"
+          : "closed",
+    canPin,
   };
 }
 
@@ -189,8 +336,9 @@ export const previewBelowHeight = (share: number, viewHeight: number) =>
   );
 
 /**
- * The handles that size the panels: the edge of the Preview column, and the
- * split over the Preview under the editor.
+ * The handles that size the panels: the edge of the docked Fields Panel, the
+ * edge of the Preview column, and the split over the Preview under the
+ * editor.
  */
 export type PanelHandle = PanelSide | "split";
 /** What a menu entry or a double-click does to a handle's panel. */
@@ -216,25 +364,42 @@ export function panelHandles(
   panels: WorkbenchPanels,
   size: ViewSize | null,
 ): readonly PanelHandle[] {
-  const { preview } = placePanels(panels, size, false);
-  return preview === "side"
-    ? ["preview"]
-    : preview === "below"
-      ? ["split"]
-      : [];
+  const { preview, fields } = placePanels(panels, size, false);
+  const handles: PanelHandle[] = [];
+  if (fields === "docked") handles.push("fields");
+  if (preview === "side") handles.push("preview");
+  if (preview === "below") handles.push("split");
+  return handles;
 }
 
 /**
- * The widest the column `side` may be while the editor keeps
- * {@link EDITOR_MIN} beside it, so no edge, key or menu entry moves the
- * column out of the side.
+ * The widest the column `side` may be while every column keeps its place:
+ * the editor keeps {@link EDITOR_MIN} beside the columns as they are drawn,
+ * so no edge, key or menu entry moves a column out of the side.
  */
 export function columnLimit(
   panels: WorkbenchPanels,
   side: PanelSide,
   size: ViewSize | null,
 ): number {
-  return sideLimit(panels, side, size);
+  const limit = PANEL_SIDES[side].limit(panels, size);
+  if (size === null) return limit;
+  const placement = placePanels(panels, size, false);
+  const other = otherSide(side);
+  // A column leaves the other column the room it is drawn at.
+  if (
+    !PANEL_SIDES[side].placed(placement) ||
+    !PANEL_SIDES[other].placed(placement)
+  )
+    return limit;
+  const handle = size.handle ?? 0;
+  return clampPanelWidth(
+    size.width -
+      EDITOR_MIN.width -
+      handle -
+      (drawnWidth(panels, other, size) + handle),
+    limit,
+  );
 }
 
 /**
