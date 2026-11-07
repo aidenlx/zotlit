@@ -80,13 +80,6 @@ export interface DataExplorerProps {
   copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
-  /**
-   * Draws the button that collapses or expands every section, trailing the
-   * field search. A host that offers it elsewhere, such as a view action,
-   * leaves it out. In a Fields Panel the button always stands in the panel's
-   * header.
-   */
-  sectionsToggle?: boolean;
 }
 
 /** The name each root goes by in the Explorer's header. */
@@ -126,7 +119,6 @@ export function DataExplorer({
   copy,
   onExploreAnnotation,
   canExploreAnnotation,
-  sectionsToggle = false,
 }: DataExplorerProps) {
   const body = useRef<HTMLDivElement>(null);
   const bodyId = useUniqueId();
@@ -443,8 +435,9 @@ export function DataExplorer({
             onNavigationChange(setFilter(tree, event.currentTarget.value))
           }
         />
-        {!panelRows && sectionsToggle && sectionsButton}
       </div>
+      {/* The Fields Panel's header holds the button that collapses or
+          expands every section. */}
       {panelRows?.actions && createPortal(sectionsButton, panelRows.actions)}
       <div
         ref={body}

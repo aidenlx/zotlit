@@ -107,7 +107,6 @@ export function FieldList({
       navigation={navigation}
       onNavigationChange={(next) => setPlace({ key, navigation: next })}
       trigger={FIELD_TRIGGER}
-      sectionsToggle
       copy={copyThrough(bridge)}
     />
   );
