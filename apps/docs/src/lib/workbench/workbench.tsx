@@ -7,11 +7,11 @@ import type { Layer } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import {
   ArrowLeft,
+  Braces,
   Download,
   ExternalLink,
   FilePlus2,
   FolderOpen,
-  PanelLeft,
   PanelRight,
   Save,
 } from "lucide-react";
@@ -44,8 +44,6 @@ import {
   entryDiagnostics,
   fieldSnippet,
   fieldsActionAttributes,
-  fieldsActionKey,
-  holdPickerFocus,
   pressFieldsAction,
   renderDiagnosis,
   insertionTarget,
@@ -86,12 +84,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
-import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages.js";
 
 import { annotationHeaderMark } from "./annotation-mark";
 import { ConnectionBar, ConnectionNotice } from "./connection-bar";
-import { FieldList, FieldListPicker } from "./field-list";
+import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
 import { ProfileMenuLabel, WorkbenchFrame, WorkbenchHelp } from "./frame";
 import { ProfileHandoff } from "./handoff";
@@ -650,32 +647,23 @@ function WorkbenchSession({
           </DropdownMenu>
           <ViewMenu model={model} registry={registry} />
           <HelpMenu />
-          {/* The view actions, as the Obsidian view has them: each shows or
-              hides its panel, wherever the panel goes at this width. Where
-              the Fields column does not fit, Fields opens its picker. */}
+          {/* The view actions, as the Obsidian view has them: Fields opens
+              the Fields sheet at every width, and Preview shows or hides its
+              panel, wherever the panel goes at this width. */}
           <Button
             ref={fieldsAnchor}
             variant="ghost"
             size="xs"
-            // A toggle for the column; a disclosure for the picker.
+            // A disclosure of the sheet.
             {...fieldsActionAttributes(
               fieldsAction,
-              host.fieldsAction?.popoverId ?? "",
+              host.fieldsAction?.sheetId ?? "",
             )}
-            className={cn(PRESSED_TOGGLE, EXPANDED_TOGGLE)}
+            className={EXPANDED_TOGGLE}
             onClick={() => pressFieldsAction(registry, model)}
-            onMouseDown={(event) => holdPickerFocus(fieldsAction, event)}
-            // Where it opens the picker, an arrow opens it and a printable
-            // key opens it searching for that key.
-            onKeyDown={(event) => {
-              const query = fieldsActionKey(fieldsAction, event);
-              if (query === null) return;
-              event.preventDefault();
-              registry.set(model.fieldsPicker, { query });
-            }}
           >
-            <PanelLeft aria-hidden className="rtl:-scale-x-100" />
-            {m.workbench_show_fields()}
+            <Braces aria-hidden />
+            {m.workbench_view_fields()}
           </Button>
           <Button
             variant="ghost"
@@ -992,19 +980,7 @@ function WorkbenchSession({
           panels={{
             fields: {
               label: m.workbench_view_fields(),
-              resizeLabel: m.workbench_fields_resize(),
               content: fields,
-              picker: (
-                <FieldListPicker
-                  root={root}
-                  sample={readSample}
-                  annotation={selectedAnnotation ?? undefined}
-                  citation={annotationResult?.annotationCitation}
-                  ready={ready}
-                  disabled={fieldDisabled}
-                  onInsertNode={insertNode}
-                />
-              ),
             },
             preview: {
               label: m.workbench_view_preview(),

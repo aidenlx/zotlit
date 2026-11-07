@@ -342,8 +342,13 @@ export function press(scope: HTMLElement, label: string): void {
   act(() => target.click());
 }
 
-/** Finds the field row named `label`, including its insertion controls. */
+/**
+ * Finds the field row named `label`, including its insertion controls. The
+ * rows stand in the Fields sheet, which it opens from the header's Fields
+ * action, as the reader does, while the sheet is closed.
+ */
 export function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
+  openFieldsSheet(scope);
   const target = [
     ...scope.querySelectorAll('[role="treeitem"] [data-part="key"]'),
   ]
@@ -351,6 +356,15 @@ export function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
     ?.closest("li");
   if (!target) throw new Error(`No field row reads '${label}'.`);
   return target;
+}
+
+/** Opens the Fields sheet from the header's Fields action, unless it stands open. */
+export function openFieldsSheet(scope: HTMLElement): void {
+  if (scope.querySelector('[role="dialog"][aria-modal="true"]')) return;
+  const action = [...scope.querySelectorAll("header button")].find(
+    (button) => button.textContent === m.workbench_view_fields(),
+  );
+  if (action) act(() => (action as HTMLButtonElement).click());
 }
 
 /**

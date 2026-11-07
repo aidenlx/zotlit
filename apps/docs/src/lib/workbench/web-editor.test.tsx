@@ -20,6 +20,7 @@ import {
   launch,
   press,
   fieldRow,
+  openFieldsSheet,
   chooseAnnotation,
   resultText,
   sourceView,
@@ -307,6 +308,7 @@ describe("the paper a profile is written for", () => {
 describe("the field list", () => {
   it("searches the complete Zotero tree without opening the foot first", async () => {
     await using page = await open();
+    openFieldsSheet(page.host);
     const search = page.host.querySelector<HTMLInputElement>(
       `input[aria-label="${m.workbench_fields_search_note()}"]`,
     )!;
@@ -764,6 +766,8 @@ describe("the annotation box", () => {
     expect(
       fieldRow(page.host, m.workbench_field_comment()).textContent,
     ).toContain("Compare these findings with the replication study.");
+    // The field list's sheet closes again, so the editor takes the clicks.
+    page.press(m.workbench_view_fields());
     page.press(m.workbench_tab_note());
     expect(
       page.host.querySelector('[role="region"][data-part="region"]')

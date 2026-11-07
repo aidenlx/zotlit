@@ -88,6 +88,8 @@ it("keeps independent Preview and Explorer choices when a new document opens", a
     refresh().value = "demand";
     refresh().dispatchEvent(new Event("input", { bubbles: true }));
   });
+  // The field list stands in the Fields sheet.
+  page.press(m.workbench_view_fields());
   const section = () =>
     page.host.querySelector<HTMLButtonElement>('[data-part="section-header"]')!;
   expect(section().getAttribute("aria-expanded")).toBe("true");
@@ -139,6 +141,7 @@ function fieldText(host: HTMLElement): string {
 it("shows one chosen Item on every surface, from one render", async () => {
   await using page = await open();
   await page.settle();
+  page.press(m.workbench_view_fields());
   renderInThread.mockClear();
   await page.show("NW2CPDTC");
   // The new paper's result has landed once the Preview shows it.
@@ -152,6 +155,7 @@ it("shows one chosen Item on every surface, from one render", async () => {
   // The editor's examples and the Preview read the same result.
   expect(renderInThread).toHaveBeenCalledTimes(1);
   expect(renderInThread.mock.lastCall![0].snapshot.item.key).toBe("NW2CPDTC");
+  page.press(m.workbench_view_fields());
   page.press(m.workbench_tab_name_and_folder());
   expect(
     page.host.querySelector('[data-part="filename-output"]')?.textContent,
@@ -182,6 +186,7 @@ it("interrupts the read of an Item the reader chose away from", async () => {
     ),
   });
   await page.settle();
+  page.press(m.workbench_view_fields());
   const first = reads.length;
   expect(first).toBeGreaterThan(0);
   expect(fieldText(page.host)).toBe("");
