@@ -176,6 +176,27 @@ it("keeps Item selection unchanged when its host chooser is dismissed", async ()
   expect(trigger.getAttribute("aria-description")).toBe("Choose Item");
 });
 
+it("draws the Item chooser alone where a row names the Item beside it", () => {
+  const { container } = render(
+    <WorkbenchHostProvider host={fakeHost()}>
+      <SampleSuggester
+        title="Choose Item"
+        selected="a"
+        groups={[
+          {
+            heading: "Items",
+            options: [{ value: "a", label: "Item A", description: "Author A" }],
+          },
+        ]}
+        onSelect={() => {}}
+      />
+    </WorkbenchHostProvider>,
+  );
+  const trigger = screen.getByRole("button", { name: "Choose Item" });
+  expect(container.firstElementChild).toBe(trigger);
+  expect(container.textContent).not.toContain("Item A");
+});
+
 it("keeps bundled annotation identity when the Item changes and current identity when reordered", () => {
   const bundled = SAMPLE_ANNOTATIONS[2]!;
   expect(annotationSamples(SAMPLE_ITEMS[0]!, bundled.id).example).toBe(bundled);

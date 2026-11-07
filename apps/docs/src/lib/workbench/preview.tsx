@@ -1,20 +1,16 @@
 // The web Preview: the result of the editor's one render, with the display
-// choices the Workbench model keeps.
+// choices the Workbench model keeps. The page's item row above the panels
+// names the item or annotation it renders and holds the chooser.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import type { ReactNode } from "react";
 
 import type { RenderDiagnostic } from "@zotlit/workbench/render";
 import {
-  AnnotationSampleBar,
   PreviewControls,
   ResultColumn,
   setPreview,
   useWorkbenchModel,
 } from "@zotlit/workbench/ui";
-import type {
-  AnnotationExamples,
-  ResultColumnProps,
-} from "@zotlit/workbench/ui";
+import type { ResultColumnProps } from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
 
@@ -22,16 +18,9 @@ import { WorkbenchHelp } from "./frame";
 
 export function WebPreview({
   mode,
-  sampleBar,
-  annotations: { current, example },
-  onAnnotationChoice,
   onShowProblem,
 }: {
   mode: ResultColumnProps["mode"];
-  sampleBar: ReactNode;
-  /** The chosen paper's Annotations, and the one chosen among them. */
-  annotations: AnnotationExamples;
-  onAnnotationChoice: (choice: string) => void;
   /**
    * The shared Show problem command: reads the problem in the editor's
    * Problems area and reveals its place in the editor; a null diagnostic opens
@@ -50,16 +39,6 @@ export function WebPreview({
   const annotationResult = useAtomValue(model.annotationResult);
   return (
     <>
-      <div className={mode === "annotation" ? "hidden" : "contents"}>
-        {sampleBar}
-      </div>
-      {mode === "annotation" && (
-        <AnnotationSampleBar
-          current={current}
-          example={example}
-          onSelect={onAnnotationChoice}
-        />
-      )}
       <PreviewControls
         preview={{ mode: settings.mode, live: settings.live }}
         onChange={(next) => choose(setPreview(next))}

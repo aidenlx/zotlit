@@ -7,10 +7,11 @@ This page checks the two side panels of the Template Workbench View, and the
 standalone Template Data Explorer. The Fields panel sits on the left of the
 editor and lists the template fields of the chosen Item. The Preview sits on
 the right and shows the note that the editor's own render makes for that Item.
-Both are in the same tab as the editor. When the tab is too narrow for a
-column, the Preview moves under the editor. The editor keeps at least 360
-pixels of width beside a column, and the Preview takes the right side before
-the Fields panel.
+Both are in the same tab as the editor, under one row that names the chosen
+Item. In a tab narrower than 896 pixels (56rem), the Preview moves under the
+editor. The Preview takes the right side before the Fields panel, and the
+Fields panel is a column while the editor keeps at least 360 pixels of width
+beside the columns.
 
 Use the Scope Case `all`. Open `templates/zotlit-profile.books.md` and run
 **Switch to template workbench view**. Close any other Template Workbench tab
@@ -47,17 +48,40 @@ the region closes, and the chosen Item stays chosen.
 ## One Item in every surface
 
 1. Show the Preview and the Fields.
-2. Select **Choose item** in the view header, and choose "Alpha of the
-   personal library".
-3. Select **Choose item** in the Preview panel, and choose "Beta of the
-   shared reading group".
-4. Select **Choose item** in the Fields panel, and choose "Alpha of the
-   personal library".
+2. Select **Choose item** in the row above the panels, and choose "Alpha of
+   the personal library".
+3. Select **Choose item** there again, and choose "Beta of the shared reading
+   group".
 
-Expected: after each choice, the editor header, the Properties tab
+Expected: one row above the panels names the chosen Item, across the Fields
+panel, the editor and the Preview; it holds the view's one **Choose item**.
+The panel heads and the view header hold no other **Choose item**, and no
+other line names the Item. After each choice, the row, the Properties tab
 (`fixture-title`), the Name and folder tab (`books-personalAlpha2024`, then
-`books-sharedReadingBeta2022`), the Fields panel caption and the Preview panel
-("Book profile: …") all name the same Item.
+`books-sharedReadingBeta2022`), the Fields panel (`title`) and the Preview
+panel ("Book profile: …") all show the same Item.
+
+## Help in the view header
+
+1. Select **Help** in the view header.
+2. Open the pane menu.
+
+Expected: step 1 opens a menu under the button with **Template guide**,
+**Template syntax**, **Template data reference**, then **Ask the community**;
+each opens its page in the browser. The header actions read, from the right:
+More options, **Help**, **Show preview**, **Show fields**, **Source**, Redo,
+Undo. In step 2, the pane menu holds no **Help**.
+
+## Collapse every section of the Fields
+
+1. Show the Fields.
+2. Select the button at the end of the field search row.
+3. Select it again.
+
+Expected: the button sits in one row with the field search, at its end, and
+looks like Obsidian's other icon buttons. Its tooltip reads **Collapse all
+sections**; step 2 closes every section, and the tooltip then reads **Expand
+all sections**. Step 3 opens them all again.
 
 ## The Fields follow the editor
 
@@ -110,11 +134,11 @@ editor's own root.
 
 Expected: the drag widens the Preview. With the keyboard, `ArrowLeft` widens
 it by 16 pixels and `Shift+ArrowLeft` by 64 pixels; `Home` makes it as narrow
-as it can be (240 pixels), and `End` as wide as the tab allows: 960 pixels, or
-40% of the tab when that is less, or the width that keeps the editor 360
-pixels wide beside the columns and their edges when that is less again. The Preview never
-takes more than 40% of the tab, and a screen reader reads the width the panel
-has and the largest width it can take.
+as it can be (240 pixels), and `End` as wide as the tab allows: the width that
+keeps the editor 360 pixels wide beside the columns and their edges. In a tab
+1700 pixels wide with the Fields hidden, that is 1336 pixels, past 40% of the
+tab. A screen reader reads the width the panel has and the largest width it
+can take.
 
 ## The panels survive a restart
 
@@ -126,8 +150,8 @@ Expected: the Books Profile opens with the Preview shown, at the same width.
 ## A narrow tab puts the Preview under the editor
 
 1. Show the Preview at its initial width.
-2. Make the tab narrower than 600 pixels, for example by splitting it to the
-   right and dragging the split.
+2. Make the tab narrower than 896 pixels (56rem), for example by splitting it
+   to the right and dragging the split.
 
 Expected: the Preview moves under the editor and takes 40% of the tab's
 height. A horizontal handle sits between the editor and the Preview. The
@@ -136,19 +160,19 @@ source stays in view above it. **Show preview** stays pressed.
 ## A wide tab puts the Preview back at the right
 
 1. Do the case above.
-2. Make the tab 600 pixels wide or wider.
+2. Make the tab 896 pixels wide or wider.
 
 Expected: the Preview returns to the right of the editor at the width it had
 before. The Preview does not hide or show, and **Show preview** stays pressed.
-A narrow Preview, made with `Home` on its edge, returns at a narrower tab
-width than a wide one.
+A narrow Preview, made with `Home` on its edge, returns at the same 896-pixel
+tab width as a wide one: the tab's width alone decides.
 
 ## The Preview keeps what you were doing in it
 
 1. Show the Preview in a wide tab. Scroll the rendered note down, then press
-   `Tab` until a control in the Preview has the focus, such as **Choose
-   item**.
-2. Make the tab narrower than 600 pixels, then wide again.
+   `Tab` until a control in the Preview has the focus, such as a property's
+   link.
+2. Make the tab narrower than 896 pixels, then wide again.
 
 Expected: the Preview moves under the editor and back to the right, and the
 same control keeps the focus each time. The rendered note keeps its scroll
@@ -252,8 +276,8 @@ still move the active row.
 
 ## Narrowing keeps the Fields picker closed
 
-1. Show the Fields in a wide tab. Select **Choose item** in the Fields
-   column, then press `Escape`, so the focus is in the column.
+1. Show the Fields in a wide tab. Click in the field search of the Fields
+   column, so the focus is in the column.
 2. Make the tab narrower than 600 pixels.
 3. Make it wide again.
 
@@ -353,7 +377,7 @@ and **Make shorter** makes it shorter at once.
 
 1. Show the Preview, and widen it with its edge.
 2. Double-click the edge.
-3. Make the tab narrower than 600 pixels, and drag the handle above the
+3. Make the tab narrower than 896 pixels, and drag the handle above the
    Preview up.
 4. Double-click the handle.
 

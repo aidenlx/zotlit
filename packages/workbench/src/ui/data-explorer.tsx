@@ -13,7 +13,7 @@ import { explorerSections } from "./explorer-sections";
 import type { ExplorerReader } from "./explorer-sections";
 import { DisplayTree } from "./explorer-tree";
 import type { DisplaySection } from "./explorer-tree";
-import { useWorkbenchHost } from "./host";
+import { useTooltip, useWorkbenchHost } from "./host";
 import type {
   WorkbenchClipboardError,
   WorkbenchMenuItem,
@@ -24,7 +24,7 @@ import type {
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchMessageLabel } from "./messages";
 import type { TemplateRoot } from "./model";
-import { useParts } from "./theme";
+import { useIcon, useParts } from "./theme";
 
 import {
   buildDisplayTree,
@@ -69,6 +69,12 @@ export interface DataExplorerProps {
   copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
+  /**
+   * Draws the button that collapses or expands every section, trailing the
+   * field search. A host that offers it elsewhere, such as a view action,
+   * leaves it out.
+   */
+  sectionsToggle?: boolean;
 }
 
 /** The name each root goes by in the Explorer's header. */
@@ -108,6 +114,7 @@ export function DataExplorer({
   copy,
   onExploreAnnotation,
   canExploreAnnotation,
+  sectionsToggle = false,
 }: DataExplorerProps) {
   const body = useRef<HTMLDivElement>(null);
   const field = useRef<string | null>(null);
@@ -176,6 +183,17 @@ export function DataExplorer({
       })),
     [visible, reader, filtering, collapsedSections],
   );
+  // Every section shown closed reads as collapsed; the button opens them all
+  // then, and closes them all otherwise. A filter holds its sections open.
+  const sectionIds = sections.map((section) => section.id);
+  const allCollapsed =
+    sectionIds.length > 0 &&
+    sectionIds.every((id) => collapsedSections.has(id));
+  const sectionsLabel = allCollapsed
+    ? m.workbench_explorer_expand_all()
+    : m.workbench_explorer_collapse_all();
+  const sectionsTooltip = useTooltip(sectionsLabel);
+  const icon = useIcon();
   const toggleSection = (id: string) => {
     const next = new Set(collapsedSections);
     if (next.has(id)) next.delete(id);
@@ -258,16 +276,34 @@ export function DataExplorer({
         <h2 {...part("heading")}>{m.workbench_fields_heading()}</h2>
         <span {...part("root-label")}>{m[ROOT_LABELS[root]]()}</span>
       </div>
-      <input
-        type="search"
-        value={tree.filterQuery}
-        aria-label={search}
-        placeholder={search}
-        {...part("search")}
-        onChange={(event) =>
-          onNavigationChange(setFilter(tree, event.currentTarget.value))
-        }
-      />
+      <div {...part("search-row")}>
+        <input
+          type="search"
+          value={tree.filterQuery}
+          aria-label={search}
+          placeholder={search}
+          {...part("search")}
+          onChange={(event) =>
+            onNavigationChange(setFilter(tree, event.currentTarget.value))
+          }
+        />
+        {sectionsToggle && (
+          <button
+            type="button"
+            aria-label={sectionsLabel}
+            disabled={filtering || sectionIds.length === 0}
+            onClick={() =>
+              onCollapsedSectionsChange(
+                allCollapsed ? new Set() : new Set(sectionIds),
+              )
+            }
+            {...sectionsTooltip}
+            {...part("sections-toggle")}
+          >
+            {icon(allCollapsed ? "expand-all" : "collapse-all")}
+          </button>
+        )}
+      </div>
       <div
         ref={body}
         {...part("body")}

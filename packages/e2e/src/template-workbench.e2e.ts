@@ -167,8 +167,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   // #1945, #1943: Fields and Preview are panels of the one view, so the Item
   // the editor's tabs read, the Item the Fields panel lists and the Item the
-  // Preview renders are one choice, whichever of the three choosers made it.
-  it("names one Item in every surface after a choice from each of the three choosers", async () => {
+  // Preview renders are one choice. #1952: the view names that Item once, in
+  // the item row above the panels, beside its one chooser.
+  it("names one Item in every surface after each choice from the item row", async () => {
     const path = `templates/${booksProfile.document}`;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(() =>
@@ -210,32 +211,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     );
 
-    /** Opens a chooser from `from`, searches `query`, and picks `title`. */
-    const choose = async (
-      from: "editor" | "preview" | "fields",
-      title: string,
-    ) => {
+    // The item row holds the view's one Choose item; no panel and no view
+    // action repeats it.
+    const choosers = await obRunUntil(
+      run.vaultId,
+      ({ page }, { path, label }) => {
+        const view = page.workbench({ path });
+        const named = (root: Element | null | undefined) =>
+          Array.from(root?.querySelectorAll("button") ?? []).filter(
+            (button) => button.textContent.trim() === label,
+          ).length;
+        if (!page.previewPanel(view) || !page.fieldsPanel(view)) return null;
+        return {
+          row: named(page.itemRow(view)),
+          view: named(view?.contentEl),
+          actions: view?.containerEl.querySelectorAll(
+            `.view-actions .view-action[aria-label="${label}"]`,
+          ).length,
+        };
+      },
+      { path, label: run.m.workbench_choose_item() },
+      { what: "both panels", ready: (found) => found !== null },
+    );
+    expect(choosers).toEqual({ row: 1, view: 1, actions: 0 });
+
+    /** Opens Choose item from the item row, searches `title`, and picks it. */
+    const choose = async (title: string) => {
       await obRunUntil(
         run.vaultId,
-        ({ page }, { path, from, label }) => {
-          const view = page.workbench({ path });
-          const trigger =
-            from === "editor"
-              ? view?.containerEl.querySelector<HTMLElement>(
-                  `.view-actions .view-action[aria-label="${label}"]`,
-                )
-              : Array.from(
-                  (from === "preview"
-                    ? page.previewPanel(view)
-                    : page.fieldsPanel(view)
-                  )?.querySelectorAll("button") ?? [],
-                ).find((button) => button.textContent.trim() === label);
+        ({ page }, { path, label }) => {
+          const trigger = Array.from(
+            page
+              .itemRow(page.workbench({ path }))
+              ?.querySelectorAll("button") ?? [],
+          ).find((button) => button.textContent.trim() === label);
           if (!trigger) return false;
-          page.press(trigger, `Choose item in the ${from}`);
+          page.press(trigger, "Choose item in the item row");
           return true;
         },
-        { path, from, label: run.m.workbench_choose_item() },
-        { what: `the ${from}'s Choose item trigger` },
+        { path, label: run.m.workbench_choose_item() },
+        { what: "the item row's Choose item" },
       );
       await obRunUntil(
         run.vaultId,
@@ -271,13 +286,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         obRunUntil(
           run.vaultId,
-          ({ page }, { path, where, text, preview, fields }) => {
+          ({ page }, { path, where, text, preview, fields, row }) => {
             const view = page.workbench({ path });
             if (!view) return false;
             if (where === preview)
               return !!page.previewPanel(view)?.innerText.includes(text);
             if (where === fields)
               return !!page.fieldsPanel(view)?.innerText.includes(text);
+            if (where === row)
+              return !!page.itemRow(view)?.innerText.includes(text);
             const tab = Array.from(
               view.contentEl.querySelectorAll<HTMLElement>("[role=tab]"),
             ).find((tab) => tab.textContent.trim() === where);
@@ -290,17 +307,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .querySelector<HTMLElement>("[role=tabpanel]:not([hidden])")
               ?.innerText.includes(text);
           },
-          { path, where, text, preview: "Preview", fields: "Fields" },
+          {
+            path,
+            where,
+            text,
+            preview: "Preview",
+            fields: "Fields",
+            row: "Item row",
+          },
           { what: `${where} to name "${text}"` },
         ),
       );
 
-    for (const [from, item] of [
-      ["editor", targetItem],
-      ["preview", booksProfileTargetItem],
-      ["fields", targetItem],
-    ] as const) {
-      await choose(from, item.title);
+    for (const item of [targetItem, booksProfileTargetItem, targetItem]) {
+      await choose(item.title);
+      await names("Item row", item.title);
       await names("Preview", `Book profile: ${item.title}`);
       await names("Fields", item.title);
       await names(run.m.workbench_tab_properties(), item.title);
@@ -344,17 +365,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       ({ page }, { path, label }) => {
-        const trigger = page
-          .workbench({ path })
-          ?.containerEl.querySelector<HTMLElement>(
-            `.view-actions .view-action[aria-label="${label}"]`,
-          );
+        const trigger = Array.from(
+          page.itemRow(page.workbench({ path }))?.querySelectorAll("button") ??
+            [],
+        ).find((button) => button.textContent.trim() === label);
         if (!trigger || trigger.doc === document) return false;
         page.press(trigger, "Choose item in the pop-out");
         return true;
       },
       { path, label: run.m.workbench_choose_item() },
-      { what: "the pop-out workbench's Choose item action" },
+      { what: "the pop-out workbench's Choose item" },
     );
     const opened = await obRunUntil(
       run.vaultId,
@@ -491,8 +511,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   // #1945: the panels are part of the view's saved state, and each edge
-  // reports the width the view draws: a panel takes at most 40% of the view,
-  // and never more than 960 px.
+  // reports the width the view draws: the Fields column takes at most 40% of
+  // the view and never more than 960 px; the Preview column grows until the
+  // editor keeps its 360 px.
   it("restores the Fields and Preview panels and their widths with the workspace", async () => {
     const path = `templates/${booksProfile.document}`;
     await using cleanup = new AsyncDisposableStack();
@@ -588,19 +609,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         saved: unknown;
       };
     };
-    /** The widest the view draws a panel beside the editor. */
+    /** The widest the view draws the Fields column. */
     const limit = (container: number) =>
       Math.min(960, Math.floor(container * 0.4));
     const panels = {
       fields: { shown: true, width: 260 },
-      // Wider than 40% of any window the run opens.
-      preview: { shown: true, width: 960 },
+      // Wider than 40% of the leaf: the Preview column has no share cap.
+      preview: { shown: true, width: 700 },
     };
     const first = await read(JSON.stringify({ panels }));
     expect(first.edges.fields.now).toBe("260");
     const { preview } = first.edges;
-    expect(preview.max).toBe(String(limit(preview.container)));
-    expect(preview.drawn).toBe(limit(preview.container));
+    expect(preview.drawn).toBe(700);
+    expect(preview.drawn).toBeGreaterThan(preview.container * 0.4);
+    // The Preview grows until the editor keeps only its 360 px beside both
+    // columns and their 4 px handles (#1952).
+    expect(preview.max).toBe(String(preview.container - 360 - 4 - (260 + 4)));
     // The Fields column grows only as far as keeps it a column beside the
     // Preview and an editor of 360 px, past both columns' 4 px handles
     // (#1956, #1952).
@@ -704,12 +728,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 "[role=separator]",
               ) ?? [],
             ).find((element) => element.getAttribute("aria-label") === label);
-            if (!view || !panel || !editor || !handle) return null;
+            // The box under the item row, which the panels and the editor share.
+            const shared = view?.contentEl.querySelector<HTMLElement>(
+              "[data-workbench-panels]",
+            );
+            if (!view || !panel || !editor || !handle || !shared) return null;
             const box = panel.getBoundingClientRect();
             const source = editor.getBoundingClientRect();
             return JSON.stringify({
-              width: view.contentEl.clientWidth,
-              height: view.contentEl.clientHeight,
+              width: shared.clientWidth,
+              height: shared.clientHeight,
               orientation: handle.getAttribute("aria-orientation"),
               share: handle.getAttribute("aria-valuenow"),
               preview:
@@ -731,14 +759,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ))!,
       ) as Layout;
 
-    // A narrow leaf: 600 px less a 240 px Preview leaves the editor under
-    // 360 px, so the Preview goes under the editor at 40% of the height.
+    // A leaf narrower than 56rem (896 px) puts the Preview under the editor,
+    // at 40% of the height.
     await open(JSON.stringify({ panels }), 30);
     const narrow = await layout(
       "the Preview under the editor of a narrow leaf",
       (layout) => layout.preview === "below",
     );
-    expect(narrow.width).toBeLessThan(600);
+    expect(narrow.width).toBeLessThan(896);
     expect(narrow.orientation).toBe("horizontal");
     expect(narrow.share).toBe("40");
     expect(narrow.previewHeight).toBe(Math.round(narrow.height * 0.4));
@@ -799,6 +827,220 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(restored.share).toBe("50");
     expect(restored.previewHeight).toBe(Math.round(restored.height * 0.5));
     expect(restored.saved).toEqual(chosen);
+  });
+
+  // #1952: 56rem (896 px) of view width is where the Preview moves between
+  // the editor's side and under it, whatever room the editor would keep.
+  it("puts the Preview under the editor below a 56rem view and beside it from 56rem", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          app.workspace.detachLeavesOfType("empty");
+        },
+        undefined,
+      ),
+    );
+    await suite.wideWindow(cleanup);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        app.workspace.detachLeavesOfType("empty");
+        const leaf = app.workspace.createLeafInParent(
+          app.workspace.rootSplit,
+          0,
+        );
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: {
+            file: path,
+            // A narrow Preview: the editor keeps its 360 px beside it either side
+            // of the boundary, so the width alone moves it.
+            panels: {
+              fields: { shown: false, width: 400 },
+              preview: { shown: true, width: 240, height: 40 },
+            },
+          },
+          active: true,
+        });
+        const other = app.workspace.createLeafBySplit(leaf, "vertical");
+        await other.setViewState({ type: "empty" });
+      },
+      { path },
+    );
+    interface Placed {
+      readonly width: number;
+      readonly preview: "below" | "right" | "other";
+    }
+    /**
+     * Gives the editor's tab group the share of the window that makes the
+     * panels' box about `target` px wide, and reads where the Preview stands
+     * once the box has that width.
+     */
+    const placeAt = async (target: number) => {
+      const resize = (share: number) =>
+        obRun(
+          run.vaultId,
+          ({ app, page }, { path, share }) => {
+            const leaf = page.workbench({ path })!.leaf;
+            const other = app.workspace.getLeavesOfType("empty")[0]!;
+            // The share of the root split, on whichever item sits in it.
+            type Sized = { setDimension(share: number): void; parent: unknown };
+            const item = (sized: Sized) =>
+              sized.parent === app.workspace.rootSplit
+                ? sized
+                : (sized.parent as Sized);
+            item(leaf as unknown as Sized).setDimension(share);
+            item(other as unknown as Sized).setDimension(100 - share);
+          },
+          { path, share },
+        );
+      const read = (what: string, ready: (placed: Placed) => boolean) =>
+        obRunUntil(
+          run.vaultId,
+          ({ page }, { path }) => {
+            const view = page.workbench({ path });
+            const shared = view?.contentEl.querySelector<HTMLElement>(
+              "[data-workbench-panels]",
+            );
+            const panel = page.previewPanel(view);
+            const editor = view?.contentEl.querySelector<HTMLElement>(
+              '[data-part="editor"]',
+            );
+            if (!shared || !panel || !editor) return null;
+            const box = panel.getBoundingClientRect();
+            const source = editor.getBoundingClientRect();
+            return {
+              width: shared.clientWidth,
+              preview:
+                box.top >= source.bottom
+                  ? "below"
+                  : box.left >= source.right
+                    ? "right"
+                    : "other",
+            } satisfies Placed;
+          },
+          { path },
+          {
+            what,
+            ready: (placed) => placed !== null && ready(placed),
+          },
+        );
+      const total = await obRun(
+        run.vaultId,
+        ({ app }) =>
+          (app.workspace.rootSplit as unknown as { containerEl: HTMLElement })
+            .containerEl.clientWidth,
+        undefined,
+      );
+      // One correction for the dividers the split draws between the groups.
+      const first = (target / total) * 100;
+      await resize(first);
+      const measured = await read(
+        `the panels' box near ${target} px`,
+        ({ width }) => Math.abs(width - target) < 80,
+      );
+      await resize((first * target) / measured!.width);
+      // The placement follows the box's own width.
+      return (await read(
+        `the Preview placed for a box near ${target} px`,
+        ({ width, preview }) =>
+          Math.abs(width - target) < 24 &&
+          preview === (width >= 896 ? "right" : "below"),
+      ))!;
+    };
+    const narrow = await placeAt(870);
+    expect(narrow.width).toBeLessThan(896);
+    expect(narrow.preview).toBe("below");
+    const wide = await placeAt(925);
+    expect(wide.width).toBeGreaterThanOrEqual(896);
+    expect(wide.preview).toBe("right");
+  });
+
+  // #1952: Help is a view action of its own, and opens the docs menu at the
+  // button; the pane menu holds no Help.
+  it("opens the docs from the Help view action", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) =>
+          app.workspace.detachLeavesOfType("zotlit-template-workbench"),
+        undefined,
+      ),
+    );
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: { file: path },
+          active: true,
+        });
+        await app.workspace.revealLeaf(leaf);
+      },
+      { path },
+    );
+    // The menu closes whatever the case finds, before the leaf goes.
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        () => {
+          for (const menu of document.body.querySelectorAll(".menu"))
+            menu.remove();
+        },
+        undefined,
+      ),
+    );
+    await obRunUntil(
+      run.vaultId,
+      ({ page }, { path, label }) => {
+        const trigger = page
+          .workbench({ path })
+          ?.containerEl.querySelector<HTMLElement>(
+            `.view-actions .view-action[aria-label="${label}"]`,
+          );
+        if (!trigger) return false;
+        page.press(trigger, "Help");
+        return true;
+      },
+      { path, label: run.m.workbench_help() },
+      { what: "the Help view action" },
+    );
+    const menu = await obRunUntil(
+      run.vaultId,
+      ({ page }, { path }) => {
+        const trigger = page
+          .workbench({ path })
+          ?.containerEl.querySelector<HTMLElement>(
+            ".view-action.has-active-menu",
+          );
+        const titles = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            "body > .menu .menu-item-title",
+          ),
+          (title) => title.textContent,
+        );
+        return trigger && titles.length > 0 ? titles : null;
+      },
+      { path },
+      {
+        what: "the Help menu at its action",
+        ready: (titles) => titles !== null,
+      },
+    );
+    expect(menu).toEqual([
+      run.m.workbench_docs_guide(),
+      run.m.workbench_docs_note(),
+      run.m.workbench_docs_data(),
+      run.m.workbench_problems_community(),
+    ]);
   });
 
   // #1956: a reader who cannot drag sizes every handle from the pane menu

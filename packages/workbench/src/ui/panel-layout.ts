@@ -24,8 +24,19 @@ export interface WorkbenchPanels {
   readonly preview: PreviewPanel;
 }
 
-/** The widths a panel can take, in pixels. */
+/**
+ * The widths a panel can take, in pixels. `max` holds the Fields column; the
+ * Preview column grows as far as the editor keeps {@link EDITOR_MIN} beside
+ * it.
+ */
 export const PANEL_WIDTH = { min: 240, initial: 400, max: 960 } as const;
+
+/**
+ * The narrowest view, in pixels, that shows the Preview as a column: 56rem
+ * at the 16 px root font size both hosts draw with, Tailwind's `@4xl`
+ * container width. A narrower view puts the Preview under the editor.
+ */
+export const PREVIEW_SIDE_MIN = 896;
 
 /** The shares of the view height the Preview takes under the editor, in percent. */
 export const PREVIEW_HEIGHT = { min: 20, initial: 40, max: 80 } as const;
@@ -49,10 +60,10 @@ export const INITIAL_PANELS: WorkbenchPanels = {
 };
 
 /**
- * The share of the panels' container one panel takes at most, so the source
- * stays in view. The panels draw each column at the width this share leaves
- * it, through the host's width custom property, so the hosts' CSS holds no
- * share of its own.
+ * The share of the panels' container the Fields column takes at most, so the
+ * source stays in view. The panels draw each column at the width its limit
+ * leaves it, through the host's width custom property, so the hosts' CSS
+ * holds no share of its own.
  */
 const PANEL_SHARE = 0.4;
 
@@ -66,11 +77,21 @@ export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
   );
 
 /**
- * The widest a host draws a panel in a container `container` pixels wide:
- * {@link PANEL_SHARE} of it, and never past {@link PANEL_WIDTH}.
+ * The widest a host draws the Fields column in a container `container`
+ * pixels wide: {@link PANEL_SHARE} of it, and never past {@link PANEL_WIDTH}.
  */
 export const panelLimit = (container: number) =>
   clampPanelWidth(container * PANEL_SHARE);
+
+/**
+ * `width` as saved for `side`: the Fields Panel within {@link PANEL_WIDTH},
+ * the Preview at least its `min`, as the view holds it to the room the
+ * editor leaves.
+ */
+export const savedPanelWidth = (side: PanelSide, width: number) =>
+  side === "fields"
+    ? clampPanelWidth(width)
+    : Math.round(Math.max(PANEL_WIDTH.min, width));
 
 /** `share` held within {@link PREVIEW_HEIGHT}. */
 export const clampPreviewHeight = (share: number) =>
@@ -78,9 +99,11 @@ export const clampPreviewHeight = (share: number) =>
 
 export const showPanel = (side: PanelSide, shown: boolean) =>
   patchAt<WorkbenchPanels, PanelSide>(side, { shown });
-/** Sets a panel's width, held within {@link PANEL_WIDTH}. */
+/** Sets a panel's width, held as {@link savedPanelWidth} says. */
 export const setPanelWidth = (side: PanelSide, width: number) =>
-  patchAt<WorkbenchPanels, PanelSide>(side, { width: clampPanelWidth(width) });
+  patchAt<WorkbenchPanels, PanelSide>(side, {
+    width: savedPanelWidth(side, width),
+  });
 /** Sets the Preview's share of the view height, held within {@link PREVIEW_HEIGHT}. */
 export const setPreviewHeight = (share: number) =>
   patchAt<WorkbenchPanels, "preview">("preview", {
@@ -123,10 +146,41 @@ export interface FieldsAction {
 }
 
 /**
+ * The widest a host draws `side`'s column in a view of `size`: the Fields
+ * column within {@link panelLimit}, the Preview column as wide as the editor
+ * keeps {@link EDITOR_MIN} beside it. A view not measured yet holds both to
+ * {@link PANEL_WIDTH}'s `max`, and draws a Preview saved wider at its saved
+ * width.
+ */
+const sideLimit = (
+  panels: WorkbenchPanels,
+  side: PanelSide,
+  size: ViewSize | null,
+) =>
+  side === "fields"
+    ? size
+      ? panelLimit(size.width)
+      : PANEL_WIDTH.max
+    : size
+      ? Math.max(
+          PANEL_WIDTH.min,
+          size.width - EDITOR_MIN.width - (size.handle ?? 0),
+        )
+      : Math.max(PANEL_WIDTH.max, panels.preview.width);
+
+/** `side`'s width as a column in a view of `size`, before the other column limits it. */
+const drawnWidth = (
+  panels: WorkbenchPanels,
+  side: PanelSide,
+  size: ViewSize | null,
+) => clampPanelWidth(panels[side].width, sideLimit(panels, side, size));
+
+/**
  * Places the panels in a view of `size`; a view not measured yet places them
- * as columns. A panel is a column only while the editor keeps
- * {@link EDITOR_MIN} beside it, and the Preview claims the side before the
- * Fields Panel.
+ * as columns. The Preview is a column in a view {@link PREVIEW_SIDE_MIN}
+ * wide or wider, and claims the side before the Fields Panel; the Fields
+ * Panel is a column only while the editor keeps {@link EDITOR_MIN} beside
+ * the columns.
  */
 export function placePanels(
   panels: WorkbenchPanels,
@@ -137,23 +191,20 @@ export function placePanels(
       preview: panels.preview.shown ? "side" : "hidden",
       fields: "column",
     };
-  const drawn = (panel: WorkbenchPanel) =>
-    clampPanelWidth(panel.width, panelLimit(size.width));
   // Each column takes its handle's width with its own.
-  const taken = (panel: WorkbenchPanel) => drawn(panel) + (size.handle ?? 0);
+  const taken = (side: PanelSide) =>
+    drawnWidth(panels, side, size) + (size.handle ?? 0);
   let room = size.width;
   let preview: PanelPlacement["preview"] = "hidden";
   if (panels.preview.shown) {
-    const width = taken(panels.preview);
-    if (room - width >= EDITOR_MIN.width) {
+    if (size.width >= PREVIEW_SIDE_MIN) {
       preview = "side";
-      room -= width;
+      room -= taken("preview");
     } else preview = "below";
   }
   return {
     preview,
-    fields:
-      room - taken(panels.fields) >= EDITOR_MIN.width ? "column" : "popover",
+    fields: room - taken("fields") >= EDITOR_MIN.width ? "column" : "popover",
   };
 }
 
@@ -217,10 +268,6 @@ export function panelHandles(
   return handles;
 }
 
-/** The widest a host draws a panel in a view of `size`. */
-const drawnLimit = (size: ViewSize | null) =>
-  size ? panelLimit(size.width) : PANEL_WIDTH.max;
-
 /**
  * The widest the column `side` may be while every column keeps its place:
  * the editor keeps {@link EDITOR_MIN} beside the columns as they are drawn,
@@ -231,20 +278,19 @@ export function columnLimit(
   side: PanelSide,
   size: ViewSize | null,
 ): number {
-  const limit = drawnLimit(size);
+  const limit = sideLimit(panels, side, size);
   if (size === null) return limit;
   const placement = placePanels(panels, size);
   // A panel the placement takes out of the side has no column to keep.
   if (!isColumn(panels, placement, side)) return limit;
   const otherSide = side === "fields" ? "preview" : "fields";
-  const other = panels[otherSide];
   const otherIsColumn = isColumn(panels, placement, otherSide);
   const handle = size.handle ?? 0;
   const room =
     size.width -
     EDITOR_MIN.width -
     handle -
-    (otherIsColumn ? clampPanelWidth(other.width, limit) + handle : 0);
+    (otherIsColumn ? drawnWidth(panels, otherSide, size) + handle : 0);
   return clampPanelWidth(room, limit);
 }
 
@@ -257,8 +303,7 @@ function handleSize(
   handle: PanelHandle,
   size: ViewSize | null,
 ) {
-  if (handle !== "split")
-    return clampPanelWidth(panels[handle].width, drawnLimit(size));
+  if (handle !== "split") return drawnWidth(panels, handle, size);
   return size
     ? previewBelowHeight(panels.preview.height, size.height)
     : panels.preview.height;

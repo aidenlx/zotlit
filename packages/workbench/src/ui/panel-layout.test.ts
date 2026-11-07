@@ -20,9 +20,11 @@ const shown = (fields: boolean, preview: boolean): WorkbenchPanels => ({
 const at = (width: number) => ({ width, height: 800 });
 
 describe("panel placement", () => {
-  // The worked examples, at the initial 400 px widths. A panel is drawn at
-  // most 2/5 of the view and never under 240 px: at 760 px a panel is 304 px,
-  // at 960 px 384 px, and at 1200 px its saved 400 px.
+  // The worked examples, at the initial 400 px widths. The Preview is a
+  // column from 896 px (56rem) and goes under the editor in a narrower view.
+  // The Fields column is drawn at most 2/5 of the view and never under
+  // 240 px: at 760 px it is 304 px, at 960 px 384 px, and at 1200 px its
+  // saved 400 px.
   it.each<{
     width: number;
     both: PanelPlacement;
@@ -43,6 +45,12 @@ describe("panel placement", () => {
     },
     {
       width: 760,
+      both: { preview: "below", fields: "column" },
+      preview: { preview: "below", fields: "column" },
+      fields: { preview: "hidden", fields: "column" },
+    },
+    {
+      width: 896,
       both: { preview: "side", fields: "popover" },
       preview: { preview: "side", fields: "popover" },
       fields: { preview: "hidden", fields: "column" },
@@ -81,10 +89,26 @@ describe("panel placement", () => {
     });
   });
 
-  it("puts the Preview at the side once the editor keeps 360 px beside it", () => {
-    // 600 px less the 240 px Preview leaves the editor exactly 360 px.
-    expect(placePanels(shown(false, true), at(600)).preview).toBe("side");
-    expect(placePanels(shown(false, true), at(599)).preview).toBe("below");
+  it("puts the Preview at the side from a 56rem (896 px) view", () => {
+    expect(placePanels(shown(false, true), at(896)).preview).toBe("side");
+    expect(placePanels(shown(false, true), at(895)).preview).toBe("below");
+    // A narrow Preview goes under the editor too, though the editor would
+    // keep its 360 px beside it.
+    const narrow: WorkbenchPanels = {
+      ...shown(false, true),
+      preview: { ...INITIAL_PANELS.preview, shown: true, width: 240 },
+    };
+    expect(placePanels(narrow, at(895)).preview).toBe("below");
+  });
+
+  it("draws a wide saved Preview as wide as the editor's 360 px allows", () => {
+    const wide: WorkbenchPanels = {
+      ...shown(false, true),
+      preview: { ...INITIAL_PANELS.preview, shown: true, width: 1400 },
+    };
+    // 896 - 360 leaves the Preview 536 px; it stays a column.
+    expect(placePanels(wide, at(896)).preview).toBe("side");
+    expect(columnLimit(wide, "preview", at(896))).toBe(536);
   });
 
   it("gives three columns sooner to a reader who narrows the panels", () => {
@@ -97,11 +121,13 @@ describe("panel placement", () => {
       preview: "side",
       fields: "column",
     });
-    // 760 - 240 - 240 leaves 280 px, under the editor's 360.
-    expect(placePanels(narrow, at(760))).toEqual({
+    // 896 - 240 - 240 leaves 416 px; at their initial 400 px the Fields
+    // Panel would leave the editor under 360.
+    expect(placePanels(narrow, at(896))).toEqual({
       preview: "side",
-      fields: "popover",
+      fields: "column",
     });
+    expect(placePanels(shown(true, true), at(896)).fields).toBe("popover");
   });
 
   it("lets a wide saved Preview move the Fields Panel out of its column", () => {
@@ -109,7 +135,8 @@ describe("panel placement", () => {
       fields: { ...INITIAL_PANELS.fields, shown: true },
       preview: { ...INITIAL_PANELS.preview, shown: true, width: 960 },
     };
-    // The Preview is drawn at 2/5 of 1200, 480 px; 1200 - 480 - 400 is 320.
+    // The Preview is drawn at its saved 960 px, within the 840 px the
+    // editor's 360 px leaves; 1200 - 960 leaves the Fields column no room.
     expect(placePanels(wide, at(1200))).toEqual({
       preview: "side",
       fields: "popover",
@@ -169,7 +196,7 @@ describe("sizing a panel without its handle", () => {
     expect(wider.preview).toBe(both.preview);
   });
 
-  it("widens a column only as far as the view draws it", () => {
+  it("widens the Fields column only as far as the view draws it", () => {
     // 2/5 of 1600 px is 640 px.
     const fields: WorkbenchPanels = {
       ...both,
@@ -180,6 +207,20 @@ describe("sizing a panel without its handle", () => {
     expect(wide.fields.width).toBe(640);
     expect(canResizePanel("fields", "grow", bounds(1600))(wide)).toBe(false);
     expect(canResizePanel("fields", "shrink", bounds(1600))(wide)).toBe(true);
+  });
+
+  it("widens the Preview column until the editor keeps only its 360 px", () => {
+    const preview: WorkbenchPanels = {
+      ...both,
+      fields: { ...both.fields, shown: false },
+    };
+    // 1600 - 360 leaves the Preview 1240 px: past 2/5 of the view.
+    const grow = resizePanel("preview", "grow", bounds(1600));
+    let panels = preview;
+    for (let press = 0; press < 20; press++) panels = grow(panels);
+    expect(panels.preview.width).toBe(1240);
+    expect(canResizePanel("preview", "grow", bounds(1600))(panels)).toBe(false);
+    expect(placePanels(panels, at(1600)).preview).toBe("side");
   });
 
   it("widens a column only while the editor keeps its 360 px beside both columns", () => {
@@ -211,8 +252,8 @@ describe("sizing a panel without its handle", () => {
       ...both,
       fields: { ...both.fields, shown: false },
     };
-    // A hidden Fields Panel leaves the Preview its 2/5 of the view.
-    expect(columnLimit(preview, "preview", at(1200))).toBe(480);
+    // A hidden Fields Panel leaves the Preview all the view but the editor's 360 px.
+    expect(columnLimit(preview, "preview", at(1200))).toBe(840);
     // A hidden Preview leaves the Fields column 2/5 of a 700 px view, as the
     // editor keeps 420 px beside it.
     const fields: WorkbenchPanels = {
@@ -221,15 +262,17 @@ describe("sizing a panel without its handle", () => {
     };
     expect(columnLimit(fields, "fields", at(700))).toBe(280);
     // A panel the placement takes out of the side keeps the 2/5 limit: a
-    // 960 px Preview drawn at 311 px leaves no column room for the Fields.
+    // 960 px Preview drawn at 640 px leaves no column room for the Fields.
     const wide: WorkbenchPanels = {
       fields: { ...both.fields, width: 260 },
       preview: { ...both.preview, width: 960 },
     };
-    expect(placePanels(wide, at(778)).fields).toBe("popover");
-    expect(columnLimit(wide, "fields", at(778))).toBe(311);
-    // A view not measured yet holds a column to its largest width.
+    expect(placePanels(wide, at(1000)).fields).toBe("popover");
+    expect(columnLimit(wide, "fields", at(1000))).toBe(400);
+    // A view not measured yet holds the Fields column to its largest width
+    // and draws the Preview at its saved width.
     expect(columnLimit(both, "fields", null)).toBe(960);
+    expect(columnLimit(wide, "preview", null)).toBe(960);
   });
 
   it("resets a column no wider than the editor's room allows", () => {

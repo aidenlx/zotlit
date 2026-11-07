@@ -78,7 +78,7 @@ export type {
   WorkbenchViewState,
 } from "./model";
 export {
-  clampPanelWidth,
+  savedPanelWidth,
   clampPreviewHeight,
   INITIAL_PANELS,
   setPanelWidth,
@@ -94,6 +94,8 @@ export type {
   WorkbenchPanels,
 } from "./panel-layout";
 export { panelSizeMenus, pickPanelSize } from "./panel-menu";
+export { HELP_PAGES } from "./help-pages";
+export { ItemRow } from "./item-row";
 export { SidePanels } from "./panels";
 export {
   FieldPicker,

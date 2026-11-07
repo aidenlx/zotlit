@@ -31,6 +31,7 @@ import {
   keep,
   title,
   shownItem,
+  openAnnotationChooser,
   bridgeFetch,
   serveBridge,
 } from "./page-test-host";
@@ -248,7 +249,7 @@ describe("the paper a profile is written for", () => {
       ),
     );
     expect(
-      page.host.querySelector("#workbench-sample")?.parentElement?.textContent,
+      page.host.querySelector("[data-workbench-item-row]")?.textContent,
     ).toContain("Why Most Published Research Findings Are False");
   });
 
@@ -732,7 +733,7 @@ describe("the annotation box", () => {
           ?.textContent,
       ).toContain("Clear methods make research easier to reproduce."),
     );
-    page.press(m.workbench_choose_annotation());
+    openAnnotationChooser(page);
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
     expect(dialog.textContent).toContain(m.workbench_annotation_from_item());
     expect(dialog.textContent).toContain(m.workbench_annotation_empty());

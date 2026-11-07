@@ -95,6 +95,7 @@ import { FieldList, FieldListPicker } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
 import { ProfileMenuLabel, WorkbenchFrame, WorkbenchHelp } from "./frame";
 import { ProfileHandoff } from "./handoff";
+import { HelpMenu } from "./help-menu";
 import { useWebHost } from "./host";
 import { makeWebPage } from "./page-model";
 import type {
@@ -648,6 +649,7 @@ function WorkbenchSession({
             </DropdownMenuContent>
           </DropdownMenu>
           <ViewMenu model={model} registry={registry} />
+          <HelpMenu />
           {/* The view actions, as the Obsidian view has them: each shows or
               hides its panel, wherever the panel goes at this width. Where
               the Fields column does not fit, Fields opens its picker. */}
@@ -947,28 +949,34 @@ function WorkbenchSession({
           </div>
         </>
       }
+      item={
+        // One row names what every panel reads: the annotation while the
+        // view renders one, else the item.
+        <SampleBar
+          sample={sample}
+          retained={retained}
+          connection={connection}
+          {...(sampleItemType !== undefined && !bundledForType
+            ? { unmatchedItemType: sampleItemType }
+            : {})}
+          busy={itemBusy}
+          onShow={show}
+          onLoad={loadSelectedItem}
+          {...(showAnnotation
+            ? {
+                annotation: {
+                  current: itemAnnotations,
+                  example: selectedAnnotation,
+                  onSelect: chooseAnnotation,
+                },
+              }
+            : {})}
+        />
+      }
       result={
         <WebPreview
-          annotations={{
-            current: itemAnnotations,
-            example: selectedAnnotation,
-          }}
-          onAnnotationChoice={chooseAnnotation}
           mode={showAnnotation ? "annotation" : "note"}
           onShowProblem={repair.showProblem}
-          sampleBar={
-            <SampleBar
-              sample={sample}
-              retained={retained}
-              connection={connection}
-              {...(sampleItemType !== undefined && !bundledForType
-                ? { unmatchedItemType: sampleItemType }
-                : {})}
-              busy={itemBusy}
-              onShow={show}
-              onLoad={loadSelectedItem}
-            />
-          }
         />
       }
       problems={
