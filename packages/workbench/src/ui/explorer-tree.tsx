@@ -8,7 +8,7 @@ import type {
   ValueNode,
 } from "#/explorer/index";
 import { regex } from "arkregex";
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -41,6 +41,20 @@ export interface DisplaySection {
   readonly labels: ReadonlyMap<string, string>;
 }
 
+/**
+ * The rows of the Fields Panel: one line each, with the selected row and the
+ * row whose details stand open. A click on a row shows or hides its details.
+ */
+export interface FieldRowState {
+  readonly selected: string | null;
+  readonly open: string | null;
+  /** The id of the row for `key`, which the search names as active. */
+  readonly idOf: (key: string) => string;
+  readonly onRowClick: (node: DisplayNode) => void;
+}
+
+const FieldRowsContext = createContext<FieldRowState | null>(null);
+
 export interface DisplayTreeProps {
   sections: readonly DisplaySection[];
   /** Keys of nodes directly matched by the filter; null when no filter is active. */
@@ -57,6 +71,8 @@ export interface DisplayTreeProps {
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
   /** The same Menu, opened by a right-click on the row; anchored at the pointer. */
   onFieldContextMenu: (node: DisplayNode, event: React.MouseEvent) => void;
+  /** Present in the Fields Panel, whose rows are one line and keep details. */
+  rows?: FieldRowState;
 }
 
 export function DisplayTree({
@@ -67,45 +83,48 @@ export function DisplayTree({
   onInsert,
   onTemplateMenu,
   onFieldContextMenu,
+  rows,
 }: DisplayTreeProps): React.ReactElement {
   const part = useParts("explorerTree");
   const id = useUniqueId();
   return (
-    <div {...part("sections")}>
-      {sections.map((section) => (
-        <section
-          key={section.id}
-          data-workbench-section={section.id}
-          {...part("section", section.collapsed ? "collapsed" : "expanded")}
-        >
-          <SectionHeader
-            section={section}
-            labelId={`${id}-${section.id}`}
-            onToggle={onToggleSection && (() => onToggleSection(section.id))}
-          />
-          {!section.collapsed && (
-            <ul
-              role="tree"
-              aria-labelledby={`${id}-${section.id}`}
-              {...part("tree")}
-            >
-              {section.nodes.map((node) => (
-                <TreeNode
-                  key={node.key}
-                  node={node}
-                  label={section.labels.get(node.key)}
-                  matchedKeys={matchedKeys}
-                  onToggle={onToggle}
-                  onInsert={onInsert}
-                  onTemplateMenu={onTemplateMenu}
-                  onFieldContextMenu={onFieldContextMenu}
-                />
-              ))}
-            </ul>
-          )}
-        </section>
-      ))}
-    </div>
+    <FieldRowsContext.Provider value={rows ?? null}>
+      <div {...part("sections")}>
+        {sections.map((section) => (
+          <section
+            key={section.id}
+            data-workbench-section={section.id}
+            {...part("section", section.collapsed ? "collapsed" : "expanded")}
+          >
+            <SectionHeader
+              section={section}
+              labelId={`${id}-${section.id}`}
+              onToggle={onToggleSection && (() => onToggleSection(section.id))}
+            />
+            {!section.collapsed && (
+              <ul
+                role="tree"
+                aria-labelledby={`${id}-${section.id}`}
+                {...part("tree")}
+              >
+                {section.nodes.map((node) => (
+                  <TreeNode
+                    key={node.key}
+                    node={node}
+                    label={section.labels.get(node.key)}
+                    matchedKeys={matchedKeys}
+                    onToggle={onToggle}
+                    onInsert={onInsert}
+                    onTemplateMenu={onTemplateMenu}
+                    onFieldContextMenu={onFieldContextMenu}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        ))}
+      </div>
+    </FieldRowsContext.Provider>
   );
 }
 
@@ -165,22 +184,39 @@ function TreeNode({
   onFieldContextMenu,
 }: TreeNodeProps) {
   const part = useParts("explorerTree");
+  const rows = useContext(FieldRowsContext);
   const isExpanded = node.kind === "value" && node.children !== undefined;
   const isExpandable = node.kind === "value" && node.expandable;
   const isMatched = matchedKeys?.has(node.key) ?? false;
+  const selected = rows?.selected === node.key;
+  const open = rows?.open === node.key;
 
   return (
     <li
       role="treeitem"
       data-workbench-field={node.key}
       aria-expanded={isExpandable ? isExpanded : undefined}
+      {...(rows && { id: rows.idOf(node.key), "aria-selected": selected })}
     >
       <div
         {...part("row", isMatched ? "matched" : undefined)}
+        data-selected={selected ? "" : undefined}
+        data-open={open ? "" : undefined}
         onContextMenu={(event) => {
           event.preventDefault();
           onFieldContextMenu(node, event);
         }}
+        // A click on the row, not on one of its controls or links, shows or
+        // hides its details.
+        onClick={
+          rows
+            ? (event) => {
+                const target = event.target as Element;
+                if (target.closest("a, button, [role=button]")) return;
+                rows.onRowClick(node);
+              }
+            : undefined
+        }
       >
         {isExpandable ? (
           <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />
@@ -188,7 +224,7 @@ function TreeNode({
           <span {...part("spacer")} />
         )}
         {/* The host lays the key and the value out as a wrapping row: one line while both fit, the value on its own line beneath the key when it does not. The space between them survives in text content only. */}
-        <div {...part("contents")}>
+        <div {...part("contents", rows ? "line" : undefined)}>
           <NodeRow node={node} label={label} />
         </div>
         <ActionCluster
@@ -257,7 +293,7 @@ function ActionCluster({
     <div {...part("actions")}>
       {onInsert && (
         <ClusterButton
-          icon="add"
+          icon="insert"
           label={m.workbench_fields_put_in_note()}
           onClick={(event) => onInsert(node, event.shiftKey)}
         />
@@ -524,7 +560,12 @@ function LongText({ value }: { value: string }) {
   const part = useParts("explorerTree");
   const [expanded, setExpanded] = useState(false);
   const isLong = value.length > STRING_PREVIEW_LIMIT || value.includes("\n");
+  // A Fields Panel row is one line; its details show the whole value.
+  const line = useContext(FieldRowsContext) !== null;
 
+  if (line) {
+    return <span {...part("string")}>{value.replaceAll(/\s+/g, " ")}</span>;
+  }
   if (!isLong) {
     return <span {...part("string")}>{value}</span>;
   }

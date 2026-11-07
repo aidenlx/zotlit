@@ -48,6 +48,7 @@ export interface WorkbenchParts {
     | "error";
   dataExplorer:
     | "hint"
+    | "keys-hint"
     | "root-label"
     | "explorer"
     | "header"
@@ -247,6 +248,24 @@ export interface WorkbenchParts {
   panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split" | "status";
   itemRow: "row" | "label";
   fieldsPanel: "panel" | "header" | "icon" | "title" | "close" | "body";
+  fieldDetails:
+    | "details-bar"
+    | "details"
+    | "header"
+    | "heading"
+    | "context"
+    | "title"
+    | "close"
+    | "value"
+    | "item"
+    | "label"
+    | "path"
+    | "snippet"
+    | "result"
+    | "result-icon"
+    | "actions"
+    | "insert"
+    | "copy";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description" | "docs-link";
   editToolbar:
@@ -328,7 +347,9 @@ export type WorkbenchIcon =
   | "drag"
   | "expand-all"
   | "collapse-all"
-  | "fields";
+  | "fields"
+  | "insert"
+  | "result";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;

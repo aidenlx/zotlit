@@ -1,7 +1,13 @@
 // The Fields Panel, the chosen Item's fields in the host's non-modal Fields popover.
 import { useAtom, useAtomSet } from "@effect/atom-react";
-import { useLayoutEffect, useRef } from "react";
-import type { ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -38,12 +44,32 @@ export function fieldsActionAttributes(
   };
 }
 
+/**
+ * What the field rows share with the Fields Panel they stand in: the step
+ * Escape takes inside the panel before the Fields popover closes, which
+ * answers `true` when it took the key.
+ */
+export interface FieldsPanelRows {
+  readonly escape: RefObject<() => boolean>;
+}
+
+const FieldsPanelRowsContext = createContext<FieldsPanelRows | null>(null);
+
+/**
+ * The Fields Panel the field rows stand in, or `null` outside one, as in the
+ * standalone Template Data Explorer, whose rows keep no details.
+ */
+export function useFieldsPanelRows(): FieldsPanelRows | null {
+  return useContext(FieldsPanelRowsContext);
+}
+
 /** The Fields Panel in the host's Fields popover. */
 export function FieldsPanel(props: FieldsPanelContent) {
   const model = useWorkbenchModel();
   const host = useOptionalHost();
   const [state, setState] = useAtom(model.fieldsPanel);
   const titleId = useUniqueId();
+  const escape = useRef<() => boolean>(() => false);
   const Popover = host?.fieldsAction?.popover;
   if (!Popover) return null;
   return (
@@ -52,8 +78,9 @@ export function FieldsPanel(props: FieldsPanelContent) {
       onClose={() => setState("closed")}
       labelledBy={titleId}
       returnFocus={state !== "to-editor"}
+      onEscape={() => escape.current()}
     >
-      <FieldsPanelBody {...props} titleId={titleId} />
+      <FieldsPanelBody {...props} titleId={titleId} escape={escape} />
     </Popover>
   );
 }
@@ -66,13 +93,18 @@ function FieldsPanelBody({
   label,
   content,
   titleId,
-}: FieldsPanelContent & { readonly titleId: string }) {
+  escape,
+}: FieldsPanelContent & {
+  readonly titleId: string;
+  readonly escape: RefObject<() => boolean>;
+}) {
   const model = useWorkbenchModel();
   const m = useWorkbenchMessages();
   const part = useParts("fieldsPanel");
   const icon = useIcon();
   const setState = useAtomSet(model.fieldsPanel);
   const panel = useRef<HTMLDivElement>(null);
+  const [rows] = useState<FieldsPanelRows>(() => ({ escape }));
   const closeLabel = m.workbench_fields_close();
   const closeTooltip = useTooltip(closeLabel);
   useLayoutEffect(() => {
@@ -81,7 +113,22 @@ function FieldsPanelBody({
       ?.focus({ preventScroll: true });
   }, []);
   return (
-    <div ref={panel} {...part("panel")}>
+    // Escape closes a field's details, then clears the search, before the
+    // host closes the panel. A host that takes the key first asks the same
+    // step through `onEscape`, and a key it took arrives here handled.
+    <div
+      ref={panel}
+      {...part("panel")}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        // Escape that drops an input method's candidate is the method's.
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+          return;
+        if (!escape.current()) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
       <div {...part("header")}>
         <span aria-hidden="true" {...part("icon")}>
           {icon("fields")}
@@ -101,7 +148,9 @@ function FieldsPanelBody({
           {icon("close")}
         </button>
       </div>
-      <div {...part("body")}>{content}</div>
+      <FieldsPanelRowsContext.Provider value={rows}>
+        <div {...part("body")}>{content}</div>
+      </FieldsPanelRowsContext.Provider>
     </div>
   );
 }

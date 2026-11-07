@@ -32,6 +32,8 @@ import {
   Clock,
   CircleHelp,
   GripVertical,
+  TextCursorInput,
+  CornerDownRight,
 } from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
@@ -83,6 +85,8 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   "expand-all": ChevronsUpDown,
   "collapse-all": ChevronsDownUp,
   fields: Braces,
+  insert: TextCursorInput,
+  result: CornerDownRight,
 };
 
 /** A read-only Properties block: one row per property, key beside value. */

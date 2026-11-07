@@ -55,6 +55,8 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   "expand-all": "chevrons-up-down",
   "collapse-all": "chevrons-down-up",
   fields: "braces",
+  insert: "text-cursor-input",
+  result: "corner-down-right",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =

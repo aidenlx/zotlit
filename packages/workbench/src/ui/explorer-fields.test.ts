@@ -1,7 +1,7 @@
 import type { DisplayNode } from "#/explorer/index";
 import { describe, expect, it } from "vitest";
 
-import { fieldSnippet, fieldValueText } from "./explorer-fields";
+import { fieldResult, fieldSnippet, fieldValueText } from "./explorer-fields";
 
 import { buildDisplayTree } from "#/explorer/index";
 import { withText } from "#/explorer/test-records";
@@ -55,5 +55,34 @@ describe("fieldValueText", () => {
     const { authors, family } = shapeNodes();
     expect(fieldValueText(authors)).toBe("Mara Rivera, Li Chen");
     expect(fieldValueText(family)).toBe("Rivera, Chen");
+  });
+});
+
+describe("fieldResult", () => {
+  const node = (data: Record<string, unknown>) =>
+    buildDisplayTree(data, { expanded: new Set() })[0]!;
+
+  it("gives what a field writes into the note for this item", () => {
+    expect(fieldResult(node({ title: "Linked notes in practice" }))).toBe(
+      "Linked notes in practice",
+    );
+    expect(fieldResult(node({ year: 2024 }))).toBe("2024");
+    expect(fieldResult(node({ backlink: "zotero://select/items/1_ABC" }))).toBe(
+      "[Zotero](zotero://select/items/1_ABC)",
+    );
+  });
+
+  it("gives a list in one line, or one Markdown list line per item", () => {
+    const { authors, family } = shapeNodes();
+    expect(fieldResult(authors)).toBe("Mara Rivera, Li Chen");
+    expect(fieldResult(authors, "loop")).toBe("- Mara Rivera\n- Li Chen");
+    expect(fieldResult(family)).toBe("Rivera, Chen");
+    expect(fieldResult(family, "loop")).toBe("- Rivera\n- Chen");
+  });
+
+  it("gives nothing for a field this item has no value for", () => {
+    expect(fieldResult(node({ abstract: "" }))).toBeNull();
+    expect(fieldResult(node({ abstract: null }))).toBeNull();
+    expect(fieldResult(node({ tags: [] }))).toBeNull();
   });
 });

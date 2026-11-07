@@ -113,6 +113,7 @@ export type {
   WorkbenchDialogHandle,
   WorkbenchDialogRequest,
   WorkbenchFieldsAction,
+  WorkbenchFieldDetailsProps,
   WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchInsertTarget,
