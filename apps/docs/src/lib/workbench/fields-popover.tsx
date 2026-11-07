@@ -4,10 +4,13 @@
 // the Workbench it serves. Base UI dismisses it on Escape and a press
 // outside; the shared Fields Panel draws the contents and focuses its search
 // field as it mounts. Focus it held at closing goes back to the Fields action.
+// A field's details in a wide view are a Base UI popover inside this one,
+// beside the panel and level with the field's row.
 import { useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 import type {
+  WorkbenchFieldDetailsProps,
   WorkbenchFieldsAction,
   WorkbenchFieldsPopoverProps,
 } from "@zotlit/workbench/ui";
@@ -27,6 +30,7 @@ export function webFieldsAction(
     onClose,
     labelledBy,
     returnFocus,
+    onEscape,
     children,
   }: WorkbenchFieldsPopoverProps) {
     // A mark where the panel stands in the tree: its parent is the panels'
@@ -59,6 +63,8 @@ export function webFieldsAction(
               reason === "outside-press" &&
               event.target instanceof Node &&
               anchor.current?.contains(event.target) === true;
+            // The panel takes Escape first: the details, then the search.
+            if (!next && reason === "escape-key" && onEscape()) return;
             if (!next && !onAction) onClose();
           }}
         >
@@ -91,5 +97,54 @@ export function webFieldsAction(
       </>
     );
   }
-  return { popover: FieldsPopover, popoverId };
+  return { popover: FieldsPopover, popoverId, details: FieldDetailsPopover };
+}
+
+/**
+ * A field's details beside the Fields Panel, level with its row, on the side
+ * with room: Base UI flips it to the other side of the panel when the left
+ * has none. It leaves focus in the panel's search as it opens; a press on
+ * its row stays the row's, which toggles it.
+ */
+function FieldDetailsPopover({
+  anchor,
+  panel,
+  onClose,
+  labelledBy,
+  children,
+}: WorkbenchFieldDetailsProps) {
+  /** The panel's height band at the row's top: the popover stands beside it. */
+  const [edge] = useState(() => ({
+    getBoundingClientRect: () => {
+      const box = panel.getBoundingClientRect();
+      const row = anchor.getBoundingClientRect();
+      return new DOMRect(box.left, row.top, box.width, row.height);
+    },
+  }));
+  return (
+    <Popover
+      open
+      onOpenChange={(next, { reason, event }) => {
+        const onRow =
+          reason === "outside-press" &&
+          event.target instanceof Node &&
+          anchor.contains(event.target);
+        if (!next && !onRow) onClose();
+      }}
+    >
+      <PopoverContent
+        anchor={edge}
+        side="left"
+        align="start"
+        sideOffset={GAP}
+        aria-labelledby={labelledBy}
+        initialFocus={false}
+        finalFocus={false}
+        // The shared details draw the surface; the popup only holds its place.
+        className="w-72 bg-transparent p-0 shadow-none ring-0"
+      >
+        {children}
+      </PopoverContent>
+    </Popover>
+  );
 }

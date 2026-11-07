@@ -236,6 +236,69 @@ it("closes the Fields popover on Escape and on a press outside it, and returns f
   expect(document.activeElement).toBe(fields);
 });
 
+/** The row of the top-level field `key` in the open popover. */
+const fieldRow = (key: string) =>
+  popover()!.querySelector<HTMLElement>(
+    `[data-workbench-field="${key}"] > [data-part="row"]`,
+  )!;
+/** The details of the field named `label`, wherever the page shows them. */
+const details = (label: string) =>
+  [...document.querySelectorAll<HTMLElement>('[data-part="details"]')].find(
+    (element) =>
+      element.querySelector('[data-part="title"]')?.textContent === label,
+  ) ?? null;
+
+// #1967: a click on a row shows its details, beside the popover in a wide
+// frame and in a bar at the panel's foot in a narrow one.
+it.each([
+  { width: 1200, inside: false, state: "popover" },
+  { width: 560, inside: true, state: "bar" },
+])(
+  "shows a field's details on a click in a $width px frame, and closes them on Escape before the search and the popover",
+  async ({ width, inside, state }) => {
+    await using page = await open({ frame: { width, height: 700 } });
+    await page.settle();
+    page.press(m.workbench_view_fields());
+    await page.settle();
+    act(() => fieldRow("title").click());
+    await page.settle();
+    const shown = details(m.workbench_field_title())!;
+    expect(shown.dataset.state).toBe(state);
+    expect(popover()!.contains(shown)).toBe(inside);
+    // Focus stays in the search.
+    expect(document.activeElement).toBe(popoverSearch());
+    press(popoverSearch()!, "Escape");
+    await page.settle();
+    expect(details(m.workbench_field_title())).toBeNull();
+    expect(popover()).not.toBeNull();
+    press(popoverSearch()!, "Escape");
+    await page.settle();
+    expect(popover()).toBeNull();
+  },
+);
+
+it("closes a field's details on a press on another row, and keeps the popover", async () => {
+  await using page = await open({ frame: { width: 1200, height: 700 } });
+  await page.settle();
+  page.press(m.workbench_view_fields());
+  await page.settle();
+  act(() => fieldRow("title").click());
+  await page.settle();
+  const other = fieldRow("authors");
+  act(() => {
+    for (const type of ["pointerdown", "mousedown"])
+      other.dispatchEvent(
+        new (type.startsWith("pointer") ? PointerEvent : MouseEvent)(type, {
+          bubbles: true,
+          button: 0,
+        }),
+      );
+  });
+  await page.settle();
+  expect(details(m.workbench_field_title())).toBeNull();
+  expect(popover()).not.toBeNull();
+});
+
 it("never opens the Fields popover as the frame narrows", async () => {
   await using page = await open({ frame: { width: 1200, height: 700 } });
   await page.settle();
