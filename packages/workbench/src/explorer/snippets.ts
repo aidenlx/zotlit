@@ -1,20 +1,27 @@
 // Pure paste-ready template-snippet generation for Template Data Explorer nodes.
 
 import { formatAccessorPath, isAccessorIdentifier } from "./accessor-path";
-import type { DisplayNode } from "./display-tree";
+import type { DisplayNode, ListPropertyNode } from "./display-tree";
+import { listLineProperty, listReadsAsText } from "./list-items";
 
 export type TemplateEngine = "liquid" | "eta";
 
 /** Output = interpolate; if-present = guard surrounding content on truthiness; loop/joined = array forms. */
 export type SnippetKind = "output" | "if-present" | "loop" | "joined";
 
-/** Snippet kinds offered for a node, gated by its kind: arrays get loop (+ joined when their elements stringify meaningfully); everything else gets output + if-present. */
+/**
+ * Snippet kinds offered for a node, gated by its kind: arrays get joined (when
+ * their elements stringify meaningfully), then loop; a list property gets
+ * joined, then loop; everything else gets output + if-present. The first kind
+ * is the one an insert uses. No list form names one item's index.
+ */
 export function snippetKindsFor(node: DisplayNode): SnippetKind[] {
+  if (node.kind === "list-property") return ["joined", "loop"];
   if (node.kind === "helper" || node.kind === "placeholder") {
     return ["output", "if-present"];
   }
   if (node.valueType === "array") {
-    return arrayJoinable(node.value) ? ["loop", "joined"] : ["loop"];
+    return listReadsAsText(itemsOf(node)) ? ["joined", "loop"] : ["loop"];
   }
   return ["output", "if-present"];
 }
@@ -24,6 +31,8 @@ export function renderSnippet(
   engine: TemplateEngine,
   kind: SnippetKind,
 ): string {
+  if (node.kind === "list-property")
+    return listPropertySnippet(node, engine, kind);
   const accessor = formatAccessorPath(node.path, "zt");
   const show = isBacklink(node) ? asZoteroLink : (output: string) => output;
   switch (kind) {
@@ -31,11 +40,35 @@ export function renderSnippet(
       return show(interpolate(engine, callForm(node, engine, accessor)));
     case "if-present":
       return guard(engine, callForm(node, engine, accessor), show);
-    case "loop":
-      return loop(engine, accessor, loopVar(node));
+    case "loop": {
+      const item = loopVariable(node.path);
+      const property = listLineProperty(itemsOf(node));
+      const body =
+        property === undefined ? item : formatAccessorPath([property], item);
+      return loop(engine, accessor, { item, body });
+    }
     case "joined":
       return joined(engine, accessor);
   }
+}
+
+/**
+ * A list property goes into the note for every item: its values joined in one
+ * line, or one Markdown list line per item. Neither form takes the list
+ * property's output or if-present kinds, so those fall back to joined.
+ */
+function listPropertySnippet(
+  node: ListPropertyNode,
+  engine: TemplateEngine,
+  kind: SnippetKind,
+): string {
+  const accessor = formatAccessorPath(node.list, "zt");
+  const item = loopVariable(node.list);
+  const value = formatAccessorPath([node.property], item);
+  if (kind === "loop") return loop(engine, accessor, { item, body: value });
+  return engine === "liquid"
+    ? `{{ ${accessor} | map: ${JSON.stringify(node.property)} | join: ", " }}`
+    : `<%= ${accessor}.map((${item}) => ${value}).join(", ") %>`;
 }
 
 /**
@@ -75,10 +108,20 @@ function guard(
     : `<% if (${expr}) { %>${output}<% } %>`;
 }
 
-function loop(engine: TemplateEngine, accessor: string, item: string): string {
+/** One Markdown list line per item: each pass starts a new line with `- ` and the item's `body`. */
+function loop(
+  engine: TemplateEngine,
+  accessor: string,
+  { item, body }: { item: string; body: string },
+): string {
   return engine === "liquid"
-    ? `{% for ${item} in ${accessor} %}{{ ${item} }}{% endfor %}`
-    : `<% for (const ${item} of ${accessor}) { %><%= ${item} %><% } %>`;
+    ? `{% for ${item} in ${accessor} %}\n- {{ ${body} }}{% endfor %}`
+    : `<% for (const ${item} of ${accessor}) { %>\n- <%= ${body} %><% } %>`;
+}
+
+/** The items of a list node; none for any other node. */
+function itemsOf(node: DisplayNode): readonly unknown[] {
+  return node.kind === "value" && Array.isArray(node.value) ? node.value : [];
 }
 
 function joined(engine: TemplateEngine, accessor: string): string {
@@ -88,8 +131,8 @@ function joined(engine: TemplateEngine, accessor: string): string {
 }
 
 /** Element name for a loop/join: the array's key with a trailing "s" stripped (tags→tag, lines→line), falling back to "item" for an index/bracket-key/non-plural segment. */
-function loopVar(node: DisplayNode): string {
-  const last = node.path.at(-1);
+export function loopVariable(path: DisplayNode["path"]): string {
+  const last = path.at(-1);
   if (
     typeof last === "string" &&
     isAccessorIdentifier(last) &&
@@ -99,14 +142,4 @@ function loopVar(node: DisplayNode): string {
     return last.slice(0, -1);
   }
   return "item";
-}
-
-/** Joins to a meaningful string when elements are primitive or carry their own `toString` (creators, tags, collections); a plain-object array would only yield `[object Object]`. Empty arrays are permissive — their element shape is unknown. */
-function arrayJoinable(value: unknown): boolean {
-  if (!Array.isArray(value)) return false;
-  if (value.length === 0) return true;
-  const first: unknown = value[0];
-  if (first === null || first === undefined) return false;
-  if (typeof first !== "object") return true;
-  return Object.hasOwn(first, "toString");
 }

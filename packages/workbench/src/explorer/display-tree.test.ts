@@ -10,6 +10,7 @@ import {
 } from "./display-tree";
 import type { DisplayNode } from "./display-tree";
 import { markInertPlaceholder } from "./inert-placeholder";
+import { withText } from "./test-records";
 
 function expectValueChildren(node: DisplayNode): readonly DisplayNode[] {
   expect(node.kind).toBe("value");
@@ -432,9 +433,25 @@ describe("buildDisplayTree — container preview from custom toString", () => {
     expect(nodes[0]).not.toHaveProperty("preview");
   });
 
-  it("omits a preview for an array (default Array toString)", () => {
+  it("previews an array with every item in one line", () => {
     const root = { tags: [1, 2, 3] };
     const nodes = buildDisplayTree(root, { expanded: new Set() });
+    expect(nodes[0]).toMatchObject({ size: 3, preview: "1, 2, 3" });
+  });
+
+  it("previews items with no text of their own by their first property", () => {
+    const root = {
+      lines: [
+        { text: "a", page: 1 },
+        { text: "b", page: 2 },
+      ],
+    };
+    const nodes = buildDisplayTree(root, { expanded: new Set() });
+    expect(nodes[0]).toMatchObject({ size: 2, preview: "1, 2" });
+  });
+
+  it("omits a preview for an empty array", () => {
+    const nodes = buildDisplayTree({ tags: [] }, { expanded: new Set() });
     expect(nodes[0]).not.toHaveProperty("preview");
   });
 });
@@ -960,6 +977,155 @@ describe("buildFilteredDisplayTree — collapsed option", () => {
     expect(creatorsNode).toMatchObject({ label: "creators", expandable: true });
     if (creatorsNode.kind !== "value") throw new Error("unexpected");
     expect(creatorsNode.children).toHaveLength(1);
+  });
+});
+
+describe("buildDisplayTree — list shape", () => {
+  const authors = () => [
+    withText({ family: "Rivera", given: "Mara" }, "Mara Rivera"),
+    withText({ family: "Chen", given: "Li" }, "Li Chen"),
+  ];
+  const shape = (root: object, expanded: string[] = []) =>
+    buildDisplayTree(root, { expanded: new Set(expanded), lists: "shape" });
+
+  it("gives a list its item count and every item in one line", () => {
+    expect(shape({ authors: authors() })[0]).toMatchObject({
+      kind: "value",
+      valueType: "array",
+      size: 2,
+      preview: "Mara Rivera, Li Chen",
+      expandable: true,
+    });
+  });
+
+  it("opens a list of records into one node for each property, holding every item's value", () => {
+    const children = expectValueChildren(
+      shape({ authors: authors() }, ["authors"])[0]!,
+    );
+    expect(children).toEqual([
+      {
+        kind: "list-property",
+        path: ["authors", "family"],
+        key: "authors[].family",
+        label: "family",
+        list: ["authors"],
+        property: "family",
+        values: ["Rivera", "Chen"],
+        preview: "Rivera, Chen",
+      },
+      {
+        kind: "list-property",
+        path: ["authors", "given"],
+        key: "authors[].given",
+        label: "given",
+        list: ["authors"],
+        property: "given",
+        values: ["Mara", "Li"],
+        preview: "Mara, Li",
+      },
+    ]);
+  });
+
+  it("takes the properties of every item, and leaves out an item without a value", () => {
+    const root = {
+      annotations: [
+        { text: "First", comment: "Core claim" },
+        { text: "Second", comment: "" },
+        { text: "Third", pageLabel: "698" },
+      ],
+    };
+    const children = expectValueChildren(shape(root, ["annotations"])[0]!);
+    expect(
+      children.map((node) =>
+        node.kind === "list-property" ? [node.label, node.values] : null,
+      ),
+    ).toEqual([
+      ["comment", ["Core claim"]],
+      ["pageLabel", ["698"]],
+      ["text", ["First", "Second", "Third"]],
+    ]);
+  });
+
+  it("reads each item's link helper as its value", () => {
+    const root = {
+      attachments: [
+        { filename: "a.pdf", fileLink: () => "[[a.pdf]]" },
+        { filename: "b.html", fileLink: () => "[[b.html]]" },
+      ],
+    };
+    const children = expectValueChildren(shape(root, ["attachments"])[0]!);
+    expect(children.find((node) => node.label === "fileLink")).toMatchObject({
+      values: ["[[a.pdf]]", "[[b.html]]"],
+    });
+  });
+
+  it("gives a list of plain values no sub-nodes", () => {
+    const [tags] = shape({ tags: ["physics", "methods"] }, ["tags"]);
+    expect(tags).toMatchObject({
+      size: 2,
+      preview: "physics, methods",
+      expandable: false,
+    });
+    expect(tags).not.toHaveProperty("children");
+  });
+
+  it("copies a list property's values one per line", () => {
+    const [family] = expectValueChildren(
+      shape({ authors: authors() }, ["authors"])[0]!,
+    );
+    expect(copyValue(family!)).toBe("Rivera\nChen");
+  });
+
+  it("keeps index nodes when the shape is not asked for", () => {
+    const [list] = buildDisplayTree(
+      { authors: authors() },
+      { expanded: new Set(["authors"]) },
+    );
+    expect(expectValueChildren(list!).map((node) => node.key)).toEqual([
+      "authors[0]",
+      "authors[1]",
+    ]);
+  });
+});
+
+describe("buildFilteredDisplayTree — list shape", () => {
+  const root = () => ({
+    title: "Paper",
+    authors: [
+      withText({ family: "Rivera", given: "Mara" }, "Mara Rivera"),
+      withText({ family: "Chen", given: "Li" }, "Li Chen"),
+    ],
+  });
+
+  it("matches a list property on any item's value", () => {
+    const { nodes, matchedKeys } = buildFilteredDisplayTree(root(), "chen", {
+      lists: "shape",
+    });
+    expect(nodes.map((node) => node.key)).toEqual(["authors"]);
+    expect(expectValueChildren(nodes[0]!).map((node) => node.key)).toEqual([
+      "authors[].family",
+    ]);
+    expect([...matchedKeys]).toEqual(["authors[].family"]);
+  });
+
+  it("matches a list property on its name", () => {
+    const { nodes } = buildFilteredDisplayTree(root(), "given", {
+      lists: "shape",
+    });
+    expect(expectValueChildren(nodes[0]!).map((node) => node.key)).toEqual([
+      "authors[].given",
+    ]);
+  });
+
+  it("matches a list of plain values on an item", () => {
+    const { nodes, matchedKeys } = buildFilteredDisplayTree(
+      { tags: ["physics", "methods"] },
+      "meth",
+      { lists: "shape" },
+    );
+    expect(nodes[0]).toMatchObject({ key: "tags", expandable: false });
+    expect(nodes[0]).not.toHaveProperty("children");
+    expect(matchedKeys.has("tags")).toBe(true);
   });
 });
 

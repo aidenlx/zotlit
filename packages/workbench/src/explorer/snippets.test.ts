@@ -6,6 +6,7 @@ import type {
   DisplayValueType,
   PathSegment,
 } from "./display-tree";
+import { buildDisplayTree } from "./display-tree";
 import { renderSnippet, snippetKindsFor } from "./snippets";
 
 function value(
@@ -80,14 +81,14 @@ describe("snippetKindsFor", () => {
     ]);
   });
 
-  it("offers loop + joined for arrays whose elements stringify meaningfully", () => {
+  it("offers joined, then loop, for arrays whose elements stringify meaningfully", () => {
     expect(snippetKindsFor(value(["tags"], "array", ["a", "b"]))).toEqual([
-      "loop",
       "joined",
+      "loop",
     ]);
     expect(snippetKindsFor(value(["tags"], "array", [tag]))).toEqual([
-      "loop",
       "joined",
+      "loop",
     ]);
   });
 
@@ -99,8 +100,8 @@ describe("snippetKindsFor", () => {
 
   it("keeps joined for an empty array (element shape unknown)", () => {
     expect(snippetKindsFor(value(["tags"], "array", []))).toEqual([
-      "loop",
       "joined",
+      "loop",
     ]);
   });
 });
@@ -169,25 +170,63 @@ describe("renderSnippet — if-present", () => {
 });
 
 describe("renderSnippet — loop", () => {
-  it("singularizes the array key as the element variable", () => {
+  it("puts each item on its own Markdown list line in each engine", () => {
     expect(renderSnippet(value(["tags"], "array", []), "liquid", "loop")).toBe(
-      "{% for tag in zt.tags %}{{ tag }}{% endfor %}",
+      "{% for tag in zt.tags %}\n- {{ tag }}{% endfor %}",
     );
     expect(renderSnippet(value(["creators"], "array", []), "eta", "loop")).toBe(
-      "<% for (const creator of zt.creators) { %><%= creator %><% } %>",
+      "<% for (const creator of zt.creators) { %>\n- <%= creator %><% } %>",
     );
   });
 
   it("singularizes a nested array key", () => {
     expect(
       renderSnippet(value(["extra", "lines"], "array", []), "liquid", "loop"),
-    ).toBe("{% for line in zt.extra.lines %}{{ line }}{% endfor %}");
+    ).toBe("{% for line in zt.extra.lines %}\n- {{ line }}{% endfor %}");
   });
 
-  it("falls back to 'item' for an index or non-plural key", () => {
+  it("falls back to 'item' for a non-plural key", () => {
     expect(
-      renderSnippet(value(["matrix", 0], "array", []), "liquid", "loop"),
-    ).toBe("{% for item in zt.matrix[0] %}{{ item }}{% endfor %}");
+      renderSnippet(value(["extra", "data"], "array", []), "liquid", "loop"),
+    ).toBe("{% for item in zt.extra.data %}\n- {{ item }}{% endfor %}");
+  });
+
+  // Items with no text of their own would print `[object Object]`; the line
+  // shows their first property instead.
+  it("shows the first property of items that do not read as text", () => {
+    const node = value(["lines"], "array", [{ text: "x", page: 1 }]);
+    expect(renderSnippet(node, "liquid", "loop")).toBe(
+      "{% for line in zt.lines %}\n- {{ line.page }}{% endfor %}",
+    );
+    expect(renderSnippet(node, "eta", "loop")).toBe(
+      "<% for (const line of zt.lines) { %>\n- <%= line.page %><% } %>",
+    );
+  });
+});
+
+describe("a list's preview and its loop line", () => {
+  // Items with different keys: the first item has no `a`.
+  it("show the same property for each item", () => {
+    const [node] = buildDisplayTree(
+      { lines: [{ b: "first" }, { a: "second", b: "third" }] },
+      { expanded: new Set() },
+    );
+    expect(node).toMatchObject({ preview: "second" });
+    expect(renderSnippet(node!, "liquid", "loop")).toBe(
+      "{% for line in zt.lines %}\n- {{ line.a }}{% endfor %}",
+    );
+  });
+
+  it("show the item itself when every item reads as text", () => {
+    const [node] = buildDisplayTree(
+      { tags: ["physics", "methods"] },
+      { expanded: new Set() },
+    );
+    expect(node).toMatchObject({ preview: "physics, methods" });
+    expect(snippetKindsFor(node!)).toEqual(["joined", "loop"]);
+    expect(renderSnippet(node!, "liquid", "loop")).toBe(
+      "{% for tag in zt.tags %}\n- {{ tag }}{% endfor %}",
+    );
   });
 });
 
@@ -200,5 +239,62 @@ describe("renderSnippet — joined", () => {
     expect(renderSnippet(node, "eta", "joined")).toBe(
       '<%= zt.tags.join(", ") %>',
     );
+  });
+});
+
+function listProperty(list: PathSegment[], property: string): DisplayNode {
+  return {
+    kind: "list-property",
+    path: [...list, property],
+    key: `${formatPath(list)}[].${property}`,
+    label: property,
+    list,
+    property,
+    values: ["Rivera", "Chen"],
+    preview: "Rivera, Chen",
+  };
+}
+
+describe("list snippets never use an item index", () => {
+  const authors = value(["authors"], "array", [tag, tag]);
+  const family = listProperty(["authors"], "family");
+
+  it("offers joined, then loop, for a list property", () => {
+    expect(snippetKindsFor(family)).toEqual(["joined", "loop"]);
+  });
+
+  it("joins a list property's values in each engine", () => {
+    expect(renderSnippet(family, "liquid", "joined")).toBe(
+      '{{ zt.authors | map: "family" | join: ", " }}',
+    );
+    expect(renderSnippet(family, "eta", "joined")).toBe(
+      '<%= zt.authors.map((author) => author.family).join(", ") %>',
+    );
+  });
+
+  it("puts a list property's value for each item on its own line in each engine", () => {
+    expect(renderSnippet(family, "liquid", "loop")).toBe(
+      "{% for author in zt.authors %}\n- {{ author.family }}{% endfor %}",
+    );
+    expect(renderSnippet(family, "eta", "loop")).toBe(
+      "<% for (const author of zt.authors) { %>\n- <%= author.family %><% } %>",
+    );
+  });
+
+  it("quotes a property name that is not an identifier", () => {
+    const node = listProperty(["attachments"], "file-name");
+    expect(renderSnippet(node, "liquid", "joined")).toBe(
+      '{{ zt.attachments | map: "file-name" | join: ", " }}',
+    );
+    expect(renderSnippet(node, "eta", "loop")).toBe(
+      '<% for (const attachment of zt.attachments) { %>\n- <%= attachment["file-name"] %><% } %>',
+    );
+  });
+
+  it("has no index in any form a list or a list property offers", () => {
+    for (const node of [authors, family])
+      for (const engine of ["liquid", "eta"] as const)
+        for (const kind of snippetKindsFor(node))
+          expect(renderSnippet(node, engine, kind)).not.toMatch(/\[\d+\]/);
   });
 });
