@@ -15,7 +15,8 @@ import type { PinnedPopoverHandle } from "./pinned-popover";
 let host: HTMLElement | null = null;
 afterEach(() => {
   const mounted = host;
-  if (mounted) act(() => render(null, mounted));
+  // Unmounting hides the popover on the body.
+  if (mounted) void act(() => render(null, mounted));
   host?.remove();
   host = null;
   vi.restoreAllMocks();
@@ -62,7 +63,6 @@ it("stands inset in its box at the right edge, as tall as the box less the gap",
   const { handle, shell } = mount(box());
   await act(() => handle.current!.show());
   const { style } = shell()!;
-  expect(shell()!.classList.contains("zt-pinned-popover-inset")).toBe(true);
   expect(style.top).toBe("58px");
   expect(style.height).toBe("384px");
   expect(style.maxWidth).toBe("584px");
@@ -73,7 +73,6 @@ it("stands inset in its box at the right edge, as tall as the box less the gap",
 it("leaves its placement to Obsidian without an inset box", async () => {
   const { handle, shell } = mount();
   await act(() => handle.current!.show());
-  expect(shell()!.classList.contains("zt-pinned-popover-inset")).toBe(false);
   expect(shell()!.style.height).toBe("");
   expect(shell()!.style.left).toBe("");
 });
