@@ -74,7 +74,13 @@
          Shift+Mod+Enter and no Ctrl/Cmd+I. (3) A view-header action (lucide `eye` / `eye-off`) shows
          or hides the Note preview; hidden, the editor takes the room. (4) A click outside the details
          (and outside their row) hides them. (5) Field rows indent one level inside their group: a
-         row's chevron sits under the group's icon; values stay on one line. */
+         row's chevron sits under the group's icon; values stay on one line.
+         AMENDMENT 5: (a) Indent replaced to save width: field labels start at the group icon's
+         left edge; the group's collapse chevron sits at the right end of its header; a list
+         field's chevron follows its label; sub-fields indent a little behind a thin guide line.
+         The group count counts top-level fields only. (b) The Fields action toggles: a second
+         click closes the modal sheet, or hides the pinned panel without unpinning it (the next
+         click shows the panel again). */
       /* DESIGN PLAN (utilitarian; the project's own system wins: Obsidian's default theme)
          ground #ffffff view; panel #f6f6f7 secondary panes / popover ground; ink #222222 text;
          muted #6b6b70; faint #a3a3a8; line #e3e3e6 hairlines; accent #7f5af0 Obsidian's interactive
@@ -1273,13 +1279,17 @@
               }
               className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs font-semibold text-muted hover:bg-ground hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
             >
-              <L.ChevronRight
-                size={12}
-                className={`shrink-0 text-faint transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+              <Icon
+                size={13}
+                strokeWidth={1.75}
+                className="shrink-0 text-accent"
               />
-              <Icon size={13} strokeWidth={1.75} className="text-accent" />
               {section.label}
               <span className="font-normal text-faint tabular-nums">{n}</span>
+              <L.ChevronDown
+                size={13}
+                className={`ml-auto shrink-0 text-faint transition-transform motion-reduce:transition-none ${open ? "" : "-rotate-90"}`}
+              />
             </button>
           </div>
         );
@@ -1548,7 +1558,7 @@
                 {nav === "headers" ? (
                   <M_StickyHeader
                     section={section}
-                    n={rows.length}
+                    n={rows.filter((r) => !r.parent).length}
                     open={isOpen(section.id)}
                     onToggle={() => toggleSection(section.id)}
                   />
@@ -1576,31 +1586,35 @@
                           }}
                           aria-expanded={detail === f.path}
                           title="Show details"
-                          className={`group flex h-8 scroll-mt-9 scroll-mb-2 cursor-pointer items-center gap-2 rounded-md pr-1 text-sm pl-7 ${on || detail === f.path ? "bg-accent-soft" : "hover:bg-ground"}`}
+                          className={`group flex h-8 scroll-mt-9 scroll-mb-2 cursor-pointer items-center gap-2 rounded-md pr-1 pl-2.5 text-sm ${on || detail === f.path ? "bg-accent-soft" : "hover:bg-ground"}`}
                         >
-                          {f.children ? (
-                            <button
-                              type="button"
-                              aria-label={`${isOpen ? "Hide" : "Show"} ${f.label} sub-fields`}
-                              aria-expanded={!!isOpen}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggle(f.path);
-                              }}
-                              className="inline-flex size-4 shrink-0 items-center justify-center rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
-                            >
-                              <L.ChevronRight
-                                size={13}
-                                className={`transition-transform motion-reduce:transition-none ${isOpen ? "rotate-90" : ""}`}
-                              />
-                            </button>
-                          ) : (
-                            <span className="size-4 shrink-0" />
-                          )}
+                          {/* Labels start at the group icon's edge; a list field's chevron follows its label;
+                            sub-fields indent a little behind a guide line. */}
                           <span
-                            className={`w-[40%] shrink-0 truncate ${f.parent ? "pl-4" : ""} ${on ? "text-accent" : "text-ink"}`}
+                            className={`flex w-[40%] min-w-0 shrink-0 items-center gap-0.5 self-stretch ${f.parent ? "ml-1 border-l border-line pl-2" : ""}`}
                           >
-                            <M_Mark text={f.label} q={q} />
+                            <span
+                              className={`truncate ${on ? "text-accent" : "text-ink"}`}
+                            >
+                              <M_Mark text={f.label} q={q} />
+                            </span>
+                            {f.children && (
+                              <button
+                                type="button"
+                                aria-label={`${isOpen ? "Hide" : "Show"} ${f.label} sub-fields`}
+                                aria-expanded={!!isOpen}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggle(f.path);
+                                }}
+                                className="inline-flex size-5 shrink-0 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                              >
+                                <L.ChevronRight
+                                  size={13}
+                                  className={`transition-transform motion-reduce:transition-none ${isOpen ? "rotate-90" : ""}`}
+                                />
+                              </button>
+                            )}
                           </span>
                           <span className="flex min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[13px] [&>*]:truncate">
                             <M_Value field={f} q={q} />
@@ -1791,7 +1805,9 @@
         const [dockW, setDockW] = useState(nav === "column" ? 356 : M_SHEET_W);
         const [jump, setJump] = useState(null);
         const [section, setSection] = useState(SECTIONS[0].id);
-        const docked = pinned && !narrow;
+        // The Fields action closes a pinned panel without unpinning it; the next click shows it again.
+        const [dockHidden, setDockHidden] = useState(false);
+        const docked = pinned && !narrow && !dockHidden;
         const modal = open && !docked;
         const taRef = useRef(null);
         const searchRef = useRef(null);
@@ -1816,7 +1832,24 @@
             searchRef.current?.focus();
             return;
           }
+          if (pinned && !narrow) {
+            setDockHidden(false);
+            setTimeout(() => searchRef.current?.focus(), 0);
+            return;
+          }
           setOpen(true);
+        };
+        /** The Fields action: a second click closes the sheet, or hides the pinned panel. */
+        const toggleSheet = () => {
+          if (docked) {
+            setDockHidden(true);
+            return;
+          }
+          if (modal) {
+            close();
+            return;
+          }
+          openSheet();
         };
         const close = () => {
           setOpen(false);
@@ -1846,6 +1879,7 @@
           } else {
             setPinned(true);
             setOpen(false);
+            setDockHidden(false);
           }
           setTimeout(() => searchRef.current?.focus(), 0);
         };
@@ -1879,10 +1913,14 @@
             key="item-data"
             ref={triggerRef}
             type="button"
-            onClick={openSheet}
+            onClick={toggleSheet}
             aria-haspopup="dialog"
             aria-expanded={modal || docked}
-            title={entry.label}
+            title={
+              modal || docked
+                ? `Close ${entry.label.toLowerCase()}`
+                : entry.label
+            }
             aria-label={entry.label}
             className={`inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm focus-visible:outline-2 focus-visible:outline-accent ${modal || docked ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
           >
