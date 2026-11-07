@@ -178,6 +178,30 @@ Expected: the Preview moves under the editor and back to the right, and the
 same control keeps the focus each time. The rendered note keeps its scroll
 position. The web Workbench does the same when the window narrows and widens.
 
+## The Preview's header row stays in view
+
+1. Show the Preview in a wide tab, with the first Item of the personal library
+   chosen. Scroll the rendered note to its end.
+2. Make the tab narrower than 896 pixels, then scroll the Preview under the
+   editor to its end.
+3. Select the **Annotation** tab and scroll the Preview.
+4. Select the **Note** tab and type `{{ zt.title | nofilter }}` in the source,
+   so that the render fails.
+5. In the web Workbench, choose a sample paper and scroll the rendered note.
+
+Expected: after step 1, the row "Note preview", "New note" and "File name:
+books-personalAlpha2024" stays at the top of the Preview while the note
+scrolls under it, and a rule marks its bottom edge. The editor's tab row
+(**Note**, **Properties**, …) stands above the template source only, so the
+Preview starts right under the item row and takes the full height beside the
+editor. After step 2, the same row stays at the top of the Preview under the
+editor, and the tab row stays above the source. After step 3, the row reads
+"Annotation example" with no file name and stays at the top. After step 4,
+the row shows no file name, and the problem notice stands below the row.
+After step 5, the file name, such as `ioannidisWhyMost2005`, stays at the top
+of the result box while the note scrolls, and the "Note preview" heading and
+its controls stay above the box.
+
 ## A tab moved to its own window
 
 1. Show the Preview and the Fields in a wide tab.
