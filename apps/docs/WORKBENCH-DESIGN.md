@@ -183,8 +183,8 @@ and add actions align at its leading edge.
 ## Adaptation and access
 
 Lay out the editor and the Preview Panel with the shared panels, and the
-Fields sheet over them, as the Template Workbench View in Obsidian does.
-"Fields" in the header opens and closes the Fields sheet at every width, and
+Fields popover over them, as the Template Workbench View in Obsidian does.
+"Fields" in the header opens and closes the Fields popover at every width, and
 "Show preview" shows and hides the Preview. One
 item row above the panels names the item they all read and holds the sample
 chooser; each panel's head keeps only what is its own. The shared placement
@@ -192,21 +192,23 @@ rule measures the main area under that row. The Preview is a column in a
 main area 56rem (896 px) wide or wider, as wide as the reader drags it while
 the editor keeps 360 px. In a narrower main area the Preview goes under the
 editor, at its saved share of the height, as the same region: it keeps its
-focus and scroll across the move. The Fields sheet slides in from the
-leading edge over a dimmed scrim, 20rem wide and at most 88% of the main
-area, and holds focus until the reader closes it; "Fields" reads as a
-disclosure of it. The editor keeps its toolbar, tabs and five
+focus and scroll across the move. The Fields popover stands inset at the
+right edge of the main area, 20rem wide and as tall as the main area less
+an 8 px gap to its top, right and bottom edges, and follows the main area
+as it resizes. It has no backdrop and is not modal: the editor and the
+Preview stay usable beside it. Escape, a press outside it and its close
+button close it and return focus to "Fields", which reads as a disclosure
+of it. The editor keeps its toolbar, tabs and five
 source lines; the edit region is its one scroller, so the source grows to
 its text and a reveal scrolls the selected text into view. A pressed view
 action shows a primary border and icon over the muted fill. Document order
-is Fields sheet, editor, Preview Panel. A short viewport scrolls the page
+is editor, Preview Panel, Fields popover. A short viewport scrolls the page
 while preserving several lines of editor space.
 
 The "View" header menu holds "Show fields", "Show preview" and one size group
-for each handle the page draws ("Resize fields", "Resize preview"), so a
-reader who cannot drag sizes every panel (WCAG 2.5.7). "Show fields" in the
-menu presses the same Fields action as the header, and opens the picker
-where the column does not fit. The menu stays open across size steps and
+for each handle the page draws ("Resize preview"), so a reader who cannot
+drag sizes every panel (WCAG 2.5.7). "Show fields" in the menu presses the
+same Fields action as the header. The menu stays open across size steps and
 closes when a step moves a panel to another place, so no entry moves under
 the pointer. A polite status reads each new size. The "Help" header menu
 lists the template guide, the syntax and data references, and the community,

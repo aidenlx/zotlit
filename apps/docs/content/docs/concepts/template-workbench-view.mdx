@@ -30,17 +30,17 @@ Select <UiLabel name={m.workbench_help()} /> in the view header for <UiLabel nam
 
 ![The Template Workbench View for The Semantic Web: the Fields panel on the left, the Default profile in the middle with its shared-template notice and the template text, and the Preview panel on the right](/img/how-to/template-workbench-layout.webp)
 
-## Panels and the Fields sheet [#panels]
+## Panels and the Fields popover [#panels]
 
-The view has two parts beside the editor. The Preview panel shows what the document produces for the chosen paper. The Fields sheet lists the template data for that paper. Both are available for a profile, the citation text, and a partial.
+The view has two parts beside the editor. The Preview panel shows what the document produces for the chosen paper. The Fields popover lists the template data for that paper. Both are available for a profile, the citation text, and a partial.
 
-The editor tabs, the Preview panel and the Fields sheet use one chosen item and one chosen annotation. The row above the panels names that item, or the annotation while you edit an annotation template, and holds <UiLabel name={m.workbench_choose_item()} /> to change it. The pane menu has the same entry. The web Workbench names the item in the same row, with its own example chooser.
+The editor tabs, the Preview panel and the Fields popover use one chosen item and one chosen annotation. The row above the panels names that item, or the annotation while you edit an annotation template, and holds <UiLabel name={m.workbench_choose_item()} /> to change it. The pane menu has the same entry. The web Workbench names the item in the same row, with its own example chooser.
 
 ### Show or hide the panels [#show-panels]
 
 Select <UiLabel name={m.workbench_show_preview()} /> in the view header to show the Preview panel. The action looks pressed while the panel is shown. Select it again to hide the panel. The same entry is in the view's pane menu, with a check mark while the panel is shown. The web Workbench has the same action in its header, and the same entry in its <UiLabel name={m.workbench_view_menu()} /> menu.
 
-Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields sheet. The pane menu entry <UiLabel name={m.workbench_show_fields()} /> and the web Workbench's <UiLabel name={m.workbench_view_menu()} /> entry of the same name open and close the sheet too, with a check mark while it is open. See [The Fields sheet](#fields-panel).
+Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields popover. The pane menu entry <UiLabel name={m.workbench_show_fields()} /> and the web Workbench's <UiLabel name={m.workbench_view_menu()} /> entry of the same name open and close the popover too, with a check mark while it is open. See [The Fields popover](#fields-panel).
 
 Hiding the Preview panel keeps your chosen item and annotation. The panel shows them again when you bring it back.
 
@@ -67,17 +67,17 @@ The Preview panel stands beside the editor in a view at least 896 pixels wide (5
 
 In a view narrower than 896 pixels, the Preview moves under the editor. It takes 40% of the view's height at first. Drag the edge above it, or focus the edge and press Up Arrow or Down Arrow, to give it more or less height; Home and End set its smallest and largest share. Double-click the edge to give it 40% again. In the pane menu, <UiLabel name={m.workbench_preview_resize()} /> then offers <UiLabel name={m.workbench_panel_taller()} />, <UiLabel name={m.workbench_panel_shorter()} />, and <UiLabel name={m.workbench_panel_reset_height()} />, in steps of 10%. The editor always keeps room for its toolbar, its tabs and at least five lines of your template; the Preview gets shorter first. Each step starts from the height you see. When the editor needs more room, it scrolls.
 
-The Fields sheet works the same at every width.
+The Fields popover works the same at every width.
 
-Making the view narrower or wider moves the Preview and changes nothing else: the panel stays shown, and it gets its width back when the view is wide enough again. A sheet you opened stays open, and a closed sheet stays closed. The Preview keeps your place as it moves: the control you were on and the scroll position stay. A view you move to another window follows that window's width.
+Making the view narrower or wider moves the Preview and changes nothing else: the panel stays shown, and it gets its width back when the view is wide enough again. A popover you opened stays open, and a closed popover stays closed. The Preview keeps your place as it moves: the control you were on and the scroll position stay. A view you move to another window follows that window's width.
 
 ### What the view remembers [#panel-state]
 
-Obsidian saves whether the Preview panel is shown, how wide it is, and its height under the editor, with the view. After a restart, the view opens the way you left it. The Fields sheet is not saved: it is closed when the view opens.
+Obsidian saves whether the Preview panel is shown, how wide it is, and its height under the editor, with the view. After a restart, the view opens the way you left it. The Fields popover is not saved: it is closed when the view opens.
 
 A new view starts with no Preview panel, for a quick edit. That is the case when you open a template document from the file explorer, or with <UiLabel name={m.template_workbench_open()} />.
 
-These entry points open the Workbench window and show the Preview panel. The Fields sheet stays closed until you select <UiLabel name={m.workbench_view_fields()} />:
+These entry points open the Workbench window and show the Preview panel. The Fields popover stays closed until you select <UiLabel name={m.workbench_view_fields()} />:
 
 - <UiLabel name={m.template_workbench_open_layout()} />, from the command
   palette or the view's pane menu.
@@ -91,26 +91,29 @@ These entry points open the Workbench window and show the Preview panel. The Fie
 citation text like any other template document, so a new view starts with no
 Preview panel.
 
-### The Fields sheet [#fields-panel]
+### The Fields popover [#fields-panel]
 
-The Fields sheet is the [Template Data Explorer](/docs/how-to/explore-template-data) inside the view. It has the same filter, sections, roots, and copy actions. The button beside the filter collapses or expands every section at once. Each row has an insert button, and its row menu has <UiLabel name={m.workbench_fields_put_in_note()} />. Both put the field into the editor at your cursor.
+The Fields popover is the [Template Data Explorer](/docs/how-to/explore-template-data) inside the view. It has the same filter, sections, roots, and copy actions. The button beside the filter collapses or expands every section at once. Each row has an insert button, and its row menu has <UiLabel name={m.workbench_fields_put_in_note()} />. Both put the field into the editor at your cursor.
 
-The sheet opens at the left edge of the view, over the editor and the Preview panel, above a dimmed backdrop. It looks the same at every width. While it is open, it holds the focus: you cannot use the editor or the Preview under it.
+The popover opens at the right edge of the view and fills its height. It looks the same at every width. The editor and the Preview panel stay usable while it is open, so you can read the preview and write in the template beside it.
 
-Close the sheet in any of these ways:
+Close the popover in any of these ways:
 
 - Select <UiLabel name={m.workbench_view_fields()} /> again.
-- Select the backdrop.
-- Select the sheet's <UiLabel name={m.workbench_fields_close()} /> button.
+- Select a place outside the popover.
+- Select the popover's <UiLabel name={m.workbench_fields_close()} /> button.
 - Press Escape.
 
 The focus goes back to <UiLabel name={m.workbench_view_fields()} />.
 
-Place your cursor in the template before you insert a field. Inserting puts the field at the cursor, closes the sheet, and puts the cursor back in the editor after the field. To insert several fields in a row, hold Shift while you select the insert button, or press Shift and Enter on it. The sheet then stays open.
+<UiLabel name={m.workbench_problem_show()} /> in the Preview panel also closes
+the popover. The editor then shows the problem, with the focus on it.
 
-The sheet opens on the same root as the editor, such as the note fields or the annotation fields. The citation text shows citation fields, and a partial shows the fields of the caller you preview it as. You can move the sheet to another root, for example to an annotation. When the editor's root or the chosen item changes, the sheet follows the editor again.
+Place your cursor in the template before you insert a field. Inserting puts the field at the cursor, closes the popover, and puts the cursor back in the editor after the field. To insert several fields in a row, hold Shift while you select the insert button, or press Shift and Enter on it. The popover then stays open.
 
-While the Fields sheet is open, <UiLabel name={m.template_data_explorer_menu_export_json()} /> in the pane menu saves the data of the root the sheet shows. Otherwise it saves the data of the editor's root.
+The popover opens on the same root as the editor, such as the note fields or the annotation fields. The citation text shows citation fields, and a partial shows the fields of the caller you preview it as. You can move the popover to another root, for example to an annotation. When the editor's root or the chosen item changes, the popover follows the editor again.
+
+While the Fields popover is open, <UiLabel name={m.template_data_explorer_menu_export_json()} /> in the pane menu saves the data of the root the popover shows. Otherwise it saves the data of the editor's root.
 
 ### The Preview panel [#preview-panel]
 
