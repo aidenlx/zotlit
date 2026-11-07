@@ -18,6 +18,8 @@ import type {
 import {
   citationVariantLabel,
   partialContextLabel,
+  PreviewFilenameLabel,
+  previewFilename,
   ResultBody,
 } from "@zotlit/workbench/ui";
 import type { ResultMode, TemplateRoot } from "@zotlit/workbench/ui";
@@ -153,11 +155,24 @@ export function PreviewPanel({
       : []),
     ...(!preview.live ? [m.workbench_preview_on_demand()] : []),
   ].join(m.workbench_selection_separator());
+  // The header row's file name and the body read the same render.
+  const reading = {
+    result,
+    annotationResult: result,
+    retained,
+    mode,
+    staleReason,
+    showManaged: preview.showManaged,
+  };
+  const filename = previewFilename(reading);
   return (
+    // The scroll padding keeps a control the reader tabs to clear of the
+    // sticky header row, so it stays at least as tall as that row: change
+    // one with the other.
     <div
       data-workbench-scroll="preview"
       data-zotlit-preview-result={result?.sourceRevision}
-      className="zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-3 zt:overflow-auto zt:p-3"
+      className="zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:scroll-pt-20 zt:flex-col zt:gap-3 zt:overflow-auto zt:p-3"
     >
       {/* The view's item row above holds the chooser this hint points at. */}
       {status === "empty" && !ready && (
@@ -198,18 +213,23 @@ export function PreviewPanel({
       )}
       {ready && (
         <>
-          <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:justify-between zt:gap-x-3 zt:gap-y-1">
-            <h2 className="zt-workbench-preview-heading">{heading}</h2>
-            {caption && <p className={selectionHint}>{caption}</p>}
-          </div>
+          {/* The header row stays at the top of the scroll area, so the
+              reader always sees which note and file name the preview shows.
+              It bleeds over the panel's padding to cover what scrolls under. */}
+          <header
+            data-workbench-preview-header=""
+            className="zt:sticky zt:-top-3 zt:z-10 zt:-mx-3 zt:-mt-3 zt:flex zt:min-w-0 zt:flex-col zt:gap-1 zt:border-b zt:border-border zt:bg-background zt:px-3 zt:pt-3 zt:pb-2"
+          >
+            <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:justify-between zt:gap-x-3 zt:gap-y-1">
+              <h2 className="zt-workbench-preview-heading">{heading}</h2>
+              {caption && <p className={selectionHint}>{caption}</p>}
+            </div>
+            {filename !== null && <PreviewFilenameLabel filename={filename} />}
+          </header>
           <ResultBody
-            result={result}
-            annotationResult={result}
-            retained={retained}
-            mode={mode}
-            staleReason={staleReason}
+            {...reading}
             showMarkdown={preview.showMarkdown}
-            showManaged={preview.showManaged}
+            showFilename={false}
             onShowProblem={showProblem}
             onRun={() => view.registry.set(workbench.scheduler.run, undefined)}
             busy={busy}
