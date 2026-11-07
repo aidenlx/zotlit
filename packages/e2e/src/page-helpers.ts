@@ -559,9 +559,18 @@ export function createPageHelpers(app: PageApp) {
    */
   function fieldsPopover(view: TemplateWorkbenchView | undefined) {
     const id = view?.containerEl
-      .querySelector('.view-action[aria-controls^="zt-fields-popover-"]')
+      .querySelector(
+        '.view-action[aria-haspopup="dialog"][aria-controls^="zt-fields-popover-"]',
+      )
       ?.getAttribute("aria-controls");
     return (id && view?.contentEl.doc.getElementById(id)) || null;
+  }
+  /** The Fields Panel docked in `view`, or null while it is not docked. */
+  function fieldsDock(view: TemplateWorkbenchView | undefined) {
+    return (
+      view?.contentEl.querySelector<HTMLElement>('[data-panel="fields"]') ??
+      null
+    );
   }
   /** The Preview panel `view` shows, or null while it hides the panel. */
   function previewPanel(view: TemplateWorkbenchView | undefined) {
@@ -992,6 +1001,7 @@ export function createPageHelpers(app: PageApp) {
     annotationOpenSubpath,
     workbench,
     fieldsPopover,
+    fieldsDock,
     previewPanel,
     itemRow,
     workbenchSurfaces,
