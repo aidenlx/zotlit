@@ -191,10 +191,17 @@ interface TreeNodeProps {
  * The label cell of a Fields Panel row: whether its field is nested, and the
  * chevron that follows the label of a field that opens.
  */
-const FieldLabelContext = createContext<{
+interface FieldLabelCell {
   readonly nested: boolean;
   readonly chevron: ReactNode;
-} | null>(null);
+}
+
+/** What a row draws: its node, the name it shows, and its label cell in a Fields Panel. */
+interface RowProps<N extends DisplayNode = DisplayNode> {
+  node: N;
+  label?: string;
+  cell?: FieldLabelCell;
+}
 
 function TreeNode({
   node,
@@ -213,6 +220,9 @@ function TreeNode({
   const isMatched = matchedKeys?.has(node.key) ?? false;
   const selected = rows?.selected === node.key;
   const open = rows?.open === node.key;
+  const chevron = isExpandable ? (
+    <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />
+  ) : null;
 
   return (
     <li
@@ -242,29 +252,14 @@ function TreeNode({
             : undefined
         }
       >
-        {!rows &&
-          (isExpandable ? (
-            <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />
-          ) : (
-            <span {...part("spacer")} />
-          ))}
+        {!rows && (chevron ?? <span {...part("spacer")} />)}
         {/* The host lays the key and the value out as a wrapping row: one line while both fit, the value on its own line beneath the key when it does not. The space between them survives in text content only. A Fields Panel row keeps one line, its label in a cell of its own with its chevron after it. */}
         <div {...part("contents", rows ? "line" : undefined)}>
-          <FieldLabelContext.Provider
-            value={
-              rows && {
-                nested,
-                chevron: isExpandable && (
-                  <Chevron
-                    expanded={isExpanded}
-                    onClick={() => onToggle(node.key)}
-                  />
-                ),
-              }
-            }
-          >
-            <NodeRow node={node} label={label} />
-          </FieldLabelContext.Provider>
+          <NodeRow
+            node={node}
+            label={label}
+            cell={rows ? { nested, chevron } : undefined}
+          />
         </div>
         <ActionCluster
           node={node}
@@ -382,16 +377,16 @@ function ClusterButton({
   );
 }
 
-function NodeRow({ node, label }: { node: DisplayNode; label?: string }) {
+function NodeRow({ node, label, cell }: RowProps) {
   switch (node.kind) {
     case "value":
-      return <ValueRow node={node} label={label} />;
+      return <ValueRow node={node} label={label} cell={cell} />;
     case "helper":
-      return <HelperRow node={node} label={label} />;
+      return <HelperRow node={node} label={label} cell={cell} />;
     case "placeholder":
-      return <PlaceholderRow node={node} label={label} />;
+      return <PlaceholderRow node={node} label={label} cell={cell} />;
     case "list-property":
-      return <ListPropertyRow node={node} label={label} />;
+      return <ListPropertyRow node={node} label={label} cell={cell} />;
   }
 }
 
@@ -399,10 +394,9 @@ function NodeRow({ node, label }: { node: DisplayNode; label?: string }) {
  * The property name, or the array index, or the reader-facing name of a
  * top-level field. A named key keeps its raw path in the tooltip.
  */
-function KeyLabel({ node, label }: { node: DisplayNode; label?: string }) {
+function KeyLabel({ node, label, cell }: RowProps) {
   const part = useParts("explorerTree");
   const tooltip = useTooltip(formatPath(node.path, "zt"));
-  const cell = useContext(FieldLabelContext);
   const key =
     label === undefined ? (
       <span {...part("key")}>{node.label}</span>
@@ -420,11 +414,11 @@ function KeyLabel({ node, label }: { node: DisplayNode; label?: string }) {
   );
 }
 
-function ValueRow({ node, label }: { node: ValueNode; label?: string }) {
+function ValueRow({ node, label, cell }: RowProps<ValueNode>) {
   const part = useParts("explorerTree");
   return (
     <>
-      <KeyLabel node={node} label={label} />{" "}
+      <KeyLabel node={node} label={label} cell={cell} />{" "}
       <span {...part("value")}>
         <ValueContent node={node} labeled={label !== undefined} />
       </span>
@@ -495,11 +489,11 @@ function ScalarValue({ node }: { node: ValueNode }) {
   }
 }
 
-function HelperRow({ node, label }: { node: HelperNode; label?: string }) {
+function HelperRow({ node, label, cell }: RowProps<HelperNode>) {
   const part = useParts("explorerTree");
   return (
     <>
-      <KeyLabel node={node} label={label} />{" "}
+      <KeyLabel node={node} label={label} cell={cell} />{" "}
       <span {...part("value")}>
         <span {...part("hint")}>{node.signatureHint}</span>{" "}
         {node.evaluated === null ? (
@@ -512,17 +506,11 @@ function HelperRow({ node, label }: { node: HelperNode; label?: string }) {
   );
 }
 
-function PlaceholderRow({
-  node,
-  label,
-}: {
-  node: PlaceholderNode;
-  label?: string;
-}) {
+function PlaceholderRow({ node, label, cell }: RowProps<PlaceholderNode>) {
   const part = useParts("explorerTree");
   return (
     <>
-      <KeyLabel node={node} label={label} />{" "}
+      <KeyLabel node={node} label={label} cell={cell} />{" "}
       <span {...part("value")}>
         <span {...part("placeholder")}>{node.reason}</span>
       </span>
@@ -531,17 +519,11 @@ function PlaceholderRow({
 }
 
 /** A property every item of a list has, with the values of all items in one line. */
-function ListPropertyRow({
-  node,
-  label,
-}: {
-  node: ListPropertyNode;
-  label?: string;
-}) {
+function ListPropertyRow({ node, label, cell }: RowProps<ListPropertyNode>) {
   const part = useParts("explorerTree");
   return (
     <>
-      <KeyLabel node={node} label={label} />{" "}
+      <KeyLabel node={node} label={label} cell={cell} />{" "}
       <span {...part("value")}>
         <span {...part("placeholder")}>{node.preview}</span>
       </span>
