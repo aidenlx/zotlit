@@ -178,25 +178,67 @@ outcome.
 1. Choose "Alpha of the personal library", and select **Fields**.
 2. Find the **All creators** row (Reference) and the **Tags** row (Common
    fields) without opening them.
-3. Close the popover. Select **Source**, and place the cursor in the note body.
-   Select **Fields**, open the row menu of **All creators**, and select
-   **Insert field**.
-4. Select **Fields**, open the row menu of **All creators** again, and select
-   **Copy loop**. Close the popover, and paste it on a new line of the note body.
-5. Select **Fields**, open the row menu of **Tags**, select **Copy joined**,
-   close the popover, and paste it on a new line. Then select **Copy loop** in
-   the same menu, and paste it under a line of text.
+3. Select the chevron after the **All creators** label.
+4. Close the popover. Select **Source**, and place the cursor in the note body.
+   Select **Fields**, and select **Insert field** on the **All creators** row.
 
 Expected: in step 2, **All creators** shows `(3)` and every item in one
 line: "Ada Personal, Erin Editor, ZotLit Research Collective". **Tags**
-shows `(2)` and "fixture-core, read-later". In both row menus, **Copy joined**
-comes before **Copy loop**. Step 3 writes
-`{{ zt.creators | join: ", " }}` and closes the popover, and the Preview shows
-the three names in one line. Step 4 pastes `{% for creator in zt.creators %}`
-and `- {{ creator }}{% endfor %}` on two lines; the Preview shows each name as
-its own list item. Step 5 pastes `{{ zt.tags | join: ", " }}`, then the tag
-loop, which the Preview shows as the two list items "fixture-core" and
-"read-later". No snippet that a list offers names one item, such as `[0]`.
+shows `(2)` and "fixture-core, read-later". A chevron follows the label of
+**All creators**, a list of creators. **Tags** has a chevron too: each tag
+carries its `name` and its `type`. In step 3 the row opens to one sub-row
+for each property of its items, such as `family` and `given`, and each
+sub-row shows that property for all three creators in one line. The
+**All creators** row keeps its count and its items. No row stands for one
+creator, and no row's path names one item, such as `[0]`. Step 4 writes
+`{{ zt.creators | join: ", " }}` and closes the popover, and the Preview
+shows the three names in one line.
+
+## A list field's details and its two forms
+
+1. Choose "Alpha of the personal library", select **Source**, place the
+   cursor on a new line of the note body, and select **Fields**.
+2. Select the **All creators** row.
+3. Under **In your note**, select **Each item**.
+4. Select **Copy**, and paste on a new line of the note body.
+5. Select **Fields**, select the **All creators** row, select **Each item**,
+   and select **Insert**.
+6. Select **Fields**, open **All creators** with its chevron, and select the
+   `family` sub-row.
+7. Select **Insert** with **In one line**, then select the `family` sub-row
+   again, choose **Each item**, and select **Insert**.
+
+Expected: step 2 opens the details. They list the three creators one per
+line, numbered 1 to 3, and offer **In one line** (chosen) and **Each item**.
+The snippet is `{{ zt.creators | join: ", " }}` and its result is the three
+names in one line. Step 3 changes the snippet to
+`{% for creator in zt.creators %}` and `- {{ creator }}{% endfor %}` on two
+lines, and the result to three lines that each start with `- `. Step 4
+pastes that loop, and **Copy** closes the details. Step 5 inserts the same
+loop, closes the popover, and the Preview shows each creator as its own list
+item. Step 6 lists each creator's family name, numbered. Step 7 inserts
+`{{ zt.creators | map: "family" | join: ", " }}`, then the loop with
+`- {{ creator.family }}`; the Preview shows the family names in one line,
+then one list item each. A field that is not a list, such as `title`, shows
+no form choice. Every list of the Fixture's Items reads as text, so each one
+offers both forms; the shared component tests cover a list that offers
+**Each item** alone.
+
+## Explore an annotation from the Fields popover
+
+1. Choose "Ten Simple Rules for Better Figures", and select **Fields**.
+2. Open the row menu of **Annotations**, and select **Explore as annotation
+   template data**.
+3. Choose "Alpha of the personal library", select **Fields**, and open the
+   row menu of **Annotations**.
+
+Expected: the **Annotations** row shows its count and has a chevron, and no
+row stands for one annotation. Step 2 moves the popover to the annotation
+root. It shows the view's chosen annotation, or the Item's first annotation
+when none is chosen. **Choose annotation** in the view's item row picks
+another, and the back arrow returns to the note root. In step 3, the Item
+has no annotations: **Annotations** shows `(0)` with no chevron, and its menu
+offers no **Explore as annotation template data**.
 
 ## Keep the Fields popover open while inserting
 
