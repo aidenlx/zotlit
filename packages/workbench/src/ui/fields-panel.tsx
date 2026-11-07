@@ -14,6 +14,7 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
 import { useOptionalHost, useTooltip } from "./host";
+import { composing } from "./ime";
 import { useWorkbenchMessages } from "./messages";
 import { pressFieldsPin } from "./model";
 import type { FieldsAction } from "./panel-layout";
@@ -176,8 +177,7 @@ function FieldsPanelBody({
       onKeyDown={(event) => {
         if (event.key !== "Escape" || event.defaultPrevented) return;
         // Escape that drops an input method's candidate is the method's.
-        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
-          return;
+        if (composing(event)) return;
         if (!escape.current()) return;
         event.preventDefault();
         event.stopPropagation();

@@ -21,6 +21,7 @@ import type {
   WorkbenchMenuItem,
   WorkbenchMenuRequest,
 } from "./host";
+import { composing } from "./ime";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
@@ -162,7 +163,9 @@ export function DataExplorer({
     insertField &&
     ((node: DisplayNode, keepOpen = false) => {
       if (insertField(node, { keepOpen }) === false) return;
-      host.notice(m.workbench_fields_inserted({ field: fieldLabel(node) }));
+      host.notice(
+        m.workbench_fields_inserted({ field: fieldLabel(node, labels) }),
+      );
       if (!keepOpen) setFields("to-editor");
     });
   const locale = host.getLocale();
@@ -193,10 +196,6 @@ export function DataExplorer({
     };
   }, [data, tree, labels]);
   const filtering = tree.filterQuery !== "";
-  /** The name a field's row shows. */
-  function fieldLabel(node: DisplayNode): string {
-    return labels.get(node.key) ?? node.label;
-  }
   // A filter holds every section that still has a row open.
   const sections = useMemo<DisplaySection[]>(
     () =>
@@ -213,6 +212,7 @@ export function DataExplorer({
   const rows = useFieldRows({
     enabled: panelRows !== null,
     sections,
+    labels,
     query: tree.filterQuery,
   });
   const detailsSurface = useRef<HTMLElement>(null);
@@ -226,7 +226,7 @@ export function DataExplorer({
   // The selected row stays in view as ↑/↓ move it.
   useLayoutEffect(() => {
     if (rows.selected === null) return;
-    rowElement(body.current, rows.selected)?.scrollIntoView?.({
+    rowElement(body.current, rows.selected)?.scrollIntoView({
       block: "nearest",
     });
   }, [rows.selected]);
@@ -537,23 +537,34 @@ interface FieldEntry {
   readonly context: string;
 }
 
+/**
+ * The name a field goes by on every surface of the Fields Panel: its row, its
+ * details, and what an insert or a copy announces. A top-level field has its
+ * reader-facing name in `labels`; a nested one shows its key.
+ */
+export function fieldLabel(
+  node: DisplayNode,
+  labels: ReadonlyMap<string, string>,
+): string {
+  return labels.get(node.key) ?? node.label;
+}
+
 /** Every row the sections show, in order, with the names its details show. */
-function fieldEntries(sections: readonly DisplaySection[]): FieldEntry[] {
+function fieldEntries(
+  sections: readonly DisplaySection[],
+  labels: ReadonlyMap<string, string>,
+): FieldEntry[] {
   const entries: FieldEntry[] = [];
-  const visit = (
-    nodes: readonly DisplayNode[],
-    context: string,
-    labels: ReadonlyMap<string, string> | null,
-  ) => {
+  const visit = (nodes: readonly DisplayNode[], context: string) => {
     for (const node of nodes) {
-      const label = labels?.get(node.key) ?? node.label;
+      const label = fieldLabel(node, labels);
       entries.push({ node, label, context });
       if (node.kind === "value" && node.children)
-        visit(node.children, `${context} · ${label}`, null);
+        visit(node.children, `${context} · ${label}`);
     }
   };
   for (const section of sections)
-    if (!section.collapsed) visit(section.nodes, section.label, section.labels);
+    if (!section.collapsed) visit(section.nodes, section.label);
   return entries;
 }
 
@@ -565,10 +576,12 @@ function fieldEntries(sections: readonly DisplaySection[]): FieldEntry[] {
 function useFieldRows({
   enabled,
   sections,
+  labels,
   query,
 }: {
   enabled: boolean;
   sections: readonly DisplaySection[];
+  labels: ReadonlyMap<string, string>;
   query: string;
 }) {
   const prefix = useUniqueId();
@@ -584,8 +597,8 @@ function useFieldRows({
     setState({ query, selected, open });
   }
   const entries = useMemo(
-    () => (enabled ? fieldEntries(sections) : []),
-    [enabled, sections],
+    () => (enabled ? fieldEntries(sections, labels) : []),
+    [enabled, sections, labels],
   );
   const index = new Map(entries.map((entry, at) => [entry.node.key, at]));
   if (selected !== null && !index.has(selected)) selected = null;
@@ -638,13 +651,9 @@ function rowElement(body: HTMLElement | null, key: string): HTMLElement | null {
   return item?.querySelector<HTMLElement>(":scope > [data-part=row]") ?? null;
 }
 
-/** Whether a keystroke belongs to an input method's composition. */
-function composing(event: React.KeyboardEvent): boolean {
-  return event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
-}
-
 /** The shortcut that inserts the selected field, as the platform names it. */
 function insertShortcut(): string {
-  const agent = globalThis.navigator?.userAgent ?? "";
-  return /Mac|iPhone|iPad/.test(agent) ? "Command+Enter" : "Ctrl+Enter";
+  return /Mac|iPhone|iPad/.test(navigator.userAgent)
+    ? "Command+Enter"
+    : "Ctrl+Enter";
 }

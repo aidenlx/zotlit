@@ -28,6 +28,7 @@ const PAPER = {
   title: "Linked notes in practice",
   DOI: "10.1000/linked-notes",
   abstract: "",
+  shelf: { label: "Methods" },
 };
 
 const PREVIEW: WorkbenchPanels = {
@@ -434,7 +435,7 @@ describe.each(PRESENTATIONS)(
       expect(region.getAllByText("Linked notes in practice")).toHaveLength(2);
       expect(region.getByText("Template path")).toBeTruthy();
       expect(region.getByText("zt.title")).toBeTruthy();
-      expect(region.getByText("In your note:")).toBeTruthy();
+      expect(region.getByText("In your note")).toBeTruthy();
       expect(region.getByText("{{ zt.title }}")).toBeTruthy();
       expect(region.getByRole("button", { name: "Insert" })).toBeTruthy();
       expect(region.getByRole("button", { name: "Copy" })).toBeTruthy();
@@ -577,7 +578,7 @@ describe("a field row", () => {
     page.pressAction();
     expect(
       within(panel()!).getByText(
-        /^Click or Enter: details · (Ctrl|Command)\+Enter: insert$/,
+        /^Select or press Enter: details · (Ctrl|Command)\+Enter: insert$/,
       ),
     ).toBeTruthy();
   });
@@ -639,5 +640,38 @@ describe("a field's details in the docked panel", () => {
     page.pressAction();
     expect(docked()).toBeNull();
     expect(page.host.calls.heldKeys).toEqual([]);
+  });
+});
+
+describe("a nested field", () => {
+  it("goes by one name in its details and in what Insert and Copy announce", () => {
+    using page = open({ size: { width: 760, height: 800 } });
+    page.pressAction();
+    fireEvent.click(
+      within(rowOf("shelf")).getByRole("button", { name: "Toggle node" }),
+    );
+    const nested = () =>
+      within(panel()!)
+        .getAllByRole("treeitem")
+        .find(
+          (row) => row.getAttribute("data-workbench-field") === "shelf.label",
+        )!
+        .querySelector<HTMLElement>("[data-part=row]")!;
+    // The details title the nested field by its key.
+    const name = "label";
+    fireEvent.click(nested());
+    expect(details(name)).not.toBeNull();
+    fireEvent.click(
+      within(details(name)!).getByRole("button", { name: "Copy" }),
+    );
+    fireEvent.click(nested());
+    fireEvent.click(
+      within(details(name)!).getByRole("button", { name: "Insert" }),
+      { shiftKey: true },
+    );
+    expect(page.host.calls.notices).toEqual([
+      `Copied ${name}.`,
+      `Inserted ${name}.`,
+    ]);
   });
 });
