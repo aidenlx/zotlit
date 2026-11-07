@@ -841,6 +841,8 @@
       // --- Kit END ---
 
       // --- Merged ---
+      // Layout reflow uses Tailwind container queries on the view frame (@container) and on the
+      // editor column (@container/main); JS reads the width only for behaviour (pin, modal vs dock, hover delay).
       // Round 3 — one merged design (E's sheet + detail flyout, A's modal behaviour, C's section icons)
       // with five placements of the section icons. All shared code is M_*; each Variant<KEY> picks a `nav`.
       //   rail    — 32 px rail at the view's left edge, always visible; a click opens the sheet at that section.
@@ -870,17 +872,16 @@
       /** The entry action and sheet title (round 4 question). Each round-4 variant passes its own. */
       const M_ENTRY_DEFAULT = { icon: L.TableProperties, label: "Item data" };
       const M_RAIL_W = 32;
-      const M_PREVIEW_BESIDE_MIN = 896;
 
       const M_STYLE = `
-@keyframes m-slide { from { transform: translateX(-100%); } }
-@keyframes m-fade { from { opacity: 0; } }
-@keyframes m-pop { from { opacity: 0; transform: translateX(-6px); } }
-.m-slide { animation: m-slide 150ms ease-out; }
-.m-fade { animation: m-fade 150ms ease-out; }
-.m-pop { animation: m-pop 120ms ease-out; }
-@media (prefers-reduced-motion: reduce) { .m-slide, .m-fade, .m-pop { animation: none; } }
-`;
+      @keyframes m-slide { from { transform: translateX(-100%); } }
+      @keyframes m-fade { from { opacity: 0; } }
+      @keyframes m-pop { from { opacity: 0; transform: translateX(-6px); } }
+      .m-slide { animation: m-slide 150ms ease-out; }
+      .m-fade { animation: m-fade 150ms ease-out; }
+      .m-pop { animation: m-pop 120ms ease-out; }
+      @media (prefers-reduced-motion: reduce) { .m-slide, .m-fade, .m-pop { animation: none; } }
+      `;
 
       const M_hit = (f, t) =>
         `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t);
@@ -1447,8 +1448,8 @@
                           className={`shrink-0 text-accent ${on ? "opacity-100" : "opacity-0 group-hover:opacity-60"}`}
                         />
                       </div>
-                      {!flyout && on && (
-                        <div className="mx-1 mb-1.5 rounded-b-md border border-t-0 border-line bg-ground px-3 py-3">
+                      {on && (
+                        <div className="mx-1 mb-1.5 rounded-b-md @min-[600px]:hidden border border-t-0 border-line bg-ground px-3 py-3">
                           <M_Detail
                             field={f}
                             q={q}
@@ -1573,12 +1574,12 @@
               {hint}
             </div>
 
-            {flyout && cur && (
+            {cur && (
               <div
                 ref={cardRef}
                 role="region"
                 aria-label={`${cur.label} details`}
-                className="m-pop absolute left-full z-50 ml-2 w-72 rounded-lg border border-line bg-raise p-4 shadow-xl"
+                className="m-pop hidden @min-[600px]:block absolute left-full z-50 ml-2 w-72 rounded-lg border border-line bg-raise p-4 shadow-xl"
                 style={{ top: cardTop }}
               >
                 <M_Detail field={cur} q={q} onInsert={onInsert} />
@@ -1605,7 +1606,6 @@
 
       /** The whole Workbench view with the merged Item data sheet and one placement of the section icons. */
       function M_View({ nav, entry = M_ENTRY_DEFAULT, title }) {
-        const { width } = useProto();
         const narrow = useNarrow();
         const [open, setOpen] = useState(false);
         const [pinned, setPinned] = useState(false);
@@ -1692,8 +1692,6 @@
         };
 
         const rail = nav === "rail";
-        const room = width - (rail ? M_RAIL_W : 0) - (docked ? dockW : 0);
-        const previewBeside = room >= M_PREVIEW_BESIDE_MIN;
         const sheetW = nav === "column" ? 356 : M_SHEET_W;
 
         const action = (
@@ -1709,7 +1707,9 @@
             className={`inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm focus-visible:outline-2 focus-visible:outline-accent ${modal || docked ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
           >
             <entry.icon size={16} strokeWidth={1.75} />
-            {!narrow && <span className="pr-0.5">{entry.label}</span>}
+            <span className="hidden pr-0.5 @min-[600px]:inline">
+              {entry.label}
+            </span>
           </button>
         );
 
@@ -1748,20 +1748,12 @@
                     {...sheetProps}
                   />
                 )}
-                <div className="flex min-w-0 flex-1 flex-col">
+                <div className="@container/main flex min-w-0 flex-1 flex-col">
                   <ItemRow onTitleClick={openSheet} />
                   <TabBar />
-                  <div
-                    className={`flex min-h-0 flex-1 ${previewBeside ? "flex-row" : "flex-col"}`}
-                  >
+                  <div className="flex min-h-0 flex-1 flex-col @min-[56rem]/main:flex-row">
                     <SourceEditor taRef={taRef} className="min-h-32 flex-1" />
-                    <NotePreview
-                      className={
-                        previewBeside
-                          ? "w-[44%] shrink-0 border-l border-line"
-                          : "h-[45%] shrink-0 border-t border-line"
-                      }
-                    />
+                    <NotePreview className="h-[45%] shrink-0 border-t border-line @min-[56rem]/main:h-auto @min-[56rem]/main:w-[44%] @min-[56rem]/main:border-t-0 @min-[56rem]/main:border-l" />
                   </div>
                 </div>
                 {modal && (
@@ -1784,7 +1776,6 @@
           </Stage>
         );
       }
-
       // --- Merged END ---
 
       // --- App ---
