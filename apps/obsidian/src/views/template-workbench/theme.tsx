@@ -458,7 +458,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:flex zt:shrink-0 zt:items-center zt:gap-1 zt:px-(--size-4-2) zt:pt-(--size-4-2)",
       icon: "zt:flex zt:shrink-0 zt:ps-1 zt:text-(--icon-color) zt:[&_svg]:size-(--icon-s)",
       title:
-        "zt:m-0 zt:min-w-0 zt:flex-1 zt:truncate zt:px-1 zt:text-sm zt:font-semibold",
+        "zt:min-w-0 zt:flex-1 zt:truncate zt:px-1 zt:text-sm zt:font-semibold",
       close: "clickable-icon zt:shrink-0",
       body: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-auto",
     },

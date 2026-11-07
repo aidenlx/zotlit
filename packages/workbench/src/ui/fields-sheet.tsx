@@ -7,7 +7,7 @@
 // The host supplies what the sheet holds and draws its parts.
 import { useAtomSet } from "@effect/atom-react";
 import { useLayoutEffect, useRef } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { FocusEvent, KeyboardEvent, ReactNode } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -44,6 +44,27 @@ export function fieldsActionAttributes(
   };
 }
 
+/** Where focus stood in the sheet: its field row and its control's name. */
+interface FocusPlace {
+  readonly field: string | null;
+  readonly label: string | null;
+}
+
+/** The control at `place` in `root`, as the sheet draws it now. */
+function controlAt(root: HTMLElement, place: FocusPlace): HTMLElement | null {
+  const escape = (value: string) => value.replaceAll(/["\\]/g, "\\$&");
+  const row =
+    place.field === null
+      ? root
+      : root.querySelector<HTMLElement>(
+          `[data-workbench-field="${escape(place.field)}"]`,
+        );
+  if (!row || place.label === null) return null;
+  return row.querySelector<HTMLElement>(
+    `[aria-label="${escape(place.label)}"]`,
+  );
+}
+
 /** The elements Tab stops at, in document order. */
 const TABBABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -74,7 +95,59 @@ export function FieldsSheet({ label, content }: FieldsSheetContent) {
       root?.querySelector<HTMLElement>(TABBABLE);
     first?.focus({ preventScroll: true });
   }, []);
+  // The sheet holds focus. A Shift insert can draw the row that held it
+  // again, and the browser then drops focus to the page: it goes back to the
+  // same control in the new row. While that row is not drawn yet, the search
+  // field holds focus for it, until the row comes back or the reader moves on.
+  const place = useRef<FocusPlace | null>(null);
+  const lost = useRef<FocusPlace | null>(null);
+  const searchField = () =>
+    sheet.current?.querySelector<HTMLElement>("[data-part=body] input") ?? null;
+  const onFocus = (event: FocusEvent<HTMLElement>) => {
+    const { target } = event;
+    if (lost.current && target === searchField()) return;
+    lost.current = null;
+    place.current = {
+      field:
+        target.closest<HTMLElement>("[data-workbench-field]")?.dataset
+          .workbenchField ?? null,
+      label: target.getAttribute("aria-label"),
+    };
+  };
+  useLayoutEffect(() => {
+    const root = sheet.current;
+    const view = root?.ownerDocument.defaultView;
+    if (!root || !view) return;
+    const observer = new view.MutationObserver(() => {
+      const doc = root.ownerDocument;
+      const at = doc.activeElement;
+      const dropped = !at || at === doc.body;
+      if (lost.current) {
+        const back = controlAt(root, lost.current);
+        if (!back) return;
+        const holding = lost.current;
+        lost.current = null;
+        if (dropped || at === searchField()) {
+          place.current = holding;
+          back.focus({ preventScroll: true });
+        }
+        return;
+      }
+      if (!dropped) return;
+      const back = place.current && controlAt(root, place.current);
+      if (back) {
+        back.focus({ preventScroll: true });
+        return;
+      }
+      lost.current = place.current;
+      searchField()?.focus({ preventScroll: true });
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    // A key is the reader's next step: the control focus waited for is past.
+    lost.current = null;
     if (event.defaultPrevented || event.nativeEvent.isComposing) return;
     if (event.key === "Escape") {
       event.preventDefault();
@@ -108,15 +181,18 @@ export function FieldsSheet({ label, content }: FieldsSheetContent) {
         aria-modal="true"
         aria-labelledby={titleId}
         onKeyDown={onKeyDown}
+        onFocus={onFocus}
         {...part("sheet")}
       >
         <div {...part("header")}>
           <span aria-hidden="true" {...part("icon")}>
             {icon("fields")}
           </span>
-          <h2 id={titleId} {...part("title")}>
+          {/* A title, not a heading: the dialog takes its name from it, and
+              a host's heading style would outweigh the theme's part. */}
+          <span id={titleId} {...part("title")}>
             {label}
-          </h2>
+          </span>
           <button
             type="button"
             aria-label={closeLabel}

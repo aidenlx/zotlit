@@ -33,18 +33,25 @@ const PREVIEW: WorkbenchPanels = {
   preview: { ...INITIAL_PANELS.preview, shown: true },
 };
 
-/** The explorer the hosts put in the sheet, over its own navigation. */
+/**
+ * The explorer the hosts put in the sheet, over its own navigation. With
+ * `redraw`, each insert draws the tree anew, as a host's can.
+ */
 function Fields({
   onInsertNode,
+  redraw = false,
 }: {
   onInsertNode: (node: DisplayNode) => boolean | void;
+  redraw?: boolean;
 }) {
+  const [drawn, setDrawn] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState<
     ReadonlySet<string>
   >(() => new Set<string>());
   const [navigation, setNavigation] = useState(initialTreeState);
   return (
     <DataExplorer
+      key={drawn}
       root="note"
       data={PAPER}
       copy={() => Effect.void}
@@ -52,7 +59,10 @@ function Fields({
       onCollapsedSectionsChange={setCollapsedSections}
       navigation={navigation}
       onNavigationChange={setNavigation}
-      onInsertNode={onInsertNode}
+      onInsertNode={(node) => {
+        if (redraw) setDrawn((count) => count + 1);
+        return onInsertNode(node);
+      }}
     />
   );
 }
@@ -60,7 +70,8 @@ function Fields({
 function open({
   size = { width: 560, height: 800 },
   refuse = false,
-}: { size?: ViewSize; refuse?: boolean } = {}) {
+  redraw = false,
+}: { size?: ViewSize; refuse?: boolean; redraw?: boolean } = {}) {
   const viewSize = Atom.make<ViewSize | null>(size);
   const inserted: string[] = [];
   const mounted = mount(
@@ -70,6 +81,7 @@ function open({
           label: "Fields",
           content: (
             <Fields
+              redraw={redraw}
               onInsertNode={(node) => {
                 if (refuse) return false;
                 inserted.push(node.key);
@@ -193,6 +205,20 @@ describe("the Fields sheet", () => {
     );
     expect(page.inserted).toEqual(["title", "title"]);
     expect(sheet()).not.toBeNull();
+  });
+
+  it("keeps focus on the field's Insert button when a Shift insert draws its row again", async () => {
+    using page = open({ redraw: true });
+    page.pressAction();
+    const insert = () =>
+      within(titleRow()).getByRole("button", { name: "Insert field" });
+    const first = insert();
+    act(() => first.focus());
+    fireEvent.keyDown(first, { key: "Enter", shiftKey: true });
+    // The row is a new element now, and focus followed it.
+    await act(async () => {});
+    expect(insert()).not.toBe(first);
+    expect(document.activeElement).toBe(insert());
   });
 
   it("stays open when the editor refuses the field", () => {
