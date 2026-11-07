@@ -7,7 +7,9 @@ import type {
   PathSegment,
 } from "./display-tree";
 import { buildDisplayTree } from "./display-tree";
-import { renderSnippet, snippetKindsFor } from "./snippets";
+import { renderSnippet, snippetKindsFor, snippetResult } from "./snippets";
+import type { SnippetKind } from "./snippets";
+import { withText } from "./test-records";
 
 function value(
   path: PathSegment[],
@@ -298,3 +300,49 @@ describe("list snippets never use an item index", () => {
           expect(renderSnippet(node, engine, kind)).not.toMatch(/\[\d+\]/);
   });
 });
+
+describe("snippetResult", () => {
+  /** What the first form a node offers, the one an insert uses, writes. */
+  const fieldResult = (subject: DisplayNode, kind?: SnippetKind) =>
+    snippetResult(subject, kind ?? snippetKindsFor(subject)[0]!);
+  const node = (data: Record<string, unknown>) =>
+    buildDisplayTree(data, { expanded: new Set() })[0]!;
+
+  it("gives what a field writes into the note for this item", () => {
+    expect(fieldResult(node({ title: "Linked notes in practice" }))).toBe(
+      "Linked notes in practice",
+    );
+    expect(fieldResult(node({ year: 2024 }))).toBe("2024");
+    expect(fieldResult(node({ backlink: "zotero://select/items/1_ABC" }))).toBe(
+      "[Zotero](zotero://select/items/1_ABC)",
+    );
+  });
+
+  it("gives a list in one line, or one Markdown list line per item", () => {
+    const { authors, family } = resultShape();
+    expect(fieldResult(authors)).toBe("Mara Rivera, Li Chen");
+    expect(fieldResult(authors, "loop")).toBe("- Mara Rivera\n- Li Chen");
+    expect(fieldResult(family)).toBe("Rivera, Chen");
+    expect(fieldResult(family, "loop")).toBe("- Rivera\n- Chen");
+  });
+
+  it("gives nothing for a field this item has no value for", () => {
+    expect(fieldResult(node({ abstract: "" }))).toBeNull();
+    expect(fieldResult(node({ abstract: null }))).toBeNull();
+    expect(fieldResult(node({ tags: [] }))).toBeNull();
+  });
+});
+
+function resultShape(): { authors: DisplayNode; family: DisplayNode } {
+  const [authors] = buildDisplayTree(
+    {
+      authors: [
+        withText({ family: "Rivera", given: "Mara" }, "Mara Rivera"),
+        withText({ family: "Chen", given: "Li" }, "Li Chen"),
+      ],
+    },
+    { expanded: new Set(["authors"]), lists: "shape" },
+  );
+  if (authors?.kind !== "value" || !authors.children) throw new Error("shape");
+  return { authors, family: authors.children[0]! };
+}

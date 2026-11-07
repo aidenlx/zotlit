@@ -7,14 +7,14 @@ import type { Ref } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
-import { fieldResult, fieldValueText } from "./explorer-fields";
+import { fieldValueText } from "./explorer-fields";
 import { useFieldsPanelRows } from "./fields-panel";
 import { useOptionalHost, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import type { ViewSize } from "./panel-layout";
 import { useIcon, useParts } from "./theme";
 
-import { formatPath } from "#/explorer/index";
+import { formatPath, snippetKindsFor, snippetResult } from "#/explorer/index";
 
 /**
  * The narrowest view, in pixels, that shows a field's details in a popover
@@ -42,7 +42,7 @@ export interface FieldDetailsContent {
   readonly label: string;
   /** Where the field sits: its section, and the field it belongs to. */
   readonly context: string;
-  /** The text an insert puts into the note. */
+  /** The text an insert puts into the note, in the field's first form. */
   readonly snippet: string;
   /** Absent where the editor takes no field now. */
   readonly onInsert?: (keepOpen: boolean) => void;
@@ -123,7 +123,8 @@ function DetailsBody({
     node.kind === "value" && typeof node.value === "string"
       ? node.value
       : fieldValueText(node);
-  const result = fieldResult(node);
+  // What the snippet writes, by the rules of the form the snippet uses.
+  const result = snippetResult(node, snippetKindsFor(node)[0]!);
   const empty = m.workbench_fields_empty();
   return (
     <section
