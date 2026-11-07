@@ -266,7 +266,10 @@ describe.each(PRESENTATIONS)(
       fireEvent.pointerEnter(row);
       fireEvent.mouseOver(row);
       expect(details()).toBeNull();
+      // A press on the row leaves focus to the search, where ↑/↓ work.
+      act(() => (document.activeElement as HTMLElement).blur());
       clickRow("Title");
+      expect(document.activeElement).toBe(search());
       expect(shownAs(details()!)).toBe(presentation);
       expect(row.hasAttribute("data-open")).toBe(true);
       clickRow("Title");

@@ -482,7 +482,19 @@ export function DataExplorer({
             onInsert={!disabled ? insertNode : undefined}
             onTemplateMenu={openTemplateMenu}
             onFieldContextMenu={openFieldContextMenu}
-            rows={panelRows ? rows.state : undefined}
+            rows={
+              panelRows
+                ? {
+                    ...rows.state,
+                    // The search keeps the keys: a press on a row, which
+                    // takes no focus itself, hands it back there.
+                    onRowClick: (node) => {
+                      rows.state.onRowClick(node);
+                      searchInput.current?.focus({ preventScroll: true });
+                    },
+                  }
+                : undefined
+            }
           />
         )}
       </div>
