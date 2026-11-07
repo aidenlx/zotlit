@@ -63,7 +63,11 @@
          AMENDMENT 2: a click on a row shows (or hides) its details; the row's Insert button
          (lucide `text-cursor-input`, shown on row hover/focus/highlight) or Enter inserts the field;
          Shift-click on Insert keeps the modal sheet open. Ctrl/Cmd+I still toggles details for the
-         highlighted row. (User: "click to show details, button to insert".) */
+         highlighted row. (User: "click to show details, button to insert".)
+         AMENDMENT 3: each sticky section header is a button that collapses or expands its group
+         (chevron + icon + label + count), as in the earlier Fields panel; the sheet header has
+         "Collapse all sections" / "Expand all sections"; a search shows every matching group open.
+         The Note preview's header row is sticky at the top of the preview. */
       /* DESIGN PLAN (utilitarian; the project's own system wins: Obsidian's default theme)
          ground #ffffff view; panel #f6f6f7 secondary panes / popover ground; ink #222222 text;
          muted #6b6b70; faint #a3a3a8; line #e3e3e6 hairlines; accent #7f5af0 Obsidian's interactive
@@ -728,7 +732,7 @@
           <div
             className={`min-h-0 overflow-auto p-5 text-sm leading-6 ${className}`}
           >
-            <div className="mb-3 text-xs text-muted">
+            <div className="sticky -top-5 z-10 -mx-5 -mt-5 mb-3 border-b border-line bg-ground/95 px-5 py-2 text-xs text-muted backdrop-blur-sm">
               Note preview · File name: ioannidisWhyMost2005
             </div>
             {out.split("\n").map((line, i) => {
@@ -1245,14 +1249,28 @@
         );
       }
 
-      /** "headers": a sticky section header with its icon and count (round 3 verdict: no jump menu). */
-      function M_StickyHeader({ section, n }) {
+      /** "headers": a sticky section header with its icon and count; a click collapses or expands the group. */
+      function M_StickyHeader({ section, n, open, onToggle }) {
         const Icon = M_icon(section.id);
         return (
-          <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-panel px-2.5 pt-3 pb-1 text-xs font-semibold text-muted">
-            <Icon size={13} strokeWidth={1.75} className="text-accent" />
-            {section.label}
-            <span className="font-normal text-faint tabular-nums">{n}</span>
+          <div className="sticky top-0 z-10 bg-panel px-1 pt-2 pb-0.5">
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={open}
+              title={
+                open ? `Collapse ${section.label}` : `Expand ${section.label}`
+              }
+              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs font-semibold text-muted hover:bg-ground hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <L.ChevronRight
+                size={12}
+                className={`shrink-0 text-faint transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+              />
+              <Icon size={13} strokeWidth={1.75} className="text-accent" />
+              {section.label}
+              <span className="font-normal text-faint tabular-nums">{n}</span>
+            </button>
           </div>
         );
       }
@@ -1281,6 +1299,18 @@
         const flyout = !narrow;
         const [q, setQ] = useState("");
         const [expanded, setExpanded] = useState(() => new Set());
+        // Collapsed section groups. A search shows every matching group open.
+        const [closed, setClosed] = useState(() => new Set());
+        const isOpen = (id) => !!q.trim() || !closed.has(id);
+        const toggleSection = (id) =>
+          setClosed((c) => {
+            const n = new Set(c);
+            n.has(id) ? n.delete(id) : n.add(id);
+            return n;
+          });
+        const allClosed = closed.size >= SECTIONS.length;
+        const toggleAll = () =>
+          setClosed(allClosed ? new Set() : new Set(SECTIONS.map((x) => x.id)));
         const [sel, setSel] = useState(null);
         const [filter, setFilter] = useState(null); // tabs only
         const [active, setActive] = useState(jump?.id ?? SECTIONS[0].id);
@@ -1297,7 +1327,9 @@
           [q, expanded, filter, nav],
         );
         const counts = useMemo(() => M_counts(q), [q]);
-        const flat = groups.flatMap((g) => g.rows);
+        const flat = groups.flatMap((g) =>
+          isOpen(g.section.id) ? g.rows : [],
+        );
         const cur = flat.find((f) => f.path === sel) ?? null;
         // Details open only on an explicit request (the row's Details button or Mod+I), never on hover.
         const [detail, setDetail] = useState(null);
@@ -1473,75 +1505,81 @@
                 className="relative"
               >
                 {nav === "headers" ? (
-                  <M_StickyHeader section={section} n={rows.length} />
+                  <M_StickyHeader
+                    section={section}
+                    n={rows.length}
+                    open={isOpen(section.id)}
+                    onToggle={() => toggleSection(section.id)}
+                  />
                 ) : (
                   <div className="sticky top-0 z-10 bg-panel px-2 pt-3 pb-1 text-xs font-medium text-muted">
                     {section.label}
                   </div>
                 )}
-                {rows.map((f) => {
-                  const on = cur?.path === f.path;
-                  const isOpen = expanded.has(f.path) || (q && f.children);
-                  return (
-                    <div key={f.path}>
-                      <div
-                        ref={(el) => {
-                          rowRefs.current[f.path] = el;
-                        }}
-                        id={`m-opt-${f.path}`}
-                        role="option"
-                        aria-selected={on}
-                        onClick={() => {
-                          setSel(f.path);
-                          toggleDetail(f.path);
-                        }}
-                        aria-expanded={detail === f.path}
-                        title="Show details"
-                        className={`group flex h-8 scroll-mt-9 scroll-mb-2 cursor-pointer items-center gap-2 rounded-md pr-1 text-sm pl-1 ${on || detail === f.path ? "bg-accent-soft" : "hover:bg-ground"}`}
-                      >
-                        {f.children ? (
+                {isOpen(section.id) &&
+                  rows.map((f) => {
+                    const on = cur?.path === f.path;
+                    const isOpen = expanded.has(f.path) || (q && f.children);
+                    return (
+                      <div key={f.path}>
+                        <div
+                          ref={(el) => {
+                            rowRefs.current[f.path] = el;
+                          }}
+                          id={`m-opt-${f.path}`}
+                          role="option"
+                          aria-selected={on}
+                          onClick={() => {
+                            setSel(f.path);
+                            toggleDetail(f.path);
+                          }}
+                          aria-expanded={detail === f.path}
+                          title="Show details"
+                          className={`group flex h-8 scroll-mt-9 scroll-mb-2 cursor-pointer items-center gap-2 rounded-md pr-1 text-sm pl-1 ${on || detail === f.path ? "bg-accent-soft" : "hover:bg-ground"}`}
+                        >
+                          {f.children ? (
+                            <button
+                              type="button"
+                              aria-label={`${isOpen ? "Hide" : "Show"} ${f.label} sub-fields`}
+                              aria-expanded={!!isOpen}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggle(f.path);
+                              }}
+                              className="inline-flex size-4 shrink-0 items-center justify-center rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                            >
+                              <L.ChevronRight
+                                size={13}
+                                className={`transition-transform motion-reduce:transition-none ${isOpen ? "rotate-90" : ""}`}
+                              />
+                            </button>
+                          ) : (
+                            <span className="size-4 shrink-0" />
+                          )}
+                          <span
+                            className={`w-[40%] shrink-0 truncate ${f.parent ? "pl-4" : ""} ${on ? "text-accent" : "text-ink"}`}
+                          >
+                            <M_Mark text={f.label} q={q} />
+                          </span>
+                          <span className="flex min-w-0 flex-1 text-[13px]">
+                            <M_Value field={f} q={q} />
+                          </span>
                           <button
                             type="button"
-                            aria-label={`${isOpen ? "Hide" : "Show"} ${f.label} sub-fields`}
-                            aria-expanded={!!isOpen}
+                            aria-label={`Insert ${f.label}`}
+                            title={`Insert ${snippetOf(f.path)} at the cursor (Enter) · Shift-click keeps this open`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              toggle(f.path);
+                              onInsert(f.path, e.shiftKey);
                             }}
-                            className="inline-flex size-4 shrink-0 items-center justify-center rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                            className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md text-accent hover:bg-accent hover:text-ground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent ${on || detail === f.path ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                           >
-                            <L.ChevronRight
-                              size={13}
-                              className={`transition-transform motion-reduce:transition-none ${isOpen ? "rotate-90" : ""}`}
-                            />
+                            <L.TextCursorInput size={14} strokeWidth={1.75} />
                           </button>
-                        ) : (
-                          <span className="size-4 shrink-0" />
-                        )}
-                        <span
-                          className={`w-[40%] shrink-0 truncate ${f.parent ? "pl-4" : ""} ${on ? "text-accent" : "text-ink"}`}
-                        >
-                          <M_Mark text={f.label} q={q} />
-                        </span>
-                        <span className="flex min-w-0 flex-1 text-[13px]">
-                          <M_Value field={f} q={q} />
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Insert ${f.label}`}
-                          title={`Insert ${snippetOf(f.path)} at the cursor (Enter) · Shift-click keeps this open`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onInsert(f.path, e.shiftKey);
-                          }}
-                          className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md text-accent hover:bg-accent hover:text-ground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent ${on || detail === f.path ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                        >
-                          <L.TextCursorInput size={14} strokeWidth={1.75} />
-                        </button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             ))}
             {/* Room for the last section to scroll to the top, so a jump always lands on its header. */}
@@ -1571,6 +1609,13 @@
                 <h2 className="flex-1 px-1 text-sm font-semibold">
                   {entry.label}
                 </h2>
+                <IconButton
+                  icon={allClosed ? L.ChevronsUpDown : L.ChevronsDownUp}
+                  label={
+                    allClosed ? "Expand all sections" : "Collapse all sections"
+                  }
+                  onClick={toggleAll}
+                />
                 <button
                   type="button"
                   onClick={onPin}
