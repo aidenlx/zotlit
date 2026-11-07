@@ -20,6 +20,7 @@ import {
   launch,
   press,
   fieldRow,
+  openFieldsPopover,
   chooseAnnotation,
   resultText,
   sourceView,
@@ -307,6 +308,7 @@ describe("the paper a profile is written for", () => {
 describe("the field list", () => {
   it("searches the complete Zotero tree without opening the foot first", async () => {
     await using page = await open();
+    openFieldsPopover(page.host);
     const search = page.host.querySelector<HTMLInputElement>(
       `input[aria-label="${m.workbench_fields_search_note()}"]`,
     )!;
@@ -500,6 +502,9 @@ describe("the simplified editing flow", () => {
       }),
     );
     act(() => source.focus());
+    // The editor reports its selection as Fields takes focus from it.
+    openFieldsPopover(page.host);
+    await page.settle();
     press(
       fieldRow(page.host, m.workbench_field_title()),
       m.workbench_fields_put_in_note(),

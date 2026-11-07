@@ -164,8 +164,13 @@ export function makeTemplateWorkbenchModel() {
   const origin = Atom.make<OriginatingNote | null>(null);
   /** Whether the originating note's update runs. */
   const updating = Atom.make(false);
-  /** The place a field insertion asks the editor to reveal. */
-  const insertRequest = Atom.make<WorkbenchInsertTarget | null>(null);
+  /**
+   * The place a field insertion asks the editor to reveal, and whether the
+   * editor takes focus there.
+   */
+  const insertRequest = Atom.make<
+    (WorkbenchInsertTarget & { readonly focus: boolean }) | null
+  >(null);
   const styles = Atom.make<CitationStyles>({ list: [], unavailable: false });
   /**
    * The Default Profile's bindings, which Name and folder shows where a
@@ -389,7 +394,6 @@ export interface SavedWorkbench {
    * and so does a Preview height it leaves out.
    */
   readonly panels: {
-    readonly fields?: WorkbenchPanel;
     readonly preview?: WorkbenchPanel & { readonly height?: number };
   };
   /** The Preview's settings the state names; each one decodes alone. */
@@ -493,10 +497,6 @@ function readPreview(input: unknown): Partial<WorkbenchPreviewSettings> {
   };
 }
 
-const savedPanel = Schema.Struct({
-  shown: Schema.Boolean,
-  width: Schema.Finite,
-});
 /** The Preview's side, which also holds its height under the editor. */
 const savedPreview = Schema.Struct({
   shown: Schema.Boolean,
@@ -504,32 +504,21 @@ const savedPreview = Schema.Struct({
   height: Schema.optional(Schema.Finite),
 });
 
-/** Each side decodes alone; its width and height are held within the limits. */
+/** The Preview decodes alone; its width and height are held within the limits. */
 function readPanels(input: unknown): SavedWorkbench["panels"] {
   const value = decode(record, input) ?? {};
-  const fields = decode(savedPanel, value.fields);
   const preview = decode(savedPreview, value.preview);
-  return {
-    ...(fields
-      ? {
-          fields: {
-            shown: fields.shown,
-            width: savedPanelWidth("fields", fields.width),
-          },
-        }
-      : {}),
-    ...(preview
-      ? {
-          preview: {
-            shown: preview.shown,
-            width: savedPanelWidth("preview", preview.width),
-            ...(preview.height === undefined
-              ? {}
-              : { height: clampPreviewHeight(preview.height) }),
-          },
-        }
-      : {}),
-  };
+  return preview
+    ? {
+        preview: {
+          shown: preview.shown,
+          width: savedPanelWidth(preview.width),
+          ...(preview.height === undefined
+            ? {}
+            : { height: clampPreviewHeight(preview.height) }),
+        },
+      }
+    : {};
 }
 
 const position = Schema.Struct({ top: Schema.Finite, left: Schema.Finite });

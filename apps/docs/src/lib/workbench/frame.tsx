@@ -47,21 +47,18 @@ export interface FrameParts {
   readonly result: ReactNode;
 }
 
-/**
- * The panels a new page shows: both, the Fields Panel at the width of the
- * field column it replaced (18rem), the Preview at its initial width.
- */
+/** The panels a new page shows: the Preview at its initial width. */
 export const PAGE_PANELS: WorkbenchPanels = {
-  fields: { shown: true, width: 288 },
   preview: { ...INITIAL_PANELS.preview, shown: true },
 };
 
 /**
  * The parts as a new page first paints them, before it measures its frame:
- * the panels of {@link PAGE_PANELS} as columns, drawn with the live panels'
- * parts and custom properties.
+ * the Preview of {@link PAGE_PANELS} as a column, drawn with the live panels'
+ * parts and custom properties. The Fields popover stays closed until the
+ * reader opens it.
  */
-function FirstPaint({ fields, edit, result }: FrameParts) {
+function FirstPaint({ edit, result }: FrameParts) {
   const part = useParts("panels");
   const properties = usePanelProperties();
   const column = (side: PanelSide, content: ReactNode) => (
@@ -74,8 +71,6 @@ function FirstPaint({ fields, edit, result }: FrameParts) {
   );
   return (
     <div {...part("panels")}>
-      {column("fields", fields)}
-      <div aria-hidden {...part("edge", "fields")} />
       <div {...part("stack")}>
         <div {...part("editor")}>{edit}</div>
       </div>

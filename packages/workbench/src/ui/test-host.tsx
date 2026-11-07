@@ -7,10 +7,10 @@ import { render as renderUI } from "@testing-library/react";
 import { Effect, Layer, Queue } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { createWorkbenchEditor, WorkbenchEditorProvider } from "./editor";
-import { PICKER_MOVE_KEYS } from "./field-picker";
 import {
   WorkbenchClipboardError,
   WorkbenchHostError,
@@ -79,8 +79,6 @@ export interface FakeHost extends WorkbenchHost {
     confirms: string[];
     /** Every text handed to the clipboard, in order. */
     copies: string[];
-    /** How many times the tree moved focus to the Fields action. */
-    actionFocuses: number;
   };
   /** Every render asked for, in order, none of them answered yet. */
   readonly renders: PendingRender[];
@@ -142,7 +140,6 @@ export function fakeHost(): FakeHost {
       notices: [],
       confirms: [],
       copies: [],
-      actionFocuses: 0,
     },
     renders,
     started,
@@ -229,8 +226,7 @@ export function fakeHost(): FakeHost {
     insertTarget: () => null,
     fieldsAction: {
       popover: FakeFieldsPopover,
-      popoverId: "fake-fields-picker",
-      focus: () => void host.calls.actionFocuses++,
+      popoverId: "fake-fields-panel",
     },
     persistence: {
       read: (scope, name) => preferences.get(key(scope, name)) ?? null,
@@ -241,36 +237,6 @@ export function fakeHost(): FakeHost {
     },
   };
   return host;
-}
-
-/** The picker's surface, which binds its keys as a host would and closes on Escape. */
-function FakeFieldsPopover({
-  open,
-  onClose,
-  keys,
-  labelledBy,
-  returnFocus,
-  children,
-}: WorkbenchFieldsPopoverProps) {
-  // A closed surface says whether its focus went back to the action.
-  if (!open) return <span hidden data-return-focus={String(returnFocus)} />;
-  return (
-    <div
-      id="fake-fields-picker"
-      role="dialog"
-      aria-labelledby={labelledBy}
-      onKeyDown={(event) => {
-        const move = PICKER_MOVE_KEYS[event.key];
-        if (move) keys.move(move);
-        else if (event.key === "Enter") keys.choose();
-        else if (event.key === "Escape") onClose();
-        else return;
-        event.preventDefault();
-      }}
-    >
-      {children}
-    </div>
-  );
 }
 
 /** Every part wears `part-<name>`, so a test can see the map land. */
@@ -399,4 +365,43 @@ export function renderWithMessages(
     ),
     ...options,
   });
+}
+
+/**
+ * The fake host's Fields popover: it closes on Escape and on a press outside,
+ * as a host's does. Closed, it records whether focus went back to the Fields
+ * action in `data-return-focus`.
+ */
+function FakeFieldsPopover({
+  open,
+  onClose,
+  labelledBy,
+  returnFocus,
+  children,
+}: WorkbenchFieldsPopoverProps) {
+  const surface = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const doc = surface.current?.ownerDocument;
+    if (!doc) return;
+    const outside = (event: Event) => {
+      if (!surface.current?.contains(event.target as Node)) onClose();
+    };
+    doc.addEventListener("pointerdown", outside, true);
+    return () => doc.removeEventListener("pointerdown", outside, true);
+  }, [open, onClose]);
+  if (!open) return <span hidden data-return-focus={String(returnFocus)} />;
+  return (
+    <div
+      ref={surface}
+      id="fake-fields-panel"
+      role="dialog"
+      aria-labelledby={labelledBy}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+    >
+      {children}
+    </div>
+  );
 }

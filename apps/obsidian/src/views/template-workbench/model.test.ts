@@ -239,7 +239,6 @@ it("round-trips the saved and ephemeral state through Schema", () => {
           },
         },
         panels: {
-          fields: { shown: false, width: 400 },
           preview: { shown: true, width: 520, height: 55 },
         },
         partial: { context: "citation", profile: "books" },
@@ -256,7 +255,6 @@ it("round-trips the saved and ephemeral state through Schema", () => {
     partialContext: "citation",
     partialProfile: "books",
     panels: {
-      fields: { shown: false, width: 400 },
       preview: { shown: true, width: 520, height: 55 },
     },
     preview: {
@@ -276,9 +274,9 @@ it("round-trips the saved and ephemeral state through Schema", () => {
   expect(
     readSavedWorkbench({ preview: { mode: "draft", live: false } })?.preview,
   ).toEqual({ live: false });
-  // A bad side leaves the other, and a width outside the limits is held to
-  // them. The Preview has no widest saved width: the view holds it to the
-  // room the editor leaves.
+  // A width under the limit is held to it. The Preview has no widest saved
+  // width: the view holds it to the room the editor leaves. A Fields column
+  // an older workspace saved has no place to restore to.
   expect(
     readSavedWorkbench({
       panels: {
@@ -295,7 +293,6 @@ it("round-trips the saved and ephemeral state through Schema", () => {
       },
     })?.panels,
   ).toEqual({
-    fields: { shown: true, width: 960 },
     preview: { shown: true, width: 1400 },
   });
   // A Preview height outside its shares is held to them; a bad one fails its
@@ -308,7 +305,6 @@ it("round-trips the saved and ephemeral state through Schema", () => {
       },
     })?.panels,
   ).toEqual({
-    fields: { shown: true, width: 300 },
     preview: { shown: true, width: 400, height: 80 },
   });
   expect(

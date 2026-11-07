@@ -388,7 +388,7 @@ These commands open profile documents in the Template Workbench and import a pro
 
 <Command name={m.template_workbench_open_layout()} />
 
-Opens the active profile document in the Template Workbench View, with both side panels shown.
+Opens the active profile document in the Template Workbench View, with the Preview panel shown.
 
 | Entry point     | Details                                                                                      |
 | --------------- | -------------------------------------------------------------------------------------------- |
@@ -406,7 +406,7 @@ Opens the Template Workbench View in the current leaf for the active document. A
 
 <Command name={m.template_workbench_open_layout()} />
 
-Opens the document being edited in the Workbench window, with the Fields and Preview panels shown.
+Opens the document being edited in the Workbench window, with the Preview panel shown.
 
 | Entry point     | Details                                                                                   |
 | --------------- | ----------------------------------------------------------------------------------------- |
@@ -428,17 +428,19 @@ The Workbench view's pane menu is where most template work starts. These entries
 
 | Menu item                                               | What it does                                                                                                                                                                                                       |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <UiLabel name={m.template_workbench_open_layout()} />   | Opens the editor in the Workbench window with both side panels shown.                                                                                                                                              |
-| <UiLabel name={m.workbench_choose_item()} />            | Picks the Zotero item that the tabs, the Fields panel, and the Preview panel read.                                                                                                                                 |
+| <UiLabel name={m.template_workbench_open_layout()} />   | Opens the editor in the Workbench window with the Preview panel shown.                                                                                                                                             |
+| <UiLabel name={m.workbench_choose_item()} />            | Picks the Zotero item that the tabs, the Fields popover, and the Preview panel read.                                                                                                                               |
 | <UiLabel name={m.workbench_choose_annotation()} />      | Picks the annotation to render. Not offered for the citation text.                                                                                                                                                 |
 | <UiLabel name={m.template_workbench_partials()} />      | Opens another partial, creates one with <UiLabel name={m.workbench_partial_new()} />, or unpacks the partials a shared profile still carries with <UiLabel name={m.workbench_problem_bundled_partial_unpack()} />. |
 | <UiLabel name={m.template_workbench_open_citation()} /> | Opens the citation text, `zotlit-citation.md`.                                                                                                                                                                     |
 
-<UiLabel name={m.workbench_show_fields()} /> and
-<UiLabel name={m.workbench_show_preview()} /> show or hide the view's [side
-panels](/docs/concepts/template-workbench-view#panels), with a check mark while
-their panel is shown. They are also view actions in the view header, pressed
-while their panel is shown. Beside them in the view header,
+<UiLabel name={m.workbench_show_fields()} /> opens or closes the view's [Fields
+popover](/docs/concepts/template-workbench-view#fields-panel), and
+<UiLabel name={m.workbench_show_preview()} /> shows or hides the [Preview
+panel](/docs/concepts/template-workbench-view#panels). Each has a check mark
+while it is on. Both are also view actions in the view header, where the
+popover's action is named <UiLabel name={m.workbench_view_fields()} />. Beside
+them in the view header,
 <UiLabel name={m.workbench_help()} /> opens a menu of the template guide, the
 syntax and data references, and the community.
 <UiLabel name={m.workbench_choose_item()} />
@@ -446,7 +448,7 @@ is also the button in the row above the panels, which names the chosen item.
 While the Preview panel is shown, the menu also holds the [preview
 choices](/docs/concepts/template-workbench-view#preview-panel).
 
-Four entries join the pane menu outside the **zotlit** section. <UiLabel name={m.template_workbench_change_language()} /> switches the document between <UiLabel name={m.workbench_name_language_liquid()} /> and <UiLabel name={m.workbench_name_language_eta()} />, and is not offered for a profile document. <UiLabel name={m.template_data_explorer_menu_export_json()} /> saves the current template data as a JSON file, for the root the Fields panel shows while that panel is shown; with the annotation root selected, the same entry reads <UiLabel name={m.template_data_explorer_export_selected_paper()} /> when it can export the whole paper instead. <UiLabel name={m.template_workbench_open_markdown()} /> opens the document as Markdown. <UiLabel name={m.settings_profile_document_restore()} /> moves the Default profile's custom document to the trash, so the built-in profile applies again, and is offered on that document only.
+Four entries join the pane menu outside the **zotlit** section. <UiLabel name={m.template_workbench_change_language()} /> switches the document between <UiLabel name={m.workbench_name_language_liquid()} /> and <UiLabel name={m.workbench_name_language_eta()} />, and is not offered for a profile document. <UiLabel name={m.template_data_explorer_menu_export_json()} /> saves the current template data as a JSON file, for the root the Fields popover shows while it is open, and for the editor's root otherwise; with the annotation root selected, the same entry reads <UiLabel name={m.template_data_explorer_export_selected_paper()} /> when it can export the whole paper instead. <UiLabel name={m.template_workbench_open_markdown()} /> opens the document as Markdown. <UiLabel name={m.settings_profile_document_restore()} /> moves the Default profile's custom document to the trash, so the built-in profile applies again, and is offered on that document only.
 
 ## Onboarding & release
 

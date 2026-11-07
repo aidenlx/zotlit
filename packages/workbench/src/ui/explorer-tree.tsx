@@ -48,7 +48,11 @@ export interface DisplayTreeProps {
   onToggle: (key: string) => void;
   /** Absent while a filter holds every matching section open. */
   onToggleSection?: (id: string) => void;
-  onInsert?: (node: DisplayNode) => void;
+  /**
+   * Inserts the node's field; `keepOpen` when the reader held Shift, so the
+   * Fields Panel stays open for the next field.
+   */
+  onInsert?: (node: DisplayNode, keepOpen: boolean) => void;
   /** The row's Menu, opened from its own control; anchored under that control. */
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
   /** The same Menu, opened by a right-click on the row; anchored at the pointer. */
@@ -146,7 +150,7 @@ interface TreeNodeProps {
   label?: string;
   matchedKeys: ReadonlySet<string> | null;
   onToggle: (key: string) => void;
-  onInsert?: (node: DisplayNode) => void;
+  onInsert?: (node: DisplayNode, keepOpen: boolean) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
   onFieldContextMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }
@@ -244,7 +248,7 @@ function ActionCluster({
   onTemplateMenu,
 }: {
   node: DisplayNode;
-  onInsert?: (node: DisplayNode) => void;
+  onInsert?: (node: DisplayNode, keepOpen: boolean) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }) {
   const m = useWorkbenchMessages();
@@ -255,7 +259,7 @@ function ActionCluster({
         <ClusterButton
           icon="add"
           label={m.workbench_fields_put_in_note()}
-          onClick={() => onInsert(node)}
+          onClick={(event) => onInsert(node, event.shiftKey)}
         />
       )}
       <ClusterButton
@@ -285,7 +289,16 @@ function ClusterButton({
       aria-label={label}
       {...useTooltip(label)}
       onClick={onClick}
-      onKeyDown={activateOnEnterOrSpace((e) => e.currentTarget.click())}
+      // Enter and Space press it as a click does, Shift included.
+      onKeyDown={activateOnEnterOrSpace((e) => {
+        const view = e.currentTarget.ownerDocument.defaultView!;
+        e.currentTarget.dispatchEvent(
+          new view.MouseEvent("click", {
+            bubbles: true,
+            shiftKey: e.shiftKey,
+          }),
+        );
+      })}
       {...part("action")}
     >
       {drawIcon(icon)}

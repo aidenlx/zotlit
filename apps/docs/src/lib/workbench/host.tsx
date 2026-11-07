@@ -139,7 +139,7 @@ export function useWebHost({
 }): {
   host: WorkbenchHost;
   overlays: ReactNode;
-  /** The header's Fields action, which the Fields picker opens under. */
+  /** The header's Fields action, which takes focus back as the Fields popover closes. */
   fieldsAnchor: RefObject<HTMLButtonElement | null>;
 } {
   const fieldsAnchor = useRef<HTMLButtonElement>(null);

@@ -52,8 +52,6 @@ import {
   entryDiagnostics,
   fieldSnippet,
   fieldsActionAttributes,
-  fieldsActionKey,
-  holdPickerFocus,
   pressFieldsAction,
   panelSizeMenus,
   pickPanelSize,
@@ -98,6 +96,7 @@ import {
 import type {
   WorkbenchHostError,
   WorkbenchEditorInstance,
+  WorkbenchFieldsAction,
   WorkbenchHost,
   WorkbenchInsertTarget,
   WorkbenchItemChoice,
@@ -181,7 +180,6 @@ import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
 import {
   FieldsPanel,
-  FieldsPicker,
   makeFieldsActions,
   makeFieldsPanelModel,
 } from "./fields-panel";
@@ -368,10 +366,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
   #root: Root | null = null;
   #updateActions = () => {};
-  /** The Fields view action, which the Fields picker opens under. */
-  readonly #fieldsAnchor: { current: HTMLElement | null } = { current: null };
-  /** The Fields view action and the picker it opens where the column does not fit. */
-  readonly #fieldsAction = fieldsActionHost(this.#fieldsAnchor);
+  /** The Fields view action, which takes focus back as the Fields popover closes. */
+  readonly #fieldsButton: { current: HTMLElement | null } = { current: null };
+  /** The Fields view action, and the Fields popover inset in the view. */
+  readonly #fieldsAction: WorkbenchFieldsAction = fieldsActionHost(
+    this.#fieldsButton,
+    { current: this.contentEl },
+  );
   #unsubscribe: (() => void) | null = null;
   #closed = false;
   /** Counts the documents this leaf loaded, so each one mounts a fresh tree. */
@@ -835,7 +836,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.#updateActions();
         this.app.workspace.requestSaveLayout();
       }),
-      // The Fields action shows whether its column or its picker is open.
+      // The Fields action shows whether its Fields popover is open.
       registry.subscribe(this.workbench.fieldsAction, () =>
         this.#updateActions(),
       ),
@@ -1065,7 +1066,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   /** Inserts the field `node` names at the editor's insertion target. */
-  insertTemplateField(node: DisplayNode): boolean {
+  /** With `focus: false`, the editor takes no focus: the Fields Panel keeps it. */
+  insertTemplateField(
+    node: DisplayNode,
+    options: { readonly focus: boolean } = { focus: true },
+  ): boolean {
     if (this.#closed || this.#controller.readOnly) return false;
     const target = this.insertTarget;
     if (!target) return false;
@@ -1079,10 +1084,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         ? "json-e"
         : "template";
     const engine = this.#documentLanguage;
-    return this.insertField(fieldSnippet(node, mode, { engine }));
+    return this.insertField(fieldSnippet(node, mode, { engine }), options);
   }
 
-  insertField(snippet: string): boolean {
+  insertField(
+    snippet: string,
+    { focus }: { readonly focus: boolean } = { focus: true },
+  ): boolean {
     if (this.#controller.readOnly || this.#closed) return false;
     const target = this.insertTarget;
     if (!target) {
@@ -1110,16 +1118,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         Effect.annotateLogs({ slice: target.slice }),
       ),
     );
+    // The caret stays one the reader placed, so the next insert finds it.
     const cursor = from + snippet.length;
-    this.#focusTarget({
-      slice: target.slice,
-      range: { from: cursor, to: cursor },
-    });
+    this.#focusTarget(
+      {
+        slice: target.slice,
+        range: { from: cursor, to: cursor, placed: true },
+      },
+      focus,
+    );
     return true;
   }
 
-  #focusTarget(target: WorkbenchInsertTarget): void {
-    this.registry.set(this.model.insertRequest, target);
+  #focusTarget(target: WorkbenchInsertTarget, focus: boolean): void {
+    this.registry.set(this.model.insertRequest, { ...target, focus });
     this.setPresentation({ selection: target });
     const state = this.change;
     state.setAdvanced(target.slice === "advanced");
@@ -1494,16 +1506,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         yield* restoreBase(state);
       }
       if (!value) return;
-      for (const side of ["fields", "preview"] as const) {
-        const panel = value.panels[side];
-        if (panel)
-          this.registry.update(this.workbench.panels, (panels) =>
-            setPanelWidth(
-              side,
-              panel.width,
-            )(showPanel(side, panel.shown)(panels)),
-          );
-      }
+      const panel = value.panels.preview;
+      if (panel)
+        this.registry.update(this.workbench.panels, (panels) =>
+          setPanelWidth(
+            "preview",
+            panel.width,
+          )(showPanel("preview", panel.shown)(panels)),
+        );
       const height = value.panels.preview?.height;
       if (height !== undefined)
         this.registry.update(this.workbench.panels, setPreviewHeight(height));
@@ -1630,24 +1640,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       () => this.togglePanel("preview"),
     );
     // Added after the Preview's, so it sits to its left.
-    // It shows the Fields column, or opens the Fields picker where the column
-    // does not fit.
-    const fields = this.addAction("panel-left", m.workbench_show_fields(), () =>
+    // It opens the Fields popover, and closes it again.
+    const fields = this.addAction("braces", m.workbench_view_fields(), () =>
       pressFieldsAction(this.registry, this.workbench),
     );
-    this.#fieldsAnchor.current = fields;
-    // Where it opens the picker, an arrow opens it and a printable key opens
-    // it searching for that key, as a Bases combobox opens.
-    this.registerDomEvent(fields, "keydown", (event) => {
-      const action = this.registry.get(this.workbench.fieldsAction);
-      const query = fieldsActionKey(action, event);
-      if (query === null) return;
-      event.preventDefault();
-      this.registry.set(this.workbench.fieldsPicker, { query });
-    });
-    this.registerDomEvent(fields, "mousedown", (event) =>
-      holdPickerFocus(this.registry.get(this.workbench.fieldsAction), event),
-    );
+    this.#fieldsButton.current = fields;
     const source = this.addAction("code", m.workbench_advanced(), () => {
       this.change.setAdvanced(!this.#view.advanced);
     });
@@ -1675,7 +1672,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       preview.setAttribute("aria-pressed", String(shown));
       preview.classList.toggle("is-active", shown);
       const action = this.registry.get(this.workbench.fieldsAction);
-      // A toggle for the column; a disclosure for the picker.
+      // A disclosure of the Fields popover.
       for (const [name, value] of Object.entries(
         fieldsActionAttributes(action, this.#fieldsAction.popoverId),
       ))
@@ -1775,9 +1772,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       item
         .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_fields())
-        .setIcon("panel-left")
-        // The view action's own press: the column, or the picker where the
-        // column does not fit.
+        .setIcon("braces")
+        // The view action's own press: it opens or closes the Fields popover.
         .setChecked(this.registry.get(this.workbench.fieldsAction).open)
         .onClick(() => pressFieldsAction(this.registry, this.workbench)),
     );
@@ -1822,9 +1818,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .onClick(() => this.#start(Effect.ignore(reportCitationTemplateOpen))),
     );
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
-    // With the Fields shown, the export saves the root the panel shows.
+    // With the Fields popover open, the export saves the root it shows.
     const target = this.templateDataTarget();
-    if (this.registry.get(this.workbench.panels).fields.shown)
+    if (this.registry.get(this.workbench.fieldsAction).open)
       this.fieldsActions.addExportMenuItem(menu);
     else if (target && this.#deps.pluginVersion)
       menu.addItem((item) =>
@@ -2698,7 +2694,7 @@ function EditorContent({
     const position = entryPosition(insertRequest.slice);
     view.setPresentation({
       ...(position === null ? {} : { selected: position }),
-      reveal: insertRequest.range,
+      reveal: { ...insertRequest.range, focus: insertRequest.focus },
     });
   }, [view, insertRequest]);
   // The last manifest that parsed, so a repair keeps the form's values.
@@ -2873,7 +2869,7 @@ function EditorContent({
   // notice its host adapter shows.
   const repair = repairCommands({
     registry: view.registry,
-    model: { view: view.model.view, fieldsPicker: workbench.fieldsPicker },
+    model: { view: view.model.view, fieldsPanel: workbench.fieldsPanel },
     controller,
     host,
     problems,
@@ -3200,11 +3196,9 @@ function EditorContent({
             panels={{
               fields: {
                 label: m.workbench_view_fields(),
-                resizeLabel: m.workbench_fields_resize(),
                 content: (
                   <FieldsPanel view={view} actions={view.fieldsActions} />
                 ),
-                picker: <FieldsPicker view={view} />,
               },
               preview: {
                 label: m.workbench_view_preview(),

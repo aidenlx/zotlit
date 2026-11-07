@@ -1,12 +1,12 @@
-// The Fields picker's surface on the web: the Workbench's Base UI popover,
-// anchored under the header's Fields action. The shared picker draws the
-// rows; Base UI places the surface and dismisses it on Escape and a press
-// outside; this module closes it when focus leaves it by keyboard, and
-// returns focus to the action.
-import { useLayoutEffect, useRef } from "react";
-import type { KeyboardEvent, RefObject } from "react";
+// The Fields popover on the web: the Workbench's Base UI popover, inset at
+// the right edge of the panels as tall as they are, with a small gap to their
+// top, right and bottom edges. It stands in the panels' box, so it sits with
+// the Workbench it serves. Base UI dismisses it on Escape and a press
+// outside; the shared Fields Panel draws the contents and focuses its search
+// field as it mounts. Focus it held at closing goes back to the Fields action.
+import { useLayoutEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 
-import { PICKER_MOVE_KEYS } from "@zotlit/workbench/ui";
 import type {
   WorkbenchFieldsAction,
   WorkbenchFieldsPopoverProps,
@@ -14,7 +14,10 @@ import type {
 
 import { Popover, PopoverContent } from "@/components/ui/popover";
 
-/** The header's Fields action, and the popover the picker opens in under it. */
+/** The gap between the popover and the panels' edges, in pixels. */
+const GAP = 8;
+
+/** The header's Fields action, and the Fields popover it opens. */
 export function webFieldsAction(
   anchor: RefObject<HTMLElement | null>,
   popoverId: string,
@@ -22,84 +25,71 @@ export function webFieldsAction(
   function FieldsPopover({
     open,
     onClose,
-    keys,
     labelledBy,
     returnFocus,
     children,
   }: WorkbenchFieldsPopoverProps) {
-    /** Whether the popover holds focus, read as it closes. */
-    const held = useRef(false);
-    const standing = useRef(open);
+    // A mark where the panel stands in the tree: its parent is the panels'
+    // box, which the popover stands inset in.
+    const mark = useRef<HTMLSpanElement>(null);
+    const box = useRef<HTMLElement | null>(null);
     useLayoutEffect(() => {
-      standing.current = open;
-    });
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.nativeEvent.isComposing) return;
-      const move = PICKER_MOVE_KEYS[event.key];
-      if (move) keys.move(move);
-      else if (event.key === "Enter") keys.choose();
-      else return;
-      event.preventDefault();
-    };
+      box.current = mark.current!.parentElement;
+    }, []);
+    /** The box's right edge, less the gap: the popover stands to its left. */
+    const [edge] = useState(() => ({
+      getBoundingClientRect: () => {
+        const rect = box.current!.getBoundingClientRect();
+        return new DOMRect(
+          rect.right - GAP,
+          rect.top + GAP,
+          0,
+          Math.max(rect.height - 2 * GAP, 0),
+        );
+      },
+    }));
     return (
-      <Popover
-        open={open}
-        onOpenChange={(next, { reason, event }) => {
-          // A press on the action is the action's own toggle.
-          const onAction =
-            reason === "outside-press" &&
-            event.target instanceof Node &&
-            anchor.current?.contains(event.target) === true;
-          if (!next && !onAction) onClose();
-        }}
-      >
-        <PopoverContent
-          id={popoverId}
-          anchor={anchor}
-          align="start"
-          aria-labelledby={labelledBy}
-          // The picker focuses its own search field as it mounts.
-          initialFocus={false}
-          // Focus the popover held at closing goes back to the action; focus
-          // an insertion already gave the editor stays there.
-          finalFocus={() => {
-            const active = anchor.current?.ownerDocument.activeElement;
-            const lost =
-              !active ||
-              active === active.ownerDocument.body ||
-              active.closest("[data-slot=popover-content]") !== null;
-            return returnFocus && held.current && lost ? anchor.current : false;
+      <>
+        <span ref={mark} hidden />
+        <Popover
+          open={open}
+          onOpenChange={(next, { reason, event }) => {
+            // A press on the action is the action's own toggle.
+            const onAction =
+              reason === "outside-press" &&
+              event.target instanceof Node &&
+              anchor.current?.contains(event.target) === true;
+            if (!next && !onAction) onClose();
           }}
-          onFocus={() => {
-            held.current = true;
-          }}
-          onBlur={(event) => {
-            const next = event.relatedTarget;
-            if (event.currentTarget.contains(next)) return;
-            held.current = false;
-            // Focus that leaves the open popover for another element closes
-            // it and goes to the action. Only the keyboard moves focus out
-            // while it stands: a press on the action keeps focus in it, and
-            // a press elsewhere closes it first.
-            if (!standing.current || !(next instanceof Node)) return;
-            onClose();
-            // The focus that is leaving lands first; a move made inside its
-            // blur would race it.
-            queueMicrotask(() =>
-              anchor.current?.focus({ preventScroll: true }),
-            );
-          }}
-          onKeyDown={onKeyDown}
-          className="flex max-h-[min(28rem,var(--available-height))] w-[min(26rem,calc(100vw-2rem))] flex-col overflow-hidden p-0"
         >
-          {children}
-        </PopoverContent>
-      </Popover>
+          <PopoverContent
+            id={popoverId}
+            anchor={edge}
+            container={box}
+            side="left"
+            align="start"
+            sideOffset={0}
+            aria-labelledby={labelledBy}
+            // The panel focuses its own search field as it mounts.
+            initialFocus={false}
+            // Focus the popover held at closing goes back to the action;
+            // focus an insert already gave the editor stays there.
+            finalFocus={() => {
+              const active = anchor.current?.ownerDocument.activeElement;
+              const lost =
+                !active ||
+                active === active.ownerDocument.body ||
+                active.closest("[data-slot=popover-content]") !== null;
+              return returnFocus && lost ? anchor.current : false;
+            }}
+            // The panel draws the surface; the popup only holds its place.
+            className="h-(--anchor-height) w-auto max-w-[calc(100vw-2rem)] overflow-visible bg-transparent p-0 shadow-none ring-0"
+          >
+            {children}
+          </PopoverContent>
+        </Popover>
+      </>
     );
   }
-  return {
-    popover: FieldsPopover,
-    popoverId,
-    focus: () => anchor.current?.focus({ preventScroll: true }),
-  };
+  return { popover: FieldsPopover, popoverId };
 }

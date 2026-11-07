@@ -62,7 +62,7 @@ One module owns each surface, and each says what it owns at its head:
   and the one render the editor and the result share; a new choice interrupts the read it
   replaces. A read that belongs to one connection runs in that connection's Scope, so
   Disconnect stops it; closing the page disposes the registry and stops everything.
-- The page lays out the Fields Panel, the pane, and the result with the shared panels of
+- The page lays out the pane, the result and the Fields popover with the shared panels of
   `@zotlit/workbench/ui`, as the Template Workbench View in Obsidian does, so both hosts share
   one layout. The page measures its frame with a `ResizeObserver` into the view-size atom
   the placement reads; page tests report the frame's size through that observer, since their

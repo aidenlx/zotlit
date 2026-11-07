@@ -59,10 +59,7 @@ export function panelSizeMenus(
     return {
       handle,
       axis,
-      label:
-        handle === "fields"
-          ? m.workbench_fields_resize()
-          : m.workbench_preview_resize(),
+      label: m.workbench_preview_resize(),
       items: RESIZES.map((resize) => ({
         handle,
         resize,

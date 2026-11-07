@@ -11,11 +11,7 @@ import {
   restoreTemplateData,
   sampleItemCitation,
 } from "@zotlit/workbench/render";
-import {
-  chooseAnnotation,
-  FieldPicker,
-  visibleSectionIds,
-} from "@zotlit/workbench/ui";
+import { chooseAnnotation, visibleSectionIds } from "@zotlit/workbench/ui";
 import type {
   ExplorerPresentation,
   TemplateRoot,
@@ -341,7 +337,7 @@ export function makeFieldsActions(
   });
 }
 
-/** The Explorer's tree in the leaf's left panel. */
+/** The Explorer's tree in the leaf's Fields Panel. */
 export function FieldsPanel({
   view,
   actions,
@@ -362,7 +358,8 @@ export function FieldsPanel({
           explorer={{
             copy: copyToClipboard,
             disabled: !canInsert,
-            onInsertNode: (node) => view.insertTemplateField(node),
+            onInsertNode: (node, { keepOpen }) =>
+              view.insertTemplateField(node, { focus: !keepOpen }),
             canExploreAnnotation: (node) =>
               annotationOfNode(view, node) !== null,
             onExploreAnnotation: (node) => {
@@ -373,31 +370,5 @@ export function FieldsPanel({
         />
       </ExplorerActionsContext>
     </ExplorerModelContext>
-  );
-}
-
-/**
- * The Fields Panel's fields as the picker the Fields action opens where the
- * column does not fit, over the same root and data as the panel.
- */
-export function FieldsPicker({ view }: { view: TemplateWorkbenchView }) {
-  const canInsert = useAtomValue(view.fields.canInsert);
-  const { root, status, data } = useAtomValue(view.fields.state);
-  return (
-    <FieldPicker
-      root={root}
-      data={status === "ready" ? data : null}
-      empty={
-        status === "loading"
-          ? m.workbench_loading_item()
-          : status === "error"
-            ? m.workbench_example_missing_item()
-            : root === "annotation"
-              ? m.workbench_fields_choose_annotation()
-              : m.workbench_fields_choose_item()
-      }
-      disabled={!canInsert}
-      onInsertNode={(node) => view.insertTemplateField(node)}
-    />
   );
 }

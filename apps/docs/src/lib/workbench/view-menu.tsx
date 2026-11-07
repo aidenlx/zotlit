@@ -53,10 +53,10 @@ export function ViewMenu({
   const panels = useAtomValue(model.panels);
   const size = useAtomValue(model.viewSize);
   const fieldsAction = useAtomValue(model.fieldsAction);
-  // Show fields presses the Fields action. Where that opens the picker, the
-  // menu closes first and the picker opens once the menu has handed focus
-  // back, so the picker keeps the focus it takes.
-  const opensPicker = useRef(false);
+  // Show fields presses the Fields action. Where that opens the Fields
+  // popover, the menu closes first and the popover opens once the menu has
+  // handed focus back, so the popover keeps the focus it takes.
+  const opensFields = useRef(false);
   const menus = panelSizeMenus(m, panels, {
     size,
     defaults: model.panelDefaults,
@@ -76,11 +76,11 @@ export function ViewMenu({
     <DropdownMenu
       open={open}
       onOpenChange={(next) => {
-        if (next) opensPicker.current = false;
+        if (next) opensFields.current = false;
         setOpen(next);
       }}
       onOpenChangeComplete={(open) => {
-        if (!open && opensPicker.current) pressFieldsAction(registry, model);
+        if (!open && opensFields.current) pressFieldsAction(registry, model);
       }}
     >
       <DropdownMenuTrigger render={<Button variant="outline" size="xs" />}>
@@ -91,15 +91,15 @@ export function ViewMenu({
       <DropdownMenuContent
         align="end"
         size="xs"
-        // Focus goes to the picker the entry opens, not back to View.
-        finalFocus={() => !opensPicker.current}
+        // Focus goes to the popover the entry opens, not back to View.
+        finalFocus={() => !opensFields.current}
       >
         <DropdownMenuCheckboxItem
           checked={fieldsAction.open}
-          closeOnClick={fieldsAction.opens === "popover"}
+          closeOnClick
           onCheckedChange={() => {
-            if (fieldsAction.opens === "popover") opensPicker.current = true;
-            else pressFieldsAction(registry, model);
+            if (fieldsAction.open) pressFieldsAction(registry, model);
+            else opensFields.current = true;
           }}
         >
           {m.workbench_show_fields()}

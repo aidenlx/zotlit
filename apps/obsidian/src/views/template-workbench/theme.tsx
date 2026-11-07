@@ -54,6 +54,7 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   drag: "grip-vertical",
   "expand-all": "chevrons-up-down",
   "collapse-all": "chevrons-down-up",
+  fields: "braces",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =
@@ -443,33 +444,24 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       status: "zt:sr-only",
       editor: "zt:min-h-0 zt:min-w-0 zt:flex-1",
       panel:
-        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--zt-panel-width) zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=below]:h-(--zt-panel-height)",
+        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=below]:h-(--zt-panel-height)",
       edge: "zt:w-1 zt:shrink-0 zt:cursor-col-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
       split:
         "zt:h-1 zt:shrink-0 zt:cursor-row-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
     },
-    // The Fields picker on its popover: the rows a Bases toolbar menu draws,
-    // with the active row's whole value in a scrolling area under them.
-    fieldPicker: {
-      status: "zt:sr-only",
-      picker: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col",
-      search: "zt:m-(--size-4-1) zt:shrink-0",
-      hint: "zt:shrink-0 zt:px-(--size-4-2) zt:pb-(--size-2-2) zt:text-xs zt:text-muted-foreground",
-      list: "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:overscroll-contain zt:p-(--menu-padding)",
-      "group-label":
-        "zt:ps-1.5 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground",
-      option:
-        "zt:flex zt:cursor-(--cursor) zt:items-baseline zt:gap-(--size-4-2) zt:rounded-sm zt:p-(--size-2-2) zt:ps-(--size-2-3) zt:text-sm zt:data-[state=active]:bg-muted",
-      "option-label": "zt:shrink-0 zt:text-foreground",
-      "option-value":
-        "zt:min-w-0 zt:flex-1 zt:truncate zt:text-end zt:text-xs zt:text-muted-foreground",
-      empty:
-        "zt:shrink-0 zt:px-2 zt:text-xs zt:text-muted-foreground zt:empty:hidden",
-      detail:
-        "zt:max-h-32 zt:shrink-0 zt:overflow-y-auto zt:overscroll-contain zt:border-t-(length:--border-width) zt:border-border zt:px-(--size-4-2) zt:py-(--size-2-3) zt:text-xs zt:empty:hidden",
-      "detail-path": "zt:block zt:font-mono zt:text-muted-foreground",
-      "detail-value":
-        "zt:mt-1 zt:block zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-foreground",
+    // The Fields Panel in the Fields popover, which stands inset at the
+    // view's right edge as tall as the view: it slides in from that edge,
+    // and a still motion setting shows it at once.
+    fieldsPanel: {
+      panel:
+        "zt:flex zt:h-full zt:w-80 zt:max-w-full zt:flex-col zt:rounded-(--radius-m) zt:border zt:border-border zt:bg-(--background-secondary) zt:text-foreground zt:shadow-(--shadow-l) zt:transition-[translate,opacity] zt:duration-150 zt:ease-out zt:starting:translate-x-2 zt:starting:opacity-0 zt:motion-reduce:transition-none",
+      header:
+        "zt:flex zt:shrink-0 zt:items-center zt:gap-1 zt:px-(--size-4-2) zt:pt-(--size-4-2)",
+      icon: "zt:flex zt:shrink-0 zt:ps-1 zt:text-(--icon-color) zt:[&_svg]:size-(--icon-s)",
+      title:
+        "zt:min-w-0 zt:flex-1 zt:truncate zt:px-1 zt:text-sm zt:font-semibold",
+      close: "clickable-icon zt:shrink-0",
+      body: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-auto",
     },
     tabBar: {
       "tab-bar":

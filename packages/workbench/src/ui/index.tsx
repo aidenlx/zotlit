@@ -86,7 +86,6 @@ export {
   showPanel,
 } from "./panel-layout";
 export type {
-  FieldsPicker,
   PanelSide,
   PreviewPanel,
   ViewSize,
@@ -97,14 +96,8 @@ export { panelSizeMenus, pickPanelSize } from "./panel-menu";
 export { HELP_PAGES } from "./help-pages";
 export { ItemRow } from "./item-row";
 export { SidePanels } from "./panels";
-export {
-  FieldPicker,
-  fieldsActionAttributes,
-  fieldsActionKey,
-  holdPickerFocus,
-  PICKER_MOVE_KEYS,
-} from "./field-picker";
-export type { FieldPickerProps } from "./field-picker";
+export { fieldsActionAttributes } from "./fields-panel";
+export type { FieldsPanelContent } from "./fields-panel";
 export {
   NO_MATCH_DATA,
   WorkbenchClipboardError,
@@ -130,8 +123,6 @@ export type {
   WorkbenchMenuItem,
   WorkbenchMenuRequest,
   WorkbenchPersistence,
-  WorkbenchPickerKeys,
-  WorkbenchPickerMove,
   WorkbenchPreferenceScope,
   WorkbenchSuggesterGroup,
   WorkbenchSuggesterOption,

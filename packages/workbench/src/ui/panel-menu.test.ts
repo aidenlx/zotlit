@@ -6,7 +6,6 @@ import { panelSizeMenus } from "./panel-menu";
 import { m } from "./test-messages";
 
 const BOTH: WorkbenchPanels = {
-  fields: { ...INITIAL_PANELS.fields, shown: true },
   preview: { ...INITIAL_PANELS.preview, shown: true },
 };
 
@@ -32,7 +31,6 @@ describe("the panel size menus", () => {
       `(${m.workbench_panel_reset_width()})`,
     ];
     expect(read(panelSizeMenus(m, BOTH, at(1200)))).toEqual([
-      [m.workbench_fields_resize(), "horizontal", widths],
       [m.workbench_preview_resize(), "horizontal", widths],
     ]);
     expect(read(panelSizeMenus(m, BOTH, at(560)))).toEqual([
@@ -49,14 +47,13 @@ describe("the panel size menus", () => {
   });
 
   it("sizes the panel of the entry the reader picks", () => {
-    // Wide enough to keep both columns at the wider Fields width.
     const size = at(1600);
-    const [fields] = panelSizeMenus(m, BOTH, size);
-    const wider = fields!.items[0]!.apply(BOTH);
-    expect(wider.fields.width).toBe(464);
+    const [preview] = panelSizeMenus(m, BOTH, size);
+    const wider = preview!.items[0]!.apply(BOTH);
+    expect(wider.preview.width).toBe(464);
     const [again] = panelSizeMenus(m, wider, size);
     // The width is no longer the default, so it can be reset.
     expect(again!.items[2]!.disabled).toBe(false);
-    expect(again!.items[2]!.apply(wider).fields.width).toBe(400);
+    expect(again!.items[2]!.apply(wider).preview.width).toBe(400);
   });
 });

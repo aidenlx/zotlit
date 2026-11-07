@@ -31,21 +31,18 @@ const press = (element: HTMLElement, key: string) =>
   });
 
 // #1954: the web Workbench lays out the shared panels as Obsidian does.
-it("starts with both panels shown, and shows and hides each from its header action", async () => {
+it("starts with the Preview shown and the Fields popover closed, and shows and hides the Preview from its header action", async () => {
   await using page = await open({ frame: { width: 1200, height: 700 } });
   await page.settle();
-  const fields = action(page.host, m.workbench_show_fields());
+  const fields = action(page.host, m.workbench_view_fields());
   const preview = action(page.host, m.workbench_show_preview());
-  expect(fields.getAttribute("aria-pressed")).toBe("true");
+  expect(fields.getAttribute("aria-expanded")).toBe("false");
   expect(preview.getAttribute("aria-pressed")).toBe("true");
-  expect(region(page.host, m.workbench_view_fields())).not.toBeNull();
+  expect(popover()).toBeNull();
   expect(region(page.host, m.workbench_view_preview())).not.toBeNull();
   page.press(m.workbench_show_preview());
   expect(preview.getAttribute("aria-pressed")).toBe("false");
   expect(region(page.host, m.workbench_view_preview())).toBeNull();
-  page.press(m.workbench_show_fields());
-  expect(fields.getAttribute("aria-pressed")).toBe("false");
-  expect(region(page.host, m.workbench_view_fields())).toBeNull();
   page.press(m.workbench_show_preview());
   expect(region(page.host, m.workbench_view_preview())).not.toBeNull();
 });
@@ -63,13 +60,11 @@ it("puts the Preview under the editor in a narrow frame and beside it in a wide 
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   page.resizeFrame({ width: 1200, height: 700 });
   expect(split().getAttribute("aria-orientation")).toBe("vertical");
-  // Resizing moved the Preview; both panels still show.
+  // Resizing moved the Preview, which still shows, and opened no popover.
   expect(
     action(page.host, m.workbench_show_preview()).getAttribute("aria-pressed"),
   ).toBe("true");
-  expect(
-    action(page.host, m.workbench_show_fields()).getAttribute("aria-pressed"),
-  ).toBe("true");
+  expect(popover()).toBeNull();
 });
 
 // The Preview moves between the side and the place under the editor as one
@@ -109,13 +104,13 @@ it("steps the split from the share a short view draws", async () => {
   expect(split.getAttribute("aria-valuenow")).toBe("31");
 });
 
-it("sizes each panel with its handle", async () => {
+it("sizes the Preview with its handle", async () => {
   await using page = await open({ frame: { width: 1200, height: 700 } });
   await page.settle();
-  const edge = handle(page.host, m.workbench_fields_resize())!;
-  expect(edge.getAttribute("aria-valuenow")).toBe("288");
-  press(edge, "ArrowRight");
-  expect(edge.getAttribute("aria-valuenow")).toBe("304");
+  const edge = handle(page.host, m.workbench_preview_resize())!;
+  expect(edge.getAttribute("aria-valuenow")).toBe("400");
+  press(edge, "ArrowLeft");
+  expect(edge.getAttribute("aria-valuenow")).toBe("416");
   page.resizeFrame({ width: 560, height: 700 });
   const split = handle(page.host, m.workbench_preview_resize())!;
   expect(split.getAttribute("aria-valuenow")).toBe("40");
@@ -123,9 +118,19 @@ it("sizes each panel with its handle", async () => {
   expect(split.getAttribute("aria-valuenow")).toBe("45");
 });
 
-/** The Fields picker's search field, on the popover over the page. */
-const pickerSearch = () =>
-  document.querySelector<HTMLInputElement>('[role="dialog"] [role="combobox"]');
+/** The Fields popover, while it stands open on the document's body. */
+const popover = () =>
+  document.querySelector<HTMLElement>(
+    '[data-slot="popover-content"][role="dialog"]',
+  );
+/** The Fields popover's field search. */
+const popoverSearch = () =>
+  popover()?.querySelector<HTMLInputElement>('input[type="search"]') ?? null;
+/** The Insert button of the top-level field `key` in the open popover. */
+const insertButton = (key: string) =>
+  popover()!.querySelector<HTMLElement>(
+    `[data-workbench-field="${key}"] [role="button"][aria-label="${m.workbench_fields_put_in_note()}"]`,
+  )!;
 
 /** The text of every editor on the page. */
 const editorText = (host: HTMLElement) =>
@@ -145,153 +150,98 @@ const placeCaret = (host: HTMLElement) => {
   return note;
 };
 
-// #1955: where the Fields column does not fit, Fields opens its picker.
-it("opens the Fields picker from its header action in a narrow frame and inserts a field from the keyboard", async () => {
-  await using page = await open({ frame: { width: 560, height: 700 } });
-  await page.settle();
-  const note = placeCaret(page.host);
-  const fields = action(page.host, m.workbench_show_fields());
-  expect(region(page.host, m.workbench_view_fields())).toBeNull();
-  expect(fields.getAttribute("aria-expanded")).toBe("false");
-  expect(editorText(page.host)).not.toContain("zt.authors");
-  page.press(m.workbench_show_fields());
-  await page.settle();
-  const search = pickerSearch()!;
-  expect(search).not.toBeNull();
-  expect(document.activeElement).toBe(search);
-  expect(fields.getAttribute("aria-expanded")).toBe("true");
-  press(search, "ArrowDown");
-  const active = document.getElementById(
-    search.getAttribute("aria-activedescendant")!,
-  );
-  expect(active?.textContent).toContain(m.workbench_field_authors());
-  press(search, "Enter");
-  await page.settle();
-  expect(pickerSearch()).toBeNull();
-  // The field goes where the reader left the caret.
-  expect(note.state.doc.line(1).text).toContain("zt.authors");
-  expect(page.host.textContent).toContain(
-    m.workbench_fields_inserted({ field: m.workbench_field_authors() }),
-  );
-});
-
-// With no caret the reader put in the template, a field has no place to go:
-// the start of the note would break its heading, and the start of Source
-// its front matter.
-it.each([{ source: false }, { source: true }])(
-  "inserts no field before the reader places the caret (Source: $source)",
-  async ({ source }) => {
-    await using page = await open({ frame: { width: 560, height: 700 } });
+// #1964: Fields opens the Fields popover at every width.
+it.each([320, 560, 760, 960, 1200])(
+  "opens the Fields popover from its header action in a %i px frame, and a second press closes it",
+  async (width) => {
+    await using page = await open({ frame: { width, height: 700 } });
     await page.settle();
-    if (source) page.press(m.workbench_advanced());
+    const fields = action(page.host, m.workbench_view_fields());
+    page.press(m.workbench_view_fields());
     await page.settle();
-    const before = editorText(page.host);
-    page.press(m.workbench_show_fields());
+    expect(popover()).not.toBeNull();
+    expect(fields.getAttribute("aria-expanded")).toBe("true");
+    expect(fields.getAttribute("aria-controls")).toBe(popover()!.id);
+    expect(document.activeElement).toBe(popoverSearch());
+    // A popover, not a modal: the editor and the Preview stay in reach.
+    expect(popover()!.getAttribute("aria-modal")).not.toBe("true");
+    expect(page.host.querySelector("[inert]")).toBeNull();
+    page.press(m.workbench_view_fields());
     await page.settle();
-    expect(pickerSearch()!.closest('[role="dialog"]')?.textContent).toContain(
-      m.workbench_fields_choose_place(),
-    );
-    press(pickerSearch()!, "Enter");
-    await page.settle();
-    expect(editorText(page.host)).toBe(before);
-    expect(pickerSearch()).not.toBeNull();
+    expect(popover()).toBeNull();
+    expect(fields.getAttribute("aria-expanded")).toBe("false");
   },
 );
 
-it("closes the Fields picker on Escape and returns focus to the Fields action", async () => {
+it("inserts a field from the popover at the caret, closes the popover and leaves focus in the editor", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
-  page.press(m.workbench_show_fields());
+  const note = placeCaret(page.host);
+  expect(editorText(page.host)).not.toContain("zt.authors");
+  page.press(m.workbench_view_fields());
   await page.settle();
-  press(pickerSearch()!, "Escape");
+  act(() => insertButton("authors").click());
   await page.settle();
-  expect(pickerSearch()).toBeNull();
-  expect(document.activeElement).toBe(
-    action(page.host, m.workbench_show_fields()),
-  );
+  expect(popover()).toBeNull();
+  // The field goes where the reader left the caret.
+  expect(note.state.doc.line(1).text).toContain("zt.authors");
+  expect(note.hasFocus).toBe(true);
 });
 
-it("opens the Fields picker from an arrow or a printable key on the Fields action", async () => {
+it("keeps the popover open for the next field on a Shift-click of Insert", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
-  const fields = action(page.host, m.workbench_show_fields());
-  act(() => fields.focus());
-  press(fields, "ArrowDown");
+  const note = placeCaret(page.host);
+  page.press(m.workbench_view_fields());
   await page.settle();
-  expect(document.activeElement).toBe(pickerSearch());
-  expect(pickerSearch()!.value).toBe("");
-  // The action names the popover it controls while it stands.
-  const popup = document.getElementById(fields.getAttribute("aria-controls")!);
-  expect(popup?.contains(pickerSearch())).toBe(true);
-  press(pickerSearch()!, "Escape");
-  await page.settle();
-  expect(fields.hasAttribute("aria-controls")).toBe(false);
-  press(fields, "d");
-  await page.settle();
-  expect(pickerSearch()!.value).toBe("d");
-  // End and Home reach the last and the first row.
-  const active = () =>
-    document.getElementById(
-      pickerSearch()!.getAttribute("aria-activedescendant")!,
+  act(() => {
+    insertButton("authors").dispatchEvent(
+      new MouseEvent("click", { bubbles: true, shiftKey: true }),
     );
-  const rows = document.querySelectorAll('[role="dialog"] [role="option"]');
-  press(pickerSearch()!, "End");
-  expect(active()).toBe(rows[rows.length - 1]);
-  press(pickerSearch()!, "Home");
-  expect(active()).toBe(rows[0]);
-});
-
-// Tab out of the picker lands on the Fields action, not on the page's body
-// or on the next control, so the reader is where the picker came from.
-it("closes the Fields picker when focus leaves it by keyboard, and gives the Fields action focus", async () => {
-  await using page = await open({ frame: { width: 560, height: 700 } });
-  await page.settle();
-  page.press(m.workbench_show_fields());
-  await page.settle();
-  const elsewhere = page.host.querySelector<HTMLElement>('[role="tab"]')!;
-  act(() => elsewhere.focus());
-  await page.settle();
-  expect(pickerSearch()).toBeNull();
-  expect(document.activeElement).toBe(
-    action(page.host, m.workbench_show_fields()),
-  );
-});
-
-// A press on the Fields action keeps focus in the open picker, so the press
-// closes it from inside and focus goes back to the action, as Escape's does.
-it("closes the Fields picker from a press on its action and gives the action focus", async () => {
-  await using page = await open({ frame: { width: 560, height: 700 } });
-  await page.settle();
-  const fields = action(page.host, m.workbench_show_fields());
-  page.press(m.workbench_show_fields());
-  await page.settle();
-  const search = pickerSearch()!;
-  const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
-  act(() => {
-    fields.dispatchEvent(down);
   });
-  expect(down.defaultPrevented).toBe(true);
-  expect(document.activeElement).toBe(search);
-  act(() => fields.click());
   await page.settle();
-  expect(pickerSearch()).toBeNull();
+  expect(popover()).not.toBeNull();
+  expect(note.state.doc.line(1).text).toContain("zt.authors");
+  // The popover keeps the focus for the next field.
+  expect(note.hasFocus).toBe(false);
+  expect(popover()!.contains(document.activeElement)).toBe(true);
+});
+
+it("closes the Fields popover on Escape and on a press outside it, and returns focus to the Fields action", async () => {
+  await using page = await open({ frame: { width: 560, height: 700 } });
+  await page.settle();
+  const fields = action(page.host, m.workbench_view_fields());
+  page.press(m.workbench_view_fields());
+  await page.settle();
+  press(popoverSearch()!, "Escape");
+  await page.settle();
+  expect(popover()).toBeNull();
   expect(document.activeElement).toBe(fields);
-  // A closed picker leaves the press to move focus as it always does.
-  const next = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+  page.press(m.workbench_view_fields());
+  await page.settle();
+  // The Preview stands outside the popover.
+  const outside = region(page.host, m.workbench_view_preview())!;
   act(() => {
-    fields.dispatchEvent(next);
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"])
+      outside.dispatchEvent(
+        new (type.startsWith("pointer") ? PointerEvent : MouseEvent)(type, {
+          bubbles: true,
+          button: 0,
+        }),
+      );
+    outside.click();
   });
-  expect(next.defaultPrevented).toBe(false);
+  await page.settle();
+  expect(popover()).toBeNull();
+  expect(document.activeElement).toBe(fields);
 });
 
-it("leaves the Fields picker closed as the frame narrows, and shows the column again as it widens", async () => {
+it("never opens the Fields popover as the frame narrows", async () => {
   await using page = await open({ frame: { width: 1200, height: 700 } });
   await page.settle();
-  page.resizeFrame({ width: 560, height: 700 });
-  expect(region(page.host, m.workbench_view_fields())).toBeNull();
-  expect(pickerSearch()).toBeNull();
-  page.resizeFrame({ width: 1200, height: 700 });
-  expect(region(page.host, m.workbench_view_fields())).not.toBeNull();
+  page.resizeFrame({ width: 320, height: 500 });
+  await page.settle();
+  expect(popover()).toBeNull();
 });
 
 // #1956: the View menu sizes every handle without a drag, as the Obsidian
@@ -331,25 +281,25 @@ it("shows, sizes and resets each panel from the View menu", async () => {
   };
   await openView();
   expect(menuItem(m.workbench_show_fields()).getAttribute("aria-checked")).toBe(
-    "true",
+    "false",
   );
-  const fields = (label: string) =>
-    sizeItem(m.workbench_fields_resize(), label);
-  // A new page draws the Fields Panel at its default 288 px.
-  expect(fields(m.workbench_panel_reset_width()).dataset.disabled).toBe("");
-  act(() => fields(m.workbench_panel_wider()).click());
-  const edge = handle(page.host, m.workbench_fields_resize())!;
-  expect(edge.getAttribute("aria-valuenow")).toBe("352");
-  expect(edge.getAttribute("aria-valuetext")).toBe("352 pixels");
+  const preview = (label: string) =>
+    sizeItem(m.workbench_preview_resize(), label);
+  // A new page draws the Preview at its default 400 px.
+  expect(preview(m.workbench_panel_reset_width()).dataset.disabled).toBe("");
+  act(() => preview(m.workbench_panel_wider()).click());
+  const edge = handle(page.host, m.workbench_preview_resize())!;
+  expect(edge.getAttribute("aria-valuenow")).toBe("464");
+  expect(edge.getAttribute("aria-valuetext")).toBe("464 pixels");
   // A menu entry moves no focus to the handle, so a status line says the
   // size it gave.
   const status = () =>
     page.host.querySelector('[data-part="panels"] > [role="status"]:last-child')
       ?.textContent;
-  expect(status()).toBe("Fields: 352 pixels");
+  expect(status()).toBe("Preview: 464 pixels");
   // The menu stays open, so the reader can pick the next step.
-  act(() => fields(m.workbench_panel_reset_width()).click());
-  expect(edge.getAttribute("aria-valuenow")).toBe("288");
+  act(() => preview(m.workbench_panel_reset_width()).click());
+  expect(edge.getAttribute("aria-valuenow")).toBe("400");
   // The resize moves the Preview under the editor, which changes the size
   // groups, so the menu closes; it opens again on the new groups.
   page.resizeFrame({ width: 560, height: 700 });
@@ -376,35 +326,8 @@ it("shows, sizes and resets each panel from the View menu", async () => {
   expect(region(page.host, m.workbench_view_preview())).toBeNull();
 });
 
-// A step that moves a panel to another place changes the size groups the
-// View menu lists; the menu closes rather than move its entries under the
-// pointer.
-it("closes the View menu when a size step changes where the panels go", async () => {
-  await using page = await open({ frame: { width: 1024, height: 700 } });
-  await page.settle();
-  // The Preview leaves no room for the Fields column beside the editor.
-  expect(region(page.host, m.workbench_view_fields())).toBeNull();
-  page.press(m.workbench_view_menu());
-  await page.waitFor(() =>
-    expect(document.querySelector('[role="menu"]')).not.toBeNull(),
-  );
-  const narrower = [
-    ...document.querySelectorAll<HTMLElement>(
-      '[role="menu"] [role="menuitem"]',
-    ),
-  ].find((element) => element.textContent === m.workbench_panel_narrower())!;
-  act(() => narrower.click());
-  await page.settle();
-  // The narrower Preview makes room for the Fields column.
-  expect(region(page.host, m.workbench_view_fields())).not.toBeNull();
-  await page.waitFor(() =>
-    expect(document.querySelector('[role="menu"]')).toBeNull(),
-  );
-});
-
-// The View menu presses the same Fields action as the header: where the
-// column does not fit, Show fields opens the picker.
-it("opens the Fields picker from the View menu's Show fields in a narrow frame", async () => {
+// The View menu presses the same Fields action as the header.
+it("opens the Fields popover from the View menu's Show fields", async () => {
   await using page = await open({ frame: { width: 560, height: 700 } });
   await page.settle();
   page.press(m.workbench_view_menu());
@@ -414,14 +337,14 @@ it("opens the Fields picker from the View menu's Show fields in a narrow frame",
   const show = [
     ...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]'),
   ].find((element) => element.textContent === m.workbench_show_fields())!;
-  // The picker is closed, so the entry reads unchecked.
+  // The popover is closed, so the entry reads unchecked.
   expect(show.getAttribute("aria-checked")).toBe("false");
   act(() => show.click());
-  await page.waitFor(() => expect(pickerSearch()).not.toBeNull());
+  await page.waitFor(() => expect(popoverSearch()).not.toBeNull());
   await page.settle();
-  expect(document.activeElement).toBe(pickerSearch());
+  expect(document.activeElement).toBe(popoverSearch());
   expect(
-    action(page.host, m.workbench_show_fields()).getAttribute("aria-expanded"),
+    action(page.host, m.workbench_view_fields()).getAttribute("aria-expanded"),
   ).toBe("true");
 });
 
@@ -440,12 +363,11 @@ const selectedInNote = (host: HTMLElement) => {
 // #1957: the preview's Show problem is the shared repair command, so the
 // round trip is the same in a narrow and a wide frame.
 it.each([
-  // Where the Fields column does not fit, the picker stands over the editor.
-  { frame: { width: 560, height: 700 }, split: "horizontal", picker: true },
-  { frame: { width: 1200, height: 700 }, split: "vertical", picker: false },
+  { frame: { width: 560, height: 700 }, split: "horizontal" },
+  { frame: { width: 1200, height: 700 }, split: "vertical" },
 ])(
   "reveals the call from the Preview's Show problem in a $frame.width px frame and keeps the Preview in place",
-  async ({ frame, split, picker }) => {
+  async ({ frame, split }) => {
     keep(
       DEFAULT_PROFILE_SOURCE.replace(
         "# {{ zt.title }}",
@@ -459,16 +381,13 @@ it.each([
     await page.waitFor(() =>
       expect(shown.querySelector('[data-part="problem-open"]')).not.toBeNull(),
     );
-    if (picker) page.press(m.workbench_show_fields());
     await page.settle();
-    expect(pickerSearch() !== null).toBe(picker);
     act(() =>
       shown
         .querySelector<HTMLButtonElement>('[data-part="problem-open"]')!
         .click(),
     );
     await page.settle();
-    expect(pickerSearch()).toBeNull();
     expect(page.host.textContent).toContain(m.workbench_problems_heading());
     expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
     expect(selectedInNote(page.host)).toBe(MISSING_CALL);

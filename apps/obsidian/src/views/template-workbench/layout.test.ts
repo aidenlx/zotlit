@@ -130,11 +130,10 @@ describe("the dedicated workbench window", () => {
           }),
         );
         expect(test.moveLeafToPopout).toHaveBeenCalledOnce();
-        // Fields is a panel of the editor's own leaf.
+        // The Preview is a panel of the editor's own leaf.
         expect(test.createLeafBySplit).not.toHaveBeenCalled();
         expect(view.leaf.getContainer()).not.toBe(test.rootSplit);
         expect(test.panels(view)).toMatchObject({
-          fields: { shown: true },
           preview: { shown: true },
         });
         expect(test.setActiveLeaf).toHaveBeenLastCalledWith(view.leaf, {
@@ -155,7 +154,6 @@ describe("the dedicated workbench window", () => {
         expect(test.moveLeafToPopout).not.toHaveBeenCalled();
         expect(test.revealLeaf).toHaveBeenCalledWith(opened.leaf);
         expect(test.panels(opened)).toMatchObject({
-          fields: { shown: true },
           preview: { shown: true },
         });
         expect(test.panels(second)).toMatchObject({
