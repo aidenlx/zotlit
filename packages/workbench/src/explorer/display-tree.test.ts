@@ -10,6 +10,7 @@ import {
 } from "./display-tree";
 import type { DisplayNode } from "./display-tree";
 import { markInertPlaceholder } from "./inert-placeholder";
+import { withText } from "./test-records";
 
 function expectValueChildren(node: DisplayNode): readonly DisplayNode[] {
   expect(node.kind).toBe("value");
@@ -978,15 +979,6 @@ describe("buildFilteredDisplayTree — collapsed option", () => {
     expect(creatorsNode.children).toHaveLength(1);
   });
 });
-
-/** A record that reads as text through its own non-enumerable toString, as the template context's creators do. */
-function withText<T extends object>(record: T, text: string): T {
-  Object.defineProperty(record, "toString", {
-    value: () => text,
-    enumerable: false,
-  });
-  return record;
-}
 
 describe("buildDisplayTree — list shape", () => {
   const authors = () => [

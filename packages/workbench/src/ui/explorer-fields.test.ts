@@ -4,24 +4,16 @@ import { describe, expect, it } from "vitest";
 import { fieldSnippet, fieldValueText } from "./explorer-fields";
 
 import { buildDisplayTree } from "#/explorer/index";
-
-function creator(family: string, given: string) {
-  const record = { family, given };
-  Object.defineProperty(record, "toString", {
-    value: () => `${given} ${family}`,
-    enumerable: false,
-  });
-  return record;
-}
-
-const root = {
-  title: "Paper",
-  authors: [creator("Rivera", "Mara"), creator("Chen", "Li")],
-};
+import { withText } from "#/explorer/test-records";
 
 function shapeNodes(): { authors: DisplayNode; family: DisplayNode } {
   const [authors] = buildDisplayTree(
-    { authors: root.authors },
+    {
+      authors: [
+        withText({ family: "Rivera", given: "Mara" }, "Mara Rivera"),
+        withText({ family: "Chen", given: "Li" }, "Li Chen"),
+      ],
+    },
     { expanded: new Set(["authors"]), lists: "shape" },
   );
   if (authors?.kind !== "value" || !authors.children) throw new Error("shape");
