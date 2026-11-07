@@ -19,6 +19,8 @@ import {
   ChevronUp,
   CircleAlert,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Ellipsis,
   TextAlignStart,
   Tags,
@@ -77,6 +79,8 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   "property-date": Calendar,
   "property-datetime": Clock,
   drag: GripVertical,
+  "expand-all": ChevronsUpDown,
+  "collapse-all": ChevronsDownUp,
 };
 
 /** A read-only Properties block: one row per property, key beside value. */
@@ -158,7 +162,9 @@ export const WEB_THEME: WorkbenchTheme = {
       explorer: "flex min-h-0 flex-1 flex-col gap-2 p-2",
       header: "flex flex-wrap items-center justify-between gap-2",
       heading: "text-xs font-semibold",
-      search: "w-full",
+      "search-row": "flex items-center gap-1",
+      search: "min-w-0 flex-1",
+      "sections-toggle": cn(historyButton, "shrink-0"),
       body: "min-h-0 flex-1 overflow-auto",
       empty: "text-fd-muted-foreground text-xs",
     },
@@ -441,6 +447,10 @@ export const WEB_THEME: WorkbenchTheme = {
     // placement. Each handle is the 12 px gap between two parts
     // (PANEL_HANDLE_WIDTH, which the placement counts), with a rule
     // down its middle that turns the primary color while it is used.
+    itemRow: {
+      row: "flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-fd-border px-3 py-1.5",
+      label: "min-w-0 text-xs text-fd-muted-foreground",
+    },
     panels: {
       panels: "flex min-h-0 min-w-0 flex-1",
       stack: "flex min-h-0 min-w-0 flex-1 data-[state=below]:flex-col",

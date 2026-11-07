@@ -1,4 +1,4 @@
-// The item the page is shown against, beside the result: which Item it is, where
+// The item the page is shown against, in the item row above the panels: which Item it is, where
 // it came from, and the one request that loads or refreshes a connected one.
 
 import type { LocalBridgeConnection } from "@zotlit/workbench/bridge";
@@ -62,7 +62,7 @@ export function SampleBar({
       .join(m.workbench_selection_separator()),
   }));
   return (
-    <div className="mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
+    <>
       <SampleSuggester
         id="workbench-sample"
         title={m.workbench_choose_item()}
@@ -115,6 +115,6 @@ export function SampleBar({
               : m.workbench_load_item()}
         </Button>
       )}
-    </div>
+    </>
   );
 }

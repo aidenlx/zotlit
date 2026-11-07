@@ -91,6 +91,7 @@ export function WorkbenchFrame({
   connection,
   notifications,
   strips,
+  item,
   status,
   fields,
   editor,
@@ -111,6 +112,8 @@ export function WorkbenchFrame({
   notifications?: ReactNode;
   /** Notices that need attention before editing. */
   strips?: ReactNode;
+  /** The item row, which names what every panel reads; it spans the panels. */
+  item?: ReactNode;
   status: ReactNode;
   fields: ReactNode;
   editor: ReactNode;
@@ -158,6 +161,7 @@ export function WorkbenchFrame({
       </header>
 
       {strips}
+      {item}
 
       <main
         ref={mainRef}

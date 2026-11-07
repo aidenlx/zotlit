@@ -52,6 +52,8 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   "property-date": "calendar",
   "property-datetime": "clock",
   drag: "grip-vertical",
+  "expand-all": "chevrons-up-down",
+  "collapse-all": "chevrons-down-up",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =
@@ -112,7 +114,7 @@ export const selectionOptionContent = cn(
 export const selectionOptionLabel = "zt:font-medium zt:text-foreground";
 /**
  * A control row that names the selected data beside the control that changes it.
- * `placement` decides which part hides outside a sidebar: the whole row, or only the trigger.
+ * In a sidebar placement, the row shows only where Obsidian hides the view header.
  */
 export const selectionBar = tv({
   slots: {
@@ -124,11 +126,6 @@ export const selectionBar = tv({
   },
   variants: {
     placement: {
-      /** The pane header always names the selection; only the trigger waits for a sidebar. */
-      header: {
-        row: "zt:flex zt:shrink-0 zt:px-3",
-        trigger: "zt-workbench-sidebar-control zt:my-1",
-      },
       /** A row inside the result appears only where Obsidian hides the view header. */
       sidebar: { row: "zt-workbench-sidebar-control" },
     },
@@ -294,7 +291,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       header:
         "zt-workbench-sidebar-control zt:items-center zt:justify-between zt:gap-x-2 zt:px-3",
       heading: "",
-      search: "zt:mx-3 zt:w-auto zt:min-w-0 zt:shrink-0",
+      "search-row":
+        "zt:mx-3 zt:flex zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-1",
+      search: "zt:w-auto zt:min-w-0 zt:flex-1",
+      "sections-toggle": "clickable-icon zt:shrink-0",
       body: "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-2 zt:pb-3",
       empty:
         "zt:px-1 zt:py-3 zt:text-muted-foreground zt:text-sm zt:leading-normal",
@@ -426,6 +426,11 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     // The side panels: the model places them, so the classes only draw each
     // placement. A column holds its saved width within 2/5 of the view; the
     // Preview under the editor takes the height the model computes.
+    itemRow: {
+      row: "zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:border-b zt:border-border zt:px-3 zt:py-1",
+      label:
+        "zt:min-w-0 zt:flex-1 zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground",
+    },
     panels: {
       panels: "zt:flex zt:h-full zt:min-w-0",
       stack:

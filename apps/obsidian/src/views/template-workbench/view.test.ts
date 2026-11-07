@@ -3451,12 +3451,15 @@ describe("the side panels of the Template Workbench View", () => {
     using migration = windowMigration();
     const { view } = setup();
     await act(async () => view.open());
+    // The box under the item row, which the panels and the editor share.
+    const box = view.contentEl.querySelector("[data-workbench-panels]")!;
+    expect(box).not.toBeNull();
     const size = { width: 1200, height: 800 };
     for (const [name, axis] of [
       ["clientWidth", "width"],
       ["clientHeight", "height"],
     ] as const)
-      Object.defineProperty(view.contentEl, name, {
+      Object.defineProperty(box, name, {
         configurable: true,
         get: () => size[axis],
       });
@@ -3475,7 +3478,7 @@ describe("the side panels of the Template Workbench View", () => {
     vi.stubGlobal("ResizeObserver", PopoutResizeObserver);
     await act(async () => migration.move(window));
     vi.unstubAllGlobals();
-    expect(observed).toEqual([view.contentEl]);
+    expect(observed).toEqual([box]);
     size.width = 520;
     await act(async () => resized?.());
     expect(view.registry.get(view.viewSize)).toMatchObject({
@@ -3551,6 +3554,30 @@ describe("the side panels of the Template Workbench View", () => {
   const entry = (view: TemplateWorkbenchView, title: string) =>
     paneMenu(view).find((item) => item.title === title);
 
+  it("opens the docs from the Help view action, which the pane menu leaves to it", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const actions = (view as unknown as MockItemView).actions.map((element) =>
+      element.getAttribute("aria-label"),
+    );
+    // The item row holds the item's chooser; the header holds Help.
+    expect(actions).toContain(m.workbench_help());
+    expect(actions).not.toContain(m.workbench_choose_item());
+    expect(entry(view, m.workbench_help())).toBeUndefined();
+    const before = Menu.instances.length;
+    await act(async () => actionOf(view, m.workbench_help()).click());
+    const menu = Menu.instances[before]!;
+    expect(menu.items.map((item) => item.title)).toEqual([
+      m.workbench_docs_guide(),
+      m.workbench_docs_note(),
+      m.workbench_docs_data(),
+      m.workbench_problems_community(),
+    ]);
+    expect(menu.position).not.toBeNull();
+  });
+
   // #1956: the pane menu sizes a panel; the End-to-end Run walks every handle.
   it("sizes a panel from the pane menu, and saves the size", async () => {
     await using cleanup = new AsyncDisposableStack();
@@ -3618,7 +3645,15 @@ describe("the side panels of the Template Workbench View", () => {
     expect(panel.querySelector("h2")?.textContent).toBe(
       m.workbench_result_heading(),
     );
-    expect(panel.textContent).toContain(SAMPLE_ITEMS[0]!.item.title);
+    // The view's one item row names the Item; the panel's head holds only
+    // what is the Preview's own.
+    const title = SAMPLE_ITEMS[0]!.item.title!;
+    expect(panel.textContent).not.toContain(title);
+    expect(
+      view.contentEl.textContent.split(
+        m.workbench_example_title({ name: title }),
+      ),
+    ).toHaveLength(2);
     expect(panel.textContent).toContain(m.workbench_preview_on_demand());
     expect(panel.textContent).toContain("A rendered paper note");
   });

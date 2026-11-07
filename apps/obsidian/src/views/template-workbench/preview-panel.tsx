@@ -16,21 +16,16 @@ import type {
   RenderDiagnostic,
 } from "@zotlit/workbench/render";
 import {
-  citationExampleLabel,
   citationVariantLabel,
   partialContextLabel,
   ResultBody,
 } from "@zotlit/workbench/ui";
 import type { ResultMode, TemplateRoot } from "@zotlit/workbench/ui";
 
-import { Icon } from "@/components/obsidian/icon";
-import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn } from "@/lib/utils";
 import { NativeMarkdown } from "@/views/template-workbench/preview/markdown";
 
-import { selectionName } from "./selection";
-import { selectionBar, selectionHint, templateWorkbenchButton } from "./theme";
+import { selectionHint, templateWorkbenchButton } from "./theme";
 import type { TemplateWorkbenchView } from "./view";
 
 /**
@@ -107,9 +102,6 @@ export function WorkbenchMarkdown({
   );
 }
 
-/** The panel names its Item and offers its chooser in every placement. */
-const panelBar = selectionBar();
-
 export function PreviewPanel({
   view,
   showProblem,
@@ -124,8 +116,6 @@ export function PreviewPanel({
   );
   const kind = useAtomValue(workbench.document.kind);
   const root = useAtomValue(workbench.root);
-  const item = useAtomValue(workbench.item);
-  const title = useAtomValue(model.title);
   const { status, error } = useAtomValue(model.read);
   const { example } = useAtomValue(workbench.examples);
   const { variant, citationExample, preview } = useAtomValue(workbench.choices);
@@ -141,17 +131,6 @@ export function PreviewPanel({
     status === "ready" ||
     (annotationMode && example !== null) ||
     (citationSet && citationExample !== null);
-  const choose = () =>
-    annotationMode ? view.startAnnotationChoice() : view.startItemChoice();
-  const name = citationSet
-    ? citationExample === null
-      ? title
-      : citationExampleLabel(m, citationExample)
-    : selectionName({
-        item: item && { id: item.id, title },
-        annotation: example,
-        annotationMode,
-      });
   const heading =
     mode === "partial"
       ? m.workbench_partial_result_heading()
@@ -174,37 +153,19 @@ export function PreviewPanel({
       : []),
     ...(!preview.live ? [m.workbench_preview_on_demand()] : []),
   ].join(m.workbench_selection_separator());
-  const chooseLabel = annotationMode
-    ? m.workbench_choose_annotation()
-    : m.workbench_choose_item();
   return (
     <div
       data-workbench-scroll="preview"
       data-zotlit-preview-result={result?.sourceRevision}
       className="zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-3 zt:overflow-auto zt:p-3"
     >
-      <div className={cn(panelBar.row(), "zt:flex")}>
-        {name && <p className={panelBar.caption()}>{name}</p>}
-        <button className={panelBar.trigger()} onClick={choose}>
-          <Icon name="search" />
-          <span>{chooseLabel}</span>
-        </button>
-      </div>
+      {/* The view's item row above holds the chooser this hint points at. */}
       {status === "empty" && !ready && (
-        <div className="zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-2">
-          <p className={selectionHint}>
-            {annotationMode
-              ? m.workbench_preview_choose_annotation()
-              : m.workbench_preview_choose_item()}
-          </p>
-          <button
-            className={selectionControl({ kind: "trigger" })}
-            onClick={choose}
-          >
-            <Icon name="search" />
-            <span>{chooseLabel}</span>
-          </button>
-        </div>
+        <p className={selectionHint}>
+          {annotationMode
+            ? m.workbench_preview_choose_annotation()
+            : m.workbench_preview_choose_item()}
+        </p>
       )}
       {status === "loading" && (
         <p role="status" className={selectionHint}>

@@ -58,6 +58,20 @@ export function DropdownMenuItem({
   );
 }
 
+/** An entry that opens a page, as a link the browser handles. */
+export function DropdownMenuLinkItem({
+  className,
+  ...props
+}: MenuPrimitive.LinkItem.Props) {
+  return (
+    <MenuPrimitive.LinkItem
+      data-slot="dropdown-menu-link-item"
+      className={cn(ITEM, className)}
+      {...props}
+    />
+  );
+}
+
 /** A choice the reader turns on and off; a check in the icon slot shows it on. */
 export function DropdownMenuCheckboxItem({
   className,

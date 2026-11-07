@@ -53,6 +53,8 @@ export interface WorkbenchParts {
     | "header"
     | "heading"
     | "search"
+    | "search-row"
+    | "sections-toggle"
     | "body"
     | "empty";
   explorerTree:
@@ -243,6 +245,7 @@ export interface WorkbenchParts {
     | "checkbox";
 
   panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split" | "status";
+  itemRow: "row" | "label";
   fieldPicker:
     | "status"
     | "picker"
@@ -336,7 +339,9 @@ export type WorkbenchIcon =
   | "property-checkbox"
   | "property-date"
   | "property-datetime"
-  | "drag";
+  | "drag"
+  | "expand-all"
+  | "collapse-all";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;
