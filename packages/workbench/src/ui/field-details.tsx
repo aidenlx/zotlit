@@ -2,7 +2,8 @@
 // and what the note gets, with Insert and Copy. A wide view shows them in the
 // host's popover beside the panel; a narrow one in a bar of fixed height at
 // the panel's foot.
-import type { DisplayNode } from "#/explorer/index";
+import type { DisplayNode, SnippetKind } from "#/explorer/index";
+import { useState } from "react";
 import type { Ref } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
@@ -14,7 +15,13 @@ import { useWorkbenchMessages } from "./messages";
 import type { ViewSize } from "./panel-layout";
 import { useIcon, useParts } from "./theme";
 
-import { formatPath, snippetKindsFor, snippetResult } from "#/explorer/index";
+import {
+  formatPath,
+  listItemTexts,
+  listSnippetKinds,
+  snippetKindsFor,
+  snippetResult,
+} from "#/explorer/index";
 
 /**
  * The narrowest view, in pixels, that shows a field's details in a popover
@@ -42,11 +49,14 @@ export interface FieldDetailsContent {
   readonly label: string;
   /** Where the field sits: its section, and the field it belongs to. */
   readonly context: string;
-  /** The text an insert puts into the note, in the field's first form. */
-  readonly snippet: string;
+  /**
+   * The text an insert puts into the note in the form `kind`, or in the
+   * field's first form where `kind` is absent.
+   */
+  readonly snippet: (kind?: SnippetKind) => string;
   /** Absent where the editor takes no field now. */
-  readonly onInsert?: (keepOpen: boolean) => void;
-  readonly onCopy: () => void;
+  readonly onInsert?: (keepOpen: boolean, kind?: SnippetKind) => void;
+  readonly onCopy: (kind?: SnippetKind) => void;
   readonly onClose: () => void;
 }
 
@@ -123,9 +133,20 @@ function DetailsBody({
     node.kind === "value" && typeof node.value === "string"
       ? node.value
       : fieldValueText(node);
+  // A list goes into the note in the form the reader picks, its first by
+  // default; any other field has one form.
+  const forms = listSnippetKinds(node);
+  const [kind, setKind] = useState<SnippetKind | undefined>(forms[0]);
+  const formsId = useUniqueId();
   // What the snippet writes, by the rules of the form the snippet uses.
-  const result = snippetResult(node, snippetKindsFor(node)[0]!);
+  const result = snippetResult(node, kind ?? snippetKindsFor(node)[0]!);
   const empty = m.workbench_fields_empty();
+  // A list shows its values one per line, numbered.
+  const values = forms.length > 0 ? listItemTexts(node) : [];
+  const formLabels: Partial<Record<SnippetKind, string>> = {
+    joined: m.workbench_fields_details_form_joined(),
+    loop: m.workbench_fields_details_form_loop(),
+  };
   return (
     <section
       ref={surface}
@@ -149,16 +170,48 @@ function DetailsBody({
           {icon("close")}
         </button>
       </div>
-      <p {...part("value", value === "" ? "empty" : undefined)}>
-        {value === "" ? empty : value}
-      </p>
+      {values.length > 1 ? (
+        <ol {...part("values")}>
+          {values.map((text, index) => (
+            <li key={index} {...part("values-item")}>
+              <span {...part("values-index")}>{index + 1}</span>
+              <span {...part("values-text")}>{text}</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p {...part("value", value === "" ? "empty" : undefined)}>
+          {value === "" ? empty : value}
+        </p>
+      )}
       <div {...part("item")}>
         <span {...part("label")}>{m.workbench_fields_details_path()}</span>
         <code {...part("path")}>{formatPath(node.path, "zt")}</code>
       </div>
       <div {...part("item")}>
-        <span {...part("label")}>{m.workbench_fields_details_in_note()}</span>
-        <code {...part("snippet")}>{snippet}</code>
+        <div {...part("item-header")}>
+          <span {...part("label")}>{m.workbench_fields_details_in_note()}</span>
+          {forms.length > 0 && (
+            <div
+              role="radiogroup"
+              aria-label={m.workbench_fields_details_form()}
+              {...part("forms")}
+            >
+              {forms.map((form) => (
+                <label key={form} {...part("form")}>
+                  <input
+                    type="radio"
+                    name={formsId}
+                    checked={kind === form}
+                    onChange={() => setKind(form)}
+                  />
+                  {formLabels[form]}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <code {...part("snippet")}>{snippet(kind)}</code>
         <p {...part("result", result === null ? "empty" : undefined)}>
           <span aria-hidden="true" {...part("result-icon")}>
             {icon("result")}
@@ -170,13 +223,13 @@ function DetailsBody({
         <button
           type="button"
           disabled={!onInsert}
-          onClick={(event) => onInsert?.(event.shiftKey)}
+          onClick={(event) => onInsert?.(event.shiftKey, kind)}
           {...part("insert")}
         >
           {icon("insert")}
           {m.workbench_fields_insert()}
         </button>
-        <button type="button" onClick={onCopy} {...part("copy")}>
+        <button type="button" onClick={() => onCopy(kind)} {...part("copy")}>
           {icon("copy")}
           {m.workbench_fields_copy()}
         </button>

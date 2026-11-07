@@ -1,4 +1,9 @@
-import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
+import type {
+  DisplayNode,
+  SnippetKind,
+  TemplateEngine,
+  TreeState,
+} from "#/explorer/index";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { Effect } from "effect";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -70,11 +75,13 @@ export interface DataExplorerProps {
   /**
    * Resolves insertion against the receiving editor at action time; `false`
    * when the editor refused the field. With `keepOpen`, Shift kept the Fields
-   * Panel open for the next field, so the editor takes no focus.
+   * Panel open for the next field, so the editor takes no focus. `kind` is
+   * the form the reader chose for a list in its details; absent, the field
+   * goes in its first form.
    */
   onInsertNode?: (
     node: DisplayNode,
-    options: { readonly keepOpen: boolean },
+    options: { readonly keepOpen: boolean; readonly kind?: SnippetKind },
   ) => boolean | void;
   copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
@@ -154,15 +161,16 @@ export function DataExplorer({
   const insertField =
     onInsertNode ??
     (onInsert
-      ? (node: DisplayNode) => onInsert(fieldSnippet(node, mode, { engine }))
+      ? (node: DisplayNode, { kind }: { readonly kind?: SnippetKind }) =>
+          onInsert(fieldSnippet(node, mode, { engine, kind }))
       : undefined);
   // An insert closes the Fields Panel and leaves focus to the editor, at the
   // inserted text; Shift keeps the panel open for the next field.
   // It names the field it inserted to a screen reader.
   const insertNode =
     insertField &&
-    ((node: DisplayNode, keepOpen = false) => {
-      if (insertField(node, { keepOpen }) === false) return;
+    ((node: DisplayNode, keepOpen = false, kind?: SnippetKind) => {
+      if (insertField(node, { keepOpen, kind }) === false) return;
       host.notice(
         m.workbench_fields_inserted({ field: fieldLabel(node, labels) }),
       );
@@ -284,9 +292,13 @@ export function DataExplorer({
       escape.current = () => false;
     };
   });
-  const insertEntry = (entry: FieldEntry, keepOpen = false) => {
+  const insertEntry = (
+    entry: FieldEntry,
+    keepOpen = false,
+    kind?: SnippetKind,
+  ) => {
     rows.close();
-    insertNode?.(entry.node, keepOpen);
+    insertNode?.(entry.node, keepOpen, kind);
   };
   const copyEntry = (entry: FieldEntry, snippet: string) => {
     rows.close();
@@ -400,8 +412,9 @@ export function DataExplorer({
     });
   };
   const search = m[SEARCH_LABELS[root]]();
-  /** What an insert of `node` puts into the note. */
-  const snippetOf = (node: DisplayNode) => fieldSnippet(node, mode, { engine });
+  /** What an insert of `node` in the form `kind` puts into the note. */
+  const snippetOf = (node: DisplayNode, kind?: SnippetKind) =>
+    fieldSnippet(node, mode, { engine, kind });
   return (
     <section {...part("explorer")}>
       <div {...part("header")}>
@@ -511,13 +524,15 @@ export function DataExplorer({
           node={rows.open.node}
           label={rows.open.label}
           context={rows.open.context}
-          snippet={snippetOf(rows.open.node)}
+          snippet={(kind) => snippetOf(rows.open!.node, kind)}
           onInsert={
             insertNode && !disabled
-              ? (keepOpen) => insertEntry(rows.open!, keepOpen)
+              ? (keepOpen, kind) => insertEntry(rows.open!, keepOpen, kind)
               : undefined
           }
-          onCopy={() => copyEntry(rows.open!, snippetOf(rows.open!.node))}
+          onCopy={(kind) =>
+            copyEntry(rows.open!, snippetOf(rows.open!.node, kind))
+          }
           onClose={rows.close}
         />
       )}

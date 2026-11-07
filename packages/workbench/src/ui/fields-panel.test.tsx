@@ -737,4 +737,108 @@ describe("a list field", () => {
       .map((row) => row.getAttribute("data-workbench-field")!);
     expect(keys.filter((key) => /\[\d+\]/.test(key))).toEqual([]);
   });
+
+  /** The details of the field `key`, after a click on its row. */
+  const openDetails = (key: string, label: string) => {
+    fireEvent.click(line(key));
+    return within(details(label)!);
+  };
+  /** The forms the details offer, the chosen one marked. */
+  const forms = (region: ReturnType<typeof openDetails>) =>
+    region
+      .queryAllByRole("radio")
+      .map(
+        (radio) =>
+          `${radio.closest("label")!.textContent}${(radio as HTMLInputElement).checked ? " ✓" : ""}`,
+      );
+
+  it("shows the list's values in its details, one per line and numbered", () => {
+    using page = open(lists);
+    page.pressAction();
+    const region = openDetails("authors", "Authors");
+    const values = region.getByRole("list");
+    expect(
+      within(values)
+        .getAllByRole("listitem")
+        .map((value) => value.textContent),
+    ).toEqual(["1Sönke Ahrens", "2Niklas Luhmann"]);
+  });
+
+  it("puts a list into the note in one line or for each item, as the reader chooses", () => {
+    using page = open(lists);
+    page.pressAction();
+    let region = openDetails("authors", "Authors");
+    expect(
+      region.getByRole("radiogroup", {
+        name: "How the list goes into the note",
+      }),
+    ).toBeTruthy();
+    expect(forms(region)).toEqual(["In one line ✓", "Each item"]);
+    expect(region.getByText('{{ zt.authors | join: ", " }}')).toBeTruthy();
+    expect(region.getByText("Sönke Ahrens, Niklas Luhmann")).toBeTruthy();
+    fireEvent.click(region.getByRole("radio", { name: "Each item" }));
+    expect(forms(region)).toEqual(["In one line", "Each item ✓"]);
+    const loop = "{% for author in zt.authors %}\n- {{ author }}{% endfor %}";
+    expect(
+      region.getByText((_, element) => element?.textContent === loop, {
+        selector: "code",
+      }),
+    ).toBeTruthy();
+    expect(
+      region.getByText(
+        (_, element) =>
+          element?.textContent === "- Sönke Ahrens\n- Niklas Luhmann",
+        { selector: "span" },
+      ),
+    ).toBeTruthy();
+    fireEvent.click(region.getByRole("button", { name: "Copy" }));
+    region = openDetails("authors", "Authors");
+    fireEvent.click(region.getByRole("radio", { name: "Each item" }));
+    fireEvent.click(region.getByRole("button", { name: "Insert" }), {
+      shiftKey: true,
+    });
+    expect(page.host.calls.copies).toEqual([loop]);
+    expect(page.texts).toEqual([loop]);
+  });
+
+  it("offers a list property in both forms", () => {
+    using page = open(lists);
+    page.pressAction();
+    fireEvent.click(toggle("authors")!);
+    const region = openDetails("authors[].family", "family");
+    expect(
+      within(region.getByRole("list"))
+        .getAllByRole("listitem")
+        .map((value) => value.textContent),
+    ).toEqual(["1Ahrens", "2Luhmann"]);
+    expect(forms(region)).toEqual(["In one line ✓", "Each item"]);
+    fireEvent.click(region.getByRole("button", { name: "Insert" }), {
+      shiftKey: true,
+    });
+    expect(page.texts).toEqual([
+      '{{ zt.authors | map: "family" | join: ", " }}',
+    ]);
+  });
+
+  it("offers each item alone where the items do not read as text, and the row's Insert uses it", () => {
+    using page = open(lists);
+    page.pressAction();
+    const region = openDetails("attachments", "Attached files");
+    expect(forms(region)).toEqual(["Each item ✓"]);
+    fireEvent.click(
+      within(line("attachments")).getByRole("button", {
+        name: "Insert field",
+      }),
+      { shiftKey: true },
+    );
+    expect(page.texts).toEqual([
+      "{% for attachment in zt.attachments %}\n- {{ attachment.filename }}{% endfor %}",
+    ]);
+  });
+
+  it("offers no form choice for a field that is not a list", () => {
+    using page = open(lists);
+    page.pressAction();
+    expect(forms(openDetails("title", "Title"))).toEqual([]);
+  });
 });
