@@ -2,8 +2,9 @@
 // wide or tall, and where each shown panel goes in a view of a given size.
 // The choice is saved state; the placement is derived from it and the view
 // size and never saved, so resizing a view changes only the placement. The
-// Fields sheet takes no side: it opens over the editor while the reader has
-// it open, at every width.
+// Fields Panel takes no side while it is not pinned: it opens as a popover
+// at the view's right edge while the reader has it open, at every width.
+// Pinned (#1966), it docks as a column at the leading edge.
 
 import { patchAt } from "./patch";
 
@@ -104,17 +105,27 @@ export interface ViewSize {
   readonly handle?: number;
 }
 
+/** Where the Fields Panel goes: a popover at the view's right edge, or nowhere. */
+export type FieldsPlacement = "popover" | "closed";
+
 /**
  * Where each panel goes. The Preview stands beside the editor, under it, or
- * nowhere while it is hidden. The Fields sheet stands over the editor while
- * the reader has it open, at every width.
+ * nowhere while it is hidden. The Fields Panel stands as a popover over the
+ * editor while the reader has it open, at every width.
  */
 export interface PanelPlacement {
   readonly preview: "side" | "below" | "hidden";
-  readonly fields: "sheet" | "closed";
+  readonly fields: FieldsPlacement;
 }
 
-/** Whether the Fields sheet the Fields action opens stands open. */
+/**
+ * Whether the Fields Panel's popover is open, and where focus goes when it
+ * closed: `closed` hands it back to the Fields action, `to-editor` leaves it
+ * to the editor, as after an insert or a repair command. Never saved.
+ */
+export type FieldsPanelState = "open" | "closed" | "to-editor";
+
+/** Whether the Fields Panel the Fields action opens stands open. */
 export interface FieldsAction {
   readonly open: boolean;
 }
@@ -147,15 +158,15 @@ const drawnWidth = (
 /**
  * Places the panels in a view of `size`; a view not measured yet places the
  * Preview as a column. The Preview is a column in a view
- * {@link PREVIEW_SIDE_MIN} wide or wider. The Fields sheet stands while
- * `fieldsOpen` says so: no view size opens or closes it.
+ * {@link PREVIEW_SIDE_MIN} wide or wider. The Fields Panel stands as a
+ * popover while `fieldsOpen` says so: no view size opens or closes it.
  */
 export function placePanels(
   panels: WorkbenchPanels,
   size: ViewSize | null,
   fieldsOpen: boolean,
 ): PanelPlacement {
-  const fields = fieldsOpen ? "sheet" : "closed";
+  const fields = fieldsOpen ? "popover" : "closed";
   if (!panels.preview.shown) return { preview: "hidden", fields };
   return {
     preview: size === null || size.width >= PREVIEW_SIDE_MIN ? "side" : "below",

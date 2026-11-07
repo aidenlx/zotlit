@@ -13,7 +13,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DataExplorer } from "./data-explorer";
-import { fieldsActionAttributes } from "./fields-sheet";
+import { fieldsActionAttributes } from "./fields-panel";
 import { pressFieldsAction } from "./model";
 import { INITIAL_PANELS } from "./panel-layout";
 import type { ViewSize, WorkbenchPanels } from "./panel-layout";
@@ -34,8 +34,8 @@ const PREVIEW: WorkbenchPanels = {
 };
 
 /**
- * The explorer the hosts put in the sheet, over its own navigation. With
- * `redraw`, each insert draws the tree anew, as a host's can.
+ * The explorer the hosts put in the Fields Panel, over its own navigation.
+ * With `redraw`, each insert draws the tree anew, as a host's can.
  */
 function Fields({
   onInsertNode,
@@ -93,7 +93,7 @@ function open({
         preview: {
           label: "Preview",
           resizeLabel: "Resize preview",
-          content: "Rendered note",
+          content: <button type="button">Show problem</button>,
         },
       }}
     >
@@ -111,9 +111,15 @@ function open({
   });
 }
 
-const sheet = () => screen.queryByRole("dialog", { name: "Fields" });
+/** The Fields Panel on the host's popover. */
+const panel = () => screen.queryByRole("dialog", { name: "Fields" });
+/** Whether focus went back to the Fields action as the popover last closed. */
+const returnedFocus = () =>
+  document
+    .querySelector("[data-return-focus]")
+    ?.getAttribute("data-return-focus");
 const titleRow = () =>
-  within(sheet()!)
+  within(panel()!)
     .getAllByRole("treeitem")
     .find((row) => row.textContent?.includes("Title"))!;
 const insertTitle = (init?: MouseEventInit) =>
@@ -122,65 +128,51 @@ const insertTitle = (init?: MouseEventInit) =>
     init,
   );
 
-describe("the Fields sheet", () => {
+describe("the Fields Panel popover", () => {
   it.each([320, 560, 760, 960, 1200])(
     "opens from the Fields action over a %i px view, and a second press closes it",
     (width) => {
       using page = open({ size: { width, height: 800 } });
-      expect(sheet()).toBeNull();
+      expect(panel()).toBeNull();
       page.pressAction();
-      const dialog = sheet()!;
-      expect(dialog.getAttribute("aria-modal")).toBe("true");
-      expect(dialog.id).toBe("fake-fields-sheet");
-      expect(page.registry.get(page.model.placement).fields).toBe("sheet");
+      expect(panel()!.id).toBe("fake-fields-panel");
+      expect(page.registry.get(page.model.placement).fields).toBe("popover");
       page.pressAction();
-      expect(sheet()).toBeNull();
+      expect(panel()).toBeNull();
       expect(page.registry.get(page.model.placement).fields).toBe("closed");
     },
   );
 
-  it("puts focus in its search field and holds the editor and the Preview out of reach", () => {
+  it("puts focus in its search field, and leaves the editor and the Preview in reach", () => {
     using page = open();
     page.pressAction();
     expect(document.activeElement).toBe(
-      within(sheet()!).getByRole("searchbox"),
+      within(panel()!).getByRole("searchbox"),
     );
-    const editor = screen.getByLabelText("Template source");
-    expect(editor.closest("[inert]")).not.toBeNull();
-    expect(screen.getByText("Rendered note").closest("[inert]")).not.toBeNull();
-    page.pressAction();
-    expect(editor.closest("[inert]")).toBeNull();
+    // A popover, not a modal: nothing under it turns inert.
+    expect(panel()!.hasAttribute("aria-modal")).toBe(false);
+    expect(document.querySelector("[inert]")).toBeNull();
+    const problem = screen.getByRole("button", { name: "Show problem" });
+    act(() => problem.focus());
+    expect(document.activeElement).toBe(problem);
   });
 
-  it("keeps Tab inside the sheet", () => {
+  it("closes on the host's Escape and outside press, and on its Close button, with focus back to the Fields action", () => {
     using page = open();
     page.pressAction();
-    const dialog = sheet()!;
-    const close = within(dialog).getByRole("button", { name: "Close" });
-    const search = within(dialog).getByRole("searchbox");
-    close.focus();
-    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
-    // The close button is the first stop; Shift+Tab wraps to the last.
-    expect(dialog.contains(document.activeElement)).toBe(true);
-    expect(document.activeElement).not.toBe(close);
-    const last = document.activeElement as HTMLElement;
-    fireEvent.keyDown(last, { key: "Tab" });
-    expect(document.activeElement).toBe(close);
-    expect(search).toBeTruthy();
-  });
-
-  it("closes on Escape and on the scrim, and hands focus to the Fields action", () => {
-    using page = open();
-    page.pressAction();
-    fireEvent.keyDown(within(sheet()!).getByRole("searchbox"), {
+    fireEvent.keyDown(within(panel()!).getByRole("searchbox"), {
       key: "Escape",
     });
-    expect(sheet()).toBeNull();
-    expect(page.host.calls.actionFocuses).toBe(1);
+    expect(panel()).toBeNull();
+    expect(returnedFocus()).toBe("true");
     page.pressAction();
-    fireEvent.click(document.querySelector("[data-part=scrim]")!);
-    expect(sheet()).toBeNull();
-    expect(page.host.calls.actionFocuses).toBe(2);
+    fireEvent.pointerDown(screen.getByLabelText("Template source"));
+    expect(panel()).toBeNull();
+    expect(returnedFocus()).toBe("true");
+    page.pressAction();
+    fireEvent.click(within(panel()!).getByRole("button", { name: "Close" }));
+    expect(panel()).toBeNull();
+    expect(returnedFocus()).toBe("true");
   });
 
   it("closes once it inserts a field, and leaves focus to the editor", () => {
@@ -188,8 +180,12 @@ describe("the Fields sheet", () => {
     page.pressAction();
     insertTitle();
     expect(page.inserted).toEqual(["title"]);
-    expect(sheet()).toBeNull();
-    expect(page.host.calls.actionFocuses).toBe(0);
+    expect(panel()).toBeNull();
+    expect(returnedFocus()).toBe("false");
+    // The next opening hands focus back again when it closes.
+    page.pressAction();
+    page.pressAction();
+    expect(returnedFocus()).toBe("true");
   });
 
   it("stays open for the next field on a Shift-click of Insert", () => {
@@ -197,14 +193,14 @@ describe("the Fields sheet", () => {
     page.pressAction();
     insertTitle({ shiftKey: true });
     expect(page.inserted).toEqual(["title"]);
-    expect(sheet()).not.toBeNull();
+    expect(panel()).not.toBeNull();
     // Shift+Enter on the button keeps it open as well.
     fireEvent.keyDown(
       within(titleRow()).getByRole("button", { name: "Insert field" }),
       { key: "Enter", shiftKey: true },
     );
     expect(page.inserted).toEqual(["title", "title"]);
-    expect(sheet()).not.toBeNull();
+    expect(panel()).not.toBeNull();
   });
 
   it("keeps focus on the field's Insert button when a Shift insert draws its row again", async () => {
@@ -225,7 +221,7 @@ describe("the Fields sheet", () => {
     using page = open({ refuse: true });
     page.pressAction();
     insertTitle();
-    expect(sheet()).not.toBeNull();
+    expect(panel()).not.toBeNull();
   });
 
   it("never opens or closes as the view changes size", () => {
@@ -235,21 +231,21 @@ describe("the Fields sheet", () => {
     page.pressAction();
     page.resize({ width: 1200, height: 900 });
     expect(page.isOpen()).toBe(true);
-    expect(sheet()).not.toBeNull();
+    expect(panel()).not.toBeNull();
   });
 });
 
 describe("the Fields action's state", () => {
-  it("reads as a disclosure of the sheet it opens", () => {
-    expect(fieldsActionAttributes({ open: false }, "sheet")).toEqual({
+  it("reads as a disclosure of the panel it opens", () => {
+    expect(fieldsActionAttributes({ open: false }, "fields")).toEqual({
       "aria-haspopup": "dialog",
       "aria-expanded": "false",
       "aria-controls": undefined,
     });
-    expect(fieldsActionAttributes({ open: true }, "sheet")).toEqual({
+    expect(fieldsActionAttributes({ open: true }, "fields")).toEqual({
       "aria-haspopup": "dialog",
       "aria-expanded": "true",
-      "aria-controls": "sheet",
+      "aria-controls": "fields",
     });
   });
 });

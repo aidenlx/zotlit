@@ -141,19 +141,19 @@ export function DataExplorer({
   const host = useWorkbenchHost();
   const model = useWorkbenchModel();
   const startCopy = useAtomSet(model.copy(useUniqueId()));
-  const closeSheet = useAtomSet(model.fieldsSheet);
+  const setFields = useAtomSet(model.fieldsPanel);
   const part = useParts("dataExplorer");
   const insertField =
     onInsertNode ??
     (onInsert
       ? (node: DisplayNode) => onInsert(fieldSnippet(node, mode, { engine }))
       : undefined);
-  // An insert closes the Fields sheet and leaves focus to the editor, at the
-  // inserted text; Shift keeps the sheet open for the next field.
+  // An insert closes the Fields Panel and leaves focus to the editor, at the
+  // inserted text; Shift keeps the panel open for the next field.
   const insertNode =
     insertField &&
     ((node: DisplayNode, keepOpen = false) => {
-      if (insertField(node) !== false && !keepOpen) closeSheet(false);
+      if (insertField(node) !== false && !keepOpen) setFields("to-editor");
     });
   const locale = host.getLocale();
   const reader = useMemo<ExplorerReader>(

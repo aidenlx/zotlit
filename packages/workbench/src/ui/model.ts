@@ -39,6 +39,7 @@ import type { WorkbenchInsertTarget } from "./host";
 import { INITIAL_PANELS, placePanels } from "./panel-layout";
 import type {
   FieldsAction,
+  FieldsPanelState,
   PanelHandle,
   PanelPlacement,
   ViewSize,
@@ -307,13 +308,14 @@ export interface WorkbenchModel<
   /** Where each panel goes in the view as it is now; never saved. */
   readonly placement: Atom.Atom<PanelPlacement>;
   /**
-   * Whether the Fields sheet stands open over the editor. Only the reader
-   * opens it, at every width; never saved.
+   * Whether the Fields Panel's popover stands open over the editor, and where
+   * focus goes as it closes. Only the reader opens it, at every width; never
+   * saved.
    */
-  readonly fieldsSheet: Atom.Writable<boolean>;
+  readonly fieldsPanel: Atom.Writable<FieldsPanelState>;
   /**
-   * Whether the Fields sheet the action opens stands open. A write presses
-   * the action: it opens or closes the sheet.
+   * Whether the Fields Panel the action opens stands open. A write presses
+   * the action: it opens or closes the panel.
    */
   readonly fieldsAction: Atom.Writable<FieldsAction, void>;
   /**
@@ -477,10 +479,10 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     };
   });
   const panels = Atom.make(initialPanels);
-  const fieldsSheet = Atom.make(false);
+  const fieldsPanel = Atom.make<FieldsPanelState>("closed");
   const placement = Atom.withEquality(
     Atom.make((get) =>
-      placePanels(get(panels), get(viewSize), get(fieldsSheet)),
+      placePanels(get(panels), get(viewSize), get(fieldsPanel) === "open"),
     ),
     sameFields,
   );
@@ -503,10 +505,14 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     sizedFromMenu: Atom.make<PanelHandle | null>(null),
     viewSize,
     placement,
-    fieldsSheet,
+    fieldsPanel,
     fieldsAction: Atom.writable(
-      (get): FieldsAction => ({ open: get(fieldsSheet) }),
-      (ctx) => ctx.set(fieldsSheet, !ctx.get(fieldsSheet)),
+      (get): FieldsAction => ({ open: get(fieldsPanel) === "open" }),
+      (ctx) =>
+        ctx.set(
+          fieldsPanel,
+          ctx.get(fieldsPanel) === "open" ? "closed" : "open",
+        ),
     ),
     pick: Atom.writable(
       (get) => get(item),
@@ -620,7 +626,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
 }
 
 /**
- * Presses the Fields action: opens or closes the Fields sheet. The view
+ * Presses the Fields action: opens or closes the Fields Panel. The view
  * action, the pane menu and the web View menu each press it.
  */
 export function pressFieldsAction(
@@ -644,7 +650,7 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
     model.panels,
     model.sizedFromMenu,
     model.viewSize,
-    model.fieldsSheet,
+    model.fieldsPanel,
     model.itemData,
     model.controller,
     model.document.source,

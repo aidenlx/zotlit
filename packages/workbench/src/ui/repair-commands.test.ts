@@ -19,7 +19,7 @@ const BOTH: WorkbenchPanels = {
 /** A narrow view, where the Preview stands under the editor. */
 const NARROW: ViewSize = { width: 560, height: 800 };
 
-/** The reader on Advanced with the Fields sheet open over the editor. */
+/** The reader on Advanced with the Fields Panel open over the editor. */
 function open({
   source,
   diagnoses = [],
@@ -34,8 +34,8 @@ function open({
     viewSize: Atom.make<ViewSize | null>(NARROW),
   });
   const { registry, model, controller, host } = mounted;
-  registry.mount(model.fieldsSheet);
-  registry.set(model.fieldsSheet, true);
+  registry.mount(model.fieldsPanel);
+  registry.set(model.fieldsPanel, "open");
   const selected: [string, RenderDiagnostic | undefined][] = [];
   const opened: boolean[] = [];
   const announced: string[] = [];
@@ -57,7 +57,7 @@ function open({
     opened,
     announced,
     view: () => registry.get(model.view),
-    sheet: () => registry.get(model.fieldsSheet),
+    fields: () => registry.get(model.fieldsPanel),
     panels: () => registry.get(model.panels),
   });
 }
@@ -86,7 +86,7 @@ const missingCall = failure({
 });
 
 describe("the repair commands", () => {
-  it("open the annotation box on its section and close the Fields sheet, keeping the panels", () => {
+  it("open the annotation box on its section and close the Fields Panel, keeping the panels", () => {
     using page = open();
     page.commands.openAnnotationBox();
     const section = page.controller.annotationSection!;
@@ -98,7 +98,7 @@ describe("the repair commands", () => {
         reveal: { from: section.source.from, to: section.source.from },
       },
     });
-    expect(page.sheet()).toBe(false);
+    expect(page.fields()).toBe("to-editor");
     expect(page.panels()).toEqual(BOTH);
   });
 
@@ -124,7 +124,7 @@ describe("the repair commands", () => {
     expect(page.host.calls.notices).toEqual([
       m.workbench_annotation_section_added(),
     ]);
-    expect(page.sheet()).toBe(false);
+    expect(page.fields()).toBe("to-editor");
     expect(page.panels()).toEqual(BOTH);
   });
 
@@ -135,7 +135,7 @@ describe("the repair commands", () => {
     expect(page.host.calls.notices).toEqual([]);
   });
 
-  it("return to the template at the place the reader left, over the sheet", () => {
+  it("return to the template at the place the reader left, over the Fields Panel", () => {
     using page = open();
     page.registry.update(page.model.view, (state) => ({
       ...state,
@@ -150,7 +150,7 @@ describe("the repair commands", () => {
       tab: "name",
       presentation: { reveal: { from: 10, to: 14, slice: "advanced" } },
     });
-    expect(page.sheet()).toBe(false);
+    expect(page.fields()).toBe("to-editor");
   });
 
   it("return to the start of the template when the reader left no place", () => {
@@ -159,7 +159,7 @@ describe("the repair commands", () => {
     expect(page.view().presentation.reveal).toEqual({ from: 0, to: 0 });
   });
 
-  it("open a diagnosis on the call it names, over the sheet", () => {
+  it("open a diagnosis on the call it names, over the Fields Panel", () => {
     using page = open({ source: MISSING_CALL });
     page.commands.openDiagnosis(diagnosis(missingCall));
     const from = page.controller.source.indexOf('{% render "missing-bit" %}');
@@ -168,7 +168,7 @@ describe("the repair commands", () => {
       tab: "note",
       presentation: { reveal: { from } },
     });
-    expect(page.sheet()).toBe(false);
+    expect(page.fields()).toBe("to-editor");
     expect(page.panels()).toEqual(BOTH);
   });
 
@@ -202,7 +202,7 @@ describe("the repair commands", () => {
       tab: "note",
       presentation: { reveal: { from } },
     });
-    expect(page.sheet()).toBe(false);
+    expect(page.fields()).toBe("to-editor");
     expect(page.panels()).toEqual(BOTH);
     // Focus goes to the call, so the area's status says why it fails.
     expect(page.announced).toEqual([
@@ -230,7 +230,7 @@ describe("the repair commands", () => {
     using page = open();
     page.commands.showProblem(null);
     expect(page.opened).toEqual([true]);
-    expect(page.sheet()).toBe(false);
+    expect(page.fields()).toBe("to-editor");
     expect(page.announced).toEqual([m.workbench_problems_location_unknown()]);
   });
 });

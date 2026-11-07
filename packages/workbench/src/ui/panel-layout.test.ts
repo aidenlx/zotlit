@@ -21,15 +21,15 @@ const at = (width: number) => ({ width, height: 800 });
 
 describe("panel placement", () => {
   // The Preview is a column from 896 px (56rem) and goes under the editor in
-  // a narrower view. The Fields sheet opens over the editor at every width,
+  // a narrower view. The Fields Panel opens as a popover over the editor at every width,
   // and only the Fields action opens it.
   it.each([320, 560, 760, 960, 1200])(
-    "opens the Fields sheet over a %i px view only while it stands open",
+    "opens the Fields Panel as a popover over a %i px view only while it stands open",
     (width) => {
       const preview = width >= 896 ? "side" : "below";
       expect(placePanels(shown(true), at(width), true)).toEqual({
         preview,
-        fields: "sheet",
+        fields: "popover",
       });
       expect(placePanels(shown(true), at(width), false)).toEqual({
         preview,
@@ -37,7 +37,7 @@ describe("panel placement", () => {
       });
       expect(placePanels(shown(false), at(width), true)).toEqual({
         preview: "hidden",
-        fields: "sheet",
+        fields: "popover",
       });
     },
   );
@@ -101,7 +101,7 @@ describe("sizing a panel without its handle", () => {
 
   it("offers the handles the view draws", () => {
     expect(panelHandles(preview, at(1200))).toEqual(["preview"]);
-    // At 560 px the Preview stands under the editor; the Fields sheet has no edge.
+    // At 560 px the Preview stands under the editor; the Fields Panel popover has no edge.
     expect(panelHandles(preview, at(560))).toEqual(["split"]);
     expect(panelHandles(shown(false), at(1200))).toEqual([]);
   });

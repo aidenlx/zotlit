@@ -187,13 +187,13 @@ describe("the Workbench model", () => {
 });
 
 describe("the side panels", () => {
-  it("starts with the Preview hidden at its initial width, and the Fields sheet closed", () => {
+  it("starts with the Preview hidden at its initial width, and the Fields Panel closed", () => {
     using opened = open();
     const { registry, model } = opened;
     expect(registry.get(model.panels)).toEqual({
       preview: { shown: false, width: 400, height: 40 },
     });
-    expect(registry.get(model.fieldsSheet)).toBe(false);
+    expect(registry.get(model.fieldsPanel)).toBe("closed");
   });
 
   it("shows the Preview", () => {
@@ -258,18 +258,18 @@ describe("the side panels", () => {
     expect(registry.get(model.panels)).toBe(panels);
   });
 
-  it("opens and closes the Fields sheet from the Fields action, at any view size", () => {
+  it("opens and closes the Fields Panel popover from the Fields action, at any view size", () => {
     const viewSize = Atom.make<ViewSize | null>({ width: 1200, height: 800 });
     using opened = open({ viewSize });
     const { registry, model } = opened;
     expect(registry.get(model.fieldsAction)).toEqual({ open: false });
     registry.set(model.fieldsAction, undefined);
     expect(registry.get(model.fieldsAction)).toEqual({ open: true });
-    expect(registry.get(model.placement).fields).toBe("sheet");
+    expect(registry.get(model.placement).fields).toBe("popover");
     registry.set(viewSize, { width: 320, height: 600 });
-    expect(registry.get(model.placement).fields).toBe("sheet");
+    expect(registry.get(model.placement).fields).toBe("popover");
     registry.set(model.fieldsAction, undefined);
-    expect(registry.get(model.fieldsSheet)).toBe(false);
+    expect(registry.get(model.fieldsPanel)).toBe("closed");
     registry.set(viewSize, { width: 1200, height: 800 });
     expect(registry.get(model.placement).fields).toBe("closed");
   });

@@ -1,7 +1,7 @@
 // The side panels around the editor, headless: the Preview Panel at the
 // trailing edge or under the editor, a labelled region the reader sizes with
-// its handle, and the Fields sheet over them all while the reader has it
-// open. The model says which panels show and where they go; the host's theme
+// its handle, and the Fields Panel in the host's Fields popover while the
+// reader has it open. The model says which panels show and where they go; the host's theme
 // draws the parts and names the custom properties that carry each drawn size.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useRef } from "react";
@@ -10,8 +10,8 @@ import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
-import { FieldsSheet } from "./fields-sheet";
-import type { FieldsSheetContent } from "./fields-sheet";
+import { FieldsPanel } from "./fields-panel";
+import type { FieldsPanelContent } from "./fields-panel";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import {
@@ -46,16 +46,16 @@ export interface SidePanel {
 
 /**
  * The editor beside or above the Preview the reader shows, and the Fields
- * sheet over both while it stands open. Document order is Fields sheet,
- * editor, Preview Panel at every placement, so the layout needs no visual
- * reordering.
+ * Panel in the host's Fields popover over both while it stands open.
+ * Document order is editor, Preview Panel, Fields Panel at every placement,
+ * so the layout needs no visual reordering.
  */
 export function SidePanels({
   panels,
   children,
 }: {
   panels: Partial<Record<PanelSide, SidePanel>> & {
-    readonly fields?: FieldsSheetContent;
+    readonly fields?: FieldsPanelContent;
   };
   children: ReactNode;
 }) {
@@ -64,8 +64,6 @@ export function SidePanels({
   const state = useAtomValue(model.panels);
   const placement = useAtomValue(model.placement);
   const preview = panels.preview && state.preview.shown ? panels.preview : null;
-  // The open sheet holds focus: what it covers takes no focus or pointer.
-  const sheet = placement.fields === "sheet" ? panels.fields : undefined;
   // The Preview stands at one place in the tree, after the editor, whether
   // it is a column beside it or under it: the stack lays the two out in a
   // row or a column, so a resize across the boundary moves the region
@@ -73,11 +71,7 @@ export function SidePanels({
   const below = placement.preview === "below";
   return (
     <div {...part("panels")}>
-      {sheet && <FieldsSheet {...sheet} />}
-      <div
-        inert={sheet ? true : undefined}
-        {...part("stack", below ? "below" : "side")}
-      >
+      <div {...part("stack", below ? "below" : "side")}>
         <div {...part("editor")}>{children}</div>
         {preview && (
           <Panel
@@ -89,6 +83,7 @@ export function SidePanels({
           />
         )}
       </div>
+      {panels.fields && <FieldsPanel {...panels.fields} />}
       <SizeStatus />
     </div>
   );

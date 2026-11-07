@@ -96,8 +96,8 @@ export { panelSizeMenus, pickPanelSize } from "./panel-menu";
 export { HELP_PAGES } from "./help-pages";
 export { ItemRow } from "./item-row";
 export { SidePanels } from "./panels";
-export { fieldsActionAttributes } from "./fields-sheet";
-export type { FieldsSheetContent } from "./fields-sheet";
+export { fieldsActionAttributes } from "./fields-panel";
+export type { FieldsPanelContent } from "./fields-panel";
 export {
   NO_MATCH_DATA,
   WorkbenchClipboardError,
@@ -113,6 +113,7 @@ export type {
   WorkbenchDialogHandle,
   WorkbenchDialogRequest,
   WorkbenchFieldsAction,
+  WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchInsertTarget,
   WorkbenchInputSuggestionsRequest,

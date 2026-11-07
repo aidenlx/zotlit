@@ -218,12 +218,32 @@ export interface WorkbenchToggleProps {
   readonly onChange: (value: boolean) => void;
 }
 
-/** The host's Fields action, which opens and closes the Fields sheet. */
+/**
+ * The Fields popover: the surface the Fields Panel opens in while it is not
+ * pinned, at the right edge of the view. The host owns Escape, a press
+ * outside, and focus at closing; it mounts `children` as the surface opens,
+ * and the panel moves focus into its search field as it mounts.
+ */
+export interface WorkbenchFieldsPopoverProps {
+  readonly open: boolean;
+  /** The host closed the surface: Escape or a press outside. */
+  readonly onClose: () => void;
+  /** The id of the element that names the surface. */
+  readonly labelledBy: string;
+  /**
+   * Whether focus the surface holds as it closes goes back to the Fields
+   * action. False after an insert: the editor takes focus at the inserted
+   * text.
+   */
+  readonly returnFocus: boolean;
+  readonly children: ReactNode;
+}
+
+/** The host's Fields action, and the Fields popover it opens. */
 export interface WorkbenchFieldsAction {
-  /** The id the sheet takes, which the action names while the sheet stands. */
-  readonly sheetId: string;
-  /** Moves focus to the action, as when the reader closes the sheet without inserting. */
-  focus(): void;
+  readonly popover: ComponentType<WorkbenchFieldsPopoverProps>;
+  /** The id of the surface `popover` draws, which the action names while it stands. */
+  readonly popoverId: string;
 }
 
 /** The partial registry and the create flow one host owns for its editors. */
@@ -302,8 +322,8 @@ export interface WorkbenchHost {
   /** The focused slice editor, or `null` when none has had focus. */
   insertTarget(): WorkbenchInsertTarget | null;
   /**
-   * The Fields action, which the sheet names and returns focus to. A host
-   * that supplies none opens the sheet from its own control alone.
+   * The Fields action and the Fields popover it opens. A host that supplies
+   * none shows no Fields Panel.
    */
   readonly fieldsAction?: WorkbenchFieldsAction;
   persistence: WorkbenchPersistence;

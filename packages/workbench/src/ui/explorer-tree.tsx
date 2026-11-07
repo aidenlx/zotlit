@@ -50,7 +50,7 @@ export interface DisplayTreeProps {
   onToggleSection?: (id: string) => void;
   /**
    * Inserts the node's field; `keepOpen` when the reader held Shift, so the
-   * Fields sheet stays open for the next field.
+   * Fields Panel stays open for the next field.
    */
   onInsert?: (node: DisplayNode, keepOpen: boolean) => void;
   /** The row's Menu, opened from its own control; anchored under that control. */

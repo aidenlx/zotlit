@@ -246,14 +246,7 @@ export interface WorkbenchParts {
 
   panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split" | "status";
   itemRow: "row" | "label";
-  fieldsSheet:
-    | "scrim"
-    | "sheet"
-    | "header"
-    | "icon"
-    | "title"
-    | "close"
-    | "body";
+  fieldsPanel: "panel" | "header" | "icon" | "title" | "close" | "body";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description" | "docs-link";
   editToolbar:
