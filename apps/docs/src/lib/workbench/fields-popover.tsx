@@ -32,13 +32,14 @@ export function webFieldsAction(
     // A mark where the panel stands in the tree: its parent is the panels'
     // box, which the popover stands inset in.
     const mark = useRef<HTMLSpanElement>(null);
-    const [box, setBox] = useState<HTMLElement | null>(null);
-    useLayoutEffect(() => setBox(mark.current?.parentElement ?? null), []);
+    const box = useRef<HTMLElement | null>(null);
+    useLayoutEffect(() => {
+      box.current = mark.current!.parentElement;
+    }, []);
     /** The box's right edge, less the gap: the popover stands to its left. */
-    const edge = {
+    const [edge] = useState(() => ({
       getBoundingClientRect: () => {
-        const rect = mark.current?.parentElement?.getBoundingClientRect();
-        if (!rect) return new DOMRect();
+        const rect = box.current!.getBoundingClientRect();
         return new DOMRect(
           rect.right - GAP,
           rect.top + GAP,
@@ -46,7 +47,7 @@ export function webFieldsAction(
           Math.max(rect.height - 2 * GAP, 0),
         );
       },
-    };
+    }));
     return (
       <>
         <span ref={mark} hidden />

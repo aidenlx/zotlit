@@ -291,14 +291,13 @@ function ClusterButton({
       onClick={onClick}
       // Enter and Space press it as a click does, Shift included.
       onKeyDown={activateOnEnterOrSpace((e) => {
-        const view = e.currentTarget.ownerDocument.defaultView;
-        if (view)
-          e.currentTarget.dispatchEvent(
-            new view.MouseEvent("click", {
-              bubbles: true,
-              shiftKey: e.shiftKey,
-            }),
-          );
+        const view = e.currentTarget.ownerDocument.defaultView!;
+        e.currentTarget.dispatchEvent(
+          new view.MouseEvent("click", {
+            bubbles: true,
+            shiftKey: e.shiftKey,
+          }),
+        );
       })}
       {...part("action")}
     >

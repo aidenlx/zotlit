@@ -100,7 +100,6 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
     this.#scope = new Scope(options.app.scope);
     this.setIsFocused(true);
     this.hoverEl.addClasses(["zt-root", "zt-pinned-popover"]);
-    if (options.inset) this.hoverEl.addClass("zt-pinned-popover-inset");
     this.hoverEl.tabIndex = -1;
     this.hoverEl.append(options.body);
   }
@@ -138,10 +137,9 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
     const box = this.#options.inset;
     if (!box) return;
     const rect = box.getBoundingClientRect();
-    const gap =
-      Number.parseFloat(
-        box.win.getComputedStyle(box).getPropertyValue("--size-4-2"),
-      ) || 8;
+    const gap = Number.parseFloat(
+      box.win.getComputedStyle(box).getPropertyValue("--size-4-2"),
+    );
     const { style } = this.hoverEl;
     style.top = `${rect.top + gap}px`;
     style.height = `${Math.max(rect.height - 2 * gap, 0)}px`;
@@ -189,7 +187,10 @@ export function PinnedPopover({
   const [parent] = useState<HoverParent>(() => ({ hoverPopover: null }));
   const [body] = useState(() => {
     const box = document.createElement("div");
-    box.className = PINNED_POPOVER_BODY;
+    // Inset in a box, the popover takes the box's height: the surface fills it.
+    box.className = inset
+      ? `${PINNED_POPOVER_BODY} zt:h-full`
+      : PINNED_POPOVER_BODY;
     return box;
   });
   const [mounted, setMounted] = useState<{

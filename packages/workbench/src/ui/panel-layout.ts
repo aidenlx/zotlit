@@ -70,10 +70,10 @@ export const clampPanelWidth = (width: number, max: number = PANEL_WIDTH.max) =>
   );
 
 /**
- * `width` as saved for `side`: at least its `min`, as the view holds it to
- * the room the editor leaves.
+ * `width` as saved: at least its `min`, as the view holds it to the room the
+ * editor leaves.
  */
-export const savedPanelWidth = (_side: PanelSide, width: number) =>
+export const savedPanelWidth = (width: number) =>
   Math.round(Math.max(PANEL_WIDTH.min, width));
 
 /** `share` held within {@link PREVIEW_HEIGHT}. */
@@ -85,7 +85,7 @@ export const showPanel = (side: PanelSide, shown: boolean) =>
 /** Sets a panel's width, held as {@link savedPanelWidth} says. */
 export const setPanelWidth = (side: PanelSide, width: number) =>
   patchAt<WorkbenchPanels, PanelSide>(side, {
-    width: savedPanelWidth(side, width),
+    width: savedPanelWidth(width),
   });
 /** Sets the Preview's share of the view height, held within {@link PREVIEW_HEIGHT}. */
 export const setPreviewHeight = (share: number) =>
