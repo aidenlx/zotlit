@@ -6,7 +6,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { PreviewSettings } from "./model";
 import { PreviewControls } from "./preview-controls";
 import { PropertyList } from "./property-list";
-import { previewFilename, ResultBody, ResultColumn } from "./result-column";
+import {
+  PreviewFilenameLabel,
+  previewFilename,
+  ResultBody,
+  ResultColumn,
+} from "./result-column";
 import type { ResultColumnProps } from "./result-column";
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
@@ -92,10 +97,7 @@ it("passes the complete note and folded properties to the host renderer", () => 
   using mounted = column({ staleReason: "hold" });
   const { props } = mounted;
   expect(
-    screen
-      .getByText("Papers/Reading.md")
-      .closest("header")
-      ?.getAttribute("aria-description"),
+    screen.getByText("Papers/Reading.md").getAttribute("aria-description"),
   ).toBe("Papers/Reading.md");
   expect(
     screen
@@ -502,6 +504,16 @@ it("leaves the file name to the host's header row", () => {
   render(mounted.ui);
   expect(screen.queryByText("Papers/Reading.md")).toBeNull();
   expect(screen.getByRole("region")).toBeDefined();
+});
+
+it("labels the file name and gives its whole value as a tooltip", () => {
+  using mounted = mount(<PreviewFilenameLabel filename="Papers/Reading.md" />);
+  render(mounted.ui);
+  const label = screen.getByText("Papers/Reading.md", { exact: false });
+  expect(label.textContent).toBe(
+    `${m.workbench_result_filename()}: Papers/Reading.md`,
+  );
+  expect(label.getAttribute("aria-description")).toBe("Papers/Reading.md");
 });
 
 it("names the file a note preview shows, and none for a failure or another mode", () => {

@@ -18,6 +18,7 @@ import type {
 import {
   citationVariantLabel,
   partialContextLabel,
+  PreviewFilenameLabel,
   previewFilename,
   ResultBody,
 } from "@zotlit/workbench/ui";
@@ -154,17 +155,20 @@ export function PreviewPanel({
       : []),
     ...(!preview.live ? [m.workbench_preview_on_demand()] : []),
   ].join(m.workbench_selection_separator());
-  const filename = previewFilename({
+  // The header row's file name and the body read the same render.
+  const reading = {
     result,
     annotationResult: result,
     retained,
     mode,
     staleReason,
     showManaged: preview.showManaged,
-  });
+  };
+  const filename = previewFilename(reading);
   return (
     // The scroll padding keeps a control the reader tabs to clear of the
-    // sticky header row, which stands about 64 px tall, more when it wraps.
+    // sticky header row, so it stays at least as tall as that row: change
+    // one with the other.
     <div
       data-workbench-scroll="preview"
       data-zotlit-preview-result={result?.sourceRevision}
@@ -220,23 +224,11 @@ export function PreviewPanel({
               <h2 className="zt-workbench-preview-heading">{heading}</h2>
               {caption && <p className={selectionHint}>{caption}</p>}
             </div>
-            {filename !== null && (
-              <p className="zt:text-sm zt:[overflow-wrap:anywhere]">
-                <span className="zt:text-muted-foreground">
-                  {m.workbench_result_filename()}:{" "}
-                </span>
-                {filename}
-              </p>
-            )}
+            {filename !== null && <PreviewFilenameLabel filename={filename} />}
           </header>
           <ResultBody
-            result={result}
-            annotationResult={result}
-            retained={retained}
-            mode={mode}
-            staleReason={staleReason}
+            {...reading}
             showMarkdown={preview.showMarkdown}
-            showManaged={preview.showManaged}
             showFilename={false}
             onShowProblem={showProblem}
             onRun={() => view.registry.set(workbench.scheduler.run, undefined)}

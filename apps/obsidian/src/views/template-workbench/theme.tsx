@@ -379,8 +379,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     resultColumn: {
       label: cn(row, "zt:flex-wrap"),
       "label-text": "zt:text-muted-foreground",
+      // The Preview Panel draws the label in its own sticky header row,
+      // outside the `filename` box, so the label carries its own size.
       filename: "zt:text-sm",
-      "filename-text": "zt:[overflow-wrap:anywhere]",
+      "filename-text": "zt:text-sm zt:[overflow-wrap:anywhere]",
       // A failure wears the same notice as the behind state, and states its
       // severity in the bar and the heading: the sentence itself stays in
       // reading color, and the line about the output on screen steps back.
