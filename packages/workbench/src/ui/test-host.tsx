@@ -82,6 +82,8 @@ export interface FakeHost extends WorkbenchHost {
     copies: string[];
     /** How many times the tree moved focus to the Fields action. */
     actionFocuses: number;
+    /** The docked panels whose keys the host holds now, by their state. */
+    heldKeys: string[];
   };
   /** Every render asked for, in order, none of them answered yet. */
   readonly renders: PendingRender[];
@@ -144,6 +146,7 @@ export function fakeHost(): FakeHost {
       confirms: [],
       copies: [],
       actionFocuses: 0,
+      heldKeys: [],
     },
     renders,
     started,
@@ -233,6 +236,15 @@ export function fakeHost(): FakeHost {
       popoverId: "fake-fields-panel",
       details: FakeFieldDetails,
       focus: () => void host.calls.actionFocuses++,
+      holdKeys: (panel) => {
+        host.calls.heldKeys.push(panel.dataset.state ?? "");
+        return () => {
+          host.calls.heldKeys.splice(
+            host.calls.heldKeys.indexOf(panel.dataset.state ?? ""),
+            1,
+          );
+        };
+      },
     },
     persistence: {
       read: (scope, name) => preferences.get(key(scope, name)) ?? null,
@@ -428,7 +440,7 @@ function FakeFieldDetails({
   return (
     <div
       data-fake-details=""
-      data-beside={panel.dataset.part}
+      data-beside={panel.dataset.state}
       data-anchor={anchor
         .closest("[data-workbench-field]")
         ?.getAttribute("data-workbench-field")}

@@ -279,6 +279,14 @@ export interface WorkbenchFieldsAction {
    * one shows the details in the bar at the panel's foot at every width.
    */
   readonly details?: ComponentType<WorkbenchFieldDetailsProps>;
+  /**
+   * The docked Fields Panel stands in `panel`. While focus is in it, the host
+   * keeps the keys the panel answers itself (Mod+Enter, Escape) from its own
+   * shortcuts and lets the page hear them, as the Fields popover does.
+   *
+   * @returns the release, called as the panel leaves the dock.
+   */
+  readonly holdKeys?: (panel: HTMLElement) => () => void;
 }
 
 /** The partial registry and the create flow one host owns for its editors. */

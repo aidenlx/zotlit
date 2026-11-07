@@ -582,3 +582,62 @@ describe("a field row", () => {
     ).toBeTruthy();
   });
 });
+
+describe("a field's details in the docked panel", () => {
+  const wide = { size: { width: 1200, height: 800 }, panels: PINNED };
+  const dockedRow = (label: string) =>
+    within(docked()!)
+      .getAllByRole("treeitem")
+      .find((row) => row.textContent?.includes(label))!
+      .querySelector<HTMLElement>("[data-part=row]")!;
+  const dockedSearch = () => within(docked()!).getByRole("combobox");
+  const dockedDetails = (label = "Title") =>
+    within(docked()!).queryByRole("region", { name: label });
+
+  it("open in the host's popover beside the docked panel", () => {
+    using _page = open(wide);
+    fireEvent.click(dockedRow("Title"));
+    const region = dockedDetails()!;
+    const popover = region.closest<HTMLElement>("[data-fake-details]")!;
+    expect(popover.dataset.beside).toBe("docked");
+    expect(popover.dataset.anchor).toBe("title");
+  });
+
+  it("close on Escape, then Escape clears the search, and the panel stays", () => {
+    using page = open(wide);
+    fireEvent.change(dockedSearch(), { target: { value: "ti" } });
+    fireEvent.click(dockedRow("Title"));
+    fireEvent.keyDown(dockedSearch(), { key: "Escape" });
+    expect(dockedDetails()).toBeNull();
+    expect(dockedSearch()).toHaveProperty("value", "ti");
+    fireEvent.keyDown(dockedSearch(), { key: "Escape" });
+    expect(dockedSearch()).toHaveProperty("value", "");
+    // No popover to close: the panel stays docked.
+    const third = fireEvent.keyDown(dockedSearch(), { key: "Escape" });
+    expect(third).toBe(true);
+    expect(docked()).not.toBeNull();
+    expect(page.isOpen()).toBe(true);
+  });
+
+  it("insert with Mod+Enter on the selected row and with Insert, and the panel stays", () => {
+    using page = open(wide);
+    fireEvent.keyDown(dockedSearch(), { key: "ArrowDown" });
+    fireEvent.keyDown(dockedSearch(), { key: "Enter", metaKey: true });
+    expect(page.inserted).toEqual(["title"]);
+    fireEvent.click(dockedRow("Title"));
+    fireEvent.click(
+      within(dockedDetails()!).getByRole("button", { name: "Insert" }),
+    );
+    expect(page.inserted).toEqual(["title", "title"]);
+    expect(dockedDetails()).toBeNull();
+    expect(docked()).not.toBeNull();
+  });
+
+  it("asks the host to keep the panel's keys while it stands docked", () => {
+    using page = open(wide);
+    expect(page.host.calls.heldKeys).toEqual(["docked"]);
+    page.pressAction();
+    expect(docked()).toBeNull();
+    expect(page.host.calls.heldKeys).toEqual([]);
+  });
+});

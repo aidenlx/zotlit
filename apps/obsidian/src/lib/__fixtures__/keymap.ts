@@ -43,8 +43,15 @@ function heldModifiers(
   event: KeyboardEvent,
 ): boolean {
   if (modifiers === null) return true;
-  return Object.entries(MODIFIER_HELD).every(
-    ([name, held]) => modifiers.includes(name as Modifier) === held(event),
+  // `Mod` is Ctrl or Meta, whichever the platform names; either one holds it.
+  const mod = modifiers.includes("Mod");
+  return (
+    (!mod || event.ctrlKey || event.metaKey) &&
+    Object.entries(MODIFIER_HELD).every(
+      ([name, held]) =>
+        (mod && (name === "Ctrl" || name === "Meta")) ||
+        modifiers.includes(name as Modifier) === held(event),
+    )
   );
 }
 
