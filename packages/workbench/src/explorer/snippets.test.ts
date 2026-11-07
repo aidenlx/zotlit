@@ -80,14 +80,14 @@ describe("snippetKindsFor", () => {
     ]);
   });
 
-  it("offers loop + joined for arrays whose elements stringify meaningfully", () => {
+  it("offers joined, then loop, for arrays whose elements stringify meaningfully", () => {
     expect(snippetKindsFor(value(["tags"], "array", ["a", "b"]))).toEqual([
-      "loop",
       "joined",
+      "loop",
     ]);
     expect(snippetKindsFor(value(["tags"], "array", [tag]))).toEqual([
-      "loop",
       "joined",
+      "loop",
     ]);
   });
 
@@ -99,8 +99,8 @@ describe("snippetKindsFor", () => {
 
   it("keeps joined for an empty array (element shape unknown)", () => {
     expect(snippetKindsFor(value(["tags"], "array", []))).toEqual([
-      "loop",
       "joined",
+      "loop",
     ]);
   });
 });
@@ -169,25 +169,37 @@ describe("renderSnippet — if-present", () => {
 });
 
 describe("renderSnippet — loop", () => {
-  it("singularizes the array key as the element variable", () => {
+  it("puts each item on its own Markdown list line in each engine", () => {
     expect(renderSnippet(value(["tags"], "array", []), "liquid", "loop")).toBe(
-      "{% for tag in zt.tags %}{{ tag }}{% endfor %}",
+      "{% for tag in zt.tags %}\n- {{ tag }}{% endfor %}",
     );
     expect(renderSnippet(value(["creators"], "array", []), "eta", "loop")).toBe(
-      "<% for (const creator of zt.creators) { %><%= creator %><% } %>",
+      "<% for (const creator of zt.creators) { %>\n- <%= creator %><% } %>",
     );
   });
 
   it("singularizes a nested array key", () => {
     expect(
       renderSnippet(value(["extra", "lines"], "array", []), "liquid", "loop"),
-    ).toBe("{% for line in zt.extra.lines %}{{ line }}{% endfor %}");
+    ).toBe("{% for line in zt.extra.lines %}\n- {{ line }}{% endfor %}");
   });
 
-  it("falls back to 'item' for an index or non-plural key", () => {
+  it("falls back to 'item' for a non-plural key", () => {
     expect(
-      renderSnippet(value(["matrix", 0], "array", []), "liquid", "loop"),
-    ).toBe("{% for item in zt.matrix[0] %}{{ item }}{% endfor %}");
+      renderSnippet(value(["extra", "data"], "array", []), "liquid", "loop"),
+    ).toBe("{% for item in zt.extra.data %}\n- {{ item }}{% endfor %}");
+  });
+
+  // Items with no text of their own would print `[object Object]`; the line
+  // shows their first property instead.
+  it("shows the first property of items that do not read as text", () => {
+    const node = value(["lines"], "array", [{ text: "x", page: 1 }]);
+    expect(renderSnippet(node, "liquid", "loop")).toBe(
+      "{% for line in zt.lines %}\n- {{ line.page }}{% endfor %}",
+    );
+    expect(renderSnippet(node, "eta", "loop")).toBe(
+      "<% for (const line of zt.lines) { %>\n- <%= line.page %><% } %>",
+    );
   });
 });
 

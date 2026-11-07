@@ -8,13 +8,13 @@ export type TemplateEngine = "liquid" | "eta";
 /** Output = interpolate; if-present = guard surrounding content on truthiness; loop/joined = array forms. */
 export type SnippetKind = "output" | "if-present" | "loop" | "joined";
 
-/** Snippet kinds offered for a node, gated by its kind: arrays get loop (+ joined when their elements stringify meaningfully); everything else gets output + if-present. */
+/** Snippet kinds offered for a node, gated by its kind: arrays get joined (when their elements stringify meaningfully), then loop; everything else gets output + if-present. The first kind is the one an insert uses. */
 export function snippetKindsFor(node: DisplayNode): SnippetKind[] {
   if (node.kind === "helper" || node.kind === "placeholder") {
     return ["output", "if-present"];
   }
   if (node.valueType === "array") {
-    return arrayJoinable(node.value) ? ["loop", "joined"] : ["loop"];
+    return arrayJoinable(node.value) ? ["joined", "loop"] : ["loop"];
   }
   return ["output", "if-present"];
 }
@@ -31,8 +31,14 @@ export function renderSnippet(
       return show(interpolate(engine, callForm(node, engine, accessor)));
     case "if-present":
       return guard(engine, callForm(node, engine, accessor), show);
-    case "loop":
-      return loop(engine, accessor, loopVar(node));
+    case "loop": {
+      const item = loopVar(node);
+      const value = node.kind === "value" ? node.value : undefined;
+      const property = arrayJoinable(value) ? undefined : firstProperty(value);
+      const body =
+        property === undefined ? item : formatAccessorPath([property], item);
+      return loop(engine, accessor, { item, body });
+    }
     case "joined":
       return joined(engine, accessor);
   }
@@ -75,10 +81,25 @@ function guard(
     : `<% if (${expr}) { %>${output}<% } %>`;
 }
 
-function loop(engine: TemplateEngine, accessor: string, item: string): string {
+/** One Markdown list line per item: each pass starts a new line with `- ` and the item's `body`. */
+function loop(
+  engine: TemplateEngine,
+  accessor: string,
+  { item, body }: { item: string; body: string },
+): string {
   return engine === "liquid"
-    ? `{% for ${item} in ${accessor} %}{{ ${item} }}{% endfor %}`
-    : `<% for (const ${item} of ${accessor}) { %><%= ${item} %><% } %>`;
+    ? `{% for ${item} in ${accessor} %}\n- {{ ${body} }}{% endfor %}`
+    : `<% for (const ${item} of ${accessor}) { %>\n- <%= ${body} %><% } %>`;
+}
+
+/** The first key, in the display tree's order, of the first record in a list: what a loop line shows for items with no text of their own. */
+function firstProperty(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const item: unknown = value.find(
+    (entry: unknown) => entry !== null && typeof entry === "object",
+  );
+  if (item === undefined) return undefined;
+  return Object.keys(item as object).sort((a, b) => a.localeCompare(b))[0];
 }
 
 function joined(engine: TemplateEngine, accessor: string): string {
