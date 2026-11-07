@@ -183,18 +183,23 @@ export function DataExplorer({
       ),
     );
   }, [data, reader]);
+  const panelRows = useFieldsPanelRows();
+  // The Fields Panel opens a list to its items' properties, never to one
+  // item's index; the standalone explorer keeps the items.
+  const lists = panelRows ? "shape" : "items";
   const visible = useMemo(() => {
     if (!data) return { nodes: [], matchedKeys: null };
     if (tree.filterQuery)
       return buildFilteredDisplayTree(data, tree.filterQuery, {
         collapsed: tree.filterCollapsed,
         aliases: labels,
+        lists,
       });
     return {
-      nodes: buildDisplayTree(data, { expanded: tree.expanded }),
+      nodes: buildDisplayTree(data, { expanded: tree.expanded, lists }),
       matchedKeys: null,
     };
-  }, [data, tree, labels]);
+  }, [data, tree, labels, lists]);
   const filtering = tree.filterQuery !== "";
   // A filter holds every section that still has a row open.
   const sections = useMemo<DisplaySection[]>(
@@ -208,7 +213,6 @@ export function DataExplorer({
       })),
     [visible, reader, filtering, collapsedSections],
   );
-  const panelRows = useFieldsPanelRows();
   const rows = useFieldRows({
     enabled: panelRows !== null,
     sections,

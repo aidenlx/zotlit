@@ -9,6 +9,7 @@ import type {
 } from "#/explorer/index";
 import { regex } from "arkregex";
 import { createContext, useContext, useState } from "react";
+import type { ReactNode } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -218,14 +219,26 @@ function TreeNode({
             : undefined
         }
       >
-        {isExpandable ? (
+        {isExpandable && !rows ? (
           <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />
         ) : (
           <span {...part("spacer")} />
         )}
         {/* The host lays the key and the value out as a wrapping row: one line while both fit, the value on its own line beneath the key when it does not. The space between them survives in text content only. */}
         <div {...part("contents", rows ? "line" : undefined)}>
-          <NodeRow node={node} label={label} />
+          <NodeRow
+            node={node}
+            label={label}
+            // A Fields Panel row opens from a chevron that follows its label.
+            toggle={
+              isExpandable && rows ? (
+                <Chevron
+                  expanded={isExpanded}
+                  onClick={() => onToggle(node.key)}
+                />
+              ) : undefined
+            }
+          />
         </div>
         <ActionCluster
           node={node}
@@ -342,10 +355,19 @@ function ClusterButton({
   );
 }
 
-function NodeRow({ node, label }: { node: DisplayNode; label?: string }) {
+function NodeRow({
+  node,
+  label,
+  toggle,
+}: {
+  node: DisplayNode;
+  label?: string;
+  /** The control that opens the node, drawn after its label. */
+  toggle?: ReactNode;
+}) {
   switch (node.kind) {
     case "value":
-      return <ValueRow node={node} label={label} />;
+      return <ValueRow node={node} label={label} toggle={toggle} />;
     case "helper":
       return <HelperRow node={node} label={label} />;
     case "placeholder":
@@ -370,11 +392,20 @@ function KeyLabel({ node, label }: { node: DisplayNode; label?: string }) {
   );
 }
 
-function ValueRow({ node, label }: { node: ValueNode; label?: string }) {
+function ValueRow({
+  node,
+  label,
+  toggle,
+}: {
+  node: ValueNode;
+  label?: string;
+  toggle?: ReactNode;
+}) {
   const part = useParts("explorerTree");
   return (
     <>
-      <KeyLabel node={node} label={label} />{" "}
+      <KeyLabel node={node} label={label} />
+      {toggle}{" "}
       <span {...part("value")}>
         <ValueContent node={node} labeled={label !== undefined} />
       </span>
@@ -394,6 +425,7 @@ function ValueContent({
   labeled?: boolean;
 }) {
   const part = useParts("explorerTree");
+  const line = useContext(FieldRowsContext) !== null;
   if (node.valueType === "array" || node.valueType === "object") {
     const hint = labeled
       ? node.valueType === "array"
@@ -405,12 +437,14 @@ function ValueContent({
     return (
       <>
         {hint !== null && <span {...part("hint")}>{hint}</span>}
-        {node.children === undefined && node.preview !== undefined && (
-          <>
-            {hint !== null && " "}
-            <span {...part("placeholder")}>{node.preview}</span>
-          </>
-        )}
+        {/* A Fields Panel row keeps its items in view while it stands open. */}
+        {(node.children === undefined || line) &&
+          node.preview !== undefined && (
+            <>
+              {hint !== null && " "}
+              <span {...part("placeholder")}>{node.preview}</span>
+            </>
+          )}
       </>
     );
   }

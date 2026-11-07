@@ -1,4 +1,5 @@
 import type { DisplayNode } from "#/explorer/index";
+import type { SnippetKind } from "#/explorer/index";
 import {
   act,
   cleanup,
@@ -12,6 +13,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DataExplorer } from "./data-explorer";
+import { fieldSnippet } from "./explorer-fields";
 import { fieldsActionAttributes } from "./fields-panel";
 import { useWorkbenchHost } from "./host";
 import { pressFieldsAction } from "./model";
@@ -21,6 +23,7 @@ import { SidePanels } from "./panels";
 import { mount } from "./test-host";
 
 import { initialTreeState } from "#/explorer/index";
+import { withText } from "#/explorer/test-records";
 
 afterEach(cleanup);
 
@@ -44,11 +47,13 @@ const PINNED: WorkbenchPanels = {
 function Fields({
   onInsertNode,
   disabled = false,
+  data = PAPER,
 }: {
   disabled?: boolean;
+  data?: Record<string, unknown>;
   onInsertNode: (
     node: DisplayNode,
-    options: { keepOpen: boolean },
+    options: { keepOpen: boolean; kind?: SnippetKind },
   ) => boolean | void;
 }) {
   const [collapsedSections, setCollapsedSections] = useState<
@@ -59,7 +64,7 @@ function Fields({
   return (
     <DataExplorer
       root="note"
-      data={PAPER}
+      data={data}
       copy={(text) => host.copy!(text)}
       collapsedSections={collapsedSections}
       onCollapsedSectionsChange={setCollapsedSections}
@@ -76,15 +81,19 @@ function open({
   refuse = false,
   disabled = false,
   panels = PREVIEW,
+  data,
 }: {
   size?: ViewSize;
   refuse?: boolean;
   disabled?: boolean;
   panels?: WorkbenchPanels;
+  data?: Record<string, unknown>;
 } = {}) {
   const viewSize = Atom.make<ViewSize | null>(size);
   const inserted: string[] = [];
   const keptOpen: boolean[] = [];
+  /** What each insert put into the note, as a host writes the field. */
+  const texts: string[] = [];
   const mounted = mount(
     <SidePanels
       panels={{
@@ -94,10 +103,12 @@ function open({
           content: (
             <Fields
               disabled={disabled}
-              onInsertNode={(node, { keepOpen }) => {
+              data={data}
+              onInsertNode={(node, { keepOpen, kind }) => {
                 if (refuse) return false;
                 inserted.push(node.key);
                 keptOpen.push(keepOpen);
+                texts.push(fieldSnippet(node, "template", { kind }));
                 return true;
               }}
             />
@@ -118,6 +129,7 @@ function open({
   return Object.assign(mounted, {
     inserted,
     keptOpen,
+    texts,
     resize: (next: ViewSize) => act(() => mounted.registry.set(viewSize, next)),
     pressAction: () =>
       act(() => pressFieldsAction(mounted.registry, mounted.model)),
@@ -665,5 +677,64 @@ describe("a nested field", () => {
       `Copied ${name}.`,
       `Inserted ${name}.`,
     ]);
+  });
+});
+
+/** A paper with a list of creators, a list of plain tags, and a list of files. */
+const LISTS = {
+  title: "Linked notes in practice",
+  authors: [
+    withText({ family: "Ahrens", given: "Sönke" }, "Sönke Ahrens"),
+    withText({ family: "Luhmann", given: "Niklas" }, "Niklas Luhmann"),
+  ],
+  tags: ["methods", "zettelkasten"],
+  attachments: [{ filename: "ahrens.pdf" }, { filename: "luhmann.pdf" }],
+};
+
+describe("a list field", () => {
+  const lists = { size: { width: 760, height: 800 }, data: LISTS };
+  /** The tree item of the field whose key is `key`. */
+  const item = (key: string) =>
+    within(panel()!)
+      .queryAllByRole("treeitem")
+      .find((row) => row.getAttribute("data-workbench-field") === key);
+  const line = (key: string) =>
+    item(key)!.querySelector<HTMLElement>(":scope > [data-part=row]")!;
+  const toggle = (key: string) =>
+    within(line(key)).queryByRole("button", { name: "Toggle node" });
+
+  it("shows its item count and every item in one line", () => {
+    using page = open(lists);
+    page.pressAction();
+    expect(line("authors").textContent).toContain("(2)");
+    expect(line("authors").textContent).toContain(
+      "Sönke Ahrens, Niklas Luhmann",
+    );
+    expect(line("tags").textContent).toContain("(2)");
+    expect(line("tags").textContent).toContain("methods, zettelkasten");
+  });
+
+  it("opens a list of records from the chevron after its label, and a list of plain values has none", () => {
+    using page = open(lists);
+    page.pressAction();
+    expect(toggle("tags")).toBeNull();
+    const chevron = toggle("authors")!;
+    const label = within(line("authors")).getByText("Authors");
+    expect(
+      label.compareDocumentPosition(chevron) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.click(chevron);
+    // One sub-row for each property, with that property for every item.
+    expect(line("authors[].family").textContent).toContain("Ahrens, Luhmann");
+    expect(line("authors[].given").textContent).toContain("Sönke, Niklas");
+    // The list row keeps its items in view while it stands open.
+    expect(line("authors").textContent).toContain(
+      "Sönke Ahrens, Niklas Luhmann",
+    );
+    // No row names one item by its index.
+    const keys = within(panel()!)
+      .getAllByRole("treeitem")
+      .map((row) => row.getAttribute("data-workbench-field")!);
+    expect(keys.filter((key) => /\[\d+\]/.test(key))).toEqual([]);
   });
 });
