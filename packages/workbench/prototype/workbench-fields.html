@@ -1,0 +1,2997 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Workbench fields</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Typefaces: add the font CDN <link> for the pairing chosen in the design plan. -->
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      /* The design plan's tokens, exposed to Tailwind as utilities: bg-ground, text-ink,
+       text-accent, font-display, ... `inline` keeps the var() reference at the use site,
+       so the media-query override below still reaches every utility. */
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-panel: var(--panel);
+        --color-raise: var(--raise);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-faint: var(--faint);
+        --color-line: var(--line);
+        --color-accent: var(--accent);
+        --color-accent-soft: var(--accent-soft);
+        --color-value: var(--value);
+        --color-desk: var(--desk);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      /* DESIGN PLAN (utilitarian; the project's own system wins: Obsidian's default theme)
+         ground #ffffff view; panel #f6f6f7 secondary panes / popover ground; ink #222222 text;
+         muted #6b6b70; faint #a3a3a8; line #e3e3e6 hairlines; accent #7f5af0 Obsidian's interactive
+         accent; value #1f7a4d sample values from the item (the video's green values).
+         Type: system UI (Obsidian's interface font) for chrome; JetBrains Mono for source + field paths.
+         Layout concept: a desk with one Workbench view frame whose width the reader drags (or jumps
+         to Wide 1100 / Medium 760 / Narrow 420). Each variant owns the whole view layout inside it.
+         DESIGN QUESTION (round 1): one way that works at every width for a reader to (1) inspect what
+         data the sample item has and (2) put a field into the note. */
+      :root {
+        --ground: #ffffff;
+        --panel: #f6f6f7;
+        --raise: #ffffff;
+        --ink: #222222;
+        --muted: #6b6b70;
+        --faint: #a3a3a8;
+        --line: #e3e3e6;
+        --accent: #7f5af0;
+        --accent-soft: #efeafe;
+        --value: #1f7a4d;
+        --desk: #dcdce0;
+        --font-display:
+          ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        --font-body:
+          ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #1e1e1e;
+          --panel: #262626;
+          --raise: #2c2c2c;
+          --ink: #dadada;
+          --muted: #9a9a9f;
+          --faint: #6c6c72;
+          --line: #363636;
+          --accent: #a58bff;
+          --accent-soft: #33294f;
+          --value: #6cc49a;
+          --desk: #111113;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- Diagram sources go here: one <script type="text/mermaid" id="..."> per diagram. -->
+
+    <script type="text/jsx" id="app">
+      import React, { useState, useEffect, useMemo } from "react";
+      import { createRoot } from "react-dom/client";
+      import * as L from "lucide-react"; // every lucide icon as L.Braces, L.Search, ... (Obsidian uses lucide too)
+      const { useSyncExternalStore, useRef, useCallback, useLayoutEffect } =
+        React;
+
+      // --- Diagram ---
+      // Diagrams are authored as <script type="text/mermaid" id="..."> blocks in the body —
+      // plain text, no escaping — and rendered with <Diagram src="thatId" />. Indentation is
+      // stripped, so the block can sit at whatever depth reads well. beautiful-mermaid loads
+      // on first mount, so a page with no diagram never fetches it; bg/fg are var() so
+      // diagrams follow the theme instead of re-rendering.
+      function decodeEntities(s) {
+        const el = document.createElement("textarea");
+        el.innerHTML = s;
+        return el.value;
+      }
+
+      function dedent(s) {
+        const lines = s.replace(/\t/g, "  ").split("\n");
+        const widths = lines
+          .filter((l) => l.trim())
+          .map((l) => l.match(/^ */)[0].length);
+        const pad = widths.length ? Math.min(...widths) : 0;
+        return lines
+          .map((l) => l.slice(pad))
+          .join("\n")
+          .trim();
+      }
+
+      let mermaidMod = null;
+      export function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => {
+          if (!mod)
+            import("beautiful-mermaid").then((m) => {
+              mermaidMod = m;
+              setMod(m);
+            });
+        }, [mod]);
+        const { svg, error } = useMemo(() => {
+          const el = document.getElementById(src);
+          if (!el)
+            return {
+              svg: null,
+              error: `no <script type="text/mermaid" id="${src}"> in this page`,
+            };
+          if (!mod) return { svg: null, error: null };
+          try {
+            const opts = {
+              bg: "var(--ground)",
+              fg: "var(--ink)",
+              transparent: true,
+            };
+            return {
+              svg: mod.renderMermaidSVG(
+                decodeEntities(dedent(el.textContent)),
+                opts,
+              ),
+              error: null,
+            };
+          } catch (e) {
+            return { svg: null, error: String(e) };
+          }
+        }, [mod, src]);
+        if (error)
+          return (
+            <pre className="text-accent text-sm whitespace-pre-wrap">
+              {error}
+            </pre>
+          );
+        return (
+          <div
+            className="overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: svg ?? "" }}
+          />
+        );
+      }
+      // --- Diagram END ---
+
+      // --- Kit ---
+      // Shared by every variant: the sample item's data, one module-level store, and the
+      // parts of the Workbench view that are NOT under test (header, item row, tabs, source
+      // editor, note preview). Variants own the layout and the whole fields experience.
+
+      // The target literature item, grouped the way the Workbench's Fields sections group it.
+      // row: { path, label, value, kind?: "text"|"list"|"link"|"empty"|"long", children?: rows }
+      const ITEM_LABEL = "Why Most Published Research Findings Are False";
+      const SECTIONS = [
+        {
+          id: "common",
+          label: "Common fields",
+          rows: [
+            { path: "title", label: "Title", value: ITEM_LABEL },
+            {
+              path: "authors",
+              label: "Authors",
+              value: "John P. A. Ioannidis",
+              kind: "list",
+              children: [
+                {
+                  path: "authors[0].firstName",
+                  label: "First name",
+                  value: "John P. A.",
+                },
+                {
+                  path: "authors[0].lastName",
+                  label: "Last name",
+                  value: "Ioannidis",
+                },
+              ],
+            },
+            { path: "date", label: "Date", value: "2005" },
+            {
+              path: "abstract",
+              label: "Abstract",
+              value:
+                "There is increasing concern that most current published research findings are false. The probability that a research claim is true may depend on study power and bias, the number of other studies on the same question, and the ratio of true to no relationships among the relationships probed in each scientific field.",
+              kind: "long",
+            },
+            {
+              path: "publicationTitle",
+              label: "Published in",
+              value: "PLoS Medicine",
+            },
+            {
+              path: "citationKey",
+              label: "Citation key",
+              value: "ioannidisWhyMost2005",
+            },
+            { path: "tags", label: "Tags", value: "", kind: "empty" },
+            {
+              path: "collections",
+              label: "Collections",
+              value: "Shared key",
+              kind: "list",
+              children: [
+                {
+                  path: "collections[0].name",
+                  label: "Name",
+                  value: "Shared key",
+                },
+              ],
+            },
+            {
+              path: "backlink",
+              label: "Link back to Zotero",
+              value: "zotero://select/library/items/IANNP5A2",
+              kind: "link",
+            },
+            {
+              path: "attachments",
+              label: "Attached files",
+              value: "ioannidis-2005.pdf",
+              kind: "list",
+              children: [
+                {
+                  path: "attachments[0].filename",
+                  label: "File name",
+                  value: "ioannidis-2005.pdf",
+                },
+                {
+                  path: "attachments[0].fileLink",
+                  label: "File link",
+                  value: "[[ioannidis-2005.pdf]]",
+                  kind: "link",
+                },
+              ],
+            },
+            {
+              path: "annotations",
+              label: "Annotations",
+              value: "3 annotations",
+              kind: "list",
+              children: [
+                {
+                  path: "annotations[0].text",
+                  label: "Highlighted text",
+                  value:
+                    "most research findings are false for most research designs",
+                },
+                {
+                  path: "annotations[0].comment",
+                  label: "Your comment",
+                  value: "Core claim",
+                },
+                {
+                  path: "annotations[0].pageLabel",
+                  label: "Page",
+                  value: "696",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "reference",
+          label: "Reference",
+          rows: [
+            {
+              path: "shortTitle",
+              label: "Short title",
+              value: "",
+              kind: "empty",
+            },
+            {
+              path: "authorsShort",
+              label: "Short author list",
+              value: "Ioannidis",
+            },
+            {
+              path: "creators",
+              label: "All creators",
+              value: "John P. A. Ioannidis",
+              kind: "list",
+            },
+            {
+              path: "primaryCreatorType",
+              label: "Primary creator role",
+              value: "author",
+            },
+            { path: "volume", label: "Volume", value: "2" },
+            { path: "issue", label: "Issue", value: "8" },
+            { path: "pages", label: "Pages", value: "e124" },
+            { path: "publisher", label: "Publisher", value: "", kind: "empty" },
+            { path: "language", label: "Language", value: "en" },
+            { path: "itemType", label: "Item type", value: "journalArticle" },
+          ],
+        },
+        {
+          id: "identifiers",
+          label: "Identifiers",
+          rows: [
+            {
+              path: "DOI",
+              label: "DOI",
+              value: "10.1371/journal.pmed.0020124",
+            },
+            { path: "ISSN", label: "ISSN", value: "1549-1676" },
+            {
+              path: "url",
+              label: "URL",
+              value: "https://dx.plos.org/10.1371/journal.pmed.0020124",
+              kind: "link",
+            },
+            { path: "extra", label: "Extra", value: "", kind: "empty" },
+          ],
+        },
+        {
+          id: "content",
+          label: "Content and files",
+          rows: [
+            {
+              path: "notes",
+              label: "Zotero notes",
+              value: "1 note",
+              kind: "list",
+            },
+          ],
+        },
+        {
+          id: "organization",
+          label: "Organization",
+          rows: [
+            {
+              path: "relatedItems",
+              label: "Related items",
+              value: "",
+              kind: "empty",
+            },
+          ],
+        },
+        {
+          id: "links",
+          label: "Links",
+          rows: [
+            {
+              path: "zoteroWebLink",
+              label: "Zotero web link",
+              value: "",
+              kind: "empty",
+            },
+            {
+              path: "libraryLink",
+              label: "Zotero library link",
+              value: "obsidian://zotlit/show-in-library?item-key=IANNP5A2",
+              kind: "link",
+            },
+            {
+              path: "noteLink",
+              label: "Note link",
+              value: "[[ioannidisWhyMost2005]]",
+              kind: "link",
+            },
+            {
+              path: "notePath",
+              label: "Note path",
+              value: "literature/ioannidisWhyMost2005.md",
+            },
+          ],
+        },
+        {
+          id: "record",
+          label: "Zotero record",
+          rows: [
+            { path: "key", label: "Zotero key", value: "IANNP5A2" },
+            {
+              path: "dateAdded",
+              label: "Date added",
+              value: "2024-03-02 10:14",
+            },
+            {
+              path: "dateModified",
+              label: "Date modified",
+              value: "2026-10-30 18:02",
+            },
+          ],
+        },
+      ];
+      const ALL_FIELDS = SECTIONS.flatMap((s) =>
+        s.rows.flatMap((r) => [
+          { ...r, section: s.label },
+          ...(r.children ?? []).map((c) => ({
+            ...c,
+            section: s.label,
+            parent: r.path,
+          })),
+        ]),
+      );
+      const findField = (path) => ALL_FIELDS.find((f) => f.path === path);
+      /** Rows matching a search over label, path and sample value. Empty query → all top-level rows. */
+      const searchFields = (q) => {
+        const t = q.trim().toLowerCase();
+        if (!t) return ALL_FIELDS.filter((f) => !f.parent);
+        return ALL_FIELDS.filter((f) =>
+          `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t),
+        );
+      };
+      /** The text a field puts into the template. */
+      const snippetOf = (path) => `{{ zt.${path} }}`;
+
+      // One module-level store. Flipping variants keeps width, source and caret.
+      const WIDTHS = { wide: 1100, medium: 760, narrow: 420 };
+      /** Below this the view cannot hold a 240 px field column beside a 360 px editor. */
+      const SIDE_BY_SIDE_MIN = 600;
+      const INITIAL_SOURCE = `# {{ zt.title }}
+
+[Zotero]({{ zt.backlink }}) {{ zt.attachments | map: "fileLink" | join: " " }}
+
+> {{ zt.abstract }}
+
+## Annotations
+`;
+      let state = {
+        width: WIDTHS.wide,
+        source: INITIAL_SOURCE,
+        caret: INITIAL_SOURCE.indexOf("\n## Annotations"),
+        lastInserted: null,
+        insertCount: 0,
+      };
+      const listeners = new Set();
+      const setProto = (patch) => {
+        state = {
+          ...state,
+          ...(typeof patch === "function" ? patch(state) : patch),
+        };
+        listeners.forEach((l) => l());
+      };
+      const useProto = () =>
+        useSyncExternalStore(
+          (l) => (listeners.add(l), () => listeners.delete(l)),
+          () => state,
+        );
+      /** Insert a field at the caret (or replace [from,to) when given), and move the caret after it. */
+      const insertField = (path, range) =>
+        setProto((s) => {
+          const text = snippetOf(path);
+          const from = range ? range[0] : s.caret,
+            to = range ? range[1] : s.caret;
+          return {
+            source: s.source.slice(0, from) + text + s.source.slice(to),
+            caret: from + text.length,
+            lastInserted: path,
+            insertCount: s.insertCount + 1,
+          };
+        });
+      const useViewWidth = () => useProto().width;
+      const useNarrow = () => useProto().width < SIDE_BY_SIDE_MIN;
+
+      function IconButton({
+        icon: Icon,
+        label,
+        onClick,
+        active,
+        className = "",
+      }) {
+        return (
+          <button
+            type="button"
+            aria-label={label}
+            title={label}
+            aria-pressed={active ?? undefined}
+            onClick={onClick}
+            className={`inline-flex size-7 items-center justify-center rounded-md text-muted hover:bg-panel hover:text-ink focus-visible:outline-2 focus-visible:outline-accent ${active ? "bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent" : ""} ${className}`}
+          >
+            <Icon size={16} strokeWidth={1.75} />
+          </button>
+        );
+      }
+
+      /** Obsidian's view header: navigation, breadcrumb, then the view's actions (`actions`, any nodes). */
+      function ViewHeader({ actions }) {
+        return (
+          <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line px-2 text-sm">
+            <IconButton icon={L.ArrowLeft} label="Back" />
+            <IconButton icon={L.ArrowRight} label="Forward" />
+            <div className="min-w-0 flex-1 truncate px-1 text-center text-muted">
+              templates / <span className="text-ink">Default · Profile</span>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <IconButton icon={L.Undo2} label="Undo" />
+              {actions}
+              <IconButton icon={L.Ellipsis} label="More options" />
+            </div>
+          </div>
+        );
+      }
+
+      /** The one item row for the whole view: which item the example uses. `children` adds controls at its end. */
+      function ItemRow({ children, onTitleClick }) {
+        return (
+          <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-line px-3 text-sm">
+            <L.BookOpenText size={15} className="shrink-0 text-muted" />
+            <button
+              type="button"
+              onClick={onTitleClick}
+              className={`min-w-0 flex-1 truncate text-left ${onTitleClick ? "hover:text-accent" : ""}`}
+            >
+              <span className="text-muted">Example: </span>
+              {ITEM_LABEL}
+            </button>
+            {children}
+            <button
+              type="button"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-muted hover:bg-panel hover:text-ink"
+            >
+              <L.Search size={14} /> Choose item
+            </button>
+          </div>
+        );
+      }
+
+      function TabBar() {
+        const tabs = [
+          "Note",
+          "Properties",
+          "Annotation",
+          "Name and folder",
+          "Match",
+          "Profile",
+        ];
+        return (
+          <div className="flex shrink-0 gap-1 overflow-x-auto px-3 pt-2 text-sm">
+            {tabs.map((t, i) => (
+              <span
+                key={t}
+                className={`shrink-0 rounded-md px-2 py-1 ${i === 0 ? "bg-accent-soft text-accent" : "text-muted"}`}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        );
+      }
+
+      const escapeHtml = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+      const highlight = (src) =>
+        escapeHtml(src).replace(
+          /\{\{[^}]*\}\}/g,
+          (m) => `<span style="color:var(--accent)">${m}</span>`,
+        ) + "\n";
+
+      /**
+       * The template source: a textarea over a highlighted mirror. Keeps the store's caret in sync.
+       * Props: `onKeyDown(e, ta)`, `onInput(ta)` hooks for completion-style variants, `taRef` to reach the textarea,
+       * `children` drawn over the editor (absolutely positioned popups go here).
+       */
+      function SourceEditor({
+        onKeyDown,
+        onInput,
+        taRef,
+        children,
+        className = "",
+      }) {
+        const { source, caret } = useProto();
+        const local = useRef(null);
+        const ref = taRef ?? local;
+        const mirror = useRef(null);
+        useLayoutEffect(() => {
+          const ta = ref.current;
+          if (ta && document.activeElement !== ta)
+            ta.setSelectionRange(caret, caret);
+        }, [caret, source]);
+        const sync = (ta) => setProto({ caret: ta.selectionStart });
+        const style =
+          "col-start-1 row-start-1 m-0 w-full whitespace-pre-wrap break-words p-3 font-mono text-[13px] leading-6";
+        return (
+          <div
+            className={`relative min-h-0 overflow-auto ${className}`}
+            onScroll={(e) =>
+              mirror.current &&
+              (mirror.current.scrollTop = e.currentTarget.scrollTop)
+            }
+          >
+            <div className="grid min-h-full">
+              <pre
+                ref={mirror}
+                aria-hidden="true"
+                className={`${style} pointer-events-none text-ink`}
+                dangerouslySetInnerHTML={{ __html: highlight(source) }}
+              />
+              <textarea
+                ref={ref}
+                spellCheck={false}
+                value={source}
+                aria-label="Template source"
+                className={`${style} resize-none overflow-hidden bg-transparent text-transparent caret-ink outline-none`}
+                onChange={(e) => {
+                  setProto({
+                    source: e.target.value,
+                    caret: e.target.selectionStart,
+                  });
+                  onInput?.(e.target);
+                }}
+                onSelect={(e) => sync(e.target)}
+                onClick={(e) => sync(e.target)}
+                onKeyDown={(e) => onKeyDown?.(e, e.currentTarget)}
+              />
+            </div>
+            {children}
+          </div>
+        );
+      }
+
+      /** Pixel position of character `index` inside textarea `ta`, relative to the textarea's box. */
+      function caretCoords(ta, index) {
+        const div = document.createElement("div");
+        const cs = getComputedStyle(ta);
+        for (const p of [
+          "fontFamily",
+          "fontSize",
+          "lineHeight",
+          "padding",
+          "border",
+          "width",
+          "whiteSpace",
+          "overflowWrap",
+          "wordBreak",
+          "letterSpacing",
+        ])
+          div.style[p] = cs[p];
+        div.style.position = "absolute";
+        div.style.visibility = "hidden";
+        div.style.whiteSpace = "pre-wrap";
+        div.textContent = ta.value.slice(0, index);
+        const span = document.createElement("span");
+        span.textContent = "​";
+        div.appendChild(span);
+        document.body.appendChild(div);
+        const r = {
+          left: span.offsetLeft,
+          top: span.offsetTop - ta.scrollTop,
+          height: parseFloat(cs.lineHeight),
+        };
+        div.remove();
+        return r;
+      }
+
+      /** Value for a `{{ zt.path | … }}` expression in the preview (filters ignored). */
+      const evalExpr = (expr) => {
+        const path = expr
+          .replace(/^\s*zt\./, "")
+          .split("|")[0]
+          .trim();
+        const f = findField(path);
+        return f ? f.value || "" : `⟨${path}⟩`;
+      };
+
+      /** The note the template makes for the sample item. */
+      function NotePreview({ className = "" }) {
+        const { source } = useProto();
+        const out = source.replace(/\{\{([^}]*)\}\}/g, (_, e) => evalExpr(e));
+        return (
+          <div
+            className={`min-h-0 overflow-auto p-5 text-sm leading-6 ${className}`}
+          >
+            <div className="mb-3 text-xs text-muted">
+              Note preview · File name: ioannidisWhyMost2005
+            </div>
+            {out.split("\n").map((line, i) => {
+              if (line.startsWith("## "))
+                return (
+                  <h3
+                    key={i}
+                    className="mt-4 mb-1 text-lg font-semibold text-balance"
+                  >
+                    {line.slice(3)}
+                  </h3>
+                );
+              if (line.startsWith("# "))
+                return (
+                  <h2 key={i} className="mb-2 text-2xl font-bold text-balance">
+                    {line.slice(2)}
+                  </h2>
+                );
+              if (line.startsWith("> "))
+                return (
+                  <blockquote
+                    key={i}
+                    className="border-l-2 border-line pl-3 text-muted"
+                  >
+                    {line.slice(2)}
+                  </blockquote>
+                );
+              if (!line.trim()) return <div key={i} className="h-2" />;
+              return (
+                <p key={i} className="break-words">
+                  {line.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1 ↗")}
+                </p>
+              );
+            })}
+          </div>
+        );
+      }
+
+      /** A short "Inserted …" notice after each insert. Place it once inside the view frame. */
+      function InsertToast() {
+        const { lastInserted, insertCount } = useProto();
+        const [shown, setShown] = useState(false);
+        useEffect(() => {
+          if (!insertCount) return;
+          setShown(true);
+          const t = setTimeout(() => setShown(false), 1400);
+          return () => clearTimeout(t);
+        }, [insertCount]);
+        if (!shown || !lastInserted) return null;
+        return (
+          <div
+            role="status"
+            className="pointer-events-none absolute top-12 left-1/2 z-50 -translate-x-1/2 rounded-md bg-ink px-3 py-1.5 text-xs text-ground shadow-lg"
+          >
+            Inserted {findField(lastInserted)?.label ?? lastInserted}
+          </div>
+        );
+      }
+
+      /**
+       * The desk: a width bar on top, then one Workbench view frame at the store's width with a drag
+       * edge on its right. The frame is `position: relative`, `@container`, and clips overflow, so a
+       * variant's popovers and drawers stay inside the view like they would in Obsidian.
+       */
+      function Stage({ children, title }) {
+        const { width } = useProto();
+        const onDrag = (e) => {
+          const x0 = e.clientX,
+            w0 = width;
+          const move = (ev) =>
+            setProto({
+              width: Math.max(
+                320,
+                Math.min(1400, Math.round(w0 + (ev.clientX - x0))),
+              ),
+            });
+          const up = () => {
+            removeEventListener("pointermove", move);
+            removeEventListener("pointerup", up);
+          };
+          addEventListener("pointermove", move);
+          addEventListener("pointerup", up);
+        };
+        return (
+          <div className="flex min-h-full flex-col gap-3 bg-desk p-4 font-body text-ink">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              <span className="font-medium text-ink">{title}</span>
+              <span className="mx-1">·</span>
+              <span>View width</span>
+              {Object.entries(WIDTHS).map(([k, w]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setProto({ width: w })}
+                  className={`rounded-md px-2 py-0.5 capitalize ${width === w ? "bg-ground text-ink shadow-sm" : "hover:bg-ground/60"}`}
+                >
+                  {k} {w}
+                </button>
+              ))}
+              <span className="tabular-nums">
+                now {width}px {width < SIDE_BY_SIDE_MIN ? "(narrow)" : ""}
+              </span>
+            </div>
+            <div className="flex h-[calc(100vh-4.5rem)] min-h-[520px]">
+              <div
+                className="@container relative flex flex-col overflow-hidden rounded-lg border border-line bg-ground shadow-sm"
+                style={{ width }}
+              >
+                {children}
+                <InsertToast />
+              </div>
+              <div
+                onPointerDown={onDrag}
+                title="Drag to resize the view"
+                className="flex w-3 cursor-col-resize items-center justify-center"
+              >
+                <div className="h-10 w-1 rounded-full bg-faint/60" />
+              </div>
+            </div>
+          </div>
+        );
+      }
+      // --- Kit END ---
+
+      // --- App ---
+      // --- Variant A ---
+      // Variant A — "Item data beside the Preview". The trailing pane holds two tabs, Preview and
+      // Item data. It sits beside the editor when the view is wide (>= 56rem) and below it otherwise,
+      // so the reader learns one place for both. One header toggle shows or hides the pane.
+      const A_STACK_BELOW = 896; // 56rem: below this the pane goes under the editor
+
+      function A_matches(f, t) {
+        return `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t);
+      }
+
+      /** Sections filtered by the query; a parent stays when a child matches (and opens). */
+      function A_filter(q) {
+        const t = q.trim().toLowerCase();
+        if (!t)
+          return SECTIONS.map((s) => ({
+            ...s,
+            rows: s.rows.map((r) => ({
+              row: r,
+              kids: r.children ?? [],
+              forceOpen: false,
+            })),
+          }));
+        return SECTIONS.map((s) => ({
+          ...s,
+          rows: s.rows.flatMap((r) => {
+            const kids = (r.children ?? []).filter((c) => A_matches(c, t));
+            if (A_matches(r, t))
+              return [
+                { row: r, kids: r.children ?? [], forceOpen: kids.length > 0 },
+              ];
+            if (kids.length) return [{ row: r, kids, forceOpen: true }];
+            return [];
+          }),
+        })).filter((s) => s.rows.length);
+      }
+
+      function A_Value({ field, clampable }) {
+        if (!field.value)
+          return <span className="text-faint italic">Empty</span>;
+        const cls = field.kind === "link" ? "break-all" : "break-words";
+        return (
+          <span
+            className={`text-value ${cls} ${clampable ? "line-clamp-2" : ""}`}
+          >
+            {field.value}
+          </span>
+        );
+      }
+
+      function A_FieldRow({ field, depth = 0, expandable, open, onToggle }) {
+        const [more, setMore] = useState(false);
+        const long = (field.value ?? "").length > 90;
+        return (
+          <div className="group relative rounded-md hover:bg-panel focus-within:bg-panel">
+            <div className="flex items-start">
+              <div
+                className="flex w-5 shrink-0 justify-center pt-2"
+                style={{ marginLeft: depth * 16 }}
+              >
+                {expandable && (
+                  <button
+                    type="button"
+                    onClick={onToggle}
+                    aria-expanded={open}
+                    aria-label={`${open ? "Collapse" : "Expand"} ${field.label}`}
+                    className="rounded text-faint hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                  >
+                    <L.ChevronRight
+                      size={14}
+                      className={`transition-transform ${open ? "rotate-90" : ""}`}
+                    />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                data-a-row
+                onClick={() => insertField(field.path)}
+                title={`Insert ${snippetOf(field.path)} at the cursor`}
+                className="grid min-w-0 flex-1 grid-cols-1 gap-x-3 gap-y-0.5 py-1.5 pr-16 text-left text-sm outline-none focus-visible:outline-2 focus-visible:outline-accent rounded-md @min-[22rem]/pane:grid-cols-[8.5rem_1fr]"
+              >
+                <span className="text-muted">{field.label}</span>
+                <span className="min-w-0">
+                  <span className="block">
+                    <A_Value field={field} clampable={long && !more} />
+                  </span>
+                  <span className="block truncate font-mono text-[11px] text-faint">
+                    zt.{field.path}
+                  </span>
+                </span>
+              </button>
+            </div>
+            {long && (
+              <button
+                type="button"
+                onClick={() => setMore((m) => !m)}
+                className="mb-1 ml-5 rounded px-1 text-xs text-muted hover:text-accent focus-visible:outline-2 focus-visible:outline-accent @min-[22rem]/pane:ml-[10.25rem]"
+              >
+                {more ? "Show less" : "Show more"}
+              </button>
+            )}
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => insertField(field.path)}
+              aria-hidden="true"
+              className="absolute top-1 right-1 hidden items-center gap-1 rounded-md border border-line bg-raise px-2 py-0.5 text-xs text-ink shadow-sm hover:text-accent group-hover:inline-flex group-focus-within:inline-flex"
+            >
+              <L.CornerDownLeft size={12} /> Insert
+            </button>
+          </div>
+        );
+      }
+
+      function A_ListRow({ entry }) {
+        const [userOpen, setUserOpen] = useState(false);
+        const { row, kids, forceOpen } = entry;
+        const expandable = kids.length > 0;
+        const open = expandable && (userOpen || forceOpen);
+        return (
+          <>
+            <A_FieldRow
+              field={row}
+              expandable={expandable}
+              open={open}
+              onToggle={() => setUserOpen((o) => !o)}
+            />
+            {open &&
+              kids.map((c) => <A_FieldRow key={c.path} field={c} depth={1} />)}
+          </>
+        );
+      }
+
+      function A_ItemData({ searchRef }) {
+        const [q, setQ] = useState("");
+        const [closed, setClosed] = useState({});
+        const sections = A_filter(q);
+        const searching = q.trim() !== "";
+        const listRef = useRef(null);
+
+        // Arrow keys move between rows; Home/End jump. Escape in the list returns to the search.
+        const onListKey = (e) => {
+          const rows = [
+            ...(listRef.current?.querySelectorAll("[data-a-row]") ?? []),
+          ];
+          const i = rows.indexOf(document.activeElement);
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            const n =
+              i < 0
+                ? 0
+                : Math.max(
+                    0,
+                    Math.min(
+                      rows.length - 1,
+                      i + (e.key === "ArrowDown" ? 1 : -1),
+                    ),
+                  );
+            rows[n]?.focus();
+          } else if (e.key === "Home") {
+            e.preventDefault();
+            rows[0]?.focus();
+          } else if (e.key === "End") {
+            e.preventDefault();
+            rows.at(-1)?.focus();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            searchRef.current?.focus();
+          }
+        };
+
+        return (
+          <div className="@container/pane flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-line p-2">
+              <label className="flex items-center gap-2 rounded-md border border-line bg-ground px-2 py-1 text-sm focus-within:border-accent">
+                <L.Search size={14} className="shrink-0 text-faint" />
+                <input
+                  ref={searchRef}
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search fields"
+                  aria-label="Search fields"
+                  className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape" && q) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setQ("");
+                    }
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      listRef.current?.querySelector("[data-a-row]")?.focus();
+                    }
+                  }}
+                />
+                {q && (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onClick={() => setQ("")}
+                    className="text-faint hover:text-ink"
+                  >
+                    <L.X size={14} />
+                  </button>
+                )}
+              </label>
+              <p className="mt-1.5 px-1 text-xs text-muted">
+                Select a field to insert it at the cursor.
+              </p>
+            </div>
+            <div
+              ref={listRef}
+              onKeyDown={onListKey}
+              className="min-h-0 flex-1 overflow-auto px-1 pb-4"
+            >
+              {sections.length === 0 && (
+                <p className="p-4 text-sm text-muted">No fields match “{q}”.</p>
+              )}
+              {sections.map((s) => {
+                const isOpen = searching || !closed[s.id];
+                return (
+                  <section
+                    key={s.id}
+                    className="border-b border-line last:border-b-0"
+                  >
+                    <button
+                      type="button"
+                      aria-expanded={isOpen}
+                      onClick={() =>
+                        setClosed((c) => ({ ...c, [s.id]: !c[s.id] }))
+                      }
+                      className="flex w-full items-center gap-1 rounded-md px-1 py-2 text-left text-xs font-semibold text-ink hover:bg-panel focus-visible:outline-2 focus-visible:outline-accent"
+                    >
+                      <L.ChevronRight
+                        size={14}
+                        className={`text-faint transition-transform ${isOpen ? "rotate-90" : ""}`}
+                      />
+                      {s.label}
+                      <span className="ml-auto font-normal text-faint tabular-nums">
+                        {s.rows.length}
+                      </span>
+                    </button>
+                    {isOpen && (
+                      <div className="pb-2">
+                        {s.rows.map((e) => (
+                          <A_ListRow key={e.row.path} entry={e} />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+
+      function A_Pane({ tab, setTab, searchRef }) {
+        const tabs = [
+          { id: "preview", label: "Preview", icon: L.Eye },
+          { id: "data", label: "Item data", icon: L.TableProperties },
+        ];
+        const onTabKey = (e) => {
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          e.preventDefault();
+          e.stopPropagation();
+          const next = tab === "preview" ? "data" : "preview";
+          setTab(next);
+          e.currentTarget.querySelector(`[data-a-tab="${next}"]`)?.focus();
+        };
+        return (
+          <div className="flex min-h-0 flex-col bg-ground">
+            <div
+              role="tablist"
+              aria-label="Pane"
+              onKeyDown={onTabKey}
+              className="flex shrink-0 items-center gap-1 border-b border-line px-2 py-1.5"
+            >
+              {tabs.map((t) => {
+                const sel = tab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    data-a-tab={t.id}
+                    aria-selected={sel}
+                    tabIndex={sel ? 0 : -1}
+                    onClick={() => setTab(t.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-accent ${sel ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
+                  >
+                    <t.icon size={14} strokeWidth={1.75} /> {t.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
+              {tab === "preview" ? (
+                <NotePreview className="flex-1" />
+              ) : (
+                <A_ItemData searchRef={searchRef} />
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      function VariantA() {
+        const width = useViewWidth();
+        const narrow = useNarrow();
+        const below = width < A_STACK_BELOW;
+        const [open, setOpen] = useState(true);
+        const [tab, setTab] = useState("data");
+        const searchRef = useRef(null);
+        const PaneIcon = below ? L.PanelBottom : L.PanelRight;
+
+        const showData = () => {
+          setOpen(true);
+          setTab("data");
+          setTimeout(() => searchRef.current?.focus(), 0);
+        };
+
+        const toggle = (
+          <button
+            key="pane"
+            type="button"
+            aria-pressed={open}
+            onClick={() => setOpen((o) => !o)}
+            title={
+              open ? "Hide preview and item data" : "Show preview and item data"
+            }
+            aria-label={
+              open ? "Hide preview and item data" : "Show preview and item data"
+            }
+            className={`inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
+          >
+            <PaneIcon size={16} strokeWidth={1.75} />
+            {!narrow && <span className="pr-0.5">Preview and item data</span>}
+          </button>
+        );
+
+        return (
+          <Stage title="A · Item data beside the Preview">
+            <ViewHeader actions={toggle} />
+            <ItemRow onTitleClick={showData} />
+            <TabBar />
+            <div
+              className={`flex min-h-0 flex-1 ${below ? "flex-col" : "flex-row"}`}
+            >
+              <SourceEditor className="min-h-32 flex-1" />
+              {open && (
+                <div
+                  className={
+                    below
+                      ? "flex h-[58%] min-h-0 shrink-0 flex-col border-t border-line"
+                      : "flex w-[44%] min-w-0 shrink-0 flex-col border-l border-line"
+                  }
+                >
+                  <A_Pane tab={tab} setTab={setTab} searchRef={searchRef} />
+                </div>
+              )}
+            </div>
+          </Stage>
+        );
+      }
+      // --- Variant A END ---
+
+      // --- Variant B ---
+      // Variant B — "Fields live at the caret". No fields panel: one completion popup anchored at the
+      // caret, opened by typing `{{`, the "Insert field" toolbar button, or Ctrl/Cmd+Space. An empty
+      // query browses every field by section, so the same popup is also the item-data inspector.
+
+      /** What a field puts into the note for the sample item, as one line. */
+      const B_inNote = (f) =>
+        f.value ? f.value : "nothing, this item has no value here";
+
+      /** The rows the popup lists: browse by section when the query is empty, flat matches otherwise. */
+      function B_buildList(query) {
+        const q = query.trim();
+        if (!q) {
+          const out = [];
+          for (const s of SECTIONS) {
+            out.push({ header: s.label, key: `h:${s.id}` });
+            for (const r of s.rows) {
+              out.push({
+                field: { ...r, section: s.label },
+                key: r.path,
+                depth: 0,
+              });
+              for (const c of r.children ?? [])
+                out.push({
+                  field: { ...c, section: s.label, parent: r.path },
+                  key: c.path,
+                  depth: 1,
+                });
+            }
+          }
+          return out;
+        }
+        // Label matches first, then path, then sample-value matches.
+        const t = q.toLowerCase();
+        const rank = (f) => {
+          const l = f.label.toLowerCase();
+          if (l.startsWith(t)) return 0;
+          if (l.includes(t)) return 1;
+          if (f.path.toLowerCase().includes(t)) return 2;
+          return 3;
+        };
+        return searchFields(q)
+          .map((f, i) => ({ f, i, r: rank(f) }))
+          .sort((a, b) => a.r - b.r || a.i - b.i)
+          .map(({ f }) => ({ field: f, key: f.path, depth: 0, flat: true }));
+      }
+
+      function B_Kbd({ children }) {
+        return (
+          <kbd className="rounded border border-line bg-panel px-1 font-body text-[10px] leading-4 text-muted">
+            {children}
+          </kbd>
+        );
+      }
+
+      function B_Row({ item, selected, onPick, onHover, id }) {
+        const f = item.field;
+        const ref = useRef(null);
+        useLayoutEffect(() => {
+          if (selected) ref.current?.scrollIntoView({ block: "nearest" });
+        }, [selected]);
+        return (
+          <div
+            ref={ref}
+            id={id}
+            role="option"
+            aria-selected={selected}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onPick}
+            onMouseMove={onHover}
+            className={`flex cursor-pointer items-baseline gap-2 rounded px-2 py-1 text-[13px] ${selected ? "bg-accent-soft" : "hover:bg-panel"}`}
+            style={{ paddingLeft: 8 + item.depth * 14 }}
+          >
+            <span
+              className={`shrink-0 ${selected ? "text-accent" : "text-ink"}`}
+            >
+              {f.label}
+            </span>
+            <span
+              className={`min-w-0 flex-1 truncate ${f.value ? "text-value" : "italic text-faint"}`}
+            >
+              {f.value || "empty"}
+            </span>
+            {item.flat && (
+              <span className="shrink-0 text-[11px] text-faint">
+                {f.section}
+              </span>
+            )}
+          </div>
+        );
+      }
+
+      function B_Detail({ field, onInsert, stacked }) {
+        if (!field)
+          return (
+            <div className="p-3 text-xs text-muted">No field selected.</div>
+          );
+        return (
+          <div
+            className={`flex min-h-0 flex-col gap-2 overflow-auto p-3 text-[13px] ${stacked ? "max-h-40" : ""}`}
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="font-semibold text-ink">{field.label}</span>
+              <span className="text-[11px] text-faint">{field.section}</span>
+            </div>
+            <div
+              className={`break-words leading-5 ${field.value ? "text-value" : "italic text-faint"}`}
+            >
+              {field.value || "Empty for this item"}
+            </div>
+            <div className="font-mono text-[11px] text-muted">
+              zt.{field.path}
+            </div>
+            <div
+              className="truncate text-xs text-muted"
+              title={B_inNote(field)}
+            >
+              In your note: <span className="text-ink">{B_inNote(field)}</span>
+            </div>
+            <div className="mt-auto flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={onInsert}
+                className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs text-ground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                <L.CornerDownLeft size={12} /> Insert
+              </button>
+              <span className="font-mono text-[11px] text-faint">
+                {snippetOf(field.path)}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      function VariantB() {
+        const { source, caret, width } = useProto();
+        const narrow = useNarrow();
+        const taRef = useRef(null);
+        const frameRef = useRef(null);
+        const popRef = useRef(null);
+        const btnRef = useRef(null);
+        // open: { from, lead } — `from` starts the range an insert replaces; `lead` is 2 after a typed `{{`.
+        const [open, setOpen] = useState(null);
+        const [sel, setSel] = useState(0);
+        const [pos, setPos] = useState(null);
+        const [tick, setTick] = useState(0);
+
+        const rawQuery = open ? source.slice(open.from + open.lead, caret) : "";
+        const query = rawQuery.trim();
+        const list = useMemo(() => B_buildList(query), [query]);
+        const picks = list.filter((i) => i.field);
+        const selIdx = Math.min(sel, Math.max(0, picks.length - 1));
+        const selected = picks[selIdx]?.field;
+
+        // Close when the caret leaves the query range or the query stops being a field name.
+        useEffect(() => {
+          if (!open) return;
+          if (
+            caret < open.from + open.lead ||
+            /[\n}]/.test(rawQuery) ||
+            (open.lead && source.slice(open.from, open.from + 2) !== "{{")
+          )
+            setOpen(null);
+        }, [open, caret, source, rawQuery]);
+        useEffect(() => setSel(0), [query, open?.from]);
+
+        // Click outside closes; scrolling the editor repositions.
+        useEffect(() => {
+          if (!open) return;
+          const down = (e) => {
+            if (
+              popRef.current?.contains(e.target) ||
+              btnRef.current?.contains(e.target)
+            )
+              return;
+            setOpen(null);
+          };
+          const scroll = () => setTick((t) => t + 1);
+          document.addEventListener("pointerdown", down);
+          const frame = frameRef.current?.parentElement;
+          frame?.addEventListener("scroll", scroll, true);
+          return () => {
+            document.removeEventListener("pointerdown", down);
+            frame?.removeEventListener("scroll", scroll, true);
+          };
+        }, [open]);
+
+        const popW = narrow ? width - 2 - 16 : Math.min(640, width - 2 - 16);
+
+        useLayoutEffect(() => {
+          if (!open || !taRef.current || !frameRef.current) {
+            setPos(null);
+            return;
+          }
+          const fr = frameRef.current.getBoundingClientRect();
+          const tr = taRef.current.getBoundingClientRect();
+          const c = caretCoords(taRef.current, open.from);
+          const x = tr.left - fr.left + c.left;
+          const y = tr.top - fr.top + c.top;
+          const h = popRef.current?.offsetHeight ?? 300;
+          const below = y + c.height + 4;
+          const above = y - h - 4;
+          let top = below + h <= fr.height - 8 || above < 8 ? below : above;
+          top = Math.max(8, Math.min(top, fr.height - h - 8));
+          const left = narrow
+            ? 8
+            : Math.max(8, Math.min(x - 10, fr.width - popW - 8));
+          setPos({ top, left, flipped: top < y });
+        }, [open, caret, source, width, narrow, popW, query, selIdx, tick]);
+
+        const openAt = (from, lead) => {
+          setOpen({ from, lead });
+          setSel(0);
+        };
+
+        const commit = (field) => {
+          if (!field || !open) return;
+          const from = open.from,
+            to = caret;
+          insertField(field.path, [from, to]);
+          setOpen(null);
+          const c = from + snippetOf(field.path).length;
+          requestAnimationFrame(() => {
+            const ta = taRef.current;
+            if (!ta) return;
+            ta.focus();
+            ta.setSelectionRange(c, c);
+            setProto({ caret: c });
+          });
+        };
+
+        const onKeyDown = (e, ta) => {
+          if (open) {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setSel((selIdx + 1) % Math.max(1, picks.length));
+              return;
+            }
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setSel((selIdx - 1 + picks.length) % Math.max(1, picks.length));
+              return;
+            }
+            if (e.key === "PageDown") {
+              e.preventDefault();
+              setSel(Math.min(picks.length - 1, selIdx + 8));
+              return;
+            }
+            if (e.key === "PageUp") {
+              e.preventDefault();
+              setSel(Math.max(0, selIdx - 8));
+              return;
+            }
+            if ((e.key === "Enter" || e.key === "Tab") && selected) {
+              e.preventDefault();
+              commit(selected);
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setOpen(null);
+              return;
+            }
+          }
+          if (e.key === " " && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            if (!open) openAt(ta.selectionStart, 0);
+          }
+        };
+
+        const onInput = (ta) => {
+          const c = ta.selectionStart;
+          if (
+            !open &&
+            ta.value.slice(c - 2, c) === "{{" &&
+            ta.value[c - 3] !== "{"
+          )
+            openAt(c - 2, 2);
+        };
+
+        const onButton = () => {
+          if (open) {
+            setOpen(null);
+            return;
+          }
+          const ta = taRef.current;
+          if (!ta) return;
+          ta.focus();
+          ta.setSelectionRange(caret, caret);
+          openAt(caret, 0);
+        };
+
+        const stacked = narrow;
+        const listEl = (
+          <div
+            role="listbox"
+            aria-label="Fields"
+            id="b-fields"
+            className={`min-h-0 overflow-auto p-1 ${stacked ? "max-h-44" : "max-h-72 min-h-44 w-[46%] shrink-0 border-r border-line"}`}
+          >
+            {picks.length === 0 && (
+              <div className="px-2 py-3 text-xs text-muted">
+                No field matches "{query}".
+              </div>
+            )}
+            {list.map((item) => {
+              if (item.header)
+                return (
+                  <div
+                    key={item.key}
+                    className="px-2 pt-2 pb-0.5 text-[11px] font-medium text-muted first:pt-1"
+                  >
+                    {item.header}
+                  </div>
+                );
+              const i = picks.indexOf(item);
+              return (
+                <B_Row
+                  key={item.key}
+                  id={`b-opt-${i}`}
+                  item={item}
+                  selected={i === selIdx}
+                  onPick={() => commit(item.field)}
+                  onHover={() => i !== selIdx && setSel(i)}
+                />
+              );
+            })}
+          </div>
+        );
+
+        return (
+          <Stage title="B · Fields live at the caret">
+            <div
+              ref={frameRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0"
+            />
+            <ViewHeader />
+            <ItemRow />
+            <TabBar />
+            <div className="flex min-h-0 flex-1 flex-col @min-[56rem]:flex-row">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-2 text-xs">
+                  <button
+                    ref={btnRef}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={onButton}
+                    aria-expanded={!!open}
+                    aria-controls="b-fields"
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
+                  >
+                    <L.Braces size={15} strokeWidth={1.75} /> Insert field
+                  </button>
+                  <span className="hidden min-w-0 truncate text-faint @min-[28rem]:inline">
+                    or type <span className="font-mono text-muted">{"{{"}</span>{" "}
+                    in the template · <B_Kbd>Ctrl</B_Kbd> <B_Kbd>Space</B_Kbd>
+                  </span>
+                </div>
+                <SourceEditor
+                  className="flex-1"
+                  taRef={taRef}
+                  onKeyDown={onKeyDown}
+                  onInput={onInput}
+                />
+              </div>
+              <NotePreview className="flex-1 border-t border-line bg-panel/40 @min-[56rem]:border-t-0 @min-[56rem]:border-l" />
+            </div>
+
+            {open && (
+              <div
+                ref={popRef}
+                role="dialog"
+                aria-label="Insert field"
+                className="absolute z-40 flex flex-col overflow-hidden rounded-lg border border-line bg-raise font-body shadow-xl"
+                style={{
+                  top: pos?.top ?? 0,
+                  left: pos?.left ?? 8,
+                  width: popW,
+                  visibility: pos ? "visible" : "hidden",
+                }}
+              >
+                <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-2 text-xs text-muted">
+                  <L.Braces size={13} className="text-accent" />
+                  {query ? (
+                    <span className="min-w-0 truncate">
+                      Fields matching{" "}
+                      <span className="font-mono text-ink">{query}</span> ·{" "}
+                      {picks.length}
+                    </span>
+                  ) : (
+                    <span className="min-w-0 truncate">
+                      Item data · type to search fields
+                    </span>
+                  )}
+                  <span className="ml-auto hidden shrink-0 items-center gap-1 @min-[30rem]:flex">
+                    <B_Kbd>↑↓</B_Kbd> move <B_Kbd>Enter</B_Kbd> insert{" "}
+                    <B_Kbd>Esc</B_Kbd> close
+                  </span>
+                </div>
+                <div className={stacked ? "flex flex-col" : "flex"}>
+                  {listEl}
+                  <div
+                    className={`min-w-0 flex-1 ${stacked ? "border-t border-line" : "flex max-h-72 flex-col"} bg-panel/50`}
+                  >
+                    <B_Detail
+                      field={selected}
+                      stacked={stacked}
+                      onInsert={() => commit(selected)}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </Stage>
+        );
+      }
+      // --- Variant B END ---
+
+      // --- Variant C ---
+      // Variant C — "The item row opens the item's record".
+      // The item row carries an "Item data" disclosure. It opens a record sheet under the row that
+      // pushes the tabs and editor down. The sheet is a grid of label/value cells (3 / 2 / 1 columns
+      // by container width) with search and section chips; a click inserts the field at the cursor.
+
+      const C_SHEET_MIN = 140;
+      const C_SHEET_MAX = 560;
+
+      /** The item row with the record disclosure. */
+      function C_ItemRow({ open, onToggle, toggleRef }) {
+        return (
+          <div
+            className={`flex min-h-9 shrink-0 items-center gap-2 border-b border-line px-3 text-sm ${open ? "bg-panel" : ""}`}
+          >
+            <L.BookOpenText size={15} className="shrink-0 text-muted" />
+            <button
+              type="button"
+              onClick={onToggle}
+              title={ITEM_LABEL}
+              className="min-w-0 flex-1 truncate rounded-sm text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <span className="text-muted">Example: </span>
+              {ITEM_LABEL}
+            </button>
+            <button
+              ref={toggleRef}
+              type="button"
+              onClick={onToggle}
+              aria-expanded={open}
+              aria-controls="c-record-sheet"
+              className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-ground hover:text-ink"}`}
+            >
+              Item data{" "}
+              {open ? <L.ChevronUp size={14} /> : <L.ChevronDown size={14} />}
+            </button>
+            <button
+              type="button"
+              title="Choose item"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-muted hover:bg-ground hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <L.Search size={14} />{" "}
+              <span className="hidden @min-[520px]:inline">Choose item</span>
+            </button>
+          </div>
+        );
+      }
+
+      /** One label/value cell. The whole cell is the insert button. */
+      function C_Cell({ field, parentLabel }) {
+        const empty = field.kind === "empty" || !field.value;
+        return (
+          <button
+            type="button"
+            data-c-cell=""
+            onClick={() => insertField(field.path)}
+            title={`Insert ${field.label} at the cursor`}
+            className="group flex min-w-0 flex-col gap-0.5 rounded-md border border-line bg-raise px-2.5 py-1.5 text-left hover:border-accent focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <span className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-xs text-muted">
+                {parentLabel && (
+                  <span className="text-faint">{parentLabel} › </span>
+                )}
+                {field.label}
+                {field.kind === "list" && (
+                  <span className="text-faint"> · list</span>
+                )}
+              </span>
+              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-accent-soft px-1.5 text-xs text-accent opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">
+                <L.Plus size={12} /> Insert
+              </span>
+            </span>
+            <span
+              className={`line-clamp-2 text-[13px] leading-5 break-words ${empty ? "text-faint italic" : "text-value"}`}
+            >
+              {empty ? "Empty for this item" : field.value}
+            </span>
+            <span className="truncate font-mono text-[11px] text-faint opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">
+              zt.{field.path}
+            </span>
+          </button>
+        );
+      }
+
+      /** Move focus between cells by their on-screen position. */
+      function C_moveFocus(e, root) {
+        const cells = [...root.querySelectorAll("[data-c-cell]")];
+        const i = cells.indexOf(document.activeElement);
+        if (i < 0) return;
+        let next = null;
+        if (e.key === "ArrowRight") next = cells[i + 1];
+        else if (e.key === "ArrowLeft") next = cells[i - 1];
+        else if (e.key === "Home") next = cells[0];
+        else if (e.key === "End") next = cells[cells.length - 1];
+        else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          const r = cells[i].getBoundingClientRect();
+          const down = e.key === "ArrowDown";
+          const rows = cells
+            .map((c) => [c, c.getBoundingClientRect()])
+            .filter(([, b]) => (down ? b.top > r.top + 2 : b.top < r.top - 2));
+          if (rows.length) {
+            const rowTop = down
+              ? Math.min(...rows.map(([, b]) => b.top))
+              : Math.max(...rows.map(([, b]) => b.top));
+            const inRow = rows.filter(([, b]) => Math.abs(b.top - rowTop) < 2);
+            next = inRow.reduce((best, cur) =>
+              Math.abs(cur[1].left - r.left) < Math.abs(best[1].left - r.left)
+                ? cur
+                : best,
+            )[0];
+          } else if (!down) {
+            root.querySelector("[data-c-search]")?.focus();
+            e.preventDefault();
+            return;
+          }
+        } else return;
+        e.preventDefault();
+        if (next) {
+          next.focus();
+          next.scrollIntoView({ block: "nearest" });
+        }
+      }
+
+      /** The record sheet: search, section chips, the cell grid, a resize edge. */
+      function C_RecordSheet({ height, setHeight, maxHeight, onClose }) {
+        const [query, setQuery] = useState("");
+        const [section, setSection] = useState("all");
+        const root = useRef(null);
+        const searchRef = useRef(null);
+        useEffect(() => {
+          searchRef.current?.focus();
+        }, []);
+
+        const t = query.trim().toLowerCase();
+        const groups = SECTIONS.filter(
+          (s) => section === "all" || s.id === section,
+        )
+          .map((s) => {
+            const cells = s.rows.flatMap((r) => [
+              { field: r },
+              ...(r.children ?? []).map((c) => ({
+                field: c,
+                parentLabel: r.label,
+              })),
+            ]);
+            const hit = (c) =>
+              !t ||
+              `${c.parentLabel ?? ""} ${c.field.label} ${c.field.path} ${c.field.value}`
+                .toLowerCase()
+                .includes(t);
+            return { ...s, cells: cells.filter(hit) };
+          })
+          .filter((g) => g.cells.length);
+        const count = groups.reduce((n, g) => n + g.cells.length, 0);
+
+        const onDrag = (e) => {
+          e.preventDefault();
+          const y0 = e.clientY,
+            h0 = height;
+          const move = (ev) =>
+            setHeight(
+              Math.max(
+                C_SHEET_MIN,
+                Math.min(maxHeight, Math.round(h0 + ev.clientY - y0)),
+              ),
+            );
+          const up = () => {
+            removeEventListener("pointermove", move);
+            removeEventListener("pointerup", up);
+          };
+          addEventListener("pointermove", move);
+          addEventListener("pointerup", up);
+        };
+        const onHandleKey = (e) => {
+          const step = e.shiftKey ? 80 : 24;
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setHeight(Math.min(maxHeight, height + step));
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setHeight(Math.max(C_SHEET_MIN, height - step));
+          }
+        };
+
+        const chip = (id, label) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={section === id}
+            onClick={() => setSection(id)}
+            className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs focus-visible:outline-2 focus-visible:outline-accent ${section === id ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:text-ink"}`}
+          >
+            {label}
+          </button>
+        );
+
+        return (
+          <section
+            id="c-record-sheet"
+            ref={root}
+            aria-label="Item data"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onClose();
+                return;
+              }
+              if (e.target.matches?.("[data-c-cell]"))
+                C_moveFocus(e, root.current);
+            }}
+            className="relative flex shrink-0 flex-col border-b border-line bg-panel"
+            style={{ height }}
+          >
+            <div className="flex shrink-0 flex-col gap-2 px-3 pt-2 pb-2">
+              <div className="flex items-center gap-2">
+                <label className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-line bg-ground px-2 py-1 focus-within:border-accent">
+                  <L.Search size={14} className="shrink-0 text-faint" />
+                  <input
+                    ref={searchRef}
+                    data-c-search=""
+                    type="search"
+                    value={query}
+                    placeholder="Search fields"
+                    aria-label="Search fields"
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        root.current.querySelector("[data-c-cell]")?.focus();
+                      }
+                      if (e.key === "Enter") {
+                        const c = groups[0]?.cells[0];
+                        if (c) {
+                          e.preventDefault();
+                          insertField(c.field.path);
+                        }
+                      }
+                      if (e.key === "Escape" && query) {
+                        e.stopPropagation();
+                        setQuery("");
+                      }
+                    }}
+                    className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint"
+                  />
+                </label>
+                <span className="hidden shrink-0 text-xs text-muted @min-[560px]:inline">
+                  Click a field to insert it at the cursor
+                </span>
+                <IconButton
+                  icon={L.X}
+                  label="Close item data"
+                  onClick={onClose}
+                />
+              </div>
+              <div
+                className="flex gap-1.5 overflow-x-auto pb-0.5"
+                role="group"
+                aria-label="Sections"
+              >
+                {chip("all", "All")}
+                {SECTIONS.map((s) => chip(s.id, s.label))}
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto px-3 pb-3">
+              {count === 0 && (
+                <div className="py-6 text-center text-sm text-muted">
+                  No fields match “{query}”.
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-1.5 @min-[560px]:grid-cols-2 @min-[860px]:grid-cols-3">
+                {groups.map((g) => (
+                  <React.Fragment key={g.id}>
+                    <h3 className="col-span-full mt-2 flex items-baseline gap-2 text-xs font-semibold text-muted first:mt-0">
+                      {g.label}{" "}
+                      <span className="font-normal text-faint">
+                        {g.cells.length}
+                      </span>
+                    </h3>
+                    {g.cells.map((c) => (
+                      <C_Cell
+                        key={c.field.path}
+                        field={c.field}
+                        parentLabel={c.parentLabel}
+                      />
+                    ))}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize item data"
+              tabIndex={0}
+              aria-valuemin={C_SHEET_MIN}
+              aria-valuemax={maxHeight}
+              aria-valuenow={height}
+              onPointerDown={onDrag}
+              onKeyDown={onHandleKey}
+              className="group absolute inset-x-0 -bottom-1.5 z-10 flex h-3 cursor-row-resize items-center justify-center focus-visible:outline-none"
+            >
+              <div className="h-1 w-10 rounded-full bg-faint/60 group-hover:bg-accent group-focus-visible:bg-accent" />
+            </div>
+          </section>
+        );
+      }
+
+      function VariantC() {
+        const [open, setOpen] = useState(false);
+        const [height, setHeight] = useState(280);
+        const [frameH, setFrameH] = useState(700);
+        const frame = useRef(null);
+        const toggleRef = useRef(null);
+        useLayoutEffect(() => {
+          const el = frame.current;
+          if (!el) return;
+          const ro = new ResizeObserver(() => setFrameH(el.clientHeight));
+          ro.observe(el);
+          return () => ro.disconnect();
+        }, []);
+        // Keep at least ~220 px for tabs and editor under the sheet.
+        const maxHeight = Math.max(
+          C_SHEET_MIN,
+          Math.min(C_SHEET_MAX, frameH - 40 - 36 - 220),
+        );
+        const shown = Math.min(height, maxHeight);
+        const close = () => {
+          setOpen(false);
+          toggleRef.current?.focus();
+        };
+
+        return (
+          <Stage title="C — Item row opens the record">
+            <div ref={frame} className="flex min-h-0 flex-1 flex-col">
+              <ViewHeader />
+              <C_ItemRow
+                open={open}
+                onToggle={() => setOpen((o) => !o)}
+                toggleRef={toggleRef}
+              />
+              {open && (
+                <C_RecordSheet
+                  height={shown}
+                  setHeight={setHeight}
+                  maxHeight={maxHeight}
+                  onClose={close}
+                />
+              )}
+              <TabBar />
+              <div className="flex min-h-0 flex-1 flex-col @min-[56rem]:flex-row">
+                <SourceEditor className="min-h-[160px] flex-1 @min-[56rem]:basis-1/2" />
+                <NotePreview className="flex-1 border-t border-line @min-[56rem]:basis-1/2 @min-[56rem]:border-t-0 @min-[56rem]:border-l" />
+              </div>
+            </div>
+          </Stage>
+        );
+      }
+      // --- Variant C END ---
+
+      // --- Variant D ---
+      // --- Variant D: field drawer docked at the bottom of the view ---
+      const D_PEEK = 44;
+      const D_FILLED = ALL_FIELDS.filter((f) => f.value).length;
+
+      /** Visible rows for a query and a section filter, grouped by section. */
+      function D_rows(query, sectionId) {
+        const t = query.trim().toLowerCase();
+        return SECTIONS.filter((s) => !sectionId || s.id === sectionId)
+          .map((s) => ({
+            id: s.id,
+            label: s.label,
+            rows: s.rows
+              .flatMap((r) => [
+                { ...r },
+                ...(r.children ?? []).map((c) => ({
+                  ...c,
+                  parentLabel: r.label,
+                })),
+              ])
+              .filter(
+                (f) =>
+                  !t ||
+                  `${f.label} ${f.parentLabel ?? ""} ${f.path} ${f.value}`
+                    .toLowerCase()
+                    .includes(t),
+              ),
+          }))
+          .filter((s) => s.rows.length);
+      }
+
+      function D_FieldRow({ field, active, id, onInsert, onHover }) {
+        const empty = !field.value;
+        return (
+          <div
+            id={id}
+            role="option"
+            aria-selected={active}
+            onMouseEnter={onHover}
+            onClick={onInsert}
+            title={
+              empty
+                ? `${field.label}: no value for this item`
+                : `${field.label}: ${field.value}`
+            }
+            className={`group flex min-w-0 cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 ${active ? "bg-accent-soft" : "hover:bg-panel"}`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-baseline gap-2">
+                <span
+                  className={`shrink-0 text-sm ${field.parentLabel ? "text-muted" : "text-ink"}`}
+                >
+                  {field.parentLabel && (
+                    <span className="text-faint">{field.parentLabel} › </span>
+                  )}
+                  {field.label}
+                </span>
+                <span
+                  className={`min-w-0 truncate text-sm ${empty ? "italic text-faint" : "text-value"}`}
+                >
+                  {empty ? "Empty" : field.value}
+                </span>
+              </div>
+              <div className="truncate font-mono text-[11px] text-faint">
+                zt.{field.path}
+              </div>
+            </div>
+            <span
+              className={`shrink-0 rounded-md border px-2 py-0.5 text-xs ${active ? "border-accent bg-accent text-ground" : "border-line text-muted group-hover:border-accent group-hover:text-accent"}`}
+            >
+              Insert
+            </span>
+          </div>
+        );
+      }
+
+      function VariantD() {
+        const width = useViewWidth();
+        const [open, setOpen] = useState(false);
+        const [pct, setPct] = useState(0.5);
+        const [query, setQuery] = useState("");
+        const [section, setSection] = useState(null);
+        const [sel, setSel] = useState(0);
+        const areaRef = useRef(null);
+        const listRef = useRef(null);
+        const searchRef = useRef(null);
+        const [areaH, setAreaH] = useState(500);
+
+        useLayoutEffect(() => {
+          const el = areaRef.current;
+          if (!el) return;
+          const ro = new ResizeObserver(() => setAreaH(el.clientHeight));
+          ro.observe(el);
+          return () => ro.disconnect();
+        }, []);
+
+        const groups = useMemo(() => D_rows(query, section), [query, section]);
+        const flat = useMemo(() => groups.flatMap((g) => g.rows), [groups]);
+        const twoCol = width >= 720;
+
+        useEffect(() => {
+          setSel(0);
+        }, [query, section]);
+        useEffect(() => {
+          if (!open) return;
+          listRef.current
+            ?.querySelector(`#d-opt-${sel}`)
+            ?.scrollIntoView({ block: "nearest" });
+        }, [sel, open]);
+
+        const insertAt = (i) => {
+          const f = flat[i];
+          if (f) {
+            setSel(i);
+            insertField(f.path);
+          }
+        };
+
+        const onKeys = (e) => {
+          if (e.key === "Escape") {
+            if (open) {
+              e.preventDefault();
+              setOpen(false);
+            }
+            return;
+          }
+          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            e.preventDefault();
+            setOpen(true);
+            return;
+          }
+          if (!open) return;
+          const step = 1;
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSel((s) => Math.min(flat.length - 1, s + step));
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSel((s) => Math.max(0, s - step));
+          }
+          if (e.key === "Home" && e.currentTarget === listRef.current) {
+            e.preventDefault();
+            setSel(0);
+          }
+          if (e.key === "End" && e.currentTarget === listRef.current) {
+            e.preventDefault();
+            setSel(flat.length - 1);
+          }
+          if (e.key === "Enter") {
+            e.preventDefault();
+            insertAt(sel);
+          }
+        };
+
+        const onDrag = (e) => {
+          e.preventDefault();
+          const rect = areaRef.current.getBoundingClientRect();
+          let moved = false;
+          const y0 = e.clientY;
+          const move = (ev) => {
+            if (Math.abs(ev.clientY - y0) > 3) moved = true;
+            if (!moved) return;
+            const p = (rect.bottom - ev.clientY) / rect.height;
+            setOpen(true);
+            setPct(Math.max(0.25, Math.min(0.8, p)));
+          };
+          const up = () => {
+            removeEventListener("pointermove", move);
+            removeEventListener("pointerup", up);
+            if (!moved) setOpen((o) => !o);
+          };
+          addEventListener("pointermove", move);
+          addEventListener("pointerup", up);
+        };
+        const onHandleKey = (e) => {
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setOpen(true);
+            setPct((p) => Math.min(0.8, p + 0.05));
+          }
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            if (!open) return;
+            setPct((p) => Math.max(0.25, p - 0.05));
+          }
+          if (e.key === "Escape" && open) {
+            e.preventDefault();
+            setOpen(false);
+          }
+        };
+
+        const height = open
+          ? Math.max(D_PEEK, Math.round(areaH * pct))
+          : D_PEEK;
+        const toggle = () => setOpen((o) => !o);
+        let idx = -1;
+
+        const headerToggle = (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-pressed={open}
+            aria-controls="d-drawer"
+            title="Item data"
+            className={`inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
+          >
+            {open ? (
+              <L.PanelBottomClose size={16} strokeWidth={1.75} />
+            ) : (
+              <L.PanelBottomOpen size={16} strokeWidth={1.75} />
+            )}
+            <span className="@max-[32rem]:sr-only">Item data</span>
+          </button>
+        );
+
+        return (
+          <Stage title="D · Field drawer">
+            <ViewHeader actions={headerToggle} />
+            <ItemRow onTitleClick={() => setOpen(true)} />
+            <TabBar />
+            <div
+              ref={areaRef}
+              className="relative mt-2 flex min-h-0 flex-1 flex-col border-t border-line @min-[56rem]:flex-row"
+            >
+              {/* Both panes pad their bottom by the drawer's peek height, so the caret line stays above the bar. */}
+              <SourceEditor className="min-h-0 flex-1 pb-11 @min-[56rem]:basis-1/2" />
+              <NotePreview className="min-h-0 flex-1 pb-14 border-t border-line bg-panel/40 @min-[56rem]:basis-1/2 @min-[56rem]:border-t-0 @min-[56rem]:border-l" />
+
+              <section
+                id="d-drawer"
+                aria-label="Item data"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && open) {
+                    e.preventDefault();
+                    setOpen(false);
+                    searchRef.current?.blur();
+                  }
+                }}
+                style={{ height, transition: "height 160ms ease" }}
+                className={`absolute inset-x-0 bottom-0 z-20 flex flex-col border-t border-line bg-ground ${open ? "shadow-[0_-8px_24px_-6px_rgba(0,0,0,0.18)]" : ""}`}
+              >
+                {/* Grab handle */}
+                <div
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label="Resize item data"
+                  tabIndex={0}
+                  aria-valuemin={25}
+                  aria-valuemax={80}
+                  aria-valuenow={open ? Math.round(pct * 100) : 0}
+                  onPointerDown={onDrag}
+                  onKeyDown={onHandleKey}
+                  className="absolute inset-x-0 -top-1.5 z-10 flex h-3 cursor-row-resize justify-center focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <div className="mt-1.5 h-1 w-10 rounded-full bg-faint/70" />
+                </div>
+                {/* Bar */}
+                <div className="flex h-11 shrink-0 items-center gap-2 px-3">
+                  <button
+                    type="button"
+                    onClick={toggle}
+                    aria-expanded={open}
+                    aria-controls="d-drawer-body"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm hover:bg-panel focus-visible:outline-2 focus-visible:outline-accent"
+                  >
+                    <L.Database size={15} className="text-muted" />
+                    <span className="font-medium">Item data</span>
+                    <span
+                      className="rounded-full bg-panel px-1.5 text-xs tabular-nums text-muted"
+                      title={`${D_FILLED} fields have a value for this item`}
+                    >
+                      {D_FILLED}
+                    </span>
+                    <L.ChevronUp
+                      size={14}
+                      className={`text-faint transition-transform ${open ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  <div className="relative ml-auto min-w-0 flex-1 @min-[40rem]:max-w-80">
+                    <L.Search
+                      size={14}
+                      className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-faint"
+                    />
+                    <input
+                      ref={searchRef}
+                      type="search"
+                      value={query}
+                      placeholder="Search fields"
+                      role="combobox"
+                      aria-expanded={open}
+                      aria-controls="d-list"
+                      aria-activedescendant={
+                        open && flat.length ? `d-opt-${sel}` : undefined
+                      }
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        if (e.target.value) setOpen(true);
+                      }}
+                      onKeyDown={onKeys}
+                      className="h-7 w-full rounded-md border border-line bg-panel pr-2 pl-7 text-sm outline-none placeholder:text-faint focus:border-accent"
+                    />
+                  </div>
+                </div>
+                {open && (
+                  <div
+                    id="d-drawer-body"
+                    className="flex min-h-0 flex-1 flex-col"
+                  >
+                    <div
+                      className="flex shrink-0 gap-1 overflow-x-auto px-3 pb-2"
+                      role="toolbar"
+                      aria-label="Sections"
+                    >
+                      {[{ id: null, label: "All" }, ...SECTIONS].map((s) => (
+                        <button
+                          key={s.id ?? "all"}
+                          type="button"
+                          onClick={() => setSection(s.id)}
+                          aria-pressed={section === s.id}
+                          className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs focus-visible:outline-2 focus-visible:outline-accent ${section === s.id ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:text-ink"}`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div
+                      id="d-list"
+                      ref={listRef}
+                      role="listbox"
+                      aria-label="Fields"
+                      tabIndex={0}
+                      onKeyDown={onKeys}
+                      aria-activedescendant={
+                        flat.length ? `d-opt-${sel}` : undefined
+                      }
+                      className="min-h-0 flex-1 overflow-y-auto border-t border-line px-2 pt-1 pb-3 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+                    >
+                      {groups.length === 0 && (
+                        <div className="p-4 text-sm text-muted">
+                          No fields match “{query}”.
+                        </div>
+                      )}
+                      {groups.map((g) => (
+                        <div key={g.id} role="group" aria-label={g.label}>
+                          <div className="sticky top-0 z-[1] bg-ground px-2 pt-2 pb-1 text-xs font-medium text-faint">
+                            {g.label}
+                          </div>
+                          <div
+                            className={`grid gap-x-4 ${twoCol ? "grid-cols-2" : "grid-cols-1"}`}
+                          >
+                            {g.rows.map((f) => {
+                              idx += 1;
+                              const i = idx;
+                              return (
+                                <D_FieldRow
+                                  key={f.path}
+                                  id={`d-opt-${i}`}
+                                  field={f}
+                                  active={i === sel}
+                                  onHover={() => setSel(i)}
+                                  onInsert={() => insertAt(i)}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+          </Stage>
+        );
+      }
+      // --- Variant D END ---
+
+      // --- Variant E ---
+      // Variant E — "Item data" browser: one modal like Obsidian's command palette, at every width.
+      const E_IS_MAC =
+        typeof navigator !== "undefined" &&
+        /Mac|iPhone|iPad/.test(navigator.platform);
+      const E_MOD = E_IS_MAC ? "⌘" : "Ctrl";
+
+      /** Text with every case-insensitive match of `q` emphasised. */
+      function E_Mark({ text, q }) {
+        const t = q.trim();
+        if (!t || !text) return text;
+        const lower = text.toLowerCase(),
+          needle = t.toLowerCase();
+        const out = [];
+        let i = 0,
+          k = 0;
+        while (true) {
+          const j = lower.indexOf(needle, i);
+          if (j < 0) break;
+          if (j > i) out.push(text.slice(i, j));
+          out.push(
+            <mark
+              key={k++}
+              className="rounded-sm bg-accent-soft px-px font-semibold text-accent"
+            >
+              {text.slice(j, j + t.length)}
+            </mark>,
+          );
+          i = j + t.length;
+        }
+        out.push(text.slice(i));
+        return out;
+      }
+
+      function E_Value({ field, q, full }) {
+        if (field.kind === "empty" || !field.value)
+          return <span className="italic text-faint">Empty for this item</span>;
+        return (
+          <span
+            className={`text-value ${full ? "break-words whitespace-pre-wrap" : "truncate"}`}
+          >
+            <E_Mark text={field.value} q={q} />
+          </span>
+        );
+      }
+
+      /** Label, full value, path, what the note would get, and the two actions. */
+      function E_Detail({ field, q, onInsert, onCopy, copied, compact }) {
+        if (!field)
+          return (
+            <div className="p-4 text-sm text-muted">No field selected.</div>
+          );
+        const empty = field.kind === "empty" || !field.value;
+        const parent = field.parent ? findField(field.parent) : null;
+        return (
+          <div
+            className={`flex flex-col gap-3 text-sm ${compact ? "" : "p-4"}`}
+          >
+            {!compact && (
+              <div>
+                <div className="text-xs text-muted">
+                  {field.section}
+                  {parent ? ` · ${parent.label}` : ""}
+                </div>
+                <div className="text-base font-semibold text-ink">
+                  {field.label}
+                </div>
+              </div>
+            )}
+            {(!compact || (field.value ?? "").length > 32) && (
+              <div className="max-h-40 overflow-auto rounded-md border border-line bg-ground p-2 leading-6">
+                <E_Value field={field} q={q} full />
+              </div>
+            )}
+            <div>
+              <div className="mb-0.5 text-xs text-muted">Template path</div>
+              <code className="font-mono text-xs break-all text-muted">
+                zt.{field.path}
+              </code>
+            </div>
+            <div>
+              <div className="mb-0.5 text-xs text-muted">In your note:</div>
+              <div className="font-mono text-xs break-all text-accent">
+                {snippetOf(field.path)}
+              </div>
+              <div className="mt-0.5 flex gap-1.5 break-words">
+                <L.CornerDownRight
+                  size={13}
+                  className="mt-0.5 shrink-0 text-faint"
+                />
+                {empty ? (
+                  <span className="font-body italic text-faint">
+                    (nothing — this item has no value)
+                  </span>
+                ) : (
+                  <span className="font-body text-value">
+                    {field.value.length > 90
+                      ? field.value.slice(0, 90) + "…"
+                      : field.value}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onInsert}
+                className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-ground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                <L.TextCursorInput size={14} /> Insert
+              </button>
+              <button
+                type="button"
+                onClick={onCopy}
+                className="inline-flex items-center gap-1.5 rounded-md border border-line bg-raise px-3 py-1.5 text-sm text-ink hover:bg-panel focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                {copied ? <L.Check size={14} /> : <L.Copy size={14} />}{" "}
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function E_Row({ field, q, active, onPick, onInsert, rowRef, children }) {
+        return (
+          <li
+            ref={rowRef}
+            role="option"
+            aria-selected={active}
+            id={`e-opt-${field.path}`}
+          >
+            <div
+              onClick={onPick}
+              onDoubleClick={onInsert}
+              className={`flex cursor-pointer items-baseline gap-3 rounded-md px-3 py-1.5 text-sm ${active ? "bg-accent-soft" : "hover:bg-panel"}`}
+            >
+              <span
+                className={`w-32 shrink-0 truncate ${field.parent ? "pl-3" : ""} ${active ? "text-accent" : "text-ink"}`}
+              >
+                {field.parent && <span className="text-faint">└ </span>}
+                <E_Mark text={field.label} q={q} />
+              </span>
+              <span className="flex min-w-0 flex-1">
+                <E_Value field={field} q={q} />
+              </span>
+            </div>
+            {children}
+          </li>
+        );
+      }
+
+      function E_FieldBrowser({ onClose, onInsertPath }) {
+        const width = useViewWidth();
+        const dialogW = Math.min(720, width - 24);
+        const wide = dialogW >= 600;
+        const [q, setQ] = useState("");
+        const [section, setSection] = useState("all");
+        const [hi, setHi] = useState(0);
+        const [copied, setCopied] = useState(null);
+        const inputRef = useRef(null);
+        const rowRefs = useRef({});
+
+        const matches = useMemo(() => {
+          const t = q.trim().toLowerCase();
+          return t
+            ? ALL_FIELDS.filter((f) =>
+                `${f.label} ${f.path} ${f.value}`.toLowerCase().includes(t),
+              )
+            : ALL_FIELDS;
+        }, [q]);
+        const counts = useMemo(() => {
+          const c = {};
+          for (const f of matches) c[f.section] = (c[f.section] ?? 0) + 1;
+          return c;
+        }, [matches]);
+        const rows =
+          section === "all"
+            ? matches
+            : matches.filter((f) => f.section === section);
+        const cur = rows[Math.min(hi, rows.length - 1)] ?? null;
+
+        useEffect(() => {
+          inputRef.current?.focus();
+        }, []);
+        useEffect(() => {
+          setHi(0);
+        }, [q, section]);
+        useEffect(() => {
+          if (cur)
+            rowRefs.current[cur.path]?.scrollIntoView({ block: "nearest" });
+        }, [cur?.path, wide]);
+
+        const copy = (f) => {
+          navigator.clipboard?.writeText(snippetOf(f.path)).catch(() => {});
+          setCopied(f.path);
+          setTimeout(() => setCopied(null), 1200);
+        };
+        const tabs = [
+          { id: "all", label: "All fields", n: matches.length },
+          ...SECTIONS.map((s) => ({
+            id: s.label,
+            label: s.label,
+            n: counts[s.label] ?? 0,
+          })),
+        ];
+
+        const onKeyDown = (e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setHi((i) => Math.min(rows.length - 1, i + 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setHi((i) => Math.max(0, i - 1));
+          } else if (
+            e.key === "Enter" &&
+            cur &&
+            e.target === inputRef.current
+          ) {
+            e.preventDefault();
+            onInsertPath(cur.path, !e.shiftKey);
+          }
+        };
+
+        const detail = (f, compact) => (
+          <E_Detail
+            field={f}
+            q={q}
+            compact={compact}
+            copied={copied === f?.path}
+            onInsert={() => onInsertPath(f.path, true)}
+            onCopy={() => copy(f)}
+          />
+        );
+
+        return (
+          <div className="absolute inset-0 z-40" onKeyDown={onKeyDown}>
+            <div className="absolute inset-0 bg-ink/30" onClick={onClose} />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Item data"
+              className="absolute left-1/2 top-[12%] flex max-h-[80%] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-line bg-raise shadow-2xl"
+              style={{ width: dialogW }}
+            >
+              {/* Search */}
+              <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
+                <L.Search size={16} className="shrink-0 text-muted" />
+                <input
+                  ref={inputRef}
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search fields and values…"
+                  role="combobox"
+                  aria-expanded="true"
+                  aria-controls="e-list"
+                  aria-activedescendant={cur ? `e-opt-${cur.path}` : undefined}
+                  className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-faint"
+                />
+                <IconButton icon={L.X} label="Close" onClick={onClose} />
+              </div>
+
+              {/* Sections: chips when narrow */}
+              {!wide && (
+                <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line px-3 py-2">
+                  {tabs.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setSection(t.id)}
+                      disabled={t.n === 0 && t.id !== section}
+                      className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 ${section === t.id ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:text-ink"}`}
+                    >
+                      {t.label}{" "}
+                      <span className="tabular-nums opacity-70">{t.n}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex min-h-0 flex-1">
+                {wide && (
+                  <nav
+                    aria-label="Sections"
+                    className="w-40 shrink-0 overflow-auto border-r border-line bg-panel p-1.5"
+                  >
+                    {tabs.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSection(t.id)}
+                        className={`flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent ${section === t.id ? "bg-accent-soft text-accent" : t.n ? "text-ink hover:bg-ground" : "text-faint"}`}
+                      >
+                        <span className="truncate">{t.label}</span>
+                        <span className="ml-2 text-xs tabular-nums text-muted">
+                          {t.n}
+                        </span>
+                      </button>
+                    ))}
+                  </nav>
+                )}
+
+                <ul
+                  id="e-list"
+                  role="listbox"
+                  aria-label="Fields"
+                  className="min-h-[12rem] min-w-0 flex-1 overflow-auto p-1.5"
+                >
+                  {rows.length === 0 && (
+                    <li className="px-3 py-6 text-center text-sm text-muted">
+                      No fields match “{q}”
+                      {section !== "all" ? ` in ${section}` : ""}.
+                      {section !== "all" && (
+                        <button
+                          type="button"
+                          className="ml-1 text-accent underline"
+                          onClick={() => setSection("all")}
+                        >
+                          Search all fields
+                        </button>
+                      )}
+                    </li>
+                  )}
+                  {rows.map((f, i) => {
+                    const active = cur?.path === f.path;
+                    return (
+                      <E_Row
+                        key={f.path}
+                        field={f}
+                        q={q}
+                        active={active}
+                        rowRef={(el) => {
+                          rowRefs.current[f.path] = el;
+                        }}
+                        onPick={() => {
+                          setHi(i);
+                          inputRef.current?.focus();
+                        }}
+                        onInsert={() => onInsertPath(f.path, true)}
+                      >
+                        {!wide && active && (
+                          <div className="mx-1 mb-1.5 rounded-b-md border border-t-0 border-line bg-panel px-3 py-3">
+                            {detail(f, true)}
+                          </div>
+                        )}
+                      </E_Row>
+                    );
+                  })}
+                </ul>
+
+                {wide && (
+                  <aside
+                    aria-label="Field details"
+                    className="w-60 shrink-0 overflow-auto border-l border-line bg-panel"
+                  >
+                    {detail(cur, false)}
+                  </aside>
+                )}
+              </div>
+
+              {/* Key hints, like Obsidian's palette */}
+              <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 py-1.5 text-xs text-muted">
+                <span>
+                  <kbd className="font-mono">↑↓</kbd> to navigate
+                </span>
+                <span>
+                  <kbd className="font-mono">↵</kbd> to insert
+                </span>
+                <span>
+                  <kbd className="font-mono">⇧↵</kbd> insert and stay
+                </span>
+                <span>
+                  <kbd className="font-mono">esc</kbd> to close
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function VariantE() {
+        const [open, setOpen] = useState(false);
+        const taRef = useRef(null);
+
+        const close = useCallback(() => {
+          setOpen(false);
+          requestAnimationFrame(() => {
+            const ta = taRef.current;
+            if (!ta) return;
+            ta.focus();
+            const c = state.caret;
+            ta.setSelectionRange(c, c);
+          });
+        }, []);
+
+        useEffect(() => {
+          const onKey = (e) => {
+            if (
+              (e.metaKey || e.ctrlKey) &&
+              e.shiftKey &&
+              e.key.toLowerCase() === "i"
+            ) {
+              e.preventDefault();
+              setOpen((o) => !o);
+            }
+          };
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        }, []);
+
+        const onInsertPath = (path, andClose) => {
+          insertField(path);
+          if (andClose) close();
+        };
+
+        const action = (
+          <button
+            key="item-data"
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            title={`Item data (${E_MOD}+Shift+I)`}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-sm focus-visible:outline-2 focus-visible:outline-accent ${open ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel hover:text-ink"}`}
+          >
+            <L.Braces size={16} strokeWidth={1.75} />{" "}
+            <span className="@max-[360px]:hidden">Item data</span>
+          </button>
+        );
+
+        return (
+          <Stage title="E — Item data browser (palette)">
+            <ViewHeader actions={action} />
+            <ItemRow onTitleClick={() => setOpen(true)} />
+            <TabBar />
+            <div className="flex min-h-0 flex-1 flex-col @min-[56rem]:flex-row">
+              <SourceEditor
+                taRef={taRef}
+                className="min-h-[10rem] flex-1 border-b border-line @min-[56rem]:border-b-0 @min-[56rem]:border-r"
+              />
+              <NotePreview className="flex-1" />
+            </div>
+            {open && (
+              <E_FieldBrowser onClose={close} onInsertPath={onInsertPath} />
+            )}
+          </Stage>
+        );
+      }
+      // --- Variant E END ---
+
+      // --- Switcher ---
+      const VARIANTS = [
+        { key: "A", name: "Item data beside Preview", component: VariantA },
+        { key: "B", name: "Fields at the caret", component: VariantB },
+        { key: "C", name: "Item row opens record", component: VariantC },
+        { key: "D", name: "Bottom drawer", component: VariantD },
+        { key: "E", name: "Field browser dialog", component: VariantE },
+      ];
+
+      // Scenario presets — buttons that jump the shared store to a telling state
+      // (e.g. "empty inbox", "3 selected"). Leave empty when the design has no such
+      // states; otherwise add { label, apply() } entries that mutate the store.
+      const SCENARIOS = [
+        {
+          label: "Wide view (1100)",
+          apply: () => setProto({ width: WIDTHS.wide }),
+        },
+        {
+          label: "Narrow view (420)",
+          apply: () => setProto({ width: WIDTHS.narrow }),
+        },
+        {
+          label: "Reset template",
+          apply: () =>
+            setProto({
+              source: INITIAL_SOURCE,
+              caret: INITIAL_SOURCE.indexOf("\n## Annotations"),
+            }),
+        },
+      ];
+
+      function App() {
+        const [idx, setIdx] = useState(() => {
+          const h = location.hash.slice(1);
+          const i = VARIANTS.findIndex((v) => v.key === h);
+          return i >= 0 ? i : 0;
+        });
+        const [pos, setPos] = useState({ right: 16, bottom: 16 });
+
+        useEffect(() => {
+          location.hash = VARIANTS[idx].key;
+          const onHash = () => {
+            const i = VARIANTS.findIndex(
+              (v) => v.key === location.hash.slice(1),
+            );
+            if (i >= 0) setIdx(i);
+          };
+          window.addEventListener("hashchange", onHash);
+          const onKey = (e) => {
+            if (
+              ["INPUT", "TEXTAREA"].includes(e.target.tagName) ||
+              e.target.isContentEditable
+            )
+              return;
+            if (e.key === "ArrowLeft")
+              setIdx((i) => (i - 1 + VARIANTS.length) % VARIANTS.length);
+            if (e.key === "ArrowRight")
+              setIdx((i) => (i + 1) % VARIANTS.length);
+          };
+          window.addEventListener("keydown", onKey);
+          return () => {
+            window.removeEventListener("hashchange", onHash);
+            window.removeEventListener("keydown", onKey);
+          };
+        }, [idx]);
+
+        const onDragStart = (e) => {
+          const start = { x: e.clientX, y: e.clientY, ...pos };
+          const onMove = (ev) => {
+            const dx = ev.clientX - start.x,
+              dy = ev.clientY - start.y;
+            setPos({
+              right: Math.max(8, start.right - dx),
+              bottom: Math.max(8, start.bottom - dy),
+            });
+          };
+          const onUp = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+          };
+          window.addEventListener("pointermove", onMove);
+          window.addEventListener("pointerup", onUp);
+        };
+
+        const V = VARIANTS[idx];
+        return (
+          <>
+            <V.component />
+            <div
+              style={{
+                position: "fixed",
+                right: pos.right,
+                bottom: pos.bottom,
+                background: "#1e293b",
+                color: "#f8fafc",
+                borderRadius: "0.75rem",
+                padding: "0.75rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.5rem",
+                fontSize: "0.875rem",
+                zIndex: 9999,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                minWidth: "9rem",
+              }}
+            >
+              <div
+                onPointerDown={onDragStart}
+                style={{
+                  cursor: "grab",
+                  fontSize: "0.75rem",
+                  opacity: 0.6,
+                  userSelect: "none",
+                  textAlign: "center",
+                }}
+              >
+                ⠿ drag
+              </div>
+              {VARIANTS.map((v, i) => (
+                <button
+                  key={v.key}
+                  onClick={() => setIdx(i)}
+                  style={{
+                    background: i === idx ? "#334155" : "none",
+                    border: "none",
+                    color: "inherit",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    padding: "0.375rem 0.5rem",
+                    borderRadius: "0.375rem",
+                  }}
+                >
+                  {v.key} — {v.name}
+                </button>
+              ))}
+              {SCENARIOS.length > 0 && (
+                <div
+                  style={{
+                    borderTop: "1px solid #334155",
+                    marginTop: "0.25rem",
+                    paddingTop: "0.5rem",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.25rem",
+                  }}
+                >
+                  {SCENARIOS.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={s.apply}
+                      style={{
+                        background: "none",
+                        border: "1px solid #334155",
+                        color: "inherit",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        padding: "0.25rem 0.5rem",
+                        borderRadius: "0.375rem",
+                        fontSize: "0.75rem",
+                      }}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        );
+      }
+      // --- Switcher END ---
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
