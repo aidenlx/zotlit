@@ -1823,6 +1823,151 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(JSON.parse(await walk(false))).toEqual(expected(false));
   });
 
+  /** The creators of "Alpha of the personal library", from the Fixture Spec. */
+  const ALPHA_CREATORS = [
+    "Ada Personal",
+    "Erin Editor",
+    "ZotLit Research Collective",
+  ];
+
+  // #1969: a list goes into the note for every item. Chosen as "Each item"
+  // in its details, it writes one Markdown list line per item, which the
+  // Preview shows as one list item each.
+  it("inserts a list in the Each item form, and the Preview shows one list line per item", async () => {
+    const path = `templates/${booksProfile.document}`;
+    const documentPath = join(e2eVaultPath, path);
+    const original = await readFile(documentPath, "utf-8");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        ({ app }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        },
+        undefined,
+      );
+      await writeFile(documentPath, original);
+    });
+    await suite.wideWindow(cleanup);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, key, showPreview }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: { file: path, itemIndexedKey: key },
+          active: true,
+        });
+        await app.workspace.revealLeaf(leaf);
+        leaf.view.containerEl
+          .querySelector<HTMLElement>(
+            `.view-action[aria-label="${showPreview}"]`,
+          )
+          ?.click();
+      },
+      {
+        path,
+        key: targetItem.key,
+        showPreview: run.m.workbench_show_preview(),
+      },
+    );
+
+    const result = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label, eachItem, names }) => {
+        const { until, trusted } = page;
+        const view = page.workbench({ path })!;
+        const el = view.contentEl;
+        const win = el.win;
+        const input = trusted(win);
+        const contents = (
+          win as Window & {
+            electronWindow: { webContents: import("electron").WebContents };
+          }
+        ).electronWindow.webContents;
+        contents.focus();
+        await until("the window takes keys", () => el.doc.hasFocus());
+        await until("the Preview", () => page.previewPanel(view) !== null);
+        const action = view.containerEl.querySelector<HTMLElement>(
+          `.view-action[aria-label="${label}"]`,
+        )!;
+        const content = el.querySelector<CodeMirrorElement>(".cm-content")!;
+        const editor = content.cmTile!.root.view;
+        await input.click(content);
+        // A list line of its own, under the note's text.
+        const end = editor.state.doc.length;
+        editor.dispatch({
+          changes: { from: end, insert: "\n\n" },
+          selection: { anchor: end + 2 },
+        });
+        const popover = () => page.fieldsPopover(view);
+        const row = (key: string) =>
+          [
+            ...(popover()?.querySelectorAll<HTMLElement>(
+              "[data-workbench-field]",
+            ) ?? []),
+          ]
+            .find((item) => item.dataset.workbenchField === key)
+            ?.querySelector<HTMLElement>(":scope > [data-part=row]") ?? null;
+        const details = () =>
+          el.doc.querySelector<HTMLElement>("[data-part=details]");
+        await input.click(action);
+        await until("the creators row", () => row("creators") !== null);
+        const creators = row("creators")!;
+        // The row: its count and every item, and no row for one item.
+        const line = creators.textContent;
+        const indexRows = [
+          ...popover()!.querySelectorAll<HTMLElement>("[data-workbench-field]"),
+        ].filter((item) => /\[\d+\]/.test(item.dataset.workbenchField!)).length;
+        await input.click(creators, { x: 40, y: 8 });
+        await until("the details", () => details() !== null);
+        const values = [
+          ...details()!.querySelectorAll<HTMLElement>(
+            "[data-part=values-text]",
+          ),
+        ].map((value) => value.textContent);
+        const radio = [
+          ...details()!.querySelectorAll<HTMLInputElement>("input[type=radio]"),
+        ].find((input) => input.closest("label")!.textContent === eachItem)!;
+        await input.click(radio);
+        await until("the Each item form", () => radio.checked);
+        const snippet = details()!.querySelector(
+          "[data-part=snippet]",
+        )!.textContent;
+        await input.click(details()!.querySelector("[data-part=insert]")!);
+        await until(
+          "the loop inserted with the popover closed",
+          () =>
+            popover() === null && editor.state.doc.toString().endsWith(snippet),
+        );
+        // The Preview renders the loop as one list item per creator.
+        const items = await until("the Preview's list items", () => {
+          const texts = [
+            ...page.previewPanel(view)!.querySelectorAll("li"),
+          ].map((item) => item.textContent.trim());
+          return names.every((name) => texts.includes(name)) && texts;
+        });
+        return { line, indexRows, values, snippet, items };
+      },
+      {
+        path,
+        label: run.m.workbench_view_fields(),
+        eachItem: run.m.workbench_fields_details_form_loop(),
+        names: ALPHA_CREATORS,
+      },
+    );
+    expect(result.indexRows).toBe(0);
+    expect(result.line).toContain(
+      "(3) Ada Personal, Erin Editor, ZotLit Research Collective",
+    );
+    expect(result.values).toEqual(ALPHA_CREATORS);
+    expect(result.snippet).toBe(
+      "{% for creator in zt.creators %}\n- {{ creator }}{% endfor %}",
+    );
+    expect(result.items).toEqual(expect.arrayContaining(ALPHA_CREATORS));
+  });
+
   // #1966: pinned in a wide leaf, the Fields Panel docks at the leading edge
   // beside the editor. It stays while the reader inserts, the action hides
   // and shows it without unpinning it, and the workspace keeps the pin, the

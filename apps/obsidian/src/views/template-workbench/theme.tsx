@@ -519,8 +519,19 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       close: "clickable-icon zt:shrink-0",
       value:
         "zt:max-h-40 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-faint zt:data-[state=empty]:italic",
+      /** A list's values, one per line and numbered. */
+      values:
+        "zt:flex zt:max-h-40 zt:flex-col zt:gap-1 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:text-green",
+      "values-item": "zt:flex zt:gap-2 zt:[overflow-wrap:anywhere]",
+      "values-index":
+        "zt:w-4 zt:shrink-0 zt:text-end zt:text-xs zt:leading-5 zt:tabular-nums zt:text-faint",
+      "values-text": "zt:min-w-0 zt:whitespace-pre-wrap",
       item: "zt:flex zt:flex-col zt:gap-0.5",
+      "item-header":
+        "zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1",
       label: "zt:text-xs zt:text-muted-foreground",
+      forms: "zt:ms-auto zt:flex zt:flex-wrap zt:gap-x-3 zt:text-xs",
+      form: "zt:inline-flex zt:cursor-pointer zt:items-center zt:gap-1 zt:text-muted-foreground zt:has-checked:text-foreground",
       path: "zt:font-mono zt:text-xs zt:break-all zt:text-muted-foreground",
       snippet:
         "zt:font-mono zt:text-xs zt:break-all zt:whitespace-pre-wrap zt:text-accent-foreground",

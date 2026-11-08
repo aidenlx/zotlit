@@ -32,6 +32,17 @@ export function snippetKindsFor(node: DisplayNode): SnippetKind[] {
   return ["output", "if-present"];
 }
 
+/**
+ * The forms a list or a list property goes into the note in, joined in one
+ * line and for each item, in the order {@link snippetKindsFor} offers them;
+ * none for a node that is not a list.
+ */
+export function listSnippetKinds(node: DisplayNode): SnippetKind[] {
+  return snippetKindsFor(node).filter(
+    (kind) => kind === "joined" || kind === "loop",
+  );
+}
+
 export function renderSnippet(
   node: DisplayNode,
   engine: TemplateEngine,
@@ -198,8 +209,11 @@ function outputResult(node: Exclude<DisplayNode, ListPropertyNode>): string {
   return isBacklink(node) && text !== "" ? asZoteroLink(text) : text;
 }
 
-/** Each item of a list as one line of the loop shows it: the loop's body for that item. */
-function listItemTexts(node: DisplayNode): string[] {
+/**
+ * Each item of a list, or of a list property, as one line of the loop shows
+ * it: the loop's body for that item. None for a node that is not a list.
+ */
+export function listItemTexts(node: DisplayNode): string[] {
   if (node.kind === "list-property") return [...node.values];
   const list = itemsOf(node);
   const property = listLineProperty(list);

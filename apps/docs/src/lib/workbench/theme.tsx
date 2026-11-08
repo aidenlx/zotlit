@@ -551,8 +551,18 @@ export const WEB_THEME: WorkbenchTheme = {
       close: cn(historyButton, "shrink-0"),
       value:
         "max-h-40 overflow-auto rounded-md border border-fd-border p-2 whitespace-pre-wrap [overflow-wrap:anywhere] text-emerald-700 dark:text-emerald-400 data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
+      /** A list's values, one per line and numbered. */
+      values:
+        "flex max-h-40 flex-col gap-1 overflow-auto rounded-md border border-fd-border p-2 text-emerald-700 dark:text-emerald-400",
+      "values-item": "flex gap-2 [overflow-wrap:anywhere]",
+      "values-index":
+        "w-4 shrink-0 text-end tabular-nums text-fd-muted-foreground",
+      "values-text": "min-w-0 whitespace-pre-wrap",
       item: "flex flex-col gap-0.5",
+      "item-header": "flex flex-wrap items-center gap-x-2 gap-y-1",
       label: "text-fd-muted-foreground",
+      forms: "ms-auto flex flex-wrap gap-x-3",
+      form: "inline-flex cursor-pointer items-center gap-1 text-fd-muted-foreground has-checked:text-fd-foreground",
       path: "font-mono break-all text-fd-muted-foreground",
       snippet: "font-mono break-all whitespace-pre-wrap text-fd-primary",
       result:

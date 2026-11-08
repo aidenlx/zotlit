@@ -219,6 +219,59 @@ describe("a list's preview and its loop line", () => {
     );
   });
 
+  // A cited item's alphabetically first property is an abstract the paper
+  // does not have.
+  it("pass over a property no item has a value for", () => {
+    const [node] = buildDisplayTree(
+      {
+        items: [
+          { abstract: "", title: "Why Most Findings Are False" },
+          { abstract: null, title: "Ten Simple Rules" },
+        ],
+      },
+      { expanded: new Set() },
+    );
+    expect(node).toMatchObject({
+      preview: "Why Most Findings Are False, Ten Simple Rules",
+    });
+    expect(renderSnippet(node!, "liquid", "loop")).toBe(
+      "{% for item in zt.items %}\n- {{ item.title }}{% endfor %}",
+    );
+  });
+
+  // A citation's alphabetically first property is the cited item, a record
+  // that would print `[object Object]`.
+  it("pass over a property whose values do not read as text", () => {
+    const [node] = buildDisplayTree(
+      {
+        citations: [
+          { item: { title: "Alpha" }, title: "Alpha" },
+          { item: { title: "Beta" }, title: "Beta" },
+        ],
+      },
+      { expanded: new Set() },
+    );
+    expect(node).toMatchObject({ preview: "Alpha, Beta" });
+    expect(renderSnippet(node!, "liquid", "loop")).toBe(
+      "{% for citation in zt.citations %}\n- {{ citation.title }}{% endfor %}",
+    );
+  });
+
+  it("prefer a property that reads as text for every item", () => {
+    const [node] = buildDisplayTree(
+      {
+        lines: [
+          { a: { nested: true }, b: "first" },
+          { a: "second", b: "third" },
+        ],
+      },
+      { expanded: new Set() },
+    );
+    expect(renderSnippet(node!, "liquid", "loop")).toBe(
+      "{% for line in zt.lines %}\n- {{ line.b }}{% endfor %}",
+    );
+  });
+
   it("show the item itself when every item reads as text", () => {
     const [node] = buildDisplayTree(
       { tags: ["physics", "methods"] },

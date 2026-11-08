@@ -30,7 +30,7 @@ import type {
   WorkbenchProblem,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import type { DisplayNode } from "@zotlit/workbench/explorer";
+import type { DisplayNode, SnippetKind } from "@zotlit/workbench/explorer";
 import {
   CITATION_EXAMPLE_IDS,
   DEFAULT_PARTIAL_CONTEXT,
@@ -1067,11 +1067,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return insertionTarget(this.#view.presentation.selection, this.#controller);
   }
 
-  /** Inserts the field `node` names at the editor's insertion target. */
-  /** With `focus: false`, the editor takes no focus: the Fields Panel keeps it. */
+  /**
+   * Inserts the field `node` names at the editor's insertion target.
+   * @param options.focus With `false`, the editor takes no focus: the Fields
+   * Panel keeps it.
+   * @param options.kind The form a list goes in; absent, the field's first
+   * form.
+   */
   insertTemplateField(
     node: DisplayNode,
-    options: { readonly focus: boolean } = { focus: true },
+    {
+      kind,
+      ...options
+    }: { readonly focus: boolean; readonly kind?: SnippetKind } = {
+      focus: true,
+    },
   ): boolean {
     if (this.#closed || this.#controller.readOnly) return false;
     const target = this.insertTarget;
@@ -1086,7 +1096,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         ? "json-e"
         : "template";
     const engine = this.#documentLanguage;
-    return this.insertField(fieldSnippet(node, mode, { engine }), options);
+    return this.insertField(
+      fieldSnippet(node, mode, { engine, kind }),
+      options,
+    );
   }
 
   insertField(

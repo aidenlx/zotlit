@@ -1,4 +1,9 @@
-import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
+import type {
+  DisplayNode,
+  SnippetKind,
+  TemplateEngine,
+  TreeState,
+} from "#/explorer/index";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { Effect } from "effect";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +20,7 @@ import type { ExplorerReader } from "./explorer-sections";
 import { DisplayTree } from "./explorer-tree";
 import type { DisplaySection, FieldRowState } from "./explorer-tree";
 import { FieldDetails, placeFieldDetails } from "./field-details";
+import type { FieldInsertOptions } from "./field-details";
 import { useFieldsPanelRows } from "./fields-panel";
 import { useTooltip, useWorkbenchHost } from "./host";
 import type {
@@ -71,11 +77,13 @@ export interface DataExplorerProps {
   /**
    * Resolves insertion against the receiving editor at action time; `false`
    * when the editor refused the field. With `keepOpen`, Shift kept the Fields
-   * Panel open for the next field, so the editor takes no focus.
+   * Panel open for the next field, so the editor takes no focus. `kind` is
+   * the form the reader chose for a list in its details; absent, the field
+   * goes in its first form.
    */
   onInsertNode?: (
     node: DisplayNode,
-    options: { readonly keepOpen: boolean },
+    options: FieldInsertOptions,
   ) => boolean | void;
   copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
@@ -148,15 +156,19 @@ export function DataExplorer({
   const insertField =
     onInsertNode ??
     (onInsert
-      ? (node: DisplayNode) => onInsert(fieldSnippet(node, mode, { engine }))
+      ? (node: DisplayNode, { kind }: FieldInsertOptions) =>
+          onInsert(fieldSnippet(node, mode, { engine, kind }))
       : undefined);
   // An insert closes the Fields Panel and leaves focus to the editor, at the
   // inserted text; Shift keeps the panel open for the next field.
   // It names the field it inserted to a screen reader.
   const insertNode =
     insertField &&
-    ((node: DisplayNode, keepOpen = false) => {
-      if (insertField(node, { keepOpen }) === false) return;
+    ((
+      node: DisplayNode,
+      { keepOpen, kind }: FieldInsertOptions = { keepOpen: false },
+    ) => {
+      if (insertField(node, { keepOpen, kind }) === false) return;
       host.notice(
         m.workbench_fields_inserted({ field: fieldLabel(node, labels) }),
       );
@@ -177,18 +189,23 @@ export function DataExplorer({
       ),
     );
   }, [data, reader]);
+  const panelRows = useFieldsPanelRows();
+  // The Fields Panel opens a list to its items' properties, never to one
+  // item's index; the standalone explorer keeps the items.
+  const lists = panelRows ? "shape" : "items";
   const visible = useMemo(() => {
     if (!data) return { nodes: [], matchedKeys: null };
     if (tree.filterQuery)
       return buildFilteredDisplayTree(data, tree.filterQuery, {
         collapsed: tree.filterCollapsed,
         aliases: labels,
+        lists,
       });
     return {
-      nodes: buildDisplayTree(data, { expanded: tree.expanded }),
+      nodes: buildDisplayTree(data, { expanded: tree.expanded, lists }),
       matchedKeys: null,
     };
-  }, [data, tree, labels]);
+  }, [data, tree, labels, lists]);
   const filtering = tree.filterQuery !== "";
   // A filter holds every section that still has a row open.
   const sections = useMemo<DisplaySection[]>(
@@ -202,7 +219,6 @@ export function DataExplorer({
       })),
     [visible, reader, filtering, collapsedSections],
   );
-  const panelRows = useFieldsPanelRows();
   const rows = useFieldRows({
     enabled: panelRows !== null,
     sections,
@@ -274,9 +290,12 @@ export function DataExplorer({
       escape.current = () => false;
     };
   });
-  const insertEntry = (entry: FieldEntry, keepOpen = false) => {
+  const insertEntry = (
+    entry: FieldEntry,
+    options: FieldInsertOptions = { keepOpen: false },
+  ) => {
     rows.close();
-    insertNode?.(entry.node, keepOpen);
+    insertNode?.(entry.node, options);
   };
   const copyEntry = (entry: FieldEntry, snippet: string) => {
     rows.close();
@@ -406,8 +425,9 @@ export function DataExplorer({
     </button>
   );
   const search = m[SEARCH_LABELS[root]]();
-  /** What an insert of `node` puts into the note. */
-  const snippetOf = (node: DisplayNode) => fieldSnippet(node, mode, { engine });
+  /** What an insert of `node` in the form `kind` puts into the note. */
+  const snippetOf = (node: DisplayNode, kind?: SnippetKind) =>
+    fieldSnippet(node, mode, { engine, kind });
   return (
     <section {...part("explorer")}>
       <div {...part("header")}>
@@ -476,7 +496,11 @@ export function DataExplorer({
             matchedKeys={visible.matchedKeys}
             onToggle={(key) => onNavigationChange(toggleNode(tree, key))}
             onToggleSection={filtering ? undefined : toggleSection}
-            onInsert={!disabled ? insertNode : undefined}
+            onInsert={
+              insertNode && !disabled
+                ? (node, keepOpen) => insertNode(node, { keepOpen })
+                : undefined
+            }
             onTemplateMenu={openTemplateMenu}
             onFieldContextMenu={openFieldContextMenu}
             rows={
@@ -504,13 +528,15 @@ export function DataExplorer({
           node={rows.open.node}
           label={rows.open.label}
           context={rows.open.context}
-          snippet={snippetOf(rows.open.node)}
+          snippet={(kind) => snippetOf(rows.open!.node, kind)}
           onInsert={
             insertNode && !disabled
-              ? (keepOpen) => insertEntry(rows.open!, keepOpen)
+              ? (options) => insertEntry(rows.open!, options)
               : undefined
           }
-          onCopy={() => copyEntry(rows.open!, snippetOf(rows.open!.node))}
+          onCopy={(kind) =>
+            copyEntry(rows.open!, snippetOf(rows.open!.node, kind))
+          }
           onClose={rows.close}
         />
       )}

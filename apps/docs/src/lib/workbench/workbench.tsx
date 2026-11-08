@@ -23,7 +23,7 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import type { DisplayNode } from "@zotlit/workbench/explorer";
+import type { DisplayNode, SnippetKind } from "@zotlit/workbench/explorer";
 import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { RenderDiagnostic } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
@@ -491,9 +491,15 @@ function WorkbenchSession({
   const insertion = useRef({ insert, mode: fieldMode });
   insertion.current = { insert, mode: fieldMode };
   const insertNode = useCallback(
-    (node: DisplayNode, { keepOpen }: { readonly keepOpen: boolean }) => {
+    (
+      node: DisplayNode,
+      {
+        keepOpen,
+        kind,
+      }: { readonly keepOpen: boolean; readonly kind?: SnippetKind },
+    ) => {
       const current = insertion.current;
-      current.insert(fieldSnippet(node, current.mode), !keepOpen);
+      current.insert(fieldSnippet(node, current.mode, { kind }), !keepOpen);
     },
     [],
   );

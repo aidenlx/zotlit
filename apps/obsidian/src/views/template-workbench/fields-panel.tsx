@@ -31,8 +31,8 @@ import { Explorer } from "@/views/template-data-explorer/Explorer";
 import { exportTarget } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import {
-  annotationKeyOfNode,
   ExplorerModelContext,
+  inNoteAnnotations,
   NO_PRESENTATION,
   toggleSections,
 } from "@/views/template-data-explorer/model";
@@ -256,20 +256,24 @@ export function makeFieldsPanelModel(
   };
 }
 
-/** The annotation example a row of the note root's `annotations` names. */
+/**
+ * The annotation example the note root's `annotations` row explores. The
+ * panel shows that list by its items' properties, with no row for one
+ * annotation, so the row explores the view's chosen annotation, else the
+ * Item's first; the view's "Choose annotation" picks another from there.
+ */
 function annotationOfNode(
   view: TemplateWorkbenchView,
   node: DisplayNode,
 ): string | null {
-  const key = annotationKeyOfNode(
-    view.registry.get(view.fields.state).root,
-    node,
+  const { root } = view.registry.get(view.fields.state);
+  if (!inNoteAnnotations(root, node, 1)) return null;
+  const { current, example } = view.registry.get(view.workbench.examples);
+  return (
+    current.find((entry) => entry.id === example?.id)?.id ??
+    current[0]?.id ??
+    null
   );
-  return key === null
-    ? null
-    : (view.registry
-        .get(view.workbench.examples)
-        .current.find((example) => example.root.key === key)?.id ?? null);
 }
 
 /** Shows `root` in the Fields panel of `view`. */
@@ -358,8 +362,8 @@ export function FieldsPanel({
           explorer={{
             copy: copyToClipboard,
             disabled: !canInsert,
-            onInsertNode: (node, { keepOpen }) =>
-              view.insertTemplateField(node, { focus: !keepOpen }),
+            onInsertNode: (node, { keepOpen, kind }) =>
+              view.insertTemplateField(node, { focus: !keepOpen, kind }),
             canExploreAnnotation: (node) =>
               annotationOfNode(view, node) !== null,
             onExploreAnnotation: (node) => {

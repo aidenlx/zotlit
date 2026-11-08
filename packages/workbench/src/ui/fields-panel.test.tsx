@@ -1,4 +1,5 @@
 import type { DisplayNode } from "#/explorer/index";
+import type { SnippetKind } from "#/explorer/index";
 import {
   act,
   cleanup,
@@ -12,6 +13,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DataExplorer } from "./data-explorer";
+import { fieldSnippet } from "./explorer-fields";
 import { fieldsActionAttributes } from "./fields-panel";
 import { useWorkbenchHost } from "./host";
 import { pressFieldsAction } from "./model";
@@ -21,6 +23,7 @@ import { SidePanels } from "./panels";
 import { mount } from "./test-host";
 
 import { initialTreeState } from "#/explorer/index";
+import { withText } from "#/explorer/test-records";
 
 afterEach(cleanup);
 
@@ -44,11 +47,13 @@ const PINNED: WorkbenchPanels = {
 function Fields({
   onInsertNode,
   disabled = false,
+  data = PAPER,
 }: {
   disabled?: boolean;
+  data?: Record<string, unknown>;
   onInsertNode: (
     node: DisplayNode,
-    options: { keepOpen: boolean },
+    options: { keepOpen: boolean; kind?: SnippetKind },
   ) => boolean | void;
 }) {
   const [collapsedSections, setCollapsedSections] = useState<
@@ -59,7 +64,7 @@ function Fields({
   return (
     <DataExplorer
       root="note"
-      data={PAPER}
+      data={data}
       copy={(text) => host.copy!(text)}
       collapsedSections={collapsedSections}
       onCollapsedSectionsChange={setCollapsedSections}
@@ -76,15 +81,19 @@ function open({
   refuse = false,
   disabled = false,
   panels = PREVIEW,
+  data,
 }: {
   size?: ViewSize;
   refuse?: boolean;
   disabled?: boolean;
   panels?: WorkbenchPanels;
+  data?: Record<string, unknown>;
 } = {}) {
   const viewSize = Atom.make<ViewSize | null>(size);
   const inserted: string[] = [];
   const keptOpen: boolean[] = [];
+  /** What each insert put into the note, as a host writes the field. */
+  const texts: string[] = [];
   const mounted = mount(
     <SidePanels
       panels={{
@@ -94,10 +103,12 @@ function open({
           content: (
             <Fields
               disabled={disabled}
-              onInsertNode={(node, { keepOpen }) => {
+              data={data}
+              onInsertNode={(node, { keepOpen, kind }) => {
                 if (refuse) return false;
                 inserted.push(node.key);
                 keptOpen.push(keepOpen);
+                texts.push(fieldSnippet(node, "template", { kind }));
                 return true;
               }}
             />
@@ -118,6 +129,7 @@ function open({
   return Object.assign(mounted, {
     inserted,
     keptOpen,
+    texts,
     resize: (next: ViewSize) => act(() => mounted.registry.set(viewSize, next)),
     pressAction: () =>
       act(() => pressFieldsAction(mounted.registry, mounted.model)),
@@ -535,6 +547,20 @@ describe.each(PRESENTATIONS)(
 );
 
 describe("a field row", () => {
+  it("marks a field with no value as empty for this item", () => {
+    using page = open({
+      data: { title: "Linked notes in practice", abstract: "", DOI: null },
+    });
+    page.pressAction();
+    for (const key of ["abstract", "DOI"]) {
+      const row = within(panel()!)
+        .getAllByRole("treeitem")
+        .find((item) => item.getAttribute("data-workbench-field") === key)!;
+      expect(row.textContent).toContain("Empty for this item");
+      expect(row.textContent).not.toContain("null");
+    }
+  });
+
   it("inserts from its Insert button, which draws the insert icon", () => {
     using page = open();
     page.pressAction();
@@ -665,6 +691,175 @@ describe("a nested field", () => {
       `Copied ${name}.`,
       `Inserted ${name}.`,
     ]);
+  });
+});
+
+/** A paper with a list of creators, a list of plain tags, and a list of files. */
+const LISTS = {
+  title: "Linked notes in practice",
+  authors: [
+    withText(
+      { family: "Ahrens", given: "Sönke", literal: null },
+      "Sönke Ahrens",
+    ),
+    withText(
+      { family: "Luhmann", given: "Niklas", literal: null },
+      "Niklas Luhmann",
+    ),
+  ],
+  tags: ["methods", "zettelkasten"],
+  attachments: [{ filename: "ahrens.pdf" }, { filename: "luhmann.pdf" }],
+};
+
+describe("a list field", () => {
+  const lists = { size: { width: 760, height: 800 }, data: LISTS };
+  /** The tree item of the field whose key is `key`. */
+  const item = (key: string) =>
+    within(panel()!)
+      .queryAllByRole("treeitem")
+      .find((row) => row.getAttribute("data-workbench-field") === key);
+  const line = (key: string) =>
+    item(key)!.querySelector<HTMLElement>(":scope > [data-part=row]")!;
+  const toggle = (key: string) =>
+    within(line(key)).queryByRole("button", { name: "Toggle node" });
+
+  it("shows its item count and every item in one line", () => {
+    using page = open(lists);
+    page.pressAction();
+    expect(line("authors").textContent).toContain("(2)");
+    expect(line("authors").textContent).toContain(
+      "Sönke Ahrens, Niklas Luhmann",
+    );
+    expect(line("tags").textContent).toContain("(2)");
+    expect(line("tags").textContent).toContain("methods, zettelkasten");
+  });
+
+  it("opens a list of records to its properties, and a list of plain values has no chevron", () => {
+    using page = open(lists);
+    page.pressAction();
+    expect(toggle("tags")).toBeNull();
+    fireEvent.click(toggle("authors")!);
+    // One sub-row for each property, with that property for every item.
+    expect(line("authors[].family").textContent).toContain("Ahrens, Luhmann");
+    expect(line("authors[].given").textContent).toContain("Sönke, Niklas");
+    // A property no item has a value for reads as empty.
+    expect(line("authors[].literal").textContent).toContain(
+      "Empty for this item",
+    );
+    // The list row keeps its items in view while it stands open.
+    expect(line("authors").textContent).toContain(
+      "Sönke Ahrens, Niklas Luhmann",
+    );
+    // No row names one item by its index.
+    const keys = within(panel()!)
+      .getAllByRole("treeitem")
+      .map((row) => row.getAttribute("data-workbench-field")!);
+    expect(keys.filter((key) => /\[\d+\]/.test(key))).toEqual([]);
+  });
+
+  /** The details of the field `key`, after a click on its row. */
+  const openDetails = (key: string, label: string) => {
+    fireEvent.click(line(key));
+    return within(details(label)!);
+  };
+  /** The forms the details offer, the chosen one marked. */
+  const forms = (region: ReturnType<typeof openDetails>) =>
+    region
+      .queryAllByRole("radio")
+      .map(
+        (radio) =>
+          `${radio.closest("label")!.textContent}${(radio as HTMLInputElement).checked ? " ✓" : ""}`,
+      );
+
+  it("shows the list's values in its details, one per line and numbered", () => {
+    using page = open(lists);
+    page.pressAction();
+    const region = openDetails("authors", "Authors");
+    const values = region.getByRole("list");
+    expect(
+      within(values)
+        .getAllByRole("listitem")
+        .map((value) => value.textContent),
+    ).toEqual(["1Sönke Ahrens", "2Niklas Luhmann"]);
+  });
+
+  it("puts a list into the note in one line or for each item, as the reader chooses", () => {
+    using page = open(lists);
+    page.pressAction();
+    let region = openDetails("authors", "Authors");
+    expect(
+      region.getByRole("radiogroup", { name: "In your note" }),
+    ).toBeTruthy();
+    expect(forms(region)).toEqual(["In one line ✓", "Each item"]);
+    expect(region.getByText('{{ zt.authors | join: ", " }}')).toBeTruthy();
+    expect(region.getByText("Sönke Ahrens, Niklas Luhmann")).toBeTruthy();
+    fireEvent.click(region.getByRole("radio", { name: "Each item" }));
+    expect(forms(region)).toEqual(["In one line", "Each item ✓"]);
+    const loop = "{% for author in zt.authors %}\n- {{ author }}{% endfor %}";
+    expect(
+      region.getByText((_, element) => element?.textContent === loop, {
+        selector: "code",
+      }),
+    ).toBeTruthy();
+    expect(
+      region.getByText(
+        (_, element) =>
+          element?.textContent === "- Sönke Ahrens\n- Niklas Luhmann",
+        { selector: "span" },
+      ),
+    ).toBeTruthy();
+    fireEvent.click(region.getByRole("button", { name: "Copy" }));
+    region = openDetails("authors", "Authors");
+    fireEvent.click(region.getByRole("radio", { name: "Each item" }));
+    fireEvent.click(region.getByRole("button", { name: "Insert" }), {
+      shiftKey: true,
+    });
+    expect(page.host.calls.copies).toEqual([loop]);
+    expect(page.texts).toEqual([loop]);
+  });
+
+  it("offers a list property in both forms", () => {
+    using page = open(lists);
+    page.pressAction();
+    fireEvent.click(toggle("authors")!);
+    const region = openDetails("authors[].family", "family");
+    expect(
+      within(region.getByRole("list"))
+        .getAllByRole("listitem")
+        .map((value) => value.textContent),
+    ).toEqual(["1Ahrens", "2Luhmann"]);
+    // A path names the list, then the property each item has.
+    expect(region.getByText("zt.authors → each item's family")).toBeTruthy();
+    expect(region.queryByText("zt.authors.family")).toBeNull();
+    expect(forms(region)).toEqual(["In one line ✓", "Each item"]);
+    fireEvent.click(region.getByRole("button", { name: "Insert" }), {
+      shiftKey: true,
+    });
+    expect(page.texts).toEqual([
+      '{{ zt.authors | map: "family" | join: ", " }}',
+    ]);
+  });
+
+  it("offers each item alone where the items do not read as text, and the row's Insert uses it", () => {
+    using page = open(lists);
+    page.pressAction();
+    const region = openDetails("attachments", "Attached files");
+    expect(forms(region)).toEqual(["Each item ✓"]);
+    fireEvent.click(
+      within(line("attachments")).getByRole("button", {
+        name: "Insert field",
+      }),
+      { shiftKey: true },
+    );
+    expect(page.texts).toEqual([
+      "{% for attachment in zt.attachments %}\n- {{ attachment.filename }}{% endfor %}",
+    ]);
+  });
+
+  it("offers no form choice for a field that is not a list", () => {
+    using page = open(lists);
+    page.pressAction();
+    expect(forms(openDetails("title", "Title"))).toEqual([]);
   });
 });
 

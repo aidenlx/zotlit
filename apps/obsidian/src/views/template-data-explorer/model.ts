@@ -261,6 +261,23 @@ export const toggleSections =
     )(session);
 
 /**
+ * Whether `node` stands in the note root's `annotations`: the list's own row
+ * at `depth` 1, or one annotation's row at `depth` 2.
+ */
+export function inNoteAnnotations(
+  root: TemplateRoot,
+  node: DisplayNode,
+  depth: 1 | 2,
+): boolean {
+  return (
+    root === "note" &&
+    node.kind === "value" &&
+    node.path.length === depth &&
+    node.path[0] === "annotations"
+  );
+}
+
+/**
  * The annotation key a row of the note root's `annotations` list names, or
  * null for any other row.
  */
@@ -269,9 +286,7 @@ export function annotationKeyOfNode(
   node: DisplayNode,
 ): string | null {
   if (
-    root !== "note" ||
-    node.path.length !== 2 ||
-    node.path[0] !== "annotations" ||
+    !inNoteAnnotations(root, node, 2) ||
     typeof node.path[1] !== "number" ||
     node.kind !== "value" ||
     !node.value ||

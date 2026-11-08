@@ -437,7 +437,9 @@ function ValueContent({
   node: ValueNode;
   labeled?: boolean;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("explorerTree");
+  const line = useContext(FieldRowsContext) !== null;
   if (node.valueType === "array" || node.valueType === "object") {
     const hint = labeled
       ? node.valueType === "array"
@@ -449,16 +451,26 @@ function ValueContent({
     return (
       <>
         {hint !== null && <span {...part("hint")}>{hint}</span>}
-        {node.children === undefined && node.preview !== undefined && (
-          <>
-            {hint !== null && " "}
-            <span {...part("placeholder")}>{node.preview}</span>
-          </>
-        )}
+        {/* A Fields Panel row keeps its items in view while it stands open. */}
+        {(node.children === undefined || line) &&
+          node.preview !== undefined && (
+            <>
+              {hint !== null && " "}
+              <span {...part("placeholder")}>{node.preview}</span>
+            </>
+          )}
       </>
     );
   }
   if (node.valueType === "getter") return <span {...part("hint")}>…</span>;
+  // A Fields Panel row marks a field this item has no value for.
+  if (
+    line &&
+    (node.valueType === "null" ||
+      node.valueType === "undefined" ||
+      node.value === "")
+  )
+    return <span {...part("placeholder")}>{m.workbench_fields_empty()}</span>;
   return <ScalarValue node={node} />;
 }
 
@@ -520,12 +532,15 @@ function PlaceholderRow({ node, label, cell }: RowProps<PlaceholderNode>) {
 
 /** A property every item of a list has, with the values of all items in one line. */
 function ListPropertyRow({ node, label, cell }: RowProps<ListPropertyNode>) {
+  const m = useWorkbenchMessages();
   const part = useParts("explorerTree");
   return (
     <>
       <KeyLabel node={node} label={label} cell={cell} />{" "}
       <span {...part("value")}>
-        <span {...part("placeholder")}>{node.preview}</span>
+        <span {...part("placeholder")}>
+          {node.preview === "" ? m.workbench_fields_empty() : node.preview}
+        </span>
       </span>
     </>
   );
