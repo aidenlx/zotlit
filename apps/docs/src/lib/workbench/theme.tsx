@@ -499,10 +499,12 @@ export const WEB_THEME: WorkbenchTheme = {
       empty: "text-fd-muted-foreground italic",
     },
     // The one row above the panels that names the item they all read: its
-    // name and badge first, then its controls at the trailing end.
+    // name and badge first, then its controls right after them at every
+    // width. A name too long for the row ends in an ellipsis, and the
+    // controls stay beside it.
     itemRow: {
-      row: "flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-fd-border px-3 py-1.5",
-      label: "min-w-0 flex-1 text-xs text-pretty text-fd-muted-foreground",
+      row: "flex min-w-0 shrink-0 items-center gap-x-2 border-b border-fd-border px-3 py-1.5",
+      label: "min-w-0 truncate text-xs text-fd-muted-foreground",
     },
     // The side panels: the model places them, so the classes only draw each
     // placement. Each handle is the 12 px gap between two parts

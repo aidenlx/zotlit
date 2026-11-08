@@ -6,14 +6,16 @@ import { useAtomValue } from "@effect/atom-react";
 import { citationExampleLabel, ItemRow } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { previewTarget } from "./preview-panel";
 import { selectionName } from "./selection";
-import { selectionBar } from "./theme";
 import type { TemplateWorkbenchView } from "./view";
 
-const { trigger } = selectionBar();
+/** The chooser keeps its width beside the name, which gives way first. */
+const trigger = cn(selectionControl({ kind: "trigger" }), "zt:shrink-0");
 
 export function ViewItemRow({ view }: { view: TemplateWorkbenchView }) {
   const { workbench, model } = view;
@@ -38,10 +40,15 @@ export function ViewItemRow({ view }: { view: TemplateWorkbenchView }) {
         annotationMode,
       });
   return (
-    <ItemRow label={name}>
+    <ItemRow
+      label={
+        // A name the row cuts short shows in full on hover.
+        name && <span {...tooltipAttrs(name)}>{name}</span>
+      }
+    >
       <button
         type="button"
-        className={trigger()}
+        className={trigger}
         onClick={() =>
           annotationMode ? view.startAnnotationChoice() : view.startItemChoice()
         }

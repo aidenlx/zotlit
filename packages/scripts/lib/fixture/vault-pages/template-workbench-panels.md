@@ -122,7 +122,9 @@ no other **Choose item**, and no other line names the Item. After each choice,
 the row, the Properties tab (`fixture-title`), the Name and folder tab
 (`books-personalAlpha2024`, then `books-sharedReadingBeta2022`), the Fields
 popover (`title`) and the Preview panel ("Book profile: …") all show the same
-Item.
+Item. **Choose item** stands right after the Item's name, not at the far edge
+of the row, in a wide view too. Make the view narrow: the name ends in "…",
+shows in full on hover, and **Choose item** stays beside it on the same line.
 
 ## Help in the view header
 

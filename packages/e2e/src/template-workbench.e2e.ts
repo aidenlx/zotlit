@@ -225,12 +225,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           actions: view?.containerEl.querySelectorAll(
             `.view-actions .view-action[aria-label="${label}"]`,
           ).length,
+          strip: page.tabStripInsets(view),
         };
       },
       { path, label: run.m.workbench_choose_item() },
       { what: "the Preview", ready: (found) => found !== null },
     );
-    expect(choosers).toEqual({ row: 1, view: 1, actions: 0 });
+    const { strip, ...counts } = choosers!;
+    expect(counts).toEqual({ row: 1, view: 1, actions: 0 });
+    // The editor's tab strip keeps the same room above its tabs, under the
+    // item row's rule, as below them, above its own rule.
+    expect(strip?.above).toBeGreaterThan(0);
+    expect(strip?.above).toBe(strip?.below);
 
     /** Opens Choose item from the item row, searches `title`, and picks it. */
     const choose = async (title: string) => {
@@ -347,6 +353,50 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await names("Preview", `Book profile: ${item.title}`);
     }
+
+    // #1962: in the wide view, Choose item follows the Item's name rather
+    // than the far edge of the row, and a name too long for a narrow row
+    // ends in an ellipsis while Choose item stays beside it on its line.
+    const layout = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label }) => {
+        const view = page.workbench({ path })!;
+        const row = page.itemRow(view)!;
+        const name = row.querySelector<HTMLElement>("p")!;
+        const trigger = Array.from(row.querySelectorAll("button")).find(
+          (button) => button.textContent.trim() === label,
+        )!;
+        // The name's text, not its box: a box that stretches across the row
+        // leaves its text at the start, a row away from the chooser.
+        const text = name.ownerDocument.createRange();
+        text.selectNodeContents(name);
+        const measure = () => {
+          const box = name.getBoundingClientRect();
+          const button = trigger.getBoundingClientRect();
+          return {
+            gap: Math.round(button.left - text.getBoundingClientRect().right),
+            sameLine:
+              Math.abs(
+                button.top + button.height / 2 - (box.top + box.height / 2),
+              ) < 2,
+            cut: name.scrollWidth > name.clientWidth,
+            room: Math.round(row.getBoundingClientRect().right - button.right),
+          };
+        };
+        const wide = measure();
+        row.style.width = "320px";
+        await page.until("the narrow row", () => row.offsetWidth === 320);
+        const narrow = measure();
+        row.style.width = "";
+        return { wide, narrow };
+      },
+      { path, label: run.m.workbench_choose_item() },
+    );
+    expect(layout.wide).toMatchObject({ sameLine: true, cut: false });
+    expect(layout.wide.gap).toBeLessThanOrEqual(8);
+    expect(layout.wide.room).toBeGreaterThan(200);
+    expect(layout.narrow).toMatchObject({ sameLine: true, cut: true });
+    expect(layout.narrow.room).toBeGreaterThanOrEqual(0);
   });
 
   // #1937: Obsidian opens a modal in the window that last took focus, and a
@@ -2336,6 +2386,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             editorPart.getBoundingClientRect().left,
           narrower: editorPart.offsetWidth < editorWidth,
           inert: el.querySelector("[inert]") !== null,
+          // Beside the docked panel, the tab strip keeps its room above
+          // the tabs, as it has without the panel.
+          strip: page.tabStripInsets(view),
         };
         // An insert while docked keeps the panel and hands the editor focus.
         await input.click(content);
@@ -2426,6 +2479,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       shown: "true",
     });
+    const { strip } = result.pinned as {
+      strip: { above: number; below: number } | null;
+    };
+    expect(strip?.above).toBeGreaterThan(0);
+    expect(strip?.above).toBe(strip?.below);
 
     // The saved state restores the docked panel at its width in a new leaf.
     await openLeaf(result.state);

@@ -1645,11 +1645,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       m.workbench_help(),
       () => this.#showHelpMenu(help),
     );
-    // Added after Help, so it sits to its left.
-    const preview = this.addAction(
-      "panel-right",
-      m.workbench_show_preview(),
-      () => this.togglePreview(),
+    // Added after Help, so it sits to its left. The eye stays the same
+    // while the action's pressed state says whether the Preview shows.
+    const preview = this.addAction("eye", m.workbench_show_preview(), () =>
+      this.togglePreview(),
     );
     // Added after the Preview's, so it sits to its left.
     // It opens the Fields popover and closes it again, or hides and shows
@@ -1795,7 +1794,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       item
         .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_preview())
-        .setIcon("panel-right")
+        .setIcon("eye")
         .setChecked(this.registry.get(this.workbench.panels).preview.shown)
         .onClick(() => this.togglePreview()),
     );

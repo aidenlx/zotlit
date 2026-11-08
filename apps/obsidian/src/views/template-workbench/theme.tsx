@@ -466,11 +466,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       empty: "metadata-input-longtext",
     },
     // The one row above the panels that names the item they all read: its
-    // name first, then its chooser at the trailing end.
+    // name first, then its chooser right after it at every width. A name too
+    // long for the row ends in an ellipsis, and the chooser stays beside it.
     itemRow: {
-      row: "zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:border-b zt:border-border zt:px-3 zt:py-1",
+      row: "zt:flex zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-x-2 zt:border-b zt:border-border zt:px-3 zt:py-1",
       label:
-        "zt:min-w-0 zt:flex-1 zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground",
+        "zt:min-w-0 zt:truncate zt:text-xs zt:leading-normal zt:text-muted-foreground",
     },
     // The side panels: the model places them, so the classes only draw each
     // placement. Each column draws the width the model holds it to, through
@@ -561,8 +562,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       reason: "zt:text-xs zt:text-muted-foreground",
     },
     tabBar: {
+      // The same room above the tabs as below them, so they stand clear of
+      // the item row's rule over the editor.
       "tab-bar":
-        "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:pb-2",
+        "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:py-2",
       tab: "clickable-icon zt:disabled:opacity-50 zt:shrink-0 zt:text-sm",
     },
     tabPanel: {

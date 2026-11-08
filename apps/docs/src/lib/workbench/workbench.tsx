@@ -10,9 +10,9 @@ import {
   Braces,
   Download,
   ExternalLink,
+  Eye,
   FilePlus2,
   FolderOpen,
-  PanelRight,
   Save,
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -694,7 +694,7 @@ function WorkbenchSession({
             className={PRESSED_TOGGLE}
             onClick={() => togglePreview()}
           >
-            <PanelRight aria-hidden className="rtl:-scale-x-100" />
+            <Eye aria-hidden />
             {m.workbench_show_preview()}
           </Button>
           <Button
