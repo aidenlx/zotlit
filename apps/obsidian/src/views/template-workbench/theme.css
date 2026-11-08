@@ -69,3 +69,12 @@
 .zt-root [data-chip-input] .multi-select-pill-remove-button:hover {
   color: var(--pill-color-remove-hover);
 }
+/* The pinned Fields pin wears the look Obsidian gives an active icon button
+   (`.clickable-icon.is-active`). The shared panel marks the state with
+   `data-state`, not with Obsidian's class, and Obsidian's unlayered
+   `.clickable-icon { color }` outranks a layered `zt:` utility, so this
+   unlayered rule draws it. */
+.zt-root button.clickable-icon[data-part="pin"][data-state="pinned"] {
+  color: var(--icon-color-active);
+  background-color: var(--background-modifier-hover);
+}
