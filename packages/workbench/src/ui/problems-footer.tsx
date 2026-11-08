@@ -269,6 +269,8 @@ export function ProblemsFooter({
   const panel = useRef<HTMLElement>(null);
   const [size, setSize] = useState(55);
   const drag = useRef<{ y: number; size: number; height: number } | null>(null);
+  // The divider says it is dragged, so the host can draw it as held.
+  const [dragging, setDragging] = useState(false);
   const headingId = useUniqueId();
   const bodyId = useUniqueId();
   const {
@@ -408,11 +410,13 @@ export function ProblemsFooter({
           aria-valuemax={85}
           aria-valuenow={Math.round(size)}
           aria-controls={selected || reportText || next ? bodyId : undefined}
+          data-dragging={dragging ? "" : undefined}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             const height =
               panel.current!.parentElement!.getBoundingClientRect().height;
             drag.current = { y: event.clientY, size, height };
+            setDragging(true);
             event.currentTarget.setPointerCapture(event.pointerId);
             event.preventDefault();
           }}
@@ -432,10 +436,12 @@ export function ProblemsFooter({
           }}
           onPointerUp={(event) => {
             drag.current = null;
+            setDragging(false);
             event.currentTarget.releasePointerCapture(event.pointerId);
           }}
           onLostPointerCapture={() => {
             drag.current = null;
+            setDragging(false);
           }}
           onKeyDown={(event) => {
             const next =

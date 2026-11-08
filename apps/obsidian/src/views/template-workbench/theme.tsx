@@ -11,6 +11,7 @@ import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
 import { obsidianPopupKeys } from "@/lib/field-popup";
+import { paneDivider } from "@/lib/pane-divider";
 import { themeHook } from "@/lib/theme-hooks";
 import { tv } from "@/lib/tw";
 import { cn } from "@/lib/utils";
@@ -77,9 +78,10 @@ export const templateWorkbenchButton =
  */
 /**
  * The width each column's handle takes between the column and the editor,
- * in pixels: the `zt:w-1` of the `edge` part below. The placement counts it.
+ * in pixels: the line of Obsidian's `--divider-width` that the `edge` part's
+ * pane divider shows; its strip overlaps the column. The placement counts it.
  */
-export const PANEL_HANDLE_WIDTH = 4;
+export const PANEL_HANDLE_WIDTH = 1;
 
 export const originatingNoteNotice = {
   root: "zt:mx-3 zt:mb-2 zt:flex zt:min-w-0 zt:flex-col zt:gap-2 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal",
@@ -482,9 +484,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       editor: "zt:min-h-0 zt:min-w-0 zt:flex-1",
       panel:
         "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--zt-panel-width) zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=below]:h-(--zt-panel-height)",
-      edge: "zt:w-1 zt:shrink-0 zt:cursor-col-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
-      split:
-        "zt:h-1 zt:shrink-0 zt:cursor-row-resize zt:bg-(--divider-color) zt:outline-none zt:hover:bg-(--interactive-accent) zt:focus-visible:bg-(--interactive-accent)",
+      // Each divider stands on the end or bottom edge of the pane before
+      // it, the Fields column or the editor, as Obsidian's between panes.
+      edge: paneDivider({ flow: "inline", edge: "end" }),
+      split: paneDivider({ flow: "inline", edge: "bottom" }),
     },
     // The Fields Panel in the Fields popover, which stands inset at the
     // view's right edge as tall as the view: it slides in from that edge,
@@ -719,8 +722,9 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     problemsFooter: {
       "problems-open": templateWorkbenchButton,
       // The divider sets the area's share; the host supplies native colors.
+      // Open, the divider draws the area's top line.
       problems:
-        "zt:relative zt:flex zt:min-h-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:p-3 zt:text-xs zt:leading-normal zt:data-[error]:border-s-2 zt:data-[error]:border-s-(--text-error)",
+        "zt:relative zt:flex zt:min-h-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:data-[state=open]:border-t-0 zt:p-3 zt:text-xs zt:leading-normal zt:data-[error]:border-s-2 zt:data-[error]:border-s-(--text-error)",
       "problems-summary":
         "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1",
       "problems-heading": "zt:font-semibold",
@@ -735,8 +739,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       // inside its own box instead of running past the pane.
       "problems-space":
         "zt:ms-auto zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
-      "problems-resize":
-        "zt:absolute zt:inset-x-0 zt:-top-1 zt:h-2 zt:cursor-row-resize zt:touch-none zt:select-none zt:hover:bg-(--background-modifier-border-hover) zt:focus-visible:bg-(--background-modifier-border-focus)",
+      // Its line runs over the area's error mark too, as the area's own top
+      // border did: `-start-0.5` is the mark's `border-s-2`.
+      "problems-resize": cn(
+        paneDivider({ flow: "overlay", edge: "top" }),
+        "zt:in-data-[error]:-start-0.5",
+      ),
       "problems-error-icon":
         "zt:flex zt:shrink-0 zt:items-center zt:text-(--text-error) zt:[&_svg]:size-4",
       "problems-toggle": selectionControl({ kind: "icon" }),

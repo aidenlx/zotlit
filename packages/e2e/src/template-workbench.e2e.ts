@@ -686,8 +686,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(preview.drawn).toBe(700);
     expect(preview.drawn).toBeGreaterThan(preview.container * 0.4);
     // The Preview grows until the editor keeps only its 360 px beside the
-    // column and its 4 px handle (#1952).
-    expect(preview.max).toBe(String(preview.container - 360 - 4));
+    // column and its handle's 1 px line (#1952).
+    expect(preview.max).toBe(String(preview.container - 360 - 1));
     expect(first.popover).toBe(false);
     // The reader opens the Fields popover; the saved state leaves it out.
     const saved = await obRun(
@@ -710,6 +710,103 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       fields: { pinned: false, hidden: false, width: 320 },
       preview: { ...panels.preview, height: 40 },
     });
+  });
+
+  // The panel dividers look as Obsidian's own divider does, and take no room
+  // beyond its 1 px line, so each column keeps the width the reader set.
+  it("draws the panel dividers as Obsidian's pane divider, at the panels' set widths", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) =>
+          app.workspace.detachLeavesOfType("zotlit-template-workbench"),
+        undefined,
+      ),
+    );
+    await suite.wideWindow(cleanup);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: {
+            file: path,
+            panels: {
+              fields: { pinned: true, hidden: false, width: 300 },
+              preview: { shown: true, width: 360, height: 40 },
+            },
+          },
+          active: true,
+        });
+      },
+      { path },
+    );
+    const read = await obRunUntil(
+      run.vaultId,
+      ({ page }, { path }) => {
+        const view = page.workbench({ path });
+        const container = view?.contentEl.querySelector<HTMLElement>(
+          '[data-part="panels"]',
+        );
+        const edges = Array.from(
+          container?.querySelectorAll<HTMLElement>('[data-part="edge"]') ?? [],
+        );
+        const own = view?.contentEl.ownerDocument.querySelector<HTMLElement>(
+          ".workspace-split.mod-left-split > .workspace-leaf-resize-handle",
+        );
+        if (!view || !container || edges.length !== 2 || !own) return null;
+        // The divider's look, its line on whichever side it stands.
+        const look = (element: HTMLElement) => {
+          const style = getComputedStyle(element);
+          const sides = ["Top", "Right", "Bottom", "Left"] as const;
+          const line = sides.find(
+            (side) => style.getPropertyValue(`border-${side}-width`) !== "0px",
+          )!;
+          return {
+            // The style's width, which a collapsed sidebar's divider keeps.
+            thickness: style.width,
+            line: style.getPropertyValue(`border-${line}-width`),
+            color: style.getPropertyValue(`border-${line}-color`),
+            background: style.backgroundColor,
+            transition: style.transition,
+            cursor: style.cursor,
+          };
+        };
+        const width = (selector: string) =>
+          container.querySelector(selector)!.getBoundingClientRect().width;
+        return JSON.stringify({
+          own: look(own),
+          edges: edges.map(look),
+          fields: width('[data-panel="fields"]'),
+          preview: width('[data-panel="preview"]'),
+          editor: width('[data-part="editor"]'),
+          container: container.getBoundingClientRect().width,
+        });
+      },
+      { path },
+      {
+        what: "the docked Fields Panel and the Preview beside the editor",
+        ready: (value) => value !== null,
+      },
+    );
+    const { own, edges, fields, preview, editor, container } = JSON.parse(
+      read!,
+    ) as {
+      own: unknown;
+      edges: unknown[];
+      fields: number;
+      preview: number;
+      editor: number;
+      container: number;
+    };
+    expect(edges).toEqual([own, own]);
+    expect([fields, preview]).toEqual([300, 360]);
+    // Each divider's 1 px line is all the room it takes from the editor.
+    expect(fields + 1 + editor + 1 + preview).toBeCloseTo(container, 1);
   });
 
   // #1954: the leaf's width places the Preview: under the editor in a narrow
