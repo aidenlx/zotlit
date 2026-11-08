@@ -1219,8 +1219,9 @@ describe("a Fields Panel with no place to insert", () => {
   it("says why it cannot insert, in its footer and beside the disabled Insert", () => {
     using page = open({ disabled: true });
     page.pressAction();
-    expect(within(panel()!).getAllByText(reason)).toHaveLength(1);
-    expect(within(panel()!).queryByText(/: insert$/)).toBeNull();
+    const hint = panel()!.querySelector("[data-part=keys-hint]")?.textContent;
+    expect(hint).toContain(reason);
+    expect(hint).not.toMatch(/: insert$/);
     clickRow("Title");
     const insert = within(details()!).getByRole("button", { name: "Insert" });
     expect(insert).toHaveProperty("disabled", true);

@@ -1694,6 +1694,7 @@
   "workbench_fields_empty": "Empty for this item",
   "workbench_fields_details_hint": "Select a row or press Enter: details · {insert}: insert",
   "workbench_fields_details_hint_view": "Select a row or press Enter: details",
+  "workbench_fields_details_hint_no_place": "{hint} · {reason}",
   "workbench_fields_choose_place": "Select a place in the template to insert a field.",
   "workbench_fields_insert_key": "Ctrl+Enter",
   "workbench_fields_insert_key_mac": "Command+Enter",

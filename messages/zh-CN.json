@@ -2126,6 +2126,7 @@
   "workbench_fields_empty": "此条目没有值",
   "workbench_fields_details_hint": "选择一行或按 Enter：查看详情 · {insert}：插入",
   "workbench_fields_details_hint_view": "选择一行或按 Enter：查看详情",
+  "workbench_fields_details_hint_no_place": "{hint} · {reason}",
   "workbench_fields_choose_place": "在模板中选择插入字段的位置。",
   "workbench_fields_insert_key": "Ctrl+Enter",
   "workbench_fields_insert_key_mac": "Command+Enter",
