@@ -2908,6 +2908,169 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
   });
 
+  // #1962: a collapse or an expand keeps the section header the reader
+  // pressed where it stood in the list. A stuck header stays in view as its
+  // section closes, and an expand never scrolls to a selection it shows
+  // again.
+  it("keeps a pressed section header in place in the Fields popover as its section collapses and expands", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) =>
+          app.workspace.detachLeavesOfType("zotlit-template-workbench"),
+        undefined,
+      ),
+    );
+    await suite.wideWindow(cleanup);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, key }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        const leaf = app.workspace.createLeafInParent(
+          app.workspace.rootSplit,
+          0,
+        );
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: { file: path, itemIndexedKey: key },
+          active: true,
+        });
+      },
+      { path, key: targetItem.key },
+    );
+    await obRunUntil(
+      run.vaultId,
+      ({ page }, { path }) =>
+        page.workbench({ path })?.contentEl.querySelector(".cm-content") !=
+        null,
+      { path },
+      { what: "the workbench with its editor" },
+    );
+
+    const walk = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label }) => {
+        const { until, trusted } = page;
+        const view = page.workbench({ path })!;
+        const el = view.contentEl;
+        const input = trusted(el.win);
+        const popover = () => page.fieldsPopover(view);
+        const action = view.containerEl.querySelector<HTMLElement>(
+          `.view-action[aria-label="${label}"]`,
+        )!;
+        if (!popover()) await input.click(action);
+        await until("the popover", () => popover() !== null);
+        const list = () =>
+          popover()!.querySelector<HTMLElement>(
+            "[data-part=explorer] > [data-part=body]",
+          )!;
+        const section = (id: string) =>
+          list().querySelector<HTMLElement>(
+            `[data-workbench-section="${id}"]`,
+          )!;
+        const header = (id: string) =>
+          section(id).querySelector<HTMLElement>(
+            ":scope > [data-part=section-heading] > button",
+          )!;
+        const expanded = (id: string) =>
+          header(id).getAttribute("aria-expanded") === "true";
+        const at = (id: string) =>
+          Math.round(
+            header(id).getBoundingClientRect().top -
+              list().getBoundingClientRect().top,
+          );
+        const settle = () =>
+          new Promise((resolve) => el.win.setTimeout(resolve, 300));
+        await until("the sections", () =>
+          list()?.querySelector("[data-workbench-section=reference]")
+            ? true
+            : undefined,
+        );
+        // Every section open, as a reader who has opened them all.
+        for (const id of ["common", "reference", "identifiers"]) {
+          if (!expanded(id)) header(id).click();
+          await until(`${id} open`, () => (expanded(id) ? true : undefined));
+        }
+        /** Presses the header of `id` and says how far it moved. */
+        const toggle = async (id: string) => {
+          const before = at(id);
+          const was = expanded(id);
+          await input.click(header(id), { x: 40, y: 10 });
+          await until(`${id} toggled`, () =>
+            expanded(id) !== was ? true : undefined,
+          );
+          await settle();
+          return { moved: at(id) - before, expanded: expanded(id) };
+        };
+
+        // Common fields scrolled until its header sticks to the top.
+        list().scrollTop = 0;
+        list().scrollTop = at("common") + 120;
+        await settle();
+        const stuck = at("common");
+        const collapseStuck = await toggle("common");
+        // A header the collapse moved out of view takes no second press.
+        const expandAgain =
+          at("common") >= 0 ? await toggle("common") : "out of view";
+
+        // The last Reference row selected, then hidden by a collapse. With
+        // Common fields open above, that row stands below the list's end once
+        // Reference opens again.
+        if (!expanded("common")) header("common").click();
+        await until("Common fields open", () =>
+          expanded("common") ? true : undefined,
+        );
+        // The section draws its rows again as it opens, so each read finds
+        // the row anew.
+        const lastRow = () =>
+          [
+            ...section("reference").querySelectorAll<HTMLElement>(
+              ":scope > [role=tree] > [data-workbench-field] > [data-part=row]",
+            ),
+          ].at(-1)!;
+        const last = lastRow();
+        last.scrollIntoView({ block: "center" });
+        await settle();
+        await input.click(last, { x: 20, y: 8 });
+        await until("the row selected", () =>
+          last.parentElement!.getAttribute("aria-selected") === "true"
+            ? true
+            : undefined,
+        );
+        await input.key("Escape");
+        await settle();
+        header("reference").click();
+        await until("Reference collapsed", () =>
+          expanded("reference") ? undefined : true,
+        );
+        list().scrollTop = 0;
+        await settle();
+        const expandHidden = await toggle("reference");
+        return JSON.stringify({
+          stuck,
+          collapseStuck,
+          expandAgain,
+          expandHidden: {
+            ...expandHidden,
+            top: list().scrollTop,
+            selectedBelow:
+              lastRow().getBoundingClientRect().bottom >
+              list().getBoundingClientRect().bottom,
+          },
+        });
+      },
+      { path, label: run.m.workbench_view_fields() },
+    );
+    expect(JSON.parse(walk)).toEqual({
+      stuck: 0,
+      collapseStuck: { moved: 0, expanded: false },
+      expandAgain: { moved: 0, expanded: true },
+      expandHidden: { moved: 0, expanded: true, top: 0, selectedBelow: true },
+    });
+  });
+
   // #1962: a workbench in the right-hand leaf of a split keeps a field's
   // details inside its own leaf, from the Fields popover and from the
   // docked Fields Panel, so they never cover the note beside it.
