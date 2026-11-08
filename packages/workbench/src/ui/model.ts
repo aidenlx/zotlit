@@ -68,6 +68,20 @@ import {
 import { isPartialContext } from "#/render/partial-preview";
 
 /** The template root a pane edits, which the Explorer and the preview follow. */
+/** One thing the Fields Panel tells a screen reader; `count` grows with each. */
+export interface FieldsStatus {
+  readonly text: string;
+  readonly count: number;
+}
+
+/** Tells a screen reader `text` through the panels' live region. */
+export const announceFields =
+  (text: string) =>
+  (last: FieldsStatus | null): FieldsStatus => ({
+    text,
+    count: (last?.count ?? 0) + 1,
+  });
+
 export type TemplateRoot = "note" | "annotation" | "filename" | "citation";
 
 /** What the preview shows: a new note, or an existing note after Update. */
@@ -338,6 +352,13 @@ export interface WorkbenchModel<
    */
   readonly fieldsFocus: Atom.Writable<boolean>;
   /**
+   * What the Fields Panel last told a screen reader, such as "Inserted
+   * Title.", with a count that tells a repeat from the last one. The panels
+   * read it out in a live region that outlasts the Fields popover. Never
+   * saved.
+   */
+  readonly fieldsStatus: Atom.Writable<FieldsStatus | null>;
+  /**
    * Makes an Item the choice. An Item the reader picked is the Citation set
    * they asked to see, so the built-in example that outranks it stands down.
    */
@@ -561,6 +582,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
       },
     ),
     fieldsFocus,
+    fieldsStatus: Atom.make<FieldsStatus | null>(null),
     pick: Atom.writable(
       (get) => get(item),
       (ctx, choice: WorkbenchItemChoice) => {
@@ -713,6 +735,7 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
     model.viewSize,
     model.fieldsPanel,
     model.fieldsFocus,
+    model.fieldsStatus,
     model.itemData,
     model.controller,
     model.document.source,

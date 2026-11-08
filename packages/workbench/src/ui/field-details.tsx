@@ -3,7 +3,7 @@
 // host's popover beside the panel; a narrow one in a bar of fixed height at
 // the panel's foot.
 import type { DisplayNode, SnippetKind } from "#/explorer/index";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Ref } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
@@ -50,6 +50,12 @@ export interface FieldDetailsContent {
   readonly onInsert?: (form: FieldForm, options: FieldInsertOptions) => void;
   readonly onCopy: (form: FieldForm) => void;
   readonly onClose: () => void;
+  /**
+   * Whether the details take focus on their first control as they open: the
+   * form choice, else Insert, else Copy. Enter opened them, so the keys
+   * reach their controls.
+   */
+  readonly takeFocus?: boolean;
 }
 
 /**
@@ -108,6 +114,7 @@ function DetailsBody({
   onInsert,
   onCopy,
   onClose,
+  takeFocus = false,
   titleId,
   surface,
   state,
@@ -134,13 +141,27 @@ function DetailsBody({
   const empty = m.workbench_fields_empty();
   // A list shows its values one per line, numbered.
   const values = isList(node) ? listItemTexts(node) : [];
+  const reasonId = useUniqueId();
+  const section = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (!takeFocus) return;
+    section.current
+      ?.querySelector<HTMLElement>(
+        "input:checked, [data-part=insert]:not(:disabled), [data-part=copy]",
+      )
+      ?.focus({ preventScroll: true });
+  }, [takeFocus]);
   const formLabels: Partial<Record<SnippetKind, string>> = {
     joined: m.workbench_fields_details_form_joined(),
     loop: m.workbench_fields_details_form_loop(),
   };
   return (
     <section
-      ref={surface}
+      ref={(element) => {
+        section.current = element;
+        if (typeof surface === "function") surface(element);
+        else if (surface) surface.current = element;
+      }}
       aria-labelledby={titleId}
       {...part("details", state)}
     >
@@ -220,6 +241,7 @@ function DetailsBody({
         <button
           type="button"
           disabled={!onInsert}
+          aria-describedby={onInsert ? undefined : reasonId}
           onClick={(event) => onInsert?.(form, { keepOpen: event.shiftKey })}
           {...part("insert")}
         >
@@ -231,6 +253,11 @@ function DetailsBody({
           {m.workbench_fields_copy()}
         </button>
       </div>
+      {!onInsert && (
+        <p id={reasonId} {...part("reason")}>
+          {m.workbench_fields_choose_place()}
+        </p>
+      )}
     </section>
   );
 }

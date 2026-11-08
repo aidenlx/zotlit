@@ -1,6 +1,11 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
-import { Menu, TextFileView as MockTextFileView } from "@mock/obsidian";
+import {
+  Menu,
+  resetMockPlatform,
+  setMockPlatform,
+  TextFileView as MockTextFileView,
+} from "@mock/obsidian";
 import type {
   ItemView as MockItemView,
   Scope as MockScope,
@@ -12,7 +17,7 @@ import { SuggestModal, TFile } from "obsidian";
 import type { App, Scope, ViewState, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   formatPlainTemplateDocument,
@@ -3816,6 +3821,9 @@ describe("the side panels of the Template Workbench View", () => {
 // #1943: Fields is the left side panel of the one view. It reads the view's
 // own Item and root, and inserts a field straight into the editor.
 describe("the Fields panel of the Template Workbench View", () => {
+  // The panel's key hint names Mod+Enter as the platform does.
+  beforeEach(() => setMockPlatform({ isMacOS: false }));
+  afterEach(resetMockPlatform);
   const actionOf = (view: TemplateWorkbenchView, title: string) =>
     (view as unknown as MockItemView).actions.find(
       (element) => element.getAttribute("aria-label") === title,

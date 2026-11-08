@@ -194,6 +194,10 @@ interface TreeNodeProps {
 interface FieldLabelCell {
   readonly nested: boolean;
   readonly chevron: ReactNode;
+  /** The id of the label text, which names the row. */
+  readonly labelId: string;
+  /** The id of the value, which describes the row. */
+  readonly valueId: string;
 }
 
 /** What a row draws: its node, the name it shows, and its label cell in a Fields Panel. */
@@ -224,13 +228,29 @@ function TreeNode({
   const chevron = isExpandable ? (
     <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />
   ) : null;
+  const rowId = rows?.idOf(node.key);
+  // A Fields Panel row reads as its visible label, its value as its
+  // description, without its controls or its nested rows.
+  const cell = rowId
+    ? {
+        nested,
+        chevron,
+        labelId: `${rowId}-label`,
+        valueId: `${rowId}-value`,
+      }
+    : undefined;
 
   return (
     <li
       role="treeitem"
       data-workbench-field={node.key}
       aria-expanded={isExpandable ? isExpanded : undefined}
-      {...(rows && { id: rows.idOf(node.key), "aria-selected": selected })}
+      {...(cell && {
+        id: rowId,
+        "aria-selected": selected,
+        "aria-labelledby": cell.labelId,
+        "aria-describedby": cell.valueId,
+      })}
     >
       <div
         {...part("row", isMatched ? "matched" : undefined)}
@@ -256,11 +276,7 @@ function TreeNode({
         {!rows && (chevron ?? <span {...part("spacer")} />)}
         {/* The host lays the key and the value out as a wrapping row: one line while both fit, the value on its own line beneath the key when it does not. The space between them survives in text content only. A Fields Panel row keeps one line, its label in a cell of its own with its chevron after it. */}
         <div {...part("contents", rows ? "line" : undefined)}>
-          <NodeRow
-            node={node}
-            label={label}
-            cell={rows ? { nested, chevron } : undefined}
-          />
+          <NodeRow node={node} label={label} cell={cell} />
         </div>
         <ActionCluster
           node={node}
@@ -399,12 +415,19 @@ function NodeRow({ node, label, cell }: RowProps) {
 function KeyLabel({ node, label, cell }: RowProps) {
   const part = useParts("explorerTree");
   const tooltip = useTooltip(formatPath(node.path, "zt"));
+  // The row's name is the label text alone, apart from the tooltip a host
+  // may draw as an aria-label.
+  const text = cell ? (
+    <span id={cell.labelId}>{label ?? node.label}</span>
+  ) : (
+    (label ?? node.label)
+  );
   const key =
     label === undefined ? (
-      <span {...part("key")}>{node.label}</span>
+      <span {...part("key")}>{text}</span>
     ) : (
       <span {...tooltip} {...part("key", "labeled")}>
-        {label}
+        {text}
       </span>
     );
   if (!cell) return key;
@@ -421,7 +444,7 @@ function ValueRow({ node, label, cell }: RowProps<ValueNode>) {
   return (
     <>
       <KeyLabel node={node} label={label} cell={cell} />{" "}
-      <span {...part("value")}>
+      <span id={cell?.valueId} {...part("value")}>
         <ValueContent node={node} labeled={label !== undefined} />
       </span>
     </>
@@ -508,7 +531,7 @@ function HelperRow({ node, label, cell }: RowProps<HelperNode>) {
   return (
     <>
       <KeyLabel node={node} label={label} cell={cell} />{" "}
-      <span {...part("value")}>
+      <span id={cell?.valueId} {...part("value")}>
         <span {...part("hint")}>{node.signatureHint}</span>{" "}
         {node.evaluated === null ? (
           <span {...part("null")}>null</span>
@@ -525,7 +548,7 @@ function PlaceholderRow({ node, label, cell }: RowProps<PlaceholderNode>) {
   return (
     <>
       <KeyLabel node={node} label={label} cell={cell} />{" "}
-      <span {...part("value")}>
+      <span id={cell?.valueId} {...part("value")}>
         <span {...part("placeholder")}>{node.reason}</span>
       </span>
     </>
@@ -539,7 +562,7 @@ function ListPropertyRow({ node, label, cell }: RowProps<ListPropertyNode>) {
   return (
     <>
       <KeyLabel node={node} label={label} cell={cell} />{" "}
-      <span {...part("value")}>
+      <span id={cell?.valueId} {...part("value")}>
         <span {...part("placeholder")}>
           {node.preview === "" ? m.workbench_fields_empty() : node.preview}
         </span>

@@ -31,6 +31,7 @@ import { composing } from "./ime";
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchMessageLabel } from "./messages";
+import { announceFields } from "./model";
 import type { TemplateRoot } from "./model";
 import { useIcon, useParts } from "./theme";
 
@@ -144,6 +145,12 @@ export function DataExplorer({
   const model = useWorkbenchModel();
   const startCopy = useAtomSet(model.copy(useUniqueId()));
   const setFields = useAtomSet(model.fieldsPanel);
+  const setStatus = useAtomSet(model.fieldsStatus);
+  /** Says `text` in a notice, and to a screen reader in the panels' live region. */
+  const announce = (text: string) => {
+    host.notice(text);
+    setStatus(announceFields(text));
+  };
   const part = useParts("dataExplorer");
   // An insert writes the field in its first form, or the form the reader
   // picked in its details, as the place the caret is in reads it. It closes
@@ -158,7 +165,7 @@ export function DataExplorer({
       form: FieldForm = fieldForm(node, insertion()),
     ) => {
       if (onInsert(form.snippet, options) === false) return;
-      host.notice(
+      announce(
         m.workbench_fields_inserted({ field: fieldLabel(node, labels) }),
       );
       if (!options.keepOpen) setFields("to-editor");
@@ -198,6 +205,8 @@ export function DataExplorer({
     };
   }, [data, tree, labels, lists]);
   const filtering = tree.filterQuery !== "";
+  /** Whether an insert can write now: the host takes fields and the editor has a place for one. */
+  const canInsert = insertNode !== undefined && !disabled;
   // A filter holds every section that still has a row open.
   const sections = useMemo<DisplaySection[]>(
     () =>
@@ -216,6 +225,12 @@ export function DataExplorer({
     labels,
     query: tree.filterQuery,
   });
+  // A search that matches nothing says so to a screen reader in the panel.
+  const noMatches =
+    panelRows !== null && data !== null && filtering && sections.length === 0;
+  useEffect(() => {
+    if (noMatches) setStatus(announceFields(m.workbench_fields_no_matches()));
+  }, [noMatches, setStatus, m]);
   const detailsSurface = useRef<HTMLElement>(null);
   const [openRow, setOpenRow] = useState<HTMLElement | null>(null);
   const viewSize = useAtomValue(model.viewSize);
@@ -293,9 +308,8 @@ export function DataExplorer({
     rows.close();
     startCopy({
       copy: copy(form.snippet),
-      copied: () =>
-        host.notice(m.workbench_fields_copied({ field: entry.label })),
-      failed: () => host.notice(m.workbench_field_copy_failed()),
+      copied: () => announce(m.workbench_fields_copied({ field: entry.label })),
+      failed: () => announce(m.workbench_field_copy_failed()),
     });
   };
   /** ↑/↓ move the selection; Enter shows or hides its details; Mod+Enter inserts it. */
@@ -311,8 +325,10 @@ export function DataExplorer({
     if (!entry) return;
     event.preventDefault();
     if (event.metaKey || event.ctrlKey) {
-      if (!disabled) insertEntry(entry);
-    } else rows.toggle(entry.node.key);
+      if (canInsert) insertEntry(entry);
+      else announce(m.workbench_fields_choose_place());
+      // Details Enter opens take focus, so the keys reach their controls.
+    } else rows.toggle(entry.node.key, { focus: true });
   };
   // Every section shown closed reads as collapsed; the button opens them all
   // then, and closes them all otherwise. A filter holds its sections open.
@@ -518,6 +534,7 @@ export function DataExplorer({
           label={rows.open.label}
           context={rows.open.context}
           forms={fieldForms(rows.open.node, insertion())}
+          takeFocus={rows.focusDetails}
           onInsert={
             insertNode && !disabled
               ? (form, options) => insertEntry(rows.open!, options, form)
@@ -532,7 +549,20 @@ export function DataExplorer({
       )}
       {panelRows && (
         <p {...part("keys-hint")}>
-          {m.workbench_fields_details_hint({ insert: insertShortcut() })}
+          {canInsert ? (
+            m.workbench_fields_details_hint({
+              insert:
+                host.fieldsAction?.insertShortcut ??
+                m.workbench_fields_insert_key(),
+            })
+          ) : (
+            // With no place to insert, the hint promises no insert and says why.
+            <>
+              {m.workbench_fields_details_hint_view()}
+              {" · "}
+              <span>{m.workbench_fields_choose_place()}</span>
+            </>
+          )}
         </p>
       )}
     </section>
@@ -599,12 +629,13 @@ function useFieldRows({
     query,
     selected: null as string | null,
     open: null as string | null,
+    focus: false,
   });
   let { selected, open } = state;
   if (state.query !== query) {
     selected = null;
     open = null;
-    setState({ query, selected, open });
+    setState({ query, selected, open, focus: false });
   }
   const entries = useMemo(
     () => (enabled ? fieldEntries(sections, labels) : []),
@@ -618,11 +649,13 @@ function useFieldRows({
   const [close] = useState(
     () => () => setState((last) => ({ ...last, open: null })),
   );
-  const toggle = (key: string) =>
+  /** Shows or hides the details of `key`; with `focus`, the details take focus as they open. */
+  const toggle = (key: string, { focus = false }: { focus?: boolean } = {}) =>
     setState((last) => ({
       ...last,
       selected: key,
       open: last.open === key ? null : key,
+      focus,
     }));
   const move = (step: 1 | -1) => {
     if (entries.length === 0) return;
@@ -645,6 +678,8 @@ function useFieldRows({
     entries,
     selected,
     open: openEntry,
+    /** Whether the open details take focus as they draw: Enter opened them. */
+    focusDetails: state.focus,
     idOf,
     close,
     toggle,
@@ -659,11 +694,4 @@ function rowElement(body: HTMLElement | null, key: string): HTMLElement | null {
     ...(body?.querySelectorAll<HTMLElement>("[data-workbench-field]") ?? []),
   ].find((element) => element.dataset.workbenchField === key);
   return item?.querySelector<HTMLElement>(":scope > [data-part=row]") ?? null;
-}
-
-/** The shortcut that inserts the selected field, as the platform names it. */
-function insertShortcut(): string {
-  return /Mac|iPhone|iPad/.test(navigator.userAgent)
-    ? "Command+Enter"
-    : "Ctrl+Enter";
 }

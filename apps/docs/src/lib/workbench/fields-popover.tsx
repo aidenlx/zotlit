@@ -16,6 +16,7 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Popover, PopoverContent } from "@/components/ui/popover";
+import { m } from "@/paraglide/messages.js";
 
 /** The gap between the popover and the panels' edges, in pixels. */
 const GAP = 8;
@@ -102,6 +103,12 @@ export function webFieldsAction(
     popoverId,
     focus: () => anchor.current?.focus({ preventScroll: true }),
     details: FieldDetailsPopover,
+    // Mod+Enter, as the reader's platform names the key.
+    get insertShortcut() {
+      return /Mac|iPhone|iPad/.test(navigator.userAgent)
+        ? m.workbench_fields_insert_key_mac()
+        : m.workbench_fields_insert_key();
+    },
   };
 }
 

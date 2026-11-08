@@ -113,6 +113,7 @@ export function SidePanels({
         )}
       </div>
       {panels.fields && <FieldsPanel {...panels.fields} />}
+      {panels.fields && <FieldsStatusRegion />}
       <SizeStatus
         labels={{
           fields: panels.fields?.label ?? "",
@@ -411,6 +412,23 @@ function useSizeText(): (
             columnLimit(panels, handle, size),
           ),
         });
+}
+
+/**
+ * The polite status that says what the Fields Panel last did, such as
+ * "Inserted Title.", in either presentation. It stands outside the Fields
+ * popover, so an insert that closes the popover is still heard. Each new
+ * status is a new node, so a repeat is heard again.
+ */
+function FieldsStatusRegion() {
+  const model = useWorkbenchModel();
+  const part = useParts("panels");
+  const status = useAtomValue(model.fieldsStatus);
+  return (
+    <div role="status" {...part("status")}>
+      {status && <span key={status.count}>{status.text}</span>}
+    </div>
+  );
 }
 
 /**

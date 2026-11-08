@@ -232,6 +232,7 @@ export function fakeHost(): FakeHost {
       popover: FakeFieldsPopover,
       popoverId: "fake-fields-panel",
       details: FakeFieldDetails,
+      insertShortcut: "Ctrl+Enter",
       focus: () => void host.calls.actionFocuses++,
     },
     persistence: {

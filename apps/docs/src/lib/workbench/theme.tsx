@@ -574,6 +574,7 @@ export const WEB_THEME: WorkbenchTheme = {
         "flex flex-wrap gap-2 in-data-[state=bar]:sticky in-data-[state=bar]:bottom-0 in-data-[state=bar]:-mx-2 in-data-[state=bar]:bg-fd-background in-data-[state=bar]:px-2 in-data-[state=bar]:py-2",
       insert: buttonVariants({ size: "xs" }),
       copy: buttonVariants({ variant: "outline", size: "xs" }),
+      reason: "text-fd-muted-foreground",
     },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",

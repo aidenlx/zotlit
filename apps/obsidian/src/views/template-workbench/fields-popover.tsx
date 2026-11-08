@@ -5,6 +5,7 @@
 // and focus back to the action; the shared Fields Panel draws the contents.
 // A field's details in a wide view are a PinnedPopover inside this one,
 // beside the panel and level with the field's row.
+import { Platform } from "obsidian";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
@@ -16,6 +17,7 @@ import type {
 
 import { PinnedPopover } from "@/components/pinned-popover";
 import type { PageKey, PinnedPopoverHandle } from "@/components/pinned-popover";
+import * as m from "@/lib/i18n/generated/messages";
 
 /**
  * Mod+Enter inserts the field selected in the panel's search, ahead of the
@@ -101,6 +103,12 @@ export function fieldsActionHost(
     popoverId,
     focus: () => anchor.current?.focus({ preventScroll: true }),
     details: FieldDetailsPopover,
+    // Mod+Enter, as Obsidian names the key on this platform.
+    get insertShortcut() {
+      return Platform.isMacOS
+        ? m.workbench_fields_insert_key_mac()
+        : m.workbench_fields_insert_key();
+    },
   };
 }
 
