@@ -1959,7 +1959,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       item
         .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_view_preview())
-        .setIcon("panel-right");
+        .setIcon("sliders-horizontal");
       this.#addPreviewSettings(item.setSubmenu());
     });
   }
