@@ -85,6 +85,21 @@ export function FieldDetails({
   const titleId = useUniqueId();
   const panel = useFieldsPanelRows()?.panel.current ?? null;
   const Popover = host?.fieldsAction?.details;
+  const bar = useRef<HTMLDivElement>(null);
+  // A bar too short for the details, such as at 200% zoom, opens on what the
+  // note gets: "In your note" and its snippet stand at its top, under the
+  // field's row the list keeps in view, and the rest scrolls.
+  const field = content.node.key;
+  useLayoutEffect(() => {
+    const box = bar.current;
+    if (!box || box.scrollHeight <= box.clientHeight) return;
+    const item = box.querySelector<HTMLElement>(
+      "[data-part=item][data-state=note]",
+    );
+    if (!item) return;
+    box.scrollTop +=
+      item.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  }, [field]);
   if (placement === "popover" && Popover && row && panel)
     return (
       <Popover
@@ -102,7 +117,7 @@ export function FieldDetails({
       </Popover>
     );
   return (
-    <div {...part("details-bar")}>
+    <div ref={bar} {...part("details-bar")}>
       <DetailsBody
         {...content}
         titleId={titleId}

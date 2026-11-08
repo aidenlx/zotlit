@@ -196,7 +196,8 @@ export const WEB_THEME: WorkbenchTheme = {
       search:
         "h-7 min-w-0 flex-1 rounded-md border border-fd-border bg-fd-background px-2 text-xs placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-fd-ring",
       "sections-toggle": cn(historyButton, "shrink-0"),
-      body: "min-h-0 flex-1 overflow-auto overscroll-contain",
+      /** Never shorter than a sticky section header and one whole row. */
+      body: "min-h-18 flex-1 overflow-auto overscroll-contain",
       "keys-hint":
         "-mx-2 -mb-2 shrink-0 border-t border-fd-border px-3 py-1.5 text-xs text-fd-muted-foreground",
       empty: "text-fd-muted-foreground text-xs",
@@ -542,9 +543,12 @@ export const WEB_THEME: WorkbenchTheme = {
       body: "flex min-h-0 flex-1 flex-col overflow-auto",
     },
     fieldDetails: {
-      /** A fixed height at the panel's foot, so the list above never moves. */
+      /**
+       * A fixed height at the panel's foot, so the list above never moves; in
+       * a short panel it gives way to the list, which keeps one whole row.
+       */
       "details-bar":
-        "-mx-2 h-48 max-h-1/2 shrink-0 overflow-y-auto border-t border-fd-border bg-fd-background",
+        "-mx-2 h-48 max-h-1/2 overflow-y-auto border-t border-fd-border bg-fd-background",
       details:
         "flex flex-col gap-3 p-3 text-xs data-[state=bar]:gap-2 data-[state=bar]:p-2 data-[state=popover]:max-h-(--available-height) data-[state=popover]:overflow-y-auto data-[state=popover]:rounded-lg data-[state=popover]:bg-fd-popover data-[state=popover]:text-fd-popover-foreground data-[state=popover]:shadow-lg data-[state=popover]:ring-1 data-[state=popover]:ring-fd-border",
       header: "flex items-start gap-1",

@@ -310,7 +310,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:mx-3 zt:flex zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-1",
       search: "zt:w-auto zt:min-w-0 zt:flex-1",
       "sections-toggle": "clickable-icon zt:shrink-0",
-      body: "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:overscroll-contain zt:px-2 zt:pb-3",
+      /** Never shorter than a sticky section header and one whole row. */
+      body: "zt:min-h-18 zt:flex-1 zt:overflow-auto zt:overscroll-contain zt:px-2 zt:pb-3",
       "keys-hint":
         "zt:shrink-0 zt:border-t zt:border-border zt:px-3 zt:py-1.5 zt:text-xs zt:text-muted-foreground",
       empty:
@@ -513,10 +514,11 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     fieldDetails: {
       /**
        * A fixed height at the panel's foot, so the list above never moves; in
-       * a short panel, no more than half of it, so the list keeps the rest.
+       * a short panel, no more than half of it, and it gives way to the list
+       * first, which keeps one whole row under its sticky section header.
        */
       "details-bar":
-        "zt:h-48 zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto zt:border-t zt:border-border zt:bg-(--background-primary)",
+        "zt:h-48 zt:max-h-1/2 zt:overflow-y-auto zt:border-t zt:border-border zt:bg-(--background-primary)",
       details:
         "zt:flex zt:flex-col zt:gap-3 zt:p-3 zt:text-sm zt:data-[state=bar]:gap-2 zt:data-[state=bar]:p-2 zt:data-[state=popover]:max-h-(--zt-pinned-max-height) zt:data-[state=popover]:w-72 zt:data-[state=popover]:overflow-y-auto zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-primary) zt:data-[state=popover]:shadow-(--shadow-l)",
       header: "zt:flex zt:items-start zt:gap-1",

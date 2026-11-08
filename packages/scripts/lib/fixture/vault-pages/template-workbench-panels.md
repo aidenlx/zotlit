@@ -423,10 +423,12 @@ Expected: in step 2 the details open in a bar of fixed height at the foot of
 the Fields popover, above the line "Select a row or press Enter: details ·
 Ctrl+Enter: insert" ("Command+Enter" on macOS). The bar shows the details of the last
 row you selected, and the rows above it do not move. In step 3 the bar stays
-where it is. In step 4 the bar takes no more than half of the panel, so the
-field list keeps at least one whole row, and the bar scrolls to show
-**In your note** and its snippet. The web Workbench does the same steps, with
-the same outcome.
+where it is. In step 4 the bar takes no more than half of the panel and
+gives way to the field list: the list keeps the whole **Title** row under
+the sticky "Common fields" header, not a cut strip of it. The bar opens on
+**In your note**, with `{{ zt.title }}` and its result above **Insert** and
+**Copy**; the field's name and value are above it, and the bar scrolls to
+them. The web Workbench does the same steps, with the same outcome.
 
 ## A field's text follows the place it goes to
 
