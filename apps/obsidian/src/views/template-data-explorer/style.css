@@ -24,9 +24,13 @@
   @apply zt:h-auto zt:w-full zt:justify-start zt:gap-1 zt:px-1 zt:py-1 zt:text-xs zt:leading-normal zt:font-semibold zt:whitespace-normal;
 }
 
+/* A search holds every section open: the header keeps its full ink, and only
+   its chevron steps back. Obsidian's unlayered stylesheet dims an
+   `aria-disabled` button (measured: opacity 0.4), and a layered `zt:`
+   utility cannot outrank it, so this unlayered rule restores the opacity. */
 .zt-template-data-explorer
   button[data-part="section-header"][aria-disabled="true"] {
-  @apply zt:cursor-default;
+  @apply zt:cursor-default zt:opacity-100;
 }
 
 .zt-template-data-explorer [data-part="group"] {

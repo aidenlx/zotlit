@@ -3,6 +3,7 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { Effect } from "effect";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -79,12 +80,6 @@ export interface DataExplorerProps {
   copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
-  /**
-   * Draws the button that collapses or expands every section, trailing the
-   * field search. A host that offers it elsewhere, such as a view action,
-   * leaves it out.
-   */
-  sectionsToggle?: boolean;
 }
 
 /** The name each root goes by in the Explorer's header. */
@@ -124,7 +119,6 @@ export function DataExplorer({
   copy,
   onExploreAnnotation,
   canExploreAnnotation,
-  sectionsToggle = false,
 }: DataExplorerProps) {
   const body = useRef<HTMLDivElement>(null);
   const bodyId = useUniqueId();
@@ -395,6 +389,22 @@ export function DataExplorer({
       ...menuEntries(node),
     });
   };
+  const sectionsButton = (
+    <button
+      type="button"
+      aria-label={sectionsLabel}
+      disabled={filtering || sectionIds.length === 0}
+      onClick={() =>
+        onCollapsedSectionsChange(
+          allCollapsed ? new Set() : new Set(sectionIds),
+        )
+      }
+      {...sectionsTooltip}
+      {...part("sections-toggle")}
+    >
+      {icon(allCollapsed ? "expand-all" : "collapse-all")}
+    </button>
+  );
   const search = m[SEARCH_LABELS[root]]();
   /** What an insert of `node` puts into the note. */
   const snippetOf = (node: DisplayNode) => fieldSnippet(node, mode, { engine });
@@ -425,23 +435,10 @@ export function DataExplorer({
             onNavigationChange(setFilter(tree, event.currentTarget.value))
           }
         />
-        {sectionsToggle && (
-          <button
-            type="button"
-            aria-label={sectionsLabel}
-            disabled={filtering || sectionIds.length === 0}
-            onClick={() =>
-              onCollapsedSectionsChange(
-                allCollapsed ? new Set() : new Set(sectionIds),
-              )
-            }
-            {...sectionsTooltip}
-            {...part("sections-toggle")}
-          >
-            {icon(allCollapsed ? "expand-all" : "collapse-all")}
-          </button>
-        )}
       </div>
+      {/* The Fields Panel's header holds the button that collapses or
+          expands every section. */}
+      {panelRows?.actions && createPortal(sectionsButton, panelRows.actions)}
       <div
         ref={body}
         id={bodyId}
