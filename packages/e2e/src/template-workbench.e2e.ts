@@ -1823,6 +1823,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(JSON.parse(await walk(false))).toEqual(expected(false));
   });
 
+  /** The creators of "Alpha of the personal library", from the Fixture Spec. */
+  const ALPHA_CREATORS = [
+    "Ada Personal",
+    "Erin Editor",
+    "ZotLit Research Collective",
+  ];
+
   // #1969: a list goes into the note for every item. Chosen as "Each item"
   // in its details, it writes one Markdown list line per item, which the
   // Preview shows as one list item each.
@@ -1868,7 +1875,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     const result = await obRun(
       run.vaultId,
-      async ({ page }, { path, label, eachItem }) => {
+      async ({ page }, { path, label, eachItem, names }) => {
         const { until, trusted } = page;
         const view = page.workbench({ path })!;
         const el = view.contentEl;
@@ -1939,30 +1946,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const texts = [
             ...page.previewPanel(view)!.querySelectorAll("li"),
           ].map((item) => item.textContent.trim());
-          return values.every((value) => texts.includes(value)) && texts;
+          return names.every((name) => texts.includes(name)) && texts;
         });
-        return {
-          line,
-          indexRows,
-          values,
-          snippet,
-          listed: values.filter((value) => items.includes(value)),
-        };
+        return { line, indexRows, values, snippet, items };
       },
       {
         path,
         label: run.m.workbench_view_fields(),
         eachItem: run.m.workbench_fields_details_form_loop(),
+        names: ALPHA_CREATORS,
       },
     );
     expect(result.indexRows).toBe(0);
-    expect(result.values.length).toBeGreaterThan(1);
-    expect(result.line).toContain(`(${result.values.length})`);
-    expect(result.line).toContain(result.values.join(", "));
+    expect(result.line).toContain(
+      "(3) Ada Personal, Erin Editor, ZotLit Research Collective",
+    );
+    expect(result.values).toEqual(ALPHA_CREATORS);
     expect(result.snippet).toBe(
       "{% for creator in zt.creators %}\n- {{ creator }}{% endfor %}",
     );
-    expect(result.listed).toEqual(result.values);
+    expect(result.items).toEqual(expect.arrayContaining(ALPHA_CREATORS));
   });
 
   // #1966: pinned in a wide leaf, the Fields Panel docks at the leading edge

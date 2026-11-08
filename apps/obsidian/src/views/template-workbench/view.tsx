@@ -1067,9 +1067,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return insertionTarget(this.#view.presentation.selection, this.#controller);
   }
 
-  /** Inserts the field `node` names at the editor's insertion target. */
-  /** With `focus: false`, the editor takes no focus: the Fields Panel keeps it. */
-  /** `kind` is the form a list goes in; absent, the field's first form. */
+  /**
+   * Inserts the field `node` names at the editor's insertion target.
+   * @param options.focus With `false`, the editor takes no focus: the Fields
+   * Panel keeps it.
+   * @param options.kind The form a list goes in; absent, the field's first
+   * form.
+   */
   insertTemplateField(
     node: DisplayNode,
     {

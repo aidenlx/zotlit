@@ -32,6 +32,7 @@ import { exportTarget } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import {
   ExplorerModelContext,
+  inNoteAnnotations,
   NO_PRESENTATION,
   toggleSections,
 } from "@/views/template-data-explorer/model";
@@ -266,13 +267,7 @@ function annotationOfNode(
   node: DisplayNode,
 ): string | null {
   const { root } = view.registry.get(view.fields.state);
-  if (
-    root !== "note" ||
-    node.kind !== "value" ||
-    node.path.length !== 1 ||
-    node.path[0] !== "annotations"
-  )
-    return null;
+  if (!inNoteAnnotations(root, node, 1)) return null;
   const { current, example } = view.registry.get(view.workbench.examples);
   return (
     current.find((entry) => entry.id === example?.id)?.id ??
