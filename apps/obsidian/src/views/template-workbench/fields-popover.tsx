@@ -98,11 +98,15 @@ export function fieldsActionHost(
       </PinnedPopover>
     );
   }
+  /** A field's details, held inside this leaf's view. */
+  function FieldDetails(props: WorkbenchFieldDetailsProps) {
+    return <FieldDetailsPopover {...props} view={view} />;
+  }
   return {
     popover: FieldsPopover,
     popoverId,
     focus: () => anchor.current?.focus({ preventScroll: true }),
-    details: FieldDetailsPopover,
+    details: FieldDetails,
     // Mod+Enter, as Obsidian names the key on this platform.
     get insertShortcut() {
       return Platform.isMacOS
@@ -113,9 +117,10 @@ export function fieldsActionHost(
 }
 
 /**
- * A field's details beside the Fields Panel. It opens as it mounts and leaves
- * focus in the panel's search; its Scope takes Escape before the Fields
- * popover's, and a press on its row stays the row's, which toggles it.
+ * A field's details beside the Fields Panel, inside `view`, so they never
+ * cover a neighbouring leaf. It opens as it mounts; its Scope takes Escape
+ * before the Fields popover's, and a press on its row stays the row's, which
+ * toggles it.
  */
 function FieldDetailsPopover({
   anchor,
@@ -123,7 +128,10 @@ function FieldDetailsPopover({
   onClose,
   labelledBy,
   children,
-}: WorkbenchFieldDetailsProps) {
+  view,
+}: WorkbenchFieldDetailsProps & {
+  readonly view: RefObject<HTMLElement | null>;
+}) {
   const handle = useRef<PinnedPopoverHandle>(null);
   const [row] = useState(() => ({ current: anchor }));
   const [beside] = useState(() => ({ current: panel }));
@@ -143,6 +151,7 @@ function FieldDetailsPopover({
     <PinnedPopover
       anchor={row}
       beside={beside}
+      within={view}
       handle={handle}
       initialFocus={false}
       // Its Scope stands over the Fields popover's: the panel's keys pass it.
