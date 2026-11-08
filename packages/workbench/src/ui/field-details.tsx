@@ -17,7 +17,7 @@ import { useWorkbenchMessages } from "./messages";
 import type { ViewSize } from "./panel-layout";
 import { useIcon, useParts } from "./theme";
 
-import { formatPath, listItemTexts } from "#/explorer/index";
+import { formatPath, isList, listItemTexts } from "#/explorer/index";
 
 /**
  * The narrowest view, in pixels, that shows a field's details in a popover
@@ -287,14 +287,6 @@ function DetailsBody({
         </p>
       )}
     </section>
-  );
-}
-
-/** A list, or a property of a list's items: its values show one per line. */
-function isList(node: DisplayNode): boolean {
-  return (
-    node.kind === "list-property" ||
-    (node.kind === "value" && node.valueType === "array")
   );
 }
 

@@ -12,7 +12,7 @@ import type { WorkbenchMessages } from "./generated/messages";
 import type { WorkbenchMessageLabel } from "./messages";
 import type { TemplateRoot } from "./model";
 
-import { buildDisplayTree } from "#/explorer/index";
+import { buildDisplayTree, listPropertiesOf } from "#/explorer/index";
 
 export type ExplorerSectionId =
   | "common"
@@ -233,29 +233,30 @@ export function fieldLabel(
 }
 
 /**
- * The names the reader sees for the properties of a list's items, by their
- * row keys (`annotations[].comment`): the label of the field each property
- * is, where a label exists. The items of an item's `annotations` take the
- * annotation's labels.
+ * The names the reader sees for the properties of the items of the top-level
+ * lists in `nodes`, by their row keys (`annotations[].comment`): the label
+ * of the field each property is, where a label exists. The items of a
+ * note's `annotations` take the annotation's labels.
  */
 export function listPropertyLabels(
-  data: Record<string, unknown>,
+  nodes: readonly DisplayNode[],
   reader: ExplorerReader,
 ): [string, string][] {
-  const lists = buildDisplayTree(data, { expanded: new Set() })
-    .filter((node) => node.kind === "value" && node.valueType === "array")
-    .map((node) => node.key);
-  return buildDisplayTree(data, { expanded: new Set(lists), lists: "shape" })
-    .flatMap((node) => (node.kind === "value" && node.children) || [])
+  return nodes
+    .flatMap(listPropertiesOf)
     .flatMap((child): [string, string][] => {
-      if (child.kind !== "list-property") return [];
       const root =
-        reader.root === "note" && child.key.startsWith("annotations[]")
+        reader.root === "note" && isNoteAnnotations(child.list)
           ? "annotation"
           : reader.root;
       const label = fieldLabel(child.property, { ...reader, root });
       return label === child.property ? [] : [[child.key, label]];
     });
+}
+
+/** The note's own list of annotations, whose items are annotations. */
+function isNoteAnnotations(list: DisplayNode["path"]): boolean {
+  return list.length === 1 && list[0] === "annotations";
 }
 
 /** Every section id a root can show, in display order. */

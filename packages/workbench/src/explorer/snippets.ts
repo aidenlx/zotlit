@@ -3,11 +3,9 @@
 import { formatAccessorPath, isAccessorIdentifier } from "./accessor-path";
 import type { TemplatePathSegment } from "./accessor-path";
 import type { DisplayNode, ListPropertyNode } from "./display-tree";
-import { readList } from "./list-items";
+import { JOIN_SEPARATOR, readList } from "./list-items";
 import { coerceToString } from "./string-coercion";
 
-/** What separates the items of a list joined in one line. */
-const JOIN_SEPARATOR = ", ";
 /** What starts each item's line in the loop form: a Markdown list line. */
 const LIST_LINE = "- ";
 
@@ -25,7 +23,7 @@ export type SnippetKind = "output" | "if-present" | "loop" | "joined";
 export function snippetKindsFor(node: DisplayNode): SnippetKind[] {
   // A backlink's Markdown link takes a loop to repeat; a join would list bare URLs.
   if (node.kind === "list-property")
-    return isBacklink(node.property) ? ["loop"] : ["joined", "loop"];
+    return node.property === BACKLINK ? ["loop"] : ["joined", "loop"];
   if (node.kind === "helper" || node.kind === "placeholder") {
     return ["output", "if-present"];
   }
@@ -54,7 +52,7 @@ export function renderSnippet(
   if (node.kind === "list-property")
     return listPropertySnippet(node, engine, kind);
   const accessor = formatAccessorPath(node.path, "zt");
-  const show = showOf(node.kind === "value" ? node.path.at(-1) : undefined);
+  const show = showOfNode(node);
   switch (kind) {
     case "output":
       return show(interpolate(engine, callForm(node, engine, accessor)));
@@ -101,15 +99,18 @@ function listPropertySnippet(
  * so its snippet is the Markdown link a note can follow, not the raw URL. It
  * names the field's own key, or the property each line of a list shows.
  */
-function isBacklink(key: TemplatePathSegment | undefined): boolean {
-  return key === "backlink";
-}
+const BACKLINK = "backlink";
 
 /** How a value of the field `key` shows in the note: a backlink as its Markdown link. */
 function showOf(
   key: TemplatePathSegment | undefined,
 ): (output: string) => string {
-  return isBacklink(key) ? asZoteroLink : (output) => output;
+  return key === BACKLINK ? asZoteroLink : (output) => output;
+}
+
+/** How a node's own value shows in the note, by the key of the field it is. */
+function showOfNode(node: DisplayNode): (output: string) => string {
+  return showOf(node.kind === "value" ? node.path.at(-1) : undefined);
 }
 
 function asZoteroLink(output: string): string {
@@ -226,9 +227,7 @@ export function outputText(
 
 function outputResult(node: Exclude<DisplayNode, ListPropertyNode>): string {
   const text = outputText(node);
-  return node.kind === "value" && isBacklink(node.path.at(-1)) && text !== ""
-    ? asZoteroLink(text)
-    : text;
+  return text === "" ? text : showOfNode(node)(text);
 }
 
 /** The key each line of a list shows: the list property, or the property the list's lines read. */

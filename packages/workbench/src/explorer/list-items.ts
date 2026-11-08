@@ -1,7 +1,19 @@
 // How a list's items read in a note: the one source for the list preview, the list shape and the list snippets.
 
+import type { DisplayNode } from "./display-tree";
 import { inertPlaceholderReason } from "./inert-placeholder";
 import { coerceToString } from "./string-coercion";
+
+/** What separates the items of a list joined in one line. */
+export const JOIN_SEPARATOR = ", ";
+
+/** A list, or a property of a list's items: a field that holds many values. */
+export function isList(node: DisplayNode): boolean {
+  return (
+    node.kind === "list-property" ||
+    (node.kind === "value" && node.valueType === "array")
+  );
+}
 
 /** True for an object literal or a null-prototype record, as opposed to a class instance such as a Temporal date. */
 export function isPlainObject(value: object): boolean {

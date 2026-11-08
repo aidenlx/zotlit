@@ -309,6 +309,16 @@ function containerPreview(value: object): string | undefined {
   return rendered;
 }
 
+/**
+ * The properties of a list's items, as a list row's shape view shows them;
+ * none for a node that is not a list of records.
+ */
+export function listPropertiesOf(node: DisplayNode): ListPropertyNode[] {
+  return node.kind === "value" && Array.isArray(node.value)
+    ? listProperties(node.value, node.path)
+    : [];
+}
+
 /** The shape view of a list: one node for each property its records have. */
 function listProperties(
   list: readonly unknown[],
