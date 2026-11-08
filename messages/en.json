@@ -1688,7 +1688,7 @@
   "workbench_fields_details_close": "Close details",
   "workbench_fields_details_path": "Template path",
   "workbench_fields_details_in_note": "In your note",
-  "workbench_fields_details_form": "How the list goes into the note",
+  "workbench_fields_details_path_each": "{list} → each item's {property}",
   "workbench_fields_details_form_joined": "In one line",
   "workbench_fields_details_form_loop": "Each item",
   "workbench_fields_empty": "Empty for this item",

@@ -424,6 +424,7 @@ function ValueContent({
   node: ValueNode;
   labeled?: boolean;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("explorerTree");
   const line = useContext(FieldRowsContext) !== null;
   if (node.valueType === "array" || node.valueType === "object") {
@@ -449,6 +450,14 @@ function ValueContent({
     );
   }
   if (node.valueType === "getter") return <span {...part("hint")}>…</span>;
+  // A Fields Panel row marks a field this item has no value for.
+  if (
+    line &&
+    (node.valueType === "null" ||
+      node.valueType === "undefined" ||
+      node.value === "")
+  )
+    return <span {...part("placeholder")}>{m.workbench_fields_empty()}</span>;
   return <ScalarValue node={node} />;
 }
 

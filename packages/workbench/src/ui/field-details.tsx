@@ -42,6 +42,16 @@ export const placeFieldDetails = (
 ): FieldDetailsPlacement =>
   size === null || size.width >= DETAILS_BESIDE_MIN ? "popover" : "bar";
 
+/**
+ * How a field goes into the note: `keepOpen` when Shift kept the Fields Panel
+ * open for the next field, and `kind`, the form the reader chose for a list;
+ * absent, the field's first form.
+ */
+export interface FieldInsertOptions {
+  readonly keepOpen: boolean;
+  readonly kind?: SnippetKind;
+}
+
 /** What the details show and do for one field. */
 export interface FieldDetailsContent {
   readonly node: DisplayNode;
@@ -55,7 +65,7 @@ export interface FieldDetailsContent {
    */
   readonly snippet: (kind?: SnippetKind) => string;
   /** Absent where the editor takes no field now. */
-  readonly onInsert?: (keepOpen: boolean, kind?: SnippetKind) => void;
+  readonly onInsert?: (options: FieldInsertOptions) => void;
   readonly onCopy: (kind?: SnippetKind) => void;
   readonly onClose: () => void;
 }
@@ -186,17 +196,23 @@ function DetailsBody({
       )}
       <div {...part("item")}>
         <span {...part("label")}>{m.workbench_fields_details_path()}</span>
-        <code {...part("path")}>{formatPath(node.path, "zt")}</code>
+        <code {...part("path")}>
+          {node.kind === "list-property"
+            ? m.workbench_fields_details_path_each({
+                list: formatPath(node.list, "zt"),
+                property: node.property,
+              })
+            : formatPath(node.path, "zt")}
+        </code>
       </div>
       <div {...part("item")}>
         <div {...part("item-header")}>
-          <span {...part("label")}>{m.workbench_fields_details_in_note()}</span>
+          <span id={formsId} {...part("label")}>
+            {m.workbench_fields_details_in_note()}
+          </span>
           {forms.length > 0 && (
-            <div
-              role="radiogroup"
-              aria-label={m.workbench_fields_details_form()}
-              {...part("forms")}
-            >
+            // Named by its visible label, so no tooltip stands on the group.
+            <div role="radiogroup" aria-labelledby={formsId} {...part("forms")}>
               {forms.map((form) => (
                 <label key={form} {...part("form")}>
                   <input
@@ -223,7 +239,7 @@ function DetailsBody({
         <button
           type="button"
           disabled={!onInsert}
-          onClick={(event) => onInsert?.(event.shiftKey, kind)}
+          onClick={(event) => onInsert?.({ keepOpen: event.shiftKey, kind })}
           {...part("insert")}
         >
           {icon("insert")}

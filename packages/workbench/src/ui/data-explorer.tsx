@@ -19,6 +19,7 @@ import type { ExplorerReader } from "./explorer-sections";
 import { DisplayTree } from "./explorer-tree";
 import type { DisplaySection, FieldRowState } from "./explorer-tree";
 import { FieldDetails, placeFieldDetails } from "./field-details";
+import type { FieldInsertOptions } from "./field-details";
 import { useFieldsPanelRows } from "./fields-panel";
 import { useTooltip, useWorkbenchHost } from "./host";
 import type {
@@ -81,7 +82,7 @@ export interface DataExplorerProps {
    */
   onInsertNode?: (
     node: DisplayNode,
-    options: { readonly keepOpen: boolean; readonly kind?: SnippetKind },
+    options: FieldInsertOptions,
   ) => boolean | void;
   copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
@@ -161,7 +162,7 @@ export function DataExplorer({
   const insertField =
     onInsertNode ??
     (onInsert
-      ? (node: DisplayNode, { kind }: { readonly kind?: SnippetKind }) =>
+      ? (node: DisplayNode, { kind }: FieldInsertOptions) =>
           onInsert(fieldSnippet(node, mode, { engine, kind }))
       : undefined);
   // An insert closes the Fields Panel and leaves focus to the editor, at the
@@ -169,7 +170,10 @@ export function DataExplorer({
   // It names the field it inserted to a screen reader.
   const insertNode =
     insertField &&
-    ((node: DisplayNode, keepOpen = false, kind?: SnippetKind) => {
+    ((
+      node: DisplayNode,
+      { keepOpen, kind }: FieldInsertOptions = { keepOpen: false },
+    ) => {
       if (insertField(node, { keepOpen, kind }) === false) return;
       host.notice(
         m.workbench_fields_inserted({ field: fieldLabel(node, labels) }),
@@ -294,11 +298,10 @@ export function DataExplorer({
   });
   const insertEntry = (
     entry: FieldEntry,
-    keepOpen = false,
-    kind?: SnippetKind,
+    options: FieldInsertOptions = { keepOpen: false },
   ) => {
     rows.close();
-    insertNode?.(entry.node, keepOpen, kind);
+    insertNode?.(entry.node, options);
   };
   const copyEntry = (entry: FieldEntry, snippet: string) => {
     rows.close();
@@ -496,7 +499,11 @@ export function DataExplorer({
             matchedKeys={visible.matchedKeys}
             onToggle={(key) => onNavigationChange(toggleNode(tree, key))}
             onToggleSection={filtering ? undefined : toggleSection}
-            onInsert={!disabled ? insertNode : undefined}
+            onInsert={
+              insertNode && !disabled
+                ? (node, keepOpen) => insertNode(node, { keepOpen })
+                : undefined
+            }
             onTemplateMenu={openTemplateMenu}
             onFieldContextMenu={openFieldContextMenu}
             rows={
@@ -527,7 +534,7 @@ export function DataExplorer({
           snippet={(kind) => snippetOf(rows.open!.node, kind)}
           onInsert={
             insertNode && !disabled
-              ? (keepOpen, kind) => insertEntry(rows.open!, keepOpen, kind)
+              ? (options) => insertEntry(rows.open!, options)
               : undefined
           }
           onCopy={(kind) =>

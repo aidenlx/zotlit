@@ -2120,7 +2120,7 @@
   "workbench_fields_details_close": "关闭详情",
   "workbench_fields_details_path": "模板路径",
   "workbench_fields_details_in_note": "在笔记中",
-  "workbench_fields_details_form": "列表写入笔记的方式",
+  "workbench_fields_details_path_each": "{list} → 每项的 {property}",
   "workbench_fields_details_form_joined": "合为一行",
   "workbench_fields_details_form_loop": "每项一行",
   "workbench_fields_empty": "此条目没有值",

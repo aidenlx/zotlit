@@ -547,6 +547,20 @@ describe.each(PRESENTATIONS)(
 );
 
 describe("a field row", () => {
+  it("marks a field with no value as empty for this item", () => {
+    using page = open({
+      data: { title: "Linked notes in practice", abstract: "", DOI: null },
+    });
+    page.pressAction();
+    for (const key of ["abstract", "DOI"]) {
+      const row = within(panel()!)
+        .getAllByRole("treeitem")
+        .find((item) => item.getAttribute("data-workbench-field") === key)!;
+      expect(row.textContent).toContain("Empty for this item");
+      expect(row.textContent).not.toContain("null");
+    }
+  });
+
   it("inserts from its Insert button, which draws the insert icon", () => {
     using page = open();
     page.pressAction();
@@ -714,16 +728,11 @@ describe("a list field", () => {
     expect(line("tags").textContent).toContain("methods, zettelkasten");
   });
 
-  it("opens a list of records from the chevron after its label, and a list of plain values has none", () => {
+  it("opens a list of records to its properties, and a list of plain values has no chevron", () => {
     using page = open(lists);
     page.pressAction();
     expect(toggle("tags")).toBeNull();
-    const chevron = toggle("authors")!;
-    const label = within(line("authors")).getByText("Authors");
-    expect(
-      label.compareDocumentPosition(chevron) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    fireEvent.click(chevron);
+    fireEvent.click(toggle("authors")!);
     // One sub-row for each property, with that property for every item.
     expect(line("authors[].family").textContent).toContain("Ahrens, Luhmann");
     expect(line("authors[].given").textContent).toContain("Sönke, Niklas");
@@ -769,9 +778,7 @@ describe("a list field", () => {
     page.pressAction();
     let region = openDetails("authors", "Authors");
     expect(
-      region.getByRole("radiogroup", {
-        name: "How the list goes into the note",
-      }),
+      region.getByRole("radiogroup", { name: "In your note" }),
     ).toBeTruthy();
     expect(forms(region)).toEqual(["In one line ✓", "Each item"]);
     expect(region.getByText('{{ zt.authors | join: ", " }}')).toBeTruthy();
@@ -811,6 +818,9 @@ describe("a list field", () => {
         .getAllByRole("listitem")
         .map((value) => value.textContent),
     ).toEqual(["1Ahrens", "2Luhmann"]);
+    // A path names the list, then the property each item has.
+    expect(region.getByText("zt.authors → each item's family")).toBeTruthy();
+    expect(region.queryByText("zt.authors.family")).toBeNull();
     expect(forms(region)).toEqual(["In one line ✓", "Each item"]);
     fireEvent.click(region.getByRole("button", { name: "Insert" }), {
       shiftKey: true,
