@@ -21,6 +21,44 @@ import { m } from "@/paraglide/messages.js";
 /** The gap between the popover and the panels' edges, in pixels. */
 const GAP = 8;
 
+/**
+ * The page's notices stand this far from the window's end edge; the toast
+ * viewport reads it, and a default of 1rem stands without it.
+ */
+const TOAST_END = "--toast-end";
+
+/** The narrowest band, in pixels, a notice stands in beside the popover. */
+const TOAST_MIN_WIDTH = 192;
+
+/**
+ * Keeps the page's notices beside the open popover, clear of its foot, while
+ * the window leaves them room there; they stand over it otherwise.
+ * @returns Lets the notices go back to their own place.
+ */
+function keepNoticesBeside(
+  popup: HTMLElement,
+  box: HTMLElement | null,
+): () => void {
+  const root = popup.ownerDocument.documentElement;
+  const win = popup.ownerDocument.defaultView!;
+  const place = () => {
+    if (!box) return;
+    // The popover stands at the box's end edge, less the gap.
+    const left = box.getBoundingClientRect().right - GAP - popup.offsetWidth;
+    if (left - 2 * GAP >= TOAST_MIN_WIDTH)
+      root.style.setProperty(TOAST_END, `${win.innerWidth - left + GAP}px`);
+    else root.style.removeProperty(TOAST_END);
+  };
+  place();
+  const resize = new ResizeObserver(place);
+  resize.observe(popup);
+  if (box) resize.observe(box);
+  return () => {
+    resize.disconnect();
+    root.style.removeProperty(TOAST_END);
+  };
+}
+
 /** The header's Fields action, and the Fields popover it opens. */
 export function webFieldsAction(
   anchor: RefObject<HTMLElement | null>,
@@ -82,6 +120,9 @@ export function webFieldsAction(
             align="start"
             sideOffset={0}
             aria-labelledby={labelledBy}
+            ref={(popup: HTMLDivElement | null) =>
+              popup ? keepNoticesBeside(popup, box.current) : undefined
+            }
             // The panel focuses its own search field as it mounts.
             initialFocus={false}
             // Focus the popover held at closing goes back to the action;

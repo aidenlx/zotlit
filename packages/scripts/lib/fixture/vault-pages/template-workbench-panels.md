@@ -455,7 +455,10 @@ popover open with the focus in the field search, and shows the notice
 "Copied Title.". Step 3 writes `{{ zt.DOI }}` at the cursor, closes the
 details and the popover, gives the editor the focus after the inserted text,
 and shows the notice "Inserted DOI.". A screen reader reads both messages,
-also after the popover closed, from the panels' live region.
+also after the popover closed, from the panels' live region. In the web
+Workbench, the notice "Copied Title." stands at the bottom, beside the Fields
+popover, and leaves the popover's foot (the key hint line) in view, in a
+window 1400 pixels wide and in one 560 pixels wide.
 
 ## Choose a field with the keyboard
 
