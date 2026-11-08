@@ -21,7 +21,8 @@
 //   anchor stays the anchor's, which toggles the popover.
 // - Focus: the shell takes it on opening, so Tab reaches the contents, unless
 //   `initialFocus` is off. A caller may move it further. Focus held at
-//   closing goes back to the anchor.
+//   closing goes back to the anchor; on a press outside, unless the press
+//   gave focus to the place it pressed.
 //
 // The element with `className` is the surface, and the caller draws it with
 // utilities. The element around it is only a shell for Obsidian to place.
@@ -187,7 +188,19 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
         if (!(target as Node | null)?.instanceOf(Element)) return;
         const element = target as Element;
         if (anchor.contains(element) || holds(element)) return;
-        if (!element.closest(OBSIDIAN_FLOATING)) this.hide();
+        if (element.closest(OBSIDIAN_FLOATING)) return;
+        const held = this.hoverEl.contains(this.hoverEl.doc.activeElement);
+        this.hide();
+        if (!held) return;
+        // The press's mousedown moves focus after this handler: to the place
+        // pressed, or to nothing where that place takes no focus. Focus left
+        // with nothing goes back to the anchor once the press is through.
+        const { doc, win } = this.hoverEl;
+        win.setTimeout(() => {
+          const active = doc.activeElement;
+          if (!active || active === doc.body)
+            anchor.focus({ preventScroll: true });
+        });
       },
       { capture: true },
     );

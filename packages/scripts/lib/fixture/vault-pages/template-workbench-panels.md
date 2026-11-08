@@ -71,13 +71,18 @@ same outcome.
 ## Click outside the Fields popover
 
 1. Show the Preview in a wide tab. Select **Fields**.
-2. Select an empty place in the Preview, outside the popover.
+2. Select the "Note preview" heading of the Preview, outside the popover.
 3. Select **Fields**. Select the row above the editor that names the Item,
    away from **Choose item**.
+4. Select **Fields**. Select the view's title in the view header.
+5. Select **Fields**. Select the rendered note in the Preview.
 
 Expected: in step 1 the focus goes to the field search of the popover. Steps 2
-and 3 each close the popover, and the focus is then on the **Fields** view
-action. The web Workbench does step 2 with the same outcome.
+to 5 each close the popover. After steps 2, 3 and 4, which select a place
+that takes no focus, the focus is on the **Fields** view action, not lost to
+the page. After step 5 the focus is on the rendered note, which you selected,
+and `Tab` goes on from there. The web Workbench does step 2 with the same
+outcome.
 
 ## The editor and the Preview stay usable
 

@@ -1491,6 +1491,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           () => popover() === null,
         );
         const outside = action.getAttribute("aria-expanded");
+        // A press on a place that takes no focus, the view's title, closes
+        // it and hands focus back to the action.
+        await input.click(action);
+        await until(
+          "the popover for the press on the title",
+          () => popover() !== null,
+        );
+        await input.click(
+          view.containerEl.querySelector<HTMLElement>(
+            ".view-header-title-container",
+          )!,
+        );
+        await until(
+          "focus on the action after the press on the title",
+          () => popover() === null && el.doc.activeElement === action,
+        );
         // A second press on the action closes it.
         await input.click(action);
         await until("the popover for the press", () => popover() !== null);
