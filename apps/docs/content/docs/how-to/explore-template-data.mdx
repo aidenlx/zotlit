@@ -16,7 +16,7 @@ The Template Data Explorer shows the fields that templates receive for a Zotero 
 
 The explorer is a view of its own. It keeps its own item choice, so browsing here changes no template that you have open. You can reach it from several entry points.
 
-To browse fields beside a template you are editing, use the Fields popover of the Template Workbench View instead. It shows the same tree for the view's chosen item, and it can insert a field at your cursor. See [The Fields popover](/docs/concepts/template-workbench-view#fields-panel).
+To browse fields beside a template you are editing, use the Fields panel of the Template Workbench View instead. It shows the same fields for the view's chosen item, and it can insert a field at your cursor. See [The Fields panel](/docs/concepts/template-workbench-view#fields-panel).
 
 ### From the command palette
 
@@ -162,10 +162,10 @@ The same menu offers ready-to-use snippets in the syntax of your template:
 - <UiLabel name={m.workbench_explorer_menu_copy_output()} /> renders the value, for example `{{ zt.title }}`.
 - <UiLabel name={m.workbench_explorer_menu_copy_if_present()} /> wraps the value
   in a conditional block.
-- <UiLabel name={m.workbench_explorer_menu_copy_loop()} /> iterates over an
-  array node.
-- <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> joins an array into
-  a delimiter-separated string.
+- <UiLabel name={m.workbench_explorer_menu_copy_loop()} /> writes each item of a
+  list on its own Markdown list line.
+- <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> writes every item
+  of a list on one line, separated by commas.
 
 An array node offers <UiLabel name={m.workbench_explorer_menu_copy_loop()} />, and <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> where its elements join into text. Every other node offers <UiLabel name={m.workbench_explorer_menu_copy_output()} /> and <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />.
 

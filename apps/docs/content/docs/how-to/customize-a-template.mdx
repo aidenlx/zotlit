@@ -16,7 +16,7 @@ A profile is the document that authors one literature note. See [Profiles](/docs
 
 ## Edit a literature note profile
 
-![The Template Workbench View for The Semantic Web: the Fields panel on the left, the Default profile in the middle with its shared-template notice and the template text, and the Preview panel on the right](/img/how-to/template-workbench-layout.webp)
+![The Template Workbench View for The Semantic Web: the Default profile's template text in the editor, the Preview panel on the right, and the Fields popover open over the right edge with the paper's fields](/img/how-to/template-workbench-layout.webp)
 
 <Steps>
   <Step>
@@ -28,15 +28,15 @@ A profile is the document that authors one literature note. See [Profiles](/docs
 
     To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. ZotLit opens the Template Workbench View with that note's item selected.
 
-    Both ways open the view in a separate Obsidian window, with the Preview panel shown. A view opened another way can start without it. Select <UiLabel name={m.workbench_show_preview()} /> in the view header to show it, or select <UiLabel name={m.template_workbench_open_layout()} /> from the pane menu. Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields popover. See [Panels and the Fields popover](/docs/concepts/template-workbench-view#panels).
+    Both ways open the view in a separate Obsidian window, with the Preview panel shown. A view opened another way can start without it. Select <UiLabel name={m.workbench_show_preview()} /> in the view header to show it, or select <UiLabel name={m.template_workbench_open_layout()} /> from the pane menu. Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields popover. See [The Preview and Fields panels](/docs/concepts/template-workbench-view#panels).
 
   </Step>
   <Step>
     ### Choose preview data
 
-    If no item is selected, choose one in the Fields popover, or with <UiLabel name={m.workbench_choose_item()} /> in the row above the panels. You can try a built-in journal article, conference paper, book, or thesis example.
+    If no item is selected, choose one in the Fields panel, or with <UiLabel name={m.workbench_choose_item()} /> in the row above the panels. You can try a built-in journal article, conference paper, book, or thesis example.
 
-    Choose a library item under <UiLabel name={m.workbench_recently_updated()} />, or select <UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library. The editor tabs, the Preview panel and the Fields popover then show that item, and the popover lists its fields.
+    Choose a library item under <UiLabel name={m.workbench_recently_updated()} />, or select <UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library. The editor tabs, the Preview panel and the Fields panel then show that item, and the Fields panel lists its fields.
 
     For annotation formatting, select <UiLabel name={m.workbench_choose_annotation()} />. Search annotations from the selected item or try a highlight, underline, note, text, image, or ink example. Annotation examples keep their own parent item data; the note preview keeps its selected item.
 
@@ -50,7 +50,7 @@ A profile is the document that authors one literature note. See [Profiles](/docs
 
     Use the <UiLabel name={m.workbench_tab_note()} />, <UiLabel name={m.workbench_tab_properties()} />, <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_match()} />, and <UiLabel name={m.workbench_tab_name_and_folder()} /> tabs to edit the profile. The Default profile does not use <UiLabel name={m.workbench_tab_match()} /> conditions.
 
-    Check the <UiLabel name={m.workbench_result_heading()} /> in the Preview panel as you edit. To add a field, place your cursor in the template, select <UiLabel name={m.workbench_view_fields()} />, and select the insert button on a field's row, or open its row menu and select <UiLabel name={m.workbench_fields_put_in_note()} />. ZotLit puts the field at your cursor, closes the Fields popover, and returns the cursor to the editor. Hold Shift while you select the insert button to keep the Fields popover open for more fields. <UiLabel name={m.workbench_advanced()} /> is a toggle: select it to edit the complete profile document as Markdown, and select it again to return to the tabs.
+    Check the <UiLabel name={m.workbench_result_heading()} /> in the Preview panel as you edit. To add a field, place your cursor in the template, select <UiLabel name={m.workbench_view_fields()} />, and select the insert button on a field's row, or open its row menu and select <UiLabel name={m.workbench_fields_put_in_note()} />. ZotLit puts the field at your cursor, closes the Fields popover, and returns the cursor to the editor. Hold Shift while you select the insert button to keep the Fields popover open for more fields, or [pin the Fields panel](/docs/concepts/template-workbench-view#pin-fields) to keep it beside the editor. For a list, such as the authors, select its row, choose <UiLabel name={m.workbench_fields_details_form_joined()} /> or <UiLabel name={m.workbench_fields_details_form_loop()} />, and select <UiLabel name={m.workbench_fields_insert()} />. <UiLabel name={m.workbench_advanced()} /> is a toggle: select it to edit the complete profile document as Markdown, and select it again to return to the tabs.
 
     On the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab, the <UiLabel name={m.workbench_name_path_heading()} /> group holds the <UiLabel name={m.workbench_name_binding_folder()} />, the <UiLabel name={m.workbench_name_filename_label()} />, and a <UiLabel name={m.workbench_name_filename_result()} /> of the full path the note gets, with `.md`. A slash (`/`) in the note name makes a subfolder in the folder. For the Default profile, change the folder in <SettingsPath />. The <UiLabel name={m.workbench_tab_match()} /> tab reports <UiLabel name={m.workbench_match_result_yes()} /> or <UiLabel name={m.workbench_match_result_no()} /> for the selected item.
 

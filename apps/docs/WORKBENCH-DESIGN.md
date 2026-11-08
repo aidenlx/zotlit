@@ -106,8 +106,9 @@ preview choices in the view's pane menu, shown while the panel shows; Show
 Markdown and the updated-section choice are menu entries, not header actions.
 The panel begins with the chosen Item and its chooser, then one role heading
 and a muted caption that names the current view, such as **New note** or
-**Updated note**. The web uses the shared result header for the corresponding
-controls. The settings contract lives in
+**Updated note**. The header row, with the file name, stays at the top of
+the panel's scroll area. The web uses the shared result header for the
+corresponding controls, and its file name strip stays at the top too. The settings contract lives in
 [ADR 0048](../../docs/adr/0048-the-note-preview-keeps-its-settings-in-native-chrome.md),
 as amended by
 [ADR 0081](../../docs/adr/0081-fields-and-preview-are-side-panels-of-the-template-workbench-view.md).
@@ -118,11 +119,20 @@ Show one field tree for the selected Item or Annotation. Common fields lead;
 the remaining fields belong to familiar sections. For Items, use Reference,
 Identifiers, Content and files, Organization, Links, and Zotero record. For
 Annotations, use Annotation, Source, Organization, Links, and Zotero record.
-Every field has one home.
+Every field has one home. Each section has a sticky header with its icon,
+name, field count and a collapse chevron; "Collapse all sections" sits in the
+panel header, before the pin.
 
-Use the human field name in the list. Keep raw paths for the tooltip and Copy
-path. Rows reveal Insert field and their menu on hover or focus, and keep those
-actions available on touch. Long values wrap beneath their names.
+Use the human field name in the list. Keep raw paths for the tooltip, the
+details and Copy path. A row holds the label and the Item's value on one
+line; a long value ends in "…". Rows reveal Insert field and their menu on
+hover, focus or selection, and keep those actions available on touch. A select
+of a row, or Enter, shows its details: beside the panel in a view 600 px wide
+or wider, in a fixed bar at the panel's foot in a narrower one. Hover opens
+nothing and moves no row. A list shows its shape: its item count and every
+item in one line, and for a list of records one sub-row per property with
+every item's value. Its details offer "In one line" and "Each item"; no list
+form names one item's index.
 
 Keep Item and Annotation selection near the task it affects. Inline selection
 uses a compact, borderless text-and-icon control, visually subordinate to the
@@ -182,10 +192,11 @@ and add actions align at its leading edge.
 
 ## Adaptation and access
 
-Lay out the editor and the Preview Panel with the shared panels, and the
-Fields popover over them, as the Template Workbench View in Obsidian does.
-"Fields" in the header opens and closes the Fields popover at every width, and
-"Show preview" shows and hides the Preview. One
+Lay out the editor, the Preview Panel and the Fields Panel with the shared
+panels, as the Template Workbench View in Obsidian does. The Fields Panel
+stands in the Fields popover over them until the reader pins it. "Fields" in
+the header opens and closes the Fields popover at every width, or hides and
+shows the docked panel, and "Show preview" shows and hides the Preview. One
 item row above the panels names the item they all read and holds the sample
 chooser; each panel's head keeps only what is its own. The shared placement
 rule measures the main area under that row. The Preview is a column in a
@@ -212,15 +223,14 @@ editor, Preview Panel, Fields popover. A short viewport scrolls the page
 while preserving several lines of editor space.
 
 The "View" header menu holds "Show fields", "Show preview" and one size group
-for each handle the page draws ("Resize preview"), so a reader who cannot
+for each handle the page draws ("Resize preview", and "Resize fields" for
+the docked Fields Panel), so a reader who cannot
 drag sizes every panel (WCAG 2.5.7). "Show fields" in the menu presses the
 same Fields action as the header. The menu stays open across size steps and
 closes when a step moves a panel to another place, so no entry moves under
 the pointer. A polite status reads each new size. The "Help" header menu
 lists the template guide, the syntax and data references, and the community,
 the same pages as the Obsidian view's Help action; each opens in a new tab.
-The Fields Panel's button that collapses or expands every section trails its
-field search.
 
 Source and Problems share the editor pane. An open Problems area keeps the share the reader chooses by dragging its top
 divider. Arrow keys adjust the focused divider; Home and End select its size
