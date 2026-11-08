@@ -87,7 +87,10 @@ it("retains note navigation across editor modes and restores it after an annotat
   expect(authorsOpen()).toBe("true");
   view.filter("title");
   expect(container.textContent).not.toContain("Ada");
-  view.show({ mode: "expression", annotation: SAMPLE_ANNOTATIONS[1]! });
+  view.show({
+    insertion: () => ({ engine: "liquid", mode: "expression" }),
+    annotation: SAMPLE_ANNOTATIONS[1]!,
+  });
   expect(
     container.querySelector<HTMLInputElement>('input[type="search"]')!.value,
   ).toBe("title");

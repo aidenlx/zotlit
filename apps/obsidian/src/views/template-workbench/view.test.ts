@@ -18,6 +18,7 @@ import {
   formatPlainTemplateDocument,
   parsePlainTemplateDocument,
 } from "@zotlit/templates/facade";
+import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
   captureRenderReport,
   emptyRender,
@@ -25,6 +26,7 @@ import {
   renderIdentity,
   SAMPLE_ITEMS,
 } from "@zotlit/workbench/render";
+import { fieldForm } from "@zotlit/workbench/ui";
 
 import { answerConfirmation } from "@/lib/__fixtures__/confirm";
 import { dispatchKey, keymapApp } from "@/lib/__fixtures__/keymap";
@@ -59,6 +61,10 @@ import {
   originatingNoteUpdateNotice,
   unpackedPartialNotices,
 } from "./view";
+
+/** Inserts `node` as the Fields Panel does: in its first form, as the place the caret is in reads it. */
+const insertNode = (view: TemplateWorkbenchView, node: DisplayNode) =>
+  view.insertField(fieldForm(node, view.fieldInsertion()).snippet);
 
 // The real leaf edges stand in: the layout module imports this view.
 vi.mock("./layout", () => ({
@@ -1624,7 +1630,7 @@ An annotation.
       });
       requestSave.mockClear();
       await act(() => {
-        expect(view.insertTemplateField(node)).toBe(true);
+        expect(insertNode(view, node)).toBe(true);
       });
       expect(view.getViewData()).toContain("A s<%= zt.title %>table note.");
       expect(requestSave).toHaveBeenCalledOnce();
@@ -1636,7 +1642,7 @@ An annotation.
       await act(async () => view.close());
       view.contentEl.remove();
     }
-    expect(view.insertTemplateField(node)).toBe(false);
+    expect(insertNode(view, node)).toBe(false);
   });
 
   // A pane that only came on screen reports where its caret starts; the
@@ -2639,7 +2645,7 @@ language: liquid
     });
     await act(() => {
       expect(
-        view.insertTemplateField({
+        insertNode(view, {
           kind: "value",
           path: ["variant"],
           key: "variant",

@@ -130,7 +130,7 @@ describe("shared Data Explorer", () => {
       <DataExplorer
         root="note"
         data={{ title: "A paper" }}
-        engine="eta"
+        insertion={() => ({ engine: "eta", mode: "template" })}
         copy={() => Effect.void}
         onInsert={insert}
       />,
@@ -140,7 +140,7 @@ describe("shared Data Explorer", () => {
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_fields_put_in_note() }),
     );
-    expect(insert).toHaveBeenCalledWith("<%= zt.title %>");
+    expect(insert).toHaveBeenCalledWith("<%= zt.title %>", { keepOpen: false });
   });
   it("expands nested values and opens the live engine menu", () => {
     let eta = false;
@@ -274,7 +274,7 @@ describe("shared Data Explorer", () => {
       <DataExplorer
         root="note"
         data={{ title: "A paper" }}
-        mode={mode}
+        insertion={() => ({ engine: "liquid", mode })}
         copy={() => Effect.void}
         onInsert={insert}
       />,
@@ -284,7 +284,7 @@ describe("shared Data Explorer", () => {
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_fields_put_in_note() }),
     );
-    expect(insert).toHaveBeenCalledWith(expected);
+    expect(insert).toHaveBeenCalledWith(expected, { keepOpen: false });
   });
 
   it("shows a refused copy as a notice", async () => {

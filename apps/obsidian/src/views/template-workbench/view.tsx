@@ -30,7 +30,6 @@ import type {
   WorkbenchProblem,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import type { DisplayNode, SnippetKind } from "@zotlit/workbench/explorer";
 import {
   CITATION_EXAMPLE_IDS,
   DEFAULT_PARTIAL_CONTEXT,
@@ -50,7 +49,6 @@ import {
   choosePartialProfile,
   citationExampleLabel,
   entryDiagnostics,
-  fieldSnippet,
   fieldsActionAttributes,
   patchAt,
   pressFieldsAction,
@@ -95,6 +93,8 @@ import {
   AnnotationSampleBar,
 } from "@zotlit/workbench/ui";
 import type {
+  FieldInsertionContext,
+  FieldInsertOptions,
   WorkbenchHostError,
   WorkbenchEditorInstance,
   WorkbenchFieldsAction,
@@ -1068,43 +1068,34 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   /**
-   * Inserts the field `node` names at the editor's insertion target.
-   * @param options.focus With `false`, the editor takes no focus: the Fields
-   * Panel keeps it.
-   * @param options.kind The form a list goes in; absent, the field's first
-   * form.
+   * Where a field from the Fields Panel goes now: the document's template
+   * language, and the kind of place the insertion target is in.
    */
-  insertTemplateField(
-    node: DisplayNode,
-    {
-      kind,
-      ...options
-    }: { readonly focus: boolean; readonly kind?: SnippetKind } = {
-      focus: true,
-    },
-  ): boolean {
-    if (this.#closed || this.#controller.readOnly) return false;
+  fieldInsertion(): FieldInsertionContext {
     const target = this.insertTarget;
-    if (!target) return false;
-    const region = this.#controller.templateRegions.find(
-      (region) =>
-        target.range.from >= region.from && target.range.to <= region.to,
-    );
-    const mode = region?.expression
-      ? "expression"
-      : region?.language === "json-e"
-        ? "json-e"
-        : "template";
-    const engine = this.#documentLanguage;
-    return this.insertField(
-      fieldSnippet(node, mode, { engine, kind }),
-      options,
-    );
+    const region =
+      target &&
+      this.#controller.templateRegions.find(
+        (region) =>
+          target.range.from >= region.from && target.range.to <= region.to,
+      );
+    return {
+      engine: this.#documentLanguage,
+      mode: region?.expression
+        ? "expression"
+        : region?.language === "json-e"
+          ? "json-e"
+          : "template",
+    };
   }
 
+  /**
+   * Writes `snippet` at the editor's insertion target. With `keepOpen`, the
+   * editor takes no focus: the Fields Panel keeps it.
+   */
   insertField(
     snippet: string,
-    { focus }: { readonly focus: boolean } = { focus: true },
+    { keepOpen }: FieldInsertOptions = { keepOpen: false },
   ): boolean {
     if (this.#controller.readOnly || this.#closed) return false;
     const target = this.insertTarget;
@@ -1140,7 +1131,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         slice: target.slice,
         range: { from: cursor, to: cursor, placed: true },
       },
-      focus,
+      !keepOpen,
     );
     return true;
   }

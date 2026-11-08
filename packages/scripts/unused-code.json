@@ -1,6 +1,5 @@
 {
   "exports": [
-    "apps/docs/src/lib/workbench/fields.ts: fieldSnippet",
     "apps/docs/src/lib/workbench/fields.ts: fieldValueText",
     "apps/obsidian/src/components/obsidian/dropdown.tsx: DropdownGroup",
     "apps/obsidian/src/lib/disposables.ts: registerInterval",
