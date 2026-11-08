@@ -11,6 +11,8 @@ import type {
 
 import {
   formatAccessorPath,
+  isList,
+  JOIN_SEPARATOR,
   listItemTexts,
   listSnippetKinds,
   loopVariable,
@@ -56,14 +58,24 @@ export interface FieldInsertOptions {
 }
 
 /**
+ * Which forms of a field a surface offers: `every` for the row menu, which
+ * in a template also offers a field's guarded form beside its output.
+ */
+export interface FieldFormsOptions {
+  readonly every?: boolean;
+}
+
+/**
  * The forms `node` goes into the note in, at a place of `context`, the first
  * of them the one an insert uses. A list in a template offers its forms in
- * one line and for each item; any other field, and any field in a
- * Properties value, has one form.
+ * one line and for each item; any other field has one form, and `every`
+ * adds its guarded form. A field in a Properties value has one form in
+ * every case.
  */
 export function fieldForms(
   node: DisplayNode,
   { engine, mode }: FieldInsertionContext,
+  { every = false }: FieldFormsOptions = {},
 ): readonly FieldForm[] {
   if (mode !== "template")
     return [
@@ -74,7 +86,11 @@ export function fieldForms(
       },
     ];
   const lists = listSnippetKinds(node);
-  const kinds = lists.length > 0 ? lists : [snippetKindsFor(node)[0]!];
+  const kinds = every
+    ? snippetKindsFor(node)
+    : lists.length > 0
+      ? lists
+      : [snippetKindsFor(node)[0]!];
   return kinds.map((kind) => ({
     kind,
     snippet: renderSnippet(node, engine, kind),
@@ -114,10 +130,10 @@ function valueSnippet(
 
 /** What a Properties value holds for this item: a list's items, else the value's text. */
 function valueOf(node: DisplayNode): string | null {
+  // `isList` holds every list property; the kind check tells the compiler.
   const text =
-    node.kind === "list-property" ||
-    (node.kind === "value" && node.valueType === "array")
-      ? listItemTexts(node).join(", ")
+    isList(node) || node.kind === "list-property"
+      ? listItemTexts(node).join(JOIN_SEPARATOR)
       : outputText(node);
   return text === "" ? null : text;
 }

@@ -142,6 +142,43 @@ describe("shared Data Explorer", () => {
     );
     expect(insert).toHaveBeenCalledWith("<%= zt.title %>", { keepOpen: false });
   });
+  it("copies from the row menu the text an insert writes in a Properties value", () => {
+    const copy = vi.fn<DataExplorerProps["copy"]>(() => Effect.void);
+    const insert = vi.fn<(snippet: string) => void>();
+    using mounted = mount(
+      <DataExplorer
+        root="note"
+        data={{ title: "A paper" }}
+        insertion={() => ({ engine: "liquid", mode: "expression" })}
+        engines={() => ["liquid", "eta"]}
+        copy={copy}
+        onInsert={insert}
+      />,
+    );
+    const { ui, host } = mounted;
+    render(ui);
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_explorer_row_actions() }),
+    );
+    const menu = host.calls.menus[0]!;
+    // One form, in no engine: a Properties value reads the field itself.
+    expect(menu.submenus ?? []).toEqual([]);
+    const copies = menu.items.filter((item) =>
+      [
+        m.workbench_explorer_menu_copy_output(),
+        m.workbench_explorer_menu_copy_if_present(),
+      ].includes(item.label),
+    );
+    expect(copies.map((item) => item.label)).toEqual([
+      m.workbench_explorer_menu_copy_output(),
+    ]);
+    copies[0]!.onSelect();
+    expect(copy).toHaveBeenCalledWith("zt.title");
+    menu.items
+      .find((item) => item.label === m.workbench_fields_put_in_note())!
+      .onSelect();
+    expect(insert).toHaveBeenCalledWith("zt.title", { keepOpen: false });
+  });
   it("expands nested values and opens the live engine menu", () => {
     let eta = false;
     using mounted = mount(

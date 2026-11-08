@@ -40,11 +40,18 @@ import {
   buildFilteredDisplayTree,
   copyValue,
   formatPath,
-  renderSnippet,
   setFilter,
-  snippetKindsFor,
   toggleNode,
 } from "#/explorer/index";
+
+/**
+ * How one insert goes: `keepOpen` as {@link FieldInsertOptions} has it, and
+ * the `form` the reader picked in the details, the field's first otherwise.
+ */
+interface FieldInsertRequest {
+  readonly keepOpen?: boolean;
+  readonly form?: FieldForm;
+}
 
 export interface ExplorerPresentation {
   top: number;
@@ -161,14 +168,16 @@ export function DataExplorer({
     onInsert &&
     ((
       node: DisplayNode,
-      options: FieldInsertOptions = { keepOpen: false },
-      form: FieldForm = fieldForm(node, insertion()),
+      {
+        keepOpen = false,
+        form = fieldForm(node, insertion()),
+      }: FieldInsertRequest = {},
     ) => {
-      if (onInsert(form.snippet, options) === false) return;
+      if (onInsert(form.snippet, { keepOpen }) === false) return;
       announce(
         m.workbench_fields_inserted({ field: fieldLabel(node, labels) }),
       );
-      if (!options.keepOpen) setFields("to-editor");
+      if (!keepOpen) setFields("to-editor");
     });
   const locale = host.getLocale();
   const reader = useMemo<ExplorerReader>(
@@ -184,7 +193,7 @@ export function DataExplorer({
       ...explorerSections(nodes, reader).flatMap((section) =>
         section.rows.map((row) => [row.node.key, row.label] as const),
       ),
-      ...listPropertyLabels(data, reader),
+      ...listPropertyLabels(nodes, reader),
     ]);
   }, [data, reader]);
   const panelRows = useFieldsPanelRows();
@@ -296,13 +305,9 @@ export function DataExplorer({
       escape.current = () => false;
     };
   });
-  const insertEntry = (
-    entry: FieldEntry,
-    options?: FieldInsertOptions,
-    form?: FieldForm,
-  ) => {
+  const insertEntry = (entry: FieldEntry, request?: FieldInsertRequest) => {
     rows.close();
-    insertNode?.(entry.node, options, form);
+    insertNode?.(entry.node, request);
   };
   const copyEntry = (entry: FieldEntry, form: FieldForm) => {
     rows.close();
@@ -379,13 +384,24 @@ export function DataExplorer({
       loop: m.workbench_explorer_menu_copy_loop,
       joined: m.workbench_explorer_menu_copy_joined,
     };
-    const languages = engines?.() ?? [insertion().engine];
+    // The menu copies what an insert at the caret writes. A template offers
+    // each engine the reader may write in; a Properties value reads the
+    // field itself, in no engine.
+    const context = insertion();
+    const languages =
+      context.mode === "template"
+        ? (engines?.() ?? [context.engine])
+        : [context.engine];
     const submenus: NonNullable<WorkbenchMenuRequest["submenus"]>[number][] =
       [];
     for (const language of languages) {
-      const snippets = snippetKindsFor(node).map((kind) => ({
-        label: labels[kind](),
-        onSelect: () => copyMenu(renderSnippet(node, language, kind)),
+      const snippets = fieldForms(
+        node,
+        { ...context, engine: language },
+        { every: true },
+      ).map((form) => ({
+        label: labels[form.kind](),
+        onSelect: () => copyMenu(form.snippet),
       }));
       if (languages.length > 1)
         submenus.push({
@@ -537,7 +553,8 @@ export function DataExplorer({
           takeFocus={rows.focusDetails}
           onInsert={
             insertNode && !disabled
-              ? (form, options) => insertEntry(rows.open!, options, form)
+              ? (form, { keepOpen }) =>
+                  insertEntry(rows.open!, { keepOpen, form })
               : undefined
           }
           onCopy={(form) => copyEntry(rows.open!, form)}
@@ -550,20 +567,17 @@ export function DataExplorer({
       )}
       {panelRows && (
         <p {...part("keys-hint")}>
-          {canInsert ? (
-            m.workbench_fields_details_hint({
-              insert:
-                host.fieldsAction?.insertShortcut ??
-                m.workbench_fields_insert_key(),
-            })
-          ) : (
-            // With no place to insert, the hint promises no insert and says why.
-            <>
-              {m.workbench_fields_details_hint_view()}
-              {" · "}
-              <span>{m.workbench_fields_choose_place()}</span>
-            </>
-          )}
+          {canInsert
+            ? m.workbench_fields_details_hint({
+                insert:
+                  host.fieldsAction?.insertShortcut ??
+                  m.workbench_fields_insert_key(),
+              })
+            : // With no place to insert, the hint promises no insert and says why.
+              m.workbench_fields_details_hint_no_place({
+                hint: m.workbench_fields_details_hint_view(),
+                reason: m.workbench_fields_choose_place(),
+              })}
         </p>
       )}
     </section>
