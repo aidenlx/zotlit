@@ -2075,7 +2075,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const pinned = {
           offered,
           label: pinOf(docked)?.getAttribute("aria-label"),
-          pressed: pinOf(docked)?.getAttribute("aria-pressed"),
+          state: pinOf(docked)?.dataset.state,
           expanded: action.getAttribute("aria-expanded"),
           // The docked panel stands at the leading edge, before the editor,
           // and the editor gives it the room.
@@ -2159,7 +2159,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       pinned: {
         offered: run.m.workbench_fields_pin(),
         label: run.m.workbench_fields_unpin(),
-        pressed: "true",
+        state: "pinned",
         expanded: "true",
         leading: true,
         narrower: true,
@@ -2209,7 +2209,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   // #1967 in the docked panel (#1966). No Scope of the panel's holds its keys
   // there, and none is needed: a reader's hotkey on Mod+Enter, live in the
   // editor, does not run while focus is in the panel's search.
-  it("shows a field's details beside the docked Fields Panel, inserts with Mod+Enter and stays docked, and stops Escape after the search", async () => {
+  it("shows a field's details beside the docked Fields Panel with the focus in them, inserts with Mod+Enter and stays docked, and stops Escape after the search", async () => {
     const path = `templates/${booksProfile.document}`;
     const documentPath = join(e2eVaultPath, path);
     const original = await readFile(documentPath, "utf-8");
@@ -2350,10 +2350,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           trailing: box.left >= column.right,
           level:
             Math.abs(box.top - row("DOI")!.getBoundingClientRect().top) <= 1,
-          focusInSearch: el.doc.activeElement === search(),
+          focus: details()!.contains(el.doc.activeElement)
+            ? (el.doc.activeElement as HTMLElement).dataset.part
+            : "elsewhere",
         };
-        // Mod+Enter in the panel inserts the selected field, the panel stays
-        // docked, and the reader's hotkey does not run.
+        // Escape closes them and hands the focus back to the search; Enter
+        // opens them again on the same row.
+        await input.key("Escape");
+        await until("the details closed", () => details() === null);
+        const back = {
+          focusInSearch: el.doc.activeElement === search(),
+          selected: el.doc.querySelector<HTMLElement>(
+            "[role=treeitem][aria-selected=true]",
+          )?.dataset.workbenchField,
+        };
+        await input.key("Return");
+        await until("the DOI's details again", () => details() !== null);
+        // Mod+Enter in the details inserts the selected field, the panel
+        // stays docked, and the reader's hotkey does not run.
         const panelBefore = sidebar();
         await input.key("Return", [mod]);
         await new Promise((resolve) => el.win.setTimeout(resolve, 400));
@@ -2391,6 +2405,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         return JSON.stringify({
           opened,
+          back,
           liveInEditor,
           inserted: {
             field: inserted.field,
@@ -2408,8 +2423,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         state: "popover",
         trailing: true,
         level: true,
-        focusInSearch: true,
+        focus: "insert",
       },
+      back: { focusInSearch: true, selected: "DOI" },
       liveInEditor: true,
       inserted: { field: true, docked: true, details: true, hotkeyRan: false },
       escape: {
@@ -2417,6 +2433,280 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         second: true,
         third: { docked: true, focusInSearch: true },
       },
+    });
+  });
+
+  // #1962: with no place in the template to put a field, the Fields popover
+  // says so in its keys hint, beside a disabled Insert and in a notice for
+  // Mod+Enter; its search finds a field by the path the template writes.
+  it("names the missing place before an insert, and finds a field by its template path", async () => {
+    const path = `templates/${booksProfile.document}`;
+    const documentPath = join(e2eVaultPath, path);
+    const original = await readFile(documentPath, "utf-8");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        ({ app }) =>
+          app.workspace.detachLeavesOfType("zotlit-template-workbench"),
+        undefined,
+      );
+      await writeFile(documentPath, original);
+    });
+    await suite.wideWindow(cleanup);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, key }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        const leaf = app.workspace.createLeafInParent(
+          app.workspace.rootSplit,
+          0,
+        );
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: { file: path, itemIndexedKey: key },
+          active: true,
+        });
+      },
+      { path, key: targetItem.key },
+    );
+    await obRunUntil(
+      run.vaultId,
+      ({ page }, { path }) =>
+        page.workbench({ path })?.contentEl.querySelector(".cm-content") !=
+        null,
+      { path },
+      { what: "the workbench with its editor" },
+    );
+
+    const walk = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label, choose }) => {
+        const { until, trusted } = page;
+        const view = page.workbench({ path })!;
+        const el = view.contentEl;
+        const input = trusted(el.win);
+        const contents = (
+          el.win as Window & {
+            electronWindow: { webContents: import("electron").WebContents };
+          }
+        ).electronWindow.webContents;
+        contents.focus();
+        await until("the window takes keys", () => el.doc.hasFocus());
+        const content = el.querySelector<CodeMirrorElement>(".cm-content")!;
+        const editor = content.cmTile!.root.view;
+        const source = editor.state.doc.toString();
+        const popover = () => page.fieldsPopover(view);
+        const search = () =>
+          popover()?.querySelector<HTMLInputElement>('input[type="search"]') ??
+          null;
+        const details = () =>
+          el.doc.querySelector<HTMLElement>("[data-part=details]");
+        const keys = () =>
+          [
+            ...(popover()?.querySelectorAll<HTMLElement>(
+              "[data-workbench-field]",
+            ) ?? []),
+          ]
+            .filter((item) => item.checkVisibility())
+            .map((item) => item.dataset.workbenchField);
+        const notices = () =>
+          [...el.doc.querySelectorAll(".notice")].map(
+            (notice) => notice.textContent,
+          );
+        // The reader opens the popover before placing the cursor anywhere.
+        await input.click(
+          view.containerEl.querySelector<HTMLElement>(
+            `.view-action[aria-label="${label}"]`,
+          )!,
+        );
+        await until("the Fields popover", () => search() !== null);
+        const hint =
+          popover()!.querySelector("[data-part=keys-hint]")?.textContent ?? "";
+        await input.click(
+          popover()!.querySelector<HTMLElement>(
+            '[data-workbench-field="title"] > [data-part=row]',
+          )!,
+          { x: 40, y: 8 },
+        );
+        await until("the details", () => details() !== null);
+        const insert =
+          details()!.querySelector<HTMLButtonElement>("[data-part=insert]")!;
+        const reasonId = insert.getAttribute("aria-describedby");
+        const reason = {
+          disabled: insert.disabled,
+          text: reasonId
+            ? el.doc.getElementById(reasonId)?.textContent
+            : undefined,
+        };
+        await input.key("Escape");
+        await until("the details closed", () => details() === null);
+        await input.key("Down");
+        await input.key("Return", [
+          process.platform === "darwin" ? "meta" : "control",
+        ]);
+        const notice = await until(
+          "the notice that names the place",
+          () => notices().includes(choose) && choose,
+        );
+        // The search takes the path the template writes.
+        const found: Record<string, unknown> = {};
+        for (const query of ["zt.title", "authors.family"]) {
+          search()!.select();
+          await contents.insertText(query);
+          await until(`the rows for ${query}`, () =>
+            keys().length > 0 && search()!.value === query ? true : undefined,
+          );
+          found[query] = keys();
+        }
+        return JSON.stringify({
+          hintNamesPlace: hint.includes(choose),
+          reason,
+          notice,
+          unchanged: editor.state.doc.toString() === source,
+          found,
+        });
+      },
+      {
+        path,
+        label: run.m.workbench_view_fields(),
+        choose: run.m.workbench_fields_choose_place(),
+      },
+    );
+    expect(JSON.parse(walk)).toEqual({
+      hintNamesPlace: true,
+      reason: { disabled: true, text: run.m.workbench_fields_choose_place() },
+      notice: run.m.workbench_fields_choose_place(),
+      unchanged: true,
+      found: {
+        "zt.title": ["title"],
+        "authors.family": ["authors", "authors[].family"],
+      },
+    });
+  });
+
+  // #1962: a workbench in the right-hand leaf of a split keeps a field's
+  // details inside its own leaf, from the Fields popover and from the
+  // docked Fields Panel, so they never cover the note beside it.
+  it("keeps a field's details inside a workbench leaf on the right of a split, popover and docked", async () => {
+    const path = `templates/${booksProfile.document}`;
+    const documentPath = join(e2eVaultPath, path);
+    const original = await readFile(documentPath, "utf-8");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        ({ app }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          app.workspace.detachLeavesOfType("empty");
+        },
+        undefined,
+      );
+      await writeFile(documentPath, original);
+    });
+    await suite.wideWindow(cleanup);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, key }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        app.workspace.detachLeavesOfType("empty");
+        const leaf = app.workspace.createLeafInParent(
+          app.workspace.rootSplit,
+          0,
+        );
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: { file: path, itemIndexedKey: key },
+          active: true,
+        });
+        // A leaf before it, so the workbench is the right-hand leaf.
+        const before = app.workspace.createLeafBySplit(leaf, "vertical", true);
+        await before.setViewState({ type: "empty" });
+        type Sized = { setDimension(share: number): void };
+        const total = (
+          app.workspace.rootSplit as unknown as { containerEl: HTMLElement }
+        ).containerEl.clientWidth;
+        const share = (615 / total) * 100;
+        for (const child of (
+          app.workspace.rootSplit as unknown as { children: unknown[] }
+        ).children)
+          (child as Sized).setDimension(
+            child === leaf || child === leaf.parent ? share : 100 - share,
+          );
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { path, key: targetItem.key },
+    );
+    await obRunUntil(
+      run.vaultId,
+      ({ page }, { path }) => {
+        const view = page.workbench({ path });
+        return (
+          view !== undefined &&
+          view.contentEl.clientWidth >= 600 &&
+          view.contentEl.clientWidth <= 640 &&
+          view.contentEl.querySelector(".cm-content") !== null
+        );
+      },
+      { path },
+      { what: "a workbench leaf of about 615 pixels on the right" },
+    );
+
+    const walk = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label }) => {
+        const { until, trusted } = page;
+        const view = page.workbench({ path })!;
+        const el = view.contentEl;
+        const input = trusted(el.win);
+        const contents = (
+          el.win as Window & {
+            electronWindow: { webContents: import("electron").WebContents };
+          }
+        ).electronWindow.webContents;
+        contents.focus();
+        await until("the window takes keys", () => el.doc.hasFocus());
+        const details = () =>
+          el.doc.querySelector<HTMLElement>("[data-part=details]");
+        const inside = (surface: () => HTMLElement | null) => async () => {
+          await input.click(
+            surface()!.querySelector<HTMLElement>(
+              '[data-workbench-field="title"] > [data-part=row]',
+            )!,
+            { x: 40, y: 8 },
+          );
+          await until("the details", () => details() !== null);
+          const box = details()!.getBoundingClientRect();
+          const leaf = el.getBoundingClientRect();
+          return {
+            state: details()!.dataset.state,
+            inside:
+              box.left >= leaf.left - 0.5 && box.right <= leaf.right + 0.5,
+          };
+        };
+        await input.click(
+          view.containerEl.querySelector<HTMLElement>(
+            `.view-action[aria-label="${label}"]`,
+          )!,
+        );
+        await until("the Fields popover", () => page.fieldsPopover(view));
+        const popover = await inside(() => page.fieldsPopover(view))();
+        await input.key("Escape");
+        await until("the details closed", () => details() === null);
+        await input.click(
+          page
+            .fieldsPopover(view)!
+            .querySelector<HTMLElement>('[data-part="pin"]')!,
+        );
+        await until("the docked panel", () => page.fieldsDock(view));
+        const docked = await inside(() => page.fieldsDock(view))();
+        return JSON.stringify({ popover, docked });
+      },
+      { path, label: run.m.workbench_view_fields() },
+    );
+    expect(JSON.parse(walk)).toEqual({
+      popover: { state: "popover", inside: true },
+      docked: { state: "popover", inside: true },
     });
   });
 
