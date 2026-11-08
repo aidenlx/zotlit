@@ -668,6 +668,14 @@ describe(
         absent: [],
       },
       {
+        // Obsidian shows a Property value as text, without the body's notes.
+        name: "a footnote marker in a Property value as literal text",
+        markdown:
+          '---\ntitle: "Draft[^credit]"\n---\nBody [@a].\n\n[^credit]: Grant support.',
+        contains: ["<title>Draft[^credit]</title>", 'id="ref-a"'],
+        absent: ["Grant support", "footnote-ref"],
+      },
+      {
         name: "an opening fence with trailing spaces as body text",
         markdown: "--- \nSee [@a].\n---\nAfter.",
         contains: ["See", "After.", 'id="ref-a"'],
