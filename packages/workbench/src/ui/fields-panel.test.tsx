@@ -727,6 +727,20 @@ describe("a list field", () => {
   const toggle = (key: string) =>
     within(line(key)).queryByRole("button", { name: "Toggle node" });
 
+  // Final review of spec #1962 (B3), story 19: a search finds a field by its
+  // template path as well as by its name and its value.
+  it.each([
+    ["zt.title", "title"],
+    ["zt.authors", "authors"],
+    ["authors.family", "authors[].family"],
+  ])("is found by its template path %s", (query, key) => {
+    using page = open(lists);
+    page.pressAction();
+    fireEvent.change(search(), { target: { value: query } });
+    expect(item(key)).toBeDefined();
+    expect(within(panel()!).queryByText(/No matching fields/)).toBeNull();
+  });
+
   it("shows its item count and every item in one line", () => {
     using page = open(lists);
     page.pressAction();

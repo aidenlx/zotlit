@@ -392,10 +392,37 @@ function stringifyContainer(value: unknown): string {
   }
 }
 
+/** What a search reads of one field. */
+export interface SearchedField {
+  /** The field's key, or the property of a list's items. */
+  readonly label: string;
+  /** The name the reader sees for it, where it has one. */
+  readonly alias?: string;
+  readonly path: readonly PathSegment[];
+  /** Its values as text; a value the search may not read is left out. */
+  readonly values?: readonly string[];
+}
+
 /**
- * Walks the raw root exhaustively, keeping only nodes whose label or
- * stringified primitive value contains `query`, plus their auto-expanded
- * ancestor chains.
+ * The one search rule over fields: a field matches when its key, the name
+ * the reader sees, its template path (`zt.authors.family`) or one of its
+ * values contains `query`, in any case. A path matches the field the query
+ * reaches into, not the fields inside it.
+ */
+export function fieldMatches(query: string, field: SearchedField): boolean {
+  const needle = query.toLowerCase();
+  const has = (text: string) => text.toLowerCase().includes(needle);
+  return (
+    [field.label, field.alias ?? "", ...(field.values ?? [])].some(has) ||
+    // A path the query reaches only up to the parent's names the parent.
+    (has(formatPath(field.path, "zt")) &&
+      !has(formatPath(field.path.slice(0, -1), "zt")))
+  );
+}
+
+/**
+ * Walks the raw root exhaustively, keeping only nodes that match `query` by
+ * {@link fieldMatches}, plus their auto-expanded ancestor chains.
  */
 export interface BuildFilteredDisplayTreeOptions {
   /** Keys (see {@link formatPath}) of containers to render without children, even when they have filtered matches. */
@@ -415,7 +442,7 @@ export function buildFilteredDisplayTree(
   matchedKeys: ReadonlySet<string>;
 } {
   const ctx: FilterContext = {
-    lowerQuery: query.toLowerCase(),
+    query,
     matchedKeys: new Set(),
     activeContainers: new WeakSet(),
     collapsed: options?.collapsed ?? new Set(),
@@ -427,7 +454,7 @@ export function buildFilteredDisplayTree(
 }
 
 interface FilterContext {
-  readonly lowerQuery: string;
+  readonly query: string;
   readonly matchedKeys: Set<string>;
   readonly activeContainers: WeakSet<object>;
   readonly collapsed: ReadonlySet<string>;
@@ -460,9 +487,10 @@ function filterNode(
   const path = [...parentPath, entry.segment];
   const key = formatPath(path);
   const label = String(entry.segment);
-  const labelMatches =
-    label.toLowerCase().includes(ctx.lowerQuery) ||
-    (ctx.aliases.get(key)?.toLowerCase().includes(ctx.lowerQuery) ?? false);
+  const alias = ctx.aliases.get(key);
+  const field: SearchedField =
+    alias === undefined ? { label, path } : { label, alias, path };
+  const labelMatches = fieldMatches(ctx.query, field);
   const nodeBase = { path, key, label };
 
   if (entry.isGetter && labelMatches) {
@@ -490,10 +518,11 @@ function filterNode(
   const valueType = valueTypeOf(value);
 
   if (valueType !== "array" && valueType !== "object") {
-    const valueMatches = stringifyPrimitive(value)
-      .toLowerCase()
-      .includes(ctx.lowerQuery);
-    if (!labelMatches && !valueMatches) return null;
+    const valueMatches = fieldMatches(ctx.query, {
+      ...field,
+      values: [stringifyPrimitive(value)],
+    });
+    if (!valueMatches) return null;
     ctx.matchedKeys.add(key);
     return classifyValue(value, nodeBase, {
       expanded: new Set(),
@@ -526,7 +555,7 @@ function filterNode(
   const itemsMatch =
     reading !== null &&
     reading.properties.length === 0 &&
-    reading.lines.some((line) => line.toLowerCase().includes(ctx.lowerQuery));
+    fieldMatches(ctx.query, { ...field, values: reading.lines });
   if (!labelMatches && !itemsMatch && children.length === 0) return null;
   if (labelMatches || itemsMatch) ctx.matchedKeys.add(key);
 
@@ -545,16 +574,20 @@ function filterNode(
   };
 }
 
-/** The list's properties whose name or any item's value contains the query. */
+/** The list's properties that match the query by name, path or any item's value. */
 function filterListProperties(
   list: readonly unknown[],
   listPath: readonly PathSegment[],
   ctx: FilterContext,
 ): ListPropertyNode[] {
   return listProperties(list, listPath).filter((node) => {
-    const matches =
-      node.label.toLowerCase().includes(ctx.lowerQuery) ||
-      node.values.some((value) => value.toLowerCase().includes(ctx.lowerQuery));
+    const alias = ctx.aliases.get(node.key);
+    const matches = fieldMatches(ctx.query, {
+      label: node.label,
+      ...(alias !== undefined && { alias }),
+      path: node.path,
+      values: node.values,
+    });
     if (matches) ctx.matchedKeys.add(node.key);
     return matches;
   });
