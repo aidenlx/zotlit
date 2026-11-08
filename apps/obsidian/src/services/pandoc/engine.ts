@@ -1,5 +1,7 @@
 // Bibliography and cited-document rendering, behind an interface that hides Pandoc.
 
+import { getFrontMatterInfo } from "obsidian";
+
 import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
@@ -203,13 +205,16 @@ export class CitationRequestSupersededError extends Error {
  * Wikilinks reach the Lua filter as Links only under this reader extension,
  * which is also what the bundled `zotlit.yaml` selects for the native CLI.
  * Without `blank_before_blockquote`, a `>` line starts a block quote directly
- * under a paragraph, as it does in Obsidian.
+ * under a paragraph, as it does in Obsidian. Obsidian reads `---` in the body as
+ * a thematic break, so YAML metadata blocks and the simple and multiline tables
+ * that overlap that syntax stay off.
  */
 const MARKDOWN_READER =
-  "markdown+wikilinks_title_after_pipe-blank_before_blockquote";
+  "markdown+wikilinks_title_after_pipe-blank_before_blockquote-yaml_metadata_block-simple_tables-multiline_tables";
 
 const STYLE_FILE = "style.csl";
 const BIBLIOGRAPHY_FILE = "bibliography.json";
+const PROPERTIES_FILE = "document-properties.yaml";
 
 /**
  * Instantiate one engine over the Pandoc WASM binary.
@@ -326,33 +331,22 @@ class PandocCitationEngine implements CitationEngine {
     const filterFiles = Object.fromEntries(
       luaFilters.map((source, index) => [`filter-${index}.lua`, source]),
     );
-    // Obsidian has one Properties block, at the start of the note. Pandoc's
-    // YAML extension also reads body separators as metadata, so pass Properties
-    // as a metadata file and read the body with that extension disabled.
-    let body = markdown;
-    const metadataFiles: Record<string, string> = {};
-    const lines = markdown.split("\n");
-    if (lines[0]?.trimEnd() === "---") {
-      const closing = lines.findIndex(
-        (line, index) => index > 0 && line.trimEnd() === "---",
-      );
-      if (closing > 0) {
-        metadataFiles["document-properties.yaml"] = lines
-          .slice(1, closing)
-          .join("\n");
-        body = lines.slice(closing + 1).join("\n");
-      }
-    }
+    // The reader reads no YAML blocks, so the opening Properties, which
+    // Obsidian bounds, reach Pandoc as a metadata file.
+    const properties = getFrontMatterInfo(markdown);
+    const metadataFiles: Record<string, string> = properties.exists
+      ? { [PROPERTIES_FILE]: properties.frontmatter }
+      : {};
     const { stdout } = await this.#convert({
       options: {
-        // Simple and multiline tables overlap Obsidian's thematic breaks.
-        from: `${MARKDOWN_READER}-pandoc_title_block-yaml_metadata_block-simple_tables-multiline_tables`,
+        // Obsidian's opening %% comment is body text.
+        from: `${MARKDOWN_READER}-pandoc_title_block`,
         "metadata-files": Object.keys(metadataFiles),
         to: "json",
         standalone: false,
         filters: Object.keys(filterFiles),
       },
-      stdin: body,
+      stdin: markdown.slice(properties.contentStart),
       files: { ...files, ...filterFiles, ...metadataFiles },
       supersedes,
     });

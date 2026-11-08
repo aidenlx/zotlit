@@ -682,7 +682,75 @@ local function convert_callout(quote)
   return pandoc.BlockQuote(blocks)
 end
 
+--- Reads Markdown as the first parse did. pandoc.read ignores
+--- reader_options.extensions, so the format names them.
+local function read_markdown(text, extensions)
+  return pandoc.read(text, {
+    format = "markdown", extensions = extensions or PANDOC_READER_OPTIONS.extensions
+  }, PANDOC_READER_OPTIONS)
+end
+
+--@variant cli
+--- Obsidian 1.14.2's Properties boundary, as `getFrontMatterInfo` scans it: an
+--- opening `---` line, then the first line that starts with `---` and ends
+--- there. The mock in `apps/obsidian/__mocks__/obsidian.ts` models the same rule.
+--- @return string|nil properties the YAML between the fences
+--- @return string body the text after the closing fence
+local function split_properties(source)
+  local from = source:match("^%-%-%-\r?\n()")
+  if not from then
+    return nil, source
+  end
+  local position = from
+  while true do
+    local start = source:find("---", position, true)
+    if not start then
+      return nil, source
+    end
+    local after = start + 3
+    if source:sub(start - 1, start - 1) == "\n" then
+      local content = source:match("^\r?\n()", after)
+      if content or after > #source then
+        return source:sub(from, start - 1), source:sub(content or after)
+      end
+    end
+    position = start + 1
+  end
+end
+
+--- Obsidian has one Properties block, at the start of the note, while Pandoc's
+--- YAML extension also reads body separators as metadata. `zotlit.yaml` turns
+--- that extension off, so this reads the opening Properties as metadata and the
+--- rest as the body. Metadata already set, such as `-M`, keeps its value.
+local function read_properties(doc)
+  local input = io.open(input_path(), "r")
+  if not input then
+    return doc
+  end
+  local properties, body = split_properties(input:read("a"))
+  input:close()
+  if not properties then
+    return doc
+  end
+  local meta = pandoc.Meta({})
+  -- Pandoc reads no metadata block whose opening fence a blank line follows.
+  local yaml = properties:gsub("^%s*\n", "")
+  if yaml:match("%S") then
+    local extensions = pandoc.List({ "yaml_metadata_block" })
+    extensions:extend(PANDOC_READER_OPTIONS.extensions)
+    meta = read_markdown("---\n" .. yaml .. "\n---\n", extensions).meta
+  end
+  for key, value in pairs(doc.meta) do
+    meta[key] = value
+  end
+  return pandoc.Pandoc(read_markdown(body).blocks, meta)
+end
+--@end
+
 function Pandoc(doc)
+--@variant cli
+  doc = read_properties(doc)
+--@end
   doc.meta = resolve_style(doc.meta)
   citations = load_citations()
 --@variant sandbox
@@ -693,11 +761,7 @@ function Pandoc(doc)
     local unmarked = input:read("a"):gsub(literal_marker .. "%d+", "")
     input:close()
     local identifiers = {}
-    -- pandoc.read ignores reader_options.extensions; give the format the same
-    -- extensions as the first parse so both passes read the same document.
-    local original = pandoc.read(unmarked, {
-      format = "markdown", extensions = PANDOC_READER_OPTIONS.extensions
-    }, PANDOC_READER_OPTIONS)
+    local original = read_markdown(unmarked)
     pandoc.Pandoc(original.blocks):walk({ Header = function(header)
       identifiers[#identifiers + 1] = header.identifier
     end })

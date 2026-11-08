@@ -807,5 +807,44 @@ describe.skipIf(noPandoc)("zotlit-cite.lua under native Pandoc", () => {
 
       expectStopped(await runCli(cli), "[resolve-call-failed]");
     });
+
+    // Obsidian reads only the opening block as Properties; each later `---`
+    // pair is a separator around body text, even text that looks like YAML.
+    it("reads the opening Properties and keeps body separators", async () => {
+      await writeFile(
+        join(cli.notes, "input.md"),
+        [
+          "---",
+          "title: Draft",
+          "---",
+          "",
+          "Before.",
+          "",
+          "---",
+          "*Aside*",
+          "---",
+          "",
+          "---",
+          "lang: fr",
+          "---",
+          "",
+          "After [[Doe 2020]].",
+          "",
+        ].join("\n"),
+      );
+      await writeFile(cli.response, JSON.stringify(RESOLVE_MAP));
+
+      const run = await runCli(cli, { to: "html", standalone: true });
+      expectRan(
+        run,
+        flatten(run.stdout),
+        "<title>Draft</title>",
+        "<hr",
+        "<em>Aside</em>",
+        "lang: fr",
+        "(Doe 2020",
+      );
+      expect(run.stdout).not.toContain('lang="fr"');
+    });
   });
 });

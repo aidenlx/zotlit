@@ -668,6 +668,12 @@ describe(
         absent: [],
       },
       {
+        name: "an opening fence with trailing spaces as body text",
+        markdown: "--- \nSee [@a].\n---\nAfter.",
+        contains: ["See", "After.", 'id="ref-a"'],
+        absent: [],
+      },
+      {
         name: "a valid citation link only inside a comment",
         markdown: "%% [paper](./Note#cite:locator=2) %%",
         contains: [],
@@ -1076,6 +1082,38 @@ describe(
           );
           expect(html).toContain('id="ref-adams2018"');
         }),
+    );
+
+    // A literal citation key sends the document through the filter's second
+    // read, which assigns heading IDs; it reads body separators as the first did.
+    it.effect("keeps body separators beside a literal citation key", () =>
+      Effect.gen(function* () {
+        const engine = yield* realEngine;
+        const result = yield* exportParsed(
+          {
+            document: { sourcePath: SOURCE, links: [] },
+            markdown: "# Intro\n\n---\n*Aside*\n---\n\nRead [@zeta2020].",
+            format: "html",
+          },
+          {
+            ...ports({
+              ...DEMO,
+              links: [],
+              citekeys: { zeta2020: "ZETA1234" },
+            }),
+            engine,
+          },
+        );
+
+        expect(result).toHaveProperty("output");
+        const html = new TextDecoder()
+          .decode((result as { output: Uint8Array }).output)
+          .replaceAll(/\s+/g, " ");
+        expect(html).toContain('id="intro"');
+        expect(html).toContain("<hr");
+        expect(html).toContain("<em>Aside</em>");
+        expect(html).toContain(`data-cites="${ZETA.id}"`);
+      }),
     );
 
     it.effect("keeps Pandoc's nocite wildcard whole", () =>
