@@ -40,7 +40,7 @@ The editor tabs, the Preview panel and the Fields panel use one chosen item and 
 
 Select <UiLabel name={m.workbench_show_preview()} /> in the view header to show the Preview panel. The action looks pressed while the panel is shown. Select it again to hide the panel. The same entry is in the view's pane menu, with a check mark while the panel is shown. The web Workbench has the same action in its header, and the same entry in its <UiLabel name={m.workbench_view_menu()} /> menu.
 
-Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields popover, and select it again to close it. When you pinned the Fields panel, the same action hides and shows it. The pane menu entry <UiLabel name={m.workbench_show_fields()} /> and the web Workbench's <UiLabel name={m.workbench_view_menu()} /> entry of the same name do the same, with a check mark while the panel is open. See [The Fields panel](#fields-panel).
+Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields popover, and select it again to close it. While the Fields panel is pinned, the same action hides and shows it. The pane menu entry <UiLabel name={m.workbench_show_fields()} /> and the web Workbench's <UiLabel name={m.workbench_view_menu()} /> entry of the same name do the same, with a check mark while the panel is open. See [The Fields panel](#fields-panel).
 
 Hiding the Preview panel keeps your chosen item and annotation. The panel shows them again when you bring it back.
 
@@ -99,7 +99,7 @@ Each row shows the field's name and the chosen paper's value on one line. A valu
 
 A list field, such as the authors or the annotations, shows how many items it has and all of them on one line. When the items have their own fields, a chevron after the list's name opens one row for each of those fields, with its value for every item: the authors open to their first and last names, and the tags to their name and type. A list goes into your note with every item, so a note for a paper with three authors names all three. The details of a list show its values one per line, numbered. Under <UiLabel name={m.workbench_fields_details_in_note()} />, choose <UiLabel name={m.workbench_fields_details_form_joined()} /> to write the items on one line, separated by commas, or <UiLabel name={m.workbench_fields_details_form_loop()} /> to write each item on its own Markdown list line. <UiLabel name={m.workbench_fields_put_in_note()} /> on the row uses the first of these choices.
 
-You can also use the keyboard in the filter. Press Down Arrow or Up Arrow to select a row, Enter to show or hide its details, and Ctrl+Enter (Command+Enter on macOS) to insert it.
+You can also use the keyboard in the filter. Press Down Arrow or Up Arrow to select a row, Enter to show its details, and Ctrl+Enter (Command+Enter on macOS) to insert it. When Enter opens the details, the cursor moves into them, so Tab reaches the form choice, <UiLabel name={m.workbench_fields_insert()} />, <UiLabel name={m.workbench_fields_copy()} /> and <UiLabel name={m.workbench_fields_details_close()} />. Ctrl+Enter there inserts the form you chose. Escape closes the details and puts the cursor back in the filter.
 
 Select a place outside the details, or press Escape, to close them. Escape first closes the details, then clears the filter, and then closes the popover. In the pinned panel, Escape stops after it clears the filter, because the panel stays.
 
@@ -123,7 +123,7 @@ The focus goes back to <UiLabel name={m.workbench_view_fields()} />.
 <UiLabel name={m.workbench_problem_show()} /> in the Preview panel also closes
 the popover. The editor then shows the problem, with the focus on it.
 
-Place your cursor in the template before you insert a field. Inserting puts the field at the cursor, closes the popover, and puts the cursor back in the editor after the field. To insert several fields in a row, hold Shift while you select the insert button, or press Shift and Enter on it. The popover then stays open.
+Place your cursor in the template before you insert a field. Until you do, the panel shows <UiLabel name={m.workbench_fields_choose_place()} />. Inserting puts the field at the cursor, closes the popover, and puts the cursor back in the editor after the field. To insert several fields in a row, hold Shift while you select the insert button, or press Shift and Enter on it. The popover then stays open.
 
 ### Pin the Fields panel [#pin-fields]
 
