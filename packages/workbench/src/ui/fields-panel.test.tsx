@@ -1217,6 +1217,19 @@ describe("the Fields Panel's announcements", () => {
     fireEvent.change(search(), { target: { value: "no such field" } });
     expect(announced()).toContain("No matching fields.");
   });
+
+  // Walkthrough of spec #1962 (N2): the sentence goes once the search
+  // matches again, or is cleared.
+  it.each([
+    ["matches again", "title"],
+    ["is cleared", ""],
+  ])("stop saying that a search matches nothing once it %s", (_, query) => {
+    using page = open();
+    page.pressAction();
+    fireEvent.change(search(), { target: { value: "no such field" } });
+    fireEvent.change(search(), { target: { value: query } });
+    expect(announced()).not.toContain("No matching fields.");
+  });
 });
 
 // Final review of spec #1962 (B6): a row reads as its visible label, with its

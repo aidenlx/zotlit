@@ -185,13 +185,18 @@ In step 3, every section is closed again, as before the search.
 2. Type each of these in the field search, one at a time: `zt.title`,
    `zt.authors`, `authors.family`, `zt.citationKey`.
 3. Type `no such field`.
+4. Type `title` in place of it. Then type `no such field` again, and clear
+   the search.
 
 Expected: in step 2 each search keeps the field it names: **Title**,
 **Authors**, the `family` row under **Authors**, and **Citation key**. A
 search that reaches into a list, such as `authors.family`, opens that list on
 its matching row only. In step 3 the list reads "No matching fields. Clear
-the search to see all fields.", and a screen reader reads that sentence. The
-web Workbench does the same steps, with the same outcome.
+the search to see all fields.", and a screen reader reads that sentence. In
+step 4 the sentence goes from the list and from the panels' live region
+(`role="status"`) as soon as the search matches a field again, and as soon as
+the search is empty. The web Workbench does the same steps, with the same
+outcome.
 
 ## The rows of the Fields Panel
 
