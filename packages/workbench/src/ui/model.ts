@@ -43,9 +43,9 @@ import {
   placePanels,
 } from "./panel-layout";
 import type {
-  FieldsAction,
   FieldsPanelState,
   FieldsPin,
+  FieldsPlacement,
   PanelHandle,
   PanelPlacement,
   ViewSize,
@@ -338,7 +338,7 @@ export interface WorkbenchModel<
    * write presses the action: it opens or closes the Fields popover, or
    * hides or shows the docked panel, which keeps its pin.
    */
-  readonly fieldsAction: Atom.Writable<FieldsAction, void>;
+  readonly fieldsAction: Atom.Writable<FieldsPlacement, void>;
   /**
    * Whether the Fields Panel is pinned, and whether the view has room to
    * dock it. A write presses the pin: it docks the panel, or unpins it into
@@ -548,10 +548,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     placement,
     fieldsPanel,
     fieldsAction: Atom.writable(
-      (get): FieldsAction => {
-        const { fields } = get(placement);
-        return { open: fields !== "closed", placement: fields };
-      },
+      (get): FieldsPlacement => get(placement).fields,
       (ctx) => {
         const { fields, canPin } = ctx.get(placement);
         if (fields === "docked")

@@ -12,8 +12,11 @@ import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
-import { DockedFieldsPanel, fieldsDockId, FieldsPanel } from "./fields-panel";
-import type { FieldsPanelContent } from "./fields-panel";
+import {
+  DockedFieldsPanel,
+  fieldsDockId,
+  FieldsPopoverPanel,
+} from "./fields-panel";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import {
@@ -33,7 +36,6 @@ import {
 import type {
   PanelHandle,
   PanelSide,
-  ShowableSide,
   ViewSize,
   WorkbenchPanels,
 } from "./panel-layout";
@@ -59,12 +61,7 @@ export function SidePanels({
   panels,
   children,
 }: {
-  panels: Partial<Record<ShowableSide, SidePanel>> & {
-    readonly fields?: FieldsPanelContent & {
-      /** The docked panel's resize handle's name. */
-      readonly resizeLabel: string;
-    };
-  };
+  panels: Partial<Record<PanelSide, SidePanel>>;
   children: ReactNode;
 }) {
   const model = useWorkbenchModel();
@@ -112,7 +109,7 @@ export function SidePanels({
           />
         )}
       </div>
-      {panels.fields && <FieldsPanel {...panels.fields} />}
+      {panels.fields && <FieldsPopoverPanel {...panels.fields} />}
       {panels.fields && <FieldsStatusRegion />}
       <SizeStatus
         labels={{

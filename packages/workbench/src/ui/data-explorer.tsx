@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useUniqueId } from "@zotlit/ui";
+import { composing } from "@zotlit/ui";
 
 import { useWorkbenchModel } from "./editor";
 import { explorerSections, listPropertyLabels } from "./explorer-sections";
@@ -26,7 +27,6 @@ import type {
   WorkbenchMenuItem,
   WorkbenchMenuRequest,
 } from "./host";
-import { composing } from "./ime";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";

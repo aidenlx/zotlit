@@ -7,12 +7,12 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { Ref } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
+import { composing } from "@zotlit/ui";
 
 import { fieldValueText } from "./explorer-fields";
 import type { FieldForm, FieldInsertOptions } from "./field-insertion";
 import { useFieldsPanelRows } from "./fields-panel";
 import { useOptionalHost, useTooltip } from "./host";
-import { composing } from "./ime";
 import { useWorkbenchMessages } from "./messages";
 import type { ViewSize } from "./panel-layout";
 import { useIcon, useParts } from "./theme";

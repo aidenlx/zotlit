@@ -83,12 +83,11 @@ export {
   INITIAL_PANELS,
   setPanelWidth,
   setPreviewHeight,
-  showPanel,
+  showPreview,
 } from "./panel-layout";
 export type {
   FieldsDock,
   PanelSide,
-  ShowableSide,
   PreviewPanel,
   ViewSize,
   WorkbenchPanel,
@@ -99,7 +98,6 @@ export { HELP_PAGES } from "./help-pages";
 export { ItemRow } from "./item-row";
 export { SidePanels } from "./panels";
 export { fieldsActionAttributes } from "./fields-panel";
-export type { FieldsPanelContent } from "./fields-panel";
 export {
   NO_MATCH_DATA,
   WorkbenchClipboardError,

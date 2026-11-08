@@ -137,7 +137,7 @@ function open({
     resize: (next: ViewSize) => act(() => mounted.registry.set(viewSize, next)),
     pressAction: () =>
       act(() => pressFieldsAction(mounted.registry, mounted.model)),
-    isOpen: () => mounted.registry.get(mounted.model.fieldsAction).open,
+    isOpen: () => mounted.registry.get(mounted.model.fieldsAction) !== "closed",
   });
 }
 
@@ -256,7 +256,6 @@ describe("the pinned Fields Panel", () => {
     using page = open({ size: { width: 1200, height: 800 } });
     page.pressAction();
     expect(pin().getAttribute("aria-label")).toBe("Pin to side");
-    expect(pin().getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(pin());
     expect(panel()).toBeNull();
     expect(docked()).not.toBeNull();
@@ -266,7 +265,8 @@ describe("the pinned Fields Panel", () => {
     expect(docked()!.hasAttribute("aria-label")).toBe(false);
     expect(page.registry.get(page.model.panels).fields.pinned).toBe(true);
     expect(pin().getAttribute("aria-label")).toBe("Unpin");
-    expect(pin().getAttribute("aria-pressed")).toBe("true");
+    // The label says the state; no pressed state contradicts it.
+    expect(pin().hasAttribute("aria-pressed")).toBe(false);
     // The docked panel takes over focus, in its search field.
     expect(document.activeElement).toBe(
       within(docked()!).getByRole("combobox"),
@@ -370,24 +370,18 @@ describe("the pinned Fields Panel", () => {
 
 describe("the Fields action's state", () => {
   it("reads as a disclosure of the panel it opens", () => {
-    expect(
-      fieldsActionAttributes({ open: false, placement: "closed" }, "fields"),
-    ).toEqual({
+    expect(fieldsActionAttributes("closed", "fields")).toEqual({
       "aria-haspopup": "dialog",
       "aria-expanded": "false",
       "aria-controls": undefined,
     });
-    expect(
-      fieldsActionAttributes({ open: true, placement: "popover" }, "fields"),
-    ).toEqual({
+    expect(fieldsActionAttributes("popover", "fields")).toEqual({
       "aria-haspopup": "dialog",
       "aria-expanded": "true",
       "aria-controls": "fields",
     });
     // The docked panel is a region beside the editor, not a popup.
-    expect(
-      fieldsActionAttributes({ open: true, placement: "docked" }, "fields"),
-    ).toEqual({
+    expect(fieldsActionAttributes("docked", "fields")).toEqual({
       "aria-haspopup": undefined,
       "aria-expanded": "true",
       "aria-controls": "fields-docked",

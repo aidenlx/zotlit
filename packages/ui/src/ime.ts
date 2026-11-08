@@ -1,7 +1,8 @@
 /**
  * Whether a keystroke belongs to an in-flight IME composition, which a text
  * field leaves to the input method: Enter that takes a candidate, Escape that
- * drops one. Obsidian's keymap offers no such guard, so each handler asks.
+ * drops one. Obsidian's keymap and React offer no such guard, so each
+ * handler asks.
  * `keyCode` 229 is the keystroke Chromium reports before `isComposing` turns
  * true. A React event is read through its native one.
  */

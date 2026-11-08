@@ -13,9 +13,10 @@
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 
+import { composing } from "@zotlit/ui";
+
 import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import type { FocusScope } from "@/lib/focus-scope";
-import { composing } from "@/lib/ime";
 import { themeHook } from "@/lib/theme-hooks";
 
 import { readingAngle } from "./free-text-layout";

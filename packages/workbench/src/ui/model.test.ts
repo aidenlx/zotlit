@@ -21,7 +21,7 @@ import {
   PANEL_WIDTH,
   setPanelWidth,
   setPreviewHeight,
-  showPanel,
+  showPreview,
 } from "./panel-layout";
 import type { ViewSize } from "./panel-layout";
 import { fakeHost, TEST_RUNTIME } from "./test-host";
@@ -200,7 +200,7 @@ describe("the side panels", () => {
   it("shows the Preview", () => {
     using opened = open();
     const { registry, model } = opened;
-    registry.update(model.panels, showPanel("preview", true));
+    registry.update(model.panels, showPreview(true));
     expect(registry.get(model.panels)).toEqual({
       fields: { pinned: false, hidden: false, width: 320 },
       preview: { shown: true, width: 400, height: 40 },
@@ -225,7 +225,7 @@ describe("the side panels", () => {
     using opened = open();
     const { registry, model } = opened;
     const panels = registry.get(model.panels);
-    registry.update(model.panels, showPanel("preview", false));
+    registry.update(model.panels, showPreview(false));
     registry.update(model.panels, setPanelWidth("preview", 400));
     expect(registry.get(model.panels)).toBe(panels);
   });
@@ -245,7 +245,7 @@ describe("the side panels", () => {
     const viewSize = Atom.make<ViewSize | null>({ width: 1200, height: 800 });
     using opened = open({ viewSize });
     const { registry, model } = opened;
-    registry.update(model.panels, showPanel("preview", true));
+    registry.update(model.panels, showPreview(true));
     const panels = registry.get(model.panels);
     expect(registry.get(model.placement)).toEqual({
       preview: "side",
@@ -266,15 +266,9 @@ describe("the side panels", () => {
     const viewSize = Atom.make<ViewSize | null>({ width: 1200, height: 800 });
     using opened = open({ viewSize });
     const { registry, model } = opened;
-    expect(registry.get(model.fieldsAction)).toEqual({
-      open: false,
-      placement: "closed",
-    });
+    expect(registry.get(model.fieldsAction)).toBe("closed");
     registry.set(model.fieldsAction, undefined);
-    expect(registry.get(model.fieldsAction)).toEqual({
-      open: true,
-      placement: "popover",
-    });
+    expect(registry.get(model.fieldsAction)).toBe("popover");
     expect(registry.get(model.placement).fields).toBe("popover");
     registry.set(viewSize, { width: 320, height: 600 });
     expect(registry.get(model.placement).fields).toBe("popover");

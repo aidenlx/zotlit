@@ -3610,7 +3610,7 @@ describe("the side panels of the Template Workbench View", () => {
     const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
-    await act(async () => view.togglePanel("preview"));
+    await act(async () => view.togglePreview());
     await act(async () =>
       view.registry.set(view.viewSize, { width: 1200, height: 800 }),
     );

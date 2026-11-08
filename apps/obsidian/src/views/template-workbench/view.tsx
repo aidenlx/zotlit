@@ -62,7 +62,7 @@ import {
   setPreviewHeight,
   setRoot,
   setTab,
-  showPanel,
+  showPreview,
   HELP_PAGES,
 } from "@zotlit/workbench/ui";
 import {
@@ -104,7 +104,6 @@ import type {
   WorkbenchModel,
   WorkbenchViewState,
   TemplateRoot,
-  ShowableSide,
   WorkbenchPanels,
   PartialPlaceholderHost,
   ViewSize,
@@ -838,7 +837,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.#updateActions();
         this.app.workspace.requestSaveLayout();
       }),
-      // The Fields action shows whether its Fields popover is open.
+      // The Fields action shows whether the Fields popover or the docked
+      // panel stands open.
       registry.subscribe(this.workbench.fieldsAction, () =>
         this.#updateActions(),
       ),
@@ -1524,7 +1524,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           setPanelWidth(
             "preview",
             panel.width,
-          )(showPanel("preview", panel.shown)(panels)),
+          )(showPreview(panel.shown)(panels)),
         );
       const height = value.panels.preview?.height;
       if (height !== undefined)
@@ -1649,10 +1649,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const preview = this.addAction(
       "panel-right",
       m.workbench_show_preview(),
-      () => this.togglePanel("preview"),
+      () => this.togglePreview(),
     );
     // Added after the Preview's, so it sits to its left.
-    // It opens the Fields popover, and closes it again.
+    // It opens the Fields popover and closes it again, or hides and shows
+    // the docked panel.
     const fields = this.addAction("braces", m.workbench_view_fields(), () =>
       pressFieldsAction(this.registry, this.workbench),
     );
@@ -1690,7 +1691,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       ))
         if (value === undefined) fields.removeAttribute(name);
         else fields.setAttribute(name, value);
-      fields.classList.toggle("is-active", action.open);
+      fields.classList.toggle("is-active", action !== "closed");
     };
     const syncChrome = () => {
       this.#updateActions();
@@ -1772,9 +1773,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   /** Shows the Preview the leaf hides, or hides it. */
-  togglePanel(side: ShowableSide): void {
+  togglePreview(): void {
     this.registry.update(this.workbench.panels, (panels) =>
-      showPanel(side, !panels[side].shown)(panels),
+      showPreview(!panels.preview.shown)(panels),
     );
   }
 
@@ -1787,7 +1788,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setIcon("braces")
         // The view action's own press: it opens or closes the Fields
         // popover, or hides or shows the docked panel.
-        .setChecked(this.registry.get(this.workbench.fieldsAction).open)
+        .setChecked(this.registry.get(this.workbench.fieldsAction) !== "closed")
         .onClick(() => pressFieldsAction(this.registry, this.workbench)),
     );
     menu.addItem((item) =>
@@ -1796,7 +1797,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setTitle(m.workbench_show_preview())
         .setIcon("panel-right")
         .setChecked(this.registry.get(this.workbench.panels).preview.shown)
-        .onClick(() => this.togglePanel("preview")),
+        .onClick(() => this.togglePreview()),
     );
     this.#addPanelSizeMenu(menu);
     menu.addItem((item) =>
@@ -1831,9 +1832,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .onClick(() => this.#start(Effect.ignore(reportCitationTemplateOpen))),
     );
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
-    // With the Fields popover open, the export saves the root it shows.
+    // With the Fields popover or the docked panel open, the export saves
+    // the root it shows.
     const target = this.templateDataTarget();
-    if (this.registry.get(this.workbench.fieldsAction).open)
+    if (this.registry.get(this.workbench.fieldsAction) !== "closed")
       this.fieldsActions.addExportMenuItem(menu);
     else if (target && this.#deps.pluginVersion)
       menu.addItem((item) =>

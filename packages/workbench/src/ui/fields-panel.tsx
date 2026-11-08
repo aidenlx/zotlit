@@ -12,17 +12,17 @@ import {
 import type { ReactNode, RefObject } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
+import { composing } from "@zotlit/ui";
 
 import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
 import { useOptionalHost, useTooltip } from "./host";
-import { composing } from "./ime";
 import { useWorkbenchMessages } from "./messages";
 import { pressFieldsPin } from "./model";
-import type { FieldsAction } from "./panel-layout";
+import type { FieldsPlacement } from "./panel-layout";
 import { useIcon, useParts } from "./theme";
 
 /** What the Fields Panel holds, and what names it. */
-export interface FieldsPanelContent {
+interface FieldsPanelContent {
   /** The panel's title, which also names it to a screen reader. */
   readonly label: string;
   /** The fields: the host's field tree and its search. */
@@ -38,22 +38,22 @@ export const fieldsDockId = (popoverId: string) => `${popoverId}-docked`;
  * stands.
  */
 export function fieldsActionAttributes(
-  action: FieldsAction,
+  placement: FieldsPlacement,
   popoverId: string,
 ): {
   readonly "aria-haspopup": "dialog" | undefined;
   readonly "aria-expanded": "true" | "false";
   readonly "aria-controls": string | undefined;
 } {
-  const docked = action.placement === "docked";
   return {
-    "aria-haspopup": docked ? undefined : "dialog",
-    "aria-expanded": action.open ? "true" : "false",
-    "aria-controls": docked
-      ? fieldsDockId(popoverId)
-      : action.open
-        ? popoverId
-        : undefined,
+    "aria-haspopup": placement === "docked" ? undefined : "dialog",
+    "aria-expanded": placement === "closed" ? "false" : "true",
+    "aria-controls":
+      placement === "docked"
+        ? fieldsDockId(popoverId)
+        : placement === "popover"
+          ? popoverId
+          : undefined,
   };
 }
 
@@ -84,7 +84,7 @@ export function useFieldsPanelRows(): FieldsPanelRows | null {
 }
 
 /** The Fields Panel in the host's Fields popover. */
-export function FieldsPanel(props: FieldsPanelContent) {
+export function FieldsPopoverPanel(props: FieldsPanelContent) {
   const model = useWorkbenchModel();
   const host = useOptionalHost();
   const [state, setState] = useAtom(model.fieldsPanel);
@@ -202,7 +202,6 @@ function FieldsPanelBody({
         <button
           type="button"
           aria-label={pinLabel}
-          aria-pressed={pinned && canPin}
           aria-disabled={canPin ? undefined : true}
           onClick={() => pressFieldsPin(registry, model)}
           {...pinTooltip}

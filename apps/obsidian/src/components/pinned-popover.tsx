@@ -46,8 +46,9 @@ import {
 import type { HTMLAttributes, Ref, RefObject } from "react";
 import { createPortal } from "react-dom";
 
+import { composing } from "@zotlit/ui";
+
 import { useObsidianApp } from "@/lib/app-context";
-import { composing } from "@/lib/ime";
 import { PopoutAwareHoverPopover } from "@/lib/popout-aware-hover-popover";
 
 import "./pinned-popover.css";

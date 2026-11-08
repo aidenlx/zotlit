@@ -58,7 +58,7 @@ import {
   PropertiesPane,
   SliceEditor,
   SidePanels,
-  showPanel,
+  showPreview,
 } from "@zotlit/workbench/ui";
 import type {
   FieldInsertionContext,
@@ -67,7 +67,6 @@ import type {
   WorkbenchTab,
   WorkbenchHost,
   WorkbenchInsertTarget,
-  ShowableSide,
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
@@ -240,9 +239,9 @@ function WorkbenchSession({
   const { drafts, layout: layoutAtom } = workbench;
   const panels = useAtomValue(model.panels);
   const fieldsAction = useAtomValue(model.fieldsAction);
-  const togglePanel = (side: ShowableSide) =>
+  const togglePreview = () =>
     registry.update(model.panels, (state) =>
-      showPanel(side, !state[side].shown)(state),
+      showPreview(!state.preview.shown)(state),
     );
   // The frame's content box is the view the panels share. A frame laid out
   // at no size, such as one in a hidden tab, keeps the size it last had.
@@ -693,7 +692,7 @@ function WorkbenchSession({
             size="xs"
             aria-pressed={panels.preview.shown}
             className={PRESSED_TOGGLE}
-            onClick={() => togglePanel("preview")}
+            onClick={() => togglePreview()}
           >
             <PanelRight aria-hidden className="rtl:-scale-x-100" />
             {m.workbench_show_preview()}
