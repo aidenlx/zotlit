@@ -698,8 +698,14 @@ describe("a nested field", () => {
 const LISTS = {
   title: "Linked notes in practice",
   authors: [
-    withText({ family: "Ahrens", given: "Sönke" }, "Sönke Ahrens"),
-    withText({ family: "Luhmann", given: "Niklas" }, "Niklas Luhmann"),
+    withText(
+      { family: "Ahrens", given: "Sönke", literal: null },
+      "Sönke Ahrens",
+    ),
+    withText(
+      { family: "Luhmann", given: "Niklas", literal: null },
+      "Niklas Luhmann",
+    ),
   ],
   tags: ["methods", "zettelkasten"],
   attachments: [{ filename: "ahrens.pdf" }, { filename: "luhmann.pdf" }],
@@ -736,6 +742,10 @@ describe("a list field", () => {
     // One sub-row for each property, with that property for every item.
     expect(line("authors[].family").textContent).toContain("Ahrens, Luhmann");
     expect(line("authors[].given").textContent).toContain("Sönke, Niklas");
+    // A property no item has a value for reads as empty.
+    expect(line("authors[].literal").textContent).toContain(
+      "Empty for this item",
+    );
     // The list row keeps its items in view while it stands open.
     expect(line("authors").textContent).toContain(
       "Sönke Ahrens, Niklas Luhmann",

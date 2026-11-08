@@ -532,12 +532,15 @@ function PlaceholderRow({ node, label, cell }: RowProps<PlaceholderNode>) {
 
 /** A property every item of a list has, with the values of all items in one line. */
 function ListPropertyRow({ node, label, cell }: RowProps<ListPropertyNode>) {
+  const m = useWorkbenchMessages();
   const part = useParts("explorerTree");
   return (
     <>
       <KeyLabel node={node} label={label} cell={cell} />{" "}
       <span {...part("value")}>
-        <span {...part("placeholder")}>{node.preview}</span>
+        <span {...part("placeholder")}>
+          {node.preview === "" ? m.workbench_fields_empty() : node.preview}
+        </span>
       </span>
     </>
   );
