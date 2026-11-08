@@ -3406,6 +3406,8 @@ describe("the side panels of the Template Workbench View", () => {
     const { view } = setup();
     await act(async () => view.open());
     const show = actionOf(view, m.workbench_show_preview());
+    // The eye names what the action shows; its pressed state says it is shown.
+    expect(show.dataset.icon).toBe("eye");
     expect(show.getAttribute("aria-pressed")).toBe("false");
     expect(region(view, m.workbench_view_preview())).toBeNull();
     await act(async () => show.click());

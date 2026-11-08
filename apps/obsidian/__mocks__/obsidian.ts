@@ -508,12 +508,14 @@ export class ItemView {
   readonly actions: HTMLElement[] = [];
 
   addAction(
-    _icon: string,
+    icon: string,
     title: string,
     callback: (evt: MouseEvent) => unknown,
   ): HTMLElement {
     const action = document.createElement("div");
     action.setAttribute("aria-label", title);
+    // Records the icon, which Obsidian draws, for a test to read.
+    action.dataset.icon = icon;
     action.addEventListener("click", callback);
     this.actions.push(action);
     return action;

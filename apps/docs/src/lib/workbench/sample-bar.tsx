@@ -83,7 +83,10 @@ export function SampleBar({
   }));
   const label = annotation ? (
     annotation.example && (
-      <span className="text-fd-foreground">
+      <span
+        className="text-fd-foreground"
+        title={annotationOption(m, annotation.example).label}
+      >
         {annotationOption(m, annotation.example).label}
       </span>
     )

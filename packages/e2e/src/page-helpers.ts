@@ -586,6 +586,28 @@ export function createPageHelpers(app: PageApp) {
       null
     );
   }
+  /**
+   * The room, in pixels, between `view`'s item row and its first editor tab
+   * (`above`), and between that tab and the rule under the tab strip
+   * (`below`), with the tabs on one line.
+   */
+  function tabStripInsets(view: TemplateWorkbenchView | undefined) {
+    const row = itemRow(view);
+    const strip = view?.contentEl.querySelector<HTMLElement>("[role=tablist]");
+    const tab = strip?.querySelector<HTMLElement>("[role=tab]");
+    if (!row || !strip || !tab) return null;
+    const rule = Number.parseFloat(getComputedStyle(strip).borderBottomWidth);
+    return {
+      above: Math.round(
+        tab.getBoundingClientRect().top - row.getBoundingClientRect().bottom,
+      ),
+      below: Math.round(
+        strip.getBoundingClientRect().bottom -
+          rule -
+          tab.getBoundingClientRect().bottom,
+      ),
+    };
+  }
   function pdfView(path: string): PagePdfView | undefined {
     return app.workspace
       .getLeavesOfType("pdf")
@@ -1004,6 +1026,7 @@ export function createPageHelpers(app: PageApp) {
     fieldsDock,
     previewPanel,
     itemRow,
+    tabStripInsets,
     workbenchSurfaces,
     pdfView,
     clientOfFirstPage,
