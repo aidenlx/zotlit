@@ -269,9 +269,25 @@ item. Step 6 lists each creator's family name, numbered. Step 7 inserts
 `{{ zt.creators | map: "family" | join: ", " }}`, then the loop with
 `- {{ creator.family }}`; the Preview shows the family names in one line,
 then one list item each. A field that is not a list, such as `title`, shows
-no form choice. Every list of the Fixture's Items reads as text, so each one
-offers both forms; the shared component tests cover a list that offers
-**Each item** alone.
+no form choice. The template path of `family` reads
+"zt.creators → each item's family".
+
+## A list whose items do not read as text
+
+1. Open `templates/zotlit-citation.md` in the Template Workbench View with
+   its default example set, and select **Fields**.
+2. Select the **Cited items** row.
+3. Open **Cited items** with its chevron.
+
+Expected: in step 2, the details offer **Each item** alone, already chosen,
+because a cited item is a record with no text of its own; **In one line**
+is not offered. The snippet is `{% for item in zt.items %}` and
+`- {{ item.abstract }}{% endfor %}`: one list line per item, which shows the
+item's first property. The cited paper has no abstract, so the result reads
+"Empty for this item". **Insert field** on the row inserts the same loop.
+In step 3, the row opens to one row for each property of a cited item, such
+as `title` with "Why Most Published Research Findings Are False"; a property
+the item has no value for, such as `DOI`, reads "Empty for this item".
 
 ## Explore an annotation from the Fields popover
 
