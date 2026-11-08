@@ -68,6 +68,8 @@ import {
 import { isPartialContext } from "#/render/partial-preview";
 
 /** The template root a pane edits, which the Explorer and the preview follow. */
+export type TemplateRoot = "note" | "annotation" | "filename" | "citation";
+
 /** One thing the Fields Panel tells a screen reader; `count` grows with each. */
 export interface FieldsStatus {
   readonly text: string;
@@ -81,8 +83,6 @@ export const announceFields =
     text,
     count: (last?.count ?? 0) + 1,
   });
-
-export type TemplateRoot = "note" | "annotation" | "filename" | "citation";
 
 /** What the preview shows: a new note, or an existing note after Update. */
 export type PreviewMode = "create" | "update";
