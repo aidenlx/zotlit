@@ -12,6 +12,7 @@ import { fieldValueText } from "./explorer-fields";
 import type { FieldForm, FieldInsertOptions } from "./field-insertion";
 import { useFieldsPanelRows } from "./fields-panel";
 import { useOptionalHost, useTooltip } from "./host";
+import { composing } from "./ime";
 import { useWorkbenchMessages } from "./messages";
 import type { ViewSize } from "./panel-layout";
 import { useIcon, useParts } from "./theme";
@@ -164,6 +165,14 @@ function DetailsBody({
       }}
       aria-labelledby={titleId}
       {...part("details", state)}
+      // Mod+Enter inserts the field in the form the details show, as it
+      // inserts the selected row from the search.
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+        if (composing(event) || !onInsert) return;
+        event.preventDefault();
+        onInsert(form, { keepOpen: event.shiftKey });
+      }}
     >
       <div {...part("header")}>
         <span {...part("heading")}>

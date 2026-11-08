@@ -239,12 +239,12 @@ export function DataExplorer({
     const key = rows.open?.node.key ?? null;
     setOpenRow(key === null ? null : rowElement(body.current, key));
   }, [rows.open]);
-  // The selected row stays in view as ↑/↓ move it.
+  // The selected row stays in view as ↑/↓ move it, clear of its section's
+  // sticky heading.
   useLayoutEffect(() => {
-    if (rows.selected === null) return;
-    rowElement(body.current, rows.selected)?.scrollIntoView({
-      block: "nearest",
-    });
+    if (rows.selected === null || !body.current) return;
+    const row = rowElement(body.current, rows.selected);
+    if (row) revealRow(body.current, row);
   }, [rows.selected]);
   // A press outside the details and outside their row closes them.
   const openKey = rows.open?.node.key ?? null;
@@ -686,6 +686,21 @@ function useFieldRows({
     move,
     state: rowState,
   };
+}
+
+/**
+ * Scrolls `body` the least that shows `row` whole, below the sticky heading
+ * of the section it stands in, which would otherwise cover it.
+ */
+function revealRow(body: HTMLElement, row: HTMLElement): void {
+  const heading = row
+    .closest("[data-workbench-section]")
+    ?.querySelector<HTMLElement>(":scope > [data-part=section-heading]");
+  const view = body.getBoundingClientRect();
+  const box = row.getBoundingClientRect();
+  const top = view.top + (heading?.offsetHeight ?? 0);
+  if (box.top < top) body.scrollTop -= top - box.top;
+  else if (box.bottom > view.bottom) body.scrollTop += box.bottom - view.bottom;
 }
 
 /** The element of the row for `key` in `body`. */

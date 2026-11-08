@@ -1113,6 +1113,22 @@ describe.each(PRESENTATIONS)(
       expect(page.texts).toEqual([TITLE]);
     });
 
+    it("insert their form on Mod+Enter", () => {
+      using page = open({ size, data: LISTS });
+      page.pressAction();
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "Enter" });
+      const loop = within(details("Authors")!).getByRole("radio", {
+        name: "Each item",
+      });
+      fireEvent.click(loop);
+      fireEvent.keyDown(loop, { key: "Enter", ctrlKey: true });
+      expect(page.texts).toEqual([
+        "{% for author in zt.authors %}\n- {{ author }}{% endfor %}",
+      ]);
+    });
+
     it("take focus on the form the reader picks for a list", () => {
       using page = open({ size, data: LISTS });
       page.pressAction();
