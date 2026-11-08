@@ -2023,7 +2023,7 @@
   "workbench_name_unset": "Not set",
   "workbench_annotation_label": "Annotation format",
   "workbench_tab_annotation": "Annotation",
-  "workbench_annotation_lede": "Set how an annotation appears when you insert it into a note: drag it in from the annotation view, use its menu, or search for it with the annotation trigger.",
+  "workbench_annotation_lede": "Set how an annotation appears when you insert it into a note.",
   "workbench_annotation_slot": "Annotation goes here",
   "workbench_annotation_preview": "Preview",
   "workbench_annotation_example": "Annotation example",

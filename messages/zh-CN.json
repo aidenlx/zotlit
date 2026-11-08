@@ -2335,7 +2335,7 @@
   "workbench_name_unset": "未设置",
   "workbench_annotation_label": "标注格式",
   "workbench_tab_annotation": "标注",
-  "workbench_annotation_lede": "设置将标注插入笔记时的呈现方式：从标注视图拖入、使用其菜单，或通过标注触发搜索。",
+  "workbench_annotation_lede": "设置将标注插入笔记时的呈现方式。",
   "workbench_annotation_slot": "标注显示在此处",
   "workbench_annotation_preview": "预览",
   "workbench_annotation_example": "标注示例",
