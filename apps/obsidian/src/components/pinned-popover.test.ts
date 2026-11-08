@@ -216,3 +216,14 @@ it("closes on a press outside, and leaves focus on the focusable place pressed",
   expect(document.activeElement).toBe(other);
   other.remove();
 });
+
+// A field's details open as they mount, and a leaf can close in the same
+// frame, before the page paints and runs passive effects: the open popover
+// still goes with the tree that held it, and leaves no empty shell behind.
+it("hides as it unmounts in the frame it opened in", () => {
+  const { handle, shell } = mount();
+  handle.current!.show();
+  expect(shell()).not.toBeNull();
+  render(null, host!);
+  expect(shell()).toBeNull();
+});
