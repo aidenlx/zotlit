@@ -152,8 +152,9 @@ function FieldDetailsPopover({
         aria-labelledby={labelledBy}
         initialFocus={false}
         finalFocus={false}
-        // The shared details draw the surface; the popup only holds its place.
-        className="w-72 bg-transparent p-0 shadow-none ring-0"
+        // The shared details draw the surface, and scroll themselves; the
+        // popup only holds its place and lets their ring and shadow show.
+        className="w-72 overflow-visible bg-transparent p-0 shadow-none ring-0"
       >
         {children}
       </PopoverContent>

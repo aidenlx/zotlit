@@ -77,6 +77,16 @@ export function SidePanels({
   const host = useOptionalHost();
   const popoverId = host?.fieldsAction?.popoverId;
   const fieldsTitle = useUniqueId();
+  // A resize or a hide that takes the docked column away hands the focus it
+  // held to the Fields action, which brings it back. The column's removal
+  // marks that it held focus; the placement decides, so a column that still
+  // stands, as through a development replay of its effects, keeps it.
+  const dockHeldFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (dockHeldFocus.current && placement.fields !== "docked")
+      host?.fieldsAction?.focus();
+    dockHeldFocus.current = false;
+  }, [placement.fields, host]);
   return (
     <div {...part("panels")}>
       {panels.fields && placement.fields === "docked" && (
@@ -89,9 +99,9 @@ export function SidePanels({
           labelledBy={fieldsTitle}
           resizeLabel={panels.fields.resizeLabel}
           {...(popoverId === undefined ? {} : { id: fieldsDockId(popoverId) })}
-          // A resize or a hide that takes the column away hands the focus
-          // it held to the Fields action, which brings it back.
-          onLeave={() => host?.fieldsAction?.focus()}
+          onLeave={() => {
+            dockHeldFocus.current = true;
+          }}
           content={
             <DockedFieldsPanel {...panels.fields} titleId={fieldsTitle} />
           }

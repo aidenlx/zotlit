@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import * as Atom from "effect/reactivity/Atom";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DataExplorer } from "./data-explorer";
@@ -87,7 +87,9 @@ function open({
   panels = PREVIEW,
   data,
   insertion,
+  strict = false,
 }: {
+  strict?: boolean;
   size?: ViewSize;
   refuse?: boolean;
   disabled?: boolean;
@@ -130,7 +132,7 @@ function open({
     </SidePanels>,
     { panels, viewSize },
   );
-  render(mounted.ui);
+  render(strict ? <StrictMode>{mounted.ui}</StrictMode> : mounted.ui);
   return Object.assign(mounted, {
     keptOpen,
     texts,
@@ -280,6 +282,18 @@ describe("the pinned Fields Panel", () => {
     ).toBeNull();
     expect(document.querySelector("[inert]")).toBeNull();
     expect(page.isOpen()).toBe(true);
+  });
+
+  // Final review of spec #1962 (B12): a replay of the docked panel's effects,
+  // as React's development mode makes, keeps the focus the pin gave it.
+  it("keeps focus in its search when its effects replay", () => {
+    using page = open({ size: { width: 1200, height: 800 }, strict: true });
+    page.pressAction();
+    fireEvent.click(pin());
+    expect(document.activeElement).toBe(
+      within(docked()!).getByRole("combobox"),
+    );
+    expect(page.host.calls.actionFocuses).toBe(0);
   });
 
   it("stays docked as it inserts, and leaves focus to the editor", () => {
