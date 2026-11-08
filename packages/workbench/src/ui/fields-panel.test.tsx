@@ -886,7 +886,7 @@ describe("a list field", () => {
       shiftKey: true,
     });
     expect(page.texts).toEqual([
-      '{{ zt.authors | map: "family" | compact | join: ", " }}',
+      '{{ zt.authors | map: "family" | where_exp: "value", "value != blank" | join: ", " }}',
     ]);
   });
 
@@ -930,7 +930,7 @@ describe("a list field", () => {
       { shiftKey: true },
     );
     expect(page.texts).toEqual([
-      "{% for attachment in zt.attachments %}{% if attachment.filename != nil %}\n- {{ attachment.filename }}{% endif %}{% endfor %}",
+      "{% for attachment in zt.attachments %}{% if attachment.filename != blank %}\n- {{ attachment.filename }}{% endif %}{% endfor %}",
     ]);
   });
 

@@ -47,25 +47,29 @@ describe("fieldForm", () => {
   it("inserts a list property joined in one line", () => {
     const { family } = shapeNodes();
     expect(text(family, "template", { engine: "eta" })).toBe(
-      '<%= zt.authors.map((author) => author.family).filter((value) => value != null).join(", ") %>',
+      '<%= zt.authors.map((author) => author.family).filter((value) => value != null && value !== false && String(value).trim() !== "").join(", ") %>',
     );
     expect(text(family, "template", { kind: "loop" })).toBe(
-      "{% for author in zt.authors %}{% if author.family != nil %}\n- {{ author.family }}{% endif %}{% endfor %}",
+      "{% for author in zt.authors %}{% if author.family != blank %}\n- {{ author.family }}{% endif %}{% endfor %}",
     );
   });
 
-  // #1969: a creator with no family name, as Zotero keeps a one-field name.
+  // #1969: a creator with no family name, as Zotero keeps a one-field name:
+  // the template context gives it an empty family name. A missing value and
+  // a value that is false read as no value too.
   describe.each(["liquid", "eta"] as const)(
     "a list property with an item that has no value, in %s",
     (engine) => {
       const zt = {
         creators: [
           withText({ family: "Personal", literal: null }, "Ada Personal"),
+          withText({ family: "", literal: "Research Group" }, "Research Group"),
           withText({ family: "Editor", literal: null }, "Erin Editor"),
           withText(
             { family: null, literal: "ZotLit Research Collective" },
             "ZotLit Research Collective",
           ),
+          withText({ family: false, literal: "Lab" }, "Lab"),
         ],
       };
       const family = () => {

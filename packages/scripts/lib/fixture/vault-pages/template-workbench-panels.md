@@ -297,8 +297,9 @@ and 3 "Empty for this item", as ZotLit Research Collective is a one-field
 name with no family name. The result of **In one line** reads
 "Personal, Editor", and the result of **Each item** has two lines,
 "- Personal" and "- Editor". Step 7 inserts
-`{{ zt.creators | map: "family" | compact | join: ", " }}`, then the loop
-`{% for creator in zt.creators %}{% if creator.family != nil %}` with
+`{{ zt.creators | map: "family" | where_exp: "value", "value != blank" | join: ", " }}`,
+then the loop
+`{% for creator in zt.creators %}{% if creator.family != blank %}` with
 `- {{ creator.family }}{% endif %}{% endfor %}`; the Preview shows exactly
 the two results: "Personal, Editor" with no separator after it, then two
 list items and no empty third one. A field that is not a list, such as

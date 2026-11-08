@@ -1040,7 +1040,7 @@ describe("buildDisplayTree — list shape", () => {
         node.kind === "list-property" ? [node.label, node.values] : null,
       ),
     ).toEqual([
-      ["comment", ["Core claim", "", null]],
+      ["comment", ["Core claim", null, null]],
       ["pageLabel", [null, null, "698"]],
       ["text", ["First", "Second", "Third"]],
     ]);

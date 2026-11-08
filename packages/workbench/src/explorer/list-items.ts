@@ -63,12 +63,14 @@ export function valueText(value: unknown): string {
 }
 
 /**
- * Whether an item has a value for a property: anything but `null` and
- * `undefined`. A list snippet passes over an item without one, as Liquid's
- * `compact` does, so the note shows no empty entry for it.
+ * Whether an item has a value for a property: anything but what Liquid
+ * reads as `blank`, that is `null`, `undefined`, `false`, or text that is
+ * empty or only spaces. A list snippet passes over an item without one, so
+ * the note shows no empty entry for it.
  */
 export function hasValue(value: unknown): boolean {
-  return value !== null && value !== undefined;
+  if (value === null || value === undefined || value === false) return false;
+  return typeof value !== "string" || value.trim() !== "";
 }
 
 /**

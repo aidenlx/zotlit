@@ -81,7 +81,7 @@ export function renderSnippet(
  * values joined in one line, or one Markdown list line per item. Neither
  * form takes the list property's output or if-present kinds, so those fall
  * back to joined. An item without a value adds no separator and no line,
- * by the rule {@link hasValue} states.
+ * by the rule `hasValue` states.
  */
 function listPropertySnippet(
   node: ListPropertyNode,
@@ -100,8 +100,18 @@ function listPropertySnippet(
     });
   const separator = JSON.stringify(JOIN_SEPARATOR);
   return engine === "liquid"
-    ? `{{ ${accessor} | map: ${JSON.stringify(node.property)} | compact | join: ${separator} }}`
-    : `<%= ${accessor}.map((${item}) => ${value}).filter((value) => value != null).join(${separator}) %>`;
+    ? `{{ ${accessor} | map: ${JSON.stringify(node.property)} | where_exp: "value", ${JSON.stringify(present(engine, "value"))} | join: ${separator} }}`
+    : `<%= ${accessor}.map((${item}) => ${value}).filter((value) => ${present(engine, "value")}).join(${separator}) %>`;
+}
+
+/**
+ * The test that `expr` has a value, by the rule `hasValue` states: Liquid's
+ * own `blank`, and its match in JavaScript for Eta.
+ */
+function present(engine: TemplateEngine, expr: string): string {
+  return engine === "liquid"
+    ? `${expr} != blank`
+    : `${expr} != null && ${expr} !== false && String(${expr}).trim() !== ""`;
 }
 
 /**
@@ -174,11 +184,15 @@ function loop(
 ): string {
   if (engine === "liquid") {
     const line = `\n${LIST_LINE}${show(`{{ ${body} }}`)}`;
-    const each = guarded ? `{% if ${body} != nil %}${line}{% endif %}` : line;
+    const each = guarded
+      ? `{% if ${present(engine, body)} %}${line}{% endif %}`
+      : line;
     return `{% for ${item} in ${accessor} %}${each}{% endfor %}`;
   }
   const line = `\n${LIST_LINE}${show(`<%= ${body} %>`)}`;
-  const each = guarded ? `<% if (${body} != null) { %>${line}<% } %>` : line;
+  const each = guarded
+    ? `<% if (${present(engine, body)}) { %>${line}<% } %>`
+    : line;
   return `<% for (const ${item} of ${accessor}) { %>${each}<% } %>`;
 }
 
