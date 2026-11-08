@@ -194,7 +194,7 @@ export function TabPanel({
       hidden={!shown}
       {...part("tab-panel", shown ? "active" : "inactive")}
     >
-      {description && tab !== "annotation" && tab !== "match" && (
+      {description && tab !== "match" && (
         <p {...part("description")}>
           {tabLede(m, tab)} <TabDocsLink tab={tab} />
         </p>

@@ -32,7 +32,6 @@ import {
   SquareCheck,
   Calendar,
   Clock,
-  CircleHelp,
   GripVertical,
   TextCursorInput,
   CornerDownRight,
@@ -67,7 +66,6 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   "chevron-right": ChevronRight,
   more: Ellipsis,
   copy: Copy,
-  help: CircleHelp,
   confirm: Check,
   add: Plus,
   remove: Trash2,
@@ -361,12 +359,6 @@ export const WEB_THEME: WorkbenchTheme = {
       "secondary-action": buttonVariants({ variant: "ghost", size: "xs" }),
     },
     annotation: {
-      "help-bar": "mb-3 shrink-0 leading-normal",
-      "help-button": buttonVariants({ variant: "ghost", size: "icon-xs" }),
-      "help-lede": "text-xs text-pretty text-fd-muted-foreground",
-      "help-toggle": "ms-1 inline-block align-baseline",
-      help: "mb-3 flex max-h-40 shrink-0 flex-col gap-1 overflow-auto text-xs leading-normal text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-fd-ring",
-
       // The inline Note-tab chooser keeps its own space; the compact
       // trigger sits in the item row, which spaces its controls.
       "sample-bar":
@@ -374,8 +366,6 @@ export const WEB_THEME: WorkbenchTheme = {
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",
       pane: "flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card",
-      pointer:
-        "mt-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-2.5 py-1.5 text-xs leading-normal",
       heading: "font-semibold",
       hint: "text-pretty text-fd-muted-foreground",
       "section-bar":

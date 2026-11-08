@@ -43,12 +43,6 @@ export interface RepairCommands {
   /** Opens the Annotation tab with the caret at the start of its section. */
   readonly openAnnotationBox: () => void;
   /**
-   * Adds the loop that lists the annotations to the end of the note, with the
-   * section it renders when the document has none, and returns the reader to
-   * the Note tab after it.
-   */
-  readonly insertAnnotationLoop: () => void;
-  /**
    * Hands the reader the template back where they left it. The selection each
    * pane reports as the reader moves through it is that place, so returning
    * is revealing it again, with the caret and the focus that go with it.
@@ -60,7 +54,7 @@ export interface RepairCommandsInput {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly model: Pick<WorkbenchModel, "view" | "fieldsPanel">;
   readonly controller: RoutedDocument &
-    Pick<WorkbenchDocumentController, "insertAnnotationLoop" | "hasSlice">;
+    Pick<WorkbenchDocumentController, "hasSlice">;
   readonly host: Pick<WorkbenchHost, "notice" | "messages">;
   readonly problems: Pick<
     WorkbenchProblemsState,
@@ -145,12 +139,6 @@ export function repairCommands({
       if (transition) route(transition);
     },
     openAnnotationBox: () => goToProblem({ slice: "annotation" }),
-    insertAnnotationLoop() {
-      const { repaired, caret } = controller.insertAnnotationLoop();
-      goToProblem({ slice: "note", range: { from: caret, to: caret } });
-      if (repaired)
-        host.notice(host.messages.workbench_annotation_section_added());
-    },
     returnToTemplate() {
       const target = selectionInDocument(
         registry.get(model.view).presentation.selection,

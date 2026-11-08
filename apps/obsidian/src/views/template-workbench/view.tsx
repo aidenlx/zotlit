@@ -68,7 +68,6 @@ import {
 import {
   AnnotationPane,
   diagnosticText,
-  AnnotationPointer,
   useWorkbenchHost,
   createWorkbenchEditor,
   NameFolderPane,
@@ -3132,12 +3131,6 @@ function EditorContent({
                   selection("note")(range);
                 }}
               />
-              {controller.noteRegions.annotationCalls.length === 0 && (
-                <AnnotationPointer
-                  disabled={controller.readOnly}
-                  onInsert={repair.insertAnnotationLoop}
-                />
-              )}
             </TabPanel>
             <TabPanel tab="properties" modeActive={!advanced}>
               {controller.managedEntries === null ? (
@@ -3197,11 +3190,6 @@ function EditorContent({
                 </button>
               )}
               <AnnotationPane
-                finishHelp={
-                  originatingNote
-                    ? m.workbench_annotation_help_finish_note()
-                    : m.workbench_annotation_help_finish_native()
-                }
                 controller={controller}
                 problem={
                   formatProblem

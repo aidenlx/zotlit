@@ -818,42 +818,4 @@ describe("the annotation box", () => {
       "Report the assumptions behind each result.",
     );
   });
-
-  /** The default Profile with neither the call nor the section it calls. */
-  const SILENT = DEFAULT_PROFILE_SOURCE.replace(
-    "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
-    "",
-  ).replace(/\n--- zotlit:annotation ---\n[\s\S]*$/, "\n");
-
-  it("gives a note without the call its loop, and the section it needs, in one press", async () => {
-    keep(SILENT, SAMPLE_ITEMS[1]!);
-    await using page = await open();
-    page.press(m.workbench_restore_accept());
-    expect(page.host.textContent).toContain(m.workbench_annotation_insert());
-    const note = EditorView.findFromDOM(
-      page.host.querySelector<HTMLElement>(".cm-editor")!,
-    )!;
-    const body = note.state.doc.toString();
-    act(() => note.dispatch({ selection: { anchor: 0, head: body.length } }));
-
-    page.press(m.workbench_annotation_insert());
-    expect(note.state.doc.toString().startsWith(body)).toBe(true);
-
-    expect(
-      document.querySelector('[data-slot="toast-viewport"]')?.textContent,
-    ).toContain(m.workbench_annotation_section_added());
-    expect(page.host.textContent).toContain(m.workbench_tab_annotation());
-    expect(page.host.textContent).not.toContain(
-      m.workbench_annotation_insert(),
-    );
-    // The repaired document renders again, loop and section in place.
-    await page.waitFor(() =>
-      expect(rendered().at(-1)).toContain("{% render_annotation annotation %}"),
-    );
-    const source = rendered().at(-1)!;
-    expect(source).toContain(
-      "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
-    );
-    expect(source.endsWith("\n--- zotlit:annotation ---\n")).toBe(true);
-  });
 });

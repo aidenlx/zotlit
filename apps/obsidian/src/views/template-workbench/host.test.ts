@@ -9,9 +9,10 @@ import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { liquidTemplate } from "@zotlit/workbench/language";
 import {
-  AnnotationPointer,
+  AnnotationSectionBar,
   NO_MATCH_DATA,
   WorkbenchClipboardError,
   WorkbenchHostError,
@@ -22,6 +23,17 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import { createTemplateWorkbenchHost } from "./host";
 import type { NativeWorkbenchSuggesterRequest } from "./host";
+
+const SECTIONLESS_PROFILE = `---
+id: paper
+name: Paper
+version: 1.0.0
+contract: 2
+language: liquid
+filename: paper
+---
+A note body.
+`;
 
 /** How `fiber` ended: its value, or its failure as a rejection. */
 function settled<A, E>(fiber: Fiber.Fiber<A, E>): Promise<A> {
@@ -132,7 +144,11 @@ describe("Template Workbench host", () => {
     using host = setup().host;
     const handle = host.dialog({
       title: "Profile panes",
-      content: createElement(AnnotationPointer, { onInsert() {} }),
+      content: createElement(AnnotationSectionBar, {
+        // A Profile with no annotation section, so the bar offers its repair.
+        controller: new WorkbenchDocumentController(SECTIONLESS_PROFILE),
+        onGo() {},
+      }),
     });
     const modal = Modal.instances.at(-1)!;
     try {
@@ -141,7 +157,7 @@ describe("Template Workbench host", () => {
         [...modal.contentEl.querySelectorAll("button")].map(
           (tab) => tab.textContent,
         ),
-      ).toContain(m.workbench_annotation_insert());
+      ).toContain(m.workbench_section_repair());
     } finally {
       handle.close();
       await act(async () => modal.onClose());

@@ -103,39 +103,6 @@ describe("the repair commands", () => {
     expect(page.panels()).toEqual(BOTH);
   });
 
-  it("insert the annotation loop, report the section they added, and return to the Note tab at its end", () => {
-    const header = "--- zotlit:annotation ---";
-    using page = open({
-      source: DEFAULT_PROFILE_SOURCE.slice(
-        0,
-        DEFAULT_PROFILE_SOURCE.indexOf(header),
-      ),
-    });
-    page.commands.insertAnnotationLoop();
-    const text = page.controller.source;
-    const loop = "{% endfor %}\n";
-    const end = text.lastIndexOf(loop) + loop.length;
-    expect(text.slice(end)).toBe(`${header}\n`);
-    expect(page.view()).toMatchObject({
-      advanced: false,
-      tab: "note",
-      root: "note",
-      presentation: { reveal: { from: end, to: end } },
-    });
-    expect(page.host.calls.notices).toEqual([
-      m.workbench_annotation_section_added(),
-    ]);
-    expect(page.fields()).toBe("to-editor");
-    expect(page.panels()).toEqual(BOTH);
-  });
-
-  it("insert the annotation loop in a section that stands without a notice", () => {
-    using page = open();
-    page.commands.insertAnnotationLoop();
-    expect(page.view()).toMatchObject({ advanced: false, tab: "note" });
-    expect(page.host.calls.notices).toEqual([]);
-  });
-
   it("return to the template at the place the reader left, over the Fields Panel", () => {
     using page = open();
     page.registry.update(page.model.view, (state) => ({

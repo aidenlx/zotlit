@@ -9,10 +9,7 @@ import {
 import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
-import {
-  captionIcon,
-  selectionControl,
-} from "@/components/obsidian/selection-control";
+import { selectionControl } from "@/components/obsidian/selection-control";
 import { obsidianPopupKeys } from "@/lib/field-popup";
 import { themeHook } from "@/lib/theme-hooks";
 import { tv } from "@/lib/tw";
@@ -23,7 +20,6 @@ import { nativeCompletion } from "./native-completion";
 
 export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
-  help: "circle-help",
   confirm: "check",
   add: "plus",
   remove: "trash-2",
@@ -701,16 +697,9 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:flex zt:cursor-(--cursor-clickable) zt:items-center zt:gap-2 zt:font-medium",
     },
     annotation: {
-      "help-bar": "zt:mb-3 zt:shrink-0 zt:leading-normal",
-      "help-button": cn("clickable-icon", captionIcon),
-      "help-lede": hint,
-      "help-toggle": "zt:ms-1 zt:inline-block zt:align-baseline",
-      help: "zt:mb-3 zt:flex zt:max-h-40 zt:shrink-0 zt:flex-col zt:gap-1 zt:overflow-auto zt:text-xs zt:leading-normal zt:text-muted-foreground zt:focus-visible:outline-2 zt:focus-visible:outline-ring",
-
       "sample-bar": row,
       problem: "zt:mb-2 zt:text-xs zt:text-(--text-error)",
       pane: stack,
-      pointer: cn(bar, "zt:mt-2"),
       heading: "zt:font-semibold",
       hint: "zt:text-muted-foreground",
       "section-bar": cn(bar, "zt:mb-2"),

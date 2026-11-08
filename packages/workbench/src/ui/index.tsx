@@ -235,7 +235,6 @@ export { entryDiagnostics, PropertiesPane } from "./properties-tab";
 export type { EntryDiagnostic, PropertiesPaneProps } from "./properties-tab";
 export {
   AnnotationPane,
-  AnnotationPointer,
   AnnotationSampleBar,
   annotationOption,
   AnnotationSectionBar,

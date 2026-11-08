@@ -50,7 +50,6 @@ import {
   useWorkbenchProblems,
   workbenchDiagnoses,
   AnnotationPane,
-  AnnotationPointer,
   AnnotationSampleBar,
   AnnotationSectionBar,
   NameFolderPane,
@@ -874,9 +873,6 @@ function WorkbenchSession({
                   }}
                   onOpenAnnotation={repair.openAnnotationBox}
                 />
-                {controller.noteRegions.annotationCalls.length === 0 && (
-                  <AnnotationPointer onInsert={repair.insertAnnotationLoop} />
-                )}
               </TabPanel>
               <TabPanel tab="match" modeActive={!advanced}>
                 <h2 className="sr-only">{tabLabel(m, "match")}</h2>

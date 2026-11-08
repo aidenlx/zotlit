@@ -5,7 +5,6 @@ import type {
 // Annotation format editing, example selection, and access to the source section.
 import type { AnnotationExample } from "#/render/index";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
 
 import { isPageNumber } from "@zotlit/db";
 import { useUniqueId } from "@zotlit/ui";
@@ -20,7 +19,6 @@ import { SampleSuggester } from "./sample-suggester";
 import type { SampleOption } from "./sample-suggester";
 import { SliceEditor } from "./slice-editor";
 import type { SliceEditorProps } from "./slice-editor";
-import { TabDocsLink } from "./tab-bar";
 import { useIcon, useParts } from "./theme";
 
 import { documentRevision } from "#/document/atoms";
@@ -152,29 +150,18 @@ export function AnnotationPane({
   controller,
   problem,
   partials,
-  finishHelp,
   ...editor
 }: Pick<
   SliceEditorProps,
   "controller" | "reveal" | "suggest" | "onSelection"
 > & {
   problem: string | null;
-  /** The host explains its save and existing-note update actions. */
-  finishHelp?: string;
   /** The Shared Partials this section's calls name, previewed as an annotation. */
   partials?: PartialPlaceholderHost;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
-  const icon = useIcon();
   const problemId = useUniqueId();
-  const helpId = useUniqueId();
-  const helpButton = useRef<HTMLButtonElement>(null);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const closeHelp = () => {
-    setHelpOpen(false);
-    helpButton.current?.focus();
-  };
   useAtomValue(documentRevision(controller));
   const boxes = usePartialBoxes(controller, "annotation", partials);
   if (
@@ -192,45 +179,6 @@ export function AnnotationPane({
           {problem}
         </p>
       )}
-      <p {...part("help-bar")}>
-        <span {...part("help-lede")}>{m.workbench_annotation_lede()}</span>{" "}
-        <TabDocsLink tab="annotation" />
-        <span {...part("help-toggle")}>
-          <button
-            ref={helpButton}
-            type="button"
-            {...part("help-button")}
-            aria-label={m.workbench_help()}
-            aria-expanded={helpOpen}
-            aria-controls={helpId}
-            onClick={() => setHelpOpen(!helpOpen)}
-          >
-            {icon("help")}
-          </button>
-        </span>
-      </p>
-      {helpOpen && (
-        <section
-          id={helpId}
-          tabIndex={0}
-          aria-label={m.workbench_annotation_help_title()}
-          {...part("help")}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape") return;
-            event.stopPropagation();
-            closeHelp();
-          }}
-        >
-          <p>
-            {m.workbench_annotation_help_edit({
-              before: "[!note]",
-              after: "[!quote]",
-            })}{" "}
-            {m.workbench_annotation_help_preview()}
-          </p>
-          <p>{finishHelp ?? m.workbench_annotation_help_finish_web()}</p>
-        </section>
-      )}
       <div {...part("pane")}>
         <SliceEditor
           {...editor}
@@ -244,36 +192,6 @@ export function AnnotationPane({
         {boxes.boxes}
       </div>
     </>
-  );
-}
-
-/**
- * Offers annotation insertion at the end of a note that has no render call.
- */
-export function AnnotationPointer({
-  onInsert,
-  disabled = false,
-}: {
-  onInsert: () => void;
-  disabled?: boolean;
-}) {
-  const m = useWorkbenchMessages();
-  const part = useParts("annotation");
-  return (
-    <div {...part("pointer")}>
-      <span {...part("heading")}>
-        {m.workbench_annotation_pointer_heading()}
-      </span>
-      <span {...part("hint")}>{m.workbench_annotation_pointer()}</span>
-      <button
-        type="button"
-        disabled={disabled}
-        {...part("primary-action")}
-        onClick={onInsert}
-      >
-        {m.workbench_annotation_insert()}
-      </button>
-    </div>
   );
 }
 

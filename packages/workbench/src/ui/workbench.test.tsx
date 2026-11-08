@@ -265,3 +265,20 @@ it("links each tab to the docs page that shows how to write it", () => {
     "https://example.invalid/docs/tutorial/customize-template",
   );
 });
+
+it("opens the Annotation tab with the lede every tab shares, and no help toggle", () => {
+  using mounted = mount(<Panes />);
+  render(mounted.ui);
+  const ledeOf = (tab: string) => {
+    fireEvent.click(screen.getByRole("tab", { name: tab }));
+    return screen.getByRole("tabpanel").firstElementChild!;
+  };
+  const note = ledeOf(m.workbench_tab_note());
+  const annotation = ledeOf(m.workbench_tab_annotation());
+  expect(annotation.textContent).toBe(
+    `${m.workbench_annotation_lede()} ${m.workbench_docs_annotation()}`,
+  );
+  expect(annotation.tagName).toBe(note.tagName);
+  expect(annotation.getAttribute("class")).toBe(note.getAttribute("class"));
+  expect(screen.queryByRole("button", { name: m.workbench_help() })).toBeNull();
+});
