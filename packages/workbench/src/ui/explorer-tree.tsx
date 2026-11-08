@@ -39,7 +39,7 @@ export interface DisplaySection {
   readonly label: string;
   readonly collapsed: boolean;
   readonly nodes: readonly DisplayNode[];
-  /** Reader-facing names by node key; a node without one shows its raw key. */
+  /** Reader-facing names by node key, nested nodes included; a node without one shows its raw key. */
   readonly labels: ReadonlyMap<string, string>;
 }
 
@@ -113,7 +113,7 @@ export function DisplayTree({
                   <TreeNode
                     key={node.key}
                     node={node}
-                    label={section.labels.get(node.key)}
+                    labels={section.labels}
                     matchedKeys={matchedKeys}
                     onToggle={onToggle}
                     onInsert={onInsert}
@@ -176,8 +176,8 @@ function SectionHeader({
 
 interface TreeNodeProps {
   node: DisplayNode;
-  /** The reader-facing name of a top-level field; nested keys show as written. */
-  label?: string;
+  /** Reader-facing names by node key; a node without one shows its key as written. */
+  labels: ReadonlyMap<string, string>;
   /** A field inside another field, whose label stands behind a guide line in the Fields Panel. */
   nested?: boolean;
   matchedKeys: ReadonlySet<string> | null;
@@ -205,7 +205,7 @@ interface RowProps<N extends DisplayNode = DisplayNode> {
 
 function TreeNode({
   node,
-  label,
+  labels,
   nested = false,
   matchedKeys,
   onToggle,
@@ -215,6 +215,7 @@ function TreeNode({
 }: TreeNodeProps) {
   const part = useParts("explorerTree");
   const rows = useContext(FieldRowsContext);
+  const label = labels.get(node.key);
   const isExpanded = node.kind === "value" && node.children !== undefined;
   const isExpandable = node.kind === "value" && node.expandable;
   const isMatched = matchedKeys?.has(node.key) ?? false;
@@ -273,6 +274,7 @@ function TreeNode({
             <TreeNode
               key={child.key}
               node={child}
+              labels={labels}
               nested
               matchedKeys={matchedKeys}
               onToggle={onToggle}

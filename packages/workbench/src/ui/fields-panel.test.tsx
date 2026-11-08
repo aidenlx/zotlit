@@ -775,6 +775,28 @@ describe("a list field", () => {
     expect(keys.filter((key) => /\[\d+\]/.test(key))).toEqual([]);
   });
 
+  // Final review of spec #1962 (S3): a property of a list's items goes by the
+  // name the reader sees for that field, where one exists.
+  it("names its item properties as the fields they are", () => {
+    using page = open({
+      ...lists,
+      data: {
+        ...LISTS,
+        annotations: [
+          { comment: "Check this", pageLabel: "4" },
+          { comment: "And this", pageLabel: "9" },
+        ],
+      },
+    });
+    page.pressAction();
+    fireEvent.click(toggle("annotations")!);
+    expect(line("annotations[].comment").textContent).toContain("Your comment");
+    expect(line("annotations[].pageLabel").textContent).toContain("Page");
+    // A property no label names keeps its key.
+    fireEvent.click(toggle("authors")!);
+    expect(line("authors[].family").textContent).toContain("family");
+  });
+
   /** The details of the field `key`, after a click on its row. */
   const openDetails = (key: string, label: string) => {
     fireEvent.click(line(key));

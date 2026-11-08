@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchModel } from "./editor";
-import { explorerSections } from "./explorer-sections";
+import { explorerSections, listPropertyLabels } from "./explorer-sections";
 import type { ExplorerReader } from "./explorer-sections";
 import { DisplayTree } from "./explorer-tree";
 import type { DisplaySection, FieldRowState } from "./explorer-tree";
@@ -168,15 +168,17 @@ export function DataExplorer({
     () => ({ m, root, locale }),
     [m, root, locale],
   );
-  // The names top-level fields show, which the filter also searches.
+  // The names top-level fields and the properties of list items show,
+  // which the filter also searches.
   const labels = useMemo(() => {
     if (!data) return new Map<string, string>();
     const nodes = buildDisplayTree(data, { expanded: new Set() });
-    return new Map(
-      explorerSections(nodes, reader).flatMap((section) =>
+    return new Map([
+      ...explorerSections(nodes, reader).flatMap((section) =>
         section.rows.map((row) => [row.node.key, row.label] as const),
       ),
-    );
+      ...listPropertyLabels(data, reader),
+    ]);
   }, [data, reader]);
   const panelRows = useFieldsPanelRows();
   // The Fields Panel opens a list to its items' properties, never to one
@@ -204,9 +206,9 @@ export function DataExplorer({
         label: section.label,
         collapsed: !filtering && collapsedSections.has(section.id),
         nodes: section.rows.map((row) => row.node),
-        labels: new Map(section.rows.map((row) => [row.node.key, row.label])),
+        labels,
       })),
-    [visible, reader, filtering, collapsedSections],
+    [visible, reader, filtering, collapsedSections, labels],
   );
   const rows = useFieldRows({
     enabled: panelRows !== null,

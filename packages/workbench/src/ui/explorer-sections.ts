@@ -232,6 +232,32 @@ export function fieldLabel(
   return schema === "en-US" ? sentenceCase(zotero) : zotero;
 }
 
+/**
+ * The names the reader sees for the properties of a list's items, by their
+ * row keys (`annotations[].comment`): the label of the field each property
+ * is, where a label exists. The items of an item's `annotations` take the
+ * annotation's labels.
+ */
+export function listPropertyLabels(
+  data: Record<string, unknown>,
+  reader: ExplorerReader,
+): [string, string][] {
+  const lists = buildDisplayTree(data, { expanded: new Set() })
+    .filter((node) => node.kind === "value" && node.valueType === "array")
+    .map((node) => node.key);
+  return buildDisplayTree(data, { expanded: new Set(lists), lists: "shape" })
+    .flatMap((node) => (node.kind === "value" && node.children) || [])
+    .flatMap((child): [string, string][] => {
+      if (child.kind !== "list-property") return [];
+      const root =
+        reader.root === "note" && child.key.startsWith("annotations[]")
+          ? "annotation"
+          : reader.root;
+      const label = fieldLabel(child.property, { ...reader, root });
+      return label === child.property ? [] : [[child.key, label]];
+    });
+}
+
 /** Every section id a root can show, in display order. */
 export function explorerSectionIds(root: TemplateRoot): ExplorerSectionId[] {
   return ["common", ...SECTIONS[root].map((section) => section.id)];
