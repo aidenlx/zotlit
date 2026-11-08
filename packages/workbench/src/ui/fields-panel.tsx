@@ -5,6 +5,7 @@ import {
   createContext,
   useContext,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -65,6 +66,11 @@ export interface FieldsPanelRows {
   readonly escape: RefObject<() => boolean>;
   /** The panel, which a field's details popover stands beside. */
   readonly panel: RefObject<HTMLElement | null>;
+  /**
+   * The place in the panel's header for the rows' own actions, such as
+   * collapsing every section, once the header is drawn.
+   */
+  readonly actions: HTMLElement | null;
 }
 
 const FieldsPanelRowsContext = createContext<FieldsPanelRows | null>(null);
@@ -140,7 +146,11 @@ function FieldsPanelBody({
   const setState = useAtomSet(model.fieldsPanel);
   const { pinned, canPin } = useAtomValue(model.fieldsPin);
   const panel = useRef<HTMLDivElement>(null);
-  const [rows] = useState<FieldsPanelRows>(() => ({ escape, panel }));
+  const [actions, setActions] = useState<HTMLElement | null>(null);
+  const rows = useMemo<FieldsPanelRows>(
+    () => ({ escape, panel, actions }),
+    [escape, actions],
+  );
   const closeLabel = m.workbench_fields_close();
   const closeTooltip = useTooltip(closeLabel);
   const pinLabel = !canPin
@@ -186,6 +196,7 @@ function FieldsPanelBody({
         <span id={titleId} {...part("title")}>
           {label}
         </span>
+        <span ref={setActions} {...part("actions")} />
         {/* Disabled by aria-disabled, so the pin keeps its focus and its
             tooltip says why it does not work. */}
         <button

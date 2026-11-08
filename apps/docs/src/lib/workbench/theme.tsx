@@ -36,6 +36,16 @@ import {
   GripVertical,
   TextCursorInput,
   CornerDownRight,
+  LayoutList,
+  BookMarked,
+  Fingerprint,
+  Paperclip,
+  FolderTree,
+  Link,
+  Database,
+  Highlighter,
+  FileText,
+  Quote,
 } from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
@@ -91,6 +101,16 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   result: CornerDownRight,
   pin: Pin,
   unpin: PinOff,
+  "section-common": LayoutList,
+  "section-reference": BookMarked,
+  "section-identifiers": Fingerprint,
+  "section-content": Paperclip,
+  "section-organization": FolderTree,
+  "section-links": Link,
+  "section-record": Database,
+  "section-annotation": Highlighter,
+  "section-source": FileText,
+  "section-citation": Quote,
 };
 
 /** A read-only Properties block: one row per property, key beside value. */
@@ -183,18 +203,29 @@ export const WEB_THEME: WorkbenchTheme = {
     explorerTree: {
       sections: "flex flex-col gap-2",
       section: "",
+      /** Stays at the top while its section scrolls past, on the panel's ground. */
+      "section-heading": "sticky top-0 z-10 bg-fd-card",
       "section-header":
         "flex w-full cursor-pointer items-center gap-1 rounded px-1 py-1 text-start text-xs font-semibold text-fd-muted-foreground hover:bg-fd-muted hover:text-fd-foreground aria-disabled:cursor-default",
+      "section-icon": "flex size-3 shrink-0 text-fd-primary [&_svg]:size-3",
       "section-chevron":
-        "flex size-3 shrink-0 items-center justify-center transition-transform duration-100 ease-out data-[expanded]:rotate-90",
-      "section-label": "min-w-0 flex-1",
+        "ms-auto flex size-3 shrink-0 items-center justify-center transition-transform duration-100 ease-out data-[expanded]:rotate-90 motion-reduce:transition-none",
+      "section-label": "min-w-0 truncate",
       "section-count": "font-normal tabular-nums text-fd-muted-foreground",
       tree: "text-xs leading-relaxed",
       spacer: "mt-[3px] size-3 shrink-0",
       /** Key and value share one line while both fit; a longer value drops to its own line beneath the key. */
       contents:
-        "flex min-w-0 flex-1 flex-wrap gap-x-1.5 select-text [overflow-wrap:anywhere] data-[state=line]:cursor-pointer data-[state=line]:flex-nowrap data-[state=line]:overflow-hidden data-[state=line]:whitespace-nowrap data-[state=line]:*:data-[part=key]:max-w-1/2 data-[state=line]:*:data-[part=key]:shrink-0 data-[state=line]:*:data-[part=key]:truncate data-[state=line]:*:data-[part=value]:truncate",
-      group: "ms-3 border-s border-fd-border ps-2",
+        "flex min-w-0 flex-1 flex-wrap gap-x-1.5 select-text [overflow-wrap:anywhere] data-[state=line]:cursor-pointer data-[state=line]:items-center data-[state=line]:self-stretch data-[state=line]:flex-nowrap data-[state=line]:overflow-hidden data-[state=line]:whitespace-nowrap data-[state=line]:*:data-[part=value]:truncate",
+      /**
+       * A Fields Panel row's label, from the section icon's edge, with the
+       * chevron of a field that opens after it. A nested field's label
+       * stands a little in, behind the guide line its siblings continue.
+       */
+      "field-label":
+        "flex w-2/5 min-w-0 shrink-0 items-center gap-1 self-stretch *:data-[part=chevron]:mt-0 *:data-[part=key]:truncate data-[state=nested]:ms-1 data-[state=nested]:border-s data-[state=nested]:border-fd-border data-[state=nested]:ps-2",
+      group:
+        "ms-3 border-s border-fd-border ps-2 data-[state=line]:ms-0 data-[state=line]:border-0 data-[state=line]:ps-0 data-[state=line]:in-data-[part=group]:ps-3",
       chevron:
         "mt-[3px] flex size-3 shrink-0 cursor-pointer items-center justify-center text-fd-muted-foreground transition-transform duration-100 ease-out hover:text-fd-foreground data-[expanded]:rotate-90",
       "chevron-icon": "size-3 [&_svg]:size-3",
@@ -210,7 +241,7 @@ export const WEB_THEME: WorkbenchTheme = {
       link: "break-all text-fd-primary underline decoration-dotted hover:decoration-solid",
       "long-toggle":
         "rounded-xs ms-0.5 cursor-pointer px-1 text-fd-muted-foreground underline decoration-dotted underline-offset-2 select-none hover:bg-fd-muted hover:text-fd-foreground",
-      row: "group rounded relative flex min-w-0 items-start gap-x-1 px-0.5 hover:bg-fd-muted data-[state=matched]:bg-fd-accent data-selected:bg-fd-muted data-open:bg-fd-accent",
+      row: "group rounded relative flex min-w-0 items-start gap-x-1 px-0.5 data-line:h-7 data-line:items-center data-line:px-1 hover:bg-fd-muted data-[state=matched]:bg-fd-accent data-selected:bg-fd-muted data-open:bg-fd-accent",
       opaque: "break-words text-cyan-700 dark:text-cyan-400",
       color:
         "inline-flex min-w-0 items-center gap-1 text-emerald-700 dark:text-emerald-400",
@@ -496,6 +527,7 @@ export const WEB_THEME: WorkbenchTheme = {
       header: "flex shrink-0 items-center gap-1 px-2 pt-2",
       icon: "flex shrink-0 ps-1 text-fd-muted-foreground [&_svg]:size-4",
       title: "min-w-0 flex-1 truncate px-1 text-sm font-semibold",
+      actions: "contents",
       // With no room to dock, the pin steps back and keeps its focus and
       // its tooltip.
       pin: cn(

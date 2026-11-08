@@ -852,3 +852,150 @@ describe("a list field", () => {
     expect(forms(openDetails("title", "Title"))).toEqual([]);
   });
 });
+
+describe("the Fields Panel's sections", () => {
+  const PRESENTED = [
+    { presentation: "Fields popover", options: {}, surface: () => panel()! },
+    {
+      presentation: "docked panel",
+      options: { size: { width: 1200, height: 800 }, panels: PINNED },
+      surface: () => docked()!,
+    },
+  ] as const;
+  const showing = (options: (typeof PRESENTED)[number]["options"]) => {
+    const page = open(options);
+    if (!docked()) page.pressAction();
+    return page;
+  };
+  const rowFor = (surface: HTMLElement, key: string) =>
+    within(surface)
+      .getAllByRole("treeitem")
+      .find((row) => row.getAttribute("data-workbench-field") === key)!;
+  /**
+   * The header of the Reference section, which holds `shelf`, a field the
+   * taxonomy does not name, as its one field.
+   */
+  const reference = (surface: HTMLElement) =>
+    within(surface).getByRole("button", { name: "Reference 1" });
+  const fieldShown = (surface: HTMLElement, key: string) =>
+    within(surface)
+      .queryAllByRole("treeitem")
+      .some((row) => row.getAttribute("data-workbench-field") === key);
+
+  describe.each(PRESENTED)("in the $presentation", ({ options, surface }) => {
+    it("head each group with its icon, its label, its count and a chevron", () => {
+      using _page = showing(options);
+      const header = reference(surface());
+      const part = (name: string) =>
+        header.querySelector(`[data-part=${name}]`);
+      expect(
+        part("section-icon")?.querySelector("[data-icon=section-reference]"),
+      ).not.toBeNull();
+      expect(part("section-label")?.textContent).toBe("Reference");
+      expect(part("section-count")?.textContent).toBe("1");
+      expect(part("section-chevron")).not.toBeNull();
+    });
+
+    it("collapse and expand a group on a click on its header", () => {
+      using _page = showing(options);
+      const header = reference(surface());
+      expect(header.getAttribute("aria-expanded")).toBe("true");
+      fireEvent.click(header);
+      expect(header.getAttribute("aria-expanded")).toBe("false");
+      expect(fieldShown(surface(), "shelf")).toBe(false);
+      fireEvent.click(header);
+      expect(fieldShown(surface(), "shelf")).toBe(true);
+    });
+
+    it("count the group's own fields, which an opened field leaves as it was", () => {
+      using _page = showing(options);
+      expect(reference(surface())).toBeTruthy();
+      fireEvent.click(
+        within(rowFor(surface(), "shelf")).getByRole("button", {
+          name: "Toggle node",
+        }),
+      );
+      expect(fieldShown(surface(), "shelf.label")).toBe(true);
+      // Still one field of its own, with its nested field open.
+      expect(reference(surface())).toBeTruthy();
+    });
+
+    it("collapse and expand every group from the panel's header", () => {
+      using _page = showing(options);
+      const header =
+        surface().querySelector<HTMLElement>("[data-part=header]")!;
+      fireEvent.click(
+        within(header).getByRole("button", { name: "Collapse all sections" }),
+      );
+      expect(within(surface()).queryAllByRole("treeitem")).toEqual([]);
+      // The same button now says what it does next.
+      fireEvent.click(
+        within(header).getByRole("button", { name: "Expand all sections" }),
+      );
+      expect(fieldShown(surface(), "title")).toBe(true);
+      expect(fieldShown(surface(), "shelf")).toBe(true);
+      // The search row holds the search alone.
+      expect(
+        within(surface())
+          .getByRole("combobox")
+          .closest("[data-part=search-row]")!
+          .querySelector("button"),
+      ).toBeNull();
+    });
+
+    it("open every group with a match while the reader searches", () => {
+      using _page = showing(options);
+      fireEvent.click(
+        within(surface()).getByRole("button", {
+          name: "Collapse all sections",
+        }),
+      );
+      fireEvent.change(within(surface()).getByRole("combobox"), {
+        target: { value: "e" },
+      });
+      // "Title" and "shelf" match, in two groups.
+      expect(fieldShown(surface(), "title")).toBe(true);
+      expect(fieldShown(surface(), "shelf")).toBe(true);
+      // Every group the search shows stands open.
+      const headers = [
+        ...surface().querySelectorAll("[data-part=section-header]"),
+      ];
+      expect(headers.length).toBeGreaterThan(1);
+      for (const header of headers)
+        expect(header.getAttribute("aria-expanded")).toBe("true");
+    });
+  });
+});
+
+describe("a Fields Panel row", () => {
+  /** The label cell of the row for the field `key`. */
+  const labelCell = (key: string) =>
+    within(panel()!)
+      .getAllByRole("treeitem")
+      .find((row) => row.getAttribute("data-workbench-field") === key)!
+      .querySelector<HTMLElement>(
+        ":scope > [data-part=row] [data-part=field-label]",
+      )!;
+
+  it("holds the field's label in its label cell, with the chevron of a field that opens", () => {
+    using page = open();
+    page.pressAction();
+    expect(within(labelCell("title")).getByText("Title")).toBeTruthy();
+    expect(
+      within(labelCell("title")).queryByRole("button", { name: "Toggle node" }),
+    ).toBeNull();
+    expect(
+      within(labelCell("shelf")).getByRole("button", { name: "Toggle node" }),
+    ).toBeTruthy();
+  });
+
+  it("marks a nested field's label, which the host draws behind a guide line", () => {
+    using page = open();
+    page.pressAction();
+    expect(labelCell("title").getAttribute("data-state")).toBeNull();
+    fireEvent.click(
+      within(labelCell("shelf")).getByRole("button", { name: "Toggle node" }),
+    );
+    expect(labelCell("shelf.label").getAttribute("data-state")).toBe("nested");
+  });
+});

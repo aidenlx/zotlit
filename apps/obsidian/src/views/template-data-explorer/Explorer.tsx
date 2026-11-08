@@ -247,7 +247,6 @@ export function Explorer({
               }
               data={data}
               root={root}
-              sectionsToggle={placement === "panel"}
               navigation={navigation}
               collapsedSections={collapsedSections}
               onCollapsedSectionsChange={(collapsed) =>

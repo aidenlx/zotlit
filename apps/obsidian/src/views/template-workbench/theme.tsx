@@ -59,6 +59,16 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   result: "corner-down-right",
   pin: "pin",
   unpin: "pin-off",
+  "section-common": "layout-list",
+  "section-reference": "book-marked",
+  "section-identifiers": "fingerprint",
+  "section-content": "paperclip",
+  "section-organization": "folder-tree",
+  "section-links": "link",
+  "section-record": "database",
+  "section-annotation": "highlighter",
+  "section-source": "file-text",
+  "section-citation": "quote",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =
@@ -309,11 +319,16 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     explorerTree: {
       sections: "zt:flex zt:flex-col zt:gap-2",
       section: "",
+      /** Stays at the top while its section scrolls past, on the ground of the panel it stands in. */
+      "section-heading":
+        "zt:sticky zt:top-0 zt:z-10 zt:bg-(--zt-fields-ground,var(--background-primary))",
       "section-header":
         "clickable-icon zt:[--icon-size:var(--icon-xs)] zt:text-muted-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
+      "section-icon":
+        "zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center zt:text-(--text-accent)",
       "section-chevron":
-        "zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center",
-      "section-label": "zt:min-w-0 zt:flex-1 zt:text-start",
+        "zt:ms-auto zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center zt:in-aria-disabled:opacity-40",
+      "section-label": "zt:min-w-0 zt:truncate zt:text-start",
       "section-count": "zt:font-normal zt:tabular-nums zt:text-faint",
       tree: "zt:text-xs zt:leading-normal",
       spacer: "zt:w-6 zt:shrink-0",
@@ -324,9 +339,16 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
        * its details.
        */
       contents:
-        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:gap-x-1.5 zt:select-text zt:[overflow-wrap:anywhere] zt:data-[state=line]:cursor-pointer zt:data-[state=line]:flex-nowrap zt:data-[state=line]:overflow-hidden zt:data-[state=line]:whitespace-nowrap zt:data-[state=line]:*:data-[part=key]:max-w-1/2 zt:data-[state=line]:*:data-[part=key]:shrink-0 zt:data-[state=line]:*:data-[part=key]:truncate zt:data-[state=line]:*:data-[part=value]:truncate",
+        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:gap-x-1.5 zt:select-text zt:[overflow-wrap:anywhere] zt:data-[state=line]:cursor-pointer zt:data-[state=line]:items-center zt:data-[state=line]:self-stretch zt:data-[state=line]:flex-nowrap zt:data-[state=line]:overflow-hidden zt:data-[state=line]:whitespace-nowrap zt:data-[state=line]:*:data-[part=value]:truncate",
+      /**
+       * A Fields Panel row's label, from the section icon's edge, with the
+       * chevron of a field that opens after it. A nested field's label
+       * stands a little in, behind the guide line its siblings continue.
+       */
+      "field-label":
+        "zt:flex zt:w-2/5 zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-0.5 zt:self-stretch zt:*:data-[part=key]:truncate zt:data-[state=nested]:ms-1 zt:data-[state=nested]:border-s zt:data-[state=nested]:border-(--nav-indentation-guide-color) zt:data-[state=nested]:ps-2",
       group:
-        "zt:ms-2.5 zt:border-s zt:border-(--nav-indentation-guide-color) zt:ps-2",
+        "zt:ms-2.5 zt:border-s zt:border-(--nav-indentation-guide-color) zt:ps-2 zt:data-[state=line]:ms-0 zt:data-[state=line]:border-0 zt:data-[state=line]:ps-0 zt:data-[state=line]:in-data-[part=group]:ps-3",
       chevron:
         "clickable-icon zt:w-6 zt:shrink-0 zt:[--icon-size:var(--icon-xs)] zt:focus-visible:shadow-(--input-box-shadow-focus)",
       "chevron-icon":
@@ -346,7 +368,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "long-toggle":
         "zt:rounded-xs zt:ms-0.5 zt:cursor-pointer zt:px-1 zt:text-muted-foreground zt:underline zt:decoration-dotted zt:underline-offset-2 zt:select-none zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
       /** The row ↑/↓ selected, and the row whose details stand open, keep their own ground. */
-      row: "zt:group/row zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg) zt:data-selected:bg-muted zt:data-open:bg-accent",
+      row: "zt:group/row zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:data-line:h-7 zt:data-line:items-center zt:data-line:py-0 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg) zt:data-selected:bg-muted zt:data-open:bg-accent",
       opaque: "zt:break-words zt:text-cyan",
       color: "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-green",
       string: "zt:text-green",
@@ -468,7 +490,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     fieldsPanel: {
       panel: cn(
         "zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-foreground",
-        "zt:data-[state=popover]:w-80 zt:data-[state=popover]:max-w-full zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-secondary) zt:data-[state=popover]:shadow-(--shadow-l)",
+        "zt:data-[state=popover]:w-80 zt:data-[state=popover]:max-w-full zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-secondary) zt:data-[state=popover]:shadow-(--shadow-l) zt:data-[state=popover]:[--zt-fields-ground:var(--background-secondary)]",
         "zt:data-[state=popover]:transition-[translate,opacity] zt:data-[state=popover]:duration-150 zt:data-[state=popover]:ease-out zt:motion-reduce:transition-none zt:data-[state=popover]:starting:translate-x-2 zt:data-[state=popover]:starting:opacity-0",
       ),
       header:
@@ -476,6 +498,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       icon: "zt:flex zt:shrink-0 zt:ps-1 zt:text-(--icon-color) zt:[&_svg]:size-(--icon-s)",
       title:
         "zt:min-w-0 zt:flex-1 zt:truncate zt:px-1 zt:text-sm zt:font-semibold",
+      actions: "zt:contents",
       // Pinned, the pin wears the accent; with no room to dock, it steps
       // back and keeps its focus and its tooltip.
       pin: "clickable-icon zt:shrink-0 zt:data-[state=pinned]:text-(--icon-color-active) zt:aria-disabled:cursor-not-allowed zt:aria-disabled:opacity-50",

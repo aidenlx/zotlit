@@ -133,13 +133,62 @@ Undo. In step 2, the pane menu holds no **Help**.
 ## Collapse every section of the Fields popover
 
 1. Select **Fields**.
-2. Select the button at the end of the field search row.
+2. In the panel's header, select the button before the pin.
 3. Select it again.
+4. Pin the panel in a wide tab, and do steps 2 and 3 in the docked panel.
 
-Expected: the button sits in one row with the field search, at its end, and
-looks like Obsidian's other icon buttons. Its tooltip reads **Collapse all
-sections**; step 2 closes every section, and the tooltip then reads **Expand
-all sections**. Step 3 opens them all again.
+Expected: the button sits in the panel's header, before the pin, and looks
+like Obsidian's other icon buttons; the field search row holds the search
+alone. Its tooltip reads **Collapse all sections**; step 2 closes every
+section, and the tooltip then reads **Expand all sections**. Step 3 opens
+them all again. Step 4 gives the same outcome in the docked panel.
+
+## Section headers in the Fields popover
+
+1. Choose "Alpha of the personal library", and select **Fields**.
+2. Look at the header of each section.
+3. Scroll the field list slowly down to its end.
+4. Select the **Reference** header. Select it again.
+5. Open **All creators**, and look at the **Reference** header's count.
+6. Pin the panel in a wide tab, and do steps 2 to 5 in the docked panel.
+
+Expected: in step 2, each header shows the section's icon, its name, the
+count of its own fields, such as "Reference 12", and a chevron at its right
+end. In step 3, the header of the section you read stays at the top of the
+list, on the panel's own background, until the next section's header pushes
+it away; no row shows through it. Step 4 closes the Reference section, with
+its chevron pointing right, and opens it again. In step 5 the count stays
+"Reference 12" with the creators open. Step 6 gives the same outcome in the
+docked panel.
+
+## A search opens every section with a match
+
+1. Select **Fields**, and collapse every section with the button in the
+   panel's header.
+2. Type `personal` in the field search.
+3. Clear the search.
+
+Expected: in step 2, every section with a matching field shows open with its
+matching rows: Common fields, Reference, Identifiers, Content and files, and
+Organization. The section headers keep their full color; only their chevrons
+and the collapse button step back, and a select on a header changes nothing.
+In step 3, every section is closed again, as before the search.
+
+## The rows of the Fields Panel
+
+1. Choose "Alpha of the personal library", and select **Fields**.
+2. Compare the left edge of the field names with the section icons.
+3. Open **All creators** (Reference).
+4. Resize the docked panel to its narrowest, 240 pixels, after you pin it in
+   a wide tab.
+
+Expected: in step 2, each field name starts at the left edge of its section's
+icon, and each row is one line: a long value, such as the title, ends with
+"…". In step 3, the chevron follows the name **All creators**, and its
+property rows, such as `family` and `given`, stand a little in, behind one
+thin vertical guide line that runs unbroken down their rows. No row stands
+for one creator. In step 4, every row stays one line, and a
+long name, such as "Short author list", also ends with "…".
 
 ## The Fields popover follows the editor
 

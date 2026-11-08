@@ -64,40 +64,13 @@ describe("shared Data Explorer", () => {
     ).toBe(true);
     expect(screen.getByText("Extra")).toBeTruthy();
     const identifiers = screen.getByRole("button", {
-      name: `${m.workbench_explorer_section_identifiers()} (1)`,
+      name: `${m.workbench_explorer_section_identifiers()} 1`,
     });
     expect(identifiers.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(identifiers);
     expect(screen.queryByText("Extra")).toBeNull();
     expect(identifiers.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByText(m.workbench_field_title())).toBeTruthy();
-  });
-
-  it("collapses and expands every section from the button beside the search", () => {
-    using mounted = mount(
-      <DataExplorer
-        root="note"
-        sectionsToggle
-        data={{ extra: "Other", title: "A paper" }}
-        copy={() => Effect.void}
-      />,
-    );
-    render(mounted.ui);
-    const search = screen.getByRole("searchbox");
-    const collapse = screen.getByRole("button", {
-      name: m.workbench_explorer_collapse_all(),
-    });
-    // The button trails the search box in one row.
-    expect(search.nextElementSibling).toBe(collapse);
-    fireEvent.click(collapse);
-    expect(screen.queryByText("Extra")).toBeNull();
-    expect(screen.queryByText("A paper")).toBeNull();
-    // The same button now says what it does next.
-    fireEvent.click(
-      screen.getByRole("button", { name: m.workbench_explorer_expand_all() }),
-    );
-    expect(screen.getByText("Extra")).toBeTruthy();
-    expect(screen.getByText("A paper")).toBeTruthy();
   });
 
   it("leaves the sections button to a host that offers it elsewhere", () => {
@@ -212,7 +185,7 @@ describe("shared Data Explorer", () => {
       render(ui);
       fireEvent.click(
         screen.getByRole("button", {
-          name: `${m.workbench_explorer_section_common()} (2)`,
+          name: `${m.workbench_explorer_section_common()} 2`,
         }),
       );
       expect(screen.queryByText("smith2026")).toBeNull();
@@ -225,7 +198,7 @@ describe("shared Data Explorer", () => {
       expect(
         screen
           .getByRole("button", {
-            name: `${m.workbench_explorer_section_common()} (1)`,
+            name: `${m.workbench_explorer_section_common()} 1`,
           })
           .getAttribute("aria-disabled"),
       ).toBe("true");
@@ -373,7 +346,7 @@ it("keeps two Explorer owners independent through display and filter changes", (
       .find((row) => row.dataset.workbenchField === "authors");
   expect(authorsRow(left)?.getAttribute("aria-expanded")).toBe("true");
   expect(authorsRow(right)?.getAttribute("aria-expanded")).toBe("false");
-  const common = `${m.workbench_explorer_section_common()} (2)`;
+  const common = `${m.workbench_explorer_section_common()} 2`;
   fireEvent.click(left.getByRole("button", { name: common }));
   expect(left.queryByText(m.workbench_field_title())).toBeNull();
   expect(right.getByText(m.workbench_field_title())).toBeTruthy();
