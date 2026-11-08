@@ -51,7 +51,7 @@ the header button reads **Fields**. At each width, the first select opens one
 region named "Fields" at the right edge of the view. It floats over the
 editor and the Preview, as tall as the view, with a small gap between it and
 the view's top, right and bottom edges. Nothing under it is dimmed. Its
-header shows the braces icon, the title "Fields" and a **Close** button.
+header shows the braces icon, the title "Fields" and a **Close fields** button.
 Under the header are the "Template fields" explorer and its search. The
 editor and the Preview keep their size. While the popover is open, the pane
 menu shows **Show fields** checked. The second select closes the popover, and
@@ -61,7 +61,7 @@ fields** the same way.
 ## Close the Fields popover and return the focus
 
 1. Select **Fields**. Press `Escape`.
-2. Select **Fields**. Select **Close**.
+2. Select **Fields**. Select **Close fields**.
 3. Select **Fields**. Select **Fields** again.
 
 Expected: each step closes the popover. After steps 1 and 2, the focus is on
@@ -174,6 +174,20 @@ Organization. The section headers keep their full color; only their chevrons
 and the collapse button step back, and a select on a header changes nothing.
 In step 3, every section is closed again, as before the search.
 
+## Search the fields by their template path
+
+1. Choose "Alpha of the personal library", and select **Fields**.
+2. Type each of these in the field search, one at a time: `zt.title`,
+   `zt.authors`, `authors.family`, `zt.citationKey`.
+3. Type `no such field`.
+
+Expected: in step 2 each search keeps the field it names: **Title**,
+**Authors**, the `family` row under **Authors**, and **Citation key**. A
+search that reaches into a list, such as `authors.family`, opens that list on
+its matching row only. In step 3 the list reads "No matching fields. Clear
+the search to see all fields.", and a screen reader reads that sentence. The
+web Workbench does the same steps, with the same outcome.
+
 ## The rows of the Fields Panel
 
 1. Choose "Alpha of the personal library", and select **Fields**.
@@ -187,7 +201,10 @@ icon, and each row is one line: a long value, such as the title, ends with
 "…". In step 3, the chevron follows the name **All creators**, and its
 property rows, such as `family` and `given`, stand a little in, behind one
 thin vertical guide line that runs unbroken down their rows. No row stands
-for one creator. In step 4, every row stays one line, and a
+for one creator. A property that is a field with a name of its own shows that
+name: open **Annotations** (Content and files), and its rows read "Your
+comment" and "Page", not `comment` and `pageLabel`; `family` and `given` have
+no such name and keep their keys. In step 4, every row stays one line, and a
 long name, such as "Short author list", also ends with "…".
 
 ## The Fields popover follows the editor
@@ -333,9 +350,15 @@ focus to the **Fields** view action.
 
 Expected: in steps 2 and 3 the rows have no **Insert field** button, and the
 note's heading and the front matter stay as they were. The row menu still
-offers the copy actions. In step 4 each row has **Insert field**, and the
-button inserts its field at the cursor. The web Workbench does the same steps,
-with the same outcome.
+offers the copy actions. The panel's footer reads "Select a row or press
+Enter: details · Select a place in the template to insert a field." and names
+no insert key. Select the row of `title`: its details show **Insert**
+disabled, with "Select a place in the template to insert a field." under it.
+Press `Down Arrow` and `Ctrl+Enter` (`Command+Enter` on macOS) in the search:
+nothing goes into the note, and a notice and a screen reader say the same
+sentence. In step 4 each row has **Insert field**, the footer names
+`Ctrl+Enter: insert` again, and the button inserts its field at the cursor.
+The web Workbench does the same steps, with the same outcome.
 
 ## Insert a field in a narrow tab with the keyboard
 
@@ -376,12 +399,32 @@ same outcome.
    library", and select **Fields**.
 2. Select the row of `title`, then the row of **All creators**.
 3. Scroll the field list.
+4. Make the tab about 400 pixels high, then zoom the app to 200%
+   (`Ctrl+=`), and select the row of `title` again.
 
 Expected: in step 2 the details open in a bar of fixed height at the foot of
-the Fields popover, above the line "Select or press Enter: details ·
+the Fields popover, above the line "Select a row or press Enter: details ·
 Ctrl+Enter: insert" ("Command+Enter" on macOS). The bar shows the details of the last
 row you selected, and the rows above it do not move. In step 3 the bar stays
-where it is. The web Workbench does the same steps, with the same outcome.
+where it is. In step 4 the bar takes no more than half of the panel, so the
+field list keeps at least one whole row, and the bar scrolls to show
+**In your note** and its snippet. The web Workbench does the same steps, with
+the same outcome.
+
+## A field's text follows the place it goes to
+
+1. Open a Profile whose `language` is `eta` (JavaScript templates on), choose
+   "Alpha of the personal library", and place the cursor in the note body.
+2. Select **Fields**, and select the row of `title`. Select **Copy**, then
+   select the row again and select **Insert**.
+3. Open the Properties tab, and place the cursor in the value of an `expr`
+   property. Select **Fields**, select the row of `date`, and do as in step 2.
+
+Expected: in step 2 **In your note** shows `<%= zt.title %>`, **Copy** copies
+`<%= zt.title %>`, and **Insert** writes `<%= zt.title %>`; `Ctrl+Enter` on
+the selected row writes the same. In step 3 the details show `zt.date` and its
+value, with no form choice, and **Copy**, **Insert** and `Ctrl+Enter` all give
+`zt.date`. A Liquid Profile shows and writes `{{ zt.title }}` in step 2.
 
 ## Insert and copy from a field's details
 
@@ -395,7 +438,8 @@ Expected: step 2 copies `{{ zt.title }}`, closes the details, keeps the Fields
 popover open with the focus in the field search, and shows the notice
 "Copied Title.". Step 3 writes `{{ zt.DOI }}` at the cursor, closes the
 details and the popover, gives the editor the focus after the inserted text,
-and shows the notice "Inserted DOI.". A screen reader reads both notices.
+and shows the notice "Inserted DOI.". A screen reader reads both messages,
+also after the popover closed, from the panels' live region.
 
 ## Choose a field with the keyboard
 
@@ -405,11 +449,17 @@ and shows the notice "Inserted DOI.". A screen reader reads both notices.
 3. Press `Enter`, then `Enter` again.
 4. Press `Ctrl+Enter` (`Command+Enter` on macOS).
 
-Expected: in step 2 the selected row is marked and shows its **Insert field**
-button, and a screen reader reads it as the search's active option. Step 3
-opens, then closes, the details of the selected row. Step 4 writes the
-selected field at the cursor, closes the popover and gives the editor the
-focus. The web Workbench does the same steps, with the same outcome.
+Expected: in step 2 the selected row shows its **Insert field** button and a
+focus ring that a row under the pointer never shows, so the two look
+different; a screen reader reads it as the search's active option by its
+label and value, such as "DOI, 10.…", without its path or its buttons. Step 3
+opens the details of the selected row with the focus on **Insert** (for a
+list, on its chosen form); `Tab` reaches **Copy**, and `Escape` closes them
+and puts the focus back in the search, where `Enter` opens them again. Step 4
+writes the selected field at the cursor, closes the popover and gives the
+editor the focus. Clear the search and press `Down Arrow` forty times, then
+`Up Arrow` forty times: the selected row is always in view, never under a
+section header. The web Workbench does the same steps, with the same outcome.
 
 ## Close a field's details
 
@@ -467,8 +517,10 @@ Expected: in step 1 the pin button's tooltip reads "Pin to side" and the
 button is not pressed. After step 2 the popover closes, and the Fields Panel
 stands as a column at the left edge of the view, before the editor, 320
 pixels wide. The editor gets narrower and the Preview stays at the right. The
-focus is in the panel's field search. The pin button is pressed, shows the
-pin-off icon, and its tooltip reads "Unpin". The panel has no **Close**
+focus is in the panel's field search. The pin button looks pressed, with the
+accent color on its icon and a ground behind it, also with the pointer away
+from it; it shows the pin-off icon, and its tooltip and its name for a screen
+reader read "Unpin", with no "pressed" state beside it. The panel has no **Close fields**
 button and nothing in the view is dimmed. **Fields** is pressed, and the pane
 menu shows **Show fields** checked. The web Workbench does the same in a
 window 1400 pixels wide.
@@ -554,12 +606,25 @@ Preview column.
    `Escape` three times, and look after each press.
 
 Expected: step 2 opens the details of the DOI row in a popover to the right
-of the docked panel, level with the row, and the focus stays in the field
-search. Step 3 writes `{{ zt.DOI }}` at the cursor, closes the details, and
-the panel stays docked; no command of Obsidian's runs, also when you have
+of the docked panel, level with the row, with the focus on **Insert**. Step 3
+writes `{{ zt.DOI }}` at the cursor, closes the details, and the panel stays
+docked; no command of Obsidian's runs, also when you have
 bound your own hotkey to Ctrl+Enter. In step 4, the first `Escape` closes the
 details, the second clears the search, and the third changes nothing: the
 panel stays docked and the focus stays in the field search.
+
+## Field details in the right leaf of a split
+
+1. Open a Markdown note, and open the Template Workbench in a new leaf to its
+   right, about 615 pixels wide. Choose "Alpha of the personal library".
+2. Select **Fields**, and select the row of `title`.
+3. Pin the panel (in a wider leaf if the pin is disabled), make the leaf
+   about 615 pixels wide again, and select the row of `title`.
+
+Expected: in steps 2 and 3 the details stand inside the Template Workbench
+leaf, beside the Fields popover or the docked panel, and never over the note
+in the left leaf. Where the side with more room is too narrow for them, they
+overlap the edge of the Fields popover instead.
 
 ## The pin survives a restart
 
