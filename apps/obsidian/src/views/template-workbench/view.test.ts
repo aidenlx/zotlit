@@ -1,6 +1,11 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
-import { Menu, TextFileView as MockTextFileView } from "@mock/obsidian";
+import {
+  Menu,
+  resetMockPlatform,
+  setMockPlatform,
+  TextFileView as MockTextFileView,
+} from "@mock/obsidian";
 import type {
   ItemView as MockItemView,
   Scope as MockScope,
@@ -12,12 +17,13 @@ import { SuggestModal, TFile } from "obsidian";
 import type { App, Scope, ViewState, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   formatPlainTemplateDocument,
   parsePlainTemplateDocument,
 } from "@zotlit/templates/facade";
+import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
   captureRenderReport,
   emptyRender,
@@ -25,6 +31,7 @@ import {
   renderIdentity,
   SAMPLE_ITEMS,
 } from "@zotlit/workbench/render";
+import { fieldForm } from "@zotlit/workbench/ui";
 
 import { answerConfirmation } from "@/lib/__fixtures__/confirm";
 import { dispatchKey, keymapApp } from "@/lib/__fixtures__/keymap";
@@ -59,6 +66,10 @@ import {
   originatingNoteUpdateNotice,
   unpackedPartialNotices,
 } from "./view";
+
+/** Inserts `node` as the Fields Panel does: in its first form, as the place the caret is in reads it. */
+const insertNode = (view: TemplateWorkbenchView, node: DisplayNode) =>
+  view.insertField(fieldForm(node, view.fieldInsertion()).snippet);
 
 // The real leaf edges stand in: the layout module imports this view.
 vi.mock("./layout", () => ({
@@ -1624,7 +1635,7 @@ An annotation.
       });
       requestSave.mockClear();
       await act(() => {
-        expect(view.insertTemplateField(node)).toBe(true);
+        expect(insertNode(view, node)).toBe(true);
       });
       expect(view.getViewData()).toContain("A s<%= zt.title %>table note.");
       expect(requestSave).toHaveBeenCalledOnce();
@@ -1636,7 +1647,7 @@ An annotation.
       await act(async () => view.close());
       view.contentEl.remove();
     }
-    expect(view.insertTemplateField(node)).toBe(false);
+    expect(insertNode(view, node)).toBe(false);
   });
 
   // A pane that only came on screen reports where its caret starts; the
@@ -2639,7 +2650,7 @@ language: liquid
     });
     await act(() => {
       expect(
-        view.insertTemplateField({
+        insertNode(view, {
           kind: "value",
           path: ["variant"],
           key: "variant",
@@ -3599,7 +3610,7 @@ describe("the side panels of the Template Workbench View", () => {
     const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
-    await act(async () => view.togglePanel("preview"));
+    await act(async () => view.togglePreview());
     await act(async () =>
       view.registry.set(view.viewSize, { width: 1200, height: 800 }),
     );
@@ -3810,6 +3821,9 @@ describe("the side panels of the Template Workbench View", () => {
 // #1943: Fields is the left side panel of the one view. It reads the view's
 // own Item and root, and inserts a field straight into the editor.
 describe("the Fields panel of the Template Workbench View", () => {
+  // The panel's key hint names Mod+Enter as the platform does.
+  beforeEach(() => setMockPlatform({ isMacOS: false }));
+  afterEach(resetMockPlatform);
   const actionOf = (view: TemplateWorkbenchView, title: string) =>
     (view as unknown as MockItemView).actions.find(
       (element) => element.getAttribute("aria-label") === title,

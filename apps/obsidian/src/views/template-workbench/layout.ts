@@ -6,7 +6,7 @@ import { Deferred, Effect, Semaphore } from "effect";
 import type { Cause } from "effect";
 import type { ViewState, WorkspaceLeaf } from "obsidian";
 
-import { showPanel } from "@zotlit/workbench/ui";
+import { showPreview } from "@zotlit/workbench/ui";
 
 import { Workspace } from "@/lib/obsidian-workspace";
 
@@ -143,7 +143,7 @@ const showWorkbench = Effect.fn("TemplateWorkbench.showWorkbench")(function* (
   editor: TemplateWorkbenchView,
 ) {
   editor.registry.update(editor.workbench.panels, (panels) =>
-    showPanel("preview", true)(panels),
+    showPreview(true)(panels),
   );
   const workspace = yield* Workspace;
   yield* workspace.revealLeaf(editor.leaf);

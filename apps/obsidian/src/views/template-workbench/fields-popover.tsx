@@ -5,6 +5,7 @@
 // and focus back to the action; the shared Fields Panel draws the contents.
 // A field's details in a wide view are a PinnedPopover inside this one,
 // beside the panel and level with the field's row.
+import { Platform } from "obsidian";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
@@ -16,6 +17,7 @@ import type {
 
 import { PinnedPopover } from "@/components/pinned-popover";
 import type { PageKey, PinnedPopoverHandle } from "@/components/pinned-popover";
+import * as m from "@/lib/i18n/generated/messages";
 
 /**
  * Mod+Enter inserts the field selected in the panel's search, ahead of the
@@ -96,18 +98,29 @@ export function fieldsActionHost(
       </PinnedPopover>
     );
   }
+  /** A field's details, held inside this leaf's view. */
+  function FieldDetails(props: WorkbenchFieldDetailsProps) {
+    return <FieldDetailsPopover {...props} view={view} />;
+  }
   return {
     popover: FieldsPopover,
     popoverId,
     focus: () => anchor.current?.focus({ preventScroll: true }),
-    details: FieldDetailsPopover,
+    details: FieldDetails,
+    // Mod+Enter, as Obsidian names the key on this platform.
+    get insertShortcut() {
+      return Platform.isMacOS
+        ? m.workbench_fields_insert_key_mac()
+        : m.workbench_fields_insert_key();
+    },
   };
 }
 
 /**
- * A field's details beside the Fields Panel. It opens as it mounts and leaves
- * focus in the panel's search; its Scope takes Escape before the Fields
- * popover's, and a press on its row stays the row's, which toggles it.
+ * A field's details beside the Fields Panel, inside `view`, so they never
+ * cover a neighbouring leaf. It opens as it mounts; its Scope takes Escape
+ * before the Fields popover's, and a press on its row stays the row's, which
+ * toggles it.
  */
 function FieldDetailsPopover({
   anchor,
@@ -115,7 +128,10 @@ function FieldDetailsPopover({
   onClose,
   labelledBy,
   children,
-}: WorkbenchFieldDetailsProps) {
+  view,
+}: WorkbenchFieldDetailsProps & {
+  readonly view: RefObject<HTMLElement | null>;
+}) {
   const handle = useRef<PinnedPopoverHandle>(null);
   const [row] = useState(() => ({ current: anchor }));
   const [beside] = useState(() => ({ current: panel }));
@@ -135,6 +151,7 @@ function FieldDetailsPopover({
     <PinnedPopover
       anchor={row}
       beside={beside}
+      within={view}
       handle={handle}
       initialFocus={false}
       // Its Scope stands over the Fields popover's: the panel's keys pass it.

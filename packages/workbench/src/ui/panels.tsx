@@ -12,8 +12,11 @@ import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 import { useUniqueId } from "@zotlit/ui";
 
 import { useWorkbenchEditor, useWorkbenchModel } from "./editor";
-import { DockedFieldsPanel, fieldsDockId, FieldsPanel } from "./fields-panel";
-import type { FieldsPanelContent } from "./fields-panel";
+import {
+  DockedFieldsPanel,
+  fieldsDockId,
+  FieldsPopoverPanel,
+} from "./fields-panel";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import {
@@ -33,7 +36,6 @@ import {
 import type {
   PanelHandle,
   PanelSide,
-  ShowableSide,
   ViewSize,
   WorkbenchPanels,
 } from "./panel-layout";
@@ -59,12 +61,7 @@ export function SidePanels({
   panels,
   children,
 }: {
-  panels: Partial<Record<ShowableSide, SidePanel>> & {
-    readonly fields?: FieldsPanelContent & {
-      /** The docked panel's resize handle's name. */
-      readonly resizeLabel: string;
-    };
-  };
+  panels: Partial<Record<PanelSide, SidePanel>>;
   children: ReactNode;
 }) {
   const model = useWorkbenchModel();
@@ -80,6 +77,16 @@ export function SidePanels({
   const host = useOptionalHost();
   const popoverId = host?.fieldsAction?.popoverId;
   const fieldsTitle = useUniqueId();
+  // A resize or a hide that takes the docked column away hands the focus it
+  // held to the Fields action, which brings it back. The column's removal
+  // marks that it held focus; the placement decides, so a column that still
+  // stands, as through a development replay of its effects, keeps it.
+  const dockHeldFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (dockHeldFocus.current && placement.fields !== "docked")
+      host?.fieldsAction?.focus();
+    dockHeldFocus.current = false;
+  }, [placement.fields, host]);
   return (
     <div {...part("panels")}>
       {panels.fields && placement.fields === "docked" && (
@@ -92,9 +99,9 @@ export function SidePanels({
           labelledBy={fieldsTitle}
           resizeLabel={panels.fields.resizeLabel}
           {...(popoverId === undefined ? {} : { id: fieldsDockId(popoverId) })}
-          // A resize or a hide that takes the column away hands the focus
-          // it held to the Fields action, which brings it back.
-          onLeave={() => host?.fieldsAction?.focus()}
+          onLeave={() => {
+            dockHeldFocus.current = true;
+          }}
           content={
             <DockedFieldsPanel {...panels.fields} titleId={fieldsTitle} />
           }
@@ -112,7 +119,8 @@ export function SidePanels({
           />
         )}
       </div>
-      {panels.fields && <FieldsPanel {...panels.fields} />}
+      {panels.fields && <FieldsPopoverPanel {...panels.fields} />}
+      {panels.fields && <FieldsStatusRegion />}
       <SizeStatus
         labels={{
           fields: panels.fields?.label ?? "",
@@ -411,6 +419,23 @@ function useSizeText(): (
             columnLimit(panels, handle, size),
           ),
         });
+}
+
+/**
+ * The polite status that says what the Fields Panel last did, such as
+ * "Inserted Title.", in either presentation. It stands outside the Fields
+ * popover, so an insert that closes the popover is still heard. Each new
+ * status is a new node, so a repeat is heard again.
+ */
+function FieldsStatusRegion() {
+  const model = useWorkbenchModel();
+  const part = useParts("panels");
+  const status = useAtomValue(model.fieldsStatus);
+  return (
+    <div role="status" {...part("status")}>
+      {status && <span key={status.count}>{status.text}</span>}
+    </div>
+  );
 }
 
 /**

@@ -20,7 +20,7 @@ import {
   WorkbenchThemeProvider,
   WorkbenchMessagesProvider,
 } from "@zotlit/workbench/ui";
-import type { PanelSide, WorkbenchPanels } from "@zotlit/workbench/ui";
+import type { WorkbenchPanels } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -62,21 +62,18 @@ export const PAGE_PANELS: WorkbenchPanels = {
 function FirstPaint({ edit, result }: FrameParts) {
   const part = useParts("panels");
   const properties = usePanelProperties();
-  const column = (side: PanelSide, content: ReactNode) => (
-    <div
-      style={{ [properties.width]: `${PAGE_PANELS[side].width}px` }}
-      {...part("panel", side)}
-    >
-      {content}
-    </div>
-  );
   return (
     <div {...part("panels")}>
       <div {...part("stack")}>
         <div {...part("editor")}>{edit}</div>
       </div>
       <div aria-hidden {...part("edge", "preview")} />
-      {column("preview", result)}
+      <div
+        style={{ [properties.width]: `${PAGE_PANELS.preview.width}px` }}
+        {...part("panel", "preview")}
+      >
+        {result}
+      </div>
     </div>
   );
 }

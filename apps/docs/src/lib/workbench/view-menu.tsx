@@ -18,7 +18,7 @@ import {
   panelSizeMenus,
   pickPanelSize,
   pressFieldsAction,
-  showPanel,
+  showPreview,
 } from "@zotlit/workbench/ui";
 import type { WorkbenchModel } from "@zotlit/workbench/ui";
 
@@ -95,10 +95,10 @@ export function ViewMenu({
         finalFocus={() => !opensFields.current}
       >
         <DropdownMenuCheckboxItem
-          checked={fieldsAction.open}
+          checked={fieldsAction !== "closed"}
           closeOnClick
           onCheckedChange={() => {
-            if (fieldsAction.open) pressFieldsAction(registry, model);
+            if (fieldsAction !== "closed") pressFieldsAction(registry, model);
             else opensFields.current = true;
           }}
         >
@@ -107,7 +107,7 @@ export function ViewMenu({
         <DropdownMenuCheckboxItem
           checked={panels.preview.shown}
           onCheckedChange={(shown) =>
-            registry.update(model.panels, showPanel("preview", shown))
+            registry.update(model.panels, showPreview(shown))
           }
         >
           {m.workbench_show_preview()}

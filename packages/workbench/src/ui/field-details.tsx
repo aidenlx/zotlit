@@ -3,25 +3,21 @@
 // host's popover beside the panel; a narrow one in a bar of fixed height at
 // the panel's foot.
 import type { DisplayNode, SnippetKind } from "#/explorer/index";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Ref } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
+import { composing } from "@zotlit/ui";
 
 import { fieldValueText } from "./explorer-fields";
+import type { FieldForm, FieldInsertOptions } from "./field-insertion";
 import { useFieldsPanelRows } from "./fields-panel";
 import { useOptionalHost, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import type { ViewSize } from "./panel-layout";
 import { useIcon, useParts } from "./theme";
 
-import {
-  formatPath,
-  listItemTexts,
-  listSnippetKinds,
-  snippetKindsFor,
-  snippetResult,
-} from "#/explorer/index";
+import { formatPath, isList, listItemTexts } from "#/explorer/index";
 
 /**
  * The narrowest view, in pixels, that shows a field's details in a popover
@@ -42,16 +38,6 @@ export const placeFieldDetails = (
 ): FieldDetailsPlacement =>
   size === null || size.width >= DETAILS_BESIDE_MIN ? "popover" : "bar";
 
-/**
- * How a field goes into the note: `keepOpen` when Shift kept the Fields Panel
- * open for the next field, and `kind`, the form the reader chose for a list;
- * absent, the field's first form.
- */
-export interface FieldInsertOptions {
-  readonly keepOpen: boolean;
-  readonly kind?: SnippetKind;
-}
-
 /** What the details show and do for one field. */
 export interface FieldDetailsContent {
   readonly node: DisplayNode;
@@ -59,15 +45,24 @@ export interface FieldDetailsContent {
   readonly label: string;
   /** Where the field sits: its section, and the field it belongs to. */
   readonly context: string;
-  /**
-   * The text an insert puts into the note in the form `kind`, or in the
-   * field's first form where `kind` is absent.
-   */
-  readonly snippet: (kind?: SnippetKind) => string;
+  /** The forms the field goes into the note in; the reader picks one where there are several. */
+  readonly forms: readonly FieldForm[];
   /** Absent where the editor takes no field now. */
-  readonly onInsert?: (options: FieldInsertOptions) => void;
-  readonly onCopy: (kind?: SnippetKind) => void;
+  readonly onInsert?: (form: FieldForm, options: FieldInsertOptions) => void;
+  readonly onCopy: (form: FieldForm) => void;
   readonly onClose: () => void;
+  /**
+   * Whether the details take focus on their first control as they open: the
+   * form choice, else Insert, else Copy. Enter opened them, so the keys
+   * reach their controls.
+   */
+  readonly takeFocus?: boolean;
+  /**
+   * Tab moved focus past the last control of the details, or Shift+Tab
+   * before the first: focus goes back to the panel, which a popover on the
+   * page's body does not follow in the Tab order.
+   */
+  readonly onTabOut: () => void;
 }
 
 /**
@@ -122,10 +117,12 @@ function DetailsBody({
   node,
   label,
   context,
-  snippet,
+  forms,
   onInsert,
   onCopy,
   onClose,
+  takeFocus = false,
+  onTabOut,
   titleId,
   surface,
   state,
@@ -145,23 +142,56 @@ function DetailsBody({
       : fieldValueText(node);
   // A list goes into the note in the form the reader picks, its first by
   // default; any other field has one form.
-  const forms = listSnippetKinds(node);
-  const [kind, setKind] = useState<SnippetKind | undefined>(forms[0]);
+  const [kind, setKind] = useState<SnippetKind>(forms[0]!.kind);
+  const form = forms.find((each) => each.kind === kind) ?? forms[0]!;
   const formsId = useUniqueId();
-  // What the snippet writes, by the rules of the form the snippet uses.
-  const result = snippetResult(node, kind ?? snippetKindsFor(node)[0]!);
+  const { result } = form;
   const empty = m.workbench_fields_empty();
   // A list shows its values one per line, numbered.
-  const values = forms.length > 0 ? listItemTexts(node) : [];
+  const values = isList(node) ? listItemTexts(node) : [];
+  const reasonId = useUniqueId();
+  const section = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (!takeFocus) return;
+    section.current
+      ?.querySelector<HTMLElement>(
+        "input:checked, [data-part=insert]:not(:disabled), [data-part=copy]",
+      )
+      ?.focus({ preventScroll: true });
+  }, [takeFocus]);
   const formLabels: Partial<Record<SnippetKind, string>> = {
     joined: m.workbench_fields_details_form_joined(),
     loop: m.workbench_fields_details_form_loop(),
   };
   return (
     <section
-      ref={surface}
+      ref={(element) => {
+        section.current = element;
+        if (typeof surface === "function") surface(element);
+        else if (surface) surface.current = element;
+      }}
       aria-labelledby={titleId}
       {...part("details", state)}
+      // Mod+Enter inserts the field in the form the details show, as it
+      // inserts the selected row from the search.
+      onKeyDown={(event) => {
+        if (event.key === "Tab") {
+          const controls = [
+            ...event.currentTarget.querySelectorAll<HTMLElement>(
+              "button:not(:disabled), input:checked",
+            ),
+          ];
+          const edge = event.shiftKey ? controls[0] : controls.at(-1);
+          if (event.target !== edge) return;
+          event.preventDefault();
+          onTabOut();
+          return;
+        }
+        if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+        if (composing(event) || !onInsert) return;
+        event.preventDefault();
+        onInsert(form, { keepOpen: event.shiftKey });
+      }}
     >
       <div {...part("header")}>
         <span {...part("heading")}>
@@ -194,7 +224,7 @@ function DetailsBody({
           {value === "" ? empty : value}
         </p>
       )}
-      <div {...part("item")}>
+      <div {...part("item", "path")}>
         <span {...part("label")}>{m.workbench_fields_details_path()}</span>
         <code {...part("path")}>
           {node.kind === "list-property"
@@ -205,29 +235,29 @@ function DetailsBody({
             : formatPath(node.path, "zt")}
         </code>
       </div>
-      <div {...part("item")}>
+      <div {...part("item", "note")}>
         <div {...part("item-header")}>
           <span id={formsId} {...part("label")}>
             {m.workbench_fields_details_in_note()}
           </span>
-          {forms.length > 0 && (
+          {forms.some(isListForm) && (
             // Named by its visible label, so no tooltip stands on the group.
             <div role="radiogroup" aria-labelledby={formsId} {...part("forms")}>
-              {forms.map((form) => (
-                <label key={form} {...part("form")}>
+              {forms.map((each) => (
+                <label key={each.kind} {...part("form")}>
                   <input
                     type="radio"
                     name={formsId}
-                    checked={kind === form}
-                    onChange={() => setKind(form)}
+                    checked={form.kind === each.kind}
+                    onChange={() => setKind(each.kind)}
                   />
-                  {formLabels[form]}
+                  {formLabels[each.kind]}
                 </label>
               ))}
             </div>
           )}
         </div>
-        <code {...part("snippet")}>{snippet(kind)}</code>
+        <code {...part("snippet")}>{form.snippet}</code>
         <p {...part("result", result === null ? "empty" : undefined)}>
           <span aria-hidden="true" {...part("result-icon")}>
             {icon("result")}
@@ -239,17 +269,28 @@ function DetailsBody({
         <button
           type="button"
           disabled={!onInsert}
-          onClick={(event) => onInsert?.({ keepOpen: event.shiftKey, kind })}
+          aria-describedby={onInsert ? undefined : reasonId}
+          onClick={(event) => onInsert?.(form, { keepOpen: event.shiftKey })}
           {...part("insert")}
         >
           {icon("insert")}
           {m.workbench_fields_insert()}
         </button>
-        <button type="button" onClick={() => onCopy(kind)} {...part("copy")}>
+        <button type="button" onClick={() => onCopy(form)} {...part("copy")}>
           {icon("copy")}
           {m.workbench_fields_copy()}
         </button>
       </div>
+      {!onInsert && (
+        <p id={reasonId} {...part("reason")}>
+          {m.workbench_fields_choose_place()}
+        </p>
+      )}
     </section>
   );
+}
+
+/** A form a list goes into the note in, which the reader picks by name. */
+function isListForm({ kind }: FieldForm): boolean {
+  return kind === "joined" || kind === "loop";
 }

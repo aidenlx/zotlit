@@ -44,12 +44,12 @@ import type {
 } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
+import { composing } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
-import { composing } from "@/lib/ime";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
 

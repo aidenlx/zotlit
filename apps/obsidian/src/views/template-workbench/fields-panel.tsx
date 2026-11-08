@@ -362,8 +362,8 @@ export function FieldsPanel({
           explorer={{
             copy: copyToClipboard,
             disabled: !canInsert,
-            onInsertNode: (node, { keepOpen, kind }) =>
-              view.insertTemplateField(node, { focus: !keepOpen, kind }),
+            insertion: () => view.fieldInsertion(),
+            onInsert: (text, options) => view.insertField(text, options),
             canExploreAnnotation: (node) =>
               annotationOfNode(view, node) !== null,
             onExploreAnnotation: (node) => {

@@ -43,9 +43,9 @@ import {
   placePanels,
 } from "./panel-layout";
 import type {
-  FieldsAction,
   FieldsPanelState,
   FieldsPin,
+  FieldsPlacement,
   PanelHandle,
   PanelPlacement,
   ViewSize,
@@ -69,6 +69,20 @@ import { isPartialContext } from "#/render/partial-preview";
 
 /** The template root a pane edits, which the Explorer and the preview follow. */
 export type TemplateRoot = "note" | "annotation" | "filename" | "citation";
+
+/** One thing the Fields Panel tells a screen reader; `count` grows with each. */
+export interface FieldsStatus {
+  readonly text: string;
+  readonly count: number;
+}
+
+/** Tells a screen reader `text` through the panels' live region. */
+export const announceFields =
+  (text: string) =>
+  (last: FieldsStatus | null): FieldsStatus => ({
+    text,
+    count: (last?.count ?? 0) + 1,
+  });
 
 /** What the preview shows: a new note, or an existing note after Update. */
 export type PreviewMode = "create" | "update";
@@ -324,7 +338,7 @@ export interface WorkbenchModel<
    * write presses the action: it opens or closes the Fields popover, or
    * hides or shows the docked panel, which keeps its pin.
    */
-  readonly fieldsAction: Atom.Writable<FieldsAction, void>;
+  readonly fieldsAction: Atom.Writable<FieldsPlacement, void>;
   /**
    * Whether the Fields Panel is pinned, and whether the view has room to
    * dock it. A write presses the pin: it docks the panel, or unpins it into
@@ -337,6 +351,13 @@ export interface WorkbenchModel<
    * Never saved.
    */
   readonly fieldsFocus: Atom.Writable<boolean>;
+  /**
+   * What the Fields Panel last told a screen reader, such as "Inserted
+   * Title.", with a count that tells a repeat from the last one. The panels
+   * read it out in a live region that outlasts the Fields popover. Never
+   * saved.
+   */
+  readonly fieldsStatus: Atom.Writable<FieldsStatus | null>;
   /**
    * Makes an Item the choice. An Item the reader picked is the Citation set
    * they asked to see, so the built-in example that outranks it stands down.
@@ -527,10 +548,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
     placement,
     fieldsPanel,
     fieldsAction: Atom.writable(
-      (get): FieldsAction => {
-        const { fields } = get(placement);
-        return { open: fields !== "closed", placement: fields };
-      },
+      (get): FieldsPlacement => get(placement).fields,
       (ctx) => {
         const { fields, canPin } = ctx.get(placement);
         if (fields === "docked")
@@ -561,6 +579,7 @@ export function makeWorkbenchModel<R extends TemplateRenderResult>({
       },
     ),
     fieldsFocus,
+    fieldsStatus: Atom.make<FieldsStatus | null>(null),
     pick: Atom.writable(
       (get) => get(item),
       (ctx, choice: WorkbenchItemChoice) => {
@@ -713,6 +732,7 @@ export function holdWorkbenchModel<R extends TemplateRenderResult>(
     model.viewSize,
     model.fieldsPanel,
     model.fieldsFocus,
+    model.fieldsStatus,
     model.itemData,
     model.controller,
     model.document.source,

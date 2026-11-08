@@ -23,7 +23,6 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import type { DisplayNode, SnippetKind } from "@zotlit/workbench/explorer";
 import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { RenderDiagnostic } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
@@ -42,7 +41,6 @@ import {
   setAdvanced as setViewAdvanced,
   diagnosticText,
   entryDiagnostics,
-  fieldSnippet,
   fieldsActionAttributes,
   pressFieldsAction,
   renderDiagnosis,
@@ -60,13 +58,15 @@ import {
   PropertiesPane,
   SliceEditor,
   SidePanels,
-  showPanel,
+  showPreview,
 } from "@zotlit/workbench/ui";
 import type {
+  FieldInsertionContext,
+  FieldInsertionMode,
+  FieldInsertOptions,
   WorkbenchTab,
   WorkbenchHost,
   WorkbenchInsertTarget,
-  ShowableSide,
   WorkbenchViewState,
 } from "@zotlit/workbench/ui";
 
@@ -90,7 +90,12 @@ import { m } from "@/paraglide/messages.js";
 import { annotationHeaderMark } from "./annotation-mark";
 import { ConnectionBar, ConnectionNotice } from "./connection-bar";
 import { FieldList } from "./field-list";
-import { insertSnippet, rootData, templateRootAt } from "./fields";
+import {
+  insertSnippet,
+  rootData,
+  SNIPPET_ENGINE,
+  templateRootAt,
+} from "./fields";
 import { ProfileMenuLabel, WorkbenchFrame, WorkbenchHelp } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { HelpMenu } from "./help-menu";
@@ -234,9 +239,9 @@ function WorkbenchSession({
   const { drafts, layout: layoutAtom } = workbench;
   const panels = useAtomValue(model.panels);
   const fieldsAction = useAtomValue(model.fieldsAction);
-  const togglePanel = (side: ShowableSide) =>
+  const togglePreview = () =>
     registry.update(model.panels, (state) =>
-      showPanel(side, !state[side].shown)(state),
+      showPreview(!state.preview.shown)(state),
     );
   // The frame's content box is the view the panels share. A frame laid out
   // at no size, such as one in a hidden tab, keeps the size it last had.
@@ -423,7 +428,7 @@ function WorkbenchSession({
     !advanced && tab === "properties"
       ? entries?.find((entry) => entry.position === row)?.language
       : undefined;
-  const fieldMode: "template" | "expression" | "json-e" =
+  const fieldMode: FieldInsertionMode =
     sourceRegion?.language === "json-e" || propertyLanguage === "value"
       ? "json-e"
       : sourceRegion?.expression || propertyLanguage === "expr"
@@ -477,30 +482,33 @@ function WorkbenchSession({
    * unless the Fields Panel keeps it.
    */
   const insert = useCallback(
-    (snippet: string, focus = true) => {
+    (
+      snippet: string,
+      { keepOpen }: FieldInsertOptions = { keepOpen: false },
+    ) => {
       if (fieldDisabled || insertAt === null) return;
       const head = insertSnippet(controller, slice, {
         target: insertAt,
         snippet,
       });
-      setReveal({ from: head, to: head, focus });
+      setReveal({ from: head, to: head, focus: !keepOpen });
     },
     [fieldDisabled, controller, slice, insertAt],
   );
 
+  // The field list reads where an insert writes at the time of each action.
   const insertion = useRef({ insert, mode: fieldMode });
   insertion.current = { insert, mode: fieldMode };
-  const insertNode = useCallback(
-    (
-      node: DisplayNode,
-      {
-        keepOpen,
-        kind,
-      }: { readonly keepOpen: boolean; readonly kind?: SnippetKind },
-    ) => {
-      const current = insertion.current;
-      current.insert(fieldSnippet(node, current.mode, { kind }), !keepOpen);
-    },
+  const fieldInsertion = useCallback(
+    (): FieldInsertionContext => ({
+      engine: SNIPPET_ENGINE,
+      mode: insertion.current.mode,
+    }),
+    [],
+  );
+  const insertText = useCallback(
+    (text: string, options: FieldInsertOptions) =>
+      insertion.current.insert(text, options),
     [],
   );
 
@@ -684,7 +692,7 @@ function WorkbenchSession({
             size="xs"
             aria-pressed={panels.preview.shown}
             className={PRESSED_TOGGLE}
-            onClick={() => togglePanel("preview")}
+            onClick={() => togglePreview()}
           >
             <PanelRight aria-hidden className="rtl:-scale-x-100" />
             {m.workbench_show_preview()}
@@ -778,9 +786,9 @@ function WorkbenchSession({
           annotation={selectedAnnotation ?? undefined}
           citation={annotationResult?.annotationCitation}
           ready={ready}
-          mode={fieldMode}
+          insertion={fieldInsertion}
           disabled={fieldDisabled}
-          onInsertNode={insertNode}
+          onInsert={insertText}
         />
       }
       editor={

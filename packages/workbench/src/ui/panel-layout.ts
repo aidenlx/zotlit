@@ -14,11 +14,6 @@ import { patchAt } from "./patch";
  * edge, the Preview at the trailing edge.
  */
 export type PanelSide = "fields" | "preview";
-/**
- * The side panel a view action shows and hides. The Fields Panel opens from
- * the Fields action instead, and docks while the reader has it pinned.
- */
-export type ShowableSide = "preview";
 export interface WorkbenchPanel {
   readonly shown: boolean;
   /** The panel's width in pixels, which the reader sets with its edge. */
@@ -105,8 +100,12 @@ export const savedPanelWidth = (side: PanelSide, width: number) => {
 export const clampPreviewHeight = (share: number) =>
   Math.round(Math.min(PREVIEW_HEIGHT.max, Math.max(PREVIEW_HEIGHT.min, share)));
 
-export const showPanel = (side: ShowableSide, shown: boolean) =>
-  patchAt<WorkbenchPanels, ShowableSide>(side, { shown });
+/**
+ * Shows or hides the Preview, the side panel a view action shows. The Fields
+ * Panel opens from the Fields action instead, and docks while pinned.
+ */
+export const showPreview = (shown: boolean) =>
+  patchAt<WorkbenchPanels, "preview">("preview", { shown });
 /** Sets a panel's width, held as {@link savedPanelWidth} says. */
 export const setPanelWidth = (side: PanelSide, width: number) =>
   patchAt<WorkbenchPanels, PanelSide>(side, {
@@ -167,12 +166,6 @@ export type FieldsPanelState = "open" | "closed" | "to-editor";
 export interface FieldsPin {
   readonly pinned: boolean;
   readonly canPin: boolean;
-}
-
-/** Whether the Fields Panel the Fields action opens stands open, and where. */
-export interface FieldsAction {
-  readonly open: boolean;
-  readonly placement: FieldsPlacement;
 }
 
 /** Where the Preview goes in a view of `size`; a view not measured yet draws it as a column. */

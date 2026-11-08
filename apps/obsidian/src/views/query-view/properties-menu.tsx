@@ -12,6 +12,8 @@ import type { IconName } from "obsidian";
 import { useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { composing } from "@zotlit/ui";
+
 import {
   Chooser,
   chooserIconButton,
@@ -23,7 +25,6 @@ import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
 import { Icon } from "@/components/obsidian/icon";
 import { registerKeymap } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
-import { composing } from "@/lib/ime";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { useQueryViewState } from "./model";

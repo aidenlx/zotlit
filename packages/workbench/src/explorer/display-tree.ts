@@ -3,13 +3,7 @@
 import { formatAccessorPath, memberAccessor } from "./accessor-path";
 import type { TemplatePathSegment } from "./accessor-path";
 import { inertPlaceholderReason } from "./inert-placeholder";
-import {
-  isPlainObject,
-  itemReadsAsText,
-  listLineProperty,
-  listPropertyNames,
-  listRecords,
-} from "./list-items";
+import { evaluateHelper, isPlainObject, readList } from "./list-items";
 import { coerceToString } from "./string-coercion";
 
 export type PathSegment = TemplatePathSegment;
@@ -255,7 +249,7 @@ function classifyValue(
     : Object.keys(container).length;
   const expandable =
     walk.lists === "shape" && Array.isArray(container)
-      ? listPropertyNames(container).length > 0
+      ? readList(container).properties.length > 0
       : size > 0;
   const preview = containerPreview(container);
 
@@ -307,15 +301,7 @@ export function previewLine(text: string): string {
 function containerPreview(value: object): string | undefined {
   if (Array.isArray(value)) {
     if (value.length === 0) return undefined;
-    const line = listLineProperty(value);
-    return previewLine(
-      value
-        .map((item: unknown) =>
-          textOf(line === undefined ? item : propertyOf(item, line)),
-        )
-        .filter((text) => text !== "")
-        .join(", "),
-    );
+    return previewLine(readList(value).lines.join(", "));
   }
   if (!Object.hasOwn(value, "toString")) return undefined;
   const rendered = previewLine(coerceToString(value));
@@ -323,29 +309,14 @@ function containerPreview(value: object): string | undefined {
   return rendered;
 }
 
-/** An item's own value for `key`; an unread getter stays unread, as the tree leaves it. */
-function propertyOf(item: unknown, key: string): unknown {
-  if (item === null || typeof item !== "object") return undefined;
-  const desc = Object.getOwnPropertyDescriptor(item, key);
-  if (!desc || desc.get) return undefined;
-  return desc.value;
-}
-
 /**
- * One value as the text a note shows: a helper's zero-argument result, a
- * record's own `toString`; empty for nothing, an inert helper, or a record
- * with no text of its own.
+ * The properties of a list's items, as a list row's shape view shows them;
+ * none for a node that is not a list of records.
  */
-function textOf(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "function") {
-    if (inertPlaceholderReason(value) !== undefined) return "";
-    return evaluateHelper(value as (...args: unknown[]) => unknown) ?? "";
-  }
-  if (typeof value !== "object") return coerceToString(value);
-  if (!itemReadsAsText(value)) return "";
-  const text = coerceToString(value);
-  return text === "[object Object]" ? "" : text;
+export function listPropertiesOf(node: DisplayNode): ListPropertyNode[] {
+  return node.kind === "value" && Array.isArray(node.value)
+    ? listProperties(node.value, node.path)
+    : [];
 }
 
 /** The shape view of a list: one node for each property its records have. */
@@ -353,24 +324,18 @@ function listProperties(
   list: readonly unknown[],
   listPath: readonly PathSegment[],
 ): ListPropertyNode[] {
-  const records = listRecords(list);
   const listKey = formatPath(listPath);
-  return listPropertyNames(list).map((property) => {
-    const values = records
-      .map((record) => textOf(propertyOf(record, property)))
-      .filter((text) => text !== "");
-    return {
-      kind: "list-property",
-      path: [...listPath, property],
-      // `[]` marks the step over every item, as in `authors[].family`.
-      key: `${listKey}[]${memberAccessor(property)}`,
-      label: property,
-      list: listPath,
-      property,
-      values,
-      preview: previewLine(values.join(", ")),
-    };
-  });
+  return readList(list).properties.map(({ name, values }) => ({
+    kind: "list-property",
+    path: [...listPath, name],
+    // `[]` marks the step over every item, as in `authors[].family`.
+    key: `${listKey}[]${memberAccessor(name)}`,
+    label: name,
+    list: listPath,
+    property: name,
+    values,
+    preview: previewLine(values.join(", ")),
+  }));
 }
 
 /** Labels of the template contract's `TemplateLink`/`FallibleTemplateLink` helpers, which all share the `(alias?, subpath?)` signature. */
@@ -387,16 +352,6 @@ function describeSignature(
   if (LINK_HELPER_SIGNATURE_HINTS.has(label)) return "ƒ(alias?, subpath?)";
   const n = fn.length;
   return n === 0 ? "ƒ()" : `ƒ(${Array(n).fill("·").join(", ")})`;
-}
-
-/** Evaluate a helper with no arguments; `null` on throw, or a null/undefined result. */
-function evaluateHelper(fn: (...args: unknown[]) => unknown): string | null {
-  try {
-    const result = fn();
-    return result == null ? null : coerceToString(result);
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -447,10 +402,37 @@ function stringifyContainer(value: unknown): string {
   }
 }
 
+/** What a search reads of one field. */
+export interface SearchedField {
+  /** The field's key, or the property of a list's items. */
+  readonly label: string;
+  /** The name the reader sees for it, where it has one. */
+  readonly alias?: string;
+  readonly path: readonly PathSegment[];
+  /** Its values as text; a value the search may not read is left out. */
+  readonly values?: readonly string[];
+}
+
 /**
- * Walks the raw root exhaustively, keeping only nodes whose label or
- * stringified primitive value contains `query`, plus their auto-expanded
- * ancestor chains.
+ * The one search rule over fields: a field matches when its key, the name
+ * the reader sees, its template path (`zt.authors.family`) or one of its
+ * values contains `query`, in any case. A path matches the field the query
+ * reaches into, not the fields inside it.
+ */
+export function fieldMatches(query: string, field: SearchedField): boolean {
+  const needle = query.toLowerCase();
+  const has = (text: string) => text.toLowerCase().includes(needle);
+  return (
+    [field.label, field.alias ?? "", ...(field.values ?? [])].some(has) ||
+    // A path the query reaches only up to the parent's names the parent.
+    (has(formatPath(field.path, "zt")) &&
+      !has(formatPath(field.path.slice(0, -1), "zt")))
+  );
+}
+
+/**
+ * Walks the raw root exhaustively, keeping only nodes that match `query` by
+ * {@link fieldMatches}, plus their auto-expanded ancestor chains.
  */
 export interface BuildFilteredDisplayTreeOptions {
   /** Keys (see {@link formatPath}) of containers to render without children, even when they have filtered matches. */
@@ -470,7 +452,7 @@ export function buildFilteredDisplayTree(
   matchedKeys: ReadonlySet<string>;
 } {
   const ctx: FilterContext = {
-    lowerQuery: query.toLowerCase(),
+    query,
     matchedKeys: new Set(),
     activeContainers: new WeakSet(),
     collapsed: options?.collapsed ?? new Set(),
@@ -482,7 +464,7 @@ export function buildFilteredDisplayTree(
 }
 
 interface FilterContext {
-  readonly lowerQuery: string;
+  readonly query: string;
   readonly matchedKeys: Set<string>;
   readonly activeContainers: WeakSet<object>;
   readonly collapsed: ReadonlySet<string>;
@@ -515,9 +497,10 @@ function filterNode(
   const path = [...parentPath, entry.segment];
   const key = formatPath(path);
   const label = String(entry.segment);
-  const labelMatches =
-    label.toLowerCase().includes(ctx.lowerQuery) ||
-    (ctx.aliases.get(key)?.toLowerCase().includes(ctx.lowerQuery) ?? false);
+  const alias = ctx.aliases.get(key);
+  const field: SearchedField =
+    alias === undefined ? { label, path } : { label, alias, path };
+  const labelMatches = fieldMatches(ctx.query, field);
   const nodeBase = { path, key, label };
 
   if (entry.isGetter && labelMatches) {
@@ -545,10 +528,11 @@ function filterNode(
   const valueType = valueTypeOf(value);
 
   if (valueType !== "array" && valueType !== "object") {
-    const valueMatches = stringifyPrimitive(value)
-      .toLowerCase()
-      .includes(ctx.lowerQuery);
-    if (!labelMatches && !valueMatches) return null;
+    const valueMatches = fieldMatches(ctx.query, {
+      ...field,
+      values: [stringifyPrimitive(value)],
+    });
+    if (!valueMatches) return null;
     ctx.matchedKeys.add(key);
     return classifyValue(value, nodeBase, {
       expanded: new Set(),
@@ -577,12 +561,11 @@ function filterNode(
       ? filterChildren(container, path, ctx)
       : [];
   // A list of plain values has no sub-nodes, so it matches on its items.
+  const reading = shape ? readList(container as unknown[]) : null;
   const itemsMatch =
-    shape &&
-    listPropertyNames(container as unknown[]).length === 0 &&
-    (container as unknown[]).some((item) =>
-      textOf(item).toLowerCase().includes(ctx.lowerQuery),
-    );
+    reading !== null &&
+    reading.properties.length === 0 &&
+    fieldMatches(ctx.query, { ...field, values: reading.lines });
   if (!labelMatches && !itemsMatch && children.length === 0) return null;
   if (labelMatches || itemsMatch) ctx.matchedKeys.add(key);
 
@@ -601,16 +584,20 @@ function filterNode(
   };
 }
 
-/** The list's properties whose name or any item's value contains the query. */
+/** The list's properties that match the query by name, path or any item's value. */
 function filterListProperties(
   list: readonly unknown[],
   listPath: readonly PathSegment[],
   ctx: FilterContext,
 ): ListPropertyNode[] {
   return listProperties(list, listPath).filter((node) => {
-    const matches =
-      node.label.toLowerCase().includes(ctx.lowerQuery) ||
-      node.values.some((value) => value.toLowerCase().includes(ctx.lowerQuery));
+    const alias = ctx.aliases.get(node.key);
+    const matches = fieldMatches(ctx.query, {
+      label: node.label,
+      ...(alias !== undefined && { alias }),
+      path: node.path,
+      values: node.values,
+    });
     if (matches) ctx.matchedKeys.add(node.key);
     return matches;
   });

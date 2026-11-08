@@ -193,9 +193,10 @@ export const WEB_THEME: WorkbenchTheme = {
       header: "flex flex-wrap items-center justify-between gap-2",
       heading: "text-xs font-semibold",
       "search-row": "flex items-center gap-1",
-      search: "min-w-0 flex-1",
+      search:
+        "h-7 min-w-0 flex-1 rounded-md border border-fd-border bg-fd-background px-2 text-xs placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-fd-ring",
       "sections-toggle": cn(historyButton, "shrink-0"),
-      body: "min-h-0 flex-1 overflow-auto",
+      body: "min-h-0 flex-1 overflow-auto overscroll-contain",
       "keys-hint":
         "-mx-2 -mb-2 shrink-0 border-t border-fd-border px-3 py-1.5 text-xs text-fd-muted-foreground",
       empty: "text-fd-muted-foreground text-xs",
@@ -207,7 +208,8 @@ export const WEB_THEME: WorkbenchTheme = {
       "section-heading": "sticky top-0 z-10 bg-fd-card",
       "section-header":
         "flex w-full cursor-pointer items-center gap-1 rounded px-1 py-1 text-start text-xs font-semibold text-fd-muted-foreground hover:bg-fd-muted hover:text-fd-foreground aria-disabled:cursor-default",
-      "section-icon": "flex size-3 shrink-0 text-fd-primary [&_svg]:size-3",
+      "section-icon":
+        "flex size-3 shrink-0 text-fd-muted-foreground [&_svg]:size-3",
       "section-chevron":
         "ms-auto flex size-3 shrink-0 items-center justify-center transition-transform duration-100 ease-out data-[expanded]:rotate-90 motion-reduce:transition-none",
       "section-label": "min-w-0 truncate",
@@ -230,7 +232,7 @@ export const WEB_THEME: WorkbenchTheme = {
         "mt-[3px] flex size-3 shrink-0 cursor-pointer items-center justify-center text-fd-muted-foreground transition-transform duration-100 ease-out hover:text-fd-foreground data-[expanded]:rotate-90",
       "chevron-icon": "size-3 [&_svg]:size-3",
       actions:
-        "absolute top-0.5 end-0 flex items-center gap-0.5 bg-linear-to-l from-fd-background from-60% to-transparent ps-6 opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-data-selected:opacity-100 group-data-open:opacity-100 [@media(hover:none)]:opacity-100",
+        "absolute top-0.5 end-0 flex items-center gap-0.5 bg-linear-to-l from-fd-background from-60% to-transparent ps-6 group-data-line:static group-data-line:bg-none group-data-line:ps-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-data-selected:opacity-100 group-data-open:opacity-100 [@media(hover:none)]:opacity-100",
       action:
         "rounded-xs flex size-4 cursor-pointer items-center justify-center text-fd-muted-foreground hover:bg-fd-muted hover:text-fd-foreground",
       key: "font-mono text-fd-foreground data-[state=labeled]:font-sans data-[state=labeled]:font-medium",
@@ -241,7 +243,8 @@ export const WEB_THEME: WorkbenchTheme = {
       link: "break-all text-fd-primary underline decoration-dotted hover:decoration-solid",
       "long-toggle":
         "rounded-xs ms-0.5 cursor-pointer px-1 text-fd-muted-foreground underline decoration-dotted underline-offset-2 select-none hover:bg-fd-muted hover:text-fd-foreground",
-      row: "group rounded relative flex min-w-0 items-start gap-x-1 px-0.5 data-line:h-7 data-line:items-center data-line:px-1 hover:bg-fd-muted data-[state=matched]:bg-fd-accent data-selected:bg-fd-muted data-open:bg-fd-accent",
+      // The row ↑/↓ selected wears a ring that hover never shows.
+      row: "group rounded relative flex min-w-0 items-start gap-x-1 px-0.5 data-line:h-7 data-line:items-center data-line:px-1 hover:bg-fd-muted data-[state=matched]:bg-fd-accent data-selected:bg-fd-muted data-selected:ring-1 data-selected:ring-inset data-selected:ring-fd-ring data-open:bg-fd-accent",
       opaque: "break-words text-cyan-700 dark:text-cyan-400",
       color:
         "inline-flex min-w-0 items-center gap-1 text-emerald-700 dark:text-emerald-400",
@@ -541,7 +544,7 @@ export const WEB_THEME: WorkbenchTheme = {
     fieldDetails: {
       /** A fixed height at the panel's foot, so the list above never moves. */
       "details-bar":
-        "-mx-2 h-48 shrink-0 overflow-y-auto border-t border-fd-border bg-fd-background",
+        "-mx-2 h-48 max-h-1/2 shrink-0 overflow-y-auto border-t border-fd-border bg-fd-background",
       details:
         "flex flex-col gap-3 p-3 text-xs data-[state=bar]:gap-2 data-[state=bar]:p-2 data-[state=popover]:max-h-(--available-height) data-[state=popover]:overflow-y-auto data-[state=popover]:rounded-lg data-[state=popover]:bg-fd-popover data-[state=popover]:text-fd-popover-foreground data-[state=popover]:shadow-lg data-[state=popover]:ring-1 data-[state=popover]:ring-fd-border",
       header: "flex items-start gap-1",
@@ -550,30 +553,32 @@ export const WEB_THEME: WorkbenchTheme = {
       title: "truncate text-sm font-semibold",
       close: cn(historyButton, "shrink-0"),
       value:
-        "max-h-40 overflow-auto rounded-md border border-fd-border p-2 whitespace-pre-wrap [overflow-wrap:anywhere] text-emerald-700 dark:text-emerald-400 data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
+        "in-data-[state=bar]:order-2 max-h-40 overflow-auto rounded-md border border-fd-border p-2 whitespace-pre-wrap [overflow-wrap:anywhere] text-emerald-700 dark:text-emerald-400 data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
       /** A list's values, one per line and numbered. */
       values:
-        "flex max-h-40 flex-col gap-1 overflow-auto rounded-md border border-fd-border p-2 text-emerald-700 dark:text-emerald-400",
+        "in-data-[state=bar]:order-2 flex max-h-40 flex-col gap-1 overflow-auto rounded-md border border-fd-border p-2 text-emerald-700 dark:text-emerald-400",
       "values-item": "flex gap-2 [overflow-wrap:anywhere]",
       "values-index":
         "w-4 shrink-0 text-end tabular-nums text-fd-muted-foreground",
       "values-text": "min-w-0 whitespace-pre-wrap",
-      item: "flex flex-col gap-0.5",
+      // The bar shows what the note gets right under its heading.
+      item: "flex flex-col gap-0.5 in-data-[state=bar]:data-[state=path]:order-3",
       "item-header": "flex flex-wrap items-center gap-x-2 gap-y-1",
       label: "text-fd-muted-foreground",
       forms: "ms-auto flex flex-wrap gap-x-3",
       form: "inline-flex cursor-pointer items-center gap-1 text-fd-muted-foreground has-checked:text-fd-foreground",
       path: "font-mono break-all text-fd-muted-foreground",
-      snippet: "font-mono break-all whitespace-pre-wrap text-fd-primary",
+      snippet: "font-mono break-all whitespace-pre-wrap text-fd-foreground",
       result:
         "flex gap-1.5 whitespace-pre-line [overflow-wrap:anywhere] text-emerald-700 dark:text-emerald-400 data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
       "result-icon":
         "mt-0.5 flex shrink-0 text-fd-muted-foreground [&_svg]:size-3",
       /** In the bar they stay in view at its foot while the details scroll. */
       actions:
-        "flex flex-wrap gap-2 in-data-[state=bar]:sticky in-data-[state=bar]:bottom-0 in-data-[state=bar]:-mx-2 in-data-[state=bar]:bg-fd-background in-data-[state=bar]:px-2 in-data-[state=bar]:py-2",
+        "flex flex-wrap gap-2 in-data-[state=bar]:order-4 in-data-[state=bar]:sticky in-data-[state=bar]:bottom-0 in-data-[state=bar]:-mx-2 in-data-[state=bar]:bg-fd-background in-data-[state=bar]:px-2 in-data-[state=bar]:py-2",
       insert: buttonVariants({ size: "xs" }),
       copy: buttonVariants({ variant: "outline", size: "xs" }),
+      reason: "text-fd-muted-foreground",
     },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",

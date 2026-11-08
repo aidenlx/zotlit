@@ -1,12 +1,11 @@
 // Pure paste-ready template-snippet generation for Template Data Explorer nodes.
 
 import { formatAccessorPath, isAccessorIdentifier } from "./accessor-path";
+import type { TemplatePathSegment } from "./accessor-path";
 import type { DisplayNode, ListPropertyNode } from "./display-tree";
-import { listLineProperty, listReadsAsText } from "./list-items";
+import { JOIN_SEPARATOR, readList } from "./list-items";
 import { coerceToString } from "./string-coercion";
 
-/** What separates the items of a list joined in one line. */
-const JOIN_SEPARATOR = ", ";
 /** What starts each item's line in the loop form: a Markdown list line. */
 const LIST_LINE = "- ";
 
@@ -22,12 +21,14 @@ export type SnippetKind = "output" | "if-present" | "loop" | "joined";
  * is the one an insert uses. No list form names one item's index.
  */
 export function snippetKindsFor(node: DisplayNode): SnippetKind[] {
-  if (node.kind === "list-property") return ["joined", "loop"];
+  // A backlink's Markdown link takes a loop to repeat; a join would list bare URLs.
+  if (node.kind === "list-property")
+    return node.property === BACKLINK ? ["loop"] : ["joined", "loop"];
   if (node.kind === "helper" || node.kind === "placeholder") {
     return ["output", "if-present"];
   }
   if (node.valueType === "array") {
-    return listReadsAsText(itemsOf(node)) ? ["joined", "loop"] : ["loop"];
+    return readList(itemsOf(node)).readsAsText ? ["joined", "loop"] : ["loop"];
   }
   return ["output", "if-present"];
 }
@@ -51,7 +52,7 @@ export function renderSnippet(
   if (node.kind === "list-property")
     return listPropertySnippet(node, engine, kind);
   const accessor = formatAccessorPath(node.path, "zt");
-  const show = isBacklink(node) ? asZoteroLink : (output: string) => output;
+  const show = showOfNode(node);
   switch (kind) {
     case "output":
       return show(interpolate(engine, callForm(node, engine, accessor)));
@@ -59,10 +60,10 @@ export function renderSnippet(
       return guard(engine, callForm(node, engine, accessor), show);
     case "loop": {
       const item = loopVariable(node.path);
-      const property = listLineProperty(itemsOf(node));
+      const property = readList(itemsOf(node)).lineProperty;
       const body =
         property === undefined ? item : formatAccessorPath([property], item);
-      return loop(engine, accessor, { item, body });
+      return loop(engine, accessor, { item, body, show: showOf(property) });
     }
     case "joined":
       return joined(engine, accessor);
@@ -82,7 +83,12 @@ function listPropertySnippet(
   const accessor = formatAccessorPath(node.list, "zt");
   const item = loopVariable(node.list);
   const value = formatAccessorPath([node.property], item);
-  if (kind === "loop") return loop(engine, accessor, { item, body: value });
+  if (kind === "loop")
+    return loop(engine, accessor, {
+      item,
+      body: value,
+      show: showOf(node.property),
+    });
   return engine === "liquid"
     ? `{{ ${accessor} | map: ${JSON.stringify(node.property)} | join: ${JSON.stringify(JOIN_SEPARATOR)} }}`
     : `<%= ${accessor}.map((${item}) => ${value}).join(${JSON.stringify(JOIN_SEPARATOR)}) %>`;
@@ -90,10 +96,21 @@ function listPropertySnippet(
 
 /**
  * A `backlink` is a bare Zotero URL — for an Annotation, its durable link —
- * so its snippet is the Markdown link a note can follow, not the raw URL.
+ * so its snippet is the Markdown link a note can follow, not the raw URL. It
+ * names the field's own key, or the property each line of a list shows.
  */
-function isBacklink(node: DisplayNode): boolean {
-  return node.kind === "value" && node.path.at(-1) === "backlink";
+const BACKLINK = "backlink";
+
+/** How a value of the field `key` shows in the note: a backlink as its Markdown link. */
+function showOf(
+  key: TemplatePathSegment | undefined,
+): (output: string) => string {
+  return key === BACKLINK ? asZoteroLink : (output) => output;
+}
+
+/** How a node's own value shows in the note, by the key of the field it is. */
+function showOfNode(node: DisplayNode): (output: string) => string {
+  return showOf(node.kind === "value" ? node.path.at(-1) : undefined);
 }
 
 function asZoteroLink(output: string): string {
@@ -125,15 +142,19 @@ function guard(
     : `<% if (${expr}) { %>${output}<% } %>`;
 }
 
-/** One Markdown list line per item: each pass starts a new line with `- ` and the item's `body`. */
+/** One Markdown list line per item: each pass starts a new line with `- ` and the item's `body`, as `show` writes it. */
 function loop(
   engine: TemplateEngine,
   accessor: string,
-  { item, body }: { item: string; body: string },
+  {
+    item,
+    body,
+    show,
+  }: { item: string; body: string; show: (output: string) => string },
 ): string {
   return engine === "liquid"
-    ? `{% for ${item} in ${accessor} %}\n${LIST_LINE}{{ ${body} }}{% endfor %}`
-    : `<% for (const ${item} of ${accessor}) { %>\n${LIST_LINE}<%= ${body} %><% } %>`;
+    ? `{% for ${item} in ${accessor} %}\n${LIST_LINE}${show(`{{ ${body} }}`)}{% endfor %}`
+    : `<% for (const ${item} of ${accessor}) { %>\n${LIST_LINE}${show(`<%= ${body} %>`)}<% } %>`;
 }
 
 /** The items of a list node; none for any other node. */
@@ -175,7 +196,7 @@ export function snippetResult(
   const text =
     kind === "loop"
       ? listItemTexts(node)
-          .map((item) => `${LIST_LINE}${item}`)
+          .map((item) => `${LIST_LINE}${showOf(lineKey(node))(item)}`)
           .join("\n")
       : // A list property takes no output form: it joins, as its snippet does.
         kind === "joined" || node.kind === "list-property"
@@ -206,23 +227,21 @@ export function outputText(
 
 function outputResult(node: Exclude<DisplayNode, ListPropertyNode>): string {
   const text = outputText(node);
-  return isBacklink(node) && text !== "" ? asZoteroLink(text) : text;
+  return text === "" ? text : showOfNode(node)(text);
+}
+
+/** The key each line of a list shows: the list property, or the property the list's lines read. */
+function lineKey(node: DisplayNode): string | undefined {
+  return node.kind === "list-property"
+    ? node.property
+    : readList(itemsOf(node)).lineProperty;
 }
 
 /**
  * Each item of a list, or of a list property, as one line of the loop shows
  * it: the loop's body for that item. None for a node that is not a list.
  */
-export function listItemTexts(node: DisplayNode): string[] {
-  if (node.kind === "list-property") return [...node.values];
-  const list = itemsOf(node);
-  const property = listLineProperty(list);
-  return list
-    .map((item) =>
-      property === undefined
-        ? item
-        : (item as Record<string, unknown> | null)?.[property],
-    )
-    .filter((item) => item !== null && item !== undefined)
-    .map(coerceToString);
+export function listItemTexts(node: DisplayNode): readonly string[] {
+  if (node.kind === "list-property") return node.values;
+  return readList(itemsOf(node)).lines;
 }

@@ -29,6 +29,11 @@ export default defineConfig({
         },
         test: { name: "preact", include: UI_TESTS },
       },
+      {
+        // Helpers that render nothing run once, outside both runtimes.
+        extends: true,
+        test: { name: "unit", include: ["src/**/*.test.ts"] },
+      },
     ],
   },
 });

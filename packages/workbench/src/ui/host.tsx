@@ -279,6 +279,11 @@ export interface WorkbenchFieldsAction {
    * one shows the details in the bar at the panel's foot at every width.
    */
   readonly details?: ComponentType<WorkbenchFieldDetailsProps>;
+  /**
+   * The keyboard shortcut that inserts the selected field, as the platform
+   * names it, such as "Ctrl+Enter" or "Command+Enter".
+   */
+  readonly insertShortcut: string;
 }
 
 /** The partial registry and the create flow one host owns for its editors. */

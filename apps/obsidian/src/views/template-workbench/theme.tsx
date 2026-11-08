@@ -310,7 +310,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:mx-3 zt:flex zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-1",
       search: "zt:w-auto zt:min-w-0 zt:flex-1",
       "sections-toggle": "clickable-icon zt:shrink-0",
-      body: "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-2 zt:pb-3",
+      body: "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:overscroll-contain zt:px-2 zt:pb-3",
       "keys-hint":
         "zt:shrink-0 zt:border-t zt:border-border zt:px-3 zt:py-1.5 zt:text-xs zt:text-muted-foreground",
       empty:
@@ -325,7 +325,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "section-header":
         "clickable-icon zt:[--icon-size:var(--icon-xs)] zt:text-muted-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
       "section-icon":
-        "zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center zt:text-(--text-accent)",
+        "zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center zt:text-(--icon-color)",
       "section-chevron":
         "zt:ms-auto zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center zt:in-aria-disabled:opacity-40",
       "section-label": "zt:min-w-0 zt:truncate zt:text-start",
@@ -367,8 +367,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       link: "zt:[overflow-wrap:anywhere] zt:text-link zt:underline zt:decoration-dotted zt:hover:decoration-solid",
       "long-toggle":
         "zt:rounded-xs zt:ms-0.5 zt:cursor-pointer zt:px-1 zt:text-muted-foreground zt:underline zt:decoration-dotted zt:underline-offset-2 zt:select-none zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
-      /** The row ↑/↓ selected, and the row whose details stand open, keep their own ground. */
-      row: "zt:group/row zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:data-line:h-7 zt:data-line:items-center zt:data-line:py-0 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg) zt:data-selected:bg-muted zt:data-open:bg-accent",
+      /**
+       * The row whose details stand open keeps its own ground. The row ↑/↓
+       * selected also wears the ring Obsidian draws on the file explorer's
+       * keyboard row (`.tree-item-self.has-focus`), which hover never shows.
+       */
+      row: "zt:group/row zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:data-line:h-7 zt:data-line:items-center zt:data-line:py-0 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg) zt:data-selected:bg-muted zt:data-selected:shadow-[inset_0_0_0_2px_var(--background-modifier-border-focus)] zt:data-open:bg-accent",
       opaque: "zt:break-words zt:text-cyan",
       color: "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-green",
       string: "zt:text-green",
@@ -499,17 +503,20 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       title:
         "zt:min-w-0 zt:flex-1 zt:truncate zt:px-1 zt:text-sm zt:font-semibold",
       actions: "zt:contents",
-      // Pinned, the pin wears the accent; with no room to dock, it steps
-      // back and keeps its focus and its tooltip.
-      pin: "clickable-icon zt:shrink-0 zt:data-[state=pinned]:text-(--icon-color-active) zt:aria-disabled:cursor-not-allowed zt:aria-disabled:opacity-50",
+      // Pinned, the pin wears Obsidian's active icon (`theme.css`); with no
+      // room to dock, it steps back and keeps its focus and its tooltip.
+      pin: "clickable-icon zt:shrink-0 zt:aria-disabled:cursor-not-allowed zt:aria-disabled:opacity-50",
       close: "clickable-icon zt:shrink-0",
       note: "zt:shrink-0 zt:px-(--size-4-3) zt:pt-(--size-2-1) zt:text-xs zt:text-muted-foreground",
       body: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-auto",
     },
     fieldDetails: {
-      /** A fixed height at the panel's foot, so the list above never moves. */
+      /**
+       * A fixed height at the panel's foot, so the list above never moves; in
+       * a short panel, no more than half of it, so the list keeps the rest.
+       */
       "details-bar":
-        "zt:h-48 zt:shrink-0 zt:overflow-y-auto zt:border-t zt:border-border zt:bg-(--background-primary)",
+        "zt:h-48 zt:max-h-1/2 zt:shrink-0 zt:overflow-y-auto zt:border-t zt:border-border zt:bg-(--background-primary)",
       details:
         "zt:flex zt:flex-col zt:gap-3 zt:p-3 zt:text-sm zt:data-[state=bar]:gap-2 zt:data-[state=bar]:p-2 zt:data-[state=popover]:max-h-(--zt-pinned-max-height) zt:data-[state=popover]:w-72 zt:data-[state=popover]:overflow-y-auto zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-primary) zt:data-[state=popover]:shadow-(--shadow-l)",
       header: "zt:flex zt:items-start zt:gap-1",
@@ -518,15 +525,19 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       title: "zt:truncate zt:font-semibold",
       close: "clickable-icon zt:shrink-0",
       value:
-        "zt:max-h-40 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-faint zt:data-[state=empty]:italic",
+        "zt:in-data-[state=bar]:order-2 zt:max-h-40 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-muted-foreground zt:data-[state=empty]:italic",
       /** A list's values, one per line and numbered. */
       values:
-        "zt:flex zt:max-h-40 zt:flex-col zt:gap-1 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:text-green",
+        "zt:in-data-[state=bar]:order-2 zt:flex zt:max-h-40 zt:flex-col zt:gap-1 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:text-green",
       "values-item": "zt:flex zt:gap-2 zt:[overflow-wrap:anywhere]",
       "values-index":
-        "zt:w-4 zt:shrink-0 zt:text-end zt:text-xs zt:leading-5 zt:tabular-nums zt:text-faint",
+        "zt:w-4 zt:shrink-0 zt:text-end zt:text-xs zt:leading-5 zt:tabular-nums zt:text-muted-foreground",
       "values-text": "zt:min-w-0 zt:whitespace-pre-wrap",
-      item: "zt:flex zt:flex-col zt:gap-0.5",
+      /**
+       * The bar shows what the note gets right under its heading, so the
+       * snippet stays in view in a short bar; the value and the path follow.
+       */
+      item: "zt:flex zt:flex-col zt:gap-0.5 zt:in-data-[state=bar]:data-[state=path]:order-3",
       "item-header":
         "zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1",
       label: "zt:text-xs zt:text-muted-foreground",
@@ -534,16 +545,17 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       form: "zt:inline-flex zt:cursor-pointer zt:items-center zt:gap-1 zt:text-muted-foreground zt:has-checked:text-foreground",
       path: "zt:font-mono zt:text-xs zt:break-all zt:text-muted-foreground",
       snippet:
-        "zt:font-mono zt:text-xs zt:break-all zt:whitespace-pre-wrap zt:text-accent-foreground",
+        "zt:font-mono zt:text-xs zt:break-all zt:whitespace-pre-wrap zt:text-foreground",
       result:
-        "zt:flex zt:gap-1.5 zt:whitespace-pre-line zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-faint zt:data-[state=empty]:italic",
+        "zt:flex zt:gap-1.5 zt:whitespace-pre-line zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-muted-foreground zt:data-[state=empty]:italic",
       "result-icon":
         "zt:mt-0.5 zt:flex zt:shrink-0 zt:text-faint zt:[&_svg]:size-3",
       /** In the bar they stay in view at its foot while the details scroll. */
       actions:
-        "zt:flex zt:flex-wrap zt:gap-2 zt:in-data-[state=bar]:sticky zt:in-data-[state=bar]:bottom-0 zt:in-data-[state=bar]:-mx-2 zt:in-data-[state=bar]:bg-(--background-primary) zt:in-data-[state=bar]:px-2 zt:in-data-[state=bar]:py-2",
+        "zt:flex zt:flex-wrap zt:gap-2 zt:in-data-[state=bar]:order-4 zt:in-data-[state=bar]:sticky zt:in-data-[state=bar]:bottom-0 zt:in-data-[state=bar]:-mx-2 zt:in-data-[state=bar]:bg-(--background-primary) zt:in-data-[state=bar]:px-2 zt:in-data-[state=bar]:py-2",
       insert: "mod-cta zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
       copy: "zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
+      reason: "zt:text-xs zt:text-muted-foreground",
     },
     tabBar: {
       "tab-bar":

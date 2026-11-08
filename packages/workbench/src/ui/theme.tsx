@@ -285,7 +285,8 @@ export interface WorkbenchParts {
     | "result-icon"
     | "actions"
     | "insert"
-    | "copy";
+    | "copy"
+    | "reason";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description" | "docs-link";
   editToolbar:

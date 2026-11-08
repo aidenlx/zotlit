@@ -1,5 +1,3 @@
-import type { DisplayNode } from "#/explorer/index";
-import type { SnippetKind } from "#/explorer/index";
 import {
   act,
   cleanup,
@@ -9,11 +7,14 @@ import {
   within,
 } from "@testing-library/react";
 import * as Atom from "effect/reactivity/Atom";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DataExplorer } from "./data-explorer";
-import { fieldSnippet } from "./explorer-fields";
+import type {
+  FieldInsertionContext,
+  FieldInsertOptions,
+} from "./field-insertion";
 import { fieldsActionAttributes } from "./fields-panel";
 import { useWorkbenchHost } from "./host";
 import { pressFieldsAction } from "./model";
@@ -34,6 +35,9 @@ const PAPER = {
   shelf: { label: "Methods" },
 };
 
+/** What an insert of the paper's title writes into a Liquid template. */
+const TITLE = "{{ zt.title }}";
+
 const PREVIEW: WorkbenchPanels = {
   ...INITIAL_PANELS,
   preview: { ...INITIAL_PANELS.preview, shown: true },
@@ -45,16 +49,15 @@ const PINNED: WorkbenchPanels = {
 
 /** The explorer the hosts put in the Fields Panel, over its own navigation. */
 function Fields({
-  onInsertNode,
+  onInsert,
+  insertion,
   disabled = false,
   data = PAPER,
 }: {
   disabled?: boolean;
   data?: Record<string, unknown>;
-  onInsertNode: (
-    node: DisplayNode,
-    options: { keepOpen: boolean; kind?: SnippetKind },
-  ) => boolean | void;
+  insertion?: FieldInsertionContext;
+  onInsert: (text: string, options: FieldInsertOptions) => boolean | void;
 }) {
   const [collapsedSections, setCollapsedSections] = useState<
     ReadonlySet<string>
@@ -70,7 +73,8 @@ function Fields({
       onCollapsedSectionsChange={setCollapsedSections}
       navigation={navigation}
       onNavigationChange={setNavigation}
-      onInsertNode={onInsertNode}
+      onInsert={onInsert}
+      {...(insertion && { insertion: () => insertion })}
       disabled={disabled}
     />
   );
@@ -82,17 +86,20 @@ function open({
   disabled = false,
   panels = PREVIEW,
   data,
+  insertion,
+  strict = false,
 }: {
+  strict?: boolean;
   size?: ViewSize;
   refuse?: boolean;
   disabled?: boolean;
   panels?: WorkbenchPanels;
   data?: Record<string, unknown>;
+  insertion?: FieldInsertionContext;
 } = {}) {
   const viewSize = Atom.make<ViewSize | null>(size);
-  const inserted: string[] = [];
   const keptOpen: boolean[] = [];
-  /** What each insert put into the note, as a host writes the field. */
+  /** What each insert put into the note. */
   const texts: string[] = [];
   const mounted = mount(
     <SidePanels
@@ -104,11 +111,11 @@ function open({
             <Fields
               disabled={disabled}
               data={data}
-              onInsertNode={(node, { keepOpen, kind }) => {
+              insertion={insertion}
+              onInsert={(text, { keepOpen }) => {
                 if (refuse) return false;
-                inserted.push(node.key);
                 keptOpen.push(keepOpen);
-                texts.push(fieldSnippet(node, "template", { kind }));
+                texts.push(text);
                 return true;
               }}
             />
@@ -125,15 +132,14 @@ function open({
     </SidePanels>,
     { panels, viewSize },
   );
-  render(mounted.ui);
+  render(strict ? <StrictMode>{mounted.ui}</StrictMode> : mounted.ui);
   return Object.assign(mounted, {
-    inserted,
     keptOpen,
     texts,
     resize: (next: ViewSize) => act(() => mounted.registry.set(viewSize, next)),
     pressAction: () =>
       act(() => pressFieldsAction(mounted.registry, mounted.model)),
-    isOpen: () => mounted.registry.get(mounted.model.fieldsAction).open,
+    isOpen: () => mounted.registry.get(mounted.model.fieldsAction) !== "closed",
   });
 }
 
@@ -191,7 +197,9 @@ describe("the Fields Panel popover", () => {
   it("closes on its Close button, with focus back to the Fields action", () => {
     using page = open();
     page.pressAction();
-    fireEvent.click(within(panel()!).getByRole("button", { name: "Close" }));
+    fireEvent.click(
+      within(panel()!).getByRole("button", { name: "Close fields" }),
+    );
     expect(panel()).toBeNull();
     expect(returnedFocus()).toBe("true");
   });
@@ -200,7 +208,7 @@ describe("the Fields Panel popover", () => {
     using page = open();
     page.pressAction();
     insertTitle();
-    expect(page.inserted).toEqual(["title"]);
+    expect(page.texts).toEqual([TITLE]);
     expect(page.keptOpen).toEqual([false]);
     expect(panel()).toBeNull();
     expect(returnedFocus()).toBe("false");
@@ -214,7 +222,7 @@ describe("the Fields Panel popover", () => {
     using page = open();
     page.pressAction();
     insertTitle({ shiftKey: true });
-    expect(page.inserted).toEqual(["title"]);
+    expect(page.texts).toEqual([TITLE]);
     // The host keeps focus off the editor for the next field.
     expect(page.keptOpen).toEqual([true]);
     expect(panel()).not.toBeNull();
@@ -223,7 +231,7 @@ describe("the Fields Panel popover", () => {
       within(titleRow()).getByRole("button", { name: "Insert field" }),
       { key: "Enter", shiftKey: true },
     );
-    expect(page.inserted).toEqual(["title", "title"]);
+    expect(page.texts).toEqual([TITLE, TITLE]);
     expect(panel()).not.toBeNull();
   });
 
@@ -250,7 +258,6 @@ describe("the pinned Fields Panel", () => {
     using page = open({ size: { width: 1200, height: 800 } });
     page.pressAction();
     expect(pin().getAttribute("aria-label")).toBe("Pin to side");
-    expect(pin().getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(pin());
     expect(panel()).toBeNull();
     expect(docked()).not.toBeNull();
@@ -260,7 +267,8 @@ describe("the pinned Fields Panel", () => {
     expect(docked()!.hasAttribute("aria-label")).toBe(false);
     expect(page.registry.get(page.model.panels).fields.pinned).toBe(true);
     expect(pin().getAttribute("aria-label")).toBe("Unpin");
-    expect(pin().getAttribute("aria-pressed")).toBe("true");
+    // The label says the state; no pressed state contradicts it.
+    expect(pin().hasAttribute("aria-pressed")).toBe(false);
     // The docked panel takes over focus, in its search field.
     expect(document.activeElement).toBe(
       within(docked()!).getByRole("combobox"),
@@ -270,16 +278,28 @@ describe("the pinned Fields Panel", () => {
       screen.getByRole("separator", { name: "Resize fields" }),
     ).not.toBeNull();
     expect(
-      within(docked()!).queryByRole("button", { name: "Close" }),
+      within(docked()!).queryByRole("button", { name: "Close fields" }),
     ).toBeNull();
     expect(document.querySelector("[inert]")).toBeNull();
     expect(page.isOpen()).toBe(true);
   });
 
+  // Final review of spec #1962 (B12): a replay of the docked panel's effects,
+  // as React's development mode makes, keeps the focus the pin gave it.
+  it("keeps focus in its search when its effects replay", () => {
+    using page = open({ size: { width: 1200, height: 800 }, strict: true });
+    page.pressAction();
+    fireEvent.click(pin());
+    expect(document.activeElement).toBe(
+      within(docked()!).getByRole("combobox"),
+    );
+    expect(page.host.calls.actionFocuses).toBe(0);
+  });
+
   it("stays docked as it inserts, and leaves focus to the editor", () => {
     using page = open({ size: { width: 1200, height: 800 }, panels: PINNED });
     insertTitle();
-    expect(page.inserted).toEqual(["title"]);
+    expect(page.texts).toEqual([TITLE]);
     expect(page.keptOpen).toEqual([false]);
     expect(docked()).not.toBeNull();
   });
@@ -364,24 +384,18 @@ describe("the pinned Fields Panel", () => {
 
 describe("the Fields action's state", () => {
   it("reads as a disclosure of the panel it opens", () => {
-    expect(
-      fieldsActionAttributes({ open: false, placement: "closed" }, "fields"),
-    ).toEqual({
+    expect(fieldsActionAttributes("closed", "fields")).toEqual({
       "aria-haspopup": "dialog",
       "aria-expanded": "false",
       "aria-controls": undefined,
     });
-    expect(
-      fieldsActionAttributes({ open: true, placement: "popover" }, "fields"),
-    ).toEqual({
+    expect(fieldsActionAttributes("popover", "fields")).toEqual({
       "aria-haspopup": "dialog",
       "aria-expanded": "true",
       "aria-controls": "fields",
     });
     // The docked panel is a region beside the editor, not a popup.
-    expect(
-      fieldsActionAttributes({ open: true, placement: "docked" }, "fields"),
-    ).toEqual({
+    expect(fieldsActionAttributes("docked", "fields")).toEqual({
       "aria-haspopup": undefined,
       "aria-expanded": "true",
       "aria-controls": "fields-docked",
@@ -480,7 +494,7 @@ describe.each(PRESENTATIONS)(
       fireEvent.keyDown(search(), { key: "Enter" });
       expect(details(label)).toBeNull();
       fireEvent.keyDown(search(), { key: "Enter", ctrlKey: true });
-      expect(page.inserted).toHaveLength(1);
+      expect(page.texts).toHaveLength(1);
       expect(page.host.calls.notices).toEqual([`Inserted ${label}.`]);
       expect(panel()).toBeNull();
     });
@@ -493,7 +507,7 @@ describe.each(PRESENTATIONS)(
         within(details()!).getByRole("button", { name: "Insert" }),
         { shiftKey: true },
       );
-      expect(page.inserted).toEqual(["title"]);
+      expect(page.texts).toEqual([TITLE]);
       expect(details()).toBeNull();
       expect(page.host.calls.notices).toEqual(["Inserted Title."]);
     });
@@ -569,7 +583,7 @@ describe("a field row", () => {
     });
     expect(button.querySelector("[data-icon=insert]")).not.toBeNull();
     insertTitle();
-    expect(page.inserted).toEqual(["title"]);
+    expect(page.texts).toEqual([TITLE]);
     expect(page.host.calls.notices).toEqual(["Inserted Title."]);
   });
 
@@ -585,7 +599,7 @@ describe("a field row", () => {
     ).toHaveProperty("disabled", true);
     fireEvent.keyDown(search(), { key: "ArrowDown" });
     fireEvent.keyDown(search(), { key: "Enter", metaKey: true });
-    expect(page.inserted).toEqual([]);
+    expect(page.texts).toEqual([]);
   });
 
   it("leaves Enter to an input method composing in the search", () => {
@@ -596,15 +610,15 @@ describe("a field row", () => {
     fireEvent.keyDown(search(), { key: "Enter", keyCode: 229, ctrlKey: true });
     expect(details()).toBeNull();
     expect(details("DOI")).toBeNull();
-    expect(page.inserted).toEqual([]);
+    expect(page.texts).toEqual([]);
   });
 
-  it("names the keys in the panel's footer", () => {
+  it("names the keys in the panel's footer, as the host names them", () => {
     using page = open();
     page.pressAction();
     expect(
       within(panel()!).getByText(
-        /^Select or press Enter: details · (Ctrl|Command)\+Enter: insert$/,
+        "Select a row or press Enter: details · Ctrl+Enter: insert",
       ),
     ).toBeTruthy();
   });
@@ -650,12 +664,12 @@ describe("a field's details in the docked panel", () => {
     using page = open(wide);
     fireEvent.keyDown(dockedSearch(), { key: "ArrowDown" });
     fireEvent.keyDown(dockedSearch(), { key: "Enter", metaKey: true });
-    expect(page.inserted).toEqual(["title"]);
+    expect(page.texts).toEqual([TITLE]);
     fireEvent.click(dockedRow("Title"));
     fireEvent.click(
       within(dockedDetails()!).getByRole("button", { name: "Insert" }),
     );
-    expect(page.inserted).toEqual(["title", "title"]);
+    expect(page.texts).toEqual([TITLE, TITLE]);
     expect(dockedDetails()).toBeNull();
     expect(docked()).not.toBeNull();
   });
@@ -723,6 +737,20 @@ describe("a list field", () => {
   const toggle = (key: string) =>
     within(line(key)).queryByRole("button", { name: "Toggle node" });
 
+  // Final review of spec #1962 (B3), story 19: a search finds a field by its
+  // template path as well as by its name and its value.
+  it.each([
+    ["zt.title", "title"],
+    ["zt.authors", "authors"],
+    ["authors.family", "authors[].family"],
+  ])("is found by its template path %s", (query, key) => {
+    using page = open(lists);
+    page.pressAction();
+    fireEvent.change(search(), { target: { value: query } });
+    expect(item(key)).toBeDefined();
+    expect(within(panel()!).queryByText(/No matching fields/)).toBeNull();
+  });
+
   it("shows its item count and every item in one line", () => {
     using page = open(lists);
     page.pressAction();
@@ -755,6 +783,28 @@ describe("a list field", () => {
       .getAllByRole("treeitem")
       .map((row) => row.getAttribute("data-workbench-field")!);
     expect(keys.filter((key) => /\[\d+\]/.test(key))).toEqual([]);
+  });
+
+  // Final review of spec #1962 (S3): a property of a list's items goes by the
+  // name the reader sees for that field, where one exists.
+  it("names its item properties as the fields they are", () => {
+    using page = open({
+      ...lists,
+      data: {
+        ...LISTS,
+        annotations: [
+          { comment: "Check this", pageLabel: "4" },
+          { comment: "And this", pageLabel: "9" },
+        ],
+      },
+    });
+    page.pressAction();
+    fireEvent.click(toggle("annotations")!);
+    expect(line("annotations[].comment").textContent).toContain("Your comment");
+    expect(line("annotations[].pageLabel").textContent).toContain("Page");
+    // A property no label names keeps its key.
+    fireEvent.click(toggle("authors")!);
+    expect(line("authors[].family").textContent).toContain("family");
   });
 
   /** The details of the field `key`, after a click on its row. */
@@ -1007,5 +1057,187 @@ describe("a Fields Panel row", () => {
       within(labelCell("shelf")).getByRole("button", { name: "Toggle node" }),
     );
     expect(labelCell("shelf.label").getAttribute("data-state")).toBe("nested");
+  });
+});
+
+// Final review of spec #1962 (A1): the details, Copy, Insert and Mod+Enter
+// write one text, in the syntax of the place the insert writes to.
+describe("a field's text follows the place an insert writes to", () => {
+  it.each([
+    {
+      place: "an Eta template",
+      insertion: { engine: "eta", mode: "template" },
+      text: "<%= zt.title %>",
+    },
+    {
+      place: "a Properties expression",
+      insertion: { engine: "liquid", mode: "expression" },
+      text: "zt.title",
+    },
+  ] as const)(
+    "shows, copies and inserts one text in $place",
+    ({ insertion, text }) => {
+      using page = open({ size: { width: 760, height: 800 }, insertion });
+      page.pressAction();
+      clickRow("Title");
+      expect(details()!.querySelector("[data-part=snippet]")!.textContent).toBe(
+        text,
+      );
+      fireEvent.click(within(details()!).getByRole("button", { name: "Copy" }));
+      expect(page.host.calls.copies).toEqual([text]);
+      clickRow("Title");
+      fireEvent.click(
+        within(details()!).getByRole("button", { name: "Insert" }),
+        { shiftKey: true },
+      );
+      // The row the click selected stays selected: the first, Title.
+      fireEvent.keyDown(search(), { key: "ArrowUp" });
+      fireEvent.keyDown(search(), { key: "Enter", ctrlKey: true });
+      expect(page.texts).toEqual([text, text]);
+    },
+  );
+});
+
+// Final review of spec #1962 (B4): a keyboard reader reaches the form
+// choice, Copy, Insert and Close details of the details Enter opened.
+describe.each(PRESENTATIONS)(
+  "the details Enter opens as a $presentation",
+  ({ size }) => {
+    it("take focus on their first control, and hand it back to the search as they close", () => {
+      using page = open({ size });
+      page.pressAction();
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "Enter" });
+      expect(document.activeElement).toBe(
+        within(details()!).getByRole("button", { name: "Insert" }),
+      );
+      fireEvent.click(
+        within(details()!).getByRole("button", { name: "Close details" }),
+      );
+      expect(details()).toBeNull();
+      expect(document.activeElement).toBe(search());
+      // ↑/↓, Enter and Mod+Enter work on from the search.
+      fireEvent.keyDown(search(), { key: "Enter", ctrlKey: true });
+      expect(page.texts).toEqual([TITLE]);
+    });
+
+    it("hand focus back to the search on Tab past their last control", () => {
+      using page = open({ size });
+      page.pressAction();
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "Enter" });
+      const copy = within(details()!).getByRole("button", { name: "Copy" });
+      act(() => copy.focus());
+      fireEvent.keyDown(copy, { key: "Tab" });
+      expect(document.activeElement).toBe(search());
+      expect(details()).not.toBeNull();
+    });
+
+    it("insert their form on Mod+Enter", () => {
+      using page = open({ size, data: LISTS });
+      page.pressAction();
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "Enter" });
+      const loop = within(details("Authors")!).getByRole("radio", {
+        name: "Each item",
+      });
+      fireEvent.click(loop);
+      fireEvent.keyDown(loop, { key: "Enter", ctrlKey: true });
+      expect(page.texts).toEqual([
+        "{% for author in zt.authors %}\n- {{ author }}{% endfor %}",
+      ]);
+    });
+
+    it("take focus on the form the reader picks for a list", () => {
+      using page = open({ size, data: LISTS });
+      page.pressAction();
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "Enter" });
+      expect(document.activeElement).toBe(
+        within(details("Authors")!).getByRole("radio", { name: "In one line" }),
+      );
+    });
+  },
+);
+
+/** The text the panel's live region holds now. */
+const announced = () =>
+  screen
+    .getAllByRole("status")
+    .map((region) => region.textContent)
+    .join("|");
+
+// Final review of spec #1962 (B5): what the panel did reaches a live region.
+describe("the Fields Panel's announcements", () => {
+  it("say an insert and a copy in a live region that outlasts the popover", () => {
+    using page = open();
+    page.pressAction();
+    insertTitle();
+    expect(panel()).toBeNull();
+    expect(announced()).toContain("Inserted Title.");
+    page.pressAction();
+    clickRow("Title");
+    fireEvent.click(within(details()!).getByRole("button", { name: "Copy" }));
+    expect(announced()).toContain("Copied Title.");
+  });
+
+  it("say that a search matches nothing", () => {
+    using page = open();
+    page.pressAction();
+    fireEvent.change(search(), { target: { value: "no such field" } });
+    expect(announced()).toContain("No matching fields.");
+  });
+});
+
+// Final review of spec #1962 (B6): a row reads as its visible label, with its
+// value as its description.
+describe("a field row's name", () => {
+  it("is its label, described by its value", () => {
+    using page = open();
+    page.pressAction();
+    const row = titleRow();
+    const name = row
+      .getAttribute("aria-labelledby")!
+      .split(" ")
+      .map((id) => document.getElementById(id));
+    expect(name.map((element) => element?.textContent)).toEqual(["Title"]);
+    expect(name[0]!.hasAttribute("aria-label")).toBe(false);
+    const description = document.getElementById(
+      row.getAttribute("aria-describedby")!,
+    );
+    expect(description?.textContent).toBe("Linked notes in practice");
+  });
+});
+
+// Final review of spec #1962 (B9): with no place to insert, the panel says
+// why, and Mod+Enter answers.
+describe("a Fields Panel with no place to insert", () => {
+  const reason = "Select a place in the template to insert a field.";
+
+  it("says why it cannot insert, in its footer and beside the disabled Insert", () => {
+    using page = open({ disabled: true });
+    page.pressAction();
+    const hint = panel()!.querySelector("[data-part=keys-hint]")?.textContent;
+    expect(hint).toContain(reason);
+    expect(hint).not.toMatch(/: insert$/);
+    clickRow("Title");
+    const insert = within(details()!).getByRole("button", { name: "Insert" });
+    expect(insert).toHaveProperty("disabled", true);
+    expect(
+      document.getElementById(insert.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe(reason);
+  });
+
+  it("answers Mod+Enter with the reason", () => {
+    using page = open({ disabled: true });
+    page.pressAction();
+    fireEvent.keyDown(search(), { key: "ArrowDown" });
+    fireEvent.keyDown(search(), { key: "Enter", ctrlKey: true });
+    expect(page.texts).toEqual([]);
+    expect(page.host.calls.notices).toEqual([reason]);
+    expect(announced()).toContain(reason);
   });
 });

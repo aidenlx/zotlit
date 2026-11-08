@@ -10,10 +10,11 @@ import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { debounce, ItemView, Keymap, Scope } from "obsidian";
 import type { Component, Modifier, WorkspaceLeaf } from "obsidian";
 
+import { composing } from "@zotlit/ui";
+
 import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
-import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";

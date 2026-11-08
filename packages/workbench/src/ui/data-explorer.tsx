@@ -1,9 +1,4 @@
-import type {
-  DisplayNode,
-  SnippetKind,
-  TemplateEngine,
-  TreeState,
-} from "#/explorer/index";
+import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { Effect } from "effect";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -11,16 +6,20 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useUniqueId } from "@zotlit/ui";
+import { composing } from "@zotlit/ui";
 
 import { useWorkbenchModel } from "./editor";
-import { fieldSnippet } from "./explorer-fields";
-import type { FieldInsertionMode } from "./explorer-fields";
-import { explorerSections } from "./explorer-sections";
+import { explorerSections, listPropertyLabels } from "./explorer-sections";
 import type { ExplorerReader } from "./explorer-sections";
 import { DisplayTree } from "./explorer-tree";
 import type { DisplaySection, FieldRowState } from "./explorer-tree";
 import { FieldDetails, placeFieldDetails } from "./field-details";
-import type { FieldInsertOptions } from "./field-details";
+import { fieldForm, fieldForms, TEMPLATE_INSERTION } from "./field-insertion";
+import type {
+  FieldForm,
+  FieldInsertionContext,
+  FieldInsertOptions,
+} from "./field-insertion";
 import { useFieldsPanelRows } from "./fields-panel";
 import { useTooltip, useWorkbenchHost } from "./host";
 import type {
@@ -28,11 +27,11 @@ import type {
   WorkbenchMenuItem,
   WorkbenchMenuRequest,
 } from "./host";
-import { composing } from "./ime";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchMessageLabel } from "./messages";
+import { announceFields } from "./model";
 import type { TemplateRoot } from "./model";
 import { useIcon, useParts } from "./theme";
 
@@ -41,11 +40,18 @@ import {
   buildFilteredDisplayTree,
   copyValue,
   formatPath,
-  renderSnippet,
   setFilter,
-  snippetKindsFor,
   toggleNode,
 } from "#/explorer/index";
+
+/**
+ * How one insert goes: `keepOpen` as {@link FieldInsertOptions} has it, and
+ * the `form` the reader picked in the details, the field's first otherwise.
+ */
+interface FieldInsertRequest {
+  readonly keepOpen?: boolean;
+  readonly form?: FieldForm;
+}
 
 export interface ExplorerPresentation {
   top: number;
@@ -67,24 +73,20 @@ export interface DataExplorerProps {
   empty?: ReactNode;
   root: TemplateRoot;
   data: Record<string, unknown> | null;
-  mode?: FieldInsertionMode;
   trigger?: string;
-  engine?: TemplateEngine;
+  /**
+   * Where an insert writes now, read as the details draw and at the time of
+   * each insert or copy; a Liquid template by default.
+   */
+  insertion?: () => FieldInsertionContext;
   /** Evaluated when the menu opens, so the host's JavaScript setting is current. */
   engines?: () => readonly TemplateEngine[];
   disabled?: boolean;
-  onInsert?: (snippet: string) => void;
   /**
-   * Resolves insertion against the receiving editor at action time; `false`
-   * when the editor refused the field. With `keepOpen`, Shift kept the Fields
-   * Panel open for the next field, so the editor takes no focus. `kind` is
-   * the form the reader chose for a list in its details; absent, the field
-   * goes in its first form.
+   * Writes a field's text at the receiving editor's insertion target;
+   * `false` when the editor refused it.
    */
-  onInsertNode?: (
-    node: DisplayNode,
-    options: FieldInsertOptions,
-  ) => boolean | void;
+  onInsert?: (text: string, options: FieldInsertOptions) => boolean | void;
   copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
@@ -117,13 +119,11 @@ export function DataExplorer({
   empty,
   root,
   data,
-  mode = "template",
   trigger,
-  engine = "liquid",
+  insertion = () => TEMPLATE_INSERTION,
   engines,
   disabled = false,
   onInsert,
-  onInsertNode,
   copy,
   onExploreAnnotation,
   canExploreAnnotation,
@@ -152,24 +152,29 @@ export function DataExplorer({
   const model = useWorkbenchModel();
   const startCopy = useAtomSet(model.copy(useUniqueId()));
   const setFields = useAtomSet(model.fieldsPanel);
+  const setStatus = useAtomSet(model.fieldsStatus);
+  /** Says `text` in a notice, and to a screen reader in the panels' live region. */
+  const announce = (text: string) => {
+    host.notice(text);
+    setStatus(announceFields(text));
+  };
   const part = useParts("dataExplorer");
-  const insertField =
-    onInsertNode ??
-    (onInsert
-      ? (node: DisplayNode, { kind }: FieldInsertOptions) =>
-          onInsert(fieldSnippet(node, mode, { engine, kind }))
-      : undefined);
-  // An insert closes the Fields Panel and leaves focus to the editor, at the
-  // inserted text; Shift keeps the panel open for the next field.
-  // It names the field it inserted to a screen reader.
+  // An insert writes the field in its first form, or the form the reader
+  // picked in its details, as the place the caret is in reads it. It closes
+  // the Fields Panel and leaves focus to the editor, at the inserted text;
+  // Shift keeps the panel open for the next field. It names the field it
+  // inserted to a screen reader.
   const insertNode =
-    insertField &&
+    onInsert &&
     ((
       node: DisplayNode,
-      { keepOpen, kind }: FieldInsertOptions = { keepOpen: false },
+      {
+        keepOpen = false,
+        form = fieldForm(node, insertion()),
+      }: FieldInsertRequest = {},
     ) => {
-      if (insertField(node, { keepOpen, kind }) === false) return;
-      host.notice(
+      if (onInsert(form.snippet, { keepOpen }) === false) return;
+      announce(
         m.workbench_fields_inserted({ field: fieldLabel(node, labels) }),
       );
       if (!keepOpen) setFields("to-editor");
@@ -179,15 +184,17 @@ export function DataExplorer({
     () => ({ m, root, locale }),
     [m, root, locale],
   );
-  // The names top-level fields show, which the filter also searches.
+  // The names top-level fields and the properties of list items show,
+  // which the filter also searches.
   const labels = useMemo(() => {
     if (!data) return new Map<string, string>();
     const nodes = buildDisplayTree(data, { expanded: new Set() });
-    return new Map(
-      explorerSections(nodes, reader).flatMap((section) =>
+    return new Map([
+      ...explorerSections(nodes, reader).flatMap((section) =>
         section.rows.map((row) => [row.node.key, row.label] as const),
       ),
-    );
+      ...listPropertyLabels(nodes, reader),
+    ]);
   }, [data, reader]);
   const panelRows = useFieldsPanelRows();
   // The Fields Panel opens a list to its items' properties, never to one
@@ -207,6 +214,8 @@ export function DataExplorer({
     };
   }, [data, tree, labels, lists]);
   const filtering = tree.filterQuery !== "";
+  /** Whether an insert can write now: the host takes fields and the editor has a place for one. */
+  const canInsert = insertNode !== undefined && !disabled;
   // A filter holds every section that still has a row open.
   const sections = useMemo<DisplaySection[]>(
     () =>
@@ -215,9 +224,9 @@ export function DataExplorer({
         label: section.label,
         collapsed: !filtering && collapsedSections.has(section.id),
         nodes: section.rows.map((row) => row.node),
-        labels: new Map(section.rows.map((row) => [row.node.key, row.label])),
+        labels,
       })),
-    [visible, reader, filtering, collapsedSections],
+    [visible, reader, filtering, collapsedSections, labels],
   );
   const rows = useFieldRows({
     enabled: panelRows !== null,
@@ -225,6 +234,12 @@ export function DataExplorer({
     labels,
     query: tree.filterQuery,
   });
+  // A search that matches nothing says so to a screen reader in the panel.
+  const noMatches =
+    panelRows !== null && data !== null && filtering && sections.length === 0;
+  useEffect(() => {
+    if (noMatches) setStatus(announceFields(m.workbench_fields_no_matches()));
+  }, [noMatches, setStatus, m]);
   const detailsSurface = useRef<HTMLElement>(null);
   const [openRow, setOpenRow] = useState<HTMLElement | null>(null);
   const viewSize = useAtomValue(model.viewSize);
@@ -233,12 +248,12 @@ export function DataExplorer({
     const key = rows.open?.node.key ?? null;
     setOpenRow(key === null ? null : rowElement(body.current, key));
   }, [rows.open]);
-  // The selected row stays in view as ↑/↓ move it.
+  // The selected row stays in view as ↑/↓ move it, clear of its section's
+  // sticky heading.
   useLayoutEffect(() => {
-    if (rows.selected === null) return;
-    rowElement(body.current, rows.selected)?.scrollIntoView({
-      block: "nearest",
-    });
+    if (rows.selected === null || !body.current) return;
+    const row = rowElement(body.current, rows.selected);
+    if (row) revealRow(body.current, row);
   }, [rows.selected]);
   // A press outside the details and outside their row closes them.
   const openKey = rows.open?.node.key ?? null;
@@ -290,20 +305,16 @@ export function DataExplorer({
       escape.current = () => false;
     };
   });
-  const insertEntry = (
-    entry: FieldEntry,
-    options: FieldInsertOptions = { keepOpen: false },
-  ) => {
+  const insertEntry = (entry: FieldEntry, request?: FieldInsertRequest) => {
     rows.close();
-    insertNode?.(entry.node, options);
+    insertNode?.(entry.node, request);
   };
-  const copyEntry = (entry: FieldEntry, snippet: string) => {
+  const copyEntry = (entry: FieldEntry, form: FieldForm) => {
     rows.close();
     startCopy({
-      copy: copy(snippet),
-      copied: () =>
-        host.notice(m.workbench_fields_copied({ field: entry.label })),
-      failed: () => host.notice(m.workbench_field_copy_failed()),
+      copy: copy(form.snippet),
+      copied: () => announce(m.workbench_fields_copied({ field: entry.label })),
+      failed: () => announce(m.workbench_field_copy_failed()),
     });
   };
   /** ↑/↓ move the selection; Enter shows or hides its details; Mod+Enter inserts it. */
@@ -319,8 +330,10 @@ export function DataExplorer({
     if (!entry) return;
     event.preventDefault();
     if (event.metaKey || event.ctrlKey) {
-      if (!disabled) insertEntry(entry);
-    } else rows.toggle(entry.node.key);
+      if (canInsert) insertEntry(entry);
+      else announce(m.workbench_fields_choose_place());
+      // Details Enter opens take focus, so the keys reach their controls.
+    } else rows.toggle(entry.node.key, { focus: true });
   };
   // Every section shown closed reads as collapsed; the button opens them all
   // then, and closes them all otherwise. A filter holds its sections open.
@@ -371,13 +384,24 @@ export function DataExplorer({
       loop: m.workbench_explorer_menu_copy_loop,
       joined: m.workbench_explorer_menu_copy_joined,
     };
-    const languages = engines?.() ?? [engine];
+    // The menu copies what an insert at the caret writes. A template offers
+    // each engine the reader may write in; a Properties value reads the
+    // field itself, in no engine.
+    const context = insertion();
+    const languages =
+      context.mode === "template"
+        ? (engines?.() ?? [context.engine])
+        : [context.engine];
     const submenus: NonNullable<WorkbenchMenuRequest["submenus"]>[number][] =
       [];
     for (const language of languages) {
-      const snippets = snippetKindsFor(node).map((kind) => ({
-        label: labels[kind](),
-        onSelect: () => copyMenu(renderSnippet(node, language, kind)),
+      const snippets = fieldForms(
+        node,
+        { ...context, engine: language },
+        { every: true },
+      ).map((form) => ({
+        label: labels[form.kind](),
+        onSelect: () => copyMenu(form.snippet),
       }));
       if (languages.length > 1)
         submenus.push({
@@ -425,9 +449,6 @@ export function DataExplorer({
     </button>
   );
   const search = m[SEARCH_LABELS[root]]();
-  /** What an insert of `node` in the form `kind` puts into the note. */
-  const snippetOf = (node: DisplayNode, kind?: SnippetKind) =>
-    fieldSnippet(node, mode, { engine, kind });
   return (
     <section {...part("explorer")}>
       <div {...part("header")}>
@@ -528,16 +549,17 @@ export function DataExplorer({
           node={rows.open.node}
           label={rows.open.label}
           context={rows.open.context}
-          snippet={(kind) => snippetOf(rows.open!.node, kind)}
+          forms={fieldForms(rows.open.node, insertion())}
+          takeFocus={rows.focusDetails}
           onInsert={
             insertNode && !disabled
-              ? (options) => insertEntry(rows.open!, options)
+              ? (form, { keepOpen }) =>
+                  insertEntry(rows.open!, { keepOpen, form })
               : undefined
           }
-          onCopy={(kind) =>
-            copyEntry(rows.open!, snippetOf(rows.open!.node, kind))
-          }
+          onCopy={(form) => copyEntry(rows.open!, form)}
           onClose={rows.close}
+          onTabOut={() => searchInput.current?.focus({ preventScroll: true })}
         />
       )}
       {trigger && (
@@ -545,7 +567,17 @@ export function DataExplorer({
       )}
       {panelRows && (
         <p {...part("keys-hint")}>
-          {m.workbench_fields_details_hint({ insert: insertShortcut() })}
+          {canInsert
+            ? m.workbench_fields_details_hint({
+                insert:
+                  host.fieldsAction?.insertShortcut ??
+                  m.workbench_fields_insert_key(),
+              })
+            : // With no place to insert, the hint promises no insert and says why.
+              m.workbench_fields_details_hint_no_place({
+                hint: m.workbench_fields_details_hint_view(),
+                reason: m.workbench_fields_choose_place(),
+              })}
         </p>
       )}
     </section>
@@ -612,12 +644,13 @@ function useFieldRows({
     query,
     selected: null as string | null,
     open: null as string | null,
+    focus: false,
   });
   let { selected, open } = state;
   if (state.query !== query) {
     selected = null;
     open = null;
-    setState({ query, selected, open });
+    setState({ query, selected, open, focus: false });
   }
   const entries = useMemo(
     () => (enabled ? fieldEntries(sections, labels) : []),
@@ -631,11 +664,13 @@ function useFieldRows({
   const [close] = useState(
     () => () => setState((last) => ({ ...last, open: null })),
   );
-  const toggle = (key: string) =>
+  /** Shows or hides the details of `key`; with `focus`, the details take focus as they open. */
+  const toggle = (key: string, { focus = false }: { focus?: boolean } = {}) =>
     setState((last) => ({
       ...last,
       selected: key,
       open: last.open === key ? null : key,
+      focus,
     }));
   const move = (step: 1 | -1) => {
     if (entries.length === 0) return;
@@ -658,6 +693,8 @@ function useFieldRows({
     entries,
     selected,
     open: openEntry,
+    /** Whether the open details take focus as they draw: Enter opened them. */
+    focusDetails: state.focus,
     idOf,
     close,
     toggle,
@@ -666,17 +703,25 @@ function useFieldRows({
   };
 }
 
+/**
+ * Scrolls `body` the least that shows `row` whole, below the sticky heading
+ * of the section it stands in, which would otherwise cover it.
+ */
+function revealRow(body: HTMLElement, row: HTMLElement): void {
+  const heading = row
+    .closest("[data-workbench-section]")
+    ?.querySelector<HTMLElement>(":scope > [data-part=section-heading]");
+  const view = body.getBoundingClientRect();
+  const box = row.getBoundingClientRect();
+  const top = view.top + (heading?.offsetHeight ?? 0);
+  if (box.top < top) body.scrollTop -= top - box.top;
+  else if (box.bottom > view.bottom) body.scrollTop += box.bottom - view.bottom;
+}
+
 /** The element of the row for `key` in `body`. */
 function rowElement(body: HTMLElement | null, key: string): HTMLElement | null {
   const item = [
     ...(body?.querySelectorAll<HTMLElement>("[data-workbench-field]") ?? []),
   ].find((element) => element.dataset.workbenchField === key);
   return item?.querySelector<HTMLElement>(":scope > [data-part=row]") ?? null;
-}
-
-/** The shortcut that inserts the selected field, as the platform names it. */
-function insertShortcut(): string {
-  return /Mac|iPhone|iPad/.test(navigator.userAgent)
-    ? "Command+Enter"
-    : "Ctrl+Enter";
 }
