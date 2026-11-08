@@ -253,12 +253,30 @@ export function DataExplorer({
     setOpenRow(key === null ? null : rowElement(body.current, key));
   }, [rows.open]);
   // The selected row stays in view as ↑/↓ move it, clear of its section's
-  // sticky heading.
+  // sticky heading. Only a move scrolls: a selection a collapse hid and an
+  // expand shows again stays where the list draws it.
+  const { reveal } = rows;
   useLayoutEffect(() => {
-    if (rows.selected === null || !body.current) return;
-    const row = rowElement(body.current, rows.selected);
+    if (reveal === null || !body.current) return;
+    const row = rowElement(body.current, reveal.key);
     if (row) revealRow(body.current, row);
-  }, [rows.selected]);
+  }, [reveal]);
+  // A collapse or an expand keeps the heading or row the reader pressed at
+  // the height it stood in the list, so the list moves around it: a stuck
+  // section heading stays in view as its section closes beneath it.
+  const held = useRef<{ element: HTMLElement; top: number } | null>(null);
+  const holdInPlace = (element: HTMLElement | null | undefined) => {
+    held.current =
+      element && body.current
+        ? { element, top: offsetIn(body.current, element) }
+        : null;
+  };
+  useLayoutEffect(() => {
+    const hold = held.current;
+    held.current = null;
+    if (!hold || !body.current || !hold.element.isConnected) return;
+    body.current.scrollTop += offsetIn(body.current, hold.element) - hold.top;
+  }, [sections]);
   // A press outside the details and outside their row closes them.
   const openKey = rows.open?.node.key ?? null;
   // Focus the details held as they closed goes back to the search.
@@ -351,6 +369,7 @@ export function DataExplorer({
   const sectionsTooltip = useTooltip(sectionsLabel);
   const icon = useIcon();
   const toggleSection = (id: string) => {
+    holdInPlace(sectionHeading(body.current, id));
     const next = new Set(collapsedSections);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -441,11 +460,13 @@ export function DataExplorer({
       type="button"
       aria-label={sectionsLabel}
       disabled={filtering || sectionIds.length === 0}
-      onClick={() =>
+      onClick={() => {
+        // The section at the top of the list stays there.
+        holdInPlace(topSectionHeading(body.current));
         onCollapsedSectionsChange(
           allCollapsed ? new Set() : new Set(sectionIds),
-        )
-      }
+        );
+      }}
       {...sectionsTooltip}
       {...part("sections-toggle")}
     >
@@ -519,7 +540,10 @@ export function DataExplorer({
           <DisplayTree
             sections={sections}
             matchedKeys={visible.matchedKeys}
-            onToggle={(key) => onNavigationChange(toggleNode(tree, key))}
+            onToggle={(key) => {
+              holdInPlace(rowElement(body.current, key));
+              onNavigationChange(toggleNode(tree, key));
+            }}
             onToggleSection={filtering ? undefined : toggleSection}
             onInsert={
               insertNode && !disabled
@@ -649,12 +673,14 @@ function useFieldRows({
     selected: null as string | null,
     open: null as string | null,
     focus: false,
+    /** The row the last ↑/↓ moved to, which the list scrolls into view. */
+    reveal: null as { readonly key: string } | null,
   });
   let { selected, open } = state;
   if (state.query !== query) {
     selected = null;
     open = null;
-    setState({ query, selected, open, focus: false });
+    setState({ query, selected, open, focus: false, reveal: null });
   }
   const entries = useMemo(
     () => (enabled ? fieldEntries(sections, labels) : []),
@@ -685,7 +711,8 @@ function useFieldRows({
           ? 0
           : entries.length - 1
         : Math.min(entries.length - 1, Math.max(0, at + step));
-    setState((last) => ({ ...last, selected: entries[next]!.node.key }));
+    const key = entries[next]!.node.key;
+    setState((last) => ({ ...last, selected: key, reveal: { key } }));
   };
   const rowState: FieldRowState = {
     selected,
@@ -699,6 +726,7 @@ function useFieldRows({
     open: openEntry,
     /** Whether the open details take focus as they draw: Enter opened them. */
     focusDetails: state.focus,
+    reveal: state.reveal,
     idOf,
     close,
     toggle,
@@ -720,6 +748,40 @@ function revealRow(body: HTMLElement, row: HTMLElement): void {
   const top = view.top + (heading?.offsetHeight ?? 0);
   if (box.top < top) body.scrollTop -= top - box.top;
   else if (box.bottom > view.bottom) body.scrollTop += box.bottom - view.bottom;
+}
+
+/** How far `element` stands below the top of the list `body` shows. */
+function offsetIn(body: HTMLElement, element: HTMLElement): number {
+  return element.getBoundingClientRect().top - body.getBoundingClientRect().top;
+}
+
+/** The heading of the section `id` in `body`. */
+function sectionHeading(
+  body: HTMLElement | null,
+  id: string,
+): HTMLElement | null {
+  const section = [
+    ...(body?.querySelectorAll<HTMLElement>("[data-workbench-section]") ?? []),
+  ].find((element) => element.dataset.workbenchSection === id);
+  return (
+    section?.querySelector<HTMLElement>(
+      ":scope > [data-part=section-heading]",
+    ) ?? null
+  );
+}
+
+/** The heading of the section the top of the list `body` shows. */
+function topSectionHeading(body: HTMLElement | null): HTMLElement | null {
+  if (!body) return null;
+  const top = body.getBoundingClientRect().top;
+  const section = [
+    ...body.querySelectorAll<HTMLElement>("[data-workbench-section]"),
+  ].find((element) => element.getBoundingClientRect().bottom > top);
+  return (
+    section?.querySelector<HTMLElement>(
+      ":scope > [data-part=section-heading]",
+    ) ?? null
+  );
 }
 
 /** The element of the row for `key` in `body`. */
