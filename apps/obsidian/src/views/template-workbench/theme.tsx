@@ -558,8 +558,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       reason: "zt:text-xs zt:text-muted-foreground",
     },
     tabBar: {
+      // The same room above the tabs as below them, so they stand clear of
+      // the item row's rule over the editor.
       "tab-bar":
-        "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:pb-2",
+        "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:py-2",
       tab: "clickable-icon zt:disabled:opacity-50 zt:shrink-0 zt:text-sm",
     },
     tabPanel: {

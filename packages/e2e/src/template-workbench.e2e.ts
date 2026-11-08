@@ -225,12 +225,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           actions: view?.containerEl.querySelectorAll(
             `.view-actions .view-action[aria-label="${label}"]`,
           ).length,
+          strip: page.tabStripInsets(view),
         };
       },
       { path, label: run.m.workbench_choose_item() },
       { what: "the Preview", ready: (found) => found !== null },
     );
-    expect(choosers).toEqual({ row: 1, view: 1, actions: 0 });
+    const { strip, ...counts } = choosers!;
+    expect(counts).toEqual({ row: 1, view: 1, actions: 0 });
+    // The editor's tab strip keeps the same room above its tabs, under the
+    // item row's rule, as below them, above its own rule.
+    expect(strip?.above).toBeGreaterThan(0);
+    expect(strip?.above).toBe(strip?.below);
 
     /** Opens Choose item from the item row, searches `title`, and picks it. */
     const choose = async (title: string) => {
@@ -2084,6 +2090,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             editorPart.getBoundingClientRect().left,
           narrower: editorPart.offsetWidth < editorWidth,
           inert: el.querySelector("[inert]") !== null,
+          // Beside the docked panel, the tab strip keeps its room above
+          // the tabs, as it has without the panel.
+          strip: page.tabStripInsets(view),
         };
         // An insert while docked keeps the panel and hands the editor focus.
         await input.click(content);
@@ -2174,6 +2183,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       shown: "true",
     });
+    const { strip } = result.pinned as {
+      strip: { above: number; below: number } | null;
+    };
+    expect(strip?.above).toBeGreaterThan(0);
+    expect(strip?.above).toBe(strip?.below);
 
     // The saved state restores the docked panel at its width in a new leaf.
     await openLeaf(result.state);
