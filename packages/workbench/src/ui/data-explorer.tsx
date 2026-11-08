@@ -542,6 +542,7 @@ export function DataExplorer({
           }
           onCopy={(form) => copyEntry(rows.open!, form)}
           onClose={rows.close}
+          onTabOut={() => searchInput.current?.focus({ preventScroll: true })}
         />
       )}
       {trigger && (

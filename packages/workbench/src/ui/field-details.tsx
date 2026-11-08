@@ -57,6 +57,12 @@ export interface FieldDetailsContent {
    * reach their controls.
    */
   readonly takeFocus?: boolean;
+  /**
+   * Tab moved focus past the last control of the details, or Shift+Tab
+   * before the first: focus goes back to the panel, which a popover on the
+   * page's body does not follow in the Tab order.
+   */
+  readonly onTabOut: () => void;
 }
 
 /**
@@ -116,6 +122,7 @@ function DetailsBody({
   onCopy,
   onClose,
   takeFocus = false,
+  onTabOut,
   titleId,
   surface,
   state,
@@ -168,6 +175,18 @@ function DetailsBody({
       // Mod+Enter inserts the field in the form the details show, as it
       // inserts the selected row from the search.
       onKeyDown={(event) => {
+        if (event.key === "Tab") {
+          const controls = [
+            ...event.currentTarget.querySelectorAll<HTMLElement>(
+              "button:not(:disabled), input:checked",
+            ),
+          ];
+          const edge = event.shiftKey ? controls[0] : controls.at(-1);
+          if (event.target !== edge) return;
+          event.preventDefault();
+          onTabOut();
+          return;
+        }
         if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
         if (composing(event) || !onInsert) return;
         event.preventDefault();

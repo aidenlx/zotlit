@@ -1107,6 +1107,18 @@ describe.each(PRESENTATIONS)(
       expect(page.texts).toEqual([TITLE]);
     });
 
+    it("hand focus back to the search on Tab past their last control", () => {
+      using page = open({ size });
+      page.pressAction();
+      fireEvent.keyDown(search(), { key: "ArrowDown" });
+      fireEvent.keyDown(search(), { key: "Enter" });
+      const copy = within(details()!).getByRole("button", { name: "Copy" });
+      act(() => copy.focus());
+      fireEvent.keyDown(copy, { key: "Tab" });
+      expect(document.activeElement).toBe(search());
+      expect(details()).not.toBeNull();
+    });
+
     it("insert their form on Mod+Enter", () => {
       using page = open({ size, data: LISTS });
       page.pressAction();
