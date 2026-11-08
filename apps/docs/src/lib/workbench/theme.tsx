@@ -560,7 +560,8 @@ export const WEB_THEME: WorkbenchTheme = {
       "values-item": "flex gap-2 [overflow-wrap:anywhere]",
       "values-index":
         "w-4 shrink-0 text-end tabular-nums text-fd-muted-foreground",
-      "values-text": "min-w-0 whitespace-pre-wrap",
+      "values-text":
+        "min-w-0 whitespace-pre-wrap data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
       // The bar shows what the note gets right under its heading.
       item: "flex flex-col gap-0.5 in-data-[state=bar]:data-[state=path]:order-3",
       "item-header": "flex flex-wrap items-center gap-x-2 gap-y-1",

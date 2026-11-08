@@ -1026,7 +1026,7 @@ describe("buildDisplayTree — list shape", () => {
     ]);
   });
 
-  it("takes the properties of every item, and leaves out an item without a value", () => {
+  it("takes the properties of every item, and marks an item without a value", () => {
     const root = {
       annotations: [
         { text: "First", comment: "Core claim" },
@@ -1040,8 +1040,8 @@ describe("buildDisplayTree — list shape", () => {
         node.kind === "list-property" ? [node.label, node.values] : null,
       ),
     ).toEqual([
-      ["comment", ["Core claim"]],
-      ["pageLabel", ["698"]],
+      ["comment", ["Core claim", "", null]],
+      ["pageLabel", [null, null, "698"]],
       ["text", ["First", "Second", "Third"]],
     ]);
   });

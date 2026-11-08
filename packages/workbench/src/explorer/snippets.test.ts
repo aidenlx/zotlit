@@ -198,10 +198,10 @@ describe("renderSnippet — loop", () => {
   it("shows the first property of items that do not read as text", () => {
     const node = value(["lines"], "array", [{ text: "x", page: 1 }]);
     expect(renderSnippet(node, "liquid", "loop")).toBe(
-      "{% for line in zt.lines %}\n- {{ line.page }}{% endfor %}",
+      "{% for line in zt.lines %}{% if line.page != nil %}\n- {{ line.page }}{% endif %}{% endfor %}",
     );
     expect(renderSnippet(node, "eta", "loop")).toBe(
-      "<% for (const line of zt.lines) { %>\n- <%= line.page %><% } %>",
+      "<% for (const line of zt.lines) { %><% if (line.page != null) { %>\n- <%= line.page %><% } %><% } %>",
     );
   });
 });
@@ -215,7 +215,7 @@ describe("a list's preview and its loop line", () => {
     );
     expect(node).toMatchObject({ preview: "second" });
     expect(renderSnippet(node!, "liquid", "loop")).toBe(
-      "{% for line in zt.lines %}\n- {{ line.a }}{% endfor %}",
+      "{% for line in zt.lines %}{% if line.a != nil %}\n- {{ line.a }}{% endif %}{% endfor %}",
     );
   });
 
@@ -235,7 +235,7 @@ describe("a list's preview and its loop line", () => {
       preview: "Why Most Findings Are False, Ten Simple Rules",
     });
     expect(renderSnippet(node!, "liquid", "loop")).toBe(
-      "{% for item in zt.items %}\n- {{ item.title }}{% endfor %}",
+      "{% for item in zt.items %}{% if item.title != nil %}\n- {{ item.title }}{% endif %}{% endfor %}",
     );
   });
 
@@ -253,7 +253,7 @@ describe("a list's preview and its loop line", () => {
     );
     expect(node).toMatchObject({ preview: "Alpha, Beta" });
     expect(renderSnippet(node!, "liquid", "loop")).toBe(
-      "{% for citation in zt.citations %}\n- {{ citation.title }}{% endfor %}",
+      "{% for citation in zt.citations %}{% if citation.title != nil %}\n- {{ citation.title }}{% endif %}{% endfor %}",
     );
   });
 
@@ -268,7 +268,7 @@ describe("a list's preview and its loop line", () => {
       { expanded: new Set() },
     );
     expect(renderSnippet(node!, "liquid", "loop")).toBe(
-      "{% for line in zt.lines %}\n- {{ line.b }}{% endfor %}",
+      "{% for line in zt.lines %}{% if line.b != nil %}\n- {{ line.b }}{% endif %}{% endfor %}",
     );
   });
 
@@ -320,29 +320,29 @@ describe("list snippets never use an item index", () => {
 
   it("joins a list property's values in each engine", () => {
     expect(renderSnippet(family, "liquid", "joined")).toBe(
-      '{{ zt.authors | map: "family" | join: ", " }}',
+      '{{ zt.authors | map: "family" | compact | join: ", " }}',
     );
     expect(renderSnippet(family, "eta", "joined")).toBe(
-      '<%= zt.authors.map((author) => author.family).join(", ") %>',
+      '<%= zt.authors.map((author) => author.family).filter((value) => value != null).join(", ") %>',
     );
   });
 
   it("puts a list property's value for each item on its own line in each engine", () => {
     expect(renderSnippet(family, "liquid", "loop")).toBe(
-      "{% for author in zt.authors %}\n- {{ author.family }}{% endfor %}",
+      "{% for author in zt.authors %}{% if author.family != nil %}\n- {{ author.family }}{% endif %}{% endfor %}",
     );
     expect(renderSnippet(family, "eta", "loop")).toBe(
-      "<% for (const author of zt.authors) { %>\n- <%= author.family %><% } %>",
+      "<% for (const author of zt.authors) { %><% if (author.family != null) { %>\n- <%= author.family %><% } %><% } %>",
     );
   });
 
   it("quotes a property name that is not an identifier", () => {
     const node = listProperty(["attachments"], "file-name");
     expect(renderSnippet(node, "liquid", "joined")).toBe(
-      '{{ zt.attachments | map: "file-name" | join: ", " }}',
+      '{{ zt.attachments | map: "file-name" | compact | join: ", " }}',
     );
     expect(renderSnippet(node, "eta", "loop")).toBe(
-      '<% for (const attachment of zt.attachments) { %>\n- <%= attachment["file-name"] %><% } %>',
+      '<% for (const attachment of zt.attachments) { %><% if (attachment["file-name"] != null) { %>\n- <%= attachment["file-name"] %><% } %><% } %>',
     );
   });
 
@@ -438,10 +438,10 @@ describe("a list reads the same in its row and in its result", () => {
     const backlink = list.children!.find((node) => node.label === "backlink")!;
     expect(snippetKindsFor(backlink)).toEqual(["loop"]);
     expect(renderSnippet(backlink, "liquid", "loop")).toBe(
-      "{% for annotation in zt.annotations %}\n- [Zotero]({{ annotation.backlink }}){% endfor %}",
+      "{% for annotation in zt.annotations %}{% if annotation.backlink != nil %}\n- [Zotero]({{ annotation.backlink }}){% endif %}{% endfor %}",
     );
     expect(renderSnippet(backlink, "eta", "loop")).toBe(
-      "<% for (const annotation of zt.annotations) { %>\n- [Zotero](<%= annotation.backlink %>)<% } %>",
+      "<% for (const annotation of zt.annotations) { %><% if (annotation.backlink != null) { %>\n- [Zotero](<%= annotation.backlink %>)<% } %><% } %>",
     );
     expect(snippetResult(backlink, "loop")).toBe(
       "- [Zotero](zotero://open/1)\n- [Zotero](zotero://open/2)",

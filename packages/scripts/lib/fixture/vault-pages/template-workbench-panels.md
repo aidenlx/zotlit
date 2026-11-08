@@ -287,11 +287,17 @@ names in one line. Step 3 changes the snippet to
 lines, and the result to three lines that each start with `- `. Step 4
 pastes that loop, and **Copy** closes the details. Step 5 inserts the same
 loop, closes the popover, and the Preview shows each creator as its own list
-item. Step 6 lists each creator's family name, numbered. Step 7 inserts
-`{{ zt.creators | map: "family" | join: ", " }}`, then the loop with
-`- {{ creator.family }}`; the Preview shows the family names in one line,
-then one list item each. A field that is not a list, such as `title`, shows
-no form choice. The template path of `family` reads
+item. Step 6 lists the three creators, numbered: 1 "Personal", 2 "Editor",
+and 3 "Empty for this item", as ZotLit Research Collective is a one-field
+name with no family name. The result of **In one line** reads
+"Personal, Editor", and the result of **Each item** has two lines,
+"- Personal" and "- Editor". Step 7 inserts
+`{{ zt.creators | map: "family" | compact | join: ", " }}`, then the loop
+`{% for creator in zt.creators %}{% if creator.family != nil %}` with
+`- {{ creator.family }}{% endif %}{% endfor %}`; the Preview shows exactly
+the two results: "Personal, Editor" with no separator after it, then two
+list items and no empty third one. A field that is not a list, such as
+`title`, shows no form choice. The template path of `family` reads
 "zt.creators → each item's family".
 
 ## A list whose items do not read as text

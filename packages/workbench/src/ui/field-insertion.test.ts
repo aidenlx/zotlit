@@ -5,6 +5,9 @@ import type {
 } from "#/explorer/index";
 import { describe, expect, it } from "vitest";
 
+import { TemplateEngine as EtaEngine } from "@zotlit/templates";
+import { createLiquidEngine } from "@zotlit/templates/liquid";
+
 import { fieldForm } from "./field-insertion";
 import type { FieldInsertionContext } from "./field-insertion";
 
@@ -44,12 +47,55 @@ describe("fieldForm", () => {
   it("inserts a list property joined in one line", () => {
     const { family } = shapeNodes();
     expect(text(family, "template", { engine: "eta" })).toBe(
-      '<%= zt.authors.map((author) => author.family).join(", ") %>',
+      '<%= zt.authors.map((author) => author.family).filter((value) => value != null).join(", ") %>',
     );
     expect(text(family, "template", { kind: "loop" })).toBe(
-      "{% for author in zt.authors %}\n- {{ author.family }}{% endfor %}",
+      "{% for author in zt.authors %}{% if author.family != nil %}\n- {{ author.family }}{% endif %}{% endfor %}",
     );
   });
+
+  // #1969: a creator with no family name, as Zotero keeps a one-field name.
+  describe.each(["liquid", "eta"] as const)(
+    "a list property with an item that has no value, in %s",
+    (engine) => {
+      const zt = {
+        creators: [
+          withText({ family: "Personal", literal: null }, "Ada Personal"),
+          withText({ family: "Editor", literal: null }, "Erin Editor"),
+          withText(
+            { family: null, literal: "ZotLit Research Collective" },
+            "ZotLit Research Collective",
+          ),
+        ],
+      };
+      const family = () => {
+        const [creators] = buildDisplayTree(zt, {
+          expanded: new Set(["creators"]),
+          lists: "shape",
+        });
+        if (creators?.kind !== "value") throw new Error("shape");
+        return creators.children!.find((child) => child.label === "family")!;
+      };
+      const render = async (snippet: string) =>
+        engine === "liquid"
+          ? createLiquidEngine().parseAndRender(snippet, { zt })
+          : new EtaEngine().renderString(snippet, zt);
+
+      it.each([
+        { kind: "joined", note: "Personal, Editor" },
+        { kind: "loop", note: "\n- Personal\n- Editor" },
+      ] as const)(
+        "renders the $kind form without the item, as its result says",
+        async ({ kind, note }) => {
+          const form = fieldForm(family(), { engine, mode: "template" }, kind);
+          const rendered = await render(form.snippet);
+          expect(rendered).toBe(note);
+          // The result is the note's text, less the line break before the first line.
+          expect(form.result).toBe(rendered.replace(/^\n/, ""));
+        },
+      );
+    },
+  );
 
   it("writes a list property as a list in a frontmatter expression", () => {
     const { family } = shapeNodes();

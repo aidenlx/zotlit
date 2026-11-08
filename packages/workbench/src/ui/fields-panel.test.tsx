@@ -886,8 +886,36 @@ describe("a list field", () => {
       shiftKey: true,
     });
     expect(page.texts).toEqual([
-      '{{ zt.authors | map: "family" | join: ", " }}',
+      '{{ zt.authors | map: "family" | compact | join: ", " }}',
     ]);
+  });
+
+  // Walkthrough of spec #1962 (F3): a creator with a one-field name has no
+  // family name. The details list every item and mark that one; the result
+  // passes over it, as the snippet does.
+  it("lists every item of a list property in its details, an item without a value marked", () => {
+    using page = open({
+      ...lists,
+      data: {
+        ...LISTS,
+        authors: [
+          ...LISTS.authors,
+          withText(
+            { family: null, given: null, literal: "Research Collective" },
+            "Research Collective",
+          ),
+        ],
+      },
+    });
+    page.pressAction();
+    fireEvent.click(toggle("authors")!);
+    const region = openDetails("authors[].family", "family");
+    expect(
+      within(region.getByRole("list"))
+        .getAllByRole("listitem")
+        .map((value) => value.textContent),
+    ).toEqual(["1Ahrens", "2Luhmann", "3Empty for this item"]);
+    expect(region.getByText("Ahrens, Luhmann")).toBeTruthy();
   });
 
   it("offers each item alone where the items do not read as text, and the row's Insert uses it", () => {
@@ -902,7 +930,7 @@ describe("a list field", () => {
       { shiftKey: true },
     );
     expect(page.texts).toEqual([
-      "{% for attachment in zt.attachments %}\n- {{ attachment.filename }}{% endfor %}",
+      "{% for attachment in zt.attachments %}{% if attachment.filename != nil %}\n- {{ attachment.filename }}{% endif %}{% endfor %}",
     ]);
   });
 

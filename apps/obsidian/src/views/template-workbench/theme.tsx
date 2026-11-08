@@ -532,7 +532,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "values-item": "zt:flex zt:gap-2 zt:[overflow-wrap:anywhere]",
       "values-index":
         "zt:w-4 zt:shrink-0 zt:text-end zt:text-xs zt:leading-5 zt:tabular-nums zt:text-muted-foreground",
-      "values-text": "zt:min-w-0 zt:whitespace-pre-wrap",
+      "values-text":
+        "zt:min-w-0 zt:whitespace-pre-wrap zt:data-[state=empty]:text-muted-foreground zt:data-[state=empty]:italic",
       /**
        * The bar shows what the note gets right under its heading, so the
        * snippet stays in view in a short bar; the value and the path follow.

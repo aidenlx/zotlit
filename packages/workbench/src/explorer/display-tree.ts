@@ -3,7 +3,12 @@
 import { formatAccessorPath, memberAccessor } from "./accessor-path";
 import type { TemplatePathSegment } from "./accessor-path";
 import { inertPlaceholderReason } from "./inert-placeholder";
-import { evaluateHelper, isPlainObject, readList } from "./list-items";
+import {
+  evaluateHelper,
+  isPlainObject,
+  readList,
+  shownTexts,
+} from "./list-items";
 import { coerceToString } from "./string-coercion";
 
 export type PathSegment = TemplatePathSegment;
@@ -62,8 +67,11 @@ export interface ListPropertyNode extends DisplayNodeBase {
   /** Path of the list whose items carry the property. */
   readonly list: readonly PathSegment[];
   readonly property: string;
-  /** Each item's value as text, in item order; an item with no value is left out. */
-  readonly values: readonly string[];
+  /**
+   * Each item's value as text, in item order: `null` for an item without a
+   * value, which the list's snippets pass over.
+   */
+  readonly values: readonly (string | null)[];
   /** The values in one compact line. */
   readonly preview: string;
 }
@@ -334,7 +342,7 @@ function listProperties(
     list: listPath,
     property: name,
     values,
-    preview: previewLine(values.join(", ")),
+    preview: previewLine(shownTexts(values).join(", ")),
   }));
 }
 
@@ -361,7 +369,7 @@ function describeSignature(
 export function copyValue(node: DisplayNode): string | null {
   if (node.kind === "placeholder") return null;
   if (node.kind === "helper") return node.evaluated;
-  if (node.kind === "list-property") return node.values.join("\n");
+  if (node.kind === "list-property") return shownTexts(node.values).join("\n");
 
   switch (node.valueType) {
     case "getter":
@@ -409,8 +417,11 @@ export interface SearchedField {
   /** The name the reader sees for it, where it has one. */
   readonly alias?: string;
   readonly path: readonly PathSegment[];
-  /** Its values as text; a value the search may not read is left out. */
-  readonly values?: readonly string[];
+  /**
+   * Its values as text; a value the search may not read is left out, and
+   * `null` stands for an item without a value.
+   */
+  readonly values?: readonly (string | null)[];
 }
 
 /**
@@ -423,7 +434,9 @@ export function fieldMatches(query: string, field: SearchedField): boolean {
   const needle = query.toLowerCase();
   const has = (text: string) => text.toLowerCase().includes(needle);
   return (
-    [field.label, field.alias ?? "", ...(field.values ?? [])].some(has) ||
+    [field.label, field.alias ?? "", ...(field.values ?? [])].some(
+      (text) => text !== null && has(text),
+    ) ||
     // A path the query reaches only up to the parent's names the parent.
     (has(formatPath(field.path, "zt")) &&
       !has(formatPath(field.path.slice(0, -1), "zt")))

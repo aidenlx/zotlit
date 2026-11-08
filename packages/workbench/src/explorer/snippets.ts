@@ -3,7 +3,7 @@
 import { formatAccessorPath, isAccessorIdentifier } from "./accessor-path";
 import type { TemplatePathSegment } from "./accessor-path";
 import type { DisplayNode, ListPropertyNode } from "./display-tree";
-import { JOIN_SEPARATOR, readList } from "./list-items";
+import { JOIN_SEPARATOR, readList, shownTexts } from "./list-items";
 import { coerceToString } from "./string-coercion";
 
 /** What starts each item's line in the loop form: a Markdown list line. */
@@ -63,7 +63,13 @@ export function renderSnippet(
       const property = readList(itemsOf(node)).lineProperty;
       const body =
         property === undefined ? item : formatAccessorPath([property], item);
-      return loop(engine, accessor, { item, body, show: showOf(property) });
+      return loop(engine, accessor, {
+        item,
+        body,
+        show: showOf(property),
+        // A line that reads a property passes over an item without it.
+        guarded: property !== undefined,
+      });
     }
     case "joined":
       return joined(engine, accessor);
@@ -71,9 +77,11 @@ export function renderSnippet(
 }
 
 /**
- * A list property goes into the note for every item: its values joined in one
- * line, or one Markdown list line per item. Neither form takes the list
- * property's output or if-present kinds, so those fall back to joined.
+ * A list property goes into the note for every item that has a value: its
+ * values joined in one line, or one Markdown list line per item. Neither
+ * form takes the list property's output or if-present kinds, so those fall
+ * back to joined. An item without a value adds no separator and no line,
+ * by the rule {@link hasValue} states.
  */
 function listPropertySnippet(
   node: ListPropertyNode,
@@ -88,10 +96,12 @@ function listPropertySnippet(
       item,
       body: value,
       show: showOf(node.property),
+      guarded: true,
     });
+  const separator = JSON.stringify(JOIN_SEPARATOR);
   return engine === "liquid"
-    ? `{{ ${accessor} | map: ${JSON.stringify(node.property)} | join: ${JSON.stringify(JOIN_SEPARATOR)} }}`
-    : `<%= ${accessor}.map((${item}) => ${value}).join(${JSON.stringify(JOIN_SEPARATOR)}) %>`;
+    ? `{{ ${accessor} | map: ${JSON.stringify(node.property)} | compact | join: ${separator} }}`
+    : `<%= ${accessor}.map((${item}) => ${value}).filter((value) => value != null).join(${separator}) %>`;
 }
 
 /**
@@ -142,7 +152,11 @@ function guard(
     : `<% if (${expr}) { %>${output}<% } %>`;
 }
 
-/** One Markdown list line per item: each pass starts a new line with `- ` and the item's `body`, as `show` writes it. */
+/**
+ * One Markdown list line per item: each pass starts a new line with `- ` and
+ * the item's `body`, as `show` writes it. `guarded` passes over an item whose
+ * `body` has no value, so it leaves no empty line.
+ */
 function loop(
   engine: TemplateEngine,
   accessor: string,
@@ -150,11 +164,22 @@ function loop(
     item,
     body,
     show,
-  }: { item: string; body: string; show: (output: string) => string },
+    guarded = false,
+  }: {
+    item: string;
+    body: string;
+    show: (output: string) => string;
+    guarded?: boolean;
+  },
 ): string {
-  return engine === "liquid"
-    ? `{% for ${item} in ${accessor} %}\n${LIST_LINE}${show(`{{ ${body} }}`)}{% endfor %}`
-    : `<% for (const ${item} of ${accessor}) { %>\n${LIST_LINE}${show(`<%= ${body} %>`)}<% } %>`;
+  if (engine === "liquid") {
+    const line = `\n${LIST_LINE}${show(`{{ ${body} }}`)}`;
+    const each = guarded ? `{% if ${body} != nil %}${line}{% endif %}` : line;
+    return `{% for ${item} in ${accessor} %}${each}{% endfor %}`;
+  }
+  const line = `\n${LIST_LINE}${show(`<%= ${body} %>`)}`;
+  const each = guarded ? `<% if (${body} != null) { %>${line}<% } %>` : line;
+  return `<% for (const ${item} of ${accessor}) { %>${each}<% } %>`;
 }
 
 /** The items of a list node; none for any other node. */
@@ -239,9 +264,18 @@ function lineKey(node: DisplayNode): string | undefined {
 
 /**
  * Each item of a list, or of a list property, as one line of the loop shows
- * it: the loop's body for that item. None for a node that is not a list.
+ * it: the loop's body for that item. An item the loop passes over is left
+ * out. None for a node that is not a list.
  */
 export function listItemTexts(node: DisplayNode): readonly string[] {
+  return shownTexts(listItemValues(node));
+}
+
+/**
+ * Every item of a list property as text, `null` for an item without a
+ * value; each line of a list otherwise. The details list them all.
+ */
+export function listItemValues(node: DisplayNode): readonly (string | null)[] {
   if (node.kind === "list-property") return node.values;
   return readList(itemsOf(node)).lines;
 }
