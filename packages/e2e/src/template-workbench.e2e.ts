@@ -2148,7 +2148,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     const result = await obRun(
       run.vaultId,
-      async ({ page }, { path, label, eachItem }) => {
+      async ({ page }, { path, label, eachItem, names }) => {
         const { until, trusted } = page;
         const view = page.workbench({ path })!;
         const el = view.contentEl;
@@ -2229,11 +2229,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ].map((value) => value.textContent);
         const joined = { snippet: text("snippet"), result: text("result") };
         await input.click(details()!.querySelector("[data-part=insert]")!);
+        // The Preview renders the edit after a moment; a family name alone,
+        // not a full name, marks the render of the inserted snippet.
         const line = await until("the joined family names in the Preview", () =>
           [...preview().querySelectorAll("p")]
             .map((p) => p.textContent.trim())
             .find((p) => p.startsWith(joined.result)),
         );
+        const listed = (texts: string[]) =>
+          texts.includes("Personal") && texts.includes("Editor");
         await openFamily(eachItem);
         const loop = { snippet: text("snippet"), result: text("result") };
         await input.click(details()!.querySelector("[data-part=insert]")!);
@@ -2241,14 +2245,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const texts = [...preview().querySelectorAll("li")].map((item) =>
             item.textContent.trim(),
           );
-          return texts.length > 0 && texts;
+          return listed(texts) && texts;
         });
-        return { values, joined, line, loop, items };
+        // A Preview of an earlier case's loop may still list the full names;
+        // what stays are the lines this case's loop wrote.
+        return {
+          values,
+          joined,
+          line,
+          loop,
+          items: items.filter((item) => !names.includes(item)),
+        };
       },
       {
         path,
         label: run.m.workbench_view_fields(),
         eachItem: run.m.workbench_fields_details_form_loop(),
+        names: ALPHA_CREATORS,
       },
     );
     expect(result).toEqual({
