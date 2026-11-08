@@ -12,9 +12,10 @@
 # defaults file remain yours to judge.
 
 # Obsidian reads `---` in the note body as a separator line, so the reader keeps
-# YAML blocks and the table syntax that overlaps separators off. zotlit-cite.lua
-# reads the note's opening Properties; an -M option keeps its value over them.
-from: markdown+wikilinks_title_after_pipe-blank_before_blockquote-yaml_metadata_block-simple_tables-multiline_tables
+# YAML blocks and the table syntax that overlaps separators off. An opening `%`
+# line is body text, so Pandoc title blocks stay off too. zotlit-cite.lua reads
+# the note's opening Properties; an -M option keeps its value over them.
+from: markdown+wikilinks_title_after_pipe-blank_before_blockquote-pandoc_title_block-yaml_metadata_block-simple_tables-multiline_tables
 filters:
   - ${.}/zotlit-cite.lua
   - citeproc

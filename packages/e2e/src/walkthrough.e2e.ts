@@ -299,7 +299,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return result;
       },
       {
-        source: `${source}\n\n---\n*Text between separators*\n---\nAfter the separators.\n`,
+        source,
         confirm: m.pandoc_export_confirm(),
         done: m.notice_pandoc_export_done({
           file: "Export display.html",
@@ -324,6 +324,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(html).toContain("<strong>research draft</strong>");
     expect(html).toContain("<hr");
     expect(html).toContain("<em>Text between separators</em>");
+    expect(html).toContain("reference-section-title: Body text");
     expect(html).toContain("After the separators.");
     expect(html).toContain("This callout becomes a readable quotation.");
     expect(html).not.toContain("[!note]");

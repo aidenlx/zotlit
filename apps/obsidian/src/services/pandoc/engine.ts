@@ -207,10 +207,11 @@ export class CitationRequestSupersededError extends Error {
  * Without `blank_before_blockquote`, a `>` line starts a block quote directly
  * under a paragraph, as it does in Obsidian. Obsidian reads `---` in the body as
  * a thematic break, so YAML metadata blocks and the simple and multiline tables
- * that overlap that syntax stay off.
+ * that overlap that syntax stay off. An opening `%` line, such as an Obsidian
+ * `%%` comment, is body text, so Pandoc title blocks stay off too.
  */
 const MARKDOWN_READER =
-  "markdown+wikilinks_title_after_pipe-blank_before_blockquote-yaml_metadata_block-simple_tables-multiline_tables";
+  "markdown+wikilinks_title_after_pipe-blank_before_blockquote-pandoc_title_block-yaml_metadata_block-simple_tables-multiline_tables";
 
 const STYLE_FILE = "style.csl";
 const BIBLIOGRAPHY_FILE = "bibliography.json";
@@ -339,8 +340,7 @@ class PandocCitationEngine implements CitationEngine {
       : {};
     const { stdout } = await this.#convert({
       options: {
-        // Obsidian's opening %% comment is body text.
-        from: `${MARKDOWN_READER}-pandoc_title_block`,
+        from: MARKDOWN_READER,
         "metadata-files": Object.keys(metadataFiles),
         to: "json",
         standalone: false,
