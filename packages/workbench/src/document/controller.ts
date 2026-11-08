@@ -747,39 +747,6 @@ export class WorkbenchDocumentController {
     return true;
   }
 
-  /** Appends annotations on a new line; section repair shares the same undo step. */
-  insertAnnotationLoop(): {
-    repaired: boolean;
-    caret: number;
-  } {
-    const repaired = this.#problems.some(
-      ({ code }) => code === "missing-annotation-section",
-    );
-    const from = repaired ? this.#state.doc.length : this.sliceRange("note").to;
-    const prefix =
-      from > 0 && this.#state.doc.sliceString(from - 1, from) !== "\n"
-        ? "\n"
-        : "";
-    const document = repaired
-      ? parseLiteratureNoteTemplate(
-          `${this.#text}${prefix}${ANNOTATION_HEADER}\n`,
-        )
-      : this.document;
-    const snippet =
-      document?.manifest.language === "eta"
-        ? "<% for (const annotation of zt.annotations) { %>\n<%~ renderAnnotation(annotation) %>\n<% } %>\n"
-        : "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n";
-    this.dispatch({
-      changes: {
-        from,
-        insert: `${prefix}${snippet}${repaired ? `${ANNOTATION_HEADER}\n` : ""}`,
-      },
-      userEvent: "input.complete",
-      annotations: isolateHistory.of("full"),
-    });
-    return { repaired, caret: from + prefix.length + snippet.length };
-  }
-
   /**
    * Applies one Properties action — add, remove, reorder, change language,
    * change merge or key — as a targeted edit of the entry's own YAML lines, in

@@ -288,9 +288,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultPath: freshPath,
       tabLabel: run.m.workbench_tab_annotation(),
       beforeEdit: async () => {
+        // The tab opens on its lede, the one line that says where the
+        // template applies, beside the shared-template banner.
         await obRunUntil(
           freshId,
-          async ({ app }, { notePath, helpButtonLabel }) => {
+          async ({ app }, { notePath, lede, bannerText }) => {
             const view = (function () {
               const leaves = app.workspace.getLeavesOfType(
                 "zotlit-template-workbench",
@@ -303,154 +305,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ) ?? leaves[0]
               )?.view;
             })()!;
-            const help = view.contentEl.querySelector<HTMLElement>(
-              `button[aria-label=${JSON.stringify(helpButtonLabel)}]`,
-            );
-            if (!help) return false;
-            view.leaf.getContainer().focus();
-            help.focus();
-            return (
-              help === view.contentEl.ownerDocument.activeElement &&
-              help.getAttribute("aria-expanded") === "false"
-            );
-          },
-          { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
-          {
-            what: "the Template Workbench help button to take focus while collapsed",
-          },
-        );
-        await obRun(
-          freshId,
-          async ({ app, page }, { notePath, helpButtonLabel }) => {
-            const { press } = page;
-            const view = (function () {
-              const leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === notePath,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            press(
-              view.contentEl.querySelector<HTMLElement>(
-                `button[aria-label=${JSON.stringify(helpButtonLabel)}]`,
-              ),
-              "Help",
-            );
-          },
-          { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
-        );
-        await obRunUntil(
-          freshId,
-          async (
-            { app },
-            { notePath, helpSectionLabel, guideText, bannerText },
-          ) => {
-            const view = (function () {
-              const leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === notePath,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            const guide = view.contentEl.querySelector<HTMLElement>(
-              `section[aria-label=${JSON.stringify(helpSectionLabel)}]`,
+            const panel = view.contentEl.querySelector<HTMLElement>(
+              '[role="tabpanel"]:not([hidden])',
             );
             const source = Array.from(
               view.contentEl.querySelectorAll<CodeMirrorElement>(".cm-content"),
             ).find((element) => element.textContent.includes("[!note]"));
             return (
-              !!guide &&
-              guide.textContent.includes("[!quote]") &&
-              guide.textContent.includes(guideText) &&
+              !!panel?.firstElementChild?.textContent?.startsWith(lede) &&
               view.contentEl.textContent.includes(bannerText) &&
-              guide.getBoundingClientRect().height > 0 &&
-              source!.getBoundingClientRect().height > 0
+              !!source &&
+              source.getBoundingClientRect().height > 0
             );
           },
           {
             notePath: note.path!,
-            helpSectionLabel: run.m.workbench_annotation_help_title(),
-            guideText: run.m.workbench_annotation_help_finish_note(),
+            lede: run.m.workbench_annotation_lede(),
             bannerText: run.m.template_workbench_shared_annotation({
               name: run.m.settings_profile_default_name(),
             }),
           },
           {
-            what: "the Template Workbench guide section to render with its quote callout visible",
-          },
-        );
-        await obRun(
-          freshId,
-          async ({ app }, { notePath, helpSectionLabel }) => {
-            const view = (function () {
-              const leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === notePath,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            const guide = view.contentEl.querySelector<HTMLElement>(
-              `section[aria-label=${JSON.stringify(helpSectionLabel)}]`,
-            );
-            guide!.focus();
-            guide!.dispatchEvent(
-              new view.contentEl.ownerDocument.defaultView!.KeyboardEvent(
-                "keydown",
-                { key: "Escape", bubbles: true },
-              ),
-            );
-          },
-          {
-            notePath: note.path!,
-            helpSectionLabel: run.m.workbench_annotation_help_title(),
-          },
-        );
-        await obRunUntil(
-          freshId,
-          async ({ app }, { notePath, helpButtonLabel }) => {
-            const view = (function () {
-              const leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === notePath,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            const help = view.contentEl.querySelector<HTMLElement>(
-              `button[aria-label=${JSON.stringify(helpButtonLabel)}]`,
-            );
-            return (
-              help!.getAttribute("aria-expanded") === "false" &&
-              help === view.contentEl.ownerDocument.activeElement &&
-              Array.from(
-                view.contentEl.querySelectorAll<CodeMirrorElement>(
-                  ".cm-content",
-                ),
-              ).some((element) => element.textContent.includes("[!note]"))
-            );
-          },
-          { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
-          {
-            what: "the help button collapsed and focused with the note source visible",
+            what: "the Annotation tab to open on its lede with the note source visible",
           },
         );
       },

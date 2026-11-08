@@ -795,8 +795,7 @@ the handle reads the share drawn, and `ArrowDown` makes the Preview shorter
 at once: each step starts from what you see, as the menu's do. After `End`, the editor keeps at least 320 pixels of
 height: the toolbar, the tabs, the tab's one-line task and at least five
 lines of the note body show above the Preview. Scroll the editor to reach
-**Include annotations in the note** and its **Add to template** button; no
-part of the editor is cut off. In step 4, the Preview gets shorter first.
+the end of the note body; no part of the editor is cut off. In step 4, the Preview gets shorter first.
 
 ## Size the Preview from the pane menu
 
@@ -929,18 +928,27 @@ error**. The editor selects `{{ zt.title | no_such_filter }}`, and the Note
 tab stays chosen. A screen reader reads why the call fails after the
 selected call.
 
-## Open the annotation box and add the annotation loop
+## Open the annotation box
 
 1. In a tab narrower than 600 pixels, show the Preview, and choose
    "Ten Simple Rules for Better Figures".
-2. Select **Add to template** in "Include annotations in the note".
-3. Select **Edit format** on the annotation example under the new loop.
+2. At the end of the note body, type an annotation loop:
 
-Expected: in step 2 the loop is added at the end of the note body, the Note
-tab stays chosen, and the cursor is after the loop. In step 3 the Annotation
-tab opens with the cursor at the start of the annotation format. The Preview
-stays under the editor in both steps, and **Show preview** stays pressed. No
-Fields popover is open after either step. The web Workbench does the same steps.
+   ```liquid
+   {% for annotation in zt.annotations %}
+   {% render_annotation annotation %}
+   {% endfor %}
+   ```
+
+3. Select **Edit format** on the annotation example under the loop.
+
+Expected: in step 3 the Annotation tab opens with the cursor at the start of
+the annotation format. Above the format, the tab's one-line description and
+its **Annotation tutorial** link start at the same left edge and line height
+as the Note tab's description, and the editor does not move when you switch
+between the two tabs. The Preview stays under the editor in both steps, and
+**Show preview** stays pressed. No Fields popover is open after either step.
+The web Workbench does the same steps.
 
 ## Other document kinds
 
