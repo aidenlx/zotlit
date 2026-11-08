@@ -62,11 +62,33 @@ export function valueText(value: unknown): string {
   return text === "[object Object]" ? "" : text;
 }
 
-/** One property a list's records have, with its text for every item that has one. */
+/**
+ * Whether an item has a value for a property: anything but what Liquid
+ * reads as `blank`, that is `null`, `undefined`, `false`, or text that is
+ * empty or only spaces. A list snippet passes over an item without one, so
+ * the note shows no empty entry for it.
+ */
+export function hasValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === false) return false;
+  return typeof value !== "string" || value.trim() !== "";
+}
+
+/**
+ * The texts a list shows in its preview and its result: every item's text
+ * but an item without a value, or with no text of its own.
+ */
+export function shownTexts(values: readonly (string | null)[]): string[] {
+  return values.filter((text): text is string => text !== null && text !== "");
+}
+
+/** One property a list's records have, with its value for every item. */
 export interface ListProperty {
   readonly name: string;
-  /** Each item's value as text, in item order; an item with no text is left out. */
-  readonly values: readonly string[];
+  /**
+   * Each item's value as text, in item order: `null` for an item without a
+   * value, which the list's snippets pass over.
+   */
+  readonly values: readonly (string | null)[];
 }
 
 /** How a list reads in a note, which its row, its details and its snippets all show. */
@@ -78,7 +100,11 @@ export interface ListReading {
    * the items read as text, so a line shows the item itself.
    */
   readonly lineProperty: string | undefined;
-  /** Each item's line as text, in item order; an item with no text is left out. */
+  /**
+   * Each item's line as text, in item order. An item without a value for the
+   * line property is left out, as the loop passes over it; so is an item
+   * that reads as no text.
+   */
   readonly lines: readonly string[];
   /** Every property the list's records have, in the display tree's order. */
   readonly properties: readonly ListProperty[];
@@ -98,20 +124,18 @@ export function readList(list: readonly unknown[]): ListReading {
     ...new Set(records.flatMap((record) => Object.keys(record))),
   ].sort((a, b) => a.localeCompare(b));
   const lineProperty = readsAsText ? undefined : lineOf(names, records);
-  const texts = (values: readonly unknown[]) =>
-    values.map(valueText).filter((text) => text !== "");
+  const valuesOf = (name: string) =>
+    list.map((item) => {
+      const value = ownValue(item, name);
+      return hasValue(value) ? valueText(value) : null;
+    });
   return {
     readsAsText,
     lineProperty,
-    lines: texts(
-      lineProperty === undefined
-        ? list
-        : list.map((item) => ownValue(item, lineProperty)),
+    lines: shownTexts(
+      lineProperty === undefined ? list.map(valueText) : valuesOf(lineProperty),
     ),
-    properties: names.map((name) => ({
-      name,
-      values: texts(records.map((record) => ownValue(record, name))),
-    })),
+    properties: names.map((name) => ({ name, values: valuesOf(name) })),
   };
 }
 

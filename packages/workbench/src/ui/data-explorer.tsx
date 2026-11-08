@@ -234,11 +234,15 @@ export function DataExplorer({
     labels,
     query: tree.filterQuery,
   });
-  // A search that matches nothing says so to a screen reader in the panel.
+  // A search that matches nothing says so to a screen reader in the panel,
+  // for as long as it matches nothing: the sentence goes once the search
+  // matches again or is cleared.
   const noMatches =
     panelRows !== null && data !== null && filtering && sections.length === 0;
   useEffect(() => {
-    if (noMatches) setStatus(announceFields(m.workbench_fields_no_matches()));
+    const text = m.workbench_fields_no_matches();
+    if (noMatches) setStatus(announceFields(text));
+    else setStatus((last) => (last?.text === text ? null : last));
   }, [noMatches, setStatus, m]);
   const detailsSurface = useRef<HTMLElement>(null);
   const [openRow, setOpenRow] = useState<HTMLElement | null>(null);

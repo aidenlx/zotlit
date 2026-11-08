@@ -71,13 +71,18 @@ same outcome.
 ## Click outside the Fields popover
 
 1. Show the Preview in a wide tab. Select **Fields**.
-2. Select an empty place in the Preview, outside the popover.
+2. Select the "Note preview" heading of the Preview, outside the popover.
 3. Select **Fields**. Select the row above the editor that names the Item,
    away from **Choose item**.
+4. Select **Fields**. Select the view's title in the view header.
+5. Select **Fields**. Select the rendered note in the Preview.
 
 Expected: in step 1 the focus goes to the field search of the popover. Steps 2
-and 3 each close the popover, and the focus is then on the **Fields** view
-action. The web Workbench does step 2 with the same outcome.
+to 5 each close the popover. After steps 2, 3 and 4, which select a place
+that takes no focus, the focus is on the **Fields** view action, not lost to
+the page. After step 5 the focus is on the rendered note, which you selected,
+and `Tab` goes on from there. The web Workbench does step 2 with the same
+outcome.
 
 ## The editor and the Preview stay usable
 
@@ -182,13 +187,18 @@ In step 3, every section is closed again, as before the search.
 2. Type each of these in the field search, one at a time: `zt.title`,
    `zt.authors`, `authors.family`, `zt.citationKey`.
 3. Type `no such field`.
+4. Type `title` in place of it. Then type `no such field` again, and clear
+   the search.
 
 Expected: in step 2 each search keeps the field it names: **Title**,
 **Authors**, the `family` row under **Authors**, and **Citation key**. A
 search that reaches into a list, such as `authors.family`, opens that list on
 its matching row only. In step 3 the list reads "No matching fields. Clear
-the search to see all fields.", and a screen reader reads that sentence. The
-web Workbench does the same steps, with the same outcome.
+the search to see all fields.", and a screen reader reads that sentence. In
+step 4 the sentence goes from the list and from the panels' live region
+(`role="status"`) as soon as the search matches a field again, and as soon as
+the search is empty. The web Workbench does the same steps, with the same
+outcome.
 
 ## The rows of the Fields Panel
 
@@ -284,11 +294,18 @@ names in one line. Step 3 changes the snippet to
 lines, and the result to three lines that each start with `- `. Step 4
 pastes that loop, and **Copy** closes the details. Step 5 inserts the same
 loop, closes the popover, and the Preview shows each creator as its own list
-item. Step 6 lists each creator's family name, numbered. Step 7 inserts
-`{{ zt.creators | map: "family" | join: ", " }}`, then the loop with
-`- {{ creator.family }}`; the Preview shows the family names in one line,
-then one list item each. A field that is not a list, such as `title`, shows
-no form choice. The template path of `family` reads
+item. Step 6 lists the three creators, numbered: 1 "Personal", 2 "Editor",
+and 3 "Empty for this item", as ZotLit Research Collective is a one-field
+name with no family name. The result of **In one line** reads
+"Personal, Editor", and the result of **Each item** has two lines,
+"- Personal" and "- Editor". Step 7 inserts
+`{{ zt.creators | map: "family" | where_exp: "value", "value != blank" | join: ", " }}`,
+then the loop
+`{% for creator in zt.creators %}{% if creator.family != blank %}` with
+`- {{ creator.family }}{% endif %}{% endfor %}`; the Preview shows exactly
+the two results: "Personal, Editor" with no separator after it, then two
+list items and no empty third one. A field that is not a list, such as
+`title`, shows no form choice. The template path of `family` reads
 "zt.creators → each item's family".
 
 ## A list whose items do not read as text
@@ -408,10 +425,12 @@ Expected: in step 2 the details open in a bar of fixed height at the foot of
 the Fields popover, above the line "Select a row or press Enter: details ·
 Ctrl+Enter: insert" ("Command+Enter" on macOS). The bar shows the details of the last
 row you selected, and the rows above it do not move. In step 3 the bar stays
-where it is. In step 4 the bar takes no more than half of the panel, so the
-field list keeps at least one whole row, and the bar scrolls to show
-**In your note** and its snippet. The web Workbench does the same steps, with
-the same outcome.
+where it is. In step 4 the bar takes no more than half of the panel and
+gives way to the field list: the list keeps the whole **Title** row under
+the sticky "Common fields" header, not a cut strip of it. The bar opens on
+**In your note**, with `{{ zt.title }}` and its result above **Insert** and
+**Copy**; the field's name and value are above it, and the bar scrolls to
+them. The web Workbench does the same steps, with the same outcome.
 
 ## A field's text follows the place it goes to
 
@@ -441,7 +460,10 @@ popover open with the focus in the field search, and shows the notice
 "Copied Title.". Step 3 writes `{{ zt.DOI }}` at the cursor, closes the
 details and the popover, gives the editor the focus after the inserted text,
 and shows the notice "Inserted DOI.". A screen reader reads both messages,
-also after the popover closed, from the panels' live region.
+also after the popover closed, from the panels' live region. In the web
+Workbench, the notice "Copied Title." stands at the bottom, beside the Fields
+popover, and leaves the popover's foot (the key hint line) in view, in a
+window 1400 pixels wide and in one 560 pixels wide.
 
 ## Choose a field with the keyboard
 

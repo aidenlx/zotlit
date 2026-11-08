@@ -17,7 +17,7 @@ import { useWorkbenchMessages } from "./messages";
 import type { ViewSize } from "./panel-layout";
 import { useIcon, useParts } from "./theme";
 
-import { formatPath, isList, listItemTexts } from "#/explorer/index";
+import { formatPath, isList, listItemValues } from "#/explorer/index";
 
 /**
  * The narrowest view, in pixels, that shows a field's details in a popover
@@ -85,6 +85,21 @@ export function FieldDetails({
   const titleId = useUniqueId();
   const panel = useFieldsPanelRows()?.panel.current ?? null;
   const Popover = host?.fieldsAction?.details;
+  const bar = useRef<HTMLDivElement>(null);
+  // A bar too short for the details, such as at 200% zoom, opens on what the
+  // note gets: "In your note" and its snippet stand at its top, under the
+  // field's row the list keeps in view, and the rest scrolls.
+  const field = content.node.key;
+  useLayoutEffect(() => {
+    const box = bar.current;
+    if (!box || box.scrollHeight <= box.clientHeight) return;
+    const item = box.querySelector<HTMLElement>(
+      "[data-part=item][data-state=note]",
+    );
+    if (!item) return;
+    box.scrollTop +=
+      item.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  }, [field]);
   if (placement === "popover" && Popover && row && panel)
     return (
       <Popover
@@ -102,7 +117,7 @@ export function FieldDetails({
       </Popover>
     );
   return (
-    <div {...part("details-bar")}>
+    <div ref={bar} {...part("details-bar")}>
       <DetailsBody
         {...content}
         titleId={titleId}
@@ -147,8 +162,9 @@ function DetailsBody({
   const formsId = useUniqueId();
   const { result } = form;
   const empty = m.workbench_fields_empty();
-  // A list shows its values one per line, numbered.
-  const values = isList(node) ? listItemTexts(node) : [];
+  // A list shows its values one per line, numbered: every item, an item
+  // without a value marked as empty.
+  const values = isList(node) ? listItemValues(node) : [];
   const reasonId = useUniqueId();
   const section = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -215,7 +231,14 @@ function DetailsBody({
           {values.map((text, index) => (
             <li key={index} {...part("values-item")}>
               <span {...part("values-index")}>{index + 1}</span>
-              <span {...part("values-text")}>{text}</span>
+              <span
+                {...part(
+                  "values-text",
+                  text === null || text === "" ? "empty" : undefined,
+                )}
+              >
+                {text === null || text === "" ? empty : text}
+              </span>
             </li>
           ))}
         </ol>

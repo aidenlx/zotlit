@@ -30,7 +30,9 @@ function ToastViewport({ className, ...props }: ToastPrimitive.Viewport.Props) {
     <ToastPrimitive.Viewport
       data-slot="toast-viewport"
       className={cn(
-        "pointer-events-none fixed inset-x-4 bottom-4 z-50 mx-auto w-auto max-w-sm outline-none sm:start-auto sm:end-4 sm:mx-0 sm:w-full",
+        // A page can move the end edge with `--toast-end`, as the Workbench
+        // does to keep notices clear of its Fields popover.
+        "pointer-events-none fixed start-4 end-[var(--toast-end,1rem)] bottom-4 z-50 ms-auto w-auto max-w-sm outline-none",
         className,
       )}
       {...props}

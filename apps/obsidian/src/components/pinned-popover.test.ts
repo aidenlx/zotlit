@@ -176,3 +176,43 @@ it("lets the page hear its page keys, which no hotkey behind it takes", async ()
   expect(pressed.defaultPrevented).toBe(false);
   expect(heard).toHaveBeenCalledTimes(1);
 });
+
+/**
+ * A pointer press outside the popover on `target`, as the browser runs it:
+ * the press, then the focus change its mousedown makes, which leaves no
+ * element focused on a place that takes no focus.
+ */
+async function pressOutside(target: HTMLElement) {
+  await act(() => {
+    target.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+    );
+    if (target.tabIndex >= 0) target.focus();
+    else (document.activeElement as HTMLElement | null)?.blur();
+  });
+  await new Promise((resolve) => target.win.setTimeout(resolve, 0));
+}
+
+// #1964: a press outside returns focus to the action, unless it gave focus
+// to the place it pressed.
+it("closes on a press outside, and hands focus to its anchor when the press focused nothing", async () => {
+  const { anchor, handle, shell } = mount();
+  await act(() => handle.current!.show());
+  shell()!.querySelector("input")!.focus();
+  const heading = document.body.appendChild(document.createElement("h2"));
+  await pressOutside(heading);
+  expect(shell()).toBeNull();
+  expect(document.activeElement).toBe(anchor.current);
+  heading.remove();
+});
+
+it("closes on a press outside, and leaves focus on the focusable place pressed", async () => {
+  const { handle, shell } = mount();
+  await act(() => handle.current!.show());
+  shell()!.querySelector("input")!.focus();
+  const other = document.body.appendChild(document.createElement("button"));
+  await pressOutside(other);
+  expect(shell()).toBeNull();
+  expect(document.activeElement).toBe(other);
+  other.remove();
+});

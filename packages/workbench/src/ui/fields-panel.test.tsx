@@ -886,8 +886,36 @@ describe("a list field", () => {
       shiftKey: true,
     });
     expect(page.texts).toEqual([
-      '{{ zt.authors | map: "family" | join: ", " }}',
+      '{{ zt.authors | map: "family" | where_exp: "value", "value != blank" | join: ", " }}',
     ]);
+  });
+
+  // Walkthrough of spec #1962 (F3): a creator with a one-field name has no
+  // family name. The details list every item and mark that one; the result
+  // passes over it, as the snippet does.
+  it("lists every item of a list property in its details, an item without a value marked", () => {
+    using page = open({
+      ...lists,
+      data: {
+        ...LISTS,
+        authors: [
+          ...LISTS.authors,
+          withText(
+            { family: null, given: null, literal: "Research Collective" },
+            "Research Collective",
+          ),
+        ],
+      },
+    });
+    page.pressAction();
+    fireEvent.click(toggle("authors")!);
+    const region = openDetails("authors[].family", "family");
+    expect(
+      within(region.getByRole("list"))
+        .getAllByRole("listitem")
+        .map((value) => value.textContent),
+    ).toEqual(["1Ahrens", "2Luhmann", "3Empty for this item"]);
+    expect(region.getByText("Ahrens, Luhmann")).toBeTruthy();
   });
 
   it("offers each item alone where the items do not read as text, and the row's Insert uses it", () => {
@@ -902,7 +930,7 @@ describe("a list field", () => {
       { shiftKey: true },
     );
     expect(page.texts).toEqual([
-      "{% for attachment in zt.attachments %}\n- {{ attachment.filename }}{% endfor %}",
+      "{% for attachment in zt.attachments %}{% if attachment.filename != blank %}\n- {{ attachment.filename }}{% endif %}{% endfor %}",
     ]);
   });
 
@@ -1188,6 +1216,19 @@ describe("the Fields Panel's announcements", () => {
     page.pressAction();
     fireEvent.change(search(), { target: { value: "no such field" } });
     expect(announced()).toContain("No matching fields.");
+  });
+
+  // Walkthrough of spec #1962 (N2): the sentence goes once the search
+  // matches again, or is cleared.
+  it.each([
+    ["matches again", "title"],
+    ["is cleared", ""],
+  ])("stop saying that a search matches nothing once it %s", (_, query) => {
+    using page = open();
+    page.pressAction();
+    fireEvent.change(search(), { target: { value: "no such field" } });
+    fireEvent.change(search(), { target: { value: query } });
+    expect(announced()).not.toContain("No matching fields.");
   });
 });
 
