@@ -39,7 +39,7 @@ import {
   Fragment,
   createContext,
   useContext,
-  useEffect,
+  useLayoutEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -318,7 +318,10 @@ export function PinnedPopover({
   const escape = useRef(onEscape);
   escape.current = onEscape;
 
-  useEffect(() => {
+  // A layout effect, so its cleanup is in place before the page paints: a
+  // popover shown as it mounts (a field's details) and unmounted in the same
+  // frame, before passive effects run, still hides with its tree.
+  useLayoutEffect(() => {
     enclosing?.children.add(node);
     return () => {
       enclosing?.children.delete(node);
