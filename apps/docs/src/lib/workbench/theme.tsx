@@ -553,15 +553,16 @@ export const WEB_THEME: WorkbenchTheme = {
       title: "truncate text-sm font-semibold",
       close: cn(historyButton, "shrink-0"),
       value:
-        "max-h-40 overflow-auto rounded-md border border-fd-border p-2 whitespace-pre-wrap [overflow-wrap:anywhere] text-emerald-700 dark:text-emerald-400 data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
+        "in-data-[state=bar]:order-2 max-h-40 overflow-auto rounded-md border border-fd-border p-2 whitespace-pre-wrap [overflow-wrap:anywhere] text-emerald-700 dark:text-emerald-400 data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
       /** A list's values, one per line and numbered. */
       values:
-        "flex max-h-40 flex-col gap-1 overflow-auto rounded-md border border-fd-border p-2 text-emerald-700 dark:text-emerald-400",
+        "in-data-[state=bar]:order-2 flex max-h-40 flex-col gap-1 overflow-auto rounded-md border border-fd-border p-2 text-emerald-700 dark:text-emerald-400",
       "values-item": "flex gap-2 [overflow-wrap:anywhere]",
       "values-index":
         "w-4 shrink-0 text-end tabular-nums text-fd-muted-foreground",
       "values-text": "min-w-0 whitespace-pre-wrap",
-      item: "flex flex-col gap-0.5",
+      // The bar shows what the note gets right under its heading.
+      item: "flex flex-col gap-0.5 in-data-[state=bar]:data-[state=path]:order-3",
       "item-header": "flex flex-wrap items-center gap-x-2 gap-y-1",
       label: "text-fd-muted-foreground",
       forms: "ms-auto flex flex-wrap gap-x-3",
@@ -574,7 +575,7 @@ export const WEB_THEME: WorkbenchTheme = {
         "mt-0.5 flex shrink-0 text-fd-muted-foreground [&_svg]:size-3",
       /** In the bar they stay in view at its foot while the details scroll. */
       actions:
-        "flex flex-wrap gap-2 in-data-[state=bar]:sticky in-data-[state=bar]:bottom-0 in-data-[state=bar]:-mx-2 in-data-[state=bar]:bg-fd-background in-data-[state=bar]:px-2 in-data-[state=bar]:py-2",
+        "flex flex-wrap gap-2 in-data-[state=bar]:order-4 in-data-[state=bar]:sticky in-data-[state=bar]:bottom-0 in-data-[state=bar]:-mx-2 in-data-[state=bar]:bg-fd-background in-data-[state=bar]:px-2 in-data-[state=bar]:py-2",
       insert: buttonVariants({ size: "xs" }),
       copy: buttonVariants({ variant: "outline", size: "xs" }),
       reason: "text-fd-muted-foreground",

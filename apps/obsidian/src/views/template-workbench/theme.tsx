@@ -525,15 +525,19 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       title: "zt:truncate zt:font-semibold",
       close: "clickable-icon zt:shrink-0",
       value:
-        "zt:max-h-40 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-muted-foreground zt:data-[state=empty]:italic",
+        "zt:in-data-[state=bar]:order-2 zt:max-h-40 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-muted-foreground zt:data-[state=empty]:italic",
       /** A list's values, one per line and numbered. */
       values:
-        "zt:flex zt:max-h-40 zt:flex-col zt:gap-1 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:text-green",
+        "zt:in-data-[state=bar]:order-2 zt:flex zt:max-h-40 zt:flex-col zt:gap-1 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:text-green",
       "values-item": "zt:flex zt:gap-2 zt:[overflow-wrap:anywhere]",
       "values-index":
         "zt:w-4 zt:shrink-0 zt:text-end zt:text-xs zt:leading-5 zt:tabular-nums zt:text-muted-foreground",
       "values-text": "zt:min-w-0 zt:whitespace-pre-wrap",
-      item: "zt:flex zt:flex-col zt:gap-0.5",
+      /**
+       * The bar shows what the note gets right under its heading, so the
+       * snippet stays in view in a short bar; the value and the path follow.
+       */
+      item: "zt:flex zt:flex-col zt:gap-0.5 zt:in-data-[state=bar]:data-[state=path]:order-3",
       "item-header":
         "zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1",
       label: "zt:text-xs zt:text-muted-foreground",
@@ -548,7 +552,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:mt-0.5 zt:flex zt:shrink-0 zt:text-faint zt:[&_svg]:size-3",
       /** In the bar they stay in view at its foot while the details scroll. */
       actions:
-        "zt:flex zt:flex-wrap zt:gap-2 zt:in-data-[state=bar]:sticky zt:in-data-[state=bar]:bottom-0 zt:in-data-[state=bar]:-mx-2 zt:in-data-[state=bar]:bg-(--background-primary) zt:in-data-[state=bar]:px-2 zt:in-data-[state=bar]:py-2",
+        "zt:flex zt:flex-wrap zt:gap-2 zt:in-data-[state=bar]:order-4 zt:in-data-[state=bar]:sticky zt:in-data-[state=bar]:bottom-0 zt:in-data-[state=bar]:-mx-2 zt:in-data-[state=bar]:bg-(--background-primary) zt:in-data-[state=bar]:px-2 zt:in-data-[state=bar]:py-2",
       insert: "mod-cta zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
       copy: "zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
       reason: "zt:text-xs zt:text-muted-foreground",

@@ -205,7 +205,7 @@ function DetailsBody({
           {value === "" ? empty : value}
         </p>
       )}
-      <div {...part("item")}>
+      <div {...part("item", "path")}>
         <span {...part("label")}>{m.workbench_fields_details_path()}</span>
         <code {...part("path")}>
           {node.kind === "list-property"
@@ -216,7 +216,7 @@ function DetailsBody({
             : formatPath(node.path, "zt")}
         </code>
       </div>
-      <div {...part("item")}>
+      <div {...part("item", "note")}>
         <div {...part("item-header")}>
           <span id={formsId} {...part("label")}>
             {m.workbench_fields_details_in_note()}
