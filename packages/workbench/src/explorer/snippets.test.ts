@@ -399,3 +399,52 @@ function resultShape(): { authors: DisplayNode; family: DisplayNode } {
   if (authors?.kind !== "value" || !authors.children) throw new Error("shape");
   return { authors, family: authors.children[0]! };
 }
+
+// Final review of spec #1962 (A2): the row preview, the details values and
+// the snippet result read a list by one rule.
+describe("a list reads the same in its row and in its result", () => {
+  const shape = (data: Record<string, unknown>) => {
+    const [list] = buildDisplayTree(data, {
+      expanded: new Set(Object.keys(data)),
+      lists: "shape",
+    });
+    if (list?.kind !== "value") throw new Error("list");
+    return list;
+  };
+
+  it("leaves out an item whose line has no text of its own", () => {
+    const list = shape({
+      files: [{ meta: { size: 1 } }, { meta: withText({}, "Draft") }],
+    });
+    expect(list.preview).toBe("Draft");
+    expect(snippetResult(list, "loop")).toBe("- Draft");
+  });
+
+  it("reads a helper on the line by what it returns", () => {
+    const list = shape({
+      files: [{ name: () => "a.pdf" }, { name: () => "b.pdf" }],
+    });
+    expect(list.preview).toBe("a.pdf, b.pdf");
+    expect(snippetResult(list, "loop")).toBe("- a.pdf\n- b.pdf");
+  });
+
+  it("links a backlink in each line of a list property's loop", () => {
+    const list = shape({
+      annotations: [
+        { backlink: "zotero://open/1", text: "One" },
+        { backlink: "zotero://open/2", text: "Two" },
+      ],
+    });
+    const backlink = list.children!.find((node) => node.label === "backlink")!;
+    expect(snippetKindsFor(backlink)).toEqual(["loop"]);
+    expect(renderSnippet(backlink, "liquid", "loop")).toBe(
+      "{% for annotation in zt.annotations %}\n- [Zotero]({{ annotation.backlink }}){% endfor %}",
+    );
+    expect(renderSnippet(backlink, "eta", "loop")).toBe(
+      "<% for (const annotation of zt.annotations) { %>\n- [Zotero](<%= annotation.backlink %>)<% } %>",
+    );
+    expect(snippetResult(backlink, "loop")).toBe(
+      "- [Zotero](zotero://open/1)\n- [Zotero](zotero://open/2)",
+    );
+  });
+});

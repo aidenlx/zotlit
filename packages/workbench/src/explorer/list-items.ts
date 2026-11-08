@@ -1,5 +1,8 @@
 // How a list's items read in a note: the one source for the list preview, the list shape and the list snippets.
 
+import { inertPlaceholderReason } from "./inert-placeholder";
+import { coerceToString } from "./string-coercion";
+
 /** True for an object literal or a null-prototype record, as opposed to a class instance such as a Temporal date. */
 export function isPlainObject(value: object): boolean {
   const proto = Object.getPrototypeOf(value);
@@ -11,49 +14,104 @@ export function isPlainObject(value: object): boolean {
  * its own `toString` (creators, tags, collections), or a class instance such
  * as a date. A plain record without one prints `[object Object]`.
  */
-export function itemReadsAsText(item: unknown): boolean {
+function itemReadsAsText(item: unknown): boolean {
   if (item === null || item === undefined) return false;
   if (typeof item !== "object") return true;
   if (Array.isArray(item)) return false;
   return Object.hasOwn(item, "toString") || !isPlainObject(item);
 }
 
-/** True when every item reads as text, so the list joins into one meaningful line. An empty list counts, as its item shape is unknown. */
-export function listReadsAsText(list: readonly unknown[]): boolean {
-  return list.every(itemReadsAsText);
+/** Evaluate a helper with no arguments; `null` on throw, or a null/undefined result. */
+export function evaluateHelper(
+  fn: (...args: unknown[]) => unknown,
+): string | null {
+  try {
+    const result = fn();
+    return result == null ? null : coerceToString(result);
+  } catch {
+    return null;
+  }
 }
 
-/** The plain records among a list's items. */
-export function listRecords(list: readonly unknown[]): object[] {
-  return list.filter(
+/**
+ * One value as the text a note shows: a helper's zero-argument result, a
+ * record's own `toString`; empty for nothing, an inert helper, or a record
+ * with no text of its own.
+ */
+export function valueText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "function") {
+    if (inertPlaceholderReason(value) !== undefined) return "";
+    return evaluateHelper(value as (...args: unknown[]) => unknown) ?? "";
+  }
+  if (typeof value !== "object") return coerceToString(value);
+  if (!itemReadsAsText(value)) return "";
+  const text = coerceToString(value);
+  return text === "[object Object]" ? "" : text;
+}
+
+/** One property a list's records have, with its text for every item that has one. */
+export interface ListProperty {
+  readonly name: string;
+  /** Each item's value as text, in item order; an item with no text is left out. */
+  readonly values: readonly string[];
+}
+
+/** How a list reads in a note, which its row, its details and its snippets all show. */
+export interface ListReading {
+  /** Every item reads as text, so the list joins into one meaningful line. An empty list counts, as its item shape is unknown. */
+  readonly readsAsText: boolean;
+  /**
+   * The property one line of the list shows for each item: `undefined` when
+   * the items read as text, so a line shows the item itself.
+   */
+  readonly lineProperty: string | undefined;
+  /** Each item's line as text, in item order; an item with no text is left out. */
+  readonly lines: readonly string[];
+  /** Every property the list's records have, in the display tree's order. */
+  readonly properties: readonly ListProperty[];
+}
+
+/** How `list` reads in a note. */
+export function readList(list: readonly unknown[]): ListReading {
+  const readsAsText = list.every(itemReadsAsText);
+  const records = list.filter(
     (item): item is object =>
       item !== null &&
       typeof item === "object" &&
       !Array.isArray(item) &&
       isPlainObject(item),
   );
-}
-
-/** Every property the list's records have, in the display tree's order. */
-export function listPropertyNames(list: readonly unknown[]): string[] {
-  const names = new Set<string>();
-  for (const record of listRecords(list))
-    for (const name of Object.keys(record)) names.add(name);
-  return [...names].sort((a, b) => a.localeCompare(b));
+  const names = [
+    ...new Set(records.flatMap((record) => Object.keys(record))),
+  ].sort((a, b) => a.localeCompare(b));
+  const lineProperty = readsAsText ? undefined : lineOf(names, records);
+  const texts = (values: readonly unknown[]) =>
+    values.map(valueText).filter((text) => text !== "");
+  return {
+    readsAsText,
+    lineProperty,
+    lines: texts(
+      lineProperty === undefined
+        ? list
+        : list.map((item) => ownValue(item, lineProperty)),
+    ),
+    properties: names.map((name) => ({
+      name,
+      values: texts(records.map((record) => ownValue(record, name))),
+    })),
+  };
 }
 
 /**
- * The property one line of a list shows for each item, in the preview and in
- * the loop snippet alike: `undefined` when the items read as text, so a line
- * shows the item itself. Else the first property, in the display tree's
- * order, that some item has a value for and that reads as text for every item
- * that has one; then the first that reads as text for some item; then the
- * first property the records have.
+ * The first property, in `names` order, that some record has a value for
+ * and that reads as text for every record that has one; then the first
+ * that reads as text for some record; then the first property.
  */
-export function listLineProperty(list: readonly unknown[]): string | undefined {
-  if (listReadsAsText(list)) return undefined;
-  const names = listPropertyNames(list);
-  const records = listRecords(list);
+function lineOf(
+  names: readonly string[],
+  records: readonly object[],
+): string | undefined {
   const values = (name: string) =>
     records
       .map((record) => ownValue(record, name))
@@ -70,8 +128,9 @@ export function listLineProperty(list: readonly unknown[]): string | undefined {
   );
 }
 
-/** A record's own value for `name`; an unread getter counts as no value, as the tree leaves it unread. */
-function ownValue(record: object, name: string): unknown {
-  const descriptor = Object.getOwnPropertyDescriptor(record, name);
+/** An item's own value for `name`; an unread getter counts as no value, as the tree leaves it unread. */
+function ownValue(item: unknown, name: string): unknown {
+  if (item === null || typeof item !== "object") return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(item, name);
   return descriptor && !descriptor.get ? descriptor.value : undefined;
 }

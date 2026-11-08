@@ -3,13 +3,7 @@
 import { formatAccessorPath, memberAccessor } from "./accessor-path";
 import type { TemplatePathSegment } from "./accessor-path";
 import { inertPlaceholderReason } from "./inert-placeholder";
-import {
-  isPlainObject,
-  itemReadsAsText,
-  listLineProperty,
-  listPropertyNames,
-  listRecords,
-} from "./list-items";
+import { evaluateHelper, isPlainObject, readList } from "./list-items";
 import { coerceToString } from "./string-coercion";
 
 export type PathSegment = TemplatePathSegment;
@@ -255,7 +249,7 @@ function classifyValue(
     : Object.keys(container).length;
   const expandable =
     walk.lists === "shape" && Array.isArray(container)
-      ? listPropertyNames(container).length > 0
+      ? readList(container).properties.length > 0
       : size > 0;
   const preview = containerPreview(container);
 
@@ -307,15 +301,7 @@ export function previewLine(text: string): string {
 function containerPreview(value: object): string | undefined {
   if (Array.isArray(value)) {
     if (value.length === 0) return undefined;
-    const line = listLineProperty(value);
-    return previewLine(
-      value
-        .map((item: unknown) =>
-          textOf(line === undefined ? item : propertyOf(item, line)),
-        )
-        .filter((text) => text !== "")
-        .join(", "),
-    );
+    return previewLine(readList(value).lines.join(", "));
   }
   if (!Object.hasOwn(value, "toString")) return undefined;
   const rendered = previewLine(coerceToString(value));
@@ -323,54 +309,23 @@ function containerPreview(value: object): string | undefined {
   return rendered;
 }
 
-/** An item's own value for `key`; an unread getter stays unread, as the tree leaves it. */
-function propertyOf(item: unknown, key: string): unknown {
-  if (item === null || typeof item !== "object") return undefined;
-  const desc = Object.getOwnPropertyDescriptor(item, key);
-  if (!desc || desc.get) return undefined;
-  return desc.value;
-}
-
-/**
- * One value as the text a note shows: a helper's zero-argument result, a
- * record's own `toString`; empty for nothing, an inert helper, or a record
- * with no text of its own.
- */
-function textOf(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "function") {
-    if (inertPlaceholderReason(value) !== undefined) return "";
-    return evaluateHelper(value as (...args: unknown[]) => unknown) ?? "";
-  }
-  if (typeof value !== "object") return coerceToString(value);
-  if (!itemReadsAsText(value)) return "";
-  const text = coerceToString(value);
-  return text === "[object Object]" ? "" : text;
-}
-
 /** The shape view of a list: one node for each property its records have. */
 function listProperties(
   list: readonly unknown[],
   listPath: readonly PathSegment[],
 ): ListPropertyNode[] {
-  const records = listRecords(list);
   const listKey = formatPath(listPath);
-  return listPropertyNames(list).map((property) => {
-    const values = records
-      .map((record) => textOf(propertyOf(record, property)))
-      .filter((text) => text !== "");
-    return {
-      kind: "list-property",
-      path: [...listPath, property],
-      // `[]` marks the step over every item, as in `authors[].family`.
-      key: `${listKey}[]${memberAccessor(property)}`,
-      label: property,
-      list: listPath,
-      property,
-      values,
-      preview: previewLine(values.join(", ")),
-    };
-  });
+  return readList(list).properties.map(({ name, values }) => ({
+    kind: "list-property",
+    path: [...listPath, name],
+    // `[]` marks the step over every item, as in `authors[].family`.
+    key: `${listKey}[]${memberAccessor(name)}`,
+    label: name,
+    list: listPath,
+    property: name,
+    values,
+    preview: previewLine(values.join(", ")),
+  }));
 }
 
 /** Labels of the template contract's `TemplateLink`/`FallibleTemplateLink` helpers, which all share the `(alias?, subpath?)` signature. */
@@ -387,16 +342,6 @@ function describeSignature(
   if (LINK_HELPER_SIGNATURE_HINTS.has(label)) return "ƒ(alias?, subpath?)";
   const n = fn.length;
   return n === 0 ? "ƒ()" : `ƒ(${Array(n).fill("·").join(", ")})`;
-}
-
-/** Evaluate a helper with no arguments; `null` on throw, or a null/undefined result. */
-function evaluateHelper(fn: (...args: unknown[]) => unknown): string | null {
-  try {
-    const result = fn();
-    return result == null ? null : coerceToString(result);
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -577,12 +522,11 @@ function filterNode(
       ? filterChildren(container, path, ctx)
       : [];
   // A list of plain values has no sub-nodes, so it matches on its items.
+  const reading = shape ? readList(container as unknown[]) : null;
   const itemsMatch =
-    shape &&
-    listPropertyNames(container as unknown[]).length === 0 &&
-    (container as unknown[]).some((item) =>
-      textOf(item).toLowerCase().includes(ctx.lowerQuery),
-    );
+    reading !== null &&
+    reading.properties.length === 0 &&
+    reading.lines.some((line) => line.toLowerCase().includes(ctx.lowerQuery));
   if (!labelMatches && !itemsMatch && children.length === 0) return null;
   if (labelMatches || itemsMatch) ctx.matchedKeys.add(key);
 
