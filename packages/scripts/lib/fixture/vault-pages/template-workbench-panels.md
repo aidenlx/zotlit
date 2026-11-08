@@ -281,10 +281,13 @@ no form choice. The template path of `family` reads
 
 Expected: in step 2, the details offer **Each item** alone, already chosen,
 because a cited item is a record with no text of its own; **In one line**
-is not offered. The snippet is `{% for item in zt.items %}` and
-`- {{ item.abstract }}{% endfor %}`: one list line per item, which shows the
-item's first property. The cited paper has no abstract, so the result reads
-"Empty for this item". **Insert field** on the row inserts the same loop.
+is not offered. The row and the snippet show the first property, in the
+rows' order, that has a value and reads as text: the snippet is
+`{% for item in zt.items %}` and `- {{ item.citationKey }}{% endfor %}`, and
+the result is "- ioannidisWhyMost2005". The empty `abstract` is passed
+over. **Insert field** on the row inserts the same loop. **Citation items**
+offers **Each item** alone too; its loop passes over the cited `item`, a
+record, and the empty `label`, and shows `citation.labelShort`, "p.".
 In step 3, the row opens to one row for each property of a cited item, such
 as `title` with "Why Most Published Research Findings Are False"; a property
 the item has no value for, such as `DOI`, reads "Empty for this item".
