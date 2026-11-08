@@ -6,7 +6,7 @@
 // theme draws the parts and names the custom properties that carry each
 // drawn size.
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
@@ -180,6 +180,8 @@ function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
     panelsUpdate(change);
   };
   const drag = useRef<{ from: PointerEvent; size: number } | null>(null);
+  // The handle says it is dragged, so the host can draw it as held.
+  const [dragging, setDragging] = useState(false);
   const dragged = (event: PointerEvent<HTMLDivElement>) => {
     const start = drag.current;
     return start
@@ -189,9 +191,11 @@ function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
   const end = (event: PointerEvent<HTMLDivElement>) => {
     const next = dragged(event);
     drag.current = null;
+    setDragging(false);
     if (next !== null) update(sizing.write(next));
   };
   return {
+    "data-dragging": dragging ? "" : undefined,
     onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
       const { grow, shrink } = sizing.keys(event.currentTarget);
       const step = sizing.step(event);
@@ -217,6 +221,7 @@ function useSizing(sizing: Sizing, region: RefObject<HTMLElement | null>) {
         from: event,
         size: sizing.read(registry.get(model.panels)),
       };
+      setDragging(true);
     },
     onPointerMove(event: PointerEvent<HTMLDivElement>) {
       const next = dragged(event);
