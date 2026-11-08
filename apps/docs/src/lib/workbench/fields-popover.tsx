@@ -59,11 +59,16 @@ export function webFieldsAction(
         <Popover
           open={open}
           onOpenChange={(next, { reason, event }) => {
-            // A press on the action is the action's own toggle.
+            // A press on the action is the action's own toggle: the press
+            // itself, and the focus it moves there from the popover first.
+            const to =
+              reason === "focus-out" && event instanceof FocusEvent
+                ? event.relatedTarget
+                : reason === "outside-press"
+                  ? event.target
+                  : null;
             const onAction =
-              reason === "outside-press" &&
-              event.target instanceof Node &&
-              anchor.current?.contains(event.target) === true;
+              to instanceof Node && anchor.current?.contains(to) === true;
             // The panel takes Escape first: the details, then the search.
             if (!next && reason === "escape-key" && onEscape()) return;
             if (!next && !onAction) onClose();

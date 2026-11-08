@@ -29,6 +29,31 @@ const action = (host: HTMLElement, label: string) =>
     (button) => button.textContent === label,
   )!;
 
+/**
+ * A pointer press on `element` as a browser runs it: the pointer and mouse
+ * events, focus moving to a focusable target, and, in a later task, the
+ * release and the click.
+ */
+const pointerPress = async (element: HTMLElement) => {
+  const fire = (type: string) =>
+    element.dispatchEvent(
+      new (type.startsWith("pointer") ? PointerEvent : MouseEvent)(type, {
+        bubbles: true,
+        button: 0,
+      }),
+    );
+  await act(async () => {
+    fire("pointerdown");
+    fire("mousedown");
+    if (element.tabIndex >= 0) element.focus();
+  });
+  act(() => {
+    fire("pointerup");
+    fire("mouseup");
+    element.click();
+  });
+};
+
 const press = (element: HTMLElement, key: string) =>
   act(() => {
     element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
@@ -170,7 +195,8 @@ it.each([320, 560, 760, 960, 1200])(
     // A popover, not a modal: the editor and the Preview stay in reach.
     expect(popover()!.getAttribute("aria-modal")).not.toBe("true");
     expect(page.host.querySelector("[inert]")).toBeNull();
-    page.press(m.workbench_view_fields());
+    // The second press moves focus from the search to the action first.
+    await pointerPress(fields);
     await page.settle();
     expect(popover()).toBeNull();
     expect(fields.getAttribute("aria-expanded")).toBe("false");
