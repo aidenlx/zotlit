@@ -140,13 +140,15 @@ export function Explorer({
       ) : (
         <>
           {/* In a Workbench panel, the view's item row names the Item and
-              holds its chooser, and the sections button trails the search. */}
+              holds its chooser, and the sections button trails the search.
+              In a sidebar, the caption's own padding and the explorer's top
+              padding space the bar from the explorer. */}
           {(anchor || placement === "sidebar") && (
             <div
               className={
                 anchor
                   ? "zt:flex zt:shrink-0 zt:flex-col zt:gap-3 zt:border-b zt:border-border zt:px-3 zt:py-2"
-                  : "zt-workbench-sidebar-control zt:shrink-0 zt:justify-end zt:px-3 zt:py-2"
+                  : "zt-workbench-sidebar-control zt:shrink-0 zt:justify-end zt:px-3 zt:pt-2"
               }
             >
               {placement === "sidebar" && (

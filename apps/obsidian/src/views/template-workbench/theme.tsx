@@ -300,8 +300,9 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     dataExplorer: {
       hint: "setting-item-description zt:px-3 zt:pb-2",
       "root-label": "zt:text-xs zt:text-muted-foreground",
+      /** In a sidebar, the sticky section headers take the sidebar's ground. */
       explorer:
-        "zt-template-data-explorer zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-3 zt:pt-3",
+        "zt-template-data-explorer zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-3 zt:pt-3 zt:in-[.mod-sidedock]:[--zt-fields-ground:var(--background-secondary)]",
       /** The native title already names the item and the Fields role in a full pane; the heading reads only where a sidebar hides that title. */
       header:
         "zt-workbench-sidebar-control zt:items-center zt:justify-between zt:gap-x-2 zt:px-3",

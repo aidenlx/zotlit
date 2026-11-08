@@ -3048,17 +3048,49 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         list().scrollTop = 0;
         await settle();
         const expandHidden = await toggle("reference");
+        const expandHiddenAfter = {
+          ...expandHidden,
+          top: list().scrollTop,
+          selectedBelow:
+            lastRow().getBoundingClientRect().bottom >
+            list().getBoundingClientRect().bottom,
+        };
+
+        // At the end of the list, the section whose header is stuck at the
+        // top collapses with its header in place, though the list then
+        // needs room past its end. Scrolling back up gives that room back.
+        const ids = [
+          ...list().querySelectorAll<HTMLElement>("[data-workbench-section]"),
+        ].map((element) => element.dataset.workbenchSection!);
+        const toEnd = async () => {
+          list().scrollTop = list().scrollHeight;
+          await settle();
+        };
+        /** The space under the last section with the list at its end. */
+        const endSpace = () =>
+          Math.round(
+            list().getBoundingClientRect().bottom -
+              section(ids.at(-1)!).getBoundingClientRect().bottom,
+          );
+        await toEnd();
+        const spaceBefore = endSpace();
+        const atTop = ids.find((id) => {
+          const box = section(id).getBoundingClientRect();
+          const top = list().getBoundingClientRect().top;
+          return box.top <= top && box.bottom > top + 60;
+        })!;
+        const collapseAtEnd = await toggle(atTop);
+        await toggle(atTop);
+        list().scrollTop = 0;
+        await settle();
+        await toEnd();
         return JSON.stringify({
           stuck,
           collapseStuck,
           expandAgain,
-          expandHidden: {
-            ...expandHidden,
-            top: list().scrollTop,
-            selectedBelow:
-              lastRow().getBoundingClientRect().bottom >
-              list().getBoundingClientRect().bottom,
-          },
+          expandHidden: expandHiddenAfter,
+          collapseAtEnd,
+          roomGivenBack: endSpace() === spaceBefore,
         });
       },
       { path, label: run.m.workbench_view_fields() },
@@ -3068,6 +3100,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       collapseStuck: { moved: 0, expanded: false },
       expandAgain: { moved: 0, expanded: true },
       expandHidden: { moved: 0, expanded: true, top: 0, selectedBelow: true },
+      collapseAtEnd: { moved: 0, expanded: false },
+      roomGivenBack: true,
     });
   });
 

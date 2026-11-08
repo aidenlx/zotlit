@@ -261,22 +261,36 @@ export function DataExplorer({
     const row = rowElement(body.current, reveal.key);
     if (row) revealRow(body.current, row);
   }, [reveal]);
-  // A collapse or an expand keeps the heading or row the reader pressed at
-  // the height it stood in the list, so the list moves around it: a stuck
-  // section heading stays in view as its section closes beneath it.
+  // A collapse or an expand keeps the section heading or row the reader
+  // pressed where it stood, and the list moves around it. Room the list
+  // lacks at its end comes from a spacer, which scrolling back up gives back.
   const held = useRef<{ element: HTMLElement; top: number } | null>(null);
-  const holdInPlace = (element: HTMLElement | null | undefined) => {
-    held.current =
-      element && body.current
-        ? { element, top: offsetIn(body.current, element) }
-        : null;
+  const spacer = useRef<HTMLDivElement>(null);
+  const holdInPlace = (element: HTMLElement | null) => {
+    held.current = element && {
+      element,
+      top: element.getBoundingClientRect().top,
+    };
   };
   useLayoutEffect(() => {
     const hold = held.current;
+    const list = body.current;
+    const room = spacer.current;
     held.current = null;
-    if (!hold || !body.current || !hold.element.isConnected) return;
-    body.current.scrollTop += offsetIn(body.current, hold.element) - hold.top;
+    if (!hold || !list || !room || !hold.element.isConnected) return;
+    const top =
+      list.scrollTop + hold.element.getBoundingClientRect().top - hold.top;
+    const short = top - (list.scrollHeight - list.clientHeight);
+    if (short > 0) room.style.height = `${room.offsetHeight + short}px`;
+    list.scrollTop = top;
   }, [sections]);
+  /** Drops the part of the spacer below the view. */
+  const trimSpacer = (list: HTMLElement) => {
+    const room = spacer.current;
+    if (!room?.offsetHeight) return;
+    const below = list.scrollHeight - list.scrollTop - list.clientHeight;
+    room.style.height = `${Math.max(0, room.offsetHeight - below)}px`;
+  };
   // A press outside the details and outside their row closes them.
   const openKey = rows.open?.node.key ?? null;
   // Focus the details held as they closed goes back to the search.
@@ -369,7 +383,11 @@ export function DataExplorer({
   const sectionsTooltip = useTooltip(sectionsLabel);
   const icon = useIcon();
   const toggleSection = (id: string) => {
-    holdInPlace(sectionHeading(body.current, id));
+    holdInPlace(
+      body.current?.querySelector<HTMLElement>(
+        `[data-workbench-section="${id}"] > [data-part=section-heading]`,
+      ) ?? null,
+    );
     const next = new Set(collapsedSections);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -460,13 +478,11 @@ export function DataExplorer({
       type="button"
       aria-label={sectionsLabel}
       disabled={filtering || sectionIds.length === 0}
-      onClick={() => {
-        // The section at the top of the list stays there.
-        holdInPlace(topSectionHeading(body.current));
+      onClick={() =>
         onCollapsedSectionsChange(
           allCollapsed ? new Set() : new Set(sectionIds),
-        );
-      }}
+        )
+      }
       {...sectionsTooltip}
       {...part("sections-toggle")}
     >
@@ -509,13 +525,14 @@ export function DataExplorer({
         ref={body}
         id={bodyId}
         {...part("body")}
-        onScroll={(event) =>
+        onScroll={(event) => {
+          trimSpacer(event.currentTarget);
           onPresentationChange?.({
             top: event.currentTarget.scrollTop,
             left: event.currentTarget.scrollLeft,
             field: field.current,
-          })
-        }
+          });
+        }}
         onFocusCapture={(event) => {
           field.current =
             (event.target as HTMLElement).closest<HTMLElement>(
@@ -567,6 +584,7 @@ export function DataExplorer({
             }
           />
         )}
+        <div ref={spacer} aria-hidden="true" />
       </div>
       {rows.open && (
         <FieldDetails
@@ -748,40 +766,6 @@ function revealRow(body: HTMLElement, row: HTMLElement): void {
   const top = view.top + (heading?.offsetHeight ?? 0);
   if (box.top < top) body.scrollTop -= top - box.top;
   else if (box.bottom > view.bottom) body.scrollTop += box.bottom - view.bottom;
-}
-
-/** How far `element` stands below the top of the list `body` shows. */
-function offsetIn(body: HTMLElement, element: HTMLElement): number {
-  return element.getBoundingClientRect().top - body.getBoundingClientRect().top;
-}
-
-/** The heading of the section `id` in `body`. */
-function sectionHeading(
-  body: HTMLElement | null,
-  id: string,
-): HTMLElement | null {
-  const section = [
-    ...(body?.querySelectorAll<HTMLElement>("[data-workbench-section]") ?? []),
-  ].find((element) => element.dataset.workbenchSection === id);
-  return (
-    section?.querySelector<HTMLElement>(
-      ":scope > [data-part=section-heading]",
-    ) ?? null
-  );
-}
-
-/** The heading of the section the top of the list `body` shows. */
-function topSectionHeading(body: HTMLElement | null): HTMLElement | null {
-  if (!body) return null;
-  const top = body.getBoundingClientRect().top;
-  const section = [
-    ...body.querySelectorAll<HTMLElement>("[data-workbench-section]"),
-  ].find((element) => element.getBoundingClientRect().bottom > top);
-  return (
-    section?.querySelector<HTMLElement>(
-      ":scope > [data-part=section-heading]",
-    ) ?? null
-  );
 }
 
 /** The element of the row for `key` in `body`. */
