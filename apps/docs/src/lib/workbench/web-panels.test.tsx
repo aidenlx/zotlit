@@ -329,6 +329,22 @@ it("closes a field's details on a press on another row, and keeps the popover", 
   expect(popover()).not.toBeNull();
 });
 
+// Walkthrough of spec #1962 (F4): the row ↓ selects wears the web theme's
+// selected look and shows its Insert field button. The page's `data-selected`
+// variant (shadcn) reads the value "true", so the row carries that value.
+it("marks the row the keyboard selects for the web theme's selected look", async () => {
+  await using page = await open({ frame: { width: 1200, height: 700 } });
+  await page.settle();
+  page.press(m.workbench_view_fields());
+  await page.settle();
+  press(popoverSearch()!, "ArrowDown");
+  await page.settle();
+  const selected = popover()!.querySelector<HTMLElement>(
+    '[role="treeitem"][aria-selected="true"] > [data-part="row"]',
+  )!;
+  expect(selected.getAttribute("data-selected")).toBe("true");
+});
+
 it("never opens the Fields popover as the frame narrows", async () => {
   await using page = await open({ frame: { width: 1200, height: 700 } });
   await page.settle();
