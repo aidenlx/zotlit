@@ -1491,20 +1491,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           () => popover() === null,
         );
         const outside = action.getAttribute("aria-expanded");
-        // A press on a place that takes no focus, the view's title, closes
-        // it and hands focus back to the action.
+        // A press on a place that takes no focus, the item row's label,
+        // closes it and hands focus back to the action (walkthrough F2).
         await input.click(action);
         await until(
-          "the popover for the press on the title",
+          "the popover for the press on the label",
           () => popover() !== null,
         );
         await input.click(
-          view.containerEl.querySelector<HTMLElement>(
-            ".view-header-title-container",
+          el.querySelector<HTMLElement>(
+            "[data-workbench-item-row] > [data-part=label]",
           )!,
+          { x: 4, y: 6 },
         );
         await until(
-          "focus on the action after the press on the title",
+          "focus on the action after the press on the label",
           () => popover() === null && el.doc.activeElement === action,
         );
         // A second press on the action closes it.
@@ -1837,6 +1838,73 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
     );
     expect(JSON.parse(await walk(false))).toEqual(expected(false));
+
+    // Walkthrough of spec #1962 (F5): at 200% zoom the narrow leaf is short.
+    // The bar gives way, so the list keeps the field's whole row under its
+    // sticky section header, and the bar opens on its snippet.
+    const zoomed = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label }) => {
+        const { until, trusted } = page;
+        const view = page.workbench({ path })!;
+        const el = view.contentEl;
+        const { webFrame } = require("electron") as typeof import("electron");
+        webFrame.setZoomFactor(2);
+        try {
+          const input = trusted(el.win);
+          await until("the zoomed leaf", () => el.clientHeight < 500);
+          const popover = () => page.fieldsPopover(view);
+          const action = view.containerEl.querySelector<HTMLElement>(
+            `.view-action[aria-label="${label}"]`,
+          )!;
+          if (!popover()) await input.click(action);
+          await until("the popover", () => popover() !== null);
+          const title = () =>
+            popover()!.querySelector<HTMLElement>(
+              '[data-workbench-field="title"] > [data-part=row]',
+            );
+          await until("the title row", () => title() !== null);
+          await input.click(title()!, { x: 20, y: 8 });
+          const bar = await until("the bar", () =>
+            el.doc.querySelector<HTMLElement>("[data-part=details-bar]"),
+          );
+          await new Promise((resolve) => el.win.setTimeout(resolve, 300));
+          const list = popover()!
+            .querySelector<HTMLElement>(
+              "[data-part=explorer] > [data-part=body]",
+            )!
+            .getBoundingClientRect();
+          const header = [
+            ...popover()!.querySelectorAll<HTMLElement>(
+              "[data-part=section-heading]",
+            ),
+          ]
+            .map((heading) => heading.getBoundingClientRect())
+            .find((box) => box.top <= list.top + 1 && box.bottom > list.top);
+          const row = title()!.getBoundingClientRect();
+          const box = bar.getBoundingClientRect();
+          const snippet = bar
+            .querySelector<HTMLElement>("[data-part=snippet]")!
+            .getBoundingClientRect();
+          const actions = bar
+            .querySelector<HTMLElement>("[data-part=actions]")!
+            .getBoundingClientRect();
+          return {
+            short: el.clientHeight < 500,
+            wholeRow:
+              row.top >= (header?.bottom ?? list.top) - 0.5 &&
+              row.bottom <= list.bottom + 0.5,
+            snippetShown:
+              snippet.top >= box.top - 0.5 &&
+              snippet.bottom <= actions.top + 0.5,
+          };
+        } finally {
+          webFrame.setZoomFactor(1);
+        }
+      },
+      { path, label: run.m.workbench_view_fields() },
+    );
+    expect(zoomed).toEqual({ short: true, wholeRow: true, snippetShown: true });
   });
 
   /** The creators of "Alpha of the personal library", from the Fixture Spec. */
@@ -1982,6 +2050,174 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "{% for creator in zt.creators %}\n- {{ creator }}{% endfor %}",
     );
     expect(result.items).toEqual(expect.arrayContaining(ALPHA_CREATORS));
+  });
+
+  // Walkthrough of spec #1962 (F3): ZotLit Research Collective is a one-field
+  // name, with no family name. The details list all three creators and mark
+  // that one; both forms pass over it, and the Preview shows what each form's
+  // result says.
+  it("passes over a creator with no family name in the details' results and in the Preview", async () => {
+    const path = `templates/${booksProfile.document}`;
+    const documentPath = join(e2eVaultPath, path);
+    const original = await readFile(documentPath, "utf-8");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        ({ app }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        },
+        undefined,
+      );
+      await writeFile(documentPath, original);
+    });
+    await suite.wideWindow(cleanup);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, key, showPreview }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: { file: path, itemIndexedKey: key },
+          active: true,
+        });
+        await app.workspace.revealLeaf(leaf);
+        leaf.view.containerEl
+          .querySelector<HTMLElement>(
+            `.view-action[aria-label="${showPreview}"]`,
+          )
+          ?.click();
+      },
+      {
+        path,
+        key: targetItem.key,
+        showPreview: run.m.workbench_show_preview(),
+      },
+    );
+
+    const result = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label, eachItem }) => {
+        const { until, trusted } = page;
+        const view = page.workbench({ path })!;
+        const el = view.contentEl;
+        const win = el.win;
+        const input = trusted(win);
+        const contents = (
+          win as Window & {
+            electronWindow: { webContents: import("electron").WebContents };
+          }
+        ).electronWindow.webContents;
+        contents.focus();
+        await until("the window takes keys", () => el.doc.hasFocus());
+        await until("the Preview", () => page.previewPanel(view) !== null);
+        const action = view.containerEl.querySelector<HTMLElement>(
+          `.view-action[aria-label="${label}"]`,
+        )!;
+        const content = el.querySelector<CodeMirrorElement>(".cm-content")!;
+        const editor = content.cmTile!.root.view;
+        await input.click(content);
+        const end = editor.state.doc.length;
+        editor.dispatch({
+          changes: { from: end, insert: "\n\n" },
+          selection: { anchor: end + 2 },
+        });
+        const popover = () => page.fieldsPopover(view);
+        const row = (key: string) =>
+          [
+            ...(popover()?.querySelectorAll<HTMLElement>(
+              "[data-workbench-field]",
+            ) ?? []),
+          ]
+            .find((item) => item.dataset.workbenchField === key)
+            ?.querySelector<HTMLElement>(":scope > [data-part=row]") ?? null;
+        const details = () =>
+          el.doc.querySelector<HTMLElement>("[data-part=details]");
+        const text = (part: string) =>
+          details()!.querySelector(`[data-part=${part}]`)!.textContent;
+        /** Opens the family details, in the form named `form` when given. */
+        const openFamily = async (form?: string) => {
+          // The insert's notice stands over the view actions of a wide
+          // leaf; a press dismisses it, as a reader's would.
+          for (const notice of el.doc.querySelectorAll(".notice"))
+            await input.click(notice);
+          await until(
+            "the notices dismissed",
+            () => el.doc.querySelector(".notice") === null,
+          );
+          await input.click(action);
+          await until("the creators row", () => row("creators") !== null);
+          if (row("creators[].family") === null) {
+            await input.click(
+              row("creators")!.querySelector<HTMLElement>(
+                '[aria-label="Toggle node"]',
+              )!,
+            );
+            await until(
+              "the family row",
+              () => row("creators[].family") !== null,
+            );
+          }
+          await input.click(row("creators[].family")!, { x: 40, y: 8 });
+          await until("the family details", () => details() !== null);
+          if (!form) return;
+          const radio = [
+            ...details()!.querySelectorAll<HTMLInputElement>(
+              "input[type=radio]",
+            ),
+          ].find((input) => input.closest("label")!.textContent === form)!;
+          await input.click(radio);
+          await until("the form", () => radio.checked);
+        };
+        const preview = () => page.previewPanel(view)!;
+        await openFamily();
+        const values = [
+          ...details()!.querySelectorAll<HTMLElement>(
+            "[data-part=values-text]",
+          ),
+        ].map((value) => value.textContent);
+        const joined = { snippet: text("snippet"), result: text("result") };
+        await input.click(details()!.querySelector("[data-part=insert]")!);
+        const line = await until("the joined family names in the Preview", () =>
+          [...preview().querySelectorAll("p")]
+            .map((p) => p.textContent.trim())
+            .find((p) => p.startsWith(joined.result)),
+        );
+        await openFamily(eachItem);
+        const loop = { snippet: text("snippet"), result: text("result") };
+        await input.click(details()!.querySelector("[data-part=insert]")!);
+        const items = await until("the family names as list items", () => {
+          const texts = [...preview().querySelectorAll("li")].map((item) =>
+            item.textContent.trim(),
+          );
+          return texts.length > 0 && texts;
+        });
+        return { values, joined, line, loop, items };
+      },
+      {
+        path,
+        label: run.m.workbench_view_fields(),
+        eachItem: run.m.workbench_fields_details_form_loop(),
+      },
+    );
+    expect(result).toEqual({
+      values: ["Personal", "Editor", run.m.workbench_fields_empty()],
+      joined: {
+        snippet:
+          '{{ zt.creators | map: "family" | where_exp: "value", "value != blank" | join: ", " }}',
+        result: "Personal, Editor",
+      },
+      // No separator after the last name.
+      line: "Personal, Editor",
+      loop: {
+        snippet:
+          "{% for creator in zt.creators %}{% if creator.family != blank %}\n- {{ creator.family }}{% endif %}{% endfor %}",
+        result: "- Personal\n- Editor",
+      },
+      // No empty list item for the third creator.
+      items: ["Personal", "Editor"],
+    });
   });
 
   // #1966: pinned in a wide leaf, the Fields Panel docks at the leading edge
