@@ -650,6 +650,24 @@ describe(
   () => {
     it.effect.each([
       {
+        name: "body thematic breaks followed by emphasis",
+        markdown: "Before.\n\n---\n*Emphasis*\n---\nAfter [@a].",
+        contains: ["<hr", "<em>Emphasis</em>", "After", 'id="ref-a"'],
+        absent: [],
+      },
+      {
+        name: "Properties followed by YAML-like body text between separators",
+        markdown:
+          '---\nreference-section-title: Sources\nnocite: "[@a]"\n---\nBefore.\n\n---\nreference-section-title: Body text\n---\nAfter.',
+        contains: [
+          "<hr",
+          "reference-section-title: Body text",
+          "Sources",
+          'id="ref-a"',
+        ],
+        absent: [],
+      },
+      {
         name: "a valid citation link only inside a comment",
         markdown: "%% [paper](./Note#cite:locator=2) %%",
         contains: [],

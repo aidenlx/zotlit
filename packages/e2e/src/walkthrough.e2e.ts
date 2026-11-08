@@ -299,7 +299,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return result;
       },
       {
-        source,
+        source: `${source}\n\n---\n*Text between separators*\n---\nAfter the separators.\n`,
         confirm: m.pandoc_export_confirm(),
         done: m.notice_pandoc_export_done({
           file: "Export display.html",
@@ -322,6 +322,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(result.absolutePathShown).toBe(false);
     const html = await readFile(join(path, "Export display.html"), "utf8");
     expect(html).toContain("<strong>research draft</strong>");
+    expect(html).toContain("<hr");
+    expect(html).toContain("<em>Text between separators</em>");
+    expect(html).toContain("After the separators.");
     expect(html).toContain("This callout becomes a readable quotation.");
     expect(html).not.toContain("[!note]");
   });

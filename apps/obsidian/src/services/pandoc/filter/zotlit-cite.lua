@@ -693,7 +693,11 @@ function Pandoc(doc)
     local unmarked = input:read("a"):gsub(literal_marker .. "%d+", "")
     input:close()
     local identifiers = {}
-    local original = pandoc.read(unmarked, "markdown", PANDOC_READER_OPTIONS)
+    -- pandoc.read ignores reader_options.extensions; give the format the same
+    -- extensions as the first parse so both passes read the same document.
+    local original = pandoc.read(unmarked, {
+      format = "markdown", extensions = PANDOC_READER_OPTIONS.extensions
+    }, PANDOC_READER_OPTIONS)
     pandoc.Pandoc(original.blocks):walk({ Header = function(header)
       identifiers[#identifiers + 1] = header.identifier
     end })

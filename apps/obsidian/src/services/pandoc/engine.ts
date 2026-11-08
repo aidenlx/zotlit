@@ -326,16 +326,34 @@ class PandocCitationEngine implements CitationEngine {
     const filterFiles = Object.fromEntries(
       luaFilters.map((source, index) => [`filter-${index}.lua`, source]),
     );
+    // Obsidian has one Properties block, at the start of the note. Pandoc's
+    // YAML extension also reads body separators as metadata, so pass Properties
+    // as a metadata file and read the body with that extension disabled.
+    let body = markdown;
+    const metadataFiles: Record<string, string> = {};
+    const lines = markdown.split("\n");
+    if (lines[0]?.trimEnd() === "---") {
+      const closing = lines.findIndex(
+        (line, index) => index > 0 && line.trimEnd() === "---",
+      );
+      if (closing > 0) {
+        metadataFiles["document-properties.yaml"] = lines
+          .slice(1, closing)
+          .join("\n");
+        body = lines.slice(closing + 1).join("\n");
+      }
+    }
     const { stdout } = await this.#convert({
       options: {
-        // Obsidian's opening %% comment is body text, while YAML stays metadata.
-        from: `${MARKDOWN_READER}-pandoc_title_block`,
+        // Simple and multiline tables overlap Obsidian's thematic breaks.
+        from: `${MARKDOWN_READER}-pandoc_title_block-yaml_metadata_block-simple_tables-multiline_tables`,
+        "metadata-files": Object.keys(metadataFiles),
         to: "json",
         standalone: false,
         filters: Object.keys(filterFiles),
       },
-      stdin: markdown,
-      files: { ...files, ...filterFiles },
+      stdin: body,
+      files: { ...files, ...filterFiles, ...metadataFiles },
       supersedes,
     });
     return new PandocPreparedDocument(JSON.parse(stdout) as Pandoc);
