@@ -1023,7 +1023,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   // #1952: Help is a view action of its own, and opens the docs menu at the
-  // button; the pane menu holds no Help.
+  // button.
   it("opens the docs from the Help view action", async () => {
     const path = `templates/${booksProfile.document}`;
     await using cleanup = new AsyncDisposableStack();
@@ -1199,43 +1199,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ) as Handles;
     /**
      * Opens the pane menu from the view's More options action, the last of
-     * its actions, then the submenu `group` in it, and returns the
-     * submenu's entries; a disabled entry reads in parentheses.
+     * its actions, then each submenu of `groups` in turn, and returns the
+     * last submenu's entries; a disabled entry reads in parentheses.
      */
-    const submenu = (group: string) =>
+    const submenu = (...groups: string[]) =>
       obRunUntil(
         run.vaultId,
-        ({ page }, { path, group }) => {
+        ({ page }, { path, groups }) => {
           const view = page.workbench({ path })!;
           const doc = view.containerEl.doc;
           const title = (item: Element) =>
             item.querySelector(".menu-item-title")?.textContent ?? "";
-          const [menu, sub] = Array.from(doc.body.querySelectorAll(".menu"));
-          if (!menu) {
+          const menus = Array.from(doc.body.querySelectorAll(".menu"));
+          if (menus.length === 0) {
             const actions = view.containerEl.querySelectorAll<HTMLElement>(
               ".view-actions .view-action",
             );
             actions[actions.length - 1]!.click();
             return null;
           }
-          if (!sub) {
+          const last = menus[menus.length - 1]!;
+          if (menus.length <= groups.length) {
             const parent = Array.from(
-              menu.querySelectorAll<HTMLElement>(".menu-item"),
-            ).find((item) => title(item) === group);
+              last.querySelectorAll<HTMLElement>(".menu-item"),
+            ).find((item) => title(item) === groups[menus.length - 1]);
             parent?.dispatchEvent(
               new MouseEvent("mouseover", { bubbles: true }),
             );
             parent?.click();
             return null;
           }
-          return Array.from(sub.querySelectorAll(".menu-item"), (item) =>
+          return Array.from(last.querySelectorAll(".menu-item"), (item) =>
             item.classList.contains("is-disabled")
               ? `(${title(item)})`
               : title(item),
           ).join("|");
         },
-        { path, group },
-        { what: `the ${group} submenu`, ready: (value) => value !== null },
+        { path, groups },
+        {
+          what: `the ${groups.join(" → ")} submenu`,
+          ready: (value) => value !== null,
+        },
       );
     /** Selects `entry` in the open submenu, as a click does, and closes the menu. */
     const pick = async (entry: string) => {
@@ -1244,7 +1248,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         ({ page }, { path, entry }) => {
           const doc = page.workbench({ path })!.containerEl.doc;
-          const sub = doc.body.querySelectorAll(".menu")[1]!;
+          const menus = doc.body.querySelectorAll(".menu");
+          const sub = menus[menus.length - 1]!;
           Array.from(sub.querySelectorAll<HTMLElement>(".menu-item"))
             .find(
               (item) =>
@@ -1257,6 +1262,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     };
     const { m } = run;
+    // The sizes wait in More workbench options (#1962).
+    const more = m.template_workbench_more_options();
     const preview = `${m.workbench_preview_resize()} vertical`;
     const split = `${m.workbench_preview_resize()} horizontal`;
 
@@ -1267,7 +1274,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       null,
     );
     await handles("the Preview column", (now) => now[preview] === "400");
-    expect(await submenu(m.workbench_preview_resize())).toBe(
+    expect(await submenu(more, m.workbench_preview_resize())).toBe(
       [
         m.workbench_panel_wider(),
         m.workbench_panel_narrower(),
@@ -1276,7 +1283,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await pick(m.workbench_panel_narrower());
     await handles("the Preview narrower", (now) => now[preview] === "336");
-    expect(await submenu(m.workbench_preview_resize())).toContain(
+    expect(await submenu(more, m.workbench_preview_resize())).toContain(
       `|${m.workbench_panel_reset_width()}`,
     );
     await pick(m.workbench_panel_reset_width());
@@ -1284,7 +1291,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "the Preview at its default width",
       (now) => now[preview] === "400",
     );
-    await submenu(m.workbench_preview_resize());
+    await submenu(more, m.workbench_preview_resize());
     await pick(m.workbench_panel_wider());
     const sized = await handles(
       "the Preview wider",
@@ -1306,7 +1313,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     await open(JSON.parse(await state(path)) as object, 30);
     await handles("the Preview under the editor", (now) => now[split] === "40");
-    expect(await submenu(m.workbench_preview_resize())).toBe(
+    expect(await submenu(more, m.workbench_preview_resize())).toBe(
       [
         m.workbench_panel_taller(),
         m.workbench_panel_shorter(),

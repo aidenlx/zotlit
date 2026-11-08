@@ -8,6 +8,7 @@ import {
 } from "@mock/obsidian";
 import type {
   ItemView as MockItemView,
+  MenuItem,
   Scope as MockScope,
 } from "@mock/obsidian";
 import { Cause, Effect, Exit } from "effect";
@@ -38,6 +39,7 @@ import { dispatchKey, keymapApp } from "@/lib/__fixtures__/keymap";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { MENU_SECTION } from "@/lib/menu-section";
 import { VaultError } from "@/lib/vault-errors";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
@@ -66,6 +68,13 @@ import {
   originatingNoteUpdateNotice,
   unpackedPartialNotices,
 } from "./view";
+
+/**
+ * Every entry of `menu` and of the submenus under it, each before its own
+ * submenu's, as a reader meets them by opening each submenu in turn.
+ */
+const menuEntries = (menu: Menu | null): MenuItem[] =>
+  (menu?.items ?? []).flatMap((item) => [item, ...menuEntries(item.submenu)]);
 
 /** Inserts `node` as the Fields Panel does: in its first form, as the place the caret is in reads it. */
 const insertNode = (view: TemplateWorkbenchView, node: DisplayNode) =>
@@ -1544,7 +1553,7 @@ An annotation.
       indexedKey: "PAPER001g42",
       root: "note",
     });
-    expect(menu.items.map((item) => item.title)).toContain(
+    expect(menuEntries(menu).map((item) => item.title)).toContain(
       "Export selected paper data",
     );
   });
@@ -1563,7 +1572,7 @@ An annotation.
       indexedKey: "ANNO0001g42",
       root: "annotation",
     });
-    expect(menu.items.map((item) => item.title)).toContain(
+    expect(menuEntries(menu).map((item) => item.title)).toContain(
       "Save template data as JSON",
     );
   });
@@ -2435,7 +2444,7 @@ language: liquid
     const titles = (view: TemplateWorkbenchView) => {
       const menu = new Menu();
       view.onPaneMenu(menu as never, "more-options");
-      return menu.items.map((item) => item.title);
+      return menuEntries(menu).map((item) => item.title);
     };
     expect(titles(profile.view)).toContain(
       m.template_workbench_open_citation(),
@@ -2695,7 +2704,7 @@ language: liquid
     );
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
-    const titles = menu.items.map((item) => item.title);
+    const titles = menuEntries(menu).map((item) => item.title);
 
     expect(titles).toContain(m.template_workbench_change_language());
     expect(titles).toContain(m.workbench_choose_annotation());
@@ -2822,7 +2831,7 @@ language: liquid
     const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
-    const language = menu.items.find(
+    const language = menuEntries(menu).find(
       (item) => item.title === m.template_workbench_change_language(),
     )!;
     language
@@ -3574,15 +3583,81 @@ describe("the side panels of the Template Workbench View", () => {
     ).toBe("45");
     await act(async () => restored.view.close());
   });
-  const paneMenu = (view: TemplateWorkbenchView) => {
+  const paneMenuOf = (view: TemplateWorkbenchView) => {
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
-    return menu.items;
+    return menu;
   };
+  const paneMenu = (view: TemplateWorkbenchView) => paneMenuOf(view).items;
+  /** The entry `title` of the pane menu, or of a submenu under it. */
   const entry = (view: TemplateWorkbenchView, title: string) =>
-    paneMenu(view).find((item) => item.title === title);
+    menuEntries(paneMenuOf(view)).find((item) => item.title === title);
 
-  it("opens the docs from the Help view action, which the pane menu leaves to it", async () => {
+  // #1962: the most-used entries lead, the rare ones wait in a submenu, and
+  // every view action is in the menu for a reader who hides the header.
+  it("leads the pane menu with the view's own actions, and folds the rare ones away", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () => view.togglePreview());
+    setViewItem(view, { id: "PAPER001g42", title: "Paper" });
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    const items = paneMenu(view);
+    expect(
+      items
+        .filter((item) => item.section === MENU_SECTION.pane)
+        .map((item) => item.title),
+    ).toEqual([
+      m.workbench_show_fields(),
+      m.workbench_show_preview(),
+      m.workbench_choose_item(),
+      m.workbench_choose_annotation(),
+      m.workbench_view_preview(),
+      m.workbench_advanced(),
+      m.workbench_undo(),
+      m.workbench_redo(),
+    ]);
+    expect(
+      items
+        .filter((item) => item.section === MENU_SECTION.action)
+        .map((item) => item.title),
+    ).toEqual([m.template_workbench_more_options(), m.workbench_help()]);
+    // Nothing is left to undo in a document just opened.
+    expect(entry(view, m.workbench_undo())?.disabled).toBe(true);
+    const preview = entry(view, m.workbench_view_preview())!;
+    expect(preview.submenu?.items.map((item) => item.title)).toEqual([
+      m.workbench_preview_as_new_note(),
+      m.workbench_preview_as_updated_note(),
+      m.workbench_preview_updated_section(),
+      m.workbench_preview_auto_refresh(),
+      m.workbench_show_markdown(),
+      m.workbench_refresh_item(),
+    ]);
+    const more = entry(view, m.template_workbench_more_options())!;
+    expect(more.submenu?.items.map((item) => item.title)).toEqual([
+      m.workbench_preview_resize(),
+      m.template_data_explorer_menu_export_json(),
+    ]);
+    // The Help submenu lists what the Help view action opens.
+    expect(
+      entry(view, m.workbench_help())?.submenu?.items.map((item) => item.title),
+    ).toEqual([
+      m.workbench_docs_guide(),
+      m.workbench_docs_note(),
+      m.workbench_docs_data(),
+      m.workbench_problems_community(),
+    ]);
+    // The Source entry is the view action's own toggle.
+    expect(entry(view, m.workbench_advanced())?.checked).toBe(false);
+    await act(async () => entry(view, m.workbench_advanced())!.click());
+    expect(viewState(view).advanced).toBe(true);
+    expect(entry(view, m.workbench_advanced())?.checked).toBe(true);
+  });
+
+  it("opens the docs from the Help view action", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
@@ -3593,7 +3668,6 @@ describe("the side panels of the Template Workbench View", () => {
     // The item row holds the item's chooser; the header holds Help.
     expect(actions).toContain(m.workbench_help());
     expect(actions).not.toContain(m.workbench_choose_item());
-    expect(entry(view, m.workbench_help())).toBeUndefined();
     const before = Menu.instances.length;
     await act(async () => actionOf(view, m.workbench_help()).click());
     const menu = Menu.instances[before]!;
@@ -3703,8 +3777,13 @@ describe("the side panels of the Template Workbench View", () => {
       m.workbench_preview_auto_refresh(),
       m.workbench_show_markdown(),
     ];
-    for (const title of choices)
-      expect(entry(view, title)?.section).toBe("pane");
+    // In the Preview submenu, which sits among the display choices.
+    expect(entry(view, m.workbench_view_preview())?.section).toBe("pane");
+    expect(
+      entry(view, m.workbench_view_preview())?.submenu?.items.map(
+        (item) => item.title,
+      ),
+    ).toEqual(expect.arrayContaining(choices));
     expect(entry(view, m.workbench_preview_as_new_note())?.checked).toBe(true);
     expect(entry(view, m.workbench_preview_auto_refresh())?.checked).toBe(true);
     await act(async () =>
@@ -4168,7 +4247,7 @@ describe("the Fields panel of the Template Workbench View", () => {
       const exportEntry = () => {
         const menu = new Menu();
         view.onPaneMenu(menu as never, "more-options");
-        return menu.items.find((item) => item.icon === "file-json");
+        return menuEntries(menu).find((item) => item.icon === "file-json");
       };
       // The paper has no annotations, so its own data stands in.
       await vi.waitFor(() =>

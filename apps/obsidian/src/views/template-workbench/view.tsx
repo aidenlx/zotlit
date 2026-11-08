@@ -1657,9 +1657,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       pressFieldsAction(this.registry, this.workbench),
     );
     this.#fieldsButton.current = fields;
-    const source = this.addAction("code", m.workbench_advanced(), () => {
-      this.change.setAdvanced(!this.#view.advanced);
-    });
+    const source = this.addAction("code", m.workbench_advanced(), () =>
+      this.#toggleSource(),
+    );
     const redo = this.addAction("redo-2", m.workbench_redo(), () => {
       this.#controller.redo();
     });
@@ -1778,6 +1778,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     );
   }
 
+  /** Shows the Profile document as Source, or as Basic again. */
+  #toggleSource(): void {
+    this.change.setAdvanced(!this.#view.advanced);
+  }
+
+  /**
+   * The view's More options (#1962). The entries a template author reaches
+   * for most lead it, the view actions among them, as a reader who hides the
+   * view header finds them here alone; the rare ones wait in More workbench
+   * options.
+   */
   override onPaneMenu(menu: Menu, source: string): void {
     super.onPaneMenu(menu, source);
     menu.addItem((item) =>
@@ -1798,17 +1809,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setChecked(this.registry.get(this.workbench.panels).preview.shown)
         .onClick(() => this.togglePreview()),
     );
-    this.#addPanelSizeMenu(menu);
     menu.addItem((item) =>
       item
-        .setSection(MENU_SECTION.open)
-        .setTitle(m.template_workbench_open_layout())
-        .setIcon("panels-top-left")
-        .onClick(() => this.#act("open-workbench", openWorkbenchLayout(this))),
-    );
-    menu.addItem((item) =>
-      item
-        .setSection(MENU_SECTION.action)
+        .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_choose_item())
         .setIcon("search")
         .onClick(() => this.startItemChoice()),
@@ -1816,13 +1819,39 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (this.documentKind !== "citation")
       menu.addItem((item) =>
         item
-          .setSection(MENU_SECTION.action)
+          .setSection(MENU_SECTION.pane)
           .setTitle(m.workbench_choose_annotation())
           .setIcon("highlighter")
           .onClick(() => this.startAnnotationChoice()),
       );
-    this.#addPartialsMenu(menu);
     this.#addPreviewMenu(menu);
+    // As the view action: only a Profile document has a Source to show.
+    if (this.documentKind === "profile")
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.pane)
+          .setTitle(m.workbench_advanced())
+          .setIcon("code")
+          .setChecked(this.#view.advanced)
+          .onClick(() => this.#toggleSource()),
+      );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_undo())
+        .setIcon("undo-2")
+        .setDisabled(!this.#controller.canUndo)
+        .onClick(() => this.#controller.undo()),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_redo())
+        .setIcon("redo-2")
+        .setDisabled(!this.#controller.canRedo)
+        .onClick(() => this.#controller.redo()),
+    );
+    this.#addPartialsMenu(menu);
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.open)
@@ -1830,6 +1859,52 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setIcon("quote")
         .onClick(() => this.#start(Effect.ignore(reportCitationTemplateOpen))),
     );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.open)
+        .setTitle(m.template_workbench_open_markdown())
+        .setIcon("file-text")
+        .setDisabled(!this.file)
+        .onClick(() => this.#act("open-markdown", this.#openMarkdown())),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.open)
+        .setTitle(m.template_workbench_open_layout())
+        .setIcon("panels-top-left")
+        .onClick(() => this.#act("open-workbench", openWorkbenchLayout(this))),
+    );
+    menu.addItem((item) => {
+      item
+        .setSection(MENU_SECTION.action)
+        .setTitle(m.template_workbench_more_options())
+        .setIcon("ellipsis");
+      this.#addMoreOptions(item.setSubmenu());
+    });
+    menu.addItem((item) => {
+      item
+        .setSection(MENU_SECTION.action)
+        .setTitle(m.workbench_help())
+        .setIcon("circle-help");
+      this.#addHelpEntries(item.setSubmenu());
+    });
+    if (this.file?.path === this.registry.get(defaultProfilePathAtom))
+      menu.addItem((item) =>
+        item
+          .setSection(MENU_SECTION.danger)
+          .setTitle(m.settings_profile_document_restore())
+          .setWarning(true)
+          .setIcon("rotate-ccw")
+          .onClick(() => this.#start(Effect.ignore(this.#restoreDefault()))),
+      );
+  }
+  /**
+   * The entries a template author needs now and then: the panel sizes, the
+   * rendering language and the Template data export. Each one takes the
+   * action section, so the submenu reads as one group.
+   */
+  #addMoreOptions(menu: Menu): void {
+    this.#addPanelSizeMenu(menu);
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
     // With the Fields popover or the docked panel open, the export saves
     // the root it shows.
@@ -1843,23 +1918,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setTitle(this.templateDataExportLabel())
           .setIcon("file-json")
           .onClick(() => this.exportTemplateData(target)),
-      );
-    menu.addItem((item) =>
-      item
-        .setSection(MENU_SECTION.open)
-        .setTitle(m.template_workbench_open_markdown())
-        .setIcon("file-text")
-        .setDisabled(!this.file)
-        .onClick(() => this.#act("open-markdown", this.#openMarkdown())),
-    );
-    if (this.file?.path === this.registry.get(defaultProfilePathAtom))
-      menu.addItem((item) =>
-        item
-          .setSection(MENU_SECTION.danger)
-          .setTitle(m.settings_profile_document_restore())
-          .setWarning(true)
-          .setIcon("rotate-ccw")
-          .onClick(() => this.#start(Effect.ignore(this.#restoreDefault()))),
       );
   }
   /**
@@ -1876,7 +1934,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     for (const { axis, label, items } of menus)
       menu.addItem((item) => {
         item
-          .setSection(MENU_SECTION.pane)
+          .setSection(MENU_SECTION.action)
           .setTitle(label)
           .setIcon(`move-${axis}`);
         const submenu = item.setSubmenu();
@@ -1894,13 +1952,23 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           );
       });
   }
-  /**
-   * The Preview panel's settings (ADR 0048), while the panel shows: what the
-   * render reads beside the Item, which note it shows, and how it refreshes.
-   */
+  /** The Preview panel's settings in a submenu of their own, while the panel shows. */
   #addPreviewMenu(menu: Menu): void {
+    if (!this.registry.get(this.workbench.panels).preview.shown) return;
+    menu.addItem((item) => {
+      item
+        .setSection(MENU_SECTION.pane)
+        .setTitle(m.workbench_view_preview())
+        .setIcon("panel-right");
+      this.#addPreviewSettings(item.setSubmenu());
+    });
+  }
+  /**
+   * The Preview panel's settings (ADR 0048): what the render reads beside the
+   * Item and which note it shows, then how it refreshes.
+   */
+  #addPreviewSettings(menu: Menu): void {
     const { registry } = this;
-    if (!registry.get(this.workbench.panels).preview.shown) return;
     const { mode, citationSet } = previewTarget(
       this.documentKind,
       this.#view.root,
@@ -1911,27 +1979,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       registry.update(choices, setPreview(value));
     const setCitation = (value: Parameters<typeof chooseCitation>[0]) =>
       registry.update(choices, chooseCitation(value));
-    menu.addItem((item) =>
-      item
-        .setSection(MENU_SECTION.action)
-        .setTitle(m.workbench_refresh_item())
-        .setIcon("refresh-cw")
-        .onClick(() => this.refresh()),
-    );
-    if (!preview.live)
-      menu.addItem((item) =>
-        item
-          .setSection(MENU_SECTION.action)
-          .setTitle(m.workbench_preview_run())
-          .setIcon("play")
-          .onClick(() => registry.set(this.workbench.scheduler.run, undefined)),
-      );
-    if (citationSet)
+    // The caller leads: it decides which set the Citation pair below it names.
+    if (mode === "partial") this.#addCallerMenu(menu);
+    if (citationSet) {
+      for (const [value, title] of [
+        ["main", m.template_workbench_preview_main_citation()],
+        ["alt", m.template_workbench_preview_alt_citation()],
+      ] as const)
+        menu.addItem((item) =>
+          item
+            .setTitle(title)
+            .setIcon("quote")
+            .setChecked(variant === value)
+            .onClick(() => setCitation({ variant: value })),
+        );
       menu.addItem((item) => {
-        item
-          .setSection(MENU_SECTION.action)
-          .setTitle(m.template_workbench_use_example())
-          .setIcon("list");
+        item.setTitle(m.template_workbench_use_example()).setIcon("list");
         const submenu = item.setSubmenu().setNoIcon();
         for (const id of CITATION_EXAMPLE_IDS)
           submenu.addItem((entry) =>
@@ -1941,21 +2004,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
               .onClick(() => setCitation({ citationExample: id })),
           );
       });
-    // The caller leads: it decides which set the Citation pair below it names.
-    if (mode === "partial") this.#addCallerMenu(menu);
-    if (citationSet)
-      for (const [value, title] of [
-        ["main", m.template_workbench_preview_main_citation()],
-        ["alt", m.template_workbench_preview_alt_citation()],
-      ] as const)
-        menu.addItem((item) =>
-          item
-            .setSection(MENU_SECTION.pane)
-            .setTitle(title)
-            .setIcon("quote")
-            .setChecked(variant === value)
-            .onClick(() => setCitation({ variant: value })),
-        );
+    }
     if (mode === "note") {
       const result = registry.get(this.workbench.scheduler.state).result;
       for (const [value, title, icon] of [
@@ -1964,7 +2013,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       ] as const)
         menu.addItem((item) =>
           item
-            .setSection(MENU_SECTION.pane)
             .setTitle(title)
             .setIcon(icon)
             .setChecked(preview.mode === value && !preview.showManaged)
@@ -1977,16 +2025,15 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         );
       menu.addItem((item) =>
         item
-          .setSection(MENU_SECTION.pane)
           .setTitle(m.workbench_preview_updated_section())
           .setIcon("rows-3")
           .setChecked(preview.showManaged)
           .onClick(() => setSettings({ showManaged: true })),
       );
     }
+    menu.addSeparator();
     menu.addItem((item) =>
       item
-        .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_preview_auto_refresh())
         .setIcon("zap")
         .setChecked(preview.live)
@@ -1994,11 +2041,23 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     );
     menu.addItem((item) =>
       item
-        .setSection(MENU_SECTION.pane)
         .setTitle(m.workbench_show_markdown())
         .setIcon("code")
         .setChecked(preview.showMarkdown)
         .onClick(() => setSettings({ showMarkdown: !preview.showMarkdown })),
+    );
+    if (!preview.live)
+      menu.addItem((item) =>
+        item
+          .setTitle(m.workbench_preview_run())
+          .setIcon("play")
+          .onClick(() => registry.set(this.workbench.scheduler.run, undefined)),
+      );
+    menu.addItem((item) =>
+      item
+        .setTitle(m.workbench_refresh_item())
+        .setIcon("refresh-cw")
+        .onClick(() => this.refresh()),
     );
   }
   /**
@@ -2020,7 +2079,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     ] as const)
       menu.addItem((item) =>
         item
-          .setSection(MENU_SECTION.pane)
           .setTitle(title)
           .setIcon(icon)
           .setChecked(current === context)
@@ -2031,10 +2089,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const profiles = this.registry.get(profilesAtom);
     if (profiles.length === 0) return;
     menu.addItem((item) => {
-      item
-        .setSection(MENU_SECTION.pane)
-        .setTitle(m.template_workbench_use_profile())
-        .setIcon("book-user");
+      item.setTitle(m.template_workbench_use_profile()).setIcon("book-user");
       const submenu = item.setSubmenu().setNoIcon();
       for (const [id, label] of [
         [null, m.settings_profile_default_name()],
@@ -2053,11 +2108,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /**
    * The docs pages a template author returns to: the step-by-step guide, the
    * syntax and the field references, and the community for what they miss.
-   * The Help view action opens it under itself, as the web page's Help menu
-   * lists the same pages.
+   * The Help view action opens them under itself and the pane menu's Help
+   * submenu lists them, as the web page's Help menu lists the same pages.
    */
-  #showHelpMenu(trigger: HTMLElement): void {
-    const menu = new Menu();
+  #addHelpEntries(menu: Menu): void {
     for (const { label, path } of HELP_PAGES)
       menu.addItem((entry) =>
         entry
@@ -2072,6 +2126,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setIcon("messages-square")
         .onClick(() => window.open(COMMUNITY)),
     );
+  }
+  /** The Help view action's menu, opened under its button. */
+  #showHelpMenu(trigger: HTMLElement): void {
+    const menu = new Menu();
+    this.#addHelpEntries(menu);
     showMenuAtButton(menu, trigger, "end");
   }
   /**
