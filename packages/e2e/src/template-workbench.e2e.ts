@@ -353,6 +353,50 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await names("Preview", `Book profile: ${item.title}`);
     }
+
+    // #1962: in the wide view, Choose item follows the Item's name rather
+    // than the far edge of the row, and a name too long for a narrow row
+    // ends in an ellipsis while Choose item stays beside it on its line.
+    const layout = await obRun(
+      run.vaultId,
+      async ({ page }, { path, label }) => {
+        const view = page.workbench({ path })!;
+        const row = page.itemRow(view)!;
+        const name = row.querySelector<HTMLElement>("p")!;
+        const trigger = Array.from(row.querySelectorAll("button")).find(
+          (button) => button.textContent.trim() === label,
+        )!;
+        // The name's text, not its box: a box that stretches across the row
+        // leaves its text at the start, a row away from the chooser.
+        const text = name.ownerDocument.createRange();
+        text.selectNodeContents(name);
+        const measure = () => {
+          const box = name.getBoundingClientRect();
+          const button = trigger.getBoundingClientRect();
+          return {
+            gap: Math.round(button.left - text.getBoundingClientRect().right),
+            sameLine:
+              Math.abs(
+                button.top + button.height / 2 - (box.top + box.height / 2),
+              ) < 2,
+            cut: name.scrollWidth > name.clientWidth,
+            room: Math.round(row.getBoundingClientRect().right - button.right),
+          };
+        };
+        const wide = measure();
+        row.style.width = "320px";
+        await page.until("the narrow row", () => row.offsetWidth === 320);
+        const narrow = measure();
+        row.style.width = "";
+        return { wide, narrow };
+      },
+      { path, label: run.m.workbench_choose_item() },
+    );
+    expect(layout.wide).toMatchObject({ sameLine: true, cut: false });
+    expect(layout.wide.gap).toBeLessThanOrEqual(8);
+    expect(layout.wide.room).toBeGreaterThan(200);
+    expect(layout.narrow).toMatchObject({ sameLine: true, cut: true });
+    expect(layout.narrow.room).toBeGreaterThanOrEqual(0);
   });
 
   // #1937: Obsidian opens a modal in the window that last took focus, and a
