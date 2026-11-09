@@ -219,7 +219,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(new Set(all.map((surface) => surface.file)).size).toBe(all.length);
   });
 
-  it("keeps each Properties row's example value through Move down while the preview renders again", async () => {
+  it("keeps each Properties row's example value through a reorder while the preview renders again", async () => {
     const documentPath = join(e2eVaultPath, "templates", booksProfile.document);
     const original = await readFile(documentPath, "utf-8");
     await using cleanup = new AsyncDisposableStack();
@@ -310,7 +310,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // follows it has landed.
     const seen = await obRun(
       run.vaultId,
-      async ({ page }, { path, moveDown }) => {
+      async ({ page }, { path, handleLabel }) => {
         const el = page.workbench({ path })!.contentEl;
         const list = Array.from(
           el.querySelectorAll<HTMLElement>('[data-part="rows"]'),
@@ -339,12 +339,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           characterData: true,
           attributes: true,
         });
-        const button = Array.from(
-          list.querySelectorAll<HTMLButtonElement>(
-            '[data-part="row"] button[aria-label]',
-          ),
-        ).find((button) => button.getAttribute("aria-label") === moveDown);
-        page.press(button, "Move down on the first row");
+        // Alt+ArrowDown on the first row's drag handle moves it one place down.
+        const handle = Array.from(
+          list.querySelectorAll<HTMLElement>('[data-part="handle"]'),
+        ).find((handle) => handle.getAttribute("aria-label") === handleLabel);
+        if (!handle) throw new Error("No drag handle on the first row");
+        handle.focus();
+        await page.trusted(handle.win).key("Down", ["alt"]);
         // The live refresh waits 300 ms after the edit, then renders.
         await new Promise((resolve) => setTimeout(resolve, 2000));
         observer.disconnect();
@@ -352,7 +353,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       {
         path: `templates/${booksProfile.document}`,
-        moveDown: run.m.workbench_properties_move_down(),
+        handleLabel: run.m.workbench_drag_to_reorder(),
       },
     );
 

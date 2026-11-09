@@ -94,7 +94,7 @@ describe("Template Workbench host", () => {
     const onSelect = vi.fn();
     host.menu({
       anchor,
-      items: [{ label: "Move up", icon: "move-up", onSelect }],
+      items: [{ label: "Remove", icon: "remove", onSelect }],
     });
     const menu = Menu.instances.at(-1)!;
     expect(menu.position).toEqual({
@@ -104,7 +104,7 @@ describe("Template Workbench host", () => {
       overlap: true,
       left: false,
     });
-    expect(menu.items[0]!.title).toBe("Move up");
+    expect(menu.items[0]!.title).toBe("Remove");
     menu.items[0]!.click();
     expect(onSelect).toHaveBeenCalledOnce();
   });

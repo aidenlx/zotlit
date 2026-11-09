@@ -9,8 +9,6 @@ import {
   Plus,
   Trash2,
   X,
-  ArrowUp,
-  ArrowDown,
   Search,
   Eye,
   Pencil,
@@ -70,8 +68,6 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   add: Plus,
   remove: Trash2,
   close: X,
-  "move-up": ArrowUp,
-  "move-down": ArrowDown,
   "choose-sample": Search,
   "chevron-up": ChevronUp,
   error: CircleAlert,
@@ -128,6 +124,23 @@ const nameRow =
  */
 export const PANEL_HANDLE_WIDTH = 12;
 
+/**
+ * A row that drags by its handle: it fades while it moves, and a primary line
+ * centred in the gap beside it marks the place it lands. The line is the row's
+ * positioned `::before`, so it takes no room and nothing moves. A list whose
+ * rows sit further apart than `gap-2` sets `--row-gap`, and a row with a
+ * border sets `--row-border`, since the line is placed from inside it. The
+ * Match tree and the Properties list share it.
+ */
+const dragRow = cn(
+  "relative data-dragging:opacity-50",
+  "before:pointer-events-none before:absolute before:inset-x-0 before:hidden before:h-0.5 before:rounded-full before:bg-fd-primary",
+  "data-[drop=before]:before:top-[calc(-0.5*(var(--row-gap,calc(var(--spacing)*2))+var(--spacing)*0.5)-var(--row-border,0px))] data-[drop=before]:before:block",
+  "data-[drop=after]:before:bottom-[calc(-0.5*(var(--row-gap,calc(var(--spacing)*2))+var(--spacing)*0.5)-var(--row-border,0px))] data-[drop=after]:before:block",
+);
+/** The grip a row drags by: shown while the pointer is over its row or it has focus. */
+const dragHandle =
+  "flex min-w-6 shrink-0 items-center justify-center rounded-sm text-fd-muted-foreground cursor-grab active:cursor-grabbing opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-fd-ring aria-disabled:hidden [&_svg]:size-4";
 export const WEB_THEME: WorkbenchTheme = {
   editorExtension: (slice, language) => [
     editorTheme,
@@ -160,9 +173,11 @@ export const WEB_THEME: WorkbenchTheme = {
       group:
         "flex min-w-0 flex-1 flex-col gap-2 rounded-md border border-fd-border p-2 data-[state=root]:border-0 data-[state=root]:p-0 [&>[data-part=actions]:first-child]:justify-between data-[drop=into]:ring-2 data-[drop=into]:ring-fd-primary",
       rows: "flex flex-col gap-2 list-none m-0 p-0",
-      row: "grid min-w-0 grid-cols-[auto_4.5rem_minmax(0,1fr)] items-start gap-2 [&>[data-part=group]]:col-span-2 data-dragging:opacity-50 [&:hover>[data-part=handle]]:opacity-100 data-[drop=before]:shadow-[0_calc(var(--spacing)*-0.5)_0_0_var(--color-fd-primary)] data-[drop=after]:shadow-[0_calc(var(--spacing)*0.5)_0_0_var(--color-fd-primary)]",
-      handle:
-        "flex min-h-8 min-w-6 shrink-0 items-center justify-center -me-1 rounded-sm text-fd-muted-foreground cursor-grab active:cursor-grabbing opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-fd-ring aria-disabled:hidden [&_svg]:size-4",
+      row: cn(
+        "grid min-w-0 grid-cols-[auto_4.5rem_minmax(0,1fr)] items-start gap-2 [&:hover>[data-part=handle]]:opacity-100 [&>[data-part=group]]:col-span-2",
+        dragRow,
+      ),
+      handle: cn(dragHandle, "-me-1 min-h-8"),
       condition: "min-w-0 flex-1",
       statement:
         "flex flex-wrap min-w-0 items-start gap-1 [&_[data-part=wrapper]]:w-auto",
@@ -319,16 +334,21 @@ export const WEB_THEME: WorkbenchTheme = {
       empty:
         "rounded-md border border-dashed border-fd-border p-3 text-xs leading-normal text-pretty text-fd-muted-foreground",
       rows: "flex flex-col gap-2",
-      row: "rounded-md border border-fd-border bg-fd-card",
-      "row-header": "grid grid-cols-[minmax(0,1fr)_auto] px-2.5 py-1.5",
+      row: cn(
+        "rounded-md border border-fd-border bg-fd-card [--row-border:1px] [&:hover_[data-part=handle]]:opacity-100",
+        dragRow,
+      ),
+      "row-header":
+        "grid grid-cols-[auto_minmax(0,1fr)_auto] px-2.5 py-1.5 ps-1",
+      handle: cn(dragHandle, "col-start-1 row-start-1 min-h-7 self-start"),
       "row-toggle":
-        "col-span-2 col-start-1 row-start-1 grid min-w-0 cursor-pointer grid-cols-subgrid rounded-md text-start",
+        "col-span-2 col-start-2 row-start-1 grid min-w-0 cursor-pointer grid-cols-subgrid rounded-md text-start",
       "row-name":
         "col-start-1 row-start-1 flex min-h-7 min-w-0 items-center gap-2 pe-2",
       key: "min-w-0 flex-1 font-mono text-sm font-medium break-words",
       label: "text-xs font-medium data-[state=problem]:text-destructive",
       "row-actions":
-        "z-10 col-start-2 row-start-1 flex items-center gap-0.5 self-start",
+        "z-10 col-start-3 row-start-1 flex items-center gap-0.5 self-start",
       edit: cn(
         buttonVariants({ variant: "ghost", size: "icon-xs" }),
         "aria-pressed:bg-fd-muted",

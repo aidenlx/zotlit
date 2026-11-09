@@ -343,7 +343,7 @@ it("keeps each row's own value while a reordered list renders again", async () =
   const dom = render(mounted.ui);
   await renderFirstExample(mounted);
   act(() => {
-    mounted.controller.editManagedEntry({ action: "move", position: 1, by: 1 });
+    mounted.controller.editManagedEntry({ action: "move", position: 1, to: 2 });
   });
   expect(
     screen.queryAllByText(m.workbench_example_awaiting_run()),
@@ -363,7 +363,7 @@ it("names each row's problem at the row's new place until the next render lands"
     { code: "property-error", position: 1, message: "The rule stopped." },
   ]);
   act(() => {
-    mounted.controller.editManagedEntry({ action: "move", position: 1, by: 1 });
+    mounted.controller.editManagedEntry({ action: "move", position: 1, to: 2 });
   });
   // Every reader of the result — rows, Problems, the entry editor — reads the
   // positions of the list on screen.

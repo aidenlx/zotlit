@@ -107,7 +107,7 @@ describe("workbenchDocumentAtoms", () => {
     const { registry, atoms } = held;
 
     expect(
-      controller.editManagedEntry({ action: "move", position: 2, by: -1 }),
+      controller.editManagedEntry({ action: "move", position: 2, to: 1 }),
     ).toBe(true);
 
     const entries = registry.get(atoms.managedEntries);

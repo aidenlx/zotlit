@@ -253,7 +253,7 @@ describe("Managed Frontmatter patching", () => {
     const { source } = edit(HAND_WRITTEN, {
       action: "move",
       position: 1,
-      by: 1,
+      to: 2,
     });
 
     expect(source).toBe(
@@ -263,7 +263,7 @@ describe("Managed Frontmatter patching", () => {
       ),
     );
     expectOneUndoStep(HAND_WRITTEN, (controller) =>
-      controller.editManagedEntry({ action: "move", position: 1, by: 1 }),
+      controller.editManagedEntry({ action: "move", position: 1, to: 2 }),
     );
   });
 
@@ -273,13 +273,35 @@ describe("Managed Frontmatter patching", () => {
       '  # when I read it\n  - key: "read on"',
     );
 
-    const { source } = edit(commented, { action: "move", position: 1, by: 1 });
+    const { source } = edit(commented, { action: "move", position: 1, to: 2 });
 
     expect(source).toBe(
       commented.replace(
         '  - key: title\n    expr: zt.title\n    merge: replace\n  # when I read it\n  - key: "read on"\n    expr: zt.dateAdded\n',
         '  - key: "read on"\n    expr: zt.dateAdded\n  # when I read it\n  - key: title\n    expr: zt.title\n    merge: replace\n',
       ),
+    );
+  });
+
+  it("moves an entry past several others and keeps each comment in its place", () => {
+    const commented = HAND_WRITTEN.replace(
+      '  - key: "read on"',
+      '  # when I read it\n  - key: "read on"',
+    );
+
+    const { source } = edit(commented, { action: "move", position: 1, to: 3 });
+
+    expect(source).toBe(
+      commented.replace(
+        '  - key: title\n    expr: zt.title\n    merge: replace\n  # when I read it\n  - key: "read on"\n    expr: zt.dateAdded\n  - value: {"kind":{"$eval":"zt.itemType"}}\n    merge: keep\n',
+        '  - key: "read on"\n    expr: zt.dateAdded\n  # when I read it\n  - value: {"kind":{"$eval":"zt.itemType"}}\n    merge: keep\n  - key: title\n    expr: zt.title\n    merge: replace\n',
+      ),
+    );
+    expect(edit(source, { action: "move", position: 3, to: 1 }).source).toBe(
+      commented,
+    );
+    expectOneUndoStep(commented, (controller) =>
+      controller.editManagedEntry({ action: "move", position: 1, to: 3 }),
     );
   });
 
@@ -307,7 +329,7 @@ describe("Managed Frontmatter patching", () => {
     const controller = new WorkbenchDocumentController(HAND_WRITTEN);
 
     expect(
-      controller.editManagedEntry({ action: "move", position: 1, by: -1 }),
+      controller.editManagedEntry({ action: "move", position: 1, to: 0 }),
     ).toBe(false);
     expect(controller.source).toBe(HAND_WRITTEN);
   });
@@ -513,13 +535,14 @@ describe("followEntries", () => {
 
   it("finds moved entries wherever they went", () => {
     expect(
-      follow(edit(HAND_WRITTEN, { action: "move", position: 1, by: 1 }).source),
+      follow(edit(HAND_WRITTEN, { action: "move", position: 1, to: 2 }).source),
     ).toEqual([2, 1, 3]);
+    expect(
+      follow(edit(HAND_WRITTEN, { action: "move", position: 1, to: 3 }).source),
+    ).toEqual([3, 1, 2]);
     // A Spread Entry swapped with a static one is found by its own text.
     expect(
-      follow(
-        edit(HAND_WRITTEN, { action: "move", position: 3, by: -1 }).source,
-      ),
+      follow(edit(HAND_WRITTEN, { action: "move", position: 3, to: 2 }).source),
     ).toEqual([1, 3, 2]);
   });
 
@@ -539,7 +562,7 @@ describe("followEntries", () => {
     const moved = edit(HAND_WRITTEN, {
       action: "move",
       position: 1,
-      by: 1,
+      to: 2,
     }).source;
     expect(
       followEntries(

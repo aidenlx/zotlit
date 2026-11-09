@@ -20,6 +20,7 @@ import type { WorkbenchMessageLabel } from "./messages";
 import { useWorkbenchMessages } from "./messages";
 import { diagnosticText, documentDiagnosis, problemText } from "./problems";
 import { PropertyList, propertyText } from "./property-list";
+import { indexAfterMove, useListReorder } from "./reorder";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
@@ -212,6 +213,23 @@ export function PropertiesPane({
   // A held list stays on screen for repair, but no list change can patch it.
   const locked = controller.readOnly || controller.managedEntriesHeld;
 
+  // The list counts rows from 0; an entry's position counts from 1.
+  const reorder = useListReorder({
+    disabled: locked,
+    onMove: (from, to) => {
+      const position = from + 1;
+      if (
+        !controller.editManagedEntry({ action: "move", position, to: to + 1 })
+      )
+        return false;
+      if (selected !== null) {
+        const next = indexAfterMove(selected, position, to + 1);
+        if (next !== selected) onSelect(next);
+      }
+      return true;
+    },
+  });
+
   function add(kind: "property" | "spread", after = entries.length) {
     if (controller.editManagedEntry({ action: "add", kind, after })) {
       setNewRow(after + 1);
@@ -259,7 +277,7 @@ export function PropertiesPane({
           />
         </div>
       )}
-      <ul {...part("rows")}>
+      <ul {...part("rows")} {...reorder.list}>
         {entries.map((entry) => {
           const fields = produced.get(entry.position) ?? [];
           const raised = problems.get(entry.position) ?? [];
@@ -278,8 +296,20 @@ export function PropertiesPane({
                 : controller.sliceText(entrySlice(entry.position))
               : summarize(m, { entry, produced: fields, fold: standing.fold }));
           return (
-            <li key={entry.position} {...part("row")}>
+            <li
+              key={entry.position}
+              {...part("row")}
+              {...reorder.row(entry.position - 1, entries.length)}
+            >
               <div {...part("row-header")}>
+                <span
+                  {...part("handle")}
+                  aria-label={m.workbench_drag_to_reorder()}
+                  {...tooltip(m.workbench_drag_to_reorder())}
+                  {...reorder.handle(entry.position - 1, entries.length)}
+                >
+                  {icon("drag")}
+                </span>
                 <button
                   type="button"
                   aria-expanded={open}
@@ -336,42 +366,6 @@ export function PropertiesPane({
                   >
                     {icon("add")}
                   </button>
-                  {([-1, 1] as const).map((by) => {
-                    const label =
-                      by === -1
-                        ? m.workbench_properties_move_up()
-                        : m.workbench_properties_move_down();
-                    return (
-                      <button
-                        type="button"
-                        {...part("row-action")}
-                        key={by}
-                        aria-label={label}
-                        {...tooltip(label)}
-                        disabled={
-                          locked ||
-                          (by === -1
-                            ? entry.position === 1
-                            : entry.position === entries.length)
-                        }
-                        onClick={() => {
-                          if (
-                            controller.editManagedEntry({
-                              action: "move",
-                              position: entry.position,
-                              by,
-                            })
-                          ) {
-                            if (open) onSelect(entry.position + by);
-                            else if (selected === entry.position + by)
-                              onSelect(entry.position);
-                          }
-                        }}
-                      >
-                        {by === -1 ? icon("move-up") : icon("move-down")}
-                      </button>
-                    );
-                  })}
                   <button
                     type="button"
                     {...part("row-action")}

@@ -25,8 +25,6 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   add: "plus",
   remove: "trash-2",
   close: "x",
-  "move-up": "arrow-up",
-  "move-down": "arrow-down",
   "choose-sample": "search",
   basic: "sliders-horizontal",
   advanced: "code",
@@ -181,6 +179,29 @@ const chipIcon = "clickable-icon zt:p-1 zt:[--icon-size:var(--icon-xs)]";
 const bar =
   "zt:flex zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:rounded-md zt:border zt:border-border zt:bg-card zt:px-2.5 zt:py-1.5 zt:text-xs";
 /**
+ * A row that drags by its handle: it fades while it moves, and an accent line
+ * centred in the gap beside it marks the place it lands. The line is the row's
+ * positioned `::before`, so it takes no room and nothing moves. A list whose
+ * rows sit further apart than `gap-2` sets `--zt-row-gap`, and a row with a
+ * border sets `--zt-row-border`, since the line is placed from inside it. The
+ * Match tree and the Properties list share it.
+ */
+const dragRow = [
+  "zt:relative zt:data-dragging:opacity-50",
+  "zt:before:pointer-events-none zt:before:absolute zt:before:inset-x-0 zt:before:hidden zt:before:h-(--size-2-1) zt:before:rounded-full zt:before:bg-(--interactive-accent)",
+  "zt:data-[drop=before]:before:block zt:data-[drop=before]:before:top-[calc(-0.5*(var(--zt-row-gap,0.5rem)+var(--size-2-1))-var(--zt-row-border,0px))]",
+  "zt:data-[drop=after]:before:block zt:data-[drop=after]:before:bottom-[calc(-0.5*(var(--zt-row-gap,0.5rem)+var(--size-2-1))-var(--zt-row-border,0px))]",
+];
+/**
+ * The grip a row drags by, drawn as the Bases grip: faint, shown while the
+ * pointer is over its own row or it has focus; a disabled editor has none.
+ */
+const dragHandle = [
+  "zt:flex zt:shrink-0 zt:cursor-grab zt:items-center zt:rounded-sm zt:text-faint zt:hover:text-muted-foreground zt:active:cursor-grabbing",
+  "zt:opacity-0 zt:focus-visible:opacity-100 zt:aria-disabled:hidden",
+  "zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none",
+];
+/**
  * The rows of a Match tree as the Bases filter menu draws them: a grip, the
  * conjunction, then the condition, where a nested group spans the last two.
  * In a drag, the row that moves fades, an accent line marks the place it
@@ -191,13 +212,11 @@ export const matchRows = tv({
   slots: {
     row: [
       "zt:grid zt:min-w-0 zt:items-start zt:[&:hover>[data-part=handle]]:opacity-100 zt:[&>[data-part=group]]:col-span-2",
-      "zt:data-dragging:opacity-50 zt:data-[drop=after]:shadow-[0_var(--size-2-1)_0_0_var(--interactive-accent)] zt:data-[drop=before]:shadow-[0_calc(-1*var(--size-2-1))_0_0_var(--interactive-accent)]",
+      dragRow,
     ],
-    /** Faint, shown while the pointer is over its own row or it has focus; a disabled editor has none. */
     handle: [
-      "zt:me-[calc(-1*var(--size-2-1))] zt:flex zt:min-h-(--input-height) zt:shrink-0 zt:cursor-grab zt:items-center zt:rounded-sm zt:text-faint zt:hover:text-muted-foreground zt:active:cursor-grabbing",
-      "zt:opacity-0 zt:focus-visible:opacity-100 zt:aria-disabled:hidden",
-      "zt:focus-visible:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:focus-visible:outline-none",
+      "zt:me-[calc(-1*var(--size-2-1))] zt:min-h-(--input-height)",
+      ...dragHandle,
     ],
     group: "zt:data-[drop=into]:shadow-(--metadata-property-box-shadow-focus)",
   },
@@ -205,7 +224,7 @@ export const matchRows = tv({
     look: {
       workbench: { row: "zt:grid-cols-[auto_4.5rem_minmax(0,1fr)] zt:gap-2" },
       filter: {
-        row: "zt:grid-cols-[auto_var(--size-4-18)_minmax(0,1fr)] zt:gap-(--size-4-2)",
+        row: "zt:grid-cols-[auto_var(--size-4-18)_minmax(0,1fr)] zt:gap-(--size-4-2) zt:[--zt-row-gap:var(--size-2-3)]",
       },
     },
   },
@@ -625,8 +644,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       pane: stack,
       empty: hint,
       rows: "zt:flex zt:min-w-0 zt:flex-col zt:gap-2",
-      row: "zt:min-w-0 zt:rounded-md zt:border zt:border-border zt:p-2",
+      row: cn(
+        "zt:min-w-0 zt:rounded-md zt:border zt:border-border zt:bg-background zt:p-2 zt:[--zt-row-border:1px] zt:[&:hover_[data-part=handle]]:opacity-100",
+        dragRow,
+      ),
       "row-header": "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-1",
+      handle: cn(dragHandle, "zt:self-stretch"),
       "row-toggle":
         "clickable-icon zt:min-w-0 zt:flex-1 zt:flex-wrap zt:justify-start zt:gap-x-3 zt:gap-y-1 zt:text-start",
       "row-name": "zt:flex zt:min-w-0 zt:items-center zt:gap-2",

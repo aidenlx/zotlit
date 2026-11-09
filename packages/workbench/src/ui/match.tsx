@@ -26,6 +26,7 @@ import {
   fromFilter,
   isExpression,
   isGroup,
+  moveAt,
   placeholderRow,
   removeAt,
   replaceAt,
@@ -46,11 +47,11 @@ import type {
 import { MatchExpressionInput } from "./match.expression";
 import { filterVocabulary } from "./match.fields";
 import type { FilterValues } from "./match.fields";
-import { useMatchReorder } from "./match.reorder";
-import type { MatchReorder } from "./match.reorder";
 import { MatchSelect } from "./match.rows";
 // One Match tree over the document controller; rows write through the master history.
 import { useWorkbenchMessages } from "./messages";
+import { useReorder } from "./reorder";
+import type { Reorder } from "./reorder";
 import { TabDocsLink } from "./tab-bar";
 import { useParts, useIcon } from "./theme";
 
@@ -357,9 +358,17 @@ export function MatchEditor<Row extends LabelledRow>({
     if (!onChange(filter)) setRoot(fromFilter(value, vocabulary));
   }
   const { places } = storedFilter(tree, vocabulary);
-  const reorder = useMatchReorder({ root: tree, disabled, onChange: change });
+  const reorder = useReorder({
+    disabled,
+    onMove: (from, to) => {
+      const next = moveAt(tree, from, to);
+      if (next === tree) return false;
+      change(next);
+      return true;
+    },
+  });
   return (
-    <fieldset disabled={disabled} {...part("fieldset")} {...reorder.fieldset}>
+    <fieldset disabled={disabled} {...part("fieldset")} {...reorder.list}>
       <Group
         root={tree}
         group={tree}
@@ -388,7 +397,7 @@ function Group<Row extends LabelledRow>({
   /** Where each row sits in the stored filter, as {@link storedFilter} finds it. */
   places: ReadonlyMap<string, FilterPath>;
   vocabulary: MatchVocabulary<Row>;
-  reorder: MatchReorder;
+  reorder: Reorder;
   onChange: (root: ConditionGroup<Row>) => void;
 }) {
   const m = useWorkbenchMessages();
@@ -453,8 +462,8 @@ function Group<Row extends LabelledRow>({
           >
             <span
               {...part("handle")}
-              aria-label={m.workbench_match_drag_to_reorder()}
-              {...host.tooltip(m.workbench_match_drag_to_reorder())}
+              aria-label={m.workbench_drag_to_reorder()}
+              {...host.tooltip(m.workbench_drag_to_reorder())}
               {...reorder.handle([...path, index], group.conditions.length)}
             >
               {icon("drag")}

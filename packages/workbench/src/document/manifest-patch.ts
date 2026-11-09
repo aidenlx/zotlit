@@ -52,7 +52,12 @@ export type ManagedEntryAction =
       readonly after?: number;
     }
   | { readonly action: "remove"; readonly position: number }
-  | { readonly action: "move"; readonly position: number; readonly by: -1 | 1 }
+  | {
+      readonly action: "move";
+      readonly position: number;
+      /** The position the entry holds once it has moved. */
+      readonly to: number;
+    }
   | {
       readonly action: "language";
       readonly position: number;
@@ -529,22 +534,31 @@ function removeEntry(list: ManagedList, position: number): ChangeSpec | null {
 function moveEntry(
   source: string,
   list: ManagedList,
-  { position, by }: { position: number; by: -1 | 1 },
+  { position, to }: { position: number; to: number },
 ): ChangeSpec | null {
-  const moved = entryAt(list, position);
-  const other = entryAt(list, position + by);
-  if (!moved || !other) return null;
-  const [first, second] =
-    by === 1 ? [moved.entry, other.entry] : [other.entry, moved.entry];
+  if (position === to || !entryAt(list, position) || !entryAt(list, to))
+    return null;
+  // The entries from the one that moves to the place it takes, in order.
+  const run = list.entries
+    .slice(Math.min(position, to) - 1, Math.max(position, to))
+    .map(({ entry }) => entry.block);
+  const blocks = run.map(({ from, to }) => source.slice(from, to));
+  const order =
+    position < to
+      ? [...blocks.slice(1), blocks[0]!]
+      : [blocks.at(-1)!, ...blocks.slice(0, -1)];
   return {
-    from: first.block.from,
-    to: second.block.to,
-    insert:
-      source.slice(second.block.from, second.block.to) +
-      // Whatever the author wrote between the two entries — a comment, a blank
-      // line — stays between them.
-      source.slice(first.block.to, second.block.from) +
-      source.slice(first.block.from, first.block.to),
+    from: run[0]!.from,
+    to: run.at(-1)!.to,
+    // Whatever the author wrote between two entries — a comment, a blank
+    // line — stays in its own place between the entries that now stand there.
+    insert: order
+      .map((block, index) =>
+        index === 0
+          ? block
+          : source.slice(run[index - 1]!.to, run[index]!.from) + block,
+      )
+      .join(""),
   };
 }
 
