@@ -19,7 +19,12 @@ import {
 } from "./fields-panel";
 import { useContainerName, useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
-import { PANEL_HANDLES, PANEL_SIDES, resizePanel } from "./panel-layout";
+import {
+  drawnMax,
+  PANEL_HANDLES,
+  PANEL_SIDES,
+  resizePanel,
+} from "./panel-layout";
 import type {
   HandleSizing,
   PanelHandle,
@@ -153,10 +158,9 @@ function useSizing(
     registry.set(model.sizedFromMenu, null);
     panelsUpdate(change);
   };
-  const bounds = () => ({
-    size: registry.get(model.viewSize),
-    defaults: model.panelDefaults,
-  });
+  // Each event reads the view as it is now.
+  const viewSize = () => registry.get(model.viewSize);
+  const bounds = () => ({ size: viewSize(), defaults: model.panelDefaults });
   // The keys that grow and shrink the panel: up gives the Preview under the
   // editor more height, and an edge grows the way it moves away from the editor.
   const keys = (element: Element) =>
@@ -179,7 +183,7 @@ function useSizing(
       ? start.size +
           sizing.fromPixels(
             moved(event.currentTarget, start.from, event),
-            registry.get(model.viewSize),
+            viewSize(),
           )
       : null;
   };
@@ -187,7 +191,7 @@ function useSizing(
     const next = dragged(event);
     drag.current = null;
     setDragging(false);
-    if (next !== null) update(sizing.write(next, registry.get(model.viewSize)));
+    if (next !== null) update(sizing.write(next, viewSize()));
   };
   return {
     "data-dragging": dragging ? "" : undefined,
@@ -218,17 +222,14 @@ function useSizing(
       event.currentTarget.setPointerCapture(event.pointerId);
       drag.current = {
         from: event,
-        size: sizing.drawn(
-          registry.get(model.panels),
-          registry.get(model.viewSize),
-        ),
+        size: sizing.drawn(registry.get(model.panels), viewSize()),
       };
       setDragging(true);
     },
     onPointerMove(event: PointerEvent<HTMLDivElement>) {
       const next = dragged(event);
       if (next === null) return;
-      const size = registry.get(model.viewSize);
+      const size = viewSize();
       const panels = sizing.write(next, size)(registry.get(model.panels));
       region.current?.style.setProperty(
         property,
@@ -296,18 +297,18 @@ function Panel({
     };
   }, []);
   const { edge: standsAt } = PANEL_SIDES[side];
-  const handleName: PanelHandle = below ? "split" : side;
-  const sizing = PANEL_HANDLES[handleName];
+  const handle: PanelHandle = below ? "split" : side;
+  const sizing = PANEL_HANDLES[handle];
   const vertical = sizing.axis === "vertical";
   const property = vertical ? properties.height : properties.width;
   const handlers = useSizing(
-    handleName,
+    handle,
     {
       // Moving the edge away from the editor widens the panel: a leading
       // column's edge toward the trailing side, a trailing column's toward
       // the leading side.
-      outward: (handle) =>
-        (standsAt === "leading" ? 1 : -1) * (rightToLeft(handle) ? -1 : 1),
+      outward: (element) =>
+        (standsAt === "leading" ? 1 : -1) * (rightToLeft(element) ? -1 : 1),
       property,
     },
     region,
@@ -316,7 +317,7 @@ function Panel({
   // The handle describes the panel as drawn: the view holds a saved size
   // within its own room, and a short view draws less than the saved share
   // to keep the editor's height.
-  const handle = (
+  const separator = (
     <div
       ref={edge}
       role="separator"
@@ -326,19 +327,16 @@ function Panel({
       // A separator's orientation is the line it draws, across the way it moves.
       aria-orientation={vertical ? "horizontal" : "vertical"}
       aria-valuemin={sizing.min}
-      aria-valuemax={sizing.drawn(
-        sizing.write(sizing.max(panels, size), size)(panels),
-        size,
-      )}
+      aria-valuemax={drawnMax(handle, panels, size)}
       aria-valuenow={sizing.drawn(panels, size)}
-      aria-valuetext={sizeText(handleName, panels, size)}
+      aria-valuetext={sizeText(handle, panels, size)}
       {...handlers}
       {...(below ? part("split") : part("edge", side))}
     />
   );
   return (
     <>
-      {standsAt === "trailing" && handle}
+      {standsAt === "trailing" && separator}
       <section
         ref={region}
         id={id}
@@ -353,7 +351,7 @@ function Panel({
         {labelledBy === undefined && name.hiddenName}
         {content}
       </section>
-      {standsAt === "leading" && handle}
+      {standsAt === "leading" && separator}
     </>
   );
 }

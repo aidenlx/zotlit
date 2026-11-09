@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   canResizePanel,
   columnLimit,
+  drawnMax,
   FIELDS_WIDTH,
   hideFields,
   INITIAL_PANELS,
@@ -15,6 +16,8 @@ import {
   resizePanel,
 } from "./panel-layout";
 import type { PanelMove, PanelStep, WorkbenchPanels } from "./panel-layout";
+import { panelSizeMenus } from "./panel-menu";
+import { m } from "./test-messages";
 
 /** The panels at their initial sizes, with the Preview shown as `preview` says. */
 const shown = (preview: boolean): WorkbenchPanels => ({
@@ -334,6 +337,7 @@ describe.each([
     menu: 384,
     min: 240,
     max: 480,
+    drawnLargest: 480,
     read: (panels: WorkbenchPanels) => panels.fields.width,
   },
   {
@@ -348,6 +352,7 @@ describe.each([
     menu: 464,
     min: 240,
     max: 1240,
+    drawnLargest: 1240,
     read: (panels: WorkbenchPanels) => panels.preview.width,
   },
   {
@@ -362,11 +367,27 @@ describe.each([
     menu: 50,
     min: 20,
     max: 80,
+    // A saved 80 % leaves the editor 160 px of an 800 px view; the Preview
+    // gives up height until the editor keeps 320, and draws at 60 %.
+    drawnLargest: 60,
     read: (panels: WorkbenchPanels) => panels.preview.height,
   },
 ] as const)(
   "the $handle handle",
-  ({ handle, panels, size, axis, drawn, key, wide, menu, min, max, read }) => {
+  ({
+    handle,
+    panels,
+    size,
+    axis,
+    drawn,
+    key,
+    wide,
+    menu,
+    min,
+    max,
+    drawnLargest,
+    read,
+  }) => {
     const sizing = PANEL_HANDLES[handle];
     const bounds = { size, defaults: INITIAL_PANELS };
     const moved = (move: PanelMove, step?: PanelStep) =>
@@ -374,10 +395,22 @@ describe.each([
         resizePanel(handle, move, step ? { ...bounds, step } : bounds)(panels),
       );
 
-    it("is drawn in the view and offers its menu", () => {
+    it("is drawn in the view and offers its menu, whose entries take the same path", () => {
       expect(panelHandles(panels, size)).toContain(handle);
-      expect(sizing.axis).toBe(axis);
       expect(sizing.drawn(panels, size)).toBe(drawn);
+      const sizeMenu = panelSizeMenus(m, panels, bounds).find(
+        (each) => each.handle === handle,
+      );
+      expect(sizeMenu?.axis).toBe(axis);
+      const [grow, shrink, reset] = sizeMenu!.items;
+      // At its default size the panel grows and shrinks, and has nothing to reset.
+      expect([grow!.disabled, shrink!.disabled, reset!.disabled]).toEqual([
+        false,
+        false,
+        true,
+      ]);
+      expect(read(grow!.apply(panels))).toBe(menu);
+      expect(read(shrink!.apply(panels))).toBe(drawn - (menu - drawn));
     });
 
     it("grows and shrinks by a key, a Shift+key and a menu step", () => {
@@ -393,6 +426,8 @@ describe.each([
       expect(moved("min")).toBe(min);
       expect(moved("max")).toBe(max);
       const largest = resizePanel(handle, "max", bounds)(panels);
+      expect(sizing.drawn(largest, size)).toBe(drawnLargest);
+      expect(drawnMax(handle, panels, size)).toBe(drawnLargest);
       expect(canResizePanel(handle, "grow", bounds)(largest)).toBe(false);
       // A key past the largest size draws the panel no larger.
       expect(
@@ -400,7 +435,7 @@ describe.each([
           resizePanel(handle, "grow", { ...bounds, step: "key" })(largest),
           size,
         ),
-      ).toBe(sizing.drawn(largest, size));
+      ).toBe(drawnLargest);
       const least = resizePanel(handle, "min", bounds)(panels);
       expect(canResizePanel(handle, "shrink", bounds)(least)).toBe(false);
     });

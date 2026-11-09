@@ -411,7 +411,6 @@ const drawnShare = (panels: WorkbenchPanels, size: ViewSize | null) =>
  * a double-click all read it, so each handle sizes its panel one way.
  */
 export interface HandleSizing {
-  /** The side panel the handle sizes. */
   readonly side: PanelSide;
   /** The way the handle moves: a column edge sideways, the split up and down. */
   readonly axis: "horizontal" | "vertical";
@@ -470,7 +469,6 @@ const columnHandle = (side: PanelSide): HandleSizing => {
   };
 };
 
-/** Each handle's sizing: the two column edges and the split. */
 export const PANEL_HANDLES: Readonly<Record<PanelHandle, HandleSizing>> = {
   fields: columnHandle("fields"),
   preview: columnHandle("preview"),
@@ -510,18 +508,36 @@ export type PanelStep = keyof HandleSizing["steps"];
 export type PanelMove = PanelResize | "min" | "max";
 
 /**
+ * The largest size `handle`'s panel draws at in a view of `size`, which End
+ * reaches: a short view draws the split's largest share less than it asks.
+ */
+export function drawnMax(
+  handle: PanelHandle,
+  panels: WorkbenchPanels,
+  size: ViewSize | null,
+): number {
+  const sizing = PANEL_HANDLES[handle];
+  return sizing.drawn(
+    sizing.write(sizing.max(panels, size), size)(panels),
+    size,
+  );
+}
+
+/** {@link PanelBounds} and how far a grow or shrink moves the handle. */
+export interface PanelMoveBounds extends PanelBounds {
+  /** @default "menu" */
+  readonly step?: PanelStep;
+}
+
+/**
  * Moves `handle`: a grow or shrink starts from the size the view draws and
- * moves by `step`, a menu entry's unless said otherwise; a reset sets the
- * default's saved size, and every size stays within the handle's limits.
+ * moves by `step`; a reset sets the default's saved size, and every size
+ * stays within the handle's limits.
  */
 export function resizePanel(
   handle: PanelHandle,
   move: PanelMove,
-  {
-    size,
-    defaults,
-    step = "menu",
-  }: PanelBounds & { readonly step?: PanelStep },
+  { size, defaults, step = "menu" }: PanelMoveBounds,
 ): (panels: WorkbenchPanels) => WorkbenchPanels {
   const sizing = PANEL_HANDLES[handle];
   const by = sizing.steps[step];
