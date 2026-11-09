@@ -1,6 +1,6 @@
 // Obsidian's hover popover with each timer cancelled on the window that armed
 // it, and placed in the window it opened in.
-import { HoverPopover, PopoverState } from "obsidian";
+import { HoverPopover as ObsidianHoverPopover, PopoverState } from "obsidian";
 
 /**
  * Obsidian arms the show timer and the hide timer on `activeWindow` and
@@ -11,7 +11,7 @@ import { HoverPopover, PopoverState } from "obsidian";
  * deadline. Every popover of the plugin extends this class, which cancels a
  * timer on the window that armed it. Verified against Obsidian 1.14.1.
  */
-export class PopoutAwareHoverPopover extends HoverPopover {
+export class HoverPopover extends ObsidianHoverPopover {
   /** The window `timer` was armed on: `activeWindow` at the time. */
   #timerWindow: Window = activeWindow;
 

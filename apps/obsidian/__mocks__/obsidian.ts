@@ -121,6 +121,10 @@ const noticeElStub = {
   addClasses: (_classes: string[]) => {},
   toggle: (_show: boolean) => {},
   querySelector: (_selector: string): HTMLElement | null => null,
+  /** Obsidian opens a modal or a notice in `activeWindow`. */
+  get win(): Window {
+    return activeWindow;
+  },
 } as unknown as HTMLElement;
 
 export class Notice {
@@ -999,7 +1003,14 @@ export abstract class FuzzySuggestModal<T> {
 }
 
 export abstract class SuggestModal<T> {
-  readonly containerEl = { addClass() {}, removeClass() {} };
+  readonly containerEl = {
+    addClass() {},
+    removeClass() {},
+    /** Obsidian opens a modal in `activeWindow`. */
+    get win(): Window {
+      return activeWindow;
+    },
+  };
   readonly resultContainerEl = {
     createDiv() {},
     setAttribute(_name: string, _value: string) {},

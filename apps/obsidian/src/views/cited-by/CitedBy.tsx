@@ -290,12 +290,13 @@ function SearchFilter() {
     field.current?.querySelector("input")?.focus();
   }, []);
   useEffect(() => {
-    if (text === search) return;
-    const timer = window.setTimeout(
+    const win = field.current?.win;
+    if (text === search || !win) return;
+    const timer = win.setTimeout(
       () => setLayout((layout) => ({ ...layout, search: text })),
       SEARCH_DEBOUNCE,
     );
-    return () => window.clearTimeout(timer);
+    return () => win.clearTimeout(timer);
   }, [search, setLayout, text]);
 
   return (

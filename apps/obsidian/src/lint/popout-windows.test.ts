@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 
 import {
   noCrossWindowInstanceof,
+  noGlobalResizeObserver,
   noGlobalTimer,
 } from "../../scripts/oxlint-plugin-popout-windows";
 
@@ -118,6 +119,29 @@ tester.run("no-global-timer", noGlobalTimer, {
     {
       code: "globalThis.setInterval(poll, 1000)",
       errors: [{ messageId: "globalTimer", data: { name: "setInterval" } }],
+    },
+  ],
+});
+
+tester.run("no-global-resize-observer", noGlobalResizeObserver, {
+  valid: [
+    "observeResize(el, [el], measure)",
+    "new (el.win as typeof window).ResizeObserver(measure)",
+    "const { ResizeObserver } = win as typeof window; new ResizeObserver(measure)",
+    "new MutationObserver(changed)",
+  ],
+  invalid: [
+    {
+      code: "new ResizeObserver(measure)",
+      errors: [{ messageId: "globalResizeObserver" }],
+    },
+    {
+      code: "new window.ResizeObserver(measure)",
+      errors: [{ messageId: "globalResizeObserver" }],
+    },
+    {
+      code: "new globalThis.ResizeObserver(measure)",
+      errors: [{ messageId: "globalResizeObserver" }],
     },
   ],
 });

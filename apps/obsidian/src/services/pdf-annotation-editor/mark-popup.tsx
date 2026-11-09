@@ -21,8 +21,8 @@ import type { Root } from "react-dom/client";
 
 import { IconButton } from "@/components/obsidian/icon-button";
 import { AppContext } from "@/lib/app-context";
+import { HoverPopover } from "@/lib/hover-popover";
 import * as m from "@/lib/i18n/generated/messages";
-import { PopoutAwareHoverPopover } from "@/lib/popout-aware-hover-popover";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
@@ -468,7 +468,7 @@ export interface MarkPopupDeps {
  * a render itself sets off — an editor ending its session as it unmounts —
  * runs once that render is done, rather than inside it.
  */
-export class MarkPopup extends PopoutAwareHoverPopover {
+export class MarkPopup extends HoverPopover {
   readonly #content: HTMLElement;
   readonly #root: Root;
   readonly #render;

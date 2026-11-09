@@ -144,10 +144,61 @@ export const noGlobalTimer: Rule = {
   },
 };
 
+/**
+ * A `ResizeObserver` reports only elements in the window whose constructor
+ * made it: the main window's never reports an element in a pop-out. Verified
+ * against Obsidian 1.14.5.
+ */
+export const noGlobalResizeObserver: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Require a ResizeObserver from the window of the element it observes.",
+    },
+    messages: {
+      globalResizeObserver:
+        "Use observeResize from @/lib/observe-resize, or the ResizeObserver of the element's own window (el.win); the main window's ResizeObserver never reports an element in a pop-out (see policies/popout-windows.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    /** Whether code around `node` declares its name, as `win`'s `ResizeObserver` taken apart. */
+    const declared = (
+      node: Parameters<typeof context.sourceCode.getScope>[0],
+      name: string,
+    ) => {
+      for (
+        let scope = context.sourceCode.getScope(node);
+        scope;
+        scope = scope.upper!
+      )
+        if (scope.set.get(name)?.defs.length) return true;
+      return false;
+    };
+    return {
+      NewExpression(node) {
+        const { callee } = node;
+        const global =
+          callee.type === "Identifier"
+            ? callee.name === "ResizeObserver" && !declared(callee, callee.name)
+            : callee.type === "MemberExpression" &&
+              callee.object.type === "Identifier" &&
+              (callee.object.name === "window" ||
+                callee.object.name === "globalThis") &&
+              callee.property.type === "Identifier" &&
+              callee.property.name === "ResizeObserver";
+        if (global) context.report({ node, messageId: "globalResizeObserver" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-obsidian" },
   rules: {
     "no-cross-window-instanceof": noCrossWindowInstanceof,
+    "no-global-resize-observer": noGlobalResizeObserver,
     "no-global-timer": noGlobalTimer,
   },
 };

@@ -2,7 +2,7 @@
 import type { HoverParent } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PopoutAwareHoverPopover } from "./popout-aware-hover-popover";
+import { HoverPopover } from "./hover-popover";
 
 const mainWindow = activeWindow;
 
@@ -37,7 +37,7 @@ function setup() {
   activeWindow = popoutWindow();
   const parent: HoverParent = { hoverPopover: null };
   const target = document.body.appendChild(document.createElement("span"));
-  const popover = new PopoutAwareHoverPopover(parent, target, 300);
+  const popover = new HoverPopover(parent, target, 300);
   return {
     parent,
     target,
@@ -57,7 +57,7 @@ afterEach(() => {
   activeDocument = mainDocument;
 });
 
-describe("PopoutAwareHoverPopover", () => {
+describe("HoverPopover", () => {
   it("stays hidden after hide() cancels a show timer armed on a popout window", () => {
     using h = setup();
     vi.advanceTimersByTime(100);
@@ -84,12 +84,10 @@ describe("PopoutAwareHoverPopover", () => {
   it("stays in the popout it opened in when focus moves to another window", () => {
     const popout = document.implementation.createHTMLDocument("popout");
     activeDocument = popout;
-    const popover = new PopoutAwareHoverPopover(
-      { hoverPopover: null },
-      null,
-      0,
-      { x: 10, y: 10 },
-    );
+    const popover = new HoverPopover({ hoverPopover: null }, null, 0, {
+      x: 10,
+      y: 10,
+    });
     popover.showNow();
     expect(popover.hoverEl.ownerDocument).toBe(popout);
     activeDocument = mainDocument;
@@ -100,7 +98,7 @@ describe("PopoutAwareHoverPopover", () => {
 
   it("opens in its home document while focus is in another window", () => {
     const popout = document.implementation.createHTMLDocument("popout");
-    const popover = new (class extends PopoutAwareHoverPopover {
+    const popover = new (class extends HoverPopover {
       protected override homeDocument(): Document {
         return popout;
       }
