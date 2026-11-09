@@ -253,6 +253,14 @@ describe("shared Data Explorer", () => {
     const { ui } = mounted;
     render(ui);
     const input = screen.getByRole("searchbox");
+    // The placeholder shows the field's name; a host would draw an
+    // `aria-label` as a tooltip over it as well.
+    expect(input.hasAttribute("aria-label")).toBe(false);
+    expect(
+      screen.getByRole("searchbox", {
+        name: input.getAttribute("placeholder")!,
+      }),
+    ).toBe(input);
     fireEvent.input(input, { target: { value: "all creators" } });
     fireEvent.change(input, { target: { value: "all creators" } });
     const row = screen.getByRole("treeitem");

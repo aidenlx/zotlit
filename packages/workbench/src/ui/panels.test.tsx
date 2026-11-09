@@ -47,10 +47,15 @@ function open(size: ViewSize) {
   });
 }
 
-/** The regions and the editor's text in document order. */
+/** The regions' names and the editor's text in document order. */
 const order = () =>
   [...document.querySelectorAll<HTMLElement>("[role=region], p")].map(
-    (element) => element.getAttribute("aria-label") ?? element.textContent,
+    (element) => {
+      const nameId = element.getAttribute("aria-labelledby");
+      return nameId === null
+        ? element.textContent
+        : document.getElementById(nameId)!.textContent;
+    },
   );
 
 describe("the side panels", () => {
@@ -59,6 +64,12 @@ describe("the side panels", () => {
     const split = screen.getByRole("separator", { name: "Resize preview" });
     expect(split.getAttribute("aria-orientation")).toBe("horizontal");
     expect(order()).toEqual(["Template source", "Preview"]);
+    // A host draws `aria-label` as a hover tooltip; the region shows none.
+    expect(
+      screen
+        .getByRole("region", { name: "Preview" })
+        .hasAttribute("aria-label"),
+    ).toBe(false);
     const panels = page.registry.get(page.model.panels);
     page.resize({ width: 1200, height: 800 });
     expect(

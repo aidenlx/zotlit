@@ -17,7 +17,7 @@ import {
   fieldsDockId,
   FieldsPopoverPanel,
 } from "./fields-panel";
-import { useOptionalHost } from "./host";
+import { useContainerName, useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import {
   clampPanelWidth,
@@ -50,6 +50,11 @@ export interface SidePanel {
   readonly content: ReactNode;
 }
 
+/** The Fields Panel's side panel, with the host's own actions for its header. */
+interface FieldsSidePanel extends SidePanel {
+  readonly actions?: ReactNode;
+}
+
 /**
  * The editor beside or above the Preview the reader shows, the docked Fields
  * Panel before both, and the Fields Panel in the host's Fields popover over
@@ -61,7 +66,7 @@ export function SidePanels({
   panels,
   children,
 }: {
-  panels: Partial<Record<PanelSide, SidePanel>>;
+  panels: { readonly fields?: FieldsSidePanel; readonly preview?: SidePanel };
   children: ReactNode;
 }) {
   const model = useWorkbenchModel();
@@ -284,6 +289,7 @@ function Panel({
   const panels = useAtomValue(model.panels);
   const uniqueId = useUniqueId();
   const id = givenId ?? uniqueId;
+  const name = useContainerName(label);
   const region = useRef<HTMLElement>(null);
   const edge = useRef<HTMLDivElement>(null);
   const leave = useRef(onLeave);
@@ -385,7 +391,7 @@ function Panel({
         id={id}
         role="region"
         {...(labelledBy === undefined
-          ? { "aria-label": label }
+          ? name.attrs
           : { "aria-labelledby": labelledBy })}
         data-panel={side}
         style={
@@ -397,6 +403,7 @@ function Panel({
         }
         {...part("panel", below ? "below" : side)}
       >
+        {labelledBy === undefined && name.hiddenName}
         {content}
       </section>
       {standsAt === "leading" && handle}

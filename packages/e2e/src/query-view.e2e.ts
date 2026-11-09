@@ -5505,8 +5505,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         set(
           await until("tag value field", () =>
-            all().querySelector<HTMLInputElement>(
-              `input[aria-label="${filterValueLabel}"]`,
+            // Named by a hidden element, so the field shows no tooltip.
+            [...all().querySelectorAll<HTMLInputElement>("input")].find(
+              (input) =>
+                input.ownerDocument.getElementById(
+                  input.getAttribute("aria-labelledby") ?? "",
+                )?.textContent === filterValueLabel,
             )!,
           ),
           "figure",

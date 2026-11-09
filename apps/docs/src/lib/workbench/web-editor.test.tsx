@@ -310,7 +310,7 @@ describe("the field list", () => {
     await using page = await open();
     openFieldsPopover(page.host);
     const search = page.host.querySelector<HTMLInputElement>(
-      `input[aria-label="${m.workbench_fields_search_note()}"]`,
+      `input[placeholder="${m.workbench_fields_search_note()}"]`,
     )!;
 
     act(() => {

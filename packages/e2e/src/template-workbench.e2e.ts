@@ -438,6 +438,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(strip?.above).toBeGreaterThan(0);
     expect(strip?.above).toBe(strip?.below);
 
+    // #1962: Obsidian draws an element's `aria-label` as its hover tooltip.
+    // The Preview and the view's other containers name themselves through
+    // `aria-labelledby`, so the pointer passes over them with no tooltip.
+    const quiet = await obRun(
+      run.vaultId,
+      ({ page }, { path }) => {
+        const view = page.workbench({ path });
+        const preview = page.previewPanel(view);
+        const nameId = preview?.getAttribute("aria-labelledby");
+        return {
+          previewLabel: preview?.getAttribute("aria-label") ?? null,
+          previewName: nameId
+            ? (preview?.ownerDocument.getElementById(nameId)?.textContent ??
+              null)
+            : null,
+          labelledContainers: [
+            ...(view?.contentEl.querySelectorAll<HTMLElement>(
+              ":is([role=region], [role=group], [role=radiogroup], [role=toolbar], [role=tablist], [role=listbox], [role=tree], section, dl, .cm-content)[aria-label]",
+            ) ?? []),
+          ].map((element) => element.getAttribute("aria-label")),
+        };
+      },
+      { path },
+    );
+    expect(quiet).toEqual({
+      previewLabel: null,
+      previewName: run.m.workbench_view_preview(),
+      labelledContainers: [],
+    });
+
     /** Opens Choose item from the item row, searches `title`, and picks it. */
     const choose = async (title: string) => {
       await obRunUntil(
@@ -1399,249 +1429,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.m.workbench_docs_data(),
       run.m.workbench_problems_community(),
     ]);
-  });
-
-  // #1956: a reader who cannot drag sizes every handle from the pane menu
-  // alone, and the sizes the menu sets are saved like dragged ones.
-  it("sizes and resets the Preview through the pane menu alone, and restores the sizes", async () => {
-    const path = `templates/${booksProfile.document}`;
-    await using cleanup = new AsyncDisposableStack();
-    cleanup.defer(() =>
-      obRun(
-        run.vaultId,
-        ({ app }) => {
-          for (const menu of activeDocument.body.querySelectorAll(".menu"))
-            menu.remove();
-          app.workspace.detachLeavesOfType("zotlit-template-workbench");
-          app.workspace.detachLeavesOfType("empty");
-        },
-        undefined,
-      ),
-    );
-    await suite.wideWindow(cleanup);
-    /**
-     * Opens the editor at the leading side of the window with `state`, and
-     * gives it `share` percent of the window beside an empty tab, or the
-     * whole window when `share` is null.
-     */
-    const open = (state: object, share: number | null) =>
-      obRun(
-        run.vaultId,
-        async ({ app }, { path, state, share }) => {
-          app.workspace.detachLeavesOfType("zotlit-template-workbench");
-          app.workspace.detachLeavesOfType("empty");
-          const leaf = app.workspace.createLeafInParent(
-            app.workspace.rootSplit,
-            0,
-          );
-          await leaf.setViewState({
-            type: "zotlit-template-workbench",
-            state: { ...(JSON.parse(state) as object), file: path },
-            active: true,
-          });
-          if (share === null) return;
-          const other = app.workspace.createLeafBySplit(leaf, "vertical");
-          await other.setViewState({ type: "empty" });
-          // The share of the root split, as dragging the edge between sets
-          // it, on whichever item sits in the root split.
-          type Sized = { setDimension(share: number): void; parent: unknown };
-          const item = (sized: Sized) =>
-            sized.parent === app.workspace.rootSplit
-              ? sized
-              : (sized.parent as Sized);
-          item(leaf as unknown as Sized).setDimension(share);
-          item(other as unknown as Sized).setDimension(100 - share);
-        },
-        { path, state: JSON.stringify(state), share },
-      );
-    interface Handles {
-      /** Each handle's value, by its name and orientation. */
-      readonly now: Record<string, string | null>;
-      readonly saved: unknown;
-    }
-    /** Waits for the handles `ready` accepts, and reads them. */
-    const handles = async (
-      what: string,
-      ready: (now: Handles["now"]) => boolean,
-    ) =>
-      JSON.parse(
-        (await obRunUntil(
-          run.vaultId,
-          ({ page }, { path }) => {
-            const view = page.workbench({ path });
-            if (!view) return null;
-            const now = Object.fromEntries(
-              Array.from(
-                view.contentEl.querySelectorAll<HTMLElement>(
-                  "[role=separator]",
-                ),
-                (handle) => [
-                  `${handle.getAttribute("aria-label")} ${handle.getAttribute("aria-orientation")}`,
-                  handle.getAttribute("aria-valuenow"),
-                ],
-              ),
-            );
-            return JSON.stringify({
-              now,
-              saved: view.getState().panels,
-            } satisfies Handles);
-          },
-          { path },
-          {
-            what,
-            ready: (value) =>
-              value !== null && ready((JSON.parse(value) as Handles).now),
-          },
-        ))!,
-      ) as Handles;
-    /**
-     * Opens the pane menu from the view's More options action, the last of
-     * its actions, then each submenu of `groups` in turn, and returns the
-     * last submenu's entries; a disabled entry reads in parentheses.
-     */
-    const submenu = (...groups: string[]) =>
-      obRunUntil(
-        run.vaultId,
-        ({ page }, { path, groups }) => {
-          const view = page.workbench({ path })!;
-          const doc = view.containerEl.doc;
-          const title = (item: Element) =>
-            item.querySelector(".menu-item-title")?.textContent ?? "";
-          const menus = Array.from(doc.body.querySelectorAll(".menu"));
-          if (menus.length === 0) {
-            const actions = view.containerEl.querySelectorAll<HTMLElement>(
-              ".view-actions .view-action",
-            );
-            actions[actions.length - 1]!.click();
-            return null;
-          }
-          const last = menus[menus.length - 1]!;
-          if (menus.length <= groups.length) {
-            const parent = Array.from(
-              last.querySelectorAll<HTMLElement>(".menu-item"),
-            ).find((item) => title(item) === groups[menus.length - 1]);
-            parent?.dispatchEvent(
-              new MouseEvent("mouseover", { bubbles: true }),
-            );
-            parent?.click();
-            return null;
-          }
-          return Array.from(last.querySelectorAll(".menu-item"), (item) =>
-            item.classList.contains("is-disabled")
-              ? `(${title(item)})`
-              : title(item),
-          ).join("|");
-        },
-        { path, groups },
-        {
-          what: `the ${groups.join(" → ")} submenu`,
-          ready: (value) => value !== null,
-        },
-      );
-    /** Selects `entry` in the open submenu, as a click does, and closes the menu. */
-    const pick = async (entry: string) => {
-      await obRun(run.vaultId, ({ page }) => page.menuReady(), undefined);
-      await obRun(
-        run.vaultId,
-        ({ page }, { path, entry }) => {
-          const doc = page.workbench({ path })!.containerEl.doc;
-          const menus = doc.body.querySelectorAll(".menu");
-          const sub = menus[menus.length - 1]!;
-          Array.from(sub.querySelectorAll<HTMLElement>(".menu-item"))
-            .find(
-              (item) =>
-                item.querySelector(".menu-item-title")?.textContent === entry,
-            )!
-            .click();
-          for (const menu of doc.body.querySelectorAll(".menu")) menu.remove();
-        },
-        { path, entry },
-      );
-    };
-    const { m } = run;
-    // The sizes wait in More workbench options (#1962).
-    const more = m.template_workbench_more_options();
-    const preview = `${m.workbench_preview_resize()} vertical`;
-    const split = `${m.workbench_preview_resize()} horizontal`;
-
-    // A wide leaf: the Preview column, sized from its submenu. The Fields
-    // popover has no edge, so the pane menu sizes the Preview alone.
-    await open(
-      { panels: { preview: { shown: true, width: 400, height: 40 } } },
-      null,
-    );
-    await handles("the Preview column", (now) => now[preview] === "400");
-    expect(await submenu(more, m.workbench_preview_resize())).toBe(
-      [
-        m.workbench_panel_wider(),
-        m.workbench_panel_narrower(),
-        `(${m.workbench_panel_reset_width()})`,
-      ].join("|"),
-    );
-    await pick(m.workbench_panel_narrower());
-    await handles("the Preview narrower", (now) => now[preview] === "336");
-    expect(await submenu(more, m.workbench_preview_resize())).toContain(
-      `|${m.workbench_panel_reset_width()}`,
-    );
-    await pick(m.workbench_panel_reset_width());
-    await handles(
-      "the Preview at its default width",
-      (now) => now[preview] === "400",
-    );
-    await submenu(more, m.workbench_preview_resize());
-    await pick(m.workbench_panel_wider());
-    const sized = await handles(
-      "the Preview wider",
-      (now) => now[preview] === "464",
-    );
-    expect(sized.saved).toEqual({
-      // The Fields Panel was never pinned.
-      fields: { pinned: false, hidden: false, width: 320 },
-      preview: { shown: true, width: 464, height: 40 },
-    });
-
-    // A narrow leaf: the Preview under the editor, sized by its height.
-    const state = (path: string) =>
-      obRun(
-        run.vaultId,
-        ({ page }, { path }) =>
-          JSON.stringify(page.workbench({ path })!.getState()),
-        { path },
-      );
-    await open(JSON.parse(await state(path)) as object, 30);
-    await handles("the Preview under the editor", (now) => now[split] === "40");
-    expect(await submenu(more, m.workbench_preview_resize())).toBe(
-      [
-        m.workbench_panel_taller(),
-        m.workbench_panel_shorter(),
-        `(${m.workbench_panel_reset_height()})`,
-      ].join("|"),
-    );
-    await pick(m.workbench_panel_taller());
-    const chosen = {
-      // The Fields Panel was never pinned.
-      fields: { pinned: false, hidden: false, width: 320 },
-      preview: { shown: true, width: 464, height: 50 },
-    };
-    const taller = await handles(
-      "the Preview taller",
-      (now) => now[split] === "50",
-    );
-    expect(taller.saved).toEqual(chosen);
-
-    // The workspace restores the sizes the menu set.
-    const saved = JSON.parse(await state(path)) as object;
-    await open(saved, 30);
-    const restored = await handles(
-      "the restored Preview under the editor",
-      (now) => now[split] === "50",
-    );
-    expect(restored.saved).toEqual(chosen);
-    await open(saved, null);
-    await handles(
-      "the restored Preview at the right",
-      (now) => now[preview] === "464",
-    );
   });
 
   // #1964: the Fields action opens the Fields popover at every width.
@@ -3851,5 +3638,141 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       tabsInEditor: true,
       fullHeight: true,
     });
+  });
+
+  // #1962: the Preview and Fields panes carry their own actions, as a small
+  // view header does.
+  it("switches the Preview's mode and opens each pane's More options from its header", async () => {
+    const path = `templates/${booksProfile.document}`;
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        ({ app }) => {
+          for (const menu of activeDocument.body.querySelectorAll(".menu"))
+            menu.remove();
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        },
+        undefined,
+      ),
+    );
+    await suite.wideWindow(cleanup);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path, key }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.setViewState({
+          type: "zotlit-template-workbench",
+          state: {
+            file: path,
+            itemIndexedKey: key,
+            panels: { preview: { shown: true, width: 400, height: 40 } },
+          },
+          active: true,
+        });
+        await app.workspace.revealLeaf(leaf);
+      },
+      { path, key: targetItem.key },
+    );
+    const { m } = run;
+    /**
+     * Presses the control labelled `label` inside the Preview panel, or
+     * inside the Fields popover, or among the view actions, once it stands.
+     */
+    const press = (where: "preview" | "fields" | "view", label: string) =>
+      obRunUntil(
+        run.vaultId,
+        ({ page }, { path, where, label }) => {
+          const view = page.workbench({ path });
+          const root =
+            where === "preview"
+              ? page.previewPanel(view)
+              : where === "fields"
+                ? page.fieldsPopover(view)
+                : view?.containerEl.querySelector(".view-actions");
+          const control = root?.querySelector<HTMLElement>(
+            `[aria-label="${label}"]`,
+          );
+          if (!control) return false;
+          page.press(control, label);
+          return true;
+        },
+        { path, where, label },
+        { what: `${label} in the ${where}` },
+      );
+    /** Waits for the Preview body in `body` mode, and names it. */
+    const body = (mode: "markdown" | "reading") =>
+      obRunUntil(
+        run.vaultId,
+        ({ page }, { path, mode }) => {
+          const scroller = page
+            .previewPanel(page.workbench({ path }))
+            ?.querySelector('[data-workbench-scroll="preview"]');
+          return scroller?.querySelector(
+            mode === "markdown" ? "pre" : ".markdown-rendered",
+          )
+            ? mode
+            : null;
+        },
+        { path, mode },
+        {
+          what: `the Preview in ${mode}`,
+          ready: (shown) => shown === mode,
+        },
+      );
+    /** Reads the open menu's entries, and closes it. */
+    const menu = async () => {
+      const titles = await obRunUntil(
+        run.vaultId,
+        () => {
+          const titles = Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              "body > .menu .menu-item-title",
+            ),
+            (title) => title.textContent,
+          );
+          return titles.length > 0 ? titles : null;
+        },
+        undefined,
+        { what: "the pane's More options menu", ready: (t) => t !== null },
+      );
+      await obRun(
+        run.vaultId,
+        () => {
+          for (const open of activeDocument.body.querySelectorAll(".menu"))
+            open.remove();
+        },
+        undefined,
+      );
+      return titles;
+    };
+
+    // The toggle names what a press shows, as Obsidian's own does.
+    await body("reading");
+    await press("preview", m.workbench_show_markdown());
+    expect(await body("markdown")).toBe("markdown");
+    await press("preview", m.workbench_show_reading_view());
+    expect(await body("reading")).toBe("reading");
+
+    // The Preview's More options lists the view's Preview settings.
+    await press("preview", m.workbench_pane_more_options());
+    expect(await menu()).toEqual([
+      m.workbench_preview_as_new_note(),
+      m.workbench_preview_as_updated_note(),
+      m.workbench_preview_updated_section(),
+      m.workbench_preview_auto_refresh(),
+      m.workbench_show_markdown(),
+      m.workbench_refresh_item(),
+    ]);
+
+    // The Fields pane's More options holds the Item and its Template data.
+    await press("view", m.workbench_view_fields());
+    await press("fields", m.workbench_pane_more_options());
+    expect(await menu()).toEqual([
+      m.workbench_choose_item(),
+      m.template_data_explorer_menu_export_json(),
+      m.command_copy_item_key_name(),
+    ]);
   });
 });
