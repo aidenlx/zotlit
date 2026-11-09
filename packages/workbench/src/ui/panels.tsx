@@ -17,7 +17,7 @@ import {
   fieldsDockId,
   FieldsPopoverPanel,
 } from "./fields-panel";
-import { useOptionalHost } from "./host";
+import { useContainerName, useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import {
   clampPanelWidth,
@@ -284,6 +284,7 @@ function Panel({
   const panels = useAtomValue(model.panels);
   const uniqueId = useUniqueId();
   const id = givenId ?? uniqueId;
+  const name = useContainerName(label);
   const region = useRef<HTMLElement>(null);
   const edge = useRef<HTMLDivElement>(null);
   const leave = useRef(onLeave);
@@ -385,7 +386,7 @@ function Panel({
         id={id}
         role="region"
         {...(labelledBy === undefined
-          ? { "aria-label": label }
+          ? name.attrs
           : { "aria-labelledby": labelledBy })}
         data-panel={side}
         style={
@@ -397,6 +398,7 @@ function Panel({
         }
         {...part("panel", below ? "below" : side)}
       >
+        {labelledBy === undefined && name.hiddenName}
         {content}
       </section>
       {standsAt === "leading" && handle}

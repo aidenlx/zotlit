@@ -654,7 +654,7 @@ function BindingRow({
   return (
     <div {...part("binding-row")}>
       <div {...part("binding-heading")}>
-        <label htmlFor={id} {...part("binding-label")}>
+        <label htmlFor={id} id={`${id}-label`} {...part("binding-label")}>
           {label}
         </label>
         <span {...part("secondary")}>
@@ -690,7 +690,7 @@ function BindingRow({
           {Toggle ? (
             <Toggle
               id={id}
-              aria-label={label}
+              aria-labelledby={`${id}-label`}
               value={effective === true}
               disabled={readOnly}
               onChange={onWrite}

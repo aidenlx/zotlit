@@ -38,3 +38,24 @@ it("syncs props without emitting changes, forwards native changes, and disposes 
   root.unmount();
   expect(element.parentElement).toBeNull();
 });
+
+it("names itself by a shown label with no aria-label, which Obsidian draws as a tooltip", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      createElement(Toggle, {
+        value: false,
+        onChange: () => {},
+        "aria-labelledby": "show-tags-label",
+      }),
+    );
+  });
+  const host = container.firstElementChild as HTMLElement;
+  const toggle = controlsOf(host)[0] as ToggleComponent;
+  expect(toggle.toggleEl.getAttribute("aria-labelledby")).toBe(
+    "show-tags-label",
+  );
+  expect(toggle.toggleEl.hasAttribute("aria-label")).toBe(false);
+  root.unmount();
+});

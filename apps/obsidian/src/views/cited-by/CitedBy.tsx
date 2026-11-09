@@ -4,6 +4,8 @@ import { Keymap, prepareSimpleSearch } from "obsidian";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
@@ -280,6 +282,9 @@ function SearchFilter() {
   );
   const [text, setText] = useState(search);
   const field = useRef<HTMLDivElement>(null);
+  // The placeholder shows the name, so a hidden element carries it and the
+  // field takes no tooltip.
+  const nameId = useUniqueId();
 
   useEffect(() => {
     field.current?.querySelector("input")?.focus();
@@ -300,9 +305,12 @@ function SearchFilter() {
         value={text}
         onChange={setText}
         placeholder={m.cited_by_search_placeholder()}
-        aria-label={m.cited_by_search_placeholder()}
+        aria-labelledby={nameId}
         clearLabel={m.cited_by_clear_search()}
       />
+      <span hidden id={nameId}>
+        {m.cited_by_search_placeholder()}
+      </span>
     </div>
   );
 }

@@ -8,6 +8,9 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import type { ConfirmLaunch, LaunchSheetDetails } from "./customize";
 
+/** Keeps each sheet's title id apart from an earlier sheet's. */
+let sheetSerial = 0;
+
 export function createLaunchSheet(app: App): ConfirmLaunch {
   return (details, resolve) => {
     let remember = false;
@@ -20,11 +23,14 @@ export function createLaunchSheet(app: App): ConfirmLaunch {
       "zt:gap-4",
     ]);
     modal.setTitle(m.modal_workbench_launch_title());
+    // The choices are named by the title the sheet shows: an `aria-label`
+    // would hang a tooltip over them. @see apps/obsidian/policies/tooltips.md
+    modal.titleEl.id = `zt-launch-sheet-title-${++sheetSerial}`;
     const content = createFragment();
     const choices = content.createDiv({
       attr: {
         role: "radiogroup",
-        "aria-label": m.modal_workbench_launch_title(),
+        "aria-labelledby": modal.titleEl.id,
       },
       cls: "zt:flex zt:flex-col zt:gap-3",
     });

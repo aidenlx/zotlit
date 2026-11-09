@@ -238,6 +238,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(strip?.above).toBeGreaterThan(0);
     expect(strip?.above).toBe(strip?.below);
 
+    // #1962: Obsidian draws an element's `aria-label` as its hover tooltip.
+    // The Preview and the view's other containers name themselves through
+    // `aria-labelledby`, so the pointer passes over them with no tooltip.
+    const quiet = await obRun(
+      run.vaultId,
+      ({ page }, { path }) => {
+        const view = page.workbench({ path });
+        const preview = page.previewPanel(view);
+        const nameId = preview?.getAttribute("aria-labelledby");
+        return {
+          previewLabel: preview?.getAttribute("aria-label") ?? null,
+          previewName: nameId
+            ? (preview?.ownerDocument.getElementById(nameId)?.textContent ??
+              null)
+            : null,
+          labelledContainers: [
+            ...(view?.contentEl.querySelectorAll<HTMLElement>(
+              ":is([role=region], [role=group], [role=radiogroup], [role=toolbar], [role=tablist], [role=listbox], [role=tree], section, dl, .cm-content)[aria-label]",
+            ) ?? []),
+          ].map((element) => element.getAttribute("aria-label")),
+        };
+      },
+      { path },
+    );
+    expect(quiet).toEqual({
+      previewLabel: null,
+      previewName: run.m.workbench_view_preview(),
+      labelledContainers: [],
+    });
+
     /** Opens Choose item from the item row, searches `title`, and picks it. */
     const choose = async (title: string) => {
       await obRunUntil(

@@ -212,7 +212,8 @@ export interface WorkbenchMarkdownProps {
 /** State and accessible name for a host-native boolean control. */
 export interface WorkbenchToggleProps {
   readonly id: string;
-  readonly "aria-label": string;
+  /** The id of the label shown beside the control, which names it. */
+  readonly "aria-labelledby": string;
   readonly value: boolean;
   readonly disabled: boolean;
   readonly onChange: (value: boolean) => void;

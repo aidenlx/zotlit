@@ -4,6 +4,8 @@
 // `separator`.
 import { Fragment } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import { Chooser } from "@/components/chooser";
 import { Dropdown, DropdownItem } from "@/components/obsidian/dropdown";
 import { Toggle } from "@/components/obsidian/toggle";
@@ -75,6 +77,7 @@ export function ListLayoutFields({
     number: m.query_view_list_marker_number,
     none: m.query_view_list_marker_none,
   };
+  const indentLabelId = useUniqueId();
   return (
     <>
       <Chooser.PageField label={m.query_view_list_markers()}>
@@ -95,11 +98,15 @@ export function ListLayoutFields({
           ))}
         </Dropdown>
       </Chooser.PageField>
-      <Chooser.PageField label={m.query_view_list_indent_properties()} inline>
+      <Chooser.PageField
+        label={m.query_view_list_indent_properties()}
+        labelId={indentLabelId}
+        inline
+      >
         <span className="zt:flex" data-query-view-option="indentProperties">
           <Toggle
             value={options.indentProperties}
-            aria-label={m.query_view_list_indent_properties()}
+            aria-labelledby={indentLabelId}
             onChange={(value) => set("indentProperties", value)}
           />
         </span>

@@ -3396,9 +3396,18 @@ describe("the side panels of the Template Workbench View", () => {
     (view as unknown as MockItemView).actions.find(
       (element) => element.getAttribute("aria-label") === title,
     )!;
+  // A region names itself through `aria-labelledby`: Obsidian draws an
+  // `aria-label` as a hover tooltip over the whole region.
   const region = (view: TemplateWorkbenchView, name: string) =>
     [...view.contentEl.querySelectorAll<HTMLElement>("[role=region]")].find(
-      (element) => element.getAttribute("aria-label") === name,
+      (element) => {
+        const nameId = element.getAttribute("aria-labelledby");
+        return (
+          !element.hasAttribute("aria-label") &&
+          nameId !== null &&
+          element.querySelector(`[id="${nameId}"]`)?.textContent === name
+        );
+      },
     ) ?? null;
   const handleOf = (view: TemplateWorkbenchView, name: string) =>
     [...view.contentEl.querySelectorAll<HTMLElement>("[role=separator]")].find(
