@@ -45,6 +45,7 @@ A workspace that kept a Note preview tab from 2.2.1 shows it as an empty tab. Cl
 
 ### Other improvements
 
+- To change the order of properties, drag a row on the Properties tab by its handle (<UiLabel name={m.workbench_drag_to_reorder()} />). The handle shows when you point to the row. You can also select the handle and press `Alt+Arrow Up` or `Alt+Arrow Down`. The handle replaces the Move up and Move down buttons. See [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties#reorder-fields).
 - The view's pane menu is shorter. Each action in the view header also has an entry there.
 - Note embeds in the Note preview now show a placeholder with the note's name and whether the note exists. Before, the preview loaded the embedded note or offered to create a missing one.
 - Query blocks and query file embeds in the Note preview now list each view with its layout and rows. They mark the views that show <UiLabel name={m.query_view_placeholder_note_item()} />, and they show problems in the query text.
@@ -53,7 +54,7 @@ A workspace that kept a Note preview tab from 2.2.1 shows it as an empty tab. Cl
 
 ## Bug Fixes
 
-- In the Template Workbench, after you moved a Properties row up or down, every row showed its raw rule for a moment. The Name tab example blinked the same way. Now each row keeps its value while the preview renders again.
+- In the Template Workbench, after you moved a Properties row, every row showed its raw rule for a moment. The Name tab example blinked the same way. Now each row keeps its value while the preview renders again.
 - <Command inline name={m.command_pandoc_export_name()} /> could read a `---`
   line in the note body as Properties. Now the line stays in the exported
   document.
