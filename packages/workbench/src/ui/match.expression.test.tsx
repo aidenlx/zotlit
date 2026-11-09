@@ -1,7 +1,7 @@
 import { completionStatus, startCompletion } from "@codemirror/autocomplete";
 import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { useLayoutEffect, useState } from "react";
 import { afterEach, expect, it, onTestFinished } from "vitest";
 
@@ -18,6 +18,18 @@ it("offers no completion without a vocabulary", () => {
   startCompletion(view);
   // A list that would open stands pending from the request on.
   expect(completionStatus(view.state)).toBeNull();
+});
+
+it("names its text by a hidden element, as a host draws an aria-label as a tooltip", () => {
+  render(
+    <MatchExpressionInput
+      value=""
+      onChange={() => {}}
+      aria-label="Expression"
+    />,
+  );
+  const content = screen.getByRole("textbox", { name: "Expression" });
+  expect(content.hasAttribute("aria-label")).toBe(false);
 });
 
 /** The text each underline of the field marks, and how it marks it. */

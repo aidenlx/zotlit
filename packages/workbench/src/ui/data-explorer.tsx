@@ -21,7 +21,7 @@ import type {
   FieldInsertOptions,
 } from "./field-insertion";
 import { useFieldsPanelRows } from "./fields-panel";
-import { useTooltip, useWorkbenchHost } from "./host";
+import { useContainerName, useTooltip, useWorkbenchHost } from "./host";
 import type {
   WorkbenchClipboardError,
   WorkbenchMenuItem,
@@ -490,6 +490,8 @@ export function DataExplorer({
     </button>
   );
   const search = m[SEARCH_LABELS[root]]();
+  // The placeholder shows the name, so the field takes no tooltip.
+  const searchName = useContainerName(search);
   return (
     <section {...part("explorer")}>
       <div {...part("header")}>
@@ -501,7 +503,7 @@ export function DataExplorer({
           ref={searchInput}
           type="search"
           value={tree.filterQuery}
-          aria-label={search}
+          {...searchName.attrs}
           placeholder={search}
           {...(panelRows && {
             role: "combobox",
@@ -517,6 +519,7 @@ export function DataExplorer({
             onNavigationChange(setFilter(tree, event.currentTarget.value))
           }
         />
+        {searchName.hiddenName}
       </div>
       {/* The Fields Panel's header holds the button that collapses or
           expands every section. */}

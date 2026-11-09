@@ -15,7 +15,7 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { ExampleActions, useExampleState } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
-import { useOptionalHost } from "./host";
+import { useContainerName, useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
 import { useWorkbenchMessages } from "./messages";
 import { diagnosticText, documentDiagnosis, problemText } from "./problems";
@@ -473,6 +473,8 @@ function EntryForm({
 }: EntryFormProps) {
   const m = useWorkbenchMessages();
   const part = useParts("properties");
+  // Named as the expression editor is, by a hidden element: no tooltip.
+  const textName = useContainerName(m.workbench_properties_expression());
   const [pendingLanguage, setPendingLanguage] = useState<
     "text" | "expr" | "value" | null
   >(null);
@@ -621,11 +623,12 @@ function EntryForm({
               </div>
             </div>
           )}
+          {format === "text" && textName.hiddenName}
           {format === "text" ? (
             <input
               type="text"
               readOnly={controller.readOnly}
-              aria-label={m.workbench_properties_expression()}
+              {...textName.attrs}
               value={fixedText ?? ""}
               onInput={(event) =>
                 controller.dispatch({
