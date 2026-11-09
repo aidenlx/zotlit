@@ -50,7 +50,8 @@ import { createPortal } from "react-dom";
 import { composing } from "@zotlit/ui";
 
 import { useObsidianApp } from "@/lib/app-context";
-import { PopoutAwareHoverPopover } from "@/lib/popout-aware-hover-popover";
+import { HoverPopover } from "@/lib/hover-popover";
+import { observeResize } from "@/lib/observe-resize";
 
 import "./pinned-popover.css";
 
@@ -140,7 +141,7 @@ interface PinnedHoverPopoverOptions {
   onHidden: () => void;
 }
 
-class PinnedHoverPopover extends PopoutAwareHoverPopover {
+class PinnedHoverPopover extends HoverPopover {
   readonly #options: PinnedHoverPopoverOptions;
   readonly #scope: Scope;
 
@@ -170,17 +171,19 @@ class PinnedHoverPopover extends PopoutAwareHoverPopover {
     this.register(() => app.keymap.popScope(this.#scope));
     // Obsidian's `watchResize` stops after ten changes; a list filtered by
     // typing goes past that.
-    const resize = new ResizeObserver(() => this.position());
-    resize.observe(body);
-    if (this.#options.inset) resize.observe(this.#options.inset);
-    if (this.#options.beside) {
-      resize.observe(this.#options.beside);
+    const { inset, beside } = this.#options;
+    const resize = observeResize(
+      anchor,
+      [body, inset, beside].filter((box) => box !== null),
+      () => this.position(),
+    );
+    if (beside) {
       // The anchor moves with the list it scrolls in.
       this.registerDomEvent(this.hoverEl.doc, "scroll", () => this.position(), {
         capture: true,
       });
     }
-    this.register(() => resize.disconnect());
+    this.register(() => resize[Symbol.dispose]());
     this.registerDomEvent(
       this.hoverEl.doc,
       "pointerdown",

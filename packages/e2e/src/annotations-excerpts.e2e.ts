@@ -26,6 +26,7 @@ import {
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import { useListingProfile } from "./listing-profile.ts";
+import { verifyMarkPopupWindow } from "./mark-popup-window.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import { clearNotices } from "./obsidian-cli.ts";
 import { verifyReaderAnnotationDrag } from "./reader-annotation-drag.ts";
@@ -388,6 +389,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   it("drags the selected highlight out of the PDF reader into a note", async () => {
     await verifyReaderAnnotationDrag(run.vaultId, {
+      pdfPath: annotationAttachment.path!,
+      annotationKey: "Q8ZR4TDH",
+    });
+  }, 120000);
+
+  it("keeps a pop-out PDF's Mark Popup in the pop-out while focus is in the main window", async () => {
+    await verifyMarkPopupWindow(run.vaultId, {
       pdfPath: annotationAttachment.path!,
       annotationKey: "Q8ZR4TDH",
     });

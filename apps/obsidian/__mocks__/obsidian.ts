@@ -121,6 +121,10 @@ const noticeElStub = {
   addClasses: (_classes: string[]) => {},
   toggle: (_show: boolean) => {},
   querySelector: (_selector: string): HTMLElement | null => null,
+  /** Obsidian opens a modal or a notice in `activeWindow`. */
+  get win(): Window {
+    return activeWindow;
+  },
 } as unknown as HTMLElement;
 
 export class Notice {
@@ -257,6 +261,7 @@ function armClickHandler(): void {
  * unload hook its content is torn down through, and the placement `position()`
  * records as an inline style. Placement is inert here — a test that asserts a
  * placement writes the style itself, the way Obsidian's positioning engine does.
+ * The document `position()` puts the popover in follows the runtime's.
  *
  * The opening sequence follows the runtime one — the constructor arms the wait
  * timer, and the timer opens the popover — so a subclass meets the lifecycle it
@@ -408,10 +413,13 @@ export class HoverPopover {
     this.#parent.hoverPopover = this.#self;
   }
 
+  /**
+   * Joins the target's document, or `activeDocument` when there is no target,
+   * on every call, as Obsidian 1.14.5 does.
+   */
   position(): void {
-    if (this.hoverEl.parentElement !== document.body) {
-      document.body.appendChild(this.hoverEl);
-    }
+    const { body } = this.targetEl?.ownerDocument ?? activeDocument;
+    if (this.hoverEl.parentElement !== body) body.appendChild(this.hoverEl);
   }
 
   watchResize(_el: HTMLElement): void {}
@@ -995,7 +1003,14 @@ export abstract class FuzzySuggestModal<T> {
 }
 
 export abstract class SuggestModal<T> {
-  readonly containerEl = { addClass() {}, removeClass() {} };
+  readonly containerEl = {
+    addClass() {},
+    removeClass() {},
+    /** Obsidian opens a modal in `activeWindow`. */
+    get win(): Window {
+      return activeWindow;
+    },
+  };
   readonly resultContainerEl = {
     createDiv() {},
     setAttribute(_name: string, _value: string) {},

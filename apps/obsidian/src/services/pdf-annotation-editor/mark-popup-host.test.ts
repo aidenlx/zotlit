@@ -66,6 +66,7 @@ function host() {
   const create = variant("create row", { x: 100, y: 300 });
   const popupHost = new MarkPopupHost({
     parent,
+    doc: () => document,
     surface,
     variants: { selected, create },
   });

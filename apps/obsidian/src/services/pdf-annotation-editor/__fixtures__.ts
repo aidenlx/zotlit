@@ -838,6 +838,7 @@ export function readerSurfaces({
   );
   const host = new MarkPopupHost({
     parent,
+    doc: () => containerEl.doc,
     surface,
     variants: {
       selected: {

@@ -48,6 +48,8 @@ export interface MarkPopupVariant {
 export interface MarkPopupHostDeps {
   /** The hover parent, which is the binding rather than the PDF view. */
   parent: HoverParent;
+  /** The document of the PDF view, which the popup stands in. */
+  doc: () => Document;
   surface: ReaderSurface;
   /**
    * What each floating kind draws, and where it hangs. An image capture, a
@@ -147,6 +149,7 @@ export class MarkPopupHost implements Disposable {
     const popup: MarkPopup = new MarkPopup({
       parent: this.#deps.parent,
       anchor,
+      doc: this.#deps.doc,
       render: (content) => this.#render(content),
       onHide: () => {
         if (this.#popup === popup) this.#popup = null;

@@ -34,6 +34,7 @@ import { IconButton } from "@/components/obsidian/icon-button";
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemTypeIcon } from "@/lib/item-type-icon";
+import { observeResize } from "@/lib/observe-resize";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
@@ -354,12 +355,8 @@ function Abstract({ abstract }: { abstract: string }) {
       );
     };
     measure();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(measure);
-    observer?.observe(el);
-    return () => observer?.disconnect();
+    const observing = observeResize(el, [el], measure);
+    return () => observing[Symbol.dispose]();
   }, [abstract]);
   return (
     <Part name="abstract" label={m.library_view_card_abstract()}>
