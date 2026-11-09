@@ -1,4 +1,5 @@
-// Obsidian's hover popover with each timer cancelled on the window that armed it.
+// Obsidian's hover popover with each timer cancelled on the window that armed
+// it, and placed in the window it opened in.
 import { HoverPopover, PopoverState } from "obsidian";
 
 /**
@@ -20,6 +21,39 @@ export class PopoutAwareHoverPopover extends HoverPopover {
     if (this.timer !== timer) this.#timerWindow = activeWindow;
     else if (state === PopoverState.Hiding && this.state === PopoverState.Shown)
       this.#timerWindow.clearTimeout(timer);
+  }
+
+  /**
+   * The document a popover with no target stands in, such as the document of
+   * the view it hangs over. `null` keeps it in the document of its first
+   * placement.
+   */
+  protected homeDocument(): Document | null {
+    return null;
+  }
+
+  /**
+   * Obsidian places a popover with no target in `activeDocument` on every
+   * call, so a placement while another window holds focus carries the popover
+   * there. A popover with no target stands in its home document instead. One
+   * with a target stands in the target's document already. Verified against
+   * Obsidian 1.14.5.
+   */
+  override position(): void {
+    const owner = this.targetEl
+      ? null
+      : (this.homeDocument() ?? this.hoverEl.parentElement?.doc);
+    if (!owner || owner === activeDocument) {
+      super.position();
+      return;
+    }
+    const focused = activeDocument;
+    activeDocument = owner;
+    try {
+      super.position();
+    } finally {
+      activeDocument = focused;
+    }
   }
 
   override hide(): void {

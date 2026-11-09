@@ -1133,6 +1133,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     selection.load();
     const host = new MarkPopupHost({
       parent: this,
+      doc: () => this.#view.containerEl.doc,
       surface,
       variants: {
         selected: {

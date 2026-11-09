@@ -49,9 +49,12 @@ function setup() {
   };
 }
 
+const mainDocument = activeDocument;
+
 afterEach(() => {
   vi.useRealTimers();
   activeWindow = mainWindow;
+  activeDocument = mainDocument;
 });
 
 describe("PopoutAwareHoverPopover", () => {
@@ -76,5 +79,35 @@ describe("PopoutAwareHoverPopover", () => {
     expect(h.popover.hoverEl.isConnected).toBe(true);
     vi.advanceTimersByTime(100);
     expect(h.popover.hoverEl.isConnected).toBe(false);
+  });
+
+  it("stays in the popout it opened in when focus moves to another window", () => {
+    const popout = document.implementation.createHTMLDocument("popout");
+    activeDocument = popout;
+    const popover = new PopoutAwareHoverPopover(
+      { hoverPopover: null },
+      null,
+      0,
+      { x: 10, y: 10 },
+    );
+    popover.showNow();
+    expect(popover.hoverEl.ownerDocument).toBe(popout);
+    activeDocument = mainDocument;
+    popover.position();
+    expect(popover.hoverEl.parentElement).toBe(popout.body);
+    popover.hide();
+  });
+
+  it("opens in its home document while focus is in another window", () => {
+    const popout = document.implementation.createHTMLDocument("popout");
+    const popover = new (class extends PopoutAwareHoverPopover {
+      protected override homeDocument(): Document {
+        return popout;
+      }
+    })({ hoverPopover: null }, null, 0, { x: 10, y: 10 });
+    popover.showNow();
+    expect(popover.hoverEl.parentElement).toBe(popout.body);
+    expect(activeDocument).toBe(mainDocument);
+    popover.hide();
   });
 });

@@ -444,6 +444,8 @@ export interface MarkPopupDeps {
   parent: HoverParent;
   /** The virtual point the popup hangs from, in client coordinates. */
   anchor: Point;
+  /** The document of the PDF view, whose client coordinates the anchor is in. */
+  doc: () => Document;
   /**
    * What the popup shows, run on open and on every refresh. `undefined`
    * leaves what it shows as it stands.
@@ -470,6 +472,7 @@ export class MarkPopup extends PopoutAwareHoverPopover {
   readonly #content: HTMLElement;
   readonly #root: Root;
   readonly #render;
+  readonly #doc;
   #anchor: Point;
   #mounted = true;
   #rendering = false;
@@ -478,9 +481,10 @@ export class MarkPopup extends PopoutAwareHoverPopover {
   #resize: ResizeObserver | null = null;
   #resizeWin: Window | null = null;
 
-  constructor({ parent, anchor, render, onHide }: MarkPopupDeps) {
+  constructor({ parent, anchor, doc, render, onHide }: MarkPopupDeps) {
     super(parent, null, 0, anchor);
     this.#anchor = anchor;
+    this.#doc = doc;
     this.setIsFocused(true);
     this.hoverEl.addClass(themeHook.pdfMarkPopup);
     this.#render = render;
@@ -538,6 +542,10 @@ export class MarkPopup extends PopoutAwareHoverPopover {
     } finally {
       this.#rendering = false;
     }
+  }
+
+  protected override homeDocument(): Document {
+    return this.#doc();
   }
 
   /**
