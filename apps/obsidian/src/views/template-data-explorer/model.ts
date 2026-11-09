@@ -15,7 +15,7 @@ import {
   setFilter as filterTree,
   toggleNode as toggleTreeNode,
 } from "@zotlit/workbench/explorer";
-import type { TreeState } from "@zotlit/workbench/explorer";
+import type { DisplayNode, TreeState } from "@zotlit/workbench/explorer";
 import {
   citationExampleData,
   DEFAULT_CITATION_EXAMPLE,
@@ -29,7 +29,7 @@ import type {
   TemplateRoot,
   WorkbenchItemChoice,
 } from "@zotlit/workbench/ui";
-import { annotationSamples } from "@zotlit/workbench/ui";
+import { annotationSamples, explorerSectionIds } from "@zotlit/workbench/ui";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { viewRuntime } from "@/lib/view-atoms";
@@ -39,16 +39,13 @@ import { TemplateDataReads } from "@/services/template-workbench/data-reads";
 import { javascriptTemplatesEnabledAtom } from "@/services/template/atoms";
 import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 import { getSampleItem } from "@/views/template-workbench/selection-data";
-import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 type AnnotationChoices = readonly Pick<AnnotationExample, "id" | "root">[];
 
 /** What the Explorer shows and where its reader is in it. */
 export interface ExplorerSession {
-  readonly sourcePath: string | null;
   readonly presentation: ExplorerPresentation;
   readonly restore: ExplorerPresentation | null;
-  readonly context: TemplateAuthoringContext | null;
   readonly item: WorkbenchItemChoice | null;
   readonly root: TemplateRoot;
   readonly annotationId: string | null;
@@ -82,13 +79,18 @@ export interface ExplorerModel {
   readonly state: Atom.Atom<ExplorerState>;
 }
 
-const NO_PRESENTATION: ExplorerPresentation = { top: 0, left: 0, field: null };
+/** What the Explorer's tree reads and writes: a standalone Explorer's model, or a panel's. */
+export type ExplorerSurface = Pick<ExplorerModel, "session" | "state">;
+
+export const NO_PRESENTATION: ExplorerPresentation = {
+  top: 0,
+  left: 0,
+  field: null,
+};
 
 export const EMPTY_EXPLORER_SESSION: ExplorerSession = {
-  sourcePath: null,
   presentation: NO_PRESENTATION,
   restore: null,
-  context: null,
   item: null,
   root: "note",
   annotationId: null,
@@ -213,86 +215,6 @@ export const setTarget =
     });
   };
 
-/** Follow the authoring context of the editor this Explorer serves. */
-export const setContext =
-  (context: TemplateAuthoringContext) =>
-  (session: ExplorerSession): ExplorerSession => {
-    const previous = session.context;
-    const next = { ...session, context, sourcePath: context.path };
-    // Display-only editor changes leave an Explorer's own annotation navigation intact.
-    if (
-      !previous ||
-      previous.item?.id !== context.item?.id ||
-      previous.root !== context.root
-    )
-      return setTarget(
-        context.item,
-        context.root,
-        context.root === "annotation" ? context.annotationId : null,
-      )(next);
-    if (
-      session.root === "annotation" &&
-      previous.annotationId !== context.annotationId
-    )
-      return setTarget(context.item, "annotation", context.annotationId)(next);
-    // The Citation set names the same fields whichever it is, so a new set
-    // reloads their values and leaves the reader's navigation where it is.
-    if (
-      session.root === "citation" &&
-      (previous.citation?.variant !== context.citation?.variant ||
-        previous.citation?.example !== context.citation?.example)
-    )
-      return refresh(next);
-    return next;
-  };
-
-/** Keep the context a pinned Explorer shows; only field insertion follows the editor. */
-export const keepPinnedContext =
-  (context: TemplateAuthoringContext) =>
-  (session: ExplorerSession): ExplorerSession =>
-    session.context
-      ? {
-          ...session,
-          context: {
-            ...session.context,
-            canInsertField:
-              session.context.path === context.path && context.canInsertField,
-          },
-        }
-      : session;
-
-/** The editor this Explorer served left; it can no longer insert fields. */
-export const loseEditor = (session: ExplorerSession): ExplorerSession =>
-  session.context
-    ? { ...session, context: { ...session.context, canInsertField: false } }
-    : session;
-
-/** The source note moved from `oldPath` to `path`. */
-export const moveSource =
-  (
-    oldPath: string,
-    path: string,
-    editorContext: TemplateAuthoringContext | null,
-  ) =>
-  (session: ExplorerSession): ExplorerSession =>
-    session.sourcePath !== oldPath
-      ? session
-      : {
-          ...session,
-          sourcePath: path,
-          ...(session.context?.path === oldPath
-            ? {
-                context: {
-                  ...session.context,
-                  path,
-                  canInsertField:
-                    editorContext?.path === path &&
-                    editorContext.canInsertField,
-                },
-              }
-            : {}),
-        };
-
 export const setNavigation =
   (navigation: TreeState) =>
   (session: ExplorerSession): ExplorerSession => ({ ...session, navigation });
@@ -317,6 +239,64 @@ export const setCollapsedSections =
     ...session,
     collapsedSections,
   });
+
+/** Whether every section the reader can see, `shown`, is closed. */
+export const allSectionsCollapsed = (
+  shown: readonly string[],
+  collapsedSections: ReadonlySet<string>,
+): boolean =>
+  shown.length > 0 && shown.every((id) => collapsedSections.has(id));
+
+/**
+ * Closes every section, or opens every section once all the reader can see,
+ * `shown`, are closed.
+ */
+export const toggleSections =
+  (shown: readonly string[]) =>
+  (session: ExplorerSession): ExplorerSession =>
+    setCollapsedSections(
+      allSectionsCollapsed(shown, session.collapsedSections)
+        ? new Set()
+        : new Set<string>(explorerSectionIds(session.root)),
+    )(session);
+
+/**
+ * Whether `node` stands in the note root's `annotations`: the list's own row
+ * at `depth` 1, or one annotation's row at `depth` 2.
+ */
+export function inNoteAnnotations(
+  root: TemplateRoot,
+  node: DisplayNode,
+  depth: 1 | 2,
+): boolean {
+  return (
+    root === "note" &&
+    node.kind === "value" &&
+    node.path.length === depth &&
+    node.path[0] === "annotations"
+  );
+}
+
+/**
+ * The annotation key a row of the note root's `annotations` list names, or
+ * null for any other row.
+ */
+export function annotationKeyOfNode(
+  root: TemplateRoot,
+  node: DisplayNode,
+): string | null {
+  if (
+    !inNoteAnnotations(root, node, 2) ||
+    typeof node.path[1] !== "number" ||
+    node.kind !== "value" ||
+    !node.value ||
+    typeof node.value !== "object" ||
+    !("key" in node.value) ||
+    typeof node.value.key !== "string"
+  )
+    return null;
+  return node.value.key;
+}
 
 export const setPresentation =
   (presentation: ExplorerPresentation) =>
@@ -350,7 +330,6 @@ export interface SavedExplorer {
   readonly anchorAnnotationKey: string | null;
   readonly root: "filename" | "annotation" | "note";
   readonly collapsedSections: ReadonlySet<string>;
-  readonly sourceFile: string | null;
 }
 
 /** The saved Explorer in `state`; `null` when it names no target at all. */
@@ -365,7 +344,6 @@ export function readSavedExplorer(state: unknown): SavedExplorer | null {
     root:
       decodeRoot(value.root) ?? (anchorAnnotationKey ? "annotation" : "note"),
     collapsedSections: strings(value.collapsedSections),
-    sourceFile: decodeString(value.sourceFile),
   };
 }
 
@@ -450,7 +428,7 @@ const loadExplorerData = (
   previousAnnotations: AnnotationChoices | null,
 ): Stream.Stream<ExplorerLoad, never, TemplateDataReads> =>
   Stream.suspend(() => {
-    const { item, root, annotationId, context } = session;
+    const { item, root, annotationId } = session;
     const itemId = item?.id ?? null;
     const load = (
       status: ExplorerLoad["status"],
@@ -468,15 +446,14 @@ const loadExplorerData = (
         ? SAMPLE_ANNOTATIONS.find(({ id }) => id === annotationId)
         : undefined;
     const snapshot = item ? getSampleItem(item.id) : null;
-    // The Citation set and Variant the editor's preview renders, so the two
-    // panes show the one choice. With no editor to name a set, a chosen Item
-    // supplies it and the built-in default stands in for none.
+    // A chosen Item supplies the Citation set; the built-in default stands
+    // in for none.
     const citation =
       root === "citation"
-        ? (context?.citation ?? {
+        ? {
             variant: DEFAULT_CITATION_VARIANT,
             example: item ? null : DEFAULT_CITATION_EXAMPLE,
-          })
+          }
         : null;
     const variant = citation?.variant ?? DEFAULT_CITATION_VARIANT;
     // A built-in example set carries its own citations, so it needs no Item —
@@ -617,9 +594,9 @@ export function annotationIndexedKey(
     : null;
 }
 
-export const ExplorerModelContext = createContext<ExplorerModel | null>(null);
+export const ExplorerModelContext = createContext<ExplorerSurface | null>(null);
 
-export function useExplorerModel(): ExplorerModel {
+export function useExplorerModel(): ExplorerSurface {
   const model = useContext(ExplorerModelContext);
   if (!model) {
     throw new Error(

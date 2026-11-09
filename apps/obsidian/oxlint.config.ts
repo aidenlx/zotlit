@@ -240,7 +240,6 @@ export default defineConfig({
         "src/views/library/library-tree.tsx",
         "src/views/library/reading-card.tsx",
         "src/views/library/view.ts",
-        "src/views/note-preview/session.ts",
         "src/views/query-view/view.tsx",
         "src/views/references/view.tsx",
         "src/views/template-workbench/view.tsx",
@@ -341,7 +340,6 @@ export default defineConfig({
       // A file moves off the list when its view reads the tags.
       files: [
         "src/views/annot-view/view.tsx",
-        "src/views/note-preview/view.tsx",
         "src/views/references/view.tsx",
         "src/views/template-data-explorer/view.tsx",
         "src/views/template-workbench/view.tsx",
@@ -396,10 +394,7 @@ export default defineConfig({
     {
       // Plain async code, or an Effect.fn, that reaches the App through
       // `deps.app`: the deps must carry the tag first.
-      files: [
-        "src/views/note-preview/render.ts",
-        "src/views/note-preview/session.ts",
-      ],
+      files: ["src/views/template-workbench/preview/render.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
@@ -438,8 +433,7 @@ export default defineConfig({
         "src/views/library/item-actions.ts",
         "src/views/library/library-tree.tsx",
         "src/views/library/view.ts",
-        "src/views/note-preview/citations.ts",
-        "src/views/note-preview/session.ts",
+        "src/views/template-workbench/preview/citations.ts",
         "src/views/query-view/table-notes.ts",
         "src/views/query-view/view.tsx",
         "src/views/template-workbench/match-data.ts",
@@ -671,7 +665,7 @@ export default defineConfig({
     {
       // A reading view of a note: the app's own classes draw its Properties
       // block, so the sheet reads as the note does in the editor.
-      files: ["src/views/note-preview/markdown.tsx"],
+      files: ["src/views/template-workbench/preview/markdown.tsx"],
       rules: { "zotlit-css/no-obsidian-class": "off" },
     },
     {

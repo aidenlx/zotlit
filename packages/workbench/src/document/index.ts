@@ -1,5 +1,7 @@
 export { ANNOTATION_HEADER } from "@zotlit/templates/constants";
 
+export { workbenchDocumentAtoms } from "./atoms";
+export type { WorkbenchDocumentAtoms } from "./atoms";
 export {
   entryPosition,
   entrySlice,

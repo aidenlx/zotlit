@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import type { WorkbenchMessages } from "./generated/messages";
-import { useWorkbenchHost } from "./host";
+import { useContainerName, useWorkbenchHost } from "./host";
 import { ChipInput } from "./match.chips";
 import type {
   MatchConditionKind,
@@ -194,6 +194,8 @@ function RowValue({
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("match");
+  // A text field shows its placeholder, so it takes no tooltip.
+  const valueName = useContainerName(m.workbench_filter_value());
   const { operator } = condition;
   // These operators test no value the row holds.
   if (
@@ -245,26 +247,32 @@ function RowValue({
   }
   if (field.type === "number" || field.type === "date")
     return (
-      <input
-        {...part("input")}
-        type={field.type}
-        aria-label={m.workbench_filter_value()}
-        placeholder={m.workbench_match_value_empty()}
-        value={condition.value}
-        onInput={(event) =>
-          onChange({ ...condition, value: event.currentTarget.value })
-        }
-      />
+      <>
+        <input
+          {...part("input")}
+          type={field.type}
+          {...valueName.attrs}
+          placeholder={m.workbench_match_value_empty()}
+          value={condition.value}
+          onInput={(event) =>
+            onChange({ ...condition, value: event.currentTarget.value })
+          }
+        />
+        {valueName.hiddenName}
+      </>
     );
   return (
-    <MatchInput
-      {...part("input")}
-      aria-label={m.workbench_filter_value()}
-      placeholder={placeholder}
-      suggestions={suggestions}
-      value={condition.value}
-      onChange={(value) => onChange({ ...condition, value })}
-    />
+    <>
+      <MatchInput
+        {...part("input")}
+        {...valueName.attrs}
+        placeholder={placeholder}
+        suggestions={suggestions}
+        value={condition.value}
+        onChange={(value) => onChange({ ...condition, value })}
+      />
+      {valueName.hiddenName}
+    </>
   );
 }
 

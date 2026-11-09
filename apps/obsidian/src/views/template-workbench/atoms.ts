@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import type { TFile } from "obsidian";
 
 import { isChildItemFields, parseIndexedKey } from "@zotlit/db";
+import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import { itemSummary } from "@/lib/item-summary";
 import { listInstalledStylesOrNone } from "@/services/pandoc/installed-styles";
@@ -10,26 +11,70 @@ import { Profile } from "@/services/profile/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
+import { ItemUnavailable } from "./errors";
 import { getSampleItem } from "./selection-data";
 
+/** The Item Snapshot of the Item a parsed Indexed Key names, under one read. */
+export const readItemSnapshot = Effect.fn("TemplateWorkbench.readSnapshot")(
+  function* (parsed: NonNullable<ReturnType<typeof parseIndexedKey>>) {
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const reads = yield* (yield* ZoteroReads).snapshot;
+        return yield* reads.ItemSnapshot({
+          selection: {
+            key: parsed.key,
+            library:
+              parsed.groupID === null
+                ? { type: "personal" }
+                : { type: "group", groupID: parsed.groupID },
+          },
+          provenance: {
+            kind: "connected",
+            installationId: "obsidian",
+            vault: "preview",
+          },
+        });
+      }),
+    );
+  },
+);
+
+/** The chosen Item: its title and the data every surface renders against. */
+export interface ChosenItem {
+  readonly title: string | null;
+  readonly snapshot: ItemSnapshot;
+}
+
 /**
- * The Item `indexedKey` names, once a read confirms it is a top-level Item;
- * `null` when it is not, or the database is degraded.
+ * The one read of a chosen Item: a Sample Item carries its data; a library
+ * Item is read once a read confirms it is a top-level Item.
+ *
+ * Fails with {@link ItemUnavailable} when the key names no such Item, or the
+ * database is degraded.
  */
-export const readSelectableItem = Effect.fn("TemplateWorkbench.readItem")(
+export const readChosenItem = Effect.fn("TemplateWorkbench.readChosenItem")(
   function* (indexedKey: string) {
     const sample = getSampleItem(indexedKey);
-    if (sample) return { id: indexedKey, title: sample.item.title ?? null };
-    if (!parseIndexedKey(indexedKey)) return null;
+    if (sample) return { title: sample.item.title ?? null, snapshot: sample };
+    const parsed = parseIndexedKey(indexedKey);
+    if (!parsed)
+      return yield* new ItemUnavailable({ indexedKey, reason: "missing" });
     const db = yield* ZoteroReads;
-    if ((yield* db.current).state === "degraded") return null;
+    if ((yield* db.current).state === "degraded")
+      return yield* new ItemUnavailable({ indexedKey, reason: "degraded" });
     const items = yield* db.reads.ItemsByIndexedKeys({
       indexedKeys: [indexedKey],
     });
     const item = items.get(indexedKey);
-    return !item || isChildItemFields(item.fields)
-      ? null
-      : { id: indexedKey, title: itemSummary(item, item.fields).formatted };
+    if (!item)
+      return yield* new ItemUnavailable({ indexedKey, reason: "missing" });
+    if (isChildItemFields(item.fields))
+      return yield* new ItemUnavailable({ indexedKey, reason: "child" });
+    const snapshot: ItemSnapshot = yield* readItemSnapshot(parsed);
+    return {
+      title: itemSummary(item, item.fields).formatted,
+      snapshot,
+    } satisfies ChosenItem;
   },
 );
 

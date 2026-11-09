@@ -7,13 +7,13 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
+import { composing } from "@zotlit/ui";
 
 import { PinnedPopover } from "@/components/pinned-popover";
 import type { PinnedPopoverHandle } from "@/components/pinned-popover";
 import { writeClipboardRichText } from "@/lib/clipboard";
 import { saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
-import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { themeHook } from "@/lib/theme-hooks";

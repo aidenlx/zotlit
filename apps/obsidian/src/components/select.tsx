@@ -23,9 +23,10 @@ import type {
   RefObject,
 } from "react";
 
+import { composing } from "@zotlit/ui";
+
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
-import { composing } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 
 import { Chooser, useChooserOpenSearch } from "./chooser";

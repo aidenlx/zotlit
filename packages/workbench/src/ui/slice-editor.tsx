@@ -5,18 +5,19 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "#/document/index";
-import type { SuggestionSource } from "#/language/index";
+import type { ResolveStart, SuggestionSource } from "#/language/index";
 import { setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { completionFields } from "./completion-fields";
-import { useDocumentRevision } from "./editor";
+import { useWorkbenchModel } from "./editor";
 import { HiddenName, useOptionalHost } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
@@ -31,6 +32,7 @@ import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 import { underlineOnlyLint } from "./underline-lint";
 
+import { documentRevision } from "#/document/atoms";
 import {
   workbenchSlice,
   sliceOffsets,
@@ -141,7 +143,7 @@ export function SliceEditor({
   onFocus,
 }: SliceEditorProps) {
   const onScreen = visible ?? useContext(Visible);
-  const revision = useDocumentRevision(controller);
+  const revision = useAtomValue(documentRevision(controller));
   const diagnoses = useSourceDiagnoses();
   const revealDiagnosis = useRevealSourceDiagnosis();
   const readOnly = controller.readOnly;
@@ -151,8 +153,15 @@ export function SliceEditor({
   const adapter = useOptionalHost();
   const editorExtension = useEditorExtension();
   const nameId = useUniqueId();
+  const createPartial = useAtomSet(useWorkbenchModel().createPartial(nameId));
+  const start: ResolveStart = (create, created) =>
+    createPartial({ create, created });
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
+  // The document the reader has put the caret in this pane of: the pane has
+  // held focus, from a click, the keyboard, or a reveal that hands it focus.
+  // It outlives the view, which a language change builds again.
+  const placedIn = useRef<WorkbenchDocumentController | null>(null);
   const syntaxSlot = useRef(new Compartment());
   const problemGutter = useRef<ReturnType<typeof sourceProblemGutter>>(null);
   const syntax = useMemo(
@@ -178,6 +187,7 @@ export function SliceEditor({
     onFocus,
     suggest,
     adapter,
+    start,
     editorExtension,
     syntax,
     m,
@@ -189,6 +199,7 @@ export function SliceEditor({
     onFocus,
     suggest,
     adapter,
+    start,
     editorExtension,
     syntax,
     m,
@@ -219,11 +230,10 @@ export function SliceEditor({
       const expression = region?.expression ?? false;
       const supplied = report.current.suggest?.(masterPosition);
       return {
-        ...partialSuggestions(
-          report.current.m,
-          controller.dependencies,
-          report.current.adapter,
-        ),
+        ...partialSuggestions(report.current.m, controller.dependencies, {
+          partials: report.current.adapter?.partials,
+          start: report.current.start,
+        }),
         ...supplied,
         root,
         language: language === "json-e" ? "json-e" : region?.language,
@@ -315,20 +325,21 @@ export function SliceEditor({
           EditorView.updateListener.of((update) => {
             if (!update.selectionSet && !update.focusChanged) return;
             if (update.focusChanged && update.view.hasFocus) {
+              placedIn.current = controller;
               report.current.onFocus?.();
             }
             if (!report.current.visible) return;
             const { from } = controller.sliceRange(slice);
             report.current.onSelection?.(
-              sliceSelection(
-                update.view,
-                from,
-                sliceOffsets(
+              sliceSelection(update.view, {
+                sliceFrom: from,
+                toStored: sliceOffsets(
                   controller,
                   slice,
                   update.view.state.doc.toString(),
                 ).toStored,
-              ),
+                placed: placedIn.current === controller,
+              }),
             );
           }),
         ],
@@ -350,11 +361,12 @@ export function SliceEditor({
     const view = editor.current;
     if (!view || !onScreen) return;
     report.current.onSelection?.(
-      sliceSelection(
-        view,
-        controller.sliceRange(slice).from,
-        sliceOffsets(controller, slice, view.state.doc.toString()).toStored,
-      ),
+      sliceSelection(view, {
+        sliceFrom: controller.sliceRange(slice).from,
+        toStored: sliceOffsets(controller, slice, view.state.doc.toString())
+          .toStored,
+        placed: placedIn.current === controller,
+      }),
     );
   }, [controller, slice, language, onScreen]);
 
@@ -452,8 +464,16 @@ export function SliceEditor({
 /** The pane's own selection in master offsets, which is what the host tracks. */
 function sliceSelection(
   view: EditorView,
-  sliceFrom: number,
-  toStored: (position: number) => number,
+  {
+    sliceFrom,
+    toStored,
+    placed,
+  }: {
+    readonly sliceFrom: number;
+    readonly toStored: (position: number) => number;
+    /** Whether the reader has put the caret in this pane. */
+    readonly placed: boolean;
+  },
 ): WorkbenchInsertTarget["range"] {
   const { main } = view.state.selection;
   const map = (position: number) => sliceFrom + toStored(position);
@@ -463,5 +483,6 @@ function sliceSelection(
     ...(main.anchor > main.head
       ? { anchor: map(main.anchor), head: map(main.head) }
       : {}),
+    ...(placed ? { placed: true } : {}),
   };
 }

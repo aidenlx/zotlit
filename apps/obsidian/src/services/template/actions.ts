@@ -6,6 +6,7 @@
 
 import { Effect, Layer } from "effect";
 import type { Context, Scope } from "effect";
+import type { WorkspaceLeaf } from "obsidian";
 
 import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -17,12 +18,18 @@ import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import type { PluginHostShape } from "@/lib/plugin-host";
+import type { Profile } from "@/services/profile/service";
 import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { Template } from "./service";
 
 /** The services the Citation Template open runs with. */
-type CitationTemplateServices = Template | Notifier | Vault | Workspace;
+type CitationTemplateServices =
+  | Template
+  | Notifier
+  | Vault
+  | Workspace
+  | Profile;
 
 /**
  * The "Customize citation text" command. Its callback is a plain Obsidian
@@ -56,7 +63,9 @@ export function addCitationTemplateActions(
       name: m.command_customize_citation_text_name(),
       callback: () =>
         deps.bridge.runAndForget(
-          reportCitationTemplateOpen.pipe(Effect.provideContext(deps.context)),
+          reportCitationTemplateOpen().pipe(
+            Effect.provideContext(deps.context),
+          ),
         ),
     }),
   );
@@ -66,21 +75,26 @@ export function addCitationTemplateActions(
  * Open the Citation Template in the Template Workbench View, creating its
  * document from the built-in citation text when the vault holds none. The
  * "profile uses Eta" notice belongs to a Profile document, so it is not
- * offered here.
+ * offered here. An open from a Workbench leaf opens in a new tab of its window.
  */
-export const openCitationTemplate = Effect.gen(function* () {
-  const file = yield* (yield* Template).materializeCitationTemplate;
-  yield* openTemplateWorkbench(file, { explainUnsupported: false });
-}).pipe(Effect.withSpan("openCitationTemplate"));
+export const openCitationTemplate = (from?: WorkspaceLeaf) =>
+  Effect.gen(function* () {
+    const file = yield* (yield* Template).materializeCitationTemplate;
+    yield* openTemplateWorkbench(file, {
+      explainUnsupported: false,
+      ...(from ? { from: { leaf: from, place: "tab" } } : {}),
+    });
+  }).pipe(Effect.withSpan("openCitationTemplate"));
 
 /**
  * {@link openCitationTemplate} for an entry point: a failure is logged and a
  * notice tells the user; an interrupt passes on with no notice.
  */
-export const reportCitationTemplateOpen = reportOutcome(openCitationTemplate, {
-  success: () => undefined,
-  error: () => m.notice_citation_text_open_failed(),
-}).pipe(
-  withLogCategory("template", "actions"),
-  Effect.withSpan("CitationTemplate.reportOpen"),
-);
+export const reportCitationTemplateOpen = (from?: WorkspaceLeaf) =>
+  reportOutcome(openCitationTemplate(from), {
+    success: () => undefined,
+    error: () => m.notice_citation_text_open_failed(),
+  }).pipe(
+    withLogCategory("template", "actions"),
+    Effect.withSpan("CitationTemplate.reportOpen"),
+  );

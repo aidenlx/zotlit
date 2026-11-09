@@ -165,8 +165,9 @@ export class WorkbenchDocumentController {
   #readOnly: boolean;
   readonly #runtime: "web" | "native";
   readonly #kind: WorkbenchDocumentKind;
-  #context: PartialContext = DEFAULT_PARTIAL_CONTEXT;
+  readonly #context: () => PartialContext;
   #document: LiteratureNoteTemplateDocument | null = null;
+  #manifest: LiteratureNoteTemplateDocument["manifest"] | null = null;
   #plain: PlainTemplateDocument | null = null;
   #problems: readonly WorkbenchProblem[] = [];
   #focused: WorkbenchSliceId | null = null;
@@ -189,13 +190,16 @@ export class WorkbenchDocumentController {
       runtime?: "web" | "native";
       readOnly?: boolean;
       kind?: WorkbenchDocumentKind;
-      /** The caller a Shared Partial opens as called from. @default "note" */
-      context?: PartialContext;
+      /**
+       * Reads the caller a Shared Partial is shown as called from, which the
+       * host's view state owns. @default "note"
+       */
+      context?: () => PartialContext;
     } = {},
   ) {
     this.#runtime = options.runtime ?? "web";
     this.#kind = options.kind ?? "profile";
-    if (options.context) this.#context = options.context;
+    this.#context = options.context ?? (() => DEFAULT_PARTIAL_CONTEXT);
     this.#readOnly = options.readOnly ?? false;
     this.#state = EditorState.create({
       doc: source,
@@ -258,11 +262,7 @@ export class WorkbenchDocumentController {
    * @see {@link PartialContext} for whose choice it is.
    */
   get partialContext(): PartialContext {
-    return this.#context;
-  }
-
-  setPartialContext(context: PartialContext): void {
-    this.#context = context;
+    return this.#context();
   }
 
   #language: "liquid" | "eta" = "liquid";
@@ -275,6 +275,20 @@ export class WorkbenchDocumentController {
   /** The parsed document, or null while the draft does not parse. */
   get document(): LiteratureNoteTemplateDocument | null {
     return this.#document;
+  }
+
+  /** Whether the draft parses as its kind's document, which alone a render reads. */
+  get parsed(): boolean {
+    return (this.#kind === "profile" ? this.#document : this.#plain) !== null;
+  }
+
+  /**
+   * The last Profile manifest that parsed, which stands while the draft does
+   * not, so the header and the Name and folder form keep their values during
+   * a repair. Null on a plain document and until a manifest parses.
+   */
+  get manifest(): LiteratureNoteTemplateDocument["manifest"] | null {
+    return this.#manifest;
   }
 
   /**
@@ -401,7 +415,7 @@ export class WorkbenchDocumentController {
       return [
         {
           ...this.sliceRange("source"),
-          root: this.#kind === "citation" ? "citation" : this.#context,
+          root: this.#kind === "citation" ? "citation" : this.#context(),
           expression: false,
         },
       ];
@@ -466,6 +480,11 @@ export class WorkbenchDocumentController {
    */
   sliceRange(id: WorkbenchSliceId): WorkbenchSliceRange {
     return this.#ranges.get(id) ?? { from: 0, to: 0 };
+  }
+
+  /** Every slice and the region it covers now, as a copy the next edit leaves alone. */
+  get slices(): ReadonlyMap<WorkbenchSliceId, WorkbenchSliceRange> {
+    return new Map(this.#ranges);
   }
 
   sliceText(id: WorkbenchSliceId): string {
@@ -728,39 +747,6 @@ export class WorkbenchDocumentController {
     return true;
   }
 
-  /** Appends annotations on a new line; section repair shares the same undo step. */
-  insertAnnotationLoop(): {
-    repaired: boolean;
-    caret: number;
-  } {
-    const repaired = this.#problems.some(
-      ({ code }) => code === "missing-annotation-section",
-    );
-    const from = repaired ? this.#state.doc.length : this.sliceRange("note").to;
-    const prefix =
-      from > 0 && this.#state.doc.sliceString(from - 1, from) !== "\n"
-        ? "\n"
-        : "";
-    const document = repaired
-      ? parseLiteratureNoteTemplate(
-          `${this.#text}${prefix}${ANNOTATION_HEADER}\n`,
-        )
-      : this.document;
-    const snippet =
-      document?.manifest.language === "eta"
-        ? "<% for (const annotation of zt.annotations) { %>\n<%~ renderAnnotation(annotation) %>\n<% } %>\n"
-        : "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n";
-    this.dispatch({
-      changes: {
-        from,
-        insert: `${prefix}${snippet}${repaired ? `${ANNOTATION_HEADER}\n` : ""}`,
-      },
-      userEvent: "input.complete",
-      annotations: isolateHistory.of("full"),
-    });
-    return { repaired, caret: from + prefix.length + snippet.length };
-  }
-
   /**
    * Applies one Properties action — add, remove, reorder, change language,
    * change merge or key — as a targeted edit of the entry's own YAML lines, in
@@ -909,6 +895,7 @@ export class WorkbenchDocumentController {
     try {
       const document = parseLiteratureNoteTemplate(source);
       this.#document = document;
+      this.#manifest = document.manifest;
       this.#language = document.manifest.language;
       this.#ranges.set("note", {
         from: document.bodyStart,

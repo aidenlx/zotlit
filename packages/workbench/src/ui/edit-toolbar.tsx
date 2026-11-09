@@ -2,15 +2,13 @@
 // document's one history. A host's own controls for the row come as children.
 // Inert outside an editor.
 
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { ReactNode } from "react";
 
-import {
-  useDocumentRevision,
-  useOptionalEditor,
-  useWorkbenchStore,
-} from "./editor";
+import { useOptionalEditor, useWorkbenchModel } from "./editor";
 import { useContainerName, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { setAdvanced as advancedTransition } from "./model";
 import { useIcon, useParts } from "./theme";
 
 export function EditToolbar({
@@ -28,10 +26,13 @@ export function EditToolbar({
 }) {
   const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
-  const controller = editor?.controller ?? null;
-  useDocumentRevision(controller);
-  const advanced = useWorkbenchStore((state) => state.advanced);
-  const setAdvanced = useWorkbenchStore((state) => state.setAdvanced);
+  const model = useWorkbenchModel();
+  const current = useAtomValue(model.controller);
+  const controller = editor === null ? null : current;
+  useAtomValue(model.document.revision);
+  const advanced = useAtomValue(model.advanced);
+  const setView = useAtomSet(model.view);
+  const setAdvanced = (next: boolean) => setView(advancedTransition(next));
   const part = useParts("editToolbar");
   const modeName = useContainerName(m.workbench_editing_mode());
   const icon = useIcon();

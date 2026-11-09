@@ -17,7 +17,9 @@ import {
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { parseExpression } from "@zotlit/filter-expression";
+import { useUniqueId } from "@zotlit/ui";
 
+import { HiddenName } from "./host";
 import {
   useExpressionCompletion,
   useExpressionExtension,
@@ -33,17 +35,22 @@ import {
 import { filterExpressionCompletion } from "#/language/filter-expression-completion";
 import { signatureHint } from "#/language/signature-hint-tooltip";
 
-/** The label and validity of the field, on its editable content. */
+/**
+ * The label and validity of the field, on its editable content. The label
+ * is a hidden element the content points at, so the text takes no tooltip.
+ */
 const contentAttributes = ({
   label,
+  labelId,
   invalid,
 }: {
   label: string | undefined;
+  labelId: string;
   invalid: boolean;
 }) =>
   EditorView.contentAttributes.of({
     "aria-invalid": String(invalid),
-    ...(label === undefined ? {} : { "aria-label": label }),
+    ...(label === undefined ? {} : { "aria-labelledby": labelId }),
   });
 
 /** Expression Completion over the vocabulary the field holds now. */
@@ -131,6 +138,7 @@ export function MatchExpressionInput({
   const presentation = useExpressionCompletion();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
+  const labelId = useUniqueId();
   // The editor is made once; it reads what it needs then, and later props,
   // through this ref.
   const props = useRef({
@@ -138,6 +146,7 @@ export function MatchExpressionInput({
     onChange,
     onBlur,
     label,
+    labelId,
     invalid,
     placeholder,
     lines,
@@ -151,6 +160,7 @@ export function MatchExpressionInput({
     onChange,
     onBlur,
     label,
+    labelId,
     invalid,
     placeholder,
     lines,
@@ -274,22 +284,25 @@ export function MatchExpressionInput({
     if (!editor) return;
     editor.dispatch({
       effects: attributes.current.reconfigure(
-        contentAttributes({ label, invalid }),
+        contentAttributes({ label, labelId, invalid }),
       ),
     });
-  }, [invalid, label]);
+  }, [invalid, label, labelId]);
   // A column that centres the editor: one line stands where a text input's
   // text stands, and wrapped text grows the box.
   return (
-    <div
-      ref={host}
-      {...part("expression")}
-      {...data}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-      }}
-    />
+    <>
+      <div
+        ref={host}
+        {...part("expression")}
+        {...data}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+        }}
+      />
+      {label !== undefined && <HiddenName id={labelId}>{label}</HiddenName>}
+    </>
   );
 }

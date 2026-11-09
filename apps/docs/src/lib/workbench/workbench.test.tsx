@@ -1,12 +1,24 @@
+import { Effect, Layer } from "effect";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
+import { renderProfile } from "@zotlit/workbench/render";
 import { createWorkbenchEditor } from "@zotlit/workbench/ui";
+import type { WorkbenchHostError } from "@zotlit/workbench/ui";
 
 // @vitest-environment happy-dom
 import { m } from "@/paraglide/messages.js";
 
-import { open, openMenu, importFile, KEPT } from "./page-test-host";
+import {
+  open,
+  openMenu,
+  openFieldsPopover,
+  importFile,
+  KEPT,
+  renderInThread,
+  shownItem,
+} from "./page-test-host";
+import { Rendering } from "./rendering";
 import { WEB_THEME } from "./theme";
 
 vi.mock("@zotlit/workbench/ui", async (original) => {
@@ -23,15 +35,15 @@ vi.mock("@zotlit/workbench/ui", async (original) => {
   };
 });
 
-it("renders editor examples and independent Preview after StrictMode replays effects", async () => {
+it("keeps one editor, and renders its examples and Preview, after StrictMode replays effects", async () => {
   vi.mocked(createWorkbenchEditor).mockClear();
   await using page = await open({ strict: true });
   const owners = vi
     .mocked(createWorkbenchEditor)
     .mock.results.map((result) => result.value);
-  expect(owners).toHaveLength(2);
-  expect(owners[0]![Symbol.dispose]).toHaveBeenCalledOnce();
-  expect(owners[1]![Symbol.dispose]).not.toHaveBeenCalled();
+  // The page makes its one editor once; the replay neither drops nor rebuilds it.
+  expect(owners).toHaveLength(1);
+  expect(owners[0]![Symbol.dispose]).not.toHaveBeenCalled();
   page.press(m.workbench_tab_name_and_folder());
   await page.waitFor(() => {
     expect(
@@ -77,8 +89,10 @@ it("keeps independent Preview and Explorer choices when a new document opens", a
     refresh().value = "demand";
     refresh().dispatchEvent(new Event("input", { bubbles: true }));
   });
+  // The field list stands in the Fields popover, on the document's body.
+  page.press(m.workbench_view_fields());
   const section = () =>
-    page.host.querySelector<HTMLButtonElement>('[data-part="section-header"]')!;
+    document.querySelector<HTMLButtonElement>('[data-part="section-header"]')!;
   expect(section().getAttribute("aria-expanded")).toBe("true");
   page.press(section().textContent);
   importFile(page.host, KEPT);
@@ -116,4 +130,79 @@ it("hands a Default copy from the Profile menu to the native import flow", async
   expect(copies[0]).not.toContain("id: default");
   expect(urls).toEqual(["obsidian://zotlit/import-profile?clipboard=true"]);
   expect(page.host.textContent).toContain(m.workbench_open_obsidian_copied());
+});
+
+/** The text of every field row the page's field lists show. */
+function fieldText(host: HTMLElement): string {
+  return [...host.ownerDocument.querySelectorAll('[role="treeitem"]')]
+    .map((row) => row.textContent)
+    .join("\n");
+}
+
+it("shows one chosen Item on every surface, from one render", async () => {
+  await using page = await open();
+  await page.settle();
+  page.press(m.workbench_view_fields());
+  renderInThread.mockClear();
+  await page.show("NW2CPDTC");
+  // Choosing the paper is a press outside the Fields popover, which closes it.
+  openFieldsPopover(page.host);
+  // The new paper's result has landed once the Preview shows it.
+  await page.waitFor(() => {
+    expect(shownItem(page.host)).toBe("Thinking, fast and slow");
+    expect(fieldText(page.host)).toContain("Thinking, fast and slow");
+    expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
+      "Thinking, fast and slow",
+    );
+  });
+  // The editor's examples and the Preview read the same result.
+  expect(renderInThread).toHaveBeenCalledTimes(1);
+  expect(renderInThread.mock.lastCall![0].snapshot.item.key).toBe("NW2CPDTC");
+  page.press(m.workbench_view_fields());
+  page.press(m.workbench_tab_name_and_folder());
+  expect(
+    page.host.querySelector('[data-part="filename-output"]')?.textContent,
+  ).toBe("literatures/Kahneman2011.md");
+});
+
+it("interrupts the read of an Item the reader chose away from", async () => {
+  // Each read of the chosen Item waits for `Temporal`; the fake holds every
+  // wait until the test lets it go, and records the ones interrupted.
+  const reads: { release: () => void; interrupted: boolean }[] = [];
+  const temporal = Effect.callback<void, WorkbenchHostError>((resume) => {
+    const read = { release: () => resume(Effect.void), interrupted: false };
+    reads.push(read);
+    return Effect.sync(() => {
+      read.interrupted = true;
+    });
+  });
+  await using page = await open({
+    rendering: Layer.succeed(
+      Rendering,
+      Rendering.of({
+        temporal,
+        render: (request) =>
+          Effect.sync(() =>
+            renderProfile(request.source, request.snapshot, request),
+          ),
+      }),
+    ),
+  });
+  await page.settle();
+  page.press(m.workbench_view_fields());
+  const first = reads.length;
+  expect(first).toBeGreaterThan(0);
+  expect(fieldText(page.host)).toBe("");
+  await page.show("NW2CPDTC");
+  await page.settle();
+  // Choosing the paper is a press outside the Fields popover, which closes it.
+  openFieldsPopover(page.host);
+  expect(reads.slice(0, first).every((read) => read.interrupted)).toBe(true);
+  for (const read of reads.slice(first)) act(() => read.release());
+  await page.waitFor(() =>
+    expect(fieldText(page.host)).toContain("Thinking, fast and slow"),
+  );
+  expect(fieldText(page.host)).not.toContain(
+    "Why Most Published Research Findings Are False",
+  );
 });

@@ -20,17 +20,19 @@ import {
   launch,
   press,
   fieldRow,
+  openFieldsPopover,
   chooseAnnotation,
   resultText,
   sourceView,
   chosenTab,
   importFile,
   openMenu,
-  openSheet,
+  openDialog,
   rendered,
   keep,
   title,
   shownItem,
+  openAnnotationChooser,
   bridgeFetch,
   serveBridge,
 } from "./page-test-host";
@@ -248,7 +250,7 @@ describe("the paper a profile is written for", () => {
       ),
     );
     expect(
-      page.host.querySelector("#workbench-sample")?.parentElement?.textContent,
+      page.host.querySelector("[data-workbench-item-row]")?.textContent,
     ).toContain("Why Most Published Research Findings Are False");
   });
 
@@ -306,8 +308,9 @@ describe("the paper a profile is written for", () => {
 describe("the field list", () => {
   it("searches the complete Zotero tree without opening the foot first", async () => {
     await using page = await open();
+    openFieldsPopover(page.host);
     const search = page.host.querySelector<HTMLInputElement>(
-      `input[aria-label="${m.workbench_fields_search_note()}"]`,
+      `input[placeholder="${m.workbench_fields_search_note()}"]`,
     )!;
 
     act(() => {
@@ -373,21 +376,21 @@ describe("the simplified editing flow", () => {
 
     importFile(page.host, KEPT);
     await page.waitFor(() =>
-      expect(openSheet(page.host).textContent).toContain(
+      expect(openDialog(page.host).textContent).toContain(
         m.workbench_replace_heading(),
       ),
     );
     expect(title(page.host)).toBe("Default");
-    press(openSheet(page.host), m.workbench_keep_editing());
+    press(openDialog(page.host), m.workbench_keep_editing());
     expect(sourceView(page.host).state.doc.toString()).toBe(edited);
 
     importFile(page.host, KEPT);
     await page.waitFor(() =>
-      expect(openSheet(page.host).textContent).toContain(
+      expect(openDialog(page.host).textContent).toContain(
         m.workbench_replace_heading(),
       ),
     );
-    press(openSheet(page.host), m.workbench_import());
+    press(openDialog(page.host), m.workbench_import());
     await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
   });
 
@@ -417,11 +420,11 @@ describe("the simplified editing flow", () => {
     editLanguage();
     importFile(page.host, KEPT);
     await page.waitFor(() =>
-      expect(openSheet(page.host).textContent).toContain(
+      expect(openDialog(page.host).textContent).toContain(
         m.workbench_replace_heading(),
       ),
     );
-    press(openSheet(page.host), m.workbench_import());
+    press(openDialog(page.host), m.workbench_import());
     await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
   });
 
@@ -480,6 +483,7 @@ describe("the simplified editing flow", () => {
         selection: { anchor: 0, head: value.state.doc.length },
       }),
     );
+    act(() => value.focus());
     press(
       fieldRow(page.host, m.workbench_field_authors()),
       m.workbench_fields_put_in_note(),
@@ -497,6 +501,10 @@ describe("the simplified editing flow", () => {
         selection: { anchor: from, head: from + "zt.authors".length },
       }),
     );
+    act(() => source.focus());
+    // The editor reports its selection as Fields takes focus from it.
+    openFieldsPopover(page.host);
+    await page.settle();
     press(
       fieldRow(page.host, m.workbench_field_title()),
       m.workbench_fields_put_in_note(),
@@ -719,7 +727,7 @@ describe("the annotation box", () => {
     expect(resultText(restored.host)).toContain("Thinking, fast and slow");
   });
 
-  it("keeps Preview annotation choices separate from editor fields and compact examples", async () => {
+  it("shares one Annotation choice between the Preview, the field list, and the note's example", async () => {
     keep(ANNOTATION_LIST, SAMPLE_ITEMS[0]!);
     await using page = await open();
     page.press(m.workbench_restore_accept());
@@ -730,7 +738,7 @@ describe("the annotation box", () => {
           ?.textContent,
       ).toContain("Clear methods make research easier to reproduce."),
     );
-    page.press(m.workbench_choose_annotation());
+    openAnnotationChooser(page);
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
     expect(dialog.textContent).toContain(m.workbench_annotation_from_item());
     expect(dialog.textContent).toContain(m.workbench_annotation_empty());
@@ -760,7 +768,7 @@ describe("the annotation box", () => {
     ).toContain("Compare these findings with the replication study.");
     expect(
       fieldRow(page.host, m.workbench_field_comment()).textContent,
-    ).toContain("Use this point in the literature review.");
+    ).toContain("Compare these findings with the replication study.");
     page.press(m.workbench_tab_note());
     expect(
       page.host.querySelector('[role="region"][data-part="region"]')
@@ -779,7 +787,7 @@ describe("the annotation box", () => {
     await page.waitFor(() =>
       expect(
         page.host.querySelector("[data-annotation-preview]")?.textContent,
-      ).toContain("Clear methods make research easier to reproduce."),
+      ).toContain("Compare these findings with the replication study."),
     );
     const note = EditorView.findFromDOM(
       page.host.querySelector<HTMLElement>(".cm-editor")!,
@@ -803,47 +811,11 @@ describe("the annotation box", () => {
     expect(
       page.host.querySelector("[data-annotation-preview]")?.textContent,
     ).toContain("Report the assumptions behind each result.");
+    // One Annotation choice serves every surface, so the Preview follows the
+    // choice made beside the note.
     page.press(m.workbench_tab_annotation());
     expect(resultText(page.host)).toContain(
-      "Compare these findings with the replication study.",
+      "Report the assumptions behind each result.",
     );
-  });
-
-  /** The default Profile with neither the call nor the section it calls. */
-  const SILENT = DEFAULT_PROFILE_SOURCE.replace(
-    "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
-    "",
-  ).replace(/\n--- zotlit:annotation ---\n[\s\S]*$/, "\n");
-
-  it("gives a note without the call its loop, and the section it needs, in one press", async () => {
-    keep(SILENT, SAMPLE_ITEMS[1]!);
-    await using page = await open();
-    page.press(m.workbench_restore_accept());
-    expect(page.host.textContent).toContain(m.workbench_annotation_insert());
-    const note = EditorView.findFromDOM(
-      page.host.querySelector<HTMLElement>(".cm-editor")!,
-    )!;
-    const body = note.state.doc.toString();
-    act(() => note.dispatch({ selection: { anchor: 0, head: body.length } }));
-
-    page.press(m.workbench_annotation_insert());
-    expect(note.state.doc.toString().startsWith(body)).toBe(true);
-
-    expect(
-      document.querySelector('[data-slot="toast-viewport"]')?.textContent,
-    ).toContain(m.workbench_annotation_section_added());
-    expect(page.host.textContent).toContain(m.workbench_tab_annotation());
-    expect(page.host.textContent).not.toContain(
-      m.workbench_annotation_insert(),
-    );
-    // The repaired document renders again, loop and section in place.
-    await page.waitFor(() =>
-      expect(rendered().at(-1)).toContain("{% render_annotation annotation %}"),
-    );
-    const source = rendered().at(-1)!;
-    expect(source).toContain(
-      "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
-    );
-    expect(source.endsWith("\n--- zotlit:annotation ---\n")).toBe(true);
   });
 });

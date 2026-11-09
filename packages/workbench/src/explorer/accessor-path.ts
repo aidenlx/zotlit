@@ -20,11 +20,16 @@ export function formatAccessorPath(
   for (const segment of segments) {
     if (typeof segment === "number") {
       out += `[${segment}]`;
-    } else if (isAccessorIdentifier(segment)) {
-      out += out ? `.${segment}` : segment;
+    } else if (!out && isAccessorIdentifier(segment)) {
+      out = segment;
     } else {
-      out += `[${JSON.stringify(segment)}]`;
+      out += memberAccessor(segment);
     }
   }
   return out;
+}
+
+/** The step that reads property `name` off a value: `.name`, or `["name"]` for a name that is not an identifier. */
+export function memberAccessor(name: string): string {
+  return isAccessorIdentifier(name) ? `.${name}` : `[${JSON.stringify(name)}]`;
 }

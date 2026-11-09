@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
-import { Context, Effect, Fiber, Layer, SubscriptionRef } from "effect";
-import type { Scope } from "effect";
+import { Effect, Fiber, Layer, SubscriptionRef } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -13,7 +12,6 @@ import type {
   LiteratureNoteTemplatePartial,
 } from "@zotlit/templates/literature-note-pack";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
@@ -34,12 +32,7 @@ import {
   saveProfileCustomization,
 } from "@/views/template-workbench/preferences";
 
-import {
-  bindCustomize,
-  Customize,
-  customize,
-  layerCustomize,
-} from "./customize";
+import { customize } from "./customize";
 import type {
   CustomizePorts,
   CustomizeRequest,
@@ -79,8 +72,6 @@ const LAUNCH_URL =
 
 interface Harness {
   customize(request: CustomizeRequest): Effect.Effect<void, unknown>;
-  /** The flow as its layer builds it, for a run through {@link bindCustomize}. */
-  service: Effect.Effect<Customize["Service"], never, Scope.Scope>;
   /** The ports the flow runs with. */
   ports: CustomizePorts;
   device: Map<string, unknown>;
@@ -231,9 +222,6 @@ const harness = Effect.fnUntraced(function* ({
   const built: Harness = {
     customize: (request) =>
       customize(request, ports).pipe(Effect.provide(layer)),
-    service: Layer.build(layerCustomize(ports).pipe(Layer.provide(layer))).pipe(
-      Effect.map((context) => Context.get(context, Customize)),
-    ),
     ports,
     device,
     settings,
@@ -400,27 +388,6 @@ describe("the Customize flow", () => {
       );
       expect(held.sheets).toHaveLength(1);
       yield* Fiber.interrupt(launch);
-
-      expect(held.closedSheets).toEqual(held.sheets);
-      expect(held.opened).toEqual([]);
-      expect(held.update).not.toHaveBeenCalled();
-    }),
-  );
-
-  it.effect("closes the open sheet when the plugin unloads", () =>
-    Effect.gen(function* () {
-      const held = yield* harness({
-        settings: { "server.enabled": false },
-        consent: "held",
-        effectivePort: null,
-      });
-      const bridge = openTestBridge();
-      const action = bindCustomize(bridge, yield* held.service);
-
-      void action({ profileId: "default" });
-      yield* Effect.yieldNow;
-      expect(held.sheets).toHaveLength(1);
-      yield* Effect.promise(() => bridge[Symbol.asyncDispose]());
 
       expect(held.closedSheets).toEqual(held.sheets);
       expect(held.opened).toEqual([]);

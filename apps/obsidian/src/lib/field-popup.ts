@@ -9,11 +9,11 @@ import type { Extension } from "@codemirror/state";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 
+import { composing } from "@zotlit/ui";
 import { fieldPopupKeyHost } from "@zotlit/workbench/language";
 import type { FieldPopupKeyHost } from "@zotlit/workbench/language";
 
 import { onEditorWindowMigrated } from "./editor-migration";
-import { composing } from "./ime";
 
 /**
  * Pushes the popup's Scope while a popup stands, parented to `app.scope` as

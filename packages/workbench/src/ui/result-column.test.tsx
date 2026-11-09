@@ -2,14 +2,17 @@ import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
 
+import type { PreviewSettings } from "./model";
 import { PreviewControls } from "./preview-controls";
 import { PropertyList } from "./property-list";
-import { ResultBody, ResultColumn } from "./result-column";
+import {
+  PreviewFilenameLabel,
+  previewFilename,
+  ResultBody,
+  ResultColumn,
+} from "./result-column";
 import type { ResultColumnProps } from "./result-column";
-import type { PreviewSettings } from "./store";
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
@@ -94,10 +97,7 @@ it("passes the complete note and folded properties to the host renderer", () => 
   using mounted = column({ staleReason: "hold" });
   const { props } = mounted;
   expect(
-    screen
-      .getByText("Papers/Reading.md")
-      .closest("header")
-      ?.getAttribute("aria-description"),
+    screen.getByText("Papers/Reading.md").getAttribute("aria-description"),
   ).toBe("Papers/Reading.md");
   expect(
     screen
@@ -383,14 +383,16 @@ it("names no preview for a refused document with nothing kept", () => {
 it("changes preview mode, runs on demand, and pauses future work", () => {
   const onRun = vi.fn<() => void>();
   function Controls() {
-    const [store] = useState(() =>
-      createStore<PreviewSettings>(() => ({ mode: "create", live: true })),
-    );
-    const preview = useStore(store);
+    const [preview, setPreview] = useState<PreviewSettings>({
+      mode: "create",
+      live: true,
+    });
     return (
       <PreviewControls
         preview={preview}
-        onChange={store.setState}
+        onChange={(value) =>
+          setPreview((current) => ({ ...current, ...value }))
+        }
         busy={false}
         onRun={onRun}
       />
@@ -484,4 +486,54 @@ it("renders ResultBody with no heading", () => {
   render(mounted.ui);
   expect(screen.queryByRole("heading")).toBeNull();
   expect(screen.getByText("Papers/Reading.md")).toBeDefined();
+});
+
+// #1965: a host that names the file in its own sticky header row leaves the
+// region's file name out and reads the name the region would show.
+it("leaves the file name to the host's header row", () => {
+  using mounted = mount(
+    <ResultBody
+      result={result}
+      mode="note"
+      staleReason={null}
+      showMarkdown={false}
+      showManaged={false}
+      showFilename={false}
+    />,
+  );
+  render(mounted.ui);
+  expect(screen.queryByText("Papers/Reading.md")).toBeNull();
+  expect(screen.getByRole("region")).toBeDefined();
+});
+
+it("labels the file name and gives its whole value as a tooltip", () => {
+  using mounted = mount(<PreviewFilenameLabel filename="Papers/Reading.md" />);
+  render(mounted.ui);
+  const label = screen.getByText("Papers/Reading.md", { exact: false });
+  expect(label.textContent).toBe(
+    `${m.workbench_result_filename()}: Papers/Reading.md`,
+  );
+  expect(label.getAttribute("aria-description")).toBe("Papers/Reading.md");
+});
+
+it("names the file a note preview shows, and none for a failure or another mode", () => {
+  const reading = {
+    result,
+    mode: "note",
+    staleReason: null,
+    showManaged: false,
+  } as const;
+  expect(previewFilename(reading)).toBe("Papers/Reading.md");
+  expect(previewFilename({ ...reading, mode: "annotation" })).toBeNull();
+  expect(
+    previewFilename({
+      ...reading,
+      result: {
+        ...result,
+        diagnostics: [
+          { code: "property-error", position: 2, message: "Invalid property" },
+        ],
+      },
+    }),
+  ).toBeNull();
 });

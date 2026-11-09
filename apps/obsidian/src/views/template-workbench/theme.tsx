@@ -9,11 +9,9 @@ import {
 import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
-import {
-  captionIcon,
-  selectionControl,
-} from "@/components/obsidian/selection-control";
+import { selectionControl } from "@/components/obsidian/selection-control";
 import { obsidianPopupKeys } from "@/lib/field-popup";
+import { paneDivider } from "@/lib/pane-divider";
 import { themeHook } from "@/lib/theme-hooks";
 import { tv } from "@/lib/tw";
 import { cn } from "@/lib/utils";
@@ -23,7 +21,6 @@ import { nativeCompletion } from "./native-completion";
 
 export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
-  help: "circle-help",
   confirm: "check",
   add: "plus",
   remove: "trash-2",
@@ -52,6 +49,23 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   "property-date": "calendar",
   "property-datetime": "clock",
   drag: "grip-vertical",
+  "expand-all": "chevrons-up-down",
+  "collapse-all": "chevrons-down-up",
+  fields: "braces",
+  insert: "text-cursor-input",
+  result: "corner-down-right",
+  pin: "pin",
+  unpin: "pin-off",
+  "section-common": "layout-list",
+  "section-reference": "book-marked",
+  "section-identifiers": "fingerprint",
+  "section-content": "paperclip",
+  "section-organization": "folder-tree",
+  "section-links": "link",
+  "section-record": "database",
+  "section-annotation": "highlighter",
+  "section-source": "file-text",
+  "section-citation": "quote",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =
@@ -62,6 +76,13 @@ export const templateWorkbenchButton =
  * below it with the action. Template and note names come from the vault, so
  * each one wraps anywhere.
  */
+/**
+ * The width each column's handle takes between the column and the editor,
+ * in pixels: the line of Obsidian's `--divider-width` that the `edge` part's
+ * pane divider shows; its strip overlaps the column. The placement counts it.
+ */
+export const PANEL_HANDLE_WIDTH = 1;
+
 export const originatingNoteNotice = {
   root: "zt:mx-3 zt:mb-2 zt:flex zt:min-w-0 zt:flex-col zt:gap-2 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal",
   guidance: "zt:min-w-0 zt:space-y-0.5",
@@ -106,7 +127,7 @@ export const selectionOptionContent = cn(
 export const selectionOptionLabel = "zt:font-medium zt:text-foreground";
 /**
  * A control row that names the selected data beside the control that changes it.
- * `placement` decides which part hides outside a sidebar: the whole row, or only the trigger.
+ * In a sidebar placement, the row shows only where Obsidian hides the view header.
  */
 export const selectionBar = tv({
   slots: {
@@ -118,11 +139,6 @@ export const selectionBar = tv({
   },
   variants: {
     placement: {
-      /** The pane header always names the selection; only the trigger waits for a sidebar. */
-      header: {
-        row: "zt:flex zt:shrink-0 zt:px-3",
-        trigger: "zt-workbench-sidebar-control zt:my-1",
-      },
       /** A row inside the result appears only where Obsidian hides the view header. */
       sidebar: { row: "zt-workbench-sidebar-control" },
     },
@@ -141,6 +157,14 @@ const hint =
   "zt:text-xs zt:leading-normal zt:text-muted-foreground zt:text-pretty";
 /** Guidance and status read at hint size wherever the selection UI states a task. */
 export const selectionHint = hint;
+/**
+ * A sticky part that covers what scrolls under it wears the ground of the
+ * pane it stands in: a sidebar's own in a sidebar, else the main area's. A
+ * surface with a ground of its own, as the Fields popover, sets
+ * `--zt-pane-ground` itself.
+ */
+export const paneCover =
+  "zt:bg-(--zt-pane-ground,var(--background-primary)) zt:in-[.mod-sidedock]:[--zt-pane-ground:var(--background-secondary)]";
 /**
  * A boxed pane wears Obsidian's text-input surface, focus ring included. Its
  * border, padding and ring read the `--input-*` variables a native input
@@ -202,6 +226,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
   // tooltips above the popover or chooser page they sit in.
   expressionExtension: [hostedEditor, popoverTooltips],
   expressionCompletion: nativeCompletion(expressionOption),
+  // The side panels carry their drawn sizes in the plugin's own namespace.
+  panelProperties: { width: "--zt-panel-width", height: "--zt-panel-height" },
   classes: {
     match: {
       "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",
@@ -286,34 +312,56 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       header:
         "zt-workbench-sidebar-control zt:items-center zt:justify-between zt:gap-x-2 zt:px-3",
       heading: "",
-      search: "zt:mx-3 zt:w-auto zt:min-w-0 zt:shrink-0",
-      body: "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-2 zt:pb-3",
+      "search-row":
+        "zt:mx-3 zt:flex zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-1",
+      search: "zt:w-auto zt:min-w-0 zt:flex-1",
+      "sections-toggle": "clickable-icon zt:shrink-0",
+      /** Never shorter than a sticky section header and one whole row. */
+      body: "zt:min-h-18 zt:flex-1 zt:overflow-auto zt:overscroll-contain zt:px-2 zt:pb-3",
+      "keys-hint":
+        "zt:shrink-0 zt:border-t zt:border-border zt:px-3 zt:py-1.5 zt:text-xs zt:text-muted-foreground",
       empty:
         "zt:px-1 zt:py-3 zt:text-muted-foreground zt:text-sm zt:leading-normal",
     },
     explorerTree: {
       sections: "zt:flex zt:flex-col zt:gap-2",
       section: "",
+      /** Stays at the top while its section scrolls past, on the ground of the panel it stands in. */
+      "section-heading": cn("zt:sticky zt:top-0 zt:z-10", paneCover),
       "section-header":
         "clickable-icon zt:[--icon-size:var(--icon-xs)] zt:text-muted-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
+      "section-icon":
+        "zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center zt:text-(--icon-color)",
       "section-chevron":
-        "zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center",
-      "section-label": "zt:min-w-0 zt:flex-1 zt:text-start",
+        "zt:ms-auto zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center zt:in-aria-disabled:opacity-40",
+      "section-label": "zt:min-w-0 zt:truncate zt:text-start",
       "section-count": "zt:font-normal zt:tabular-nums zt:text-faint",
       tree: "zt:text-xs zt:leading-normal",
       spacer: "zt:w-6 zt:shrink-0",
-      /** Key and value share one line while both fit; a longer value drops to its own line beneath the key. */
+      /**
+       * Key and value share one line while both fit; a longer value drops to
+       * its own line beneath the key. A Fields Panel row (`line`) keeps both
+       * on one line, the value cut with an ellipsis, and a click on it shows
+       * its details.
+       */
       contents:
-        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:gap-x-1.5 zt:select-text zt:[overflow-wrap:anywhere]",
+        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:gap-x-1.5 zt:select-text zt:[overflow-wrap:anywhere] zt:data-[state=line]:cursor-pointer zt:data-[state=line]:items-center zt:data-[state=line]:self-stretch zt:data-[state=line]:flex-nowrap zt:data-[state=line]:overflow-hidden zt:data-[state=line]:whitespace-nowrap zt:data-[state=line]:*:data-[part=value]:truncate",
+      /**
+       * A Fields Panel row's label, from the section icon's edge, with the
+       * chevron of a field that opens after it. A nested field's label
+       * stands a little in, behind the guide line its siblings continue.
+       */
+      "field-label":
+        "zt:flex zt:w-2/5 zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-0.5 zt:self-stretch zt:*:data-[part=key]:truncate zt:data-[state=nested]:ms-1 zt:data-[state=nested]:border-s zt:data-[state=nested]:border-(--nav-indentation-guide-color) zt:data-[state=nested]:ps-2",
       group:
-        "zt:ms-2.5 zt:border-s zt:border-(--nav-indentation-guide-color) zt:ps-2",
+        "zt:ms-2.5 zt:border-s zt:border-(--nav-indentation-guide-color) zt:ps-2 zt:data-[state=line]:ms-0 zt:data-[state=line]:border-0 zt:data-[state=line]:ps-0 zt:data-[state=line]:in-data-[part=group]:ps-3",
       chevron:
         "clickable-icon zt:w-6 zt:shrink-0 zt:[--icon-size:var(--icon-xs)] zt:focus-visible:shadow-(--input-box-shadow-focus)",
       "chevron-icon":
         "zt:flex zt:size-(--icon-size) zt:items-center zt:justify-center zt:in-data-[expanded]:rotate-90",
       /** Revealed by hover or focus; a touch device has neither, so it keeps them visible. */
       actions:
-        "zt:flex zt:shrink-0 zt:items-center zt:gap-0.5 zt:opacity-0 zt:group-hover/row:opacity-100 zt:group-focus-within/row:opacity-100 zt:[.is-mobile_&]:opacity-100",
+        "zt:flex zt:shrink-0 zt:items-center zt:gap-0.5 zt:opacity-0 zt:group-hover/row:opacity-100 zt:group-focus-within/row:opacity-100 zt:group-data-selected/row:opacity-100 zt:group-data-open/row:opacity-100 zt:[.is-mobile_&]:opacity-100",
       action:
         "clickable-icon zt:[--icon-size:var(--icon-xs)] zt:focus-visible:shadow-(--input-box-shadow-focus)",
       key: "zt:font-mono zt:text-foreground zt:data-[state=labeled]:font-sans zt:data-[state=labeled]:font-medium",
@@ -325,7 +373,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       link: "zt:[overflow-wrap:anywhere] zt:text-link zt:underline zt:decoration-dotted zt:hover:decoration-solid",
       "long-toggle":
         "zt:rounded-xs zt:ms-0.5 zt:cursor-pointer zt:px-1 zt:text-muted-foreground zt:underline zt:decoration-dotted zt:underline-offset-2 zt:select-none zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
-      row: "zt:group/row zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg)",
+      /**
+       * The row whose details stand open keeps its own ground. The row ↑/↓
+       * selected also wears the ring Obsidian draws on the file explorer's
+       * keyboard row (`.tree-item-self.has-focus`), which hover never shows.
+       */
+      row: "zt:group/row zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:data-line:h-7 zt:data-line:items-center zt:data-line:py-0 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg) zt:data-selected:bg-muted zt:data-selected:shadow-[inset_0_0_0_2px_var(--background-modifier-border-focus)] zt:data-open:bg-accent",
       opaque: "zt:break-words zt:text-cyan",
       color: "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-green",
       string: "zt:text-green",
@@ -357,7 +410,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     },
     resultHeader: {
       header: "zt:flex zt:min-w-0 zt:flex-col zt:gap-2",
-      heading: "zt-note-preview-heading",
+      heading: "zt-workbench-preview-heading",
       controls: cn(row, "zt:flex-wrap zt:text-sm"),
       label: cn(row, "zt:flex-wrap"),
       "label-text": "zt:text-muted-foreground",
@@ -371,8 +424,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     resultColumn: {
       label: cn(row, "zt:flex-wrap"),
       "label-text": "zt:text-muted-foreground",
+      // The Preview Panel draws the label in its own sticky header row,
+      // outside the `filename` box, so the label carries its own size.
       filename: "zt:text-sm",
-      "filename-text": "zt:[overflow-wrap:anywhere]",
+      "filename-text": "zt:text-sm zt:[overflow-wrap:anywhere]",
       // A failure wears the same notice as the behind state, and states its
       // severity in the bar and the heading: the sentence itself stays in
       // reading color, and the line about the output on screen steps back.
@@ -415,9 +470,108 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       checkbox: "metadata-input-checkbox",
       empty: "metadata-input-longtext",
     },
+    // The one row above the panels that names the item they all read: its
+    // name first, then its chooser right after it at every width. A name too
+    // long for the row ends in an ellipsis, and the chooser stays beside it.
+    itemRow: {
+      row: "zt:flex zt:min-w-0 zt:shrink-0 zt:items-center zt:gap-x-2 zt:border-b zt:border-border zt:px-3 zt:py-1",
+      label:
+        "zt:min-w-0 zt:truncate zt:text-xs zt:leading-normal zt:text-muted-foreground",
+    },
+    // The side panels: the model places them, so the classes only draw each
+    // placement. Each column draws the width the model holds it to, through
+    // the width custom property; the Preview under the editor takes the
+    // height the model computes.
+    panels: {
+      panels: "zt:flex zt:h-full zt:min-w-0",
+      stack:
+        "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:data-[state=below]:flex-col",
+      status: "zt:sr-only",
+      editor: "zt:min-h-0 zt:min-w-0 zt:flex-1",
+      panel:
+        "zt:flex zt:min-h-0 zt:shrink-0 zt:flex-col zt:overflow-auto zt:data-[state=fields]:w-(--zt-panel-width) zt:data-[state=preview]:w-(--zt-panel-width) zt:data-[state=below]:h-(--zt-panel-height)",
+      // Each divider stands on the end or bottom edge of the pane before
+      // it, the Fields column or the editor, as Obsidian's between panes.
+      edge: paneDivider({ flow: "inline", edge: "end" }),
+      split: paneDivider({ flow: "inline", edge: "bottom" }),
+    },
+    // The Fields Panel in the Fields popover, which stands inset at the
+    // view's right edge as tall as the view: it slides in from that edge,
+    // and a still motion setting shows it at once. Docked, it fills its
+    // column on the view's own ground.
+    fieldsPanel: {
+      panel: cn(
+        "zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-foreground",
+        "zt:data-[state=popover]:w-80 zt:data-[state=popover]:max-w-full zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-secondary) zt:data-[state=popover]:shadow-(--shadow-l) zt:data-[state=popover]:[--zt-pane-ground:var(--background-secondary)]",
+        "zt:data-[state=popover]:transition-[translate,opacity] zt:data-[state=popover]:duration-150 zt:data-[state=popover]:ease-out zt:motion-reduce:transition-none zt:data-[state=popover]:starting:translate-x-2 zt:data-[state=popover]:starting:opacity-0",
+      ),
+      header:
+        "zt:flex zt:shrink-0 zt:items-center zt:gap-1 zt:px-(--size-4-2) zt:pt-(--size-4-2)",
+      icon: "zt:flex zt:shrink-0 zt:ps-1 zt:text-(--icon-color) zt:[&_svg]:size-(--icon-s)",
+      title:
+        "zt:min-w-0 zt:flex-1 zt:truncate zt:px-1 zt:text-sm zt:font-semibold",
+      actions: "zt:contents",
+      // Pinned, the pin wears Obsidian's active icon (`theme.css`); with no
+      // room to dock, it steps back and keeps its focus and its tooltip.
+      pin: "clickable-icon zt:shrink-0 zt:aria-disabled:cursor-not-allowed zt:aria-disabled:opacity-50",
+      close: "clickable-icon zt:shrink-0",
+      note: "zt:shrink-0 zt:px-(--size-4-3) zt:pt-(--size-2-1) zt:text-xs zt:text-muted-foreground",
+      body: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:overflow-auto",
+    },
+    fieldDetails: {
+      /**
+       * A fixed height at the panel's foot, so the list above never moves; in
+       * a short panel, no more than half of it, and it gives way to the list
+       * first, which keeps one whole row under its sticky section header.
+       */
+      "details-bar":
+        "zt:h-48 zt:max-h-1/2 zt:overflow-y-auto zt:border-t zt:border-border zt:bg-(--background-primary)",
+      details:
+        "zt:flex zt:flex-col zt:gap-3 zt:p-3 zt:text-sm zt:data-[state=bar]:gap-2 zt:data-[state=bar]:p-2 zt:data-[state=popover]:max-h-(--zt-pinned-max-height) zt:data-[state=popover]:w-72 zt:data-[state=popover]:overflow-y-auto zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-primary) zt:data-[state=popover]:shadow-(--shadow-l)",
+      header: "zt:flex zt:items-start zt:gap-1",
+      heading: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col",
+      context: "zt:truncate zt:text-xs zt:text-muted-foreground",
+      title: "zt:truncate zt:font-semibold",
+      close: "clickable-icon zt:shrink-0",
+      value:
+        "zt:in-data-[state=bar]:order-2 zt:max-h-40 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-muted-foreground zt:data-[state=empty]:italic",
+      /** A list's values, one per line and numbered. */
+      values:
+        "zt:in-data-[state=bar]:order-2 zt:flex zt:max-h-40 zt:flex-col zt:gap-1 zt:overflow-auto zt:rounded-(--radius-s) zt:border zt:border-border zt:p-2 zt:text-green",
+      "values-item": "zt:flex zt:gap-2 zt:[overflow-wrap:anywhere]",
+      "values-index":
+        "zt:w-4 zt:shrink-0 zt:text-end zt:text-xs zt:leading-5 zt:tabular-nums zt:text-muted-foreground",
+      "values-text":
+        "zt:min-w-0 zt:whitespace-pre-wrap zt:data-[state=empty]:text-muted-foreground zt:data-[state=empty]:italic",
+      /**
+       * The bar shows what the note gets right under its heading, so the
+       * snippet stays in view in a short bar; the value and the path follow.
+       */
+      item: "zt:flex zt:flex-col zt:gap-0.5 zt:in-data-[state=bar]:data-[state=path]:order-3",
+      "item-header":
+        "zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1",
+      label: "zt:text-xs zt:text-muted-foreground",
+      forms: "zt:ms-auto zt:flex zt:flex-wrap zt:gap-x-3 zt:text-xs",
+      form: "zt:inline-flex zt:cursor-pointer zt:items-center zt:gap-1 zt:text-muted-foreground zt:has-checked:text-foreground",
+      path: "zt:font-mono zt:text-xs zt:break-all zt:text-muted-foreground",
+      snippet:
+        "zt:font-mono zt:text-xs zt:break-all zt:whitespace-pre-wrap zt:text-foreground",
+      result:
+        "zt:flex zt:gap-1.5 zt:whitespace-pre-line zt:[overflow-wrap:anywhere] zt:text-green zt:data-[state=empty]:text-muted-foreground zt:data-[state=empty]:italic",
+      "result-icon":
+        "zt:mt-0.5 zt:flex zt:shrink-0 zt:text-faint zt:[&_svg]:size-3",
+      /** In the bar they stay in view at its foot while the details scroll. */
+      actions:
+        "zt:flex zt:flex-wrap zt:gap-2 zt:in-data-[state=bar]:order-4 zt:in-data-[state=bar]:sticky zt:in-data-[state=bar]:bottom-0 zt:in-data-[state=bar]:-mx-2 zt:in-data-[state=bar]:bg-(--background-primary) zt:in-data-[state=bar]:px-2 zt:in-data-[state=bar]:py-2",
+      insert: "mod-cta zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
+      copy: "zt:gap-1.5 zt:[&_svg]:size-(--icon-s)",
+      reason: "zt:text-xs zt:text-muted-foreground",
+    },
     tabBar: {
+      // The same room above the tabs as below them, so they stand clear of
+      // the item row's rule over the editor.
       "tab-bar":
-        "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:pb-2",
+        "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:py-2",
       tab: "clickable-icon zt:disabled:opacity-50 zt:shrink-0 zt:text-sm",
     },
     tabPanel: {
@@ -552,16 +706,9 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:flex zt:cursor-(--cursor-clickable) zt:items-center zt:gap-2 zt:font-medium",
     },
     annotation: {
-      "help-bar": "zt:mb-3 zt:shrink-0 zt:leading-normal",
-      "help-button": cn("clickable-icon", captionIcon),
-      "help-lede": hint,
-      "help-toggle": "zt:ms-1 zt:inline-block zt:align-baseline",
-      help: "zt:mb-3 zt:flex zt:max-h-40 zt:shrink-0 zt:flex-col zt:gap-1 zt:overflow-auto zt:text-xs zt:leading-normal zt:text-muted-foreground zt:focus-visible:outline-2 zt:focus-visible:outline-ring",
-
       "sample-bar": row,
       problem: "zt:mb-2 zt:text-xs zt:text-(--text-error)",
       pane: stack,
-      pointer: cn(bar, "zt:mt-2"),
       heading: "zt:font-semibold",
       hint: "zt:text-muted-foreground",
       "section-bar": cn(bar, "zt:mb-2"),
@@ -581,13 +728,15 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     problemsFooter: {
       "problems-open": templateWorkbenchButton,
       // The divider sets the area's share; the host supplies native colors.
+      // Open, the divider draws the area's top line.
       problems:
-        "zt:relative zt:flex zt:min-h-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:p-3 zt:text-xs zt:leading-normal zt:data-[error]:border-s-2 zt:data-[error]:border-s-(--text-error)",
+        "zt:relative zt:flex zt:min-h-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:data-[state=open]:border-t-0 zt:p-3 zt:text-xs zt:leading-normal zt:data-[error]:border-s-2 zt:data-[error]:border-s-(--text-error)",
       "problems-summary":
         "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1",
       "problems-heading": "zt:font-semibold",
       // A value that changes as problems are repaired, so its digits hold
       // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-announcement": "zt:sr-only",
       "problems-count":
         "zt:shrink-0 zt:rounded-sm zt:bg-(--background-modifier-error)/10 zt:text-foreground zt:px-1.5 zt:font-medium zt:tabular-nums zt:whitespace-nowrap",
       "problems-text":
@@ -596,8 +745,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       // inside its own box instead of running past the pane.
       "problems-space":
         "zt:ms-auto zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
-      "problems-resize":
-        "zt:absolute zt:inset-x-0 zt:-top-1 zt:h-2 zt:cursor-row-resize zt:touch-none zt:select-none zt:hover:bg-(--background-modifier-border-hover) zt:focus-visible:bg-(--background-modifier-border-focus)",
+      // Its line runs over the area's error mark too, as the area's own top
+      // border did: `-start-0.5` is the mark's `border-s-2`.
+      "problems-resize": cn(
+        paneDivider({ flow: "overlay", edge: "top" }),
+        "zt:in-data-[error]:-start-0.5",
+      ),
       "problems-error-icon":
         "zt:flex zt:shrink-0 zt:items-center zt:text-(--text-error) zt:[&_svg]:size-4",
       "problems-toggle": selectionControl({ kind: "icon" }),
@@ -610,7 +763,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       // clears the outline every focus ring would otherwise draw, so the ring
       // is drawn inside.
       "problems-scroll": cn(
-        "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-1 zt:overflow-y-auto zt:overscroll-contain",
+        "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-1 zt:overflow-y-auto zt:overscroll-contain zt:pb-1",
         "zt:focus-visible:shadow-[inset_0_0_0_2px_var(--background-modifier-border-focus)]",
       ),
       // The chooser leads the explanation where the object line otherwise
@@ -635,9 +788,11 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:mt-1 zt:max-h-56 zt:overflow-auto zt:rounded-md zt:border zt:border-border zt:bg-(--background-secondary) zt:p-2 zt:font-mono zt:whitespace-pre zt:select-text",
       "problems-copy-failed": "zt:mt-1 zt:text-pretty zt:text-(--text-error)",
       // Under the scroll, never inside it: every one of these stays put while
-      // a long explanation and an open disclosure move past above them.
+      // a long explanation and an open disclosure move past above them. The
+      // rule over them marks where the explanation scrolls out of view, so a
+      // line cut at that edge reads as more to scroll, not as covered.
       "problems-controls":
-        "zt:mt-2 zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
+        "zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:border-t zt:border-border zt:pt-2 zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
       "problems-copy": templateWorkbenchButton,
       // Help, not an action: it reads as the link it is, aligned with the
       // buttons it shares the row with.

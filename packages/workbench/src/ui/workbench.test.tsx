@@ -1,13 +1,16 @@
 import { EditorView } from "@codemirror/view";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 
 import { AnnotationPane } from "./annotation";
 import { EditToolbar } from "./edit-toolbar";
-import { useWorkbenchController, useWorkbenchStore } from "./editor";
+import { useWorkbenchController, useWorkbenchModel } from "./editor";
+import { setTab as tabTransition } from "./model";
 import { NotePane } from "./note-pane";
 import { SliceEditor } from "./slice-editor";
 import { TabBar, TabPanel } from "./tab-bar";
+import type { WorkbenchTab } from "./tabs";
 // The shared panes together, under a fake adapter and theme in both runtimes.
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
@@ -17,11 +20,13 @@ import { ANNOTATION_LIST_PROFILE_SOURCE } from "#/render/test-profiles";
 
 afterEach(cleanup);
 
-/** The host composes panes; the shared store keeps their tab and mode. */
+/** The host composes panes; the shared model keeps their tab and mode. */
 function Panes() {
   const controller = useWorkbenchController();
-  const advanced = useWorkbenchStore((state) => state.advanced);
-  const setTab = useWorkbenchStore((state) => state.setTab);
+  const model = useWorkbenchModel();
+  const advanced = useAtomValue(model.advanced);
+  const setView = useAtomSet(model.view);
+  const setTab = (tab: WorkbenchTab) => setView(tabTransition(tab));
   return (
     <>
       <EditToolbar />
@@ -213,10 +218,12 @@ it("reports no selection from a pane a retained tab keeps hidden", () => {
   render(mounted.ui);
   expect(reported).toEqual(["note"]);
   // The Note pane folds away but stays mounted; only the pane on screen reports.
-  act(() => mounted.store.getState().setTab("annotation"));
+  act(() =>
+    mounted.registry.update(mounted.model.view, tabTransition("annotation")),
+  );
   expect(reported).toEqual(["note", "annotation"]);
   // Returning restores the Note pane's own caret, and reports nothing else.
-  act(() => mounted.store.getState().setTab("note"));
+  act(() => mounted.registry.update(mounted.model.view, tabTransition("note")));
   expect(reported).toEqual(["note", "annotation", "note"]);
 });
 
@@ -257,4 +264,21 @@ it("links each tab to the docs page that shows how to write it", () => {
     "href",
     "https://example.invalid/docs/tutorial/customize-template",
   );
+});
+
+it("opens the Annotation tab with the lede every tab shares, and no help toggle", () => {
+  using mounted = mount(<Panes />);
+  render(mounted.ui);
+  const ledeOf = (tab: string) => {
+    fireEvent.click(screen.getByRole("tab", { name: tab }));
+    return screen.getByRole("tabpanel").firstElementChild!;
+  };
+  const note = ledeOf(m.workbench_tab_note());
+  const annotation = ledeOf(m.workbench_tab_annotation());
+  expect(annotation.textContent).toBe(
+    `${m.workbench_annotation_lede()} ${m.workbench_docs_annotation()}`,
+  );
+  expect(annotation.tagName).toBe(note.tagName);
+  expect(annotation.getAttribute("class")).toBe(note.getAttribute("class"));
+  expect(screen.queryByRole("button", { name: m.workbench_help() })).toBeNull();
 });

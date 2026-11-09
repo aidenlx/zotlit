@@ -8,6 +8,7 @@ import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
 import type { ComponentType, ReactNode } from "react";
 
+import type { ExplorerSectionId } from "./explorer-sections";
 import type { SliceLanguage } from "./slice-editor";
 
 /**
@@ -48,23 +49,29 @@ export interface WorkbenchParts {
     | "error";
   dataExplorer:
     | "hint"
+    | "keys-hint"
     | "root-label"
     | "explorer"
     | "header"
     | "heading"
     | "search"
+    | "search-row"
+    | "sections-toggle"
     | "body"
     | "empty";
   explorerTree:
     | "sections"
     | "section"
+    | "section-heading"
     | "section-header"
+    | "section-icon"
     | "section-chevron"
     | "section-label"
     | "section-count"
     | "tree"
     | "spacer"
     | "contents"
+    | "field-label"
     | "group"
     | "chevron"
     | "chevron-icon"
@@ -160,15 +167,9 @@ export interface WorkbenchParts {
     | "primary-action"
     | "secondary-action";
   annotation:
-    | "help-bar"
-    | "help-button"
-    | "help-lede"
-    | "help-toggle"
-    | "help"
     | "sample-bar"
     | "problem"
     | "pane"
-    | "pointer"
     | "heading"
     | "hint"
     | "section-bar"
@@ -242,6 +243,44 @@ export interface WorkbenchParts {
     | "text"
     | "checkbox";
 
+  panels: "panels" | "stack" | "editor" | "panel" | "edge" | "split" | "status";
+  itemRow: "row" | "label";
+  fieldsPanel:
+    | "panel"
+    | "header"
+    | "icon"
+    | "title"
+    | "actions"
+    | "pin"
+    | "close"
+    | "note"
+    | "body";
+  fieldDetails:
+    | "details-bar"
+    | "details"
+    | "header"
+    | "heading"
+    | "context"
+    | "title"
+    | "close"
+    | "value"
+    | "values"
+    | "values-item"
+    | "values-index"
+    | "values-text"
+    | "item"
+    | "item-header"
+    | "label"
+    | "forms"
+    | "form"
+    | "path"
+    | "snippet"
+    | "result"
+    | "result-icon"
+    | "actions"
+    | "insert"
+    | "copy"
+    | "reason";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description" | "docs-link";
   editToolbar:
@@ -256,6 +295,7 @@ export interface WorkbenchParts {
     | "problems-summary"
     | "problems-heading"
     | "problems-count"
+    | "problems-announcement"
     | "problems-text"
     | "problems-space"
     | "problems-resize"
@@ -291,7 +331,6 @@ export type WorkbenchClassMap = {
 /** The icons the tree asks for, named by role so each host picks the glyph. */
 export type WorkbenchIcon =
   | "copy"
-  | "help"
   | "confirm"
   | "add"
   | "remove"
@@ -319,7 +358,15 @@ export type WorkbenchIcon =
   | "property-checkbox"
   | "property-date"
   | "property-datetime"
-  | "drag";
+  | "drag"
+  | "expand-all"
+  | "collapse-all"
+  | "fields"
+  | "insert"
+  | "result"
+  | "pin"
+  | "unpin"
+  | `section-${ExplorerSectionId}`;
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;
@@ -347,7 +394,24 @@ export interface WorkbenchTheme {
    * every select of a host without one, is a native `<select>`.
    */
   readonly matchSelect?: ComponentType<MatchSelectProps>;
+  /**
+   * The custom properties a side panel's region carries its drawn width and
+   * height in, which the host's classes for the `panels` parts read. A host
+   * names them in its own namespace, such as Obsidian's `--zt-*`.
+   */
+  readonly panelProperties?: PanelProperties;
 }
+
+/** The custom properties of a side panel's drawn size. */
+export interface PanelProperties {
+  readonly width: string;
+  readonly height: string;
+}
+
+const PANEL_PROPERTIES: PanelProperties = {
+  width: "--workbench-panel-width",
+  height: "--workbench-panel-height",
+};
 
 /** One choice of a Match editor select. */
 export interface MatchSelectOption {
@@ -381,6 +445,11 @@ export interface MatchSelectProps {
   /** The part the select stands as, with the host's class for it. */
   "data-part"?: string;
   className?: string;
+}
+
+/** The custom properties a side panel's region carries its drawn size in. */
+export function usePanelProperties(): PanelProperties {
+  return useContext(ThemeContext).panelProperties ?? PANEL_PROPERTIES;
 }
 
 /** The host's control for a Match editor select, if it supplies one. */

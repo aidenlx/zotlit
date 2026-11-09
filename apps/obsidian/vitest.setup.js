@@ -8,6 +8,7 @@ globalThis.window ??= globalThis;
 // Obsidian's `activeWindow` names the window that last held focus and starts
 // out as the main window itself.
 globalThis.activeWindow ??= globalThis;
+globalThis.activeDocument ??= globalThis.document;
 
 // Obsidian patches every window (main and popout alike, each patched by its
 // own copy of this same runtime script) with a `createEl()`/`createDiv()`/

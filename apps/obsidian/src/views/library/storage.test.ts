@@ -35,8 +35,6 @@ import {
 import type { LibraryViewDocument } from "./document";
 import { LibraryViewStorage } from "./storage";
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-
 const LABELS = {
   papers: "Papers",
 };

@@ -370,7 +370,7 @@ describe("suggestions: filters, tags, and partials", () => {
         label: "New partial…",
         detail: "Name a new partial, then insert the call.",
         run: () => Effect.succeed(null),
-        fork: Effect.runFork,
+        start: (flow, answered) => void Effect.runPromise(flow).then(answered),
       },
     };
     // No call names either partial yet, and the list still holds both.
@@ -400,7 +400,7 @@ describe("suggestions: filters, tags, and partials", () => {
           asked.push(query);
           return Effect.succeed("venue-line");
         },
-        fork: Effect.runFork,
+        start: (flow, answered) => void Effect.runPromise(flow).then(answered),
       },
     })!;
     const option = result.options.find((o) => o.label === "New partial…")!;

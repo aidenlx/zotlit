@@ -6,8 +6,7 @@ import { tv } from "@/lib/tw";
 import { cn } from "@/lib/utils";
 
 /** Icons beside 12 px regular text carry the same optical weight. */
-export const captionIcon =
-  "zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5]";
+const captionIcon = "zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5]";
 /** Every choose control shares the flat `clickable-icon` surface; `kind` sets its shape. */
 export const selectionControl = tv({
   base: "clickable-icon",

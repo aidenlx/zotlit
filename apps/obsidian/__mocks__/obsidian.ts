@@ -508,12 +508,14 @@ export class ItemView {
   readonly actions: HTMLElement[] = [];
 
   addAction(
-    _icon: string,
+    icon: string,
     title: string,
     callback: (evt: MouseEvent) => unknown,
   ): HTMLElement {
     const action = document.createElement("div");
     action.setAttribute("aria-label", title);
+    // Records the icon, which Obsidian draws, for a test to read.
+    action.dataset.icon = icon;
     action.addEventListener("click", callback);
     this.actions.push(action);
     return action;
@@ -975,6 +977,14 @@ export class Scope {
   }
 }
 
+/**
+ * The window a modal opens in. Obsidian's `Modal.open` takes `activeWindow`,
+ * the window that last took focus.
+ */
+function openingWindow(): Window | null {
+  return (globalThis as { activeWindow?: Window }).activeWindow ?? null;
+}
+
 export abstract class FuzzySuggestModal<T> {
   constructor(readonly app: App) {}
   setPlaceholder(_placeholder: string): void {}
@@ -1007,7 +1017,11 @@ export abstract class SuggestModal<T> {
     return this;
   }
   setInstructions(_instructions: Instruction[]): void {}
-  open(): void {}
+  /** The window `open` put the modal in. */
+  win: Window | null = null;
+  open(): void {
+    this.win = openingWindow();
+  }
   close(): void {
     this.onClose();
   }
@@ -1412,8 +1426,11 @@ export class Modal {
     return this;
   }
 
+  /** The window `open` put the modal in. */
+  win: Window | null = null;
   open(): void {
     this.isOpen = true;
+    this.win = openingWindow();
   }
 
   close(): void {
@@ -1905,7 +1922,11 @@ export class ConfirmationModal {
     this.#closed = callback;
     return this;
   }
-  open(): void {}
+  /** The window `open` put the modal in. */
+  win: Window | null = null;
+  open(): void {
+    this.win = openingWindow();
+  }
   close(): void {
     this.#closed?.();
   }

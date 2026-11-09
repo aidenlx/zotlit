@@ -27,10 +27,6 @@ import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { indexedKeyFileMenu } from "./services/indexed-key/menu";
-import {
-  addCustomizeActions,
-  customizeFileMenu,
-} from "./services/local-bridge/actions";
 import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import {
   addNoteFeatureActions,
@@ -57,7 +53,6 @@ import { registerCitedByView } from "./views/cited-by/register";
 import { itemActions } from "./views/library/item-actions";
 import { registerLibraryView, showInLibrary } from "./views/library/register";
 import { showInLibraryFileMenu } from "./views/library/show-in-library-actions";
-import { registerNotePreview } from "./views/note-preview/register";
 import { openTargetCommand } from "./views/open-target";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQueryBlock } from "./views/query-view/block";
@@ -251,16 +246,6 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
     // now, and the stack releases the services the build acquired.
     if (this.unloaded) return;
 
-    // One Customize flow shared by every entry action.
-    const customize = services.customize;
-
-    const customizeDeps = {
-      settings: services.settings,
-      profile: services.profile,
-      customize,
-      bridge: services.bridge,
-    };
-    addCustomizeActions(this, customizeDeps);
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, {
       citekeyEditor: services.citekeyEditor,
@@ -441,16 +426,6 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       settings: services.settings,
     });
 
-    registerNotePreview(this, {
-      app: this.app,
-      registry: services.viewRegistry,
-      openCitationEngineSettings,
-      bridge: services.bridge,
-      context: services.workbenchActionContext,
-      itemLookup: services.itemLookup,
-      settings: services.settings,
-    });
-
     registerReferencesView(this, {
       app: this.app,
       registry: services.viewRegistry,
@@ -491,7 +466,6 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
         attachmentOpenFileMenu(attachmentOpenDeps),
         templateWorkbenchFileMenu(this.app, templateWorkbenchDeps),
         noteFeatureFileMenu(noteFeatureDeps),
-        customizeFileMenu(this.app, customizeDeps),
         citationPresentationFileMenu(citationPresentationDeps),
         annotationHistoryFileMenu({
           annotations: services.annotationRepository,
@@ -505,7 +479,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
         showInLibraryFileMenu((indexedKey) =>
           services.bridge.runAndForget(services.showInLibrary.show(indexedKey)),
         ),
-        explorerFileMenu(this.app, {
+        explorerFileMenu({
           bridge: services.bridge,
           context: services.workbenchActionContext,
         }),

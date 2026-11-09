@@ -175,6 +175,7 @@ it("interrupts its vocabulary, custom-field and Match reads when the pane goes",
   expect(mounted.host.held.some(({ interrupted }) => interrupted)).toBe(false);
 
   act(() => unmount());
+  await Promise.all(mounted.host.held.map(({ interruption }) => interruption));
 
   expect(
     mounted.host.held

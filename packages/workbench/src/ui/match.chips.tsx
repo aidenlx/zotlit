@@ -2,7 +2,7 @@ import { useRef } from "react";
 
 import { TagsInput, useTagsInput } from "@zotlit/ui";
 
-import { useWorkbenchHost } from "./host";
+import { useContainerName, useWorkbenchHost } from "./host";
 import { useInputSuggestions } from "./match.input";
 // Wrapping list values retain free text and optional host suggestions.
 import { useWorkbenchMessages } from "./messages";
@@ -84,16 +84,19 @@ function ChipField({
     hint,
     onSelect: add,
   });
+  // A hidden name: a tooltip would hang over the gap after the chips.
+  const name = useContainerName(m.workbench_match_value());
   return (
     <>
       <TagsInput.Input
         inputRef={inputRef}
         {...part("chip-input")}
-        aria-label={m.workbench_match_value()}
+        {...name.attrs}
         placeholder={values.length === 0 ? placeholder : ""}
         autoComplete="off"
         list={list}
       />
+      {name.hiddenName}
       {datalist}
     </>
   );

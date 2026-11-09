@@ -5,19 +5,20 @@
 import type {
   ManagedEntrySource,
   WorkbenchDocumentController,
+  WorkbenchProblem,
   WorkbenchSliceRange,
 } from "#/document/index";
-import type { RenderedProperty } from "#/render/result";
+import type { RenderDiagnostic, RenderedProperty } from "#/render/result";
 import { useEffect, useState, useRef, useMemo } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { ExampleActions, useExampleState } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
-import { useOptionalHost } from "./host";
+import { useContainerName, useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
 import { useWorkbenchMessages } from "./messages";
-import { documentDiagnosis } from "./problems";
+import { diagnosticText, documentDiagnosis, problemText } from "./problems";
 import { PropertyList, propertyText } from "./property-list";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { SliceEditor } from "./slice-editor";
@@ -25,7 +26,7 @@ import type { SuggestionSource } from "./slice-editor";
 import { useIcon, useParts } from "./theme";
 import { useRetention } from "./visited";
 
-import { entrySlice, sliceShownText } from "#/document/index";
+import { entryPosition, entrySlice, sliceShownText } from "#/document/index";
 
 const MERGE_LABEL: Record<string, WorkbenchMessageLabel> = {
   replace: "workbench_properties_merge_replace",
@@ -38,6 +39,35 @@ export interface EntryDiagnostic {
   /** 1-based position of the Managed Frontmatter entry it belongs to. */
   readonly position: number;
   readonly message: string;
+}
+
+/**
+ * The problems the rows carry: the renderer's own that name an entry, and
+ * the manifest errors the parser pinned to one entry.
+ */
+export function entryDiagnostics(
+  m: WorkbenchMessages,
+  diagnostics: readonly RenderDiagnostic[],
+  problems: readonly WorkbenchProblem[],
+): EntryDiagnostic[] {
+  return [
+    ...diagnostics.flatMap((diagnostic) =>
+      diagnostic.position === undefined
+        ? []
+        : [
+            {
+              position: diagnostic.position,
+              message: diagnosticText(m, diagnostic),
+            },
+          ],
+    ),
+    ...problems.flatMap((problem) => {
+      const position = entryPosition(problem.slice);
+      return position === null
+        ? []
+        : [{ position, message: problemText(m, problem).message }];
+    }),
+  ];
 }
 
 export interface PropertiesPaneProps {
@@ -443,6 +473,8 @@ function EntryForm({
 }: EntryFormProps) {
   const m = useWorkbenchMessages();
   const part = useParts("properties");
+  // Named as the expression editor is, by a hidden element: no tooltip.
+  const textName = useContainerName(m.workbench_properties_expression());
   const [pendingLanguage, setPendingLanguage] = useState<
     "text" | "expr" | "value" | null
   >(null);
@@ -591,11 +623,12 @@ function EntryForm({
               </div>
             </div>
           )}
+          {format === "text" && textName.hiddenName}
           {format === "text" ? (
             <input
               type="text"
               readOnly={controller.readOnly}
-              aria-label={m.workbench_properties_expression()}
+              {...textName.attrs}
               value={fixedText ?? ""}
               onInput={(event) =>
                 controller.dispatch({

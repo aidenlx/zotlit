@@ -6,8 +6,8 @@
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Effect } from "effect";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { testItemSeed } from "@zotlit/item-query";
 import type { RenderRequest } from "@zotlit/workbench/render";
@@ -47,6 +47,7 @@ import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
 import { webCompletion } from "./completion";
+import { webFieldsAction } from "./fields-popover";
 import { webHover } from "./hover";
 import { Rendering } from "./rendering";
 import { ResultSheet } from "./result-sheet";
@@ -68,7 +69,7 @@ interface Pending<Request, Answer> {
 }
 
 /** The names the snapshot's note root carries, as the Match tab needs them. */
-function matchData(
+export function matchData(
   snapshot: RenderRequest["snapshot"],
   bridge: Pick<PageBridge, "provide">,
 ): WorkbenchHost["matchData"] {
@@ -135,7 +136,14 @@ export function useWebHost({
   /** Puts a sentence on the status line. */
   notice: (text: string) => void;
   insertTarget: () => WorkbenchInsertTarget | null;
-}): { host: WorkbenchHost; overlays: ReactNode } {
+}): {
+  host: WorkbenchHost;
+  overlays: ReactNode;
+  /** The header's Fields action, which takes focus back as the Fields popover closes. */
+  fieldsAnchor: RefObject<HTMLButtonElement | null>;
+} {
+  const fieldsAnchor = useRef<HTMLButtonElement>(null);
+  const fieldsPopoverId = useId();
   const [menu, setMenu] = useState<WorkbenchMenuRequest | null>(null);
   const [dialog, setDialog] = useState<WorkbenchDialogRequest | null>(null);
   const [confirm, setConfirm] = useState<Pending<
@@ -156,12 +164,11 @@ export function useWebHost({
     latest.current = { data, notice, insertTarget };
   }, [data, notice, insertTarget]);
 
-  // The runner is the page's: closing the page interrupts every host Effect
-  // it still runs, and an Effect started after it is interrupted at once.
+  // Every host Effect runs on the page runtime, so closing the page
+  // interrupts the ones still running.
   const host = useMemo<WorkbenchHost>(
     () => ({
       messages: m,
-      run: bridge.run,
       getLocale,
       menu: setMenu,
       dialog(request) {
@@ -203,6 +210,7 @@ export function useWebHost({
         customFields: Effect.suspend(() => latest.current.data.customFields),
       },
       insertTarget: () => latest.current.insertTarget(),
+      fieldsAction: webFieldsAction(fieldsAnchor, fieldsPopoverId),
       persistence: {
         read(scope, key) {
           try {
@@ -229,7 +237,7 @@ export function useWebHost({
         },
       },
     }),
-    [bridge],
+    [bridge, fieldsPopoverId],
   );
 
   function answerConfirm(value: boolean) {
@@ -413,5 +421,5 @@ export function useWebHost({
     </>
   );
 
-  return { host, overlays };
+  return { host, overlays, fieldsAnchor };
 }

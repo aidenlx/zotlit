@@ -83,7 +83,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       vaultId,
       async ({ app }) => {
         return app.commands.executeCommandById(
-          "zotlit:customize-note-template",
+          "zotlit:open-template-workbench",
         );
       },
       undefined,
@@ -363,7 +363,6 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           for (const type of [
             "zotlit-template-workbench",
             "zotlit-template-data-explorer",
-            "zotlit-note-preview",
           ])
             app.workspace.detachLeavesOfType(type);
           await app.vault.delete(app.vault.getFileByPath(path)!);
@@ -410,7 +409,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       vaultId,
       async ({ app }) => {
         return app.commands.executeCommandById(
-          "zotlit:customize-note-template",
+          "zotlit:open-template-workbench",
         );
       },
       undefined,

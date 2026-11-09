@@ -9,17 +9,12 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import type {
-  DisplayNode,
-  SnippetKind,
-  TemplateEngine,
-} from "@zotlit/workbench/explorer";
+import type { TemplateEngine } from "@zotlit/workbench/explorer";
 import {
   restoreTemplateData,
   sampleItemCitation,
 } from "@zotlit/workbench/render";
 import type { AnnotationExample, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import { fieldSnippet as sharedFieldSnippet } from "@zotlit/workbench/ui";
 import type { TemplateRoot } from "@zotlit/workbench/ui";
 
 export type SampleItem = (typeof SAMPLE_ITEMS)[number];
@@ -84,17 +79,6 @@ export function rootData(
  * @see docs/adr/0033-web-workbench-is-public-and-standalone.md
  */
 export const SNIPPET_ENGINE: TemplateEngine = "liquid";
-
-export type FieldInsertionMode = "template" | "expression" | "json-e";
-
-/** A field inserted in a property uses that property's own value syntax. */
-export function fieldSnippet(
-  node: DisplayNode,
-  mode: FieldInsertionMode,
-  kind: SnippetKind,
-): string {
-  return sharedFieldSnippet(node, mode, { kind, engine: SNIPPET_ENGINE });
-}
 
 /** The opening delimiter that starts Template Completion. */
 export const FIELD_TRIGGER = "{{";

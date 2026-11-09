@@ -1,182 +1,50 @@
-// The web Preview owns its display choices and render lifetime.
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
+// The web Preview: the result of the editor's one render, with the display
+// choices the Workbench model keeps. The page's item row above the panels
+// names the item or annotation it renders and holds the chooser.
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 
-import type {
-  RenderDiagnostic,
-  RenderResources,
-  WorkbenchReportContext,
-} from "@zotlit/workbench/render";
+import type { RenderDiagnostic } from "@zotlit/workbench/render";
 import {
-  AnnotationSampleBar,
-  annotationSamples,
-  createRenderScheduler,
   PreviewControls,
-  renderDiagnosis,
   ResultColumn,
-  usePublishedProblems,
-  useRenderState,
-  useWorkbenchHost,
+  setPreview,
+  useWorkbenchModel,
 } from "@zotlit/workbench/ui";
-import type {
-  PreviewMode,
-  ResultColumnProps,
-  RenderScheduler,
-} from "@zotlit/workbench/ui";
+import type { ResultColumnProps } from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
 
-import type { SampleItem } from "./fields";
 import { WorkbenchHelp } from "./frame";
 
-interface PreviewState {
-  mode: PreviewMode;
-  live: boolean;
-  showMarkdown: boolean;
-  showManaged: boolean;
-  annotationChoice: string | null;
-}
-
 export function WebPreview({
-  source,
-  document,
-  sample,
-  resources,
-  hold,
   mode,
-  sampleBar,
-  annotationChoice,
-  onAnnotationChoice,
   onShowProblem,
-  publishProblems,
-  reportContext,
 }: {
-  source: string;
-  /** The Template Document this preview reads, which its retained output belongs to. */
-  document: string;
-  sample: SampleItem;
-  resources: RenderResources | undefined;
-  hold: boolean | "invalid";
   mode: ResultColumnProps["mode"];
-  sampleBar: ReactNode;
-  annotationChoice: string;
-  onAnnotationChoice: (choice: string) => void;
   /**
-   * Reads one problem in the editor's Problems area; a null id opens the area
-   * on whatever the editor's own checks found.
+   * The shared Show problem command: reads the problem in the editor's
+   * Problems area and reveals its place in the editor; a null diagnostic opens
+   * the area on whatever the editor's own checks found.
    */
-  onShowProblem: (id: string | null) => void;
-  /** Hands what this render found to the editor that explains it. */
-  publishProblems: (diagnostics: readonly RenderDiagnostic[]) => void;
-  /** What names this preview in the report a failed attempt is copied as. */
-  reportContext: () => WorkbenchReportContext;
+  onShowProblem: (diagnostic: RenderDiagnostic | null) => void;
 }) {
-  const host = useWorkbenchHost();
-  const [store] = useState(() =>
-    createStore<PreviewState>()(() => ({
-      mode: "create",
-      live: true,
-      showMarkdown: false,
-      showManaged: false,
-      annotationChoice,
-    })),
+  const model = useWorkbenchModel();
+  const { result, retained, busy, staleReason } = useAtomValue(
+    model.scheduler.state,
   );
-  const state = useStore(store);
-  useEffect(() => {
-    if (store.getState().annotationChoice !== annotationChoice)
-      store.setState({ annotationChoice });
-  }, [store, annotationChoice]);
-  const { current, example } = useMemo(
-    () => annotationSamples(sample, state.annotationChoice),
-    [sample, state.annotationChoice],
-  );
-  useEffect(() => {
-    if (
-      state.annotationChoice === annotationChoice &&
-      example.id !== annotationChoice
-    )
-      onAnnotationChoice(example.id);
-  }, [
-    example.id,
-    state.annotationChoice,
-    annotationChoice,
-    onAnnotationChoice,
-  ]);
-  const [scheduler, setScheduler] = useState<RenderScheduler | null>(null);
-  const named = useRef(reportContext);
-  named.current = reportContext;
-  useEffect(() => {
-    const owner = createRenderScheduler({
-      input: { source: "", snapshot: null, mode: "create", live: true },
-      render: (request) => host.render(request),
-      run: host.run,
-      failed: (result) => result,
-      reportContext: () => named.current(),
-    });
-    setScheduler(owner);
-    return () => owner[Symbol.dispose]();
-  }, [host]);
-  useEffect(() => {
-    scheduler?.setInput({
-      source,
-      document,
-      snapshot: sample,
-      annotation: example,
-      resources,
-      hold,
-      mode: state.mode,
-      live: state.live,
-    });
-  }, [
-    scheduler,
-    source,
-    document,
-    sample,
-    example,
-    resources,
-    hold,
-    state.mode,
-    state.live,
-  ]);
-  const { result, retained, busy, staleReason, trigger, attempt } =
-    useRenderState(scheduler);
-  // The editor owns the explanation, so this preview publishes what its render
-  // found and takes it back when it closes.
-  usePublishedProblems({
-    result,
-    trigger,
-    attempt,
-    publish: publishProblems,
-    showProblem: onShowProblem,
-  });
-  const annotationResult =
-    result?.annotationId === example.id &&
-    result.annotationRevision === example.revision
-      ? result
-      : null;
+  const settings = useAtomValue(model.preview);
+  const hold = useAtomValue(model.itemData, (data) => data.hold ?? false);
+  const choose = useAtomSet(model.choices);
+  const run = useAtomSet(model.scheduler.run);
+  const annotationResult = useAtomValue(model.annotationResult);
   return (
     <>
-      <div className={mode === "annotation" ? "hidden" : "contents"}>
-        {sampleBar}
-      </div>
-      {mode === "annotation" && (
-        <AnnotationSampleBar
-          current={current}
-          example={example}
-          onSelect={(annotationChoice) => {
-            store.setState({ annotationChoice });
-            onAnnotationChoice(annotationChoice);
-          }}
-        />
-      )}
       <PreviewControls
-        preview={{ mode: state.mode, live: state.live }}
-        onChange={(next) => store.setState(next)}
+        preview={{ mode: settings.mode, live: settings.live }}
+        onChange={(next) => choose(setPreview(next))}
         busy={busy}
-        disabled={hold !== false || scheduler === null}
-        onRun={() => scheduler?.run()}
+        disabled={hold !== false}
+        onRun={() => run()}
       />
       <ResultColumn
         result={result}
@@ -184,20 +52,16 @@ export function WebPreview({
         retained={retained}
         mode={mode}
         staleReason={staleReason}
-        showMarkdown={state.showMarkdown}
-        onShowMarkdown={(showMarkdown) => store.setState({ showMarkdown })}
-        showManaged={state.showManaged}
-        onShowManaged={(showManaged) => store.setState({ showManaged })}
-        onShowProblem={(diagnostic) =>
-          onShowProblem(
-            diagnostic === null ? null : renderDiagnosis(diagnostic).id,
-          )
-        }
+        showMarkdown={settings.showMarkdown}
+        onShowMarkdown={(showMarkdown) => choose(setPreview({ showMarkdown }))}
+        showManaged={settings.showManaged}
+        onShowManaged={(showManaged) => choose(setPreview({ showManaged }))}
+        onShowProblem={onShowProblem}
         help={
           <WorkbenchHelp title={m.workbench_result_heading()}>
             {mode === "annotation"
               ? m.workbench_annotation_lede()
-              : state.showManaged
+              : settings.showManaged
                 ? m.workbench_result_managed_lede()
                 : m.workbench_result_lede()}
           </WorkbenchHelp>

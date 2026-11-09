@@ -1,3 +1,5 @@
+import { useUniqueId } from "@zotlit/ui";
+
 import {
   Chooser,
   useChooserPageSave,
@@ -189,6 +191,7 @@ function AnnotationsLayoutFields({
   options: AnnotationsLayoutOptions;
   set: (key: keyof AnnotationsLayoutOptions, value: unknown) => void;
 }) {
+  const labelId = useUniqueId();
   return (
     <>
       <Chooser.PageField label={m.query_view_card_width()}>
@@ -210,11 +213,16 @@ function AnnotationsLayoutFields({
           ["showPage", m.query_view_show_page()],
         ] as const
       ).map(([key, label]) => (
-        <Chooser.PageField key={key} label={label} inline>
+        <Chooser.PageField
+          key={key}
+          label={label}
+          labelId={`${labelId}-${key}`}
+          inline
+        >
           <span className="zt:flex" data-query-view-option={key}>
             <Toggle
               value={options[key]}
-              aria-label={label}
+              aria-labelledby={`${labelId}-${key}`}
               onChange={(value) => set(key, value)}
             />
           </span>

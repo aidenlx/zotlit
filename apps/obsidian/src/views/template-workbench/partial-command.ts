@@ -9,7 +9,6 @@ import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { withOutcome } from "@/lib/notifier";
-import { Workspace } from "@/lib/obsidian-workspace";
 import { Template } from "@/services/template/service";
 
 import { openNewPartialPrompt } from "./new-partial";
@@ -25,7 +24,7 @@ import { openTemplateWorkbench } from "./open";
  */
 export const createSharedPartial = Effect.fn("SharedPartial.create")(function* (
   app: App,
-  options: Omit<CreateSharedPartialOptions, "open"> = {},
+  options: Omit<CreateSharedPartialOptions, "open" | "from"> = {},
 ) {
   const template = yield* Template;
   const taken = yield* template.getPartialNames;
@@ -53,18 +52,14 @@ export const createSharedPartialEffect = Effect.fn(
 )(function* (app: App, options: CreateSharedPartialOptions = {}) {
   return yield* withOutcome(
     Effect.gen(function* () {
-      const { open = "split", ...create } = options;
+      const { open = "split", from, ...create } = options;
       const created = yield* createSharedPartial(app, create);
       if (!created) return null;
-      if (open !== false) {
-        const leaf = yield* (yield* Workspace).getLeaf(
-          open === "split" ? "split" : "tab",
-        );
+      if (open !== false)
         yield* openTemplateWorkbench(created.file, {
-          leaf,
           explainUnsupported: false,
+          ...(from ? { from: { leaf: from, place: open } } : {}),
         });
-      }
       return created.name;
     }),
     {

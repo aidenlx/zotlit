@@ -1,46 +1,68 @@
-// One editor owns its document, view state, and compact render examples.
-// Companion views consume source values through their own render owners.
+// One editor owns its document, view state, and compact render examples, all
+// in the Workbench model.
 
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { WorkbenchReportContext } from "#/render/report";
 import type { TemplateRenderResult } from "#/render/result";
-import { Effect } from "effect";
 import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  useSyncExternalStore,
-} from "react";
+  RegistryContext,
+  RegistryProvider,
+  useAtomValue,
+} from "@effect/atom-react";
+import { Effect, Layer } from "effect";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
-import { useStore } from "zustand";
 
 import { useUniqueId } from "@zotlit/ui";
 
+import { NO_MATCH_DATA } from "./host";
 import type { WorkbenchHost, WorkbenchHostError } from "./host";
-import { createRenderScheduler } from "./scheduler";
-import type { RenderScheduler, RenderSchedulerState } from "./scheduler";
-import { createWorkbenchStore } from "./store";
+import { holdWorkbenchModel, makeWorkbenchModel } from "./model";
 import type {
-  WorkbenchStore,
-  WorkbenchViewActions,
+  WorkbenchModel,
+  WorkbenchModelOptions,
+  WorkbenchRuntime,
   WorkbenchViewState,
-} from "./store";
+} from "./model";
+
+import { WorkbenchDocumentController as Controller } from "#/document/controller";
 
 export interface WorkbenchEditorInstance<
   R extends TemplateRenderResult = TemplateRenderResult,
 > extends Disposable {
-  readonly store: WorkbenchStore;
-  readonly scheduler: RenderScheduler<R>;
+  readonly model: WorkbenchModel<R>;
+  /** The registry the model lives in. */
+  readonly registry: AtomRegistry.AtomRegistry;
+  /** Sets the controller in use to one the host loaded. */
   attach(controller: WorkbenchDocumentController): void;
 }
 
 interface WorkbenchEditorOptions {
   controller: WorkbenchDocumentController;
-  host: WorkbenchHost;
+  /** The host members the model reads: its render and its Match data. */
+  host: Pick<WorkbenchHost, "render" | "matchData">;
   state?: Partial<WorkbenchViewState>;
-  /** A host may initialize its pure view store before acquiring render resources. */
-  store?: WorkbenchStore;
+  /**
+   * The registry to keep the model in, which the host disposes. Without one
+   * the editor keeps a registry of its own and disposes it with itself.
+   */
+  registry?: AtomRegistry.AtomRegistry;
+  /** The host's one runtime, which every editor of the host shares. */
+  runtime: WorkbenchRuntime;
+  /** The view state, when the host keeps it in an atom of its own. */
+  view?: Atom.Writable<WorkbenchViewState>;
+  /** The chosen Item's data, when the host derives it from its own read. */
+  itemData?: WorkbenchModelOptions<TemplateRenderResult>["itemData"];
+  /** {@link WorkbenchModelOptions.choices} */
+  choices?: WorkbenchModelOptions<TemplateRenderResult>["choices"];
+  /** {@link WorkbenchModelOptions.partialName} */
+  partialName?: WorkbenchModelOptions<TemplateRenderResult>["partialName"];
+  /** {@link WorkbenchModelOptions.panels} */
+  panels?: WorkbenchModelOptions<TemplateRenderResult>["panels"];
+  /** {@link WorkbenchModelOptions.viewSize} */
+  viewSize?: WorkbenchModelOptions<TemplateRenderResult>["viewSize"];
   /** What names this editor in the report a failed example is copied as. */
   reportContext?: () => WorkbenchReportContext;
 }
@@ -59,113 +81,121 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
   controller,
   host,
   state,
-  store: providedStore,
+  registry: providedRegistry,
+  runtime,
+  view: providedView,
+  choices,
+  partialName,
+  panels,
+  viewSize,
+  itemData,
   reportContext,
   mapResult,
   retain,
 }: WorkbenchEditorOptions & {
   mapResult?: (result: TemplateRenderResult) => R;
   retain?: (kept: R, result: R) => R;
-}): WorkbenchEditorInstance {
-  const store =
-    providedStore ??
-    createWorkbenchStore(
-      controller.document?.manifest.id === "default" && state?.tab === "match"
-        ? { ...state, tab: "note" }
-        : state,
-    );
-  const asHostResult =
-    mapResult ?? ((result: TemplateRenderResult) => result as R);
-  const scheduler = createRenderScheduler({
-    input: {
-      source: controller.source,
-      snapshot: null,
-      mode: "create",
-      live: true,
-    },
+}): WorkbenchEditorInstance<R> {
+  const registry =
+    providedRegistry ?? AtomRegistry.make({ defaultIdleTTL: 400 });
+  const initial =
+    controller.document?.manifest.id === "default" && state?.tab === "match"
+      ? { ...state, tab: "note" as const }
+      : state;
+  const model = makeWorkbenchModel<R>({
+    controller,
+    ...(providedView ? { view: providedView } : {}),
+    ...(choices ? { choices } : {}),
+    ...(partialName ? { partialName } : {}),
+    ...(itemData ? { itemData } : {}),
+    ...(panels ? { panels } : {}),
+    ...(viewSize ? { viewSize } : {}),
+    ...(initial ? { initial } : {}),
+    runtime,
+    host,
     render: (request) => {
       const result = host.render(request);
       return mapResult
         ? Effect.map(result, mapResult)
         : (result as Effect.Effect<R, WorkbenchHostError>);
     },
-    run: host.run,
-    failed: asHostResult,
+    failed: mapResult ?? ((result) => result as R),
     ...(retain ? { retain } : {}),
     ...(reportContext ? { reportContext } : {}),
   });
-  function follow(next: WorkbenchDocumentController) {
-    scheduler.setInput({ source: next.source });
-    return next.subscribe(({ docChanged }) => {
-      if (docChanged) scheduler.setInput({ source: next.source });
-    });
-  }
-  let unfollow = follow(controller);
+  const release = holdWorkbenchModel(registry, model);
+  let closed = false;
   return {
-    store,
-    scheduler,
+    model,
+    registry,
     attach(next) {
-      unfollow();
-      unfollow = follow(next);
+      registry.set(model.controller, next);
     },
     [Symbol.dispose]() {
-      unfollow();
-      scheduler[Symbol.dispose]();
+      if (closed) return;
+      closed = true;
+      release();
+      if (providedRegistry === undefined) registry.dispose();
     },
   };
 }
 
 export interface WorkbenchEditor {
-  readonly store: WorkbenchStore;
-  readonly controller: WorkbenchDocumentController;
-  /** The scheduler for this editor's compact examples. */
-  readonly scheduler: RenderScheduler;
+  readonly model: WorkbenchModel;
+  readonly registry: AtomRegistry.AtomRegistry;
   /** The prefix of this instance's element ids. */
   readonly id: string;
 }
 
 const EditorContext = createContext<WorkbenchEditor | null>(null);
 
-/** Never written: what the tree reads where no editor is in context. */
-const INERT_STORE = createWorkbenchStore();
+let inert: WorkbenchModel | undefined;
+/**
+ * Never renders and is never written: what the tree reads where no editor is
+ * in context. Made on first read, so importing the package builds nothing.
+ */
+function inertModel(): WorkbenchModel {
+  inert ??= makeWorkbenchModel({
+    controller: new Controller(""),
+    runtime: Atom.runtime(Layer.empty),
+    host: { matchData: NO_MATCH_DATA },
+    render: () => Effect.die("An inert Workbench never renders."),
+    failed: (result) => result,
+  });
+  return inert;
+}
 
-const INERT_STATE: RenderSchedulerState = {
-  result: null,
-  retained: null,
-  busy: false,
-  staleReason: null,
-  trigger: null,
-  attempt: 0,
-};
+/** A browser task, as the registry schedules its notifications. */
+function scheduleTask(task: () => void): () => void {
+  const timeout = setTimeout(task, 0);
+  return () => clearTimeout(timeout);
+}
 
-/** Never renders: what the tree reads where no editor is in context. */
-const INERT_SCHEDULER: RenderScheduler = {
-  getState: () => INERT_STATE,
-  subscribe: () => () => {},
-  setInput() {},
-  invalidate() {},
-  run() {},
-  pause() {},
-  fail() {},
-  [Symbol.dispose]() {},
-};
-
-export function WorkbenchEditorProvider({
-  store,
-  controller,
-  scheduler,
+/**
+ * Puts `editor` and its registry in context. `null` paints the tree inert in
+ * a registry of its own, which goes with the provider.
+ */
+export function WorkbenchEditorProvider<R extends TemplateRenderResult>({
+  editor,
   children,
 }: {
-  store: WorkbenchStore;
-  controller: WorkbenchDocumentController;
-  scheduler: RenderScheduler;
+  editor: WorkbenchEditorInstance<R> | null;
   children?: ReactNode;
 }) {
   const id = useUniqueId();
+  if (editor === null)
+    return (
+      <RegistryProvider scheduleTask={scheduleTask} defaultIdleTTL={400}>
+        {children}
+      </RegistryProvider>
+    );
+  const { registry, model } = editor;
   return (
-    <EditorContext.Provider value={{ store, controller, scheduler, id }}>
-      {children}
-    </EditorContext.Provider>
+    <RegistryContext.Provider value={registry}>
+      <EditorContext.Provider value={{ model, registry, id }}>
+        {children}
+      </EditorContext.Provider>
+    </RegistryContext.Provider>
   );
 }
 
@@ -184,45 +214,12 @@ export function useWorkbenchEditor(): WorkbenchEditor {
   return editor;
 }
 
-export function useWorkbenchStore<T>(
-  selector: (state: WorkbenchViewState & WorkbenchViewActions) => T,
-): T {
-  return useStore(useContext(EditorContext)?.store ?? INERT_STORE, selector);
+/** The model in context, or an inert one where the tree paints inert. */
+export function useWorkbenchModel(): WorkbenchModel {
+  return useContext(EditorContext)?.model ?? inertModel();
 }
 
+/** The controller in use, which follows a replacement the host attaches. */
 export function useWorkbenchController(): WorkbenchDocumentController {
-  return useWorkbenchEditor().controller;
-}
-
-/** The scheduler in context, or an inert one where the tree paints inert. */
-export function useRenderScheduler(): RenderScheduler {
-  return useContext(EditorContext)?.scheduler ?? INERT_SCHEDULER;
-}
-
-/**
- * What the result surfaces paint. A host that holds its scheduler above the
- * editor provider, as the web page does, passes it rather than the context one.
- * A null owner has not acquired its scheduler yet and reads the inert state.
- */
-export function useRenderState(
-  scheduler?: RenderScheduler | null,
-): RenderSchedulerState {
-  const inContext = useRenderScheduler();
-  const read = scheduler === null ? INERT_SCHEDULER : (scheduler ?? inContext);
-  return useSyncExternalStore(read.subscribe, read.getState);
-}
-
-/**
- * Re-renders the caller on every document update, and hands back the count
- * so a memo can key on it. Without a controller the count stays at zero.
- */
-export function useDocumentRevision(
-  controller: WorkbenchDocumentController | null,
-): number {
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    if (controller === null) return;
-    return controller.subscribe(() => setRevision((count) => count + 1));
-  }, [controller]);
-  return revision;
+  return useAtomValue(useWorkbenchEditor().model.controller);
 }

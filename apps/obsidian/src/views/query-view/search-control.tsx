@@ -5,6 +5,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
+import { useUniqueId } from "@zotlit/ui";
+
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
@@ -61,6 +63,9 @@ export function SearchRow({ view, bar }: { view: QueryView; bar: SearchBar }) {
   const query = useAnnotStore((s) => s.filterQuery);
   const setQuery = useSetFilterQuery();
   const inputRef = useRef<HTMLInputElement>(null);
+  // The placeholder shows what the field finds, so a hidden element names it
+  // and the field takes no tooltip.
+  const nameId = useUniqueId();
   // The field takes the focus once it is mounted.
   useLayoutEffect(() => {
     if (bar.open) inputRef.current?.focus({ preventScroll: true });
@@ -80,7 +85,7 @@ export function SearchRow({ view, bar }: { view: QueryView; bar: SearchBar }) {
         ref={inputRef}
         type="text"
         data-query-search=""
-        aria-label={m.query_view_search()}
+        aria-labelledby={nameId}
         value={query}
         onChange={setQuery}
         placeholder={datasetSpec(dataset).search()}
@@ -91,6 +96,9 @@ export function SearchRow({ view, bar }: { view: QueryView; bar: SearchBar }) {
           bar.close();
         }}
       />
+      <span hidden id={nameId}>
+        {m.query_view_search()}
+      </span>
     </div>
   );
 }

@@ -80,14 +80,14 @@
     "effect": "catalog:",
     "jsonc-parser": "^3.3.1",
     "valibot": "catalog:",
-    "yaml": "catalog:",
-    "zustand": "catalog:"
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "catalog:",
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
+    "@effect/atom-react": "catalog:",
     "@effect/vitest": "catalog:",
     "@lezer/generator": "1.8.0",
     "@testing-library/dom": "catalog:",
@@ -104,6 +104,7 @@
     "preact": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "scheduler": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
@@ -113,14 +114,22 @@
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
+    "@effect/atom-react": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "scheduler": "catalog:"
   },
   "peerDependenciesMeta": {
+    "@effect/atom-react": {
+      "optional": true
+    },
     "react": {
       "optional": true
     },
     "react-dom": {
+      "optional": true
+    },
+    "scheduler": {
       "optional": true
     }
   }

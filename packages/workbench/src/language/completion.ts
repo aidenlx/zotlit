@@ -9,7 +9,6 @@ import { isolateHistory } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { regex } from "arkregex";
-import { Exit } from "effect";
 
 import { syntaxCompletion } from "./field-popup";
 import type { CompletionPresentation } from "./field-popup";
@@ -41,13 +40,12 @@ export function applyTemplateCompletion(
     // CodeMirror absorbs a dispatch to a destroyed view.
     // A flow that fails or is interrupted writes nothing.
     const source = view.state.doc.toString();
-    const { insert, fork } = option.resolveInsert;
-    fork(insert).addObserver((exit) => {
-      if (!Exit.isSuccess(exit)) return;
-      if (exit.value === null || view.state.doc.toString() !== source) return;
+    const { insert, start } = option.resolveInsert;
+    start(insert, (text) => {
+      if (text === null || view.state.doc.toString() !== source) return;
       applyTemplateCompletion(view, result, {
         ...option,
-        insert: exit.value,
+        insert: text,
         resolveInsert: undefined,
       });
     });
