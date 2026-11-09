@@ -716,6 +716,8 @@ export function readerSurfaces({
   notifier = testNotifier(),
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
+  /** Each drag of a selected mark out of the reader, as the selection started it. */
+  const draggedOut = vi.fn<MarkSelectionDeps["dragOut"]>();
   // The view's own Scope, which holds its registry and its writes, as the
   // editor's does, and which the disposal closes.
   const scope = EffectScope.makeUnsafe();
@@ -818,6 +820,7 @@ export function readerSurfaces({
     adjustRange,
     textRotation,
     now: () => READER_NOW,
+    dragOut: draggedOut,
   });
   selection.load();
   const view: { scope: Scope | null; app: typeof app } = { scope: null, app };
@@ -860,6 +863,7 @@ export function readerSurfaces({
     colors,
     gestures,
     reportCreateFailure,
+    draggedOut,
     /** Every notice the surfaces showed, in order. */
     notices: notifier.notices,
     focusReader,

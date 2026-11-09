@@ -12,10 +12,13 @@ import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
 import { AttachmentResolver } from "@/services/attachment-resolver/service";
+import { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { NoteIndex } from "@/services/note-index/service";
 import { PluginSettings } from "@/services/settings/service";
 import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { PdfAnnotationEditor, layerPdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
@@ -68,6 +71,15 @@ export function editorFixtureLayer(options: EditorFixtureOptions) {
     }),
     Layer.mock(ZoteroLocalApi, {
       state: Effect.succeed({ kind: "probing" } as const),
+    }),
+    // A mark dragged out inserts nothing through these seams.
+    Layer.mock(AnnotationNoteActions, {}),
+    Layer.mock(ZoteroPref, {
+      current: Effect.succeed(
+        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+          dataDir: "/zotero",
+        }),
+      ),
     }),
     Layer.mock(CapabilityNotices, {
       reportBlockedGesture: (key) =>

@@ -1930,3 +1930,95 @@ it("says why a Geometry Edit did not land, naming the edit", async () => {
     ],
   ]);
 });
+
+/** The drag the browser starts from a press, heard where it begins. */
+function dragFrom(node: HTMLElement) {
+  const dataTransfer = new DataTransfer();
+  // happy-dom draws no drag image.
+  const setDragImage = vi.fn<DataTransfer["setDragImage"]>();
+  dataTransfer.setDragImage = setDragImage;
+  const event = new DragEvent("dragstart", { bubbles: true, cancelable: true });
+  // happy-dom leaves the init's `dataTransfer` off the event.
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+  node.dispatchEvent(event);
+  return { dataTransfer, setDragImage };
+}
+
+it("drags the selected highlight out of the reader as its Annotation", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+
+  pointer(h.page.div, "pointerdown", ON_WORD);
+  expect(h.page.div.draggable).toBe(true);
+  const { dataTransfer, setDragImage } = dragFrom(h.page.div);
+
+  expect(h.draggedOut).toHaveBeenCalledOnce();
+  const [event, record] = h.draggedOut.mock.calls[0]!;
+  expect(event.dataTransfer).toBe(dataTransfer);
+  expect(event.currentTarget).toBe(h.containerEl);
+  expect(record.key).toBe("WRDS2222");
+  // The picture under the pointer is the mark's own ghost, not the page.
+  const [ghost] = setDragImage.mock.calls[0]!;
+  expect(ghost).not.toBe(h.page.div);
+  expect(ghost).toHaveProperty("className", "drag-ghost");
+
+  h.page.div.dispatchEvent(new DragEvent("dragend", { bubbles: true }));
+  expect(h.page.div.draggable).toBeFalsy();
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
+});
+
+it("leaves a drag from an unselected mark to the browser's own text drag", async () => {
+  await using h = await setup();
+
+  pointer(h.page.div, "pointerdown", ON_WORD);
+  dragFrom(h.page.div);
+
+  expect(h.page.div.draggable).toBeFalsy();
+  expect(h.draggedOut).not.toHaveBeenCalled();
+});
+
+it("leaves a press beside the selected mark to the browser's text selection", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+
+  pointer(h.page.div, "pointerdown", ON_PAGE);
+  dragFrom(h.page.div);
+
+  expect(h.page.div.draggable).toBeFalsy();
+  expect(h.draggedOut).not.toHaveBeenCalled();
+});
+
+it("lets go of the drag a press armed once the press is released", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+
+  pointer(h.page.div, "pointerdown", ON_WORD);
+  pointer(h.containerEl, "pointerup", ON_WORD);
+
+  expect(h.page.div.draggable).toBeFalsy();
+});
+
+it("keeps a press on the body of a mark that moves by it a Geometry Edit", async () => {
+  await using h = await figureSelected();
+
+  pointer(h.page.div, "pointerdown", ON_FIGURE);
+  dragFrom(h.page.div);
+
+  expect(h.page.div.draggable).toBeFalsy();
+  expect(h.draggedOut).not.toHaveBeenCalled();
+  pointer(h.containerEl, "pointerup", ON_FIGURE);
+});
+
+it("drags a mark that moves by its body out while editing is not live", async () => {
+  await using h = await figureSelected({
+    kind: "read-only",
+    reason: "library-read-only",
+  });
+
+  pointer(h.page.div, "pointerdown", ON_FIGURE);
+  dragFrom(h.page.div);
+
+  expect(h.draggedOut.mock.calls.map(([, record]) => record.key)).toEqual([
+    "FIGR3333",
+  ]);
+});

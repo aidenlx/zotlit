@@ -4,6 +4,7 @@ import {
   Context,
   Effect,
   Exit,
+  FiberSet,
   Layer,
   PubSub,
   Scope,
@@ -27,12 +28,14 @@ import type {
   BorrowedExcerptDocument,
   ExcerptReaderDocuments,
 } from "@/services/excerpt-image/reader-borrow";
+import { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { NoteIndex } from "@/services/note-index/service";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { PluginSettings } from "@/services/settings/service";
 import { UseLedger } from "@/services/use-ledger/service";
 import { writeReadUse } from "@/services/zotero-local-api/last-read";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { registerAnnotationAnchorCapture } from "./anchor-capture";
@@ -102,6 +105,8 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
       const api = yield* ZoteroLocalApi;
       const notices = yield* CapabilityNotices;
       const notifier = yield* Notifier;
+      const annotationNotes = yield* AnnotationNoteActions;
+      const zoteroPref = yield* ZoteroPref;
       const bridge = yield* scopedBridge;
       const layerScope = yield* Effect.scope;
       const now = instantClock(yield* Clock.Clock);
@@ -180,6 +185,10 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
           const { registry, writes } = yield* bindingResources.pipe(
             Scope.provide(scope),
           );
+          const runInsert = yield* FiberSet.make().pipe(
+            Effect.flatMap((fibers) => FiberSet.runtime(fibers)<never>()),
+            Scope.provide(scope),
+          );
           const binding = new PdfViewBinding({
             view,
             adapter: {
@@ -211,6 +220,11 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
             reads,
             openedAt: restoredViews.has(view) ? null : now(),
             registry,
+            inserts: {
+              execute: (request) => annotationNotes.insert(request),
+              run: runInsert,
+            },
+            sourceScope: () => bridge.runSync(zoteroPref.current).dataDir,
           });
           // The surfaces go before the writes end, so the writes a disposal
           // starts, a typed Text Draft's create among them, run on an open

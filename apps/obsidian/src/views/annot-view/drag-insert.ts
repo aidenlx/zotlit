@@ -2,7 +2,6 @@
 import { nanoid } from "nanoid";
 import { MarkdownView } from "obsidian";
 import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
-import type { DragEvent } from "react";
 
 import { observeExit } from "@zotlit/workbench/ui";
 
@@ -179,6 +178,18 @@ interface ActiveDrag {
   cancel(): void;
 }
 
+/**
+ * The start of an Annotation's drag: a card's chip in the Annotation View, or
+ * the selected Annotation Mark in the PDF reader. The drag runs in the window
+ * of `currentTarget`.
+ */
+export interface AnnotationDragStart {
+  readonly dataTransfer: DataTransfer;
+  readonly currentTarget: HTMLElement;
+  /** Calls off the drag before it begins. */
+  preventDefault(): void;
+}
+
 export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
   const report = reporter(deps);
   const slot = insertSlot(deps, report);
@@ -188,7 +199,7 @@ export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
     slot.cancel();
   };
   const drag = (
-    event: DragEvent<HTMLElement>,
+    event: AnnotationDragStart,
     annotation: AnnotationRecord,
   ): void => {
     cancel();
@@ -249,8 +260,7 @@ function insertDrop<R>(
   options: {
     annotation: AnnotationRecord;
     snapshot: AnnotationSnapshot;
-    // oxlint-disable-next-line obsidianmd/no-global-this -- type position: React's event type shadows the DOM name
-    dropEvent: globalThis.DragEvent;
+    dropEvent: DragEvent;
     editor: Editor;
     info: MarkdownFileInfo;
     file: TFile;
