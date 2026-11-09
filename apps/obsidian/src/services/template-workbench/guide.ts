@@ -51,6 +51,9 @@ const FRONTMATTER_SECTION = `MANAGED FRONTMATTER
 
 PROFILE DOCUMENTS
   Edit the Profile document's ordered frontmatter list with file tools.
+  List order is property order in a new note: the first entry that produces a
+  key sets its position. On update, existing note keys keep their position.
+  Insert an entry at the position the user names, or beside related entries.
   Each entry has exactly one value member: expr for a Liquid value expression,
   value for a JSON-e template, or js for a gated JavaScript expression.
   A static-key entry declares key. Static keys are unique and non-reserved.
@@ -67,7 +70,7 @@ JSON-E AND SPREAD ENTRIES
   and scalar spread results refuse the operation.
   Entries evaluate against the same zt context and pinned now. List order
   controls the fold: later replace wins; append and keep see pending values.
-  Existing note keys keep their position. Unproduced keys remain untouched.
+  Unproduced keys remain untouched.
   To delete a key, use a static-key value entry whose JSON-e result is absent
   under replace. Spread omission preserves it.
   A reserved or empty produced key refuses the complete operation. Diagnostics
