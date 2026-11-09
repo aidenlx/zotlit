@@ -3640,7 +3640,11 @@ describe("the side panels of the Template Workbench View", () => {
       items
         .filter((item) => item.section === MENU_SECTION.action)
         .map((item) => item.title),
-    ).toEqual([m.template_workbench_more_options(), m.workbench_help()]);
+      // The pane edges size the panels, so the menu holds no sizes.
+    ).toEqual([
+      m.template_data_explorer_menu_export_json(),
+      m.workbench_help(),
+    ]);
     // Nothing is left to undo in a document just opened.
     expect(entry(view, m.workbench_undo())?.disabled).toBe(true);
     const preview = entry(view, m.workbench_view_preview())!;
@@ -3651,11 +3655,6 @@ describe("the side panels of the Template Workbench View", () => {
       m.workbench_preview_auto_refresh(),
       m.workbench_show_markdown(),
       m.workbench_refresh_item(),
-    ]);
-    const more = entry(view, m.template_workbench_more_options())!;
-    // The pane edges size the panels, so the menu holds no sizes.
-    expect(more.submenu?.items.map((item) => item.title)).toEqual([
-      m.template_data_explorer_menu_export_json(),
     ]);
     // The Help submenu lists what the Help view action opens.
     expect(

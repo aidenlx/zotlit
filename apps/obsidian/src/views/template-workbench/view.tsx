@@ -1870,13 +1870,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setDisabled(!this.file)
         .onClick(() => this.#act("open-markdown", this.#openMarkdown())),
     );
-    menu.addItem((item) => {
-      item
-        .setSection(MENU_SECTION.action)
-        .setTitle(m.template_workbench_more_options())
-        .setIcon("ellipsis");
-      this.#addMoreOptions(item.setSubmenu());
-    });
+    this.#addTemplateEntries(menu);
     menu.addItem((item) => {
       item
         .setSection(MENU_SECTION.action)
@@ -1896,10 +1890,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /**
    * The entries a template author needs now and then: the rendering language
-   * and the Template data export. Each one takes the action section, so the
-   * submenu reads as one group.
+   * and the Template data export, in the action section before Help.
    */
-  #addMoreOptions(menu: Menu): void {
+  #addTemplateEntries(menu: Menu): void {
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
     // With the Fields popover or the docked panel open, the export saves
     // the root it shows.

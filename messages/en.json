@@ -1297,7 +1297,6 @@
   "template_workbench_note_update_result": "{name}: {result}",
   "template_workbench_updated_note": "Updated {name}.",
   "template_workbench_open_layout": "Open template workbench",
-  "template_workbench_more_options": "More workbench options",
   "template_workbench_title_profile": "{label} · Profile",
   "template_workbench_title_citation": "Citation text",
   "template_workbench_title_partial": "{name} · Partial",
