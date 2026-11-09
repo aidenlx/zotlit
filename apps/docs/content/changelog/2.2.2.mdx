@@ -60,4 +60,7 @@ A workspace that kept a Note preview tab from 2.2.1 shows it as an empty tab. Cl
   line in the note body as Properties. Now the line stays in the exported
   document.
 - If you run Pandoc yourself, a `---` line had the same problem. A line that starts with `%` after the Properties became the document title. Now both stay as text. Save the [ZotLit integration pair](/docs/how-to/export-with-native-pandoc) again to get the fix.
+- In a PDF opened in its own window, the popup of a selected annotation moved to the main window when you clicked there. Now it stays with the PDF.
+- In a separate window, some parts of ZotLit did not adapt when you resized the window: a pinned popover, the Library View layout, and the abstract on a reading card. Now they adapt as in the main window.
+- In a separate window, some actions were slow while the main window was hidden: the Cited by search, the save of a query file, the refresh of a Query View, and the item picker. Now they run at full speed.
 - ZotLit now finds your Zotero profile in more setups. On Linux, it also finds a Zotero profile under `~/.config/zotero`. On Windows, it follows an AppData folder that was moved to another place.
