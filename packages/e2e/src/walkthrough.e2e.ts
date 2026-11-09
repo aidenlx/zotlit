@@ -322,6 +322,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(result.absolutePathShown).toBe(false);
     const html = await readFile(join(path, "Export display.html"), "utf8");
     expect(html).toContain("<strong>research draft</strong>");
+    expect(html).toContain("<hr");
+    expect(html).toContain("<em>Text between separators</em>");
+    expect(html).toContain("reference-section-title: Body text");
+    expect(html).toContain("After the separators.");
     expect(html).toContain("This callout becomes a readable quotation.");
     expect(html).not.toContain("[!note]");
   });

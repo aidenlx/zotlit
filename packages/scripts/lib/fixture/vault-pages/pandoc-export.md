@@ -8,10 +8,24 @@ A **research draft** keeps its headings, emphasis, and paragraphs in the exporte
 > [!note] Export check
 > This callout becomes a readable quotation.
 
+Only the block at the top of this page is Properties. Each pair of lines below is a separator above and below body text, and the export keeps both separators and the text.
+
+---
+*Text between separators*
+
+---
+
+---
+reference-section-title: Body text
+
+---
+
+After the separators.
+
 ## Check the export
 
 1. Open this page and run **ZotLit: Export note with citations**.
 2. Choose **HTML** and keep the default citation style.
 3. Select **Export**. The export progress notice is followed by a completion notice naming the file and style.
-4. Open the HTML file next to this note. It includes the title, the bold words “research draft”, and the callout text. The Obsidian callout marker is absent.
+4. Open the HTML file next to this note. It includes the title, the bold words “research draft”, and the callout text. The Obsidian callout marker is absent. Four separator lines appear, with the italic text, the line “reference-section-title: Body text”, and “After the separators.” in the body.
 5. Run the command again and dismiss the dialog. No new output is written.

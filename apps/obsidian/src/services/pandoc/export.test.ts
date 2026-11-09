@@ -650,6 +650,38 @@ describe(
   () => {
     it.effect.each([
       {
+        name: "body thematic breaks followed by emphasis",
+        markdown: "Before.\n\n---\n*Emphasis*\n---\nAfter [@a].",
+        contains: ["<hr", "<em>Emphasis</em>", "After", 'id="ref-a"'],
+        absent: [],
+      },
+      {
+        name: "Properties followed by YAML-like body text between separators",
+        markdown:
+          '---\nreference-section-title: Sources\nnocite: "[@a]"\n---\nBefore.\n\n---\nreference-section-title: Body text\n---\nAfter.',
+        contains: [
+          "<hr",
+          "reference-section-title: Body text",
+          "Sources",
+          'id="ref-a"',
+        ],
+        absent: [],
+      },
+      {
+        // Obsidian shows a Property value as text, without the body's notes.
+        name: "a footnote marker in a Property value as literal text",
+        markdown:
+          '---\ntitle: "Draft[^credit]"\n---\nBody [@a].\n\n[^credit]: Grant support.',
+        contains: ["<title>Draft[^credit]</title>", 'id="ref-a"'],
+        absent: ["Grant support", "footnote-ref"],
+      },
+      {
+        name: "an opening fence with trailing spaces as body text",
+        markdown: "--- \nSee [@a].\n---\nAfter.",
+        contains: ["See", "After.", 'id="ref-a"'],
+        absent: [],
+      },
+      {
         name: "a valid citation link only inside a comment",
         markdown: "%% [paper](./Note#cite:locator=2) %%",
         contains: [],
@@ -1058,6 +1090,38 @@ describe(
           );
           expect(html).toContain('id="ref-adams2018"');
         }),
+    );
+
+    // A literal citation key sends the document through the filter's second
+    // read, which assigns heading IDs; it reads body separators as the first did.
+    it.effect("keeps body separators beside a literal citation key", () =>
+      Effect.gen(function* () {
+        const engine = yield* realEngine;
+        const result = yield* exportParsed(
+          {
+            document: { sourcePath: SOURCE, links: [] },
+            markdown: "# Intro\n\n---\n*Aside*\n---\n\nRead [@zeta2020].",
+            format: "html",
+          },
+          {
+            ...ports({
+              ...DEMO,
+              links: [],
+              citekeys: { zeta2020: "ZETA1234" },
+            }),
+            engine,
+          },
+        );
+
+        expect(result).toHaveProperty("output");
+        const html = new TextDecoder()
+          .decode((result as { output: Uint8Array }).output)
+          .replaceAll(/\s+/g, " ");
+        expect(html).toContain('id="intro"');
+        expect(html).toContain("<hr");
+        expect(html).toContain("<em>Aside</em>");
+        expect(html).toContain(`data-cites="${ZETA.id}"`);
+      }),
     );
 
     it.effect("keeps Pandoc's nocite wildcard whole", () =>
