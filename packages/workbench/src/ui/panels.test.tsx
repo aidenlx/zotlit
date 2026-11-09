@@ -8,7 +8,7 @@ import {
 import * as Atom from "effect/reactivity/Atom";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { INITIAL_PANELS } from "./panel-layout";
+import { INITIAL_PANELS, pinFields } from "./panel-layout";
 import type { ViewSize, WorkbenchPanels } from "./panel-layout";
 import { SidePanels } from "./panels";
 import { mount } from "./test-host";
@@ -135,5 +135,43 @@ describe("the side panels", () => {
     // The Preview's edge grows toward the leading side.
     fireEvent.keyDown(edge, { key: "ArrowLeft" });
     expect(page.registry.get(page.model.panels).preview.width).toBe(416);
+  });
+
+  it("draws a dragged handle's size as the pointer moves, and saves it where the reader lets go", () => {
+    using page = open({ width: 560, height: 800 });
+    const split = screen.getByRole("separator", { name: "Resize preview" });
+    const region = () => screen.getByRole("region", { name: "Preview" });
+    // 80 px up a view 800 px tall gives the Preview a tenth more height.
+    fireEvent.pointerDown(split, { button: 0, pointerId: 1, clientY: 500 });
+    fireEvent.pointerMove(split, { pointerId: 1, clientY: 420 });
+    expect(region().getAttribute("style")).toContain("400px");
+    expect(page.registry.get(page.model.panels).preview.height).toBe(40);
+    fireEvent.pointerUp(split, { pointerId: 1, clientY: 420 });
+    expect(page.registry.get(page.model.panels).preview.height).toBe(50);
+
+    page.resize({ width: 1200, height: 800 });
+    const edge = screen.getByRole("separator", { name: "Resize preview" });
+    // The Preview's edge widens the Preview as it moves toward the leading side.
+    fireEvent.pointerDown(edge, { button: 0, pointerId: 1, clientX: 800 });
+    fireEvent.pointerMove(edge, { pointerId: 1, clientX: 700 });
+    expect(region().getAttribute("style")).toContain("500px");
+    fireEvent.pointerUp(edge, { pointerId: 1, clientX: 700 });
+    expect(page.registry.get(page.model.panels).preview.width).toBe(500);
+  });
+
+  it("sizes the docked Fields Panel with its own edge, which grows toward the trailing side", () => {
+    using page = open({ width: 1600, height: 800 });
+    act(() => page.registry.update(page.model.panels, pinFields(true)));
+    const edge = screen.getByRole("separator", { name: "Resize fields" });
+    expect(edge.getAttribute("aria-orientation")).toBe("vertical");
+    expect(edge.getAttribute("aria-valuenow")).toBe("320");
+    expect(edge.getAttribute("aria-valuemax")).toBe("480");
+    fireEvent.keyDown(edge, { key: "ArrowRight" });
+    expect(page.registry.get(page.model.panels).fields.width).toBe(336);
+    fireEvent.keyDown(edge, { key: "ArrowLeft", shiftKey: true });
+    expect(page.registry.get(page.model.panels).fields.width).toBe(272);
+    fireEvent.keyDown(edge, { key: "End" });
+    expect(page.registry.get(page.model.panels).fields.width).toBe(480);
+    expect(edge.getAttribute("aria-valuetext")).toContain("480");
   });
 });
