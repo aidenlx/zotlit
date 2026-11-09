@@ -1945,7 +1945,8 @@ function dragFrom(node: HTMLElement) {
 }
 
 it("drags the selected highlight out of the reader as its Annotation", async () => {
-  await using h = await setup();
+  const quoted = { ...WORD, text: "simple rules" };
+  await using h = await setup([PARAGRAPH, quoted]);
   click(h.page.div, ON_WORD);
 
   pointer(h.page.div, "pointerdown", ON_WORD);
@@ -1957,10 +1958,10 @@ it("drags the selected highlight out of the reader as its Annotation", async () 
   expect(event.dataTransfer).toBe(dataTransfer);
   expect(event.currentTarget).toBe(h.containerEl);
   expect(record.key).toBe("WRDS2222");
-  // The picture under the pointer is the mark's own ghost, not the page.
+  // The picture under the pointer names the Annotation, not the whole page.
   const [ghost] = setDragImage.mock.calls[0]!;
   expect(ghost).not.toBe(h.page.div);
-  expect(ghost).toHaveProperty("className", "drag-ghost");
+  expect(ghost.textContent).toBe("simple rules");
 
   h.page.div.dispatchEvent(new DragEvent("dragend", { bubbles: true }));
   expect(h.page.div.draggable).toBeFalsy();
@@ -1982,6 +1983,21 @@ it("leaves a press beside the selected mark to the browser's text selection", as
   click(h.page.div, ON_WORD);
 
   pointer(h.page.div, "pointerdown", ON_PAGE);
+  dragFrom(h.page.div);
+
+  expect(h.page.div.draggable).toBeFalsy();
+  expect(h.draggedOut).not.toHaveBeenCalled();
+});
+
+it("leaves a drag of text selected over the selected mark to the text", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+  vi.mocked(window.getSelection).mockReturnValue({
+    isCollapsed: false,
+    anchorNode: h.page.div,
+  } as unknown as Selection);
+
+  pointer(h.page.div, "pointerdown", ON_WORD);
   dragFrom(h.page.div);
 
   expect(h.page.div.draggable).toBeFalsy();

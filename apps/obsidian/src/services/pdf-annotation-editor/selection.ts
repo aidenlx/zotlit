@@ -1649,12 +1649,14 @@ export class MarkSelection implements Disposable {
    * A main-button press on the selected mark that no Geometry Edit and no
    * armed tool took makes its page draggable for this press alone, so moving
    * the pointer drags the mark out, as Zotero's reader drags it. A mark that
-   * moves by its body keeps that press for the move while editing is live.
+   * moves by its body keeps that press for the move while editing is live,
+   * and text selected in the PDF keeps the press for its own drag.
    */
   #armDragOut(event: PointerEvent): void {
     this.#disarmDragOut();
     if (event.button !== 0 || this.#dragging || this.#pressedStroke) return;
     if (this.#deps.creation?.capturing) return;
+    if (!selectionCollapsed(this.#deps.containerEl)) return;
     const record = this.#record();
     if (!record) return;
     const page = this.#pageUnder({ x: event.clientX, y: event.clientY });

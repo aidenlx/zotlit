@@ -23,16 +23,20 @@ export async function verifyReaderAnnotationDrag(
     vaultId,
     async ({ app, page }, { pdfPath, annotationKey, notePath, before }) => {
       type DragData = { items: { mimeType: string; data: string }[] };
+      await using cleanup = new AsyncDisposableStack();
       const pdf = app.vault.getFileByPath(pdfPath);
       if (!pdf) throw new Error(`PDF missing: ${pdfPath}`);
-      const pdfLeaf = app.workspace.getLeaf("tab");
+      const file = await app.vault.create(notePath, before);
+      cleanup.defer(() => app.vault.delete(file));
+      const pdfLeaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+        leaf.detach(),
+      );
       await pdfLeaf.openFile(pdf);
       await app.workspace.revealLeaf(pdfLeaf);
-      const file =
-        app.vault.getFileByPath(notePath) ??
-        (await app.vault.create(notePath, before));
-      await app.vault.modify(file, before);
-      const noteLeaf = app.workspace.createLeafBySplit(pdfLeaf, "vertical");
+      const noteLeaf = cleanup.adopt(
+        app.workspace.createLeafBySplit(pdfLeaf, "vertical"),
+        (leaf) => leaf.detach(),
+      );
       await noteLeaf.setViewState({
         type: "markdown",
         state: { file: notePath, mode: "source", source: false },
@@ -72,8 +76,10 @@ export async function verifyReaderAnnotationDrag(
         }
       ).electronWindow.webContents;
       const cdp = contents.debugger;
-      const attached = cdp.isAttached();
-      if (!attached) cdp.attach("1.3");
+      if (!cdp.isAttached()) {
+        cdp.attach("1.3");
+        cleanup.defer(() => cdp.detach());
+      }
       const send = (method: string, params: object) =>
         cdp.sendCommand(method, params) as Promise<unknown>;
       const mouse = (
@@ -97,57 +103,51 @@ export async function verifyReaderAnnotationDrag(
       ) => {
         if (method === "Input.dragIntercepted") data = params.data;
       };
-      try {
-        // A click selects the mark, as the reader's own click does.
-        await mouse("mouseMoved", from, 0);
-        await mouse("mousePressed", from, 1);
-        await mouse("mouseReleased", from, 0);
-        await page.until(
-          "the selected mark's outline",
-          () =>
-            container.querySelector(".zt-pdf-annotation-selection-outline") !==
-            null,
-          5000,
-        );
-        cdp.on("message", onMessage);
-        await send("Input.setInterceptDrags", { enabled: true });
-        await mouse("mousePressed", from, 1);
-        for (let step = 1; step <= 8; step++)
-          await mouse(
-            "mouseMoved",
-            { x: from.x + step * 6, y: from.y + step * 4 },
-            1,
-          );
-        await page.until(
-          "the drag the press started",
-          () => data !== null,
-          5000,
-        );
-        const dragged: DragData = data!;
-        for (const type of ["dragEnter", "dragOver", "drop"])
-          await send("Input.dispatchDragEvent", { type, ...to, data: dragged });
-        await mouse("mouseReleased", to, 0);
-        await page.until(
-          "the inserted annotation",
-          () => editor.getValue() !== before,
-          15000,
-        );
-        return {
-          types: dragged.items.map(({ mimeType }) => mimeType),
-          text: editor.getValue(),
-          pageDraggable: Array.from(
-            container.querySelectorAll<HTMLElement>(".page"),
-          ).some((node) => node.draggable),
-        };
-      } finally {
+      // A click selects the mark, as the reader's own click does.
+      await mouse("mouseMoved", from, 0);
+      await mouse("mousePressed", from, 1);
+      await mouse("mouseReleased", from, 0);
+      await page.until(
+        "the selected mark's outline",
+        () =>
+          container.querySelector(".zt-pdf-annotation-selection-outline") !==
+          null,
+        5000,
+      );
+      cdp.on("message", onMessage);
+      cleanup.defer(() => {
         cdp.removeListener("message", onMessage);
+      });
+      await send("Input.setInterceptDrags", { enabled: true });
+      cleanup.defer(async () => {
         await send("Input.setInterceptDrags", { enabled: false }).catch(
           () => {},
         );
-        if (!attached) cdp.detach();
-        noteLeaf.detach();
-        pdfLeaf.detach();
-      }
+      });
+      await mouse("mousePressed", from, 1);
+      for (let step = 1; step <= 8; step++)
+        await mouse(
+          "mouseMoved",
+          { x: from.x + step * 6, y: from.y + step * 4 },
+          1,
+        );
+      await page.until("the drag the press started", () => data !== null, 5000);
+      const dragged: DragData = data!;
+      for (const type of ["dragEnter", "dragOver", "drop"])
+        await send("Input.dispatchDragEvent", { type, ...to, data: dragged });
+      await mouse("mouseReleased", to, 0);
+      await page.until(
+        "the inserted annotation",
+        () => editor.getValue() !== before,
+        15000,
+      );
+      return {
+        types: dragged.items.map(({ mimeType }) => mimeType),
+        text: editor.getValue(),
+        pageDraggable: Array.from(
+          container.querySelectorAll<HTMLElement>(".page"),
+        ).some((node) => node.draggable),
+      };
     },
     { pdfPath, annotationKey, notePath, before },
     { timeoutMs: 60000 },
