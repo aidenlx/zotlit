@@ -9,6 +9,7 @@ import {
   e2eVaultPath,
   reachable,
   targetItem,
+  webWorkbenchEnabled,
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import * as suite from "./e2e-run-suite-helpers.ts";
@@ -28,15 +29,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(() =>
       obRun(
         run.vaultId,
-        async ({ app }, { notePath }) => {
+        async ({ app }, { path, notePath }) => {
           app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          // The tabs this case opened in the main window, which would share
+          // the root split with the next case's leaf.
+          for (const leaf of app.workspace.getLeavesOfType("markdown")) {
+            const file = leaf.view.getState().file;
+            if (file === path || file === notePath) leaf.detach();
+          }
           const note = app.vault.getFileByPath(notePath);
           if (note) await app.vault.delete(note);
           for (const file of app.vault.getMarkdownFiles())
             if (file.basename.startsWith("zotlit-profile.e2e-link"))
               await app.vault.delete(file);
         },
-        { notePath },
+        { path, notePath },
       ),
     );
     /** Where each Workbench leaf stands, and whether the first one is still it. */
@@ -153,65 +160,65 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     );
 
-    // From an obsidian://zotlit/import-profile link.
-    await obRun(
-      run.vaultId,
-      async ({ app }, { path }) => {
-        const source = await app.vault.read(app.vault.getFileByPath(path)!);
-        await navigator.clipboard.writeText(
-          source
-            .replace(/^id: .*$/m, "id: e2e-link")
-            .replace(/^name: .*$/m, "name: Linked profile"),
-        );
-        const { protocolHandlers } = app.workspace as unknown as {
-          protocolHandlers: Map<string, (params: object) => unknown>;
-        };
-        void protocolHandlers.get("zotlit/import-profile")!({
-          action: "zotlit/import-profile",
-          clipboard: "true",
-        });
-      },
-      { path },
-    );
-    await obRunUntil(
-      run.vaultId,
-      ({ page }, { confirm }) => {
-        const button = Array.from(
-          document.querySelectorAll<HTMLButtonElement>(
-            ".modal-container button",
-          ),
-        ).find((button) => button.textContent.trim() === confirm);
-        if (!button) return false;
-        page.press(button, "Import profile");
-        return true;
-      },
-      { confirm: run.m.profile_import_confirm() },
-      { what: "the import sheet's Import profile button" },
-    );
-    const linked = await withWorkbenchSurfaces(
-      run.vaultId,
-      obRunUntil(
+    // From an obsidian://zotlit/import-profile link, which a build registers
+    // with the web workbench only.
+    if (webWorkbenchEnabled) {
+      await obRun(
         run.vaultId,
-        ({ app, page }) => {
-          const file = app.workspace
-            .getLeavesOfType("zotlit-template-workbench")
-            .map((leaf) => String(leaf.view.getState().file ?? ""))
-            .find((file) => file.includes("zotlit-profile.e2e-link"));
-          const view = file ? page.workbench({ path: file }) : undefined;
-          return view &&
-            view.leaf.getContainer().win !== window &&
-            page.previewPanel(view)
-            ? file!
-            : null;
+        async ({ app }, { path }) => {
+          const source = await app.vault.read(app.vault.getFileByPath(path)!);
+          await navigator.clipboard.writeText(
+            source
+              .replace(/^id: .*$/m, "id: e2e-link")
+              .replace(/^name: .*$/m, "name: Linked profile"),
+          );
+          app.workspace.protocolHandler.handlers.get("zotlit/import-profile")!({
+            action: "zotlit/import-profile",
+            clipboard: "true",
+          });
         },
-        undefined,
-        {
-          what: "the imported Profile in a Workbench window",
-          ready: (found) => found !== null,
+        { path },
+      );
+      await obRunUntil(
+        run.vaultId,
+        ({ page }, { confirm }) => {
+          const button = Array.from(
+            document.querySelectorAll<HTMLButtonElement>(
+              ".modal-container button",
+            ),
+          ).find((button) => button.textContent.trim() === confirm);
+          if (!button) return false;
+          page.press(button, "Import profile");
+          return true;
         },
-      ),
-    );
-    expect(linked).toMatch(/zotlit-profile\.e2e-link/);
+        { confirm: run.m.profile_import_confirm() },
+        { what: "the import sheet's Import profile button" },
+      );
+      // The wait finds the imported Profile's leaf by its file name.
+      await withWorkbenchSurfaces(
+        run.vaultId,
+        obRunUntil(
+          run.vaultId,
+          ({ app, page }) => {
+            const file = app.workspace
+              .getLeavesOfType("zotlit-template-workbench")
+              .map((leaf) => String(leaf.view.getState().file ?? ""))
+              .find((file) => file.includes("zotlit-profile.e2e-link"));
+            const view = file ? page.workbench({ path: file }) : undefined;
+            return view &&
+              view.leaf.getContainer().win !== window &&
+              page.previewPanel(view)
+              ? file!
+              : null;
+          },
+          undefined,
+          {
+            what: "the imported Profile in a Workbench window",
+            ready: (found) => found !== null,
+          },
+        ),
+      );
+    }
 
     // Each document stands in one Workbench leaf, and none in the main window.
     const all = await surfaces();
@@ -226,14 +233,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }) => {
+        async ({ app }, { path }) => {
           for (const type of [
             "zotlit-template-workbench",
             "zotlit-template-data-explorer",
           ])
             app.workspace.detachLeavesOfType(type);
+          // The Profile's tab this case opened in the main window.
+          for (const leaf of app.workspace.getLeavesOfType("markdown"))
+            if (leaf.view.getState().file === path) leaf.detach();
         },
-        undefined,
+        { path: `templates/${booksProfile.document}` },
       );
       await writeFile(documentPath, original);
     });
