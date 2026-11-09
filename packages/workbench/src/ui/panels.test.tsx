@@ -8,7 +8,7 @@ import {
 import * as Atom from "effect/reactivity/Atom";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { INITIAL_PANELS } from "./panel-layout";
+import { INITIAL_PANELS, pinFields } from "./panel-layout";
 import type { ViewSize, WorkbenchPanels } from "./panel-layout";
 import { SidePanels } from "./panels";
 import { mount } from "./test-host";
@@ -135,5 +135,21 @@ describe("the side panels", () => {
     // The Preview's edge grows toward the leading side.
     fireEvent.keyDown(edge, { key: "ArrowLeft" });
     expect(page.registry.get(page.model.panels).preview.width).toBe(416);
+  });
+
+  it("sizes the docked Fields Panel with its own edge, which grows toward the trailing side", () => {
+    using page = open({ width: 1600, height: 800 });
+    act(() => page.registry.update(page.model.panels, pinFields(true)));
+    const edge = screen.getByRole("separator", { name: "Resize fields" });
+    expect(edge.getAttribute("aria-orientation")).toBe("vertical");
+    expect(edge.getAttribute("aria-valuenow")).toBe("320");
+    expect(edge.getAttribute("aria-valuemax")).toBe("480");
+    fireEvent.keyDown(edge, { key: "ArrowRight" });
+    expect(page.registry.get(page.model.panels).fields.width).toBe(336);
+    fireEvent.keyDown(edge, { key: "ArrowLeft", shiftKey: true });
+    expect(page.registry.get(page.model.panels).fields.width).toBe(272);
+    fireEvent.keyDown(edge, { key: "End" });
+    expect(page.registry.get(page.model.panels).fields.width).toBe(480);
+    expect(edge.getAttribute("aria-valuetext")).toContain("480");
   });
 });

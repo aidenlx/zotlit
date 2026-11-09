@@ -6,6 +6,7 @@ import {
   FIELDS_WIDTH,
   hideFields,
   INITIAL_PANELS,
+  PANEL_HANDLES,
   pinFields,
   setPanelWidth,
   panelHandles,
@@ -13,7 +14,7 @@ import {
   previewBelowHeight,
   resizePanel,
 } from "./panel-layout";
-import type { WorkbenchPanels } from "./panel-layout";
+import type { PanelMove, PanelStep, WorkbenchPanels } from "./panel-layout";
 
 /** The panels at their initial sizes, with the Preview shown as `preview` says. */
 const shown = (preview: boolean): WorkbenchPanels => ({
@@ -317,6 +318,103 @@ describe("sizing a panel without its handle", () => {
     expect(canResizePanel("split", "reset", bounds(560))(sized)).toBe(true);
   });
 });
+
+// Keys, menu entries and a double-click size every handle through one path,
+// from the size the reader sees, within the handle's limits.
+describe.each([
+  {
+    handle: "fields",
+    // The docked Fields Panel at 320 px in a 1200 px view, which holds it to 480.
+    panels: pinned(false),
+    size: at(1200),
+    axis: "horizontal",
+    drawn: 320,
+    key: 336,
+    wide: 384,
+    menu: 384,
+    min: 240,
+    max: 480,
+    read: (panels: WorkbenchPanels) => panels.fields.width,
+  },
+  {
+    handle: "preview",
+    // The Preview column at 400 px in a 1600 px view, which holds it to 1240.
+    panels: shown(true),
+    size: at(1600),
+    axis: "horizontal",
+    drawn: 400,
+    key: 416,
+    wide: 464,
+    menu: 464,
+    min: 240,
+    max: 1240,
+    read: (panels: WorkbenchPanels) => panels.preview.width,
+  },
+  {
+    handle: "split",
+    // The Preview under the editor at 40 % of a 560 x 800 view.
+    panels: shown(true),
+    size: at(560),
+    axis: "vertical",
+    drawn: 40,
+    key: 45,
+    wide: 45,
+    menu: 50,
+    min: 20,
+    max: 80,
+    read: (panels: WorkbenchPanels) => panels.preview.height,
+  },
+] as const)(
+  "the $handle handle",
+  ({ handle, panels, size, axis, drawn, key, wide, menu, min, max, read }) => {
+    const sizing = PANEL_HANDLES[handle];
+    const bounds = { size, defaults: INITIAL_PANELS };
+    const moved = (move: PanelMove, step?: PanelStep) =>
+      read(
+        resizePanel(handle, move, step ? { ...bounds, step } : bounds)(panels),
+      );
+
+    it("is drawn in the view and offers its menu", () => {
+      expect(panelHandles(panels, size)).toContain(handle);
+      expect(sizing.axis).toBe(axis);
+      expect(sizing.drawn(panels, size)).toBe(drawn);
+    });
+
+    it("grows and shrinks by a key, a Shift+key and a menu step", () => {
+      expect(moved("grow", "key")).toBe(key);
+      expect(moved("grow", "wide")).toBe(wide);
+      expect(moved("grow")).toBe(menu);
+      expect(moved("shrink", "key")).toBe(drawn - (key - drawn));
+      expect(moved("shrink", "wide")).toBe(drawn - (wide - drawn));
+      expect(moved("shrink")).toBe(drawn - (menu - drawn));
+    });
+
+    it("goes to its least and largest size, and grows no further", () => {
+      expect(moved("min")).toBe(min);
+      expect(moved("max")).toBe(max);
+      const largest = resizePanel(handle, "max", bounds)(panels);
+      expect(canResizePanel(handle, "grow", bounds)(largest)).toBe(false);
+      // A key past the largest size draws the panel no larger.
+      expect(
+        sizing.drawn(
+          resizePanel(handle, "grow", { ...bounds, step: "key" })(largest),
+          size,
+        ),
+      ).toBe(sizing.drawn(largest, size));
+      const least = resizePanel(handle, "min", bounds)(panels);
+      expect(canResizePanel(handle, "shrink", bounds)(least)).toBe(false);
+    });
+
+    it("resets to the default size, which a default panel cannot", () => {
+      const sized = resizePanel(handle, "max", bounds)(panels);
+      expect(canResizePanel(handle, "reset", bounds)(sized)).toBe(true);
+      expect(read(resizePanel(handle, "reset", bounds)(sized))).toBe(
+        read(panels),
+      );
+      expect(canResizePanel(handle, "reset", bounds)(panels)).toBe(false);
+    });
+  },
+);
 
 // The web draws a 12 px handle beside each column, which the editor's room counts.
 describe("panel placement with handles", () => {

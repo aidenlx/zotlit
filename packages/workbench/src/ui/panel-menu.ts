@@ -9,12 +9,13 @@ import type { WorkbenchMessages } from "./generated/messages";
 import type { WorkbenchModel } from "./model";
 import {
   canResizePanel,
-  handleSide,
+  PANEL_HANDLES,
   PANEL_SIDES,
   panelHandles,
   resizePanel,
 } from "./panel-layout";
 import type {
+  HandleSizing,
   PanelBounds,
   PanelHandle,
   PanelResize,
@@ -34,7 +35,7 @@ export interface PanelSizeItem {
 export interface PanelSizeMenu {
   readonly handle: PanelHandle;
   /** The way the handle moves: a column edge sideways, the split up and down. */
-  readonly axis: "horizontal" | "vertical";
+  readonly axis: HandleSizing["axis"];
   /** The handle's own name, so the menu reads as the handle does. */
   readonly label: string;
   readonly items: readonly PanelSizeItem[];
@@ -49,7 +50,7 @@ export function panelSizeMenus(
   bounds: PanelBounds,
 ): readonly PanelSizeMenu[] {
   return panelHandles(panels, bounds.size).map((handle) => {
-    const axis = handle === "split" ? "vertical" : "horizontal";
+    const { axis, side } = PANEL_HANDLES[handle];
     const labels =
       axis === "vertical"
         ? {
@@ -65,7 +66,7 @@ export function panelSizeMenus(
     return {
       handle,
       axis,
-      label: PANEL_SIDES[handleSide(handle)].resizeLabel(m),
+      label: PANEL_SIDES[side].resizeLabel(m),
       items: RESIZES.map((resize) => ({
         handle,
         resize,

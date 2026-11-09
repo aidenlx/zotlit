@@ -273,10 +273,6 @@ export const PANEL_SIDES: Readonly<Record<PanelSide, SideColumn>> = {
 const otherSide = (side: PanelSide): PanelSide =>
   (Object.keys(PANEL_SIDES) as PanelSide[]).find((other) => other !== side)!;
 
-/** The side panel a handle sizes: the split sizes the Preview under the editor. */
-export const handleSide = (handle: PanelHandle): PanelSide =>
-  handle === "split" ? "preview" : handle;
-
 /** `side`'s width as a column in a view of `size`, before the other column limits it. */
 const drawnWidth = (
   panels: WorkbenchPanels,
@@ -341,7 +337,7 @@ export type PanelResize = "grow" | "shrink" | "reset";
  * How far one key press moves a handle: an edge by `width` pixels, or by
  * `wideWidth` with Shift, and the split by `height` percent of the view.
  */
-export const KEY_STEP = { width: 16, wideWidth: 64, height: 5 } as const;
+const KEY_STEP = { width: 16, wideWidth: 64, height: 5 } as const;
 
 /**
  * How far one menu entry moves a handle: the Shift+arrow step of an edge,
@@ -396,29 +392,10 @@ export function columnLimit(
 }
 
 /**
- * The size of `handle`'s panel as the reader sees it: a column's drawn
- * width, or the Preview's drawn height under the editor.
- */
-function handleSize(
-  panels: WorkbenchPanels,
-  handle: PanelHandle,
-  size: ViewSize | null,
-) {
-  if (handle !== "split") return drawnWidth(panels, handle, size);
-  return size
-    ? previewBelowHeight(panels.preview.height, size.height)
-    : panels.preview.height;
-}
-
-/** The size saved for `handle`'s panel: a column's width, or the Preview's share of the height. */
-const storedSize = (handle: PanelHandle, panels: WorkbenchPanels) =>
-  handle === "split" ? panels.preview.height : panels[handle].width;
-
-/**
  * The Preview's share as drawn: a short view draws a saved share less
  * than it asks for, and a step starts from what the reader sees.
  */
-export const drawnShare = (panels: WorkbenchPanels, size: ViewSize | null) =>
+const drawnShare = (panels: WorkbenchPanels, size: ViewSize | null) =>
   size && size.height > 0
     ? Math.min(
         panels.preview.height,
@@ -429,6 +406,96 @@ export const drawnShare = (panels: WorkbenchPanels, size: ViewSize | null) =>
       )
     : panels.preview.height;
 
+/**
+ * Everything that sizes one handle's panel. Keys, menu entries, a drag and
+ * a double-click all read it, so each handle sizes its panel one way.
+ */
+export interface HandleSizing {
+  /** The side panel the handle sizes. */
+  readonly side: PanelSide;
+  /** The way the handle moves: a column edge sideways, the split up and down. */
+  readonly axis: "horizontal" | "vertical";
+  /** The size's unit: a column's pixels, or the split's percent of the view height. */
+  readonly unit: "px" | "%";
+  /** The size as the reader sees it in a view of `size`; every step starts from it. */
+  readonly drawn: (panels: WorkbenchPanels, size: ViewSize | null) => number;
+  /** The size saved, which a reset sets to the default's. */
+  readonly stored: (panels: WorkbenchPanels) => number;
+  /** The least size, which Home sets. */
+  readonly min: number;
+  /** The largest size, which End sets. */
+  readonly max: (panels: WorkbenchPanels, size: ViewSize | null) => number;
+  /** How far one arrow key, one Shift+arrow key and one menu entry move the handle. */
+  readonly steps: {
+    readonly key: number;
+    readonly wide: number;
+    readonly menu: number;
+  };
+  /** Writes `next`, held within the handle's limits in a view of `size`. */
+  readonly write: (
+    next: number,
+    size: ViewSize | null,
+  ) => (panels: WorkbenchPanels) => WorkbenchPanels;
+  /** The panel's drawn size in pixels, which the region's size property carries. */
+  readonly pixels: (panels: WorkbenchPanels, size: ViewSize | null) => number;
+  /** A pointer movement of `pixels` toward growth, in the size's unit. */
+  readonly fromPixels: (pixels: number, size: ViewSize | null) => number;
+}
+
+/** A column's edge: the column's width in pixels, within {@link columnLimit}. */
+const columnHandle = (side: PanelSide): HandleSizing => {
+  // The width the region draws, after the other column limits it.
+  const drawn = (panels: WorkbenchPanels, size: ViewSize | null) =>
+    clampPanelWidth(panels[side].width, columnLimit(panels, side, size));
+  return {
+    side,
+    axis: "horizontal",
+    unit: "px",
+    drawn,
+    stored: (panels) => panels[side].width,
+    min: PANEL_SIDES[side].width.min,
+    max: (panels, size) => columnLimit(panels, side, size),
+    steps: {
+      key: KEY_STEP.width,
+      wide: KEY_STEP.wideWidth,
+      menu: MENU_STEP.width,
+    },
+    write: (next, size) => (panels) =>
+      setPanelWidth(
+        side,
+        clampPanelWidth(next, columnLimit(panels, side, size)),
+      )(panels),
+    pixels: drawn,
+    fromPixels: (pixels) => pixels,
+  };
+};
+
+/** Each handle's sizing: the two column edges and the split. */
+export const PANEL_HANDLES: Readonly<Record<PanelHandle, HandleSizing>> = {
+  fields: columnHandle("fields"),
+  preview: columnHandle("preview"),
+  split: {
+    side: "preview",
+    axis: "vertical",
+    unit: "%",
+    drawn: drawnShare,
+    stored: (panels) => panels.preview.height,
+    min: PREVIEW_HEIGHT.min,
+    max: () => PREVIEW_HEIGHT.max,
+    steps: {
+      key: KEY_STEP.height,
+      wide: KEY_STEP.height,
+      menu: MENU_STEP.height,
+    },
+    write: (next) => setPreviewHeight(next),
+    // The split is placed only in a measured view.
+    pixels: (panels, size) =>
+      previewBelowHeight(panels.preview.height, size?.height ?? 0),
+    fromPixels: (pixels, size) =>
+      size && size.height > 0 ? (pixels / size.height) * 100 : 0,
+  },
+};
+
 /** What sizing a panel reads besides the panels themselves. */
 export interface PanelBounds {
   /** The view the panels are drawn in; null until the host measures it. */
@@ -437,35 +504,38 @@ export interface PanelBounds {
   readonly defaults: WorkbenchPanels;
 }
 
+/** Which step moves a handle: an arrow key, Shift+arrow, or a menu entry. */
+export type PanelStep = keyof HandleSizing["steps"];
+/** A grow, shrink or reset, or Home and End, which set the least and largest size. */
+export type PanelMove = PanelResize | "min" | "max";
+
 /**
- * A column steps from the width the view draws, and every column size stays
- * within {@link columnLimit}, a reset too; the split steps from the share
- * the view draws.
+ * Moves `handle`: a grow or shrink starts from the size the view draws and
+ * moves by `step`, a menu entry's unless said otherwise; a reset sets the
+ * default's saved size, and every size stays within the handle's limits.
  */
 export function resizePanel(
   handle: PanelHandle,
-  resize: PanelResize,
-  { size, defaults }: PanelBounds,
+  move: PanelMove,
+  {
+    size,
+    defaults,
+    step = "menu",
+  }: PanelBounds & { readonly step?: PanelStep },
 ): (panels: WorkbenchPanels) => WorkbenchPanels {
-  if (handle === "split")
-    return (panels) =>
-      setPreviewHeight(
-        resize === "reset"
-          ? storedSize(handle, defaults)
-          : drawnShare(panels, size) +
-              (resize === "grow" ? MENU_STEP.height : -MENU_STEP.height),
-      )(panels);
-  return (panels) => {
-    const step = resize === "grow" ? MENU_STEP.width : -MENU_STEP.width;
-    const width =
-      resize === "reset"
-        ? storedSize(handle, defaults)
-        : handleSize(panels, handle, size) + step;
-    return setPanelWidth(
-      handle,
-      clampPanelWidth(width, columnLimit(panels, handle, size)),
+  const sizing = PANEL_HANDLES[handle];
+  const by = sizing.steps[step];
+  return (panels) =>
+    sizing.write(
+      move === "reset"
+        ? sizing.stored(defaults)
+        : move === "min"
+          ? sizing.min
+          : move === "max"
+            ? sizing.max(panels, size)
+            : sizing.drawn(panels, size) + (move === "grow" ? by : -by),
+      size,
     )(panels);
-  };
 }
 
 /**
@@ -477,10 +547,11 @@ export function canResizePanel(
   resize: PanelResize,
   bounds: PanelBounds,
 ): (panels: WorkbenchPanels) => boolean {
+  const sizing = PANEL_HANDLES[handle];
   const apply = resizePanel(handle, resize, bounds);
   const measure =
     resize === "reset"
-      ? (panels: WorkbenchPanels) => storedSize(handle, panels)
-      : (panels: WorkbenchPanels) => handleSize(panels, handle, bounds.size);
+      ? sizing.stored
+      : (panels: WorkbenchPanels) => sizing.drawn(panels, bounds.size);
   return (panels) => measure(apply(panels)) !== measure(panels);
 }
