@@ -21,10 +21,13 @@ import {
   PreviewFilenameLabel,
   previewFilename,
   ResultBody,
+  setPreview,
 } from "@zotlit/workbench/ui";
 import type { ResultMode, TemplateRoot } from "@zotlit/workbench/ui";
 
+import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
+import { tooltipAttrs } from "@/lib/utils";
 import { NativeMarkdown } from "@/views/template-workbench/preview/markdown";
 
 import { selectionHint, templateWorkbenchButton } from "./theme";
@@ -101,6 +104,43 @@ export function WorkbenchMarkdown({
       result={kept === markdown ? retained : result}
       expandProperties={!advanced && tab === "properties"}
     />
+  );
+}
+
+/**
+ * The Preview pane's actions, as Obsidian's Markdown view has them: the mode
+ * toggle names what a press shows, and More options holds the settings the
+ * view's Preview submenu lists.
+ */
+function PreviewActions({
+  view,
+  showMarkdown,
+}: {
+  view: TemplateWorkbenchView;
+  showMarkdown: boolean;
+}) {
+  const toggle = showMarkdown
+    ? m.workbench_show_reading_view()
+    : m.workbench_show_markdown();
+  return (
+    <div className="zt:flex zt:shrink-0 zt:items-center">
+      <IconButton
+        icon={showMarkdown ? "book-open" : "code"}
+        onClick={() =>
+          view.registry.update(
+            view.workbench.choices,
+            setPreview({ showMarkdown: !showMarkdown }),
+          )
+        }
+        {...tooltipAttrs(toggle)}
+      />
+      <IconButton
+        icon="more-horizontal"
+        aria-haspopup="menu"
+        onClick={(event) => view.showPreviewMenu(event.currentTarget)}
+        {...tooltipAttrs(m.workbench_pane_more_options())}
+      />
+    </div>
   );
 }
 
@@ -220,10 +260,15 @@ export function PreviewPanel({
             data-workbench-preview-header=""
             className="zt:sticky zt:-top-3 zt:z-10 zt:-mx-3 zt:-mt-3 zt:flex zt:min-w-0 zt:flex-col zt:gap-1 zt:border-b zt:border-border zt:bg-background zt:px-3 zt:pt-3 zt:pb-2"
           >
-            <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:justify-between zt:gap-x-3 zt:gap-y-1">
-              <h2 className="zt-workbench-preview-heading">{heading}</h2>
-              {caption && <p className={selectionHint}>{caption}</p>}
+            {/* The pane's actions keep the row's inline end, as a view
+                header's do; what the preview shows reads under the heading. */}
+            <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-2">
+              <h2 className="zt-workbench-preview-heading zt:min-w-0 zt:flex-1">
+                {heading}
+              </h2>
+              <PreviewActions view={view} showMarkdown={preview.showMarkdown} />
             </div>
+            {caption && <p className={selectionHint}>{caption}</p>}
             {filename !== null && <PreviewFilenameLabel filename={filename} />}
           </header>
           <ResultBody

@@ -50,6 +50,11 @@ export interface SidePanel {
   readonly content: ReactNode;
 }
 
+/** The Fields Panel's side panel, with the host's own actions for its header. */
+interface FieldsSidePanel extends SidePanel {
+  readonly actions?: ReactNode;
+}
+
 /**
  * The editor beside or above the Preview the reader shows, the docked Fields
  * Panel before both, and the Fields Panel in the host's Fields popover over
@@ -61,7 +66,7 @@ export function SidePanels({
   panels,
   children,
 }: {
-  panels: Partial<Record<PanelSide, SidePanel>>;
+  panels: { readonly fields?: FieldsSidePanel; readonly preview?: SidePanel };
   children: ReactNode;
 }) {
   const model = useWorkbenchModel();

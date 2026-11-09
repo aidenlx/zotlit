@@ -3637,8 +3637,8 @@ describe("the side panels of the Template Workbench View", () => {
       m.workbench_refresh_item(),
     ]);
     const more = entry(view, m.template_workbench_more_options())!;
+    // The pane edges size the panels, so the menu holds no sizes.
     expect(more.submenu?.items.map((item) => item.title)).toEqual([
-      m.workbench_preview_resize(),
       m.template_data_explorer_menu_export_json(),
     ]);
     // The Help submenu lists what the Help view action opens.
@@ -3680,47 +3680,6 @@ describe("the side panels of the Template Workbench View", () => {
     expect(menu.position).not.toBeNull();
   });
 
-  // #1956: the pane menu sizes a panel; the End-to-end Run walks every handle.
-  it("sizes a panel from the pane menu, and saves the size", async () => {
-    await using cleanup = new AsyncDisposableStack();
-    const { view } = setup();
-    cleanup.defer(() => act(async () => view.close()));
-    await act(async () => view.open());
-    await act(async () => view.togglePreview());
-    await act(async () =>
-      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
-    );
-    await act(async () =>
-      entry(view, m.workbench_preview_resize())!
-        .submenu!.items.find(
-          (item) => item.title === m.workbench_panel_narrower(),
-        )!
-        .click(),
-    );
-    expect(
-      handleOf(view, m.workbench_preview_resize()).getAttribute(
-        "aria-valuenow",
-      ),
-    ).toBe("336");
-    const restored = setup();
-    cleanup.defer(() => act(async () => restored.view.close()));
-    await act(async () =>
-      restored.view.setState(view.getState(), { history: false }),
-    );
-    await act(async () => restored.view.open());
-    await act(async () =>
-      restored.view.registry.set(restored.view.viewSize, {
-        width: 1200,
-        height: 800,
-      }),
-    );
-    expect(
-      handleOf(restored.view, m.workbench_preview_resize()).getAttribute(
-        "aria-valuenow",
-      ),
-    ).toBe("336");
-  });
-
   it("shows the editor's own render of the chosen Item in the Preview panel", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup({
@@ -3760,6 +3719,62 @@ describe("the side panels of the Template Workbench View", () => {
     ).toHaveLength(2);
     expect(panel.textContent).toContain(m.workbench_preview_on_demand());
     expect(panel.textContent).toContain("A rendered paper note");
+  });
+
+  // #1962: the Preview pane has its own actions, as a view header has.
+  it("switches the Preview between reading view and Markdown from its header, and opens its settings there", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "A rendered paper note",
+        }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const header = () =>
+      region(view, m.workbench_view_preview())!.querySelector<HTMLElement>(
+        "[data-workbench-preview-header]",
+      )!;
+    const action = (label: string) =>
+      [...header().querySelectorAll<HTMLElement>("[aria-label]")].find(
+        (element) => element.getAttribute("aria-label") === label,
+      );
+    // The header row names its pane, and leaves the tooltips to its actions.
+    expect(header().hasAttribute("aria-label")).toBe(false);
+    // The toggle names what a press does, as Obsidian's own does.
+    expect(
+      action(m.workbench_show_markdown())!.querySelector(".lucide-code"),
+    ).not.toBeNull();
+    await act(async () => action(m.workbench_show_markdown())!.click());
+    expect(view.registry.get(view.workbench.preview).showMarkdown).toBe(true);
+    expect(action(m.workbench_show_markdown())).toBeUndefined();
+    expect(
+      action(m.workbench_show_reading_view())!.querySelector(
+        ".lucide-book-open",
+      ),
+    ).not.toBeNull();
+    await act(async () => action(m.workbench_show_reading_view())!.click());
+    expect(view.registry.get(view.workbench.preview).showMarkdown).toBe(false);
+    // More options lists the settings the view's Preview submenu holds.
+    const before = Menu.instances.length;
+    await act(async () => action(m.workbench_pane_more_options())!.click());
+    const menu = Menu.instances[before]!;
+    expect(menu.position).not.toBeNull();
+    expect(menu.items.map((item) => item.title)).toEqual(
+      entry(view, m.workbench_view_preview())?.submenu?.items.map(
+        (item) => item.title,
+      ),
+    );
+    expect(menu.items.map((item) => item.title)).toContain(
+      m.workbench_show_markdown(),
+    );
   });
 
   it("offers the Preview's settings in the pane menu while the panel shows, and saves them", async () => {
@@ -4216,6 +4231,57 @@ describe("the Fields panel of the Template Workbench View", () => {
       }),
     );
     await act(async () => view.close());
+  });
+
+  // #1962: the Fields pane has its own More options, beside its pin.
+  it("opens the Fields pane's own More options from its header", async () => {
+    await using zoteroReads = inProcessReadsService(
+      memoryOpener(() =>
+        seedWorksSql([{ itemID: 1, key: "FIRST234", title: "First paper" }]),
+      ).open,
+    );
+    const { view } = setup({
+      runtime: testRuntime(),
+      services: { zoteroReads },
+      pluginVersion: "2.1.3",
+    });
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => openView(view));
+      await act(async () => openFields(view));
+      const more = () =>
+        [...fields(view)!.querySelectorAll<HTMLElement>("[aria-label]")].find(
+          (element) =>
+            element.getAttribute("aria-label") ===
+            m.workbench_pane_more_options(),
+        );
+      const open = async () => {
+        const before = Menu.instances.length;
+        await act(async () => more()!.click());
+        const menu = Menu.instances[before]!;
+        expect(menu.position).not.toBeNull();
+        return menu;
+      };
+      // With no Item yet, the menu offers to choose one.
+      expect((await open()).items.map((item) => item.title)).toEqual([
+        m.workbench_choose_item(),
+      ]);
+      await act(async () =>
+        setViewItem(view, { id: "FIRST234", title: "First paper" }),
+      );
+      await vi.waitFor(async () => {
+        const menu = await open();
+        expect(menu.sections).toEqual([MENU_SECTION.action, MENU_SECTION.info]);
+        expect(menu.items.map((item) => [item.section, item.title])).toEqual([
+          [MENU_SECTION.action, m.workbench_choose_item()],
+          [MENU_SECTION.action, m.template_data_explorer_menu_export_json()],
+          [MENU_SECTION.info, m.command_copy_item_key_name()],
+        ]);
+      });
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
   });
 
   it("exports the root the panel shows", async () => {
