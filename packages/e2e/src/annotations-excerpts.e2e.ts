@@ -28,6 +28,7 @@ import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import { useListingProfile } from "./listing-profile.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import { clearNotices } from "./obsidian-cli.ts";
+import { verifyReaderAnnotationDrag } from "./reader-annotation-drag.ts";
 import { clearVault, e2eVaultDir } from "./vault-script.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -384,6 +385,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     },
     120000,
   );
+
+  it("drags the selected highlight out of the PDF reader into a note", async () => {
+    await verifyReaderAnnotationDrag(run.vaultId, {
+      pdfPath: annotationAttachment.path!,
+      annotationKey: "Q8ZR4TDH",
+    });
+  }, 120000);
 
   it("creates durable image and ink excerpts with PDF readers closed", async () => {
     const path = e2eVaultDir(workspaceRoot, "excerpt-note-vault");

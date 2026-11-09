@@ -12,7 +12,7 @@
 // @see apps/obsidian/docs/adr/0065-the-mark-popup-is-one-preact-root-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
 import type { App } from "obsidian";
-import { Keymap } from "obsidian";
+import { Keymap, setIcon } from "obsidian";
 import { createElement } from "react";
 import type { ReactNode, RefObject } from "react";
 
@@ -68,6 +68,7 @@ import type { CardBlock, CardControl } from "@/views/annot-view/card-controls";
 import { copyText, deleteConfirmation } from "@/views/annot-view/card-verbs";
 import { controlEntry } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
+import type { AnnotationDragStart } from "@/views/annot-view/drag-insert";
 import type {
   CaretPoint,
   TextDraftActions,
@@ -75,6 +76,7 @@ import type {
   HeldDraftActions,
 } from "@/views/annot-view/editor-sheet";
 import type { EndTagSession } from "@/views/annot-view/tag-editor";
+import { typeIcon } from "@/views/annot-view/type-icon";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import type { CreationGestures } from "./creation";
@@ -305,6 +307,11 @@ export interface MarkSelectionDeps {
   textRotation: TextRotation;
   /** The clock a cooldown's remaining seconds are read against. */
   now: () => Temporal.Instant;
+  /**
+   * Takes a drag of the selected mark out of the reader: a drop into a note
+   * inserts the Annotation, as a card dragged from the Annotation View does.
+   */
+  dragOut: (event: AnnotationDragStart, annotation: AnnotationRecord) => void;
 }
 
 /**
@@ -336,6 +343,12 @@ export class MarkSelection implements Disposable {
   #pressedHandle = false;
   /** Whether the last press was the armed ink tool's, whose click selects nothing. */
   #pressedStroke = false;
+  /**
+   * The page a press on the selected mark made draggable, so the browser
+   * starts a drag of the mark rather than a text selection; `null` once the
+   * press ends or the drag begins.
+   */
+  #dragOutPage: HTMLElement | null = null;
   #adjusting = Promise.resolve();
   /**
    * The text range the pointer last asked for, which a release waits on so
@@ -378,6 +391,31 @@ export class MarkSelection implements Disposable {
         // could, as Zotero's reader does, whether or not the press drew.
         this.#pressedStroke =
           event.button === 0 && this.#state().armed === "ink";
+        this.#armDragOut(event);
+      }),
+    );
+    // A drag the press on the selected mark armed carries its Annotation; any
+    // other drag, such as one of selected text, stays the browser's own.
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "dragstart", (event) => {
+        const armed = this.#dragOutPage !== null;
+        this.#disarmDragOut();
+        const record = armed ? this.#record() : null;
+        const { dataTransfer } = event;
+        if (!record || !dataTransfer) return;
+        dragGhost(
+          containerEl.doc,
+          { dataTransfer, clientX: event.clientX, clientY: event.clientY },
+          record,
+        );
+        this.#deps.dragOut(
+          {
+            dataTransfer,
+            currentTarget: containerEl,
+            preventDefault: () => event.preventDefault(),
+          },
+          record,
+        );
       }),
     );
     this.#surfaces.use(
@@ -425,9 +463,10 @@ export class MarkSelection implements Disposable {
     // The browser has settled the selection by the time a release bubbles, so
     // this is where a drag on the page becomes a selection worth acting on.
     this.#surfaces.use(
-      registerDomEvent(containerEl.doc, "pointerup", () =>
-        this.#deps.creation?.settle(),
-      ),
+      registerDomEvent(containerEl.doc, "pointerup", () => {
+        this.#disarmDragOut();
+        this.#deps.creation?.settle();
+      }),
     );
     this.#surfaces.use(
       registerDomEvent(containerEl, "keydown", (event) => {
@@ -538,6 +577,7 @@ export class MarkSelection implements Disposable {
   [Symbol.dispose](): void {
     this.#submitAndCloseCommentEditor();
     this.#endTagSession();
+    this.#disarmDragOut();
     this.#surfaces.dispose();
     // A range step still in flight lands on no surface.
     this.#rangeAsk++;
@@ -1605,6 +1645,34 @@ export class MarkSelection implements Disposable {
     return selectSelectedRowInput(this.#state())?.annotation ?? null;
   }
 
+  /**
+   * A main-button press on the selected mark that no Geometry Edit and no
+   * armed tool took makes its page draggable for this press alone, so moving
+   * the pointer drags the mark out, as Zotero's reader drags it. A mark that
+   * moves by its body keeps that press for the move while editing is live,
+   * and text selected in the PDF keeps the press for its own drag.
+   */
+  #armDragOut(event: PointerEvent): void {
+    this.#disarmDragOut();
+    if (event.button !== 0 || this.#dragging || this.#pressedStroke) return;
+    if (this.#deps.creation?.capturing) return;
+    if (!selectionCollapsed(this.#deps.containerEl)) return;
+    const record = this.#record();
+    if (!record) return;
+    const page = this.#pageUnder({ x: event.clientX, y: event.clientY });
+    if (!page || !marksAtPoint(page.targets, page.at).includes(record.key))
+      return;
+    const div = this.#deps.pageAt(page.index)?.div;
+    if (!div) return;
+    div.draggable = true;
+    this.#dragOutPage = div;
+  }
+
+  #disarmDragOut(): void {
+    if (this.#dragOutPage) this.#dragOutPage.draggable = false;
+    this.#dragOutPage = null;
+  }
+
   /** Whether an Annotation Mark lies under a press. */
   #onMark(event: PointerEvent): boolean {
     const page = this.#pageUnder({ x: event.clientX, y: event.clientY });
@@ -1694,6 +1762,30 @@ function linkUnder(target: EventTarget | null): boolean {
     ? node
     : (node?.parentElement ?? null);
   return element?.closest("a[href], .linkAnnotation") != null;
+}
+
+/**
+ * The picture under the pointer while a mark is dragged out: Obsidian's own
+ * drag ghost, with the Annotation's type and its text, in place of the whole
+ * page the browser would draw for the draggable page.
+ */
+function dragGhost(
+  doc: Document,
+  {
+    dataTransfer,
+    clientX,
+    clientY,
+  }: Pick<DragEvent, "clientX" | "clientY"> & { dataTransfer: DataTransfer },
+  { type, text, comment }: AnnotationRecord,
+): void {
+  const ghost = doc.body.createDiv({ cls: "drag-ghost" });
+  ghost.setCssProps({ left: `${clientX}px`, top: `${clientY}px` });
+  const self = ghost.createDiv({ cls: "drag-ghost-self" });
+  setIcon(self, typeIcon(type));
+  self.createSpan({ text: text || comment || "" });
+  dataTransfer.setDragImage(ghost, 0, 0);
+  // The browser takes its picture of the ghost as the drag starts.
+  doc.win.setTimeout(() => ghost.remove(), 0);
 }
 
 /**
