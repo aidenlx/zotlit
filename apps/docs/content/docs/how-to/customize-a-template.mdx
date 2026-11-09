@@ -26,9 +26,9 @@ A profile is the document that authors one literature note. See [Profiles](/docs
 
     Customizing the built-in Default creates its document in the configured template folder before editing becomes available. If a custom document already exists, ZotLit opens it. If creation fails, use the retry action beside the error.
 
-    To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. ZotLit opens the Template Workbench View with that note's item selected.
+    To edit the profile used by an existing literature note, open that note and run <Command name={m.template_workbench_open_layout()} />. The same action is in the note's file menu. ZotLit opens the Template Workbench View with that note's item selected.
 
-    Both ways open the view in a separate Obsidian window, with the Preview panel shown. A view opened another way can start without it. Select <UiLabel name={m.workbench_show_preview()} /> in the view header to show it, or select <UiLabel name={m.template_workbench_open_layout()} /> from the pane menu. Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields popover. See [The Preview and Fields panels](/docs/concepts/template-workbench-view#panels).
+    Every way opens the view in its own Obsidian window, with the Preview panel shown. If that window is already open, ZotLit brings it to the front. Select <UiLabel name={m.workbench_show_preview()} /> in the view header to hide or show the Preview panel. Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields popover. See [The Preview and Fields panels](/docs/concepts/template-workbench-view#panels).
 
   </Step>
   <Step>
@@ -83,7 +83,7 @@ The **citation text** is one template document, `zotlit-citation.md`, that rende
 
     The row's second line shows the document's vault path, or <UiLabel name={m.settings_template_using_default()} /> while your vault holds no file. With no file, that button writes `zotlit-citation.md` from the built-in text first, then opens it.
 
-    Two other entry points open the same document: the command <Command inline name={m.command_customize_citation_text_name()} />, and <UiLabel name={m.template_workbench_open_citation()} /> in the Template Workbench View's pane menu.
+    The command <Command inline name={m.command_customize_citation_text_name()} /> opens the same document. The Template Workbench View's pane menu has the same entry.
 
   </Step>
   <Step>

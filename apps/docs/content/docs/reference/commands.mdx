@@ -199,7 +199,7 @@ Opens the citation text in the Template Workbench View. When the vault holds no 
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Command palette         | Always available                                                                                                                                                                   |
 | Settings                | The <UiLabel name={m.settings_citation_text_open()} /> button on the <UiLabel name={m.settings_citation_text_name()} /> row at <SettingsPath page={m.settings_page_citations()} /> |
-| Template Workbench View | The pane menu's <UiLabel name={m.template_workbench_open_citation()} /> item                                                                                                       |
+| Template Workbench View | The pane menu's <UiLabel name={m.command_customize_citation_text_name()} /> item                                                                                                   |
 
 ## Graph view
 
@@ -270,14 +270,7 @@ Copies the note's Zotero key to the clipboard.
 | Command palette | Active on a file with a Zotero key                                          |
 | File menu       | Label: <UiLabel name={m.command_copy_item_key_name()} />. Single file only. |
 
-<Command name={m.command_customize_note_template_name()} />
-
-Opens the profile document that the note resolves against in the Template Workbench View. A note with no profile stamp resolves against the Default profile. A profile the vault cannot resolve shows a notice instead. See [Profiles](/docs/concepts/profiles) for what a profile decides.
-
-| Entry point     | Details                                                                                           |
-| --------------- | ------------------------------------------------------------------------------------------------- |
-| Command palette | Active on a literature note                                                                       |
-| File menu       | Label: <UiLabel name={m.command_customize_note_template_name()} />. Appears on a literature note. |
+To edit the profile that a literature note uses, run <Command inline name={m.template_workbench_open_layout()} /> from the note. See [Templates and profiles](#templates-and-profiles).
 
 <Command name={m.command_switch_literature_note_profile_name()} />
 
@@ -384,34 +377,19 @@ Opens the template data explorer, showing the full data object available to temp
 
 ## Templates and profiles
 
-These commands open profile documents in the Template Workbench and import a profile that someone shared with you. Two of them are palette entries labelled <UiLabel name={m.template_workbench_open_layout()} />. One opens the profile document you are editing; the other shows the whole Workbench from inside the view.
+These commands open template documents in the Template Workbench and import a profile that someone shared with you.
 
 <Command name={m.template_workbench_open_layout()} />
 
-Opens the active profile document in the Template Workbench View, with the Preview panel shown.
+Opens the Template Workbench View for the active document, in the Workbench's own window, with the Preview panel shown. A profile document, a partial, or the citation text opens directly. A literature note opens the profile document it resolves against, with the note's item selected, and the Workbench can then update that note. A note with no profile stamp resolves against the Default profile. A profile the vault cannot resolve shows a notice instead. See [Profiles](/docs/concepts/profiles) for what a profile decides.
 
-| Entry point     | Details                                                                                      |
-| --------------- | -------------------------------------------------------------------------------------------- |
-| Command palette | Active on a profile document                                                                 |
-| File menu       | Label: <UiLabel name={m.template_workbench_open_layout()} />. Appears on a profile document. |
+When a Workbench window already shows the document, the command brings that window to the front. From inside the view, it brings the view's own window to the front. To move a view to another window, use Obsidian's **Move to new window**.
 
-<Command name={m.template_workbench_open()} />
-
-Opens the Template Workbench View in the current leaf for the active document. A profile document, a partial, or the citation text opens directly. A literature note opens the profile document it resolves against.
-
-| Entry point     | Details                                                                                 |
-| --------------- | --------------------------------------------------------------------------------------- |
-| Command palette | Active on a profile document, a partial, the citation text, or a literature note        |
-| File menu       | Label: <UiLabel name={m.template_workbench_open()} />. Same files as the palette entry. |
-
-<Command name={m.template_workbench_open_layout()} />
-
-Opens the document being edited in the Workbench window, with the Preview panel shown.
-
-| Entry point     | Details                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------- |
-| Command palette | Active in the Template Workbench View                                                     |
-| Pane menu       | The <UiLabel name={m.template_workbench_open_layout()} /> item of the Workbench pane menu |
+| Entry point     | Details                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| Command palette | Active on a profile document, a partial, the citation text, or a literature note, and in the Workbench view |
+| File menu       | Label: <UiLabel name={m.template_workbench_open_layout()} />. Same files as the palette entry.              |
+| View header     | The <UiLabel name={m.template_workbench_open_layout()} /> action on a template document open as Markdown    |
 
 <Command name={m.command_import_profile_name()} />
 
@@ -426,13 +404,12 @@ Imports a profile that someone shared with you, from the clipboard or from a fil
 
 The Workbench view's pane menu is where most template work starts. These entries sit in the **zotlit** section:
 
-| Menu item                                               | What it does                                                                                                                                                                                                       |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <UiLabel name={m.template_workbench_open_layout()} />   | Opens the editor in the Workbench window with the Preview panel shown.                                                                                                                                             |
-| <UiLabel name={m.workbench_choose_item()} />            | Picks the Zotero item that the tabs, the Fields panel, and the Preview panel read.                                                                                                                                 |
-| <UiLabel name={m.workbench_choose_annotation()} />      | Picks the annotation to render. Not offered for the citation text.                                                                                                                                                 |
-| <UiLabel name={m.template_workbench_partials()} />      | Opens another partial, creates one with <UiLabel name={m.workbench_partial_new()} />, or unpacks the partials a shared profile still carries with <UiLabel name={m.workbench_problem_bundled_partial_unpack()} />. |
-| <UiLabel name={m.template_workbench_open_citation()} /> | Opens the citation text, `zotlit-citation.md`.                                                                                                                                                                     |
+| Menu item                                                   | What it does                                                                                                                                                                                                                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.workbench_choose_item()} />                | Picks the Zotero item that the tabs, the Fields panel, and the Preview panel read.                                                                                                                                                                      |
+| <UiLabel name={m.workbench_choose_annotation()} />          | Picks the annotation to render. Not offered for the citation text.                                                                                                                                                                                      |
+| <UiLabel name={m.template_workbench_partials()} />          | Opens another partial in a new tab of the Workbench window, creates one with <UiLabel name={m.workbench_partial_new()} />, or unpacks the partials a shared profile still carries with <UiLabel name={m.workbench_problem_bundled_partial_unpack()} />. |
+| <UiLabel name={m.command_customize_citation_text_name()} /> | Opens the citation text, `zotlit-citation.md`, in a new tab of the Workbench window.                                                                                                                                                                    |
 
 <UiLabel name={m.workbench_show_fields()} /> opens or closes the view's [Fields
 panel](/docs/concepts/template-workbench-view#fields-panel): the Fields popover,
@@ -501,7 +478,6 @@ Opens the release notes for the installed ZotLit version.
 | <UiLabel name={m.command_overwrite_note_name()} />                  |   yes   |   no   |     yes      | Active on a literature note                         |
 | <UiLabel name={m.command_import_child_notes_name()} />              |   yes   |   no   |     yes      | Active on a literature note                         |
 | <UiLabel name={m.command_copy_item_key_name()} />                   |   yes   |   no   |     yes      | Active on a file with a Zotero key                  |
-| <UiLabel name={m.command_customize_note_template_name()} />         |   yes   |   no   |     yes      | Active on a literature note                         |
 | <UiLabel name={m.command_switch_literature_note_profile_name()} />  |   yes   |   no   |      no      | Active on a literature note                         |
 | <UiLabel name={m.command_open_pdf_name()} />                        |   yes   |   no   |     yes      | Active on a literature note                         |
 | <UiLabel name={m.command_reimport_note_name()} />                   |   yes   |   no   |     yes      | Active on an imported note                          |
@@ -513,14 +489,10 @@ Opens the release notes for the installed ZotLit version.
 | <UiLabel name={m.command_annot_view_unpin_name()} />                |   yes   |   no   |      no      | Annotation view open and pinned                     |
 | <UiLabel name={m.command_new_query_file_name()} />                  |   yes   |   no   |   explorer   | Always                                              |
 | <UiLabel name={m.command_open_template_data_explorer_name()} />     |   yes   |   no   |     yes      | Always                                              |
-| <UiLabel name={m.template_workbench_open_layout()} />               |   yes   |   no   |     yes      | Active on a profile document                        |
-| <UiLabel name={m.template_workbench_open()} />                      |   yes   |   no   |     yes      | Active on a template document or a literature note  |
-| <UiLabel name={m.template_workbench_open_layout()} />               |   yes   |   no   |      no      | Active in the Template Workbench View               |
+| <UiLabel name={m.template_workbench_open_layout()} />               |   yes   |   no   |     yes      | Active on a template document or a literature note  |
 | <UiLabel name={m.command_import_profile_name()} />                  |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_open_welcome_name()} />                    |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_open_release_note_name()} />               |   yes   |   no   |      no      | Always                                              |
-
-The two <UiLabel name={m.template_workbench_open_layout()} /> rows are separate commands. The first opens the profile document you are editing; the second shows the whole Workbench from inside the view.
 
 ## Query CLI [#query-cli]
 

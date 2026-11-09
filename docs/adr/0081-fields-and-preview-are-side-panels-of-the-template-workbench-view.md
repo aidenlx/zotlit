@@ -118,3 +118,11 @@ The reader had two tools for one task: a Fields column with a tree of values in 
 ### Preview header row
 
 - The Preview Panel's header row (heading, caption, "File name: …") is sticky at the top of its scroll area, beside and under the editor, with scroll padding so a focused control stays clear of it. One shared component (`PreviewFilenameLabel`) draws the file name in both hosts.
+
+## Amendment (2026-11-09): every open lands in the Workbench window
+
+Spec #1962. This amendment replaces "A new view shows neither" in the Decision and the compact-editor open of ADR 0045.
+
+- One function, `openTemplateWorkbench` (`views/template-workbench/open.ts`), opens a Template Document in the Workbench for every route: commands, file menus, the Markdown header action, the settings rows, the recovery notice, the Customize flow's Obsidian side and the `import-profile` link. It reveals the window that already holds the document. An open that starts from a leaf in a Workbench window (Open as Markdown and back, Edit partial, Extract to partial, the citation text from the pane menu) opens in that window: in the leaf, or in a new tab or split beside it. A Workbench leaf that an older workspace saved in the main window moves into a window of its own. Otherwise the open makes a new window. Every open shows the Preview.
+- One command, "Open template workbench" (`open-template-workbench`), opens the active Profile, Citation Template, Shared Partial, or the Profile of the active Literature Note with its Item and the note to update. The file menu and the Markdown header action carry the same entry. "Switch to template workbench view", the second "Open template workbench" command (`customize-profile`), "Customize this note's template" (`customize-note-template`) and the pane menu's "Open template workbench" are gone. The pane menu's citation entry takes the command's name, "Customize citation text". The web Workbench launch and the settings' Customize chooser stay.
+- The `import-profile` link's `paneType` no longer picks a pane for the imported Profile.

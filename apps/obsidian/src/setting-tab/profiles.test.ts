@@ -37,10 +37,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { Template } from "@/services/template/service";
-import {
-  openNativeProfile,
-  openTemplateWorkbench,
-} from "@/views/template-workbench/open";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { rebuildingSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
@@ -48,7 +45,6 @@ import { profileControlValue, setProfileControlValue } from "./controls";
 import { literatureNoteItems, profilesPage } from "./profiles";
 
 vi.mock("@/views/template-workbench/open", () => ({
-  openNativeProfile: vi.fn(() => Effect.void),
   openTemplateWorkbench: vi.fn(() => Effect.void),
 }));
 
@@ -406,9 +402,8 @@ it.effect(
         .find((button) => button.tooltip === m.settings_template_open())!
         .click();
       yield* Queue.take(rebuilt);
-      expect(openNativeProfile).toHaveBeenCalledWith(
+      expect(openTemplateWorkbench).toHaveBeenCalledWith(
         expect.objectContaining({ path: paths[0] }),
-        { customize: true },
       );
 
       // Deleting is the list's own affordance, addressed by row index.

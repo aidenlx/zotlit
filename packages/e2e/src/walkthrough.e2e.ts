@@ -1727,7 +1727,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             observer.observe(document.body, { childList: true, subtree: true });
             resources.adopt(setInterval(sample, 10), clearInterval);
             const accepted = app.commands.executeCommandById(
-              "zotlit:customize-note-template",
+              "zotlit:open-template-workbench",
             );
             const ready = () =>
               editors().some(
@@ -1841,7 +1841,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           app.vault.getFileByPath(bridge.runSync(profile.defaultDocumentPath))!,
         );
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        app.commands.executeCommandById("zotlit:customize-profile");
+        app.commands.executeCommandById("zotlit:open-template-workbench");
       },
       undefined,
     );
@@ -2049,7 +2049,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        app.commands.executeCommandById("zotlit:customize-profile");
+        app.commands.executeCommandById("zotlit:open-template-workbench");
         const view = () =>
           page.leavesOfType("zotlit-template-workbench")[0]?.view;
         await waitFor(
@@ -2214,7 +2214,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
         await leaf.openFile(app.vault.getFileByPath(profile.path)!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        app.commands.executeCommandById("zotlit:customize-profile");
+        app.commands.executeCommandById("zotlit:open-template-workbench");
         const view = () =>
           page.leavesOfType("zotlit-template-workbench")[0]?.view;
         await waitFor(
@@ -2366,7 +2366,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host }) => {
         const app = host as WalkthroughApp;
 
-        app.commands.executeCommandById("zotlit:customize-note-template");
+        app.commands.executeCommandById("zotlit:open-template-workbench");
       },
       undefined,
     );
@@ -2447,7 +2447,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         await app.workspace.revealLeaf(note!);
         app.workspace.setActiveLeaf(note!, { focus: true });
         return app.commands.executeCommandById(
-          "zotlit:customize-note-template",
+          "zotlit:open-template-workbench",
         );
       },
       undefined,
@@ -2585,7 +2585,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       vaultId,
       async ({ app: host }) => {
         const app = host as WalkthroughApp;
-        app.commands.executeCommandById("zotlit:customize-note-template");
+        app.commands.executeCommandById("zotlit:open-template-workbench");
       },
       undefined,
     );

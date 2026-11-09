@@ -767,34 +767,34 @@ describe("clipboard Profile protocol handoff", () => {
         yield* Deferred.succeed(consent, imported(file.path));
         if (!Fiber.isFiber(fiber)) return yield* Effect.die("no handler fiber");
         yield* Fiber.join(fiber);
-        expect(openTemplateWorkbench).toHaveBeenCalledWith(file, {});
+        expect(openTemplateWorkbench).toHaveBeenCalledWith(file);
       }),
   );
 
-  it.effect("hands the workbench the pane the link names", () =>
-    Effect.gen(function* () {
-      const { file, files } = profileVault();
-      const app = appStub();
-      const workspace = new MemoryWorkspace();
-      yield* register({
-        deps: {
-          app,
-          importProfile: vi.fn(() => Effect.succeed(imported(file.path))),
-        },
-        files,
-        workspace,
-      });
+  it.effect(
+    "opens the Workbench on its own route, whatever pane the link names",
+    () =>
+      Effect.gen(function* () {
+        const { file, files } = profileVault();
+        const app = appStub();
+        const workspace = new MemoryWorkspace();
+        yield* register({
+          deps: {
+            app,
+            importProfile: vi.fn(() => Effect.succeed(imported(file.path))),
+          },
+          files,
+          workspace,
+        });
 
-      yield* dispatch("zotlit/import-profile", {
-        clipboard: "true",
-        paneType: "split",
-      });
+        yield* dispatch("zotlit/import-profile", {
+          clipboard: "true",
+          paneType: "split",
+        });
 
-      expect(workspace.leafRequests).toEqual(["split"]);
-      expect(openTemplateWorkbench).toHaveBeenCalledWith(file, {
-        leaf: expect.anything(),
-      });
-    }),
+        expect(workspace.leafRequests).toEqual([]);
+        expect(openTemplateWorkbench).toHaveBeenCalledWith(file);
+      }),
   );
 
   it.effect("leaves the editor closed after import cancellation", () =>

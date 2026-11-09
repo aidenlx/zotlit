@@ -25,7 +25,7 @@ import {
 import { ShowInLibrary } from "@/views/library/show-in-library";
 import type { PandocExportServices } from "@/views/pandoc-export/register";
 import type { WorkbenchActionServices } from "@/views/template-workbench/actions";
-import { openNativeProfile } from "@/views/template-workbench/open";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 import {
   profileCustomization,
   saveProfileCustomization,
@@ -58,7 +58,6 @@ import { bindQuery } from "./item-query/handle";
 import { QueryService } from "./item-query/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { LibraryScope } from "./library-scope/service";
-import { bindCustomize, Customize } from "./local-bridge/customize";
 import type { DefaultProfileTarget } from "./local-bridge/customize";
 import { bindLocalBridge } from "./local-bridge/handle";
 import { createLaunchSheet } from "./local-bridge/launch-sheet";
@@ -194,7 +193,7 @@ export async function createPluginRuntime(
           rememberPreference: (value) =>
             saveProfileCustomization(plugin.app, value),
           openNative: ({ item, originatingNote }, target) =>
-            openNativeProfile(target, {
+            openTemplateWorkbench(target, {
               ...(item ? { itemIndexedKey: item.key } : {}),
               originatingNote,
               explainUnsupported: false,
@@ -330,7 +329,6 @@ export async function createPluginRuntime(
       },
     } satisfies DefaultProfileTarget,
     localBridge: bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
-    customize: bindCustomize(bridge, runtime.runSync(Customize)),
     templateData: bindTemplateData(
       bridge,
       runtime.runSync(Effect.context<TemplateDataServices>()),

@@ -33,7 +33,6 @@ import { resourcesGroup } from "./resources";
 import { zoteroPageItems } from "./zotero";
 
 vi.mock("@/views/template-workbench/open", () => ({
-  openNativeProfile: vi.fn(() => Effect.void),
   openTemplateWorkbench: vi.fn(() => Effect.void),
 }));
 

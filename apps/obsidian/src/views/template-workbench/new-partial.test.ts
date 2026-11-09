@@ -7,7 +7,7 @@ import {
 } from "@mock/obsidian";
 import { Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
-import type { App, PaneType, SplitDirection, WorkspaceLeaf } from "obsidian";
+import type { App, WorkspaceLeaf } from "obsidian";
 import { beforeEach, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -27,29 +27,12 @@ vi.mock("./open", () => ({
   openTemplateWorkbench: vi.fn(() => Effect.void),
 }));
 
-const split = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+/** The Workbench leaf a create starts from. */
+const origin = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
   updateHeader: vi.fn(),
 });
-const getLeaf = vi.fn(
-  (_newLeaf?: PaneType | boolean, _direction?: SplitDirection) => split,
-);
-function getLeafForWorkspace(
-  newLeaf?: "split",
-  direction?: SplitDirection,
-): WorkspaceLeaf;
-function getLeafForWorkspace(newLeaf?: PaneType | boolean): WorkspaceLeaf;
-function getLeafForWorkspace(
-  newLeaf?: PaneType | boolean,
-  direction?: SplitDirection,
-): WorkspaceLeaf {
-  return direction === undefined
-    ? getLeaf(newLeaf)
-    : getLeaf(newLeaf, direction);
-}
 const app = stubService<App>("App", {
-  workspace: stubService<App["workspace"]>("Workspace", {
-    getLeaf: getLeafForWorkspace,
-  }),
+  workspace: stubService<App["workspace"]>("Workspace", {}),
 });
 
 function actions(taken: readonly string[] = []) {
@@ -121,7 +104,10 @@ beforeEach(() => {
 
 it("folds the typed name, names the file, and opens the partial in a split", async () => {
   const template = actions();
-  const flow = createSharedPartial(app, template, { name: "Venue line" });
+  const flow = createSharedPartial(app, template, {
+    name: "Venue line",
+    from: origin,
+  });
   const modal = await prompt();
 
   // The completion's query arrives folded, and the row names the file it makes.
@@ -137,9 +123,8 @@ it("folds the typed name, names the file, and opens the partial in a split", asy
   expect(template.createPartial).toHaveBeenCalledWith("venue-line", {});
   expect(openTemplateWorkbench).toHaveBeenCalledWith(
     { path: "templates/zotlit-partial.venue-line.md" },
-    { leaf: split, explainUnsupported: false },
+    { explainUnsupported: false, from: { leaf: origin, place: "split" } },
   );
-  expect(getLeaf).toHaveBeenCalledWith("split");
 });
 
 it.each([

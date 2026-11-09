@@ -19,6 +19,206 @@ import { withWorkbenchSurfaces } from "./workbench-surfaces.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
+  // #1962: every route that opens the Workbench lands in its dedicated
+  // window, with the Preview shown, and a second open reveals that window.
+  it("opens the Workbench in its own window from a Profile, a note, and a link, and reveals it again", async () => {
+    const path = `templates/${booksProfile.document}`;
+    const notePath = "Workbench entry.md";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(() =>
+      obRun(
+        run.vaultId,
+        async ({ app }, { notePath }) => {
+          app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          const note = app.vault.getFileByPath(notePath);
+          if (note) await app.vault.delete(note);
+          for (const file of app.vault.getMarkdownFiles())
+            if (file.basename.startsWith("zotlit-profile.e2e-link"))
+              await app.vault.delete(file);
+        },
+        { notePath },
+      ),
+    );
+    /** Where each Workbench leaf stands, and whether the first one is still it. */
+    const surfaces = () =>
+      obRun(
+        run.vaultId,
+        ({ app }) =>
+          app.workspace
+            .getLeavesOfType("zotlit-template-workbench")
+            .map((leaf) => ({
+              file: (leaf.view.getState().file as string | null) ?? null,
+              window: leaf.getContainer().win === window ? "main" : "popout",
+              marked: leaf.view.containerEl.hasAttribute("data-e2e-first"),
+            })),
+        undefined,
+      );
+    /** Waits until the Workbench of `file` shows its Preview in a popout. */
+    const opened = (file: string, what: string) =>
+      withWorkbenchSurfaces(
+        run.vaultId,
+        obRunUntil(
+          run.vaultId,
+          ({ page }, { file }) => {
+            const view = page.workbench({ path: file });
+            return (
+              !!view &&
+              view.leaf.getContainer().win !== window &&
+              !!page.previewPanel(view)
+            );
+          },
+          { file },
+          { what },
+        ),
+      );
+
+    // From a Profile's Markdown view in the main window.
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        app.commands.executeCommandById("zotlit:open-template-workbench");
+      },
+      { path },
+    );
+    await opened(path, "the Books Profile's Workbench window");
+    await obRun(
+      run.vaultId,
+      ({ page }, { path }) => {
+        page
+          .workbench({ path })!
+          .containerEl.setAttribute("data-e2e-first", "");
+      },
+      { path },
+    );
+
+    // A second open from the same Markdown view reveals that window.
+    await obRun(
+      run.vaultId,
+      ({ app }, { path }) => {
+        const markdown = app.workspace
+          .getLeavesOfType("markdown")
+          .find((leaf) => leaf.view.getState().file === path)!;
+        app.workspace.setActiveLeaf(markdown, { focus: true });
+        app.commands.executeCommandById("zotlit:open-template-workbench");
+      },
+      { path },
+    );
+    await opened(path, "the Books Profile's Workbench window, again");
+    expect(
+      (await surfaces()).filter((surface) => surface.file === path),
+    ).toEqual([{ file: path, window: "popout", marked: true }]);
+
+    // From a Literature Note: its Profile, with the note to update.
+    await obRun(
+      run.vaultId,
+      async ({ app }, { notePath, key }) => {
+        const note = await app.vault.create(
+          notePath,
+          `---\nzotero-key: ${key}\n---\n# Workbench entry`,
+        );
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(note);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { notePath, key: targetItem.key },
+    );
+    await obRunUntil(
+      run.vaultId,
+      ({ app }, { notePath }) => {
+        // The command waits for the note's Profile to resolve.
+        if (app.workspace.getActiveFile()?.path !== notePath) return true;
+        app.commands.executeCommandById("zotlit:open-template-workbench");
+        return false;
+      },
+      { notePath },
+      { what: "Open template workbench to run on the Literature Note" },
+    );
+    await withWorkbenchSurfaces(
+      run.vaultId,
+      obRunUntil(
+        run.vaultId,
+        ({ page }, { notePath }) => {
+          const view = page.workbench({ originatingNote: notePath });
+          return (
+            view?.originatingNote?.path === notePath &&
+            view.leaf.getContainer().win !== window &&
+            !!page.previewPanel(view)
+          );
+        },
+        { notePath },
+        { what: "the note's Profile in a Workbench window" },
+      ),
+    );
+
+    // From an obsidian://zotlit/import-profile link.
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        const source = await app.vault.read(app.vault.getFileByPath(path)!);
+        await navigator.clipboard.writeText(
+          source
+            .replace(/^id: .*$/m, "id: e2e-link")
+            .replace(/^name: .*$/m, "name: Linked profile"),
+        );
+        const { protocolHandlers } = app.workspace as unknown as {
+          protocolHandlers: Map<string, (params: object) => unknown>;
+        };
+        void protocolHandlers.get("zotlit/import-profile")!({
+          action: "zotlit/import-profile",
+          clipboard: "true",
+        });
+      },
+      { path },
+    );
+    await obRunUntil(
+      run.vaultId,
+      ({ page }, { confirm }) => {
+        const button = Array.from(
+          document.querySelectorAll<HTMLButtonElement>(
+            ".modal-container button",
+          ),
+        ).find((button) => button.textContent.trim() === confirm);
+        if (!button) return false;
+        page.press(button, "Import profile");
+        return true;
+      },
+      { confirm: run.m.profile_import_confirm() },
+      { what: "the import sheet's Import profile button" },
+    );
+    const linked = await withWorkbenchSurfaces(
+      run.vaultId,
+      obRunUntil(
+        run.vaultId,
+        ({ app, page }) => {
+          const file = app.workspace
+            .getLeavesOfType("zotlit-template-workbench")
+            .map((leaf) => String(leaf.view.getState().file ?? ""))
+            .find((file) => file.includes("zotlit-profile.e2e-link"));
+          const view = file ? page.workbench({ path: file }) : undefined;
+          return view &&
+            view.leaf.getContainer().win !== window &&
+            page.previewPanel(view)
+            ? file!
+            : null;
+        },
+        undefined,
+        {
+          what: "the imported Profile in a Workbench window",
+          ready: (found) => found !== null,
+        },
+      ),
+    );
+    expect(linked).toMatch(/zotlit-profile\.e2e-link/);
+
+    // Each document stands in one Workbench leaf, and none in the main window.
+    const all = await surfaces();
+    expect(all.every((surface) => surface.window === "popout")).toBe(true);
+    expect(new Set(all.map((surface) => surface.file)).size).toBe(all.length);
+  });
+
   it("keeps each Properties row's example value through Move down while the preview renders again", async () => {
     const documentPath = join(e2eVaultPath, "templates", booksProfile.document);
     const original = await readFile(documentPath, "utf-8");
@@ -44,7 +244,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(app.vault.getFileByPath(path)!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        app.commands.executeCommandById("zotlit:open-template-workbench-view");
+        app.commands.executeCommandById("zotlit:open-template-workbench");
       },
       { path: `templates/${booksProfile.document}` },
     );

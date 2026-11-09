@@ -2434,7 +2434,7 @@ language: liquid
     ).toBe(m.workbench_tab_note());
   });
 
-  it("offers Open citation text on every kind, and the language switch on the Citation Template", async () => {
+  it("offers Customize citation text on every kind, and the language switch on the Citation Template", async () => {
     await using cleanup = new AsyncDisposableStack();
     const profile = openKind("templates/zotlit-profile.paper.md", SOURCE);
     cleanup.defer(() => act(async () => profile.view.close()));
@@ -2447,13 +2447,17 @@ language: liquid
       return menuEntries(menu).map((item) => item.title);
     };
     expect(titles(profile.view)).toContain(
-      m.template_workbench_open_citation(),
+      m.command_customize_citation_text_name(),
+    );
+    // The view already stands in its Workbench window: no entry opens it.
+    expect(titles(profile.view)).not.toContain(
+      m.template_workbench_open_layout(),
     );
     expect(titles(profile.view)).not.toContain(
       m.template_workbench_change_language(),
     );
     expect(titles(citation.view)).toContain(
-      m.template_workbench_open_citation(),
+      m.command_customize_citation_text_name(),
     );
     expect(titles(citation.view)).toContain(
       m.template_workbench_change_language(),
@@ -2951,6 +2955,7 @@ An annotation.
       source: SELECTION,
       language: "liquid",
       open: "split",
+      from: view.leaf,
     });
     expect(view.getViewData()).toBe(EXTRACT_SOURCE.replace(SELECTION, CALL));
   });
@@ -2977,6 +2982,7 @@ An annotation.
       source: ruled,
       language: "liquid",
       open: "split",
+      from: view.leaf,
     });
     expect(
       parsePlainTemplateDocument(
@@ -3000,6 +3006,7 @@ An annotation.
       source: SELECTION,
       language: "eta",
       open: "split",
+      from: view.leaf,
     });
     expect(view.getViewData()).toBe(
       EXTRACT_SOURCE.replace("language: liquid", "language: eta").replace(

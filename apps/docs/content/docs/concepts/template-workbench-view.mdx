@@ -24,7 +24,7 @@ The view opens all three [kinds of template document](/docs/concepts/how-templat
 
 Everything you type is previewed, including bytes you have not saved yet. Editing uses Obsidian's automatic saving, with its Undo and Redo. A document with an error stays editable and saves with its diagnostics shown in the editor.
 
-The native Markdown view keeps working on the same file. Select <UiLabel name={m.template_workbench_open_markdown()} /> to open the document as Markdown, and right-click a template document in the file explorer for <UiLabel name={m.template_workbench_open()} />.
+The native Markdown view keeps working on the same file. Select <UiLabel name={m.template_workbench_open_markdown()} /> to open the document as Markdown, and right-click a template document in the file explorer for <UiLabel name={m.template_workbench_open_layout()} />.
 
 Select <UiLabel name={m.workbench_help()} /> in the view header for <UiLabel name={m.workbench_docs_guide()} />, <UiLabel name={m.workbench_docs_note()} />, <UiLabel name={m.workbench_docs_data()} />, and <UiLabel name={m.workbench_problems_community()} />. The web Workbench has the same <UiLabel name={m.workbench_help()} /> menu in its header.
 
@@ -75,21 +75,19 @@ Making the view narrower or wider moves the Preview and changes nothing else: th
 
 Obsidian saves whether the Preview panel is shown, how wide it is, and its height under the editor, with the view. It also saves whether the Fields panel is pinned, whether you hid it, and how wide it is. After a restart, the view opens the way you left it. The Fields popover is not saved: it is closed when the view opens. The web Workbench keeps the pin and the width while the page is open.
 
-A new view starts with no Preview panel, for a quick edit. That is the case when you open a template document from the file explorer, or with <UiLabel name={m.template_workbench_open()} />.
-
-These entry points open the Workbench window and show the Preview panel. The Fields popover stays closed until you select <UiLabel name={m.workbench_view_fields()} />:
+Every way to open a template document opens it in the Workbench window and shows the Preview panel. When the window already shows the document, ZotLit brings it to the front. The Fields popover stays closed until you select <UiLabel name={m.workbench_view_fields()} />. These entry points open the Workbench:
 
 - <UiLabel name={m.template_workbench_open_layout()} />, from the command
-  palette or the view's pane menu.
-- <Command inline name={m.command_customize_note_template_name()} />, from a
-  literature note.
+  palette, the file menu of a template document or a literature note, or the
+  header of a template document open as Markdown.
 - <UiLabel name={m.template_workbench_customize()} /> on the built-in Default
   profile.
 - The <UiLabel name={m.settings_profile_edit()} /> button beside a profile in ZotLit settings.
+- <Command inline name={m.command_customize_citation_text_name()} />, for the
+  citation text.
 
-<Command inline name={m.command_customize_citation_text_name()} /> opens the
-citation text like any other template document, so a new view starts with no
-Preview panel.
+A partial or the citation text that you open from the view's pane menu opens in
+a new tab of the same window.
 
 ### The Fields panel [#fields-panel]
 
@@ -183,7 +181,7 @@ its source in its one tab, so the toggle is offered for a profile document only.
 
 ### Preview data [#preview-data]
 
-The preview uses a Zotero item or built-in example. Opening the view from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data and <UiLabel name={m.template_workbench_open_layout()} /> to show the [Preview panel](#panels) in the Workbench window.
+The preview uses a Zotero item or built-in example. Opening the view from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data.
 
 The preview changes as you edit. A database or citation-style warning can limit the preview, but you can continue editing the profile.
 
