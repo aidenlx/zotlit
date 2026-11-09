@@ -158,6 +158,14 @@ const hint =
 /** Guidance and status read at hint size wherever the selection UI states a task. */
 export const selectionHint = hint;
 /**
+ * A sticky part that covers what scrolls under it wears the ground of the
+ * pane it stands in: a sidebar's own in a sidebar, else the main area's. A
+ * surface with a ground of its own, as the Fields popover, sets
+ * `--zt-pane-ground` itself.
+ */
+export const paneCover =
+  "zt:bg-(--zt-pane-ground,var(--background-primary)) zt:in-[.mod-sidedock]:[--zt-pane-ground:var(--background-secondary)]";
+/**
  * A boxed pane wears Obsidian's text-input surface, focus ring included. Its
  * border, padding and ring read the `--input-*` variables a native input
  * reads, so a host that draws the box itself zeroes them.
@@ -298,9 +306,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     dataExplorer: {
       hint: "setting-item-description zt:px-3 zt:pb-2",
       "root-label": "zt:text-xs zt:text-muted-foreground",
-      /** In a sidebar, the sticky section headers take the sidebar's ground. */
       explorer:
-        "zt-template-data-explorer zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-3 zt:pt-3 zt:in-[.mod-sidedock]:[--zt-fields-ground:var(--background-secondary)]",
+        "zt-template-data-explorer zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-3 zt:pt-3",
       /** The native title already names the item and the Fields role in a full pane; the heading reads only where a sidebar hides that title. */
       header:
         "zt-workbench-sidebar-control zt:items-center zt:justify-between zt:gap-x-2 zt:px-3",
@@ -320,8 +327,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       sections: "zt:flex zt:flex-col zt:gap-2",
       section: "",
       /** Stays at the top while its section scrolls past, on the ground of the panel it stands in. */
-      "section-heading":
-        "zt:sticky zt:top-0 zt:z-10 zt:bg-(--zt-fields-ground,var(--background-primary))",
+      "section-heading": cn("zt:sticky zt:top-0 zt:z-10", paneCover),
       "section-header":
         "clickable-icon zt:[--icon-size:var(--icon-xs)] zt:text-muted-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
       "section-icon":
@@ -496,7 +502,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     fieldsPanel: {
       panel: cn(
         "zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-foreground",
-        "zt:data-[state=popover]:w-80 zt:data-[state=popover]:max-w-full zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-secondary) zt:data-[state=popover]:shadow-(--shadow-l) zt:data-[state=popover]:[--zt-fields-ground:var(--background-secondary)]",
+        "zt:data-[state=popover]:w-80 zt:data-[state=popover]:max-w-full zt:data-[state=popover]:rounded-(--radius-m) zt:data-[state=popover]:border zt:data-[state=popover]:border-border zt:data-[state=popover]:bg-(--background-secondary) zt:data-[state=popover]:shadow-(--shadow-l) zt:data-[state=popover]:[--zt-pane-ground:var(--background-secondary)]",
         "zt:data-[state=popover]:transition-[translate,opacity] zt:data-[state=popover]:duration-150 zt:data-[state=popover]:ease-out zt:motion-reduce:transition-none zt:data-[state=popover]:starting:translate-x-2 zt:data-[state=popover]:starting:opacity-0",
       ),
       header:

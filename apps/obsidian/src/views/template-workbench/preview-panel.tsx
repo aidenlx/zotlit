@@ -27,10 +27,10 @@ import type { ResultMode, TemplateRoot } from "@zotlit/workbench/ui";
 
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import { NativeMarkdown } from "@/views/template-workbench/preview/markdown";
 
-import { selectionHint, templateWorkbenchButton } from "./theme";
+import { paneCover, selectionHint, templateWorkbenchButton } from "./theme";
 import type { TemplateWorkbenchView } from "./view";
 
 /**
@@ -258,7 +258,10 @@ export function PreviewPanel({
               It bleeds over the panel's padding to cover what scrolls under. */}
           <header
             data-workbench-preview-header=""
-            className="zt:sticky zt:-top-3 zt:z-10 zt:-mx-3 zt:-mt-3 zt:flex zt:min-w-0 zt:flex-col zt:gap-1 zt:border-b zt:border-border zt:bg-background zt:px-3 zt:pt-3 zt:pb-2"
+            className={cn(
+              "zt:sticky zt:-top-3 zt:z-10 zt:-mx-3 zt:-mt-3 zt:flex zt:min-w-0 zt:flex-col zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:pt-3 zt:pb-2",
+              paneCover,
+            )}
           >
             {/* The pane's actions keep the row's inline end, as a view
                 header's do; what the preview shows reads under the heading. */}
