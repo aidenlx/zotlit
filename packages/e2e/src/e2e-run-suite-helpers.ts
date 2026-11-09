@@ -129,7 +129,9 @@ function conditionReady({
         page.valueOf(control("button", labels.kind)) === kind &&
         page.valueOf(control("select", labels.operator)) === operator &&
         page.valueOf(
-          control(kind === "collection" ? "input" : "button", labels.value),
+          kind === "collection"
+            ? page.labelledInput(line, labels.value)
+            : control("button", labels.value),
         ) === value
       );
     },

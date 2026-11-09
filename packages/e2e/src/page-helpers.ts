@@ -129,6 +129,24 @@ export function createPageHelpers(app: PageApp) {
         : el.value
       : undefined;
   }
+  /**
+   * The input in `root` whose accessible name is `name`. A Workbench text
+   * field is named by a hidden element it points `aria-labelledby` at, so it
+   * shows no hover tooltip in Obsidian.
+   */
+  function labelledInput(root: ParentNode | null | undefined, name: string) {
+    return (
+      [...(root?.querySelectorAll<HTMLInputElement>("input") ?? [])].find(
+        (input) => {
+          const nameId = input.getAttribute("aria-labelledby");
+          return (
+            nameId !== null &&
+            input.ownerDocument.getElementById(nameId)?.textContent === name
+          );
+        },
+      ) ?? null
+    );
+  }
   async function pick<T extends HTMLButtonElement | HTMLSelectElement>(
     el: T | null | undefined,
     value: string,
@@ -1037,6 +1055,7 @@ export function createPageHelpers(app: PageApp) {
     until,
     stands,
     valueOf,
+    labelledInput,
     pick,
     fire,
     tap,

@@ -1785,9 +1785,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           view: section("view").querySelector<HTMLElement>(
             "[data-filter-heading]",
           )!.textContent,
-          tag: section("view").querySelector<HTMLInputElement>(
-            `[data-condition-row] input[aria-label="${filterLabel}"]`,
-          )!.value,
+          tag: pageHelpers.labelledInput(section("view"), filterLabel)!.value,
         };
       },
       { filterLabel: run.m.workbench_filter_value() },
@@ -1821,9 +1819,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
 
         set(
-          section("view").querySelector<HTMLInputElement>(
-            `[data-condition-row] input[aria-label="${filterLabel}"]`,
-          )!,
+          pageHelpers.labelledInput(section("view"), filterLabel)!,
           "methodology",
         );
       },
@@ -2314,9 +2310,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )!;
 
           return String(
-            section("view").querySelector<HTMLInputElement>(
-              `[data-condition-row] input[aria-label="${filterLabel}"]`,
-            )?.value ?? null,
+            pageHelpers.labelledInput(section("view"), filterLabel)?.value ??
+              null,
           );
         },
         { filterLabel: run.m.workbench_filter_value() },
