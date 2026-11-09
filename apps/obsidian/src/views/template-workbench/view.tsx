@@ -681,7 +681,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           names: () => this.partialNames,
           create: (query) =>
             this.toHostEffect(
-              createSharedPartialEffect(this.app, { name: query }),
+              createSharedPartialEffect(this.app, {
+                name: query,
+                from: this.leaf,
+              }),
             ),
         },
         // The menu runs this on the host's runner, which is this leaf's.
@@ -1853,9 +1856,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.open)
-        .setTitle(m.template_workbench_open_citation())
+        .setTitle(m.command_customize_citation_text_name())
         .setIcon("quote")
-        .onClick(() => this.#start(Effect.ignore(reportCitationTemplateOpen))),
+        .onClick(() =>
+          this.#start(Effect.ignore(reportCitationTemplateOpen(this.leaf))),
+        ),
     );
     menu.addItem((item) =>
       item
@@ -1864,13 +1869,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setIcon("file-text")
         .setDisabled(!this.file)
         .onClick(() => this.#act("open-markdown", this.#openMarkdown())),
-    );
-    menu.addItem((item) =>
-      item
-        .setSection(MENU_SECTION.open)
-        .setTitle(m.template_workbench_open_layout())
-        .setIcon("panels-top-left")
-        .onClick(() => this.#act("open-workbench", openWorkbenchLayout(this))),
     );
     menu.addItem((item) => {
       item
@@ -2175,6 +2173,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   #openPartial(path: string): void {
+    const { leaf } = this;
     this.#act(
       "open-partial",
       Effect.gen(function* () {
@@ -2182,6 +2181,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         if (file)
           yield* openTemplateWorkbench(file, {
             explainUnsupported: false,
+            from: { leaf, place: "tab" },
           });
       }),
     );
@@ -2195,7 +2195,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #createPartial(
     options: CreateSharedPartialOptions,
   ): Effect.Effect<string | null, never, ViewServices> {
-    return createSharedPartialEffect(this.app, options);
+    return createSharedPartialEffect(this.app, { ...options, from: this.leaf });
   }
 
   /**

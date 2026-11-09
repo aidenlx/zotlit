@@ -16,29 +16,32 @@ the Fields Panel: in a tab with room, it then docks as a column at the left
 edge of the view, before the editor.
 
 Use the Scope Case `all`. Open `templates/zotlit-profile.books.md` and run
-**Switch to template workbench view**. Close any other Template Workbench tab
-before each case.
+**Open template workbench**. The Workbench opens in a window of its own. Close
+any other Template Workbench tab before each case.
 
-## The view opens with the editor only
+## The view opens with the Preview in its own window
 
 1. Open the Books Profile as above.
+2. Go back to the main window and run **Open template workbench** again.
 
-Expected: the editor fills the tab. The **Show preview** view action is not
-pressed, and no Fields popover is open. The pane menu shows **Show fields** and,
-below it, **Show preview**, both without a check mark, and has no Preview
-settings.
+Expected: after step 1, the Workbench stands in a new window. The **Show
+preview** view action is pressed, a region named "Preview" stands on the right,
+and no Fields popover is open. The pane menu has no **Open template
+workbench**. After step 2, the same window comes to the front, and no other
+window or tab opens.
 
-## Show and hide the Preview
+## Hide and show the Preview
 
 1. Select the **Show preview** view action.
 2. Select it again.
 
-Expected: after step 1, a region named "Preview" opens on the right and the
-action is pressed. The pane menu shows **Show preview** checked, followed by
+Expected: after step 1, the region named "Preview" closes, and the pane menu
+shows **Show fields** and, below it, **Show preview**, both without a check
+mark, and no Preview settings. After step 2, the region opens on the right and
+the action is pressed. The pane menu shows **Show preview** checked, followed by
 **Resize preview**, **Preview as new note**, **Preview as updated note**, **Preview updated
 section only**, **Automatically refresh preview** and **Show Markdown**. The
-menu has no **Resize fields**.
-After step 2, the region closes, and the chosen Item stays chosen.
+menu has no **Resize fields**. The chosen Item stays chosen.
 
 ## Open and close the Fields popover at every width
 

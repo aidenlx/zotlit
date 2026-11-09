@@ -27,10 +27,6 @@ import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { indexedKeyFileMenu } from "./services/indexed-key/menu";
-import {
-  addCustomizeActions,
-  customizeFileMenu,
-} from "./services/local-bridge/actions";
 import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import {
   addNoteFeatureActions,
@@ -250,16 +246,6 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
     // now, and the stack releases the services the build acquired.
     if (this.unloaded) return;
 
-    // One Customize flow shared by every entry action.
-    const customize = services.customize;
-
-    const customizeDeps = {
-      settings: services.settings,
-      profile: services.profile,
-      customize,
-      bridge: services.bridge,
-    };
-    addCustomizeActions(this, customizeDeps);
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, {
       citekeyEditor: services.citekeyEditor,
@@ -480,7 +466,6 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
         attachmentOpenFileMenu(attachmentOpenDeps),
         templateWorkbenchFileMenu(this.app, templateWorkbenchDeps),
         noteFeatureFileMenu(noteFeatureDeps),
-        customizeFileMenu(this.app, customizeDeps),
         citationPresentationFileMenu(citationPresentationDeps),
         annotationHistoryFileMenu({
           annotations: services.annotationRepository,

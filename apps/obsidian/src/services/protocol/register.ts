@@ -48,7 +48,7 @@ import { forkEach } from "@/lib/effect-stream";
 import type { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
-import { Workspace } from "@/lib/obsidian-workspace";
+import type { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -665,7 +665,7 @@ const handleProfileImportProtocol = Effect.fn(
   if (!query) return ProtocolOutcome.InvalidLink();
   // A failure or a defect ends as ProfileImportFailed; an interrupt (unload)
   // passes through.
-  return yield* openImportedProfile(deps, query.paneType).pipe(
+  return yield* openImportedProfile(deps).pipe(
     Effect.catchCause((cause) =>
       Cause.hasInterruptsOnly(cause)
         ? Effect.interrupt
@@ -691,7 +691,7 @@ class ImportedProfileMissing extends Schema.TaggedError<
 
 /** Import a Profile from the clipboard and open it in the workbench. */
 const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
-  function* (deps: ProtocolDeps, paneType: PaneType | undefined) {
+  function* (deps: ProtocolDeps) {
     yield* Effect.logDebug("Opening clipboard Profile import");
     const profile = yield* deps.importProfile({ source: "clipboard" });
     if (!profile) {
@@ -702,11 +702,8 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     }
     const file = yield* (yield* Vault).getFileByPath(profile.path);
     if (!file) return yield* new ImportedProfileMissing({ path: profile.path });
-    // The workbench picks its own leaf; a named pane hands it one instead.
-    const options = paneType
-      ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
-      : {};
-    yield* explainWorkbenchOpen(yield* openTemplateWorkbench(file, options));
+    // The Workbench opens in its own window, whatever pane the link names.
+    yield* explainWorkbenchOpen(yield* openTemplateWorkbench(file));
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(
       Effect.annotateLogs({ path: profile.path }),
     );

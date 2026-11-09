@@ -222,7 +222,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         freshId,
         async ({ app }) => {
           return app.commands.executeCommandById(
-            "zotlit:customize-note-template",
+            "zotlit:open-template-workbench",
           );
         },
         undefined,

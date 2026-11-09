@@ -4,6 +4,8 @@ import type { App, Plugin, WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
+import { profileRecoveryNotice } from "@/lib/profile-recovery";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type {
   DefaultProfileTarget,
@@ -16,16 +18,12 @@ import {
 } from "@/services/profile/atoms";
 import { templateFolderAtom } from "@/services/settings/atoms";
 
-import { startTemplateWorkbenchAction } from "./actions";
-import type { WorkbenchActionDeps } from "./actions";
+import { explainNoOpen, startTemplateWorkbenchAction } from "./actions";
+import type { WorkbenchActionDeps, WorkbenchOpen } from "./actions";
 import { templateDocumentKind } from "./document-kind";
 import { noteEmbedPlaceholders } from "./embed-placeholder";
-import { openWorkbenchLayout } from "./layout";
-import {
-  customizeProfile,
-  openNativeProfile,
-  openTemplateWorkbench,
-} from "./open";
+import { customizeProfile, openTemplateWorkbench } from "./open";
+import type { WorkbenchOpenOptions } from "./open";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
 
@@ -35,15 +33,16 @@ type RegistrationDeps = TemplateWorkbenchDeps &
     /** The Default Profile, which a note on the Default Profile opens. */
     defaultProfile: DefaultProfileTarget;
   };
+
 /**
  * What the Workbench's commands, header action, and file-menu entries ask of a
- * file: which kind of Template Document it is, which Profile a note opens, and
- * the Customize launch for that Profile.
+ * file: which kind of Template Document it is, which Profile a note opens, the
+ * one open "Open template workbench" runs for it, and the web Workbench launch.
  */
 function workbenchTargets(app: App, deps: RegistrationDeps) {
   const state = () => deps.registry.get(profileStateAtom);
   /** A plain document — the Citation Template or a Shared Partial — which the
-   *  view opens on its own tab without any Profile flow. */
+   *  view opens without any Profile flow. */
   const isPlainDocument = (file: TFile | null): file is TFile =>
     file !== null &&
     templateDocumentKind(file, deps.registry.get(templateFolderAtom)) !==
@@ -54,24 +53,67 @@ function workbenchTargets(app: App, deps: RegistrationDeps) {
     (file.path === state()?.defaultDocumentPath ||
       (state()?.profiles ?? []).some((profile) => profile.path === file.path) ||
       file.basename.startsWith("zotlit-profile."));
-  const targetOf = (file: TFile | null) => {
-    if (isProfile(file)) return file;
+  /** The Profile a Literature Note carries, or the stamp the vault holds no Profile for. */
+  const noteProfile = (file: TFile | null) => {
     if (!file || !itemKeyFromFrontmatter(app.metadataCache.getFileCache(file)))
       return null;
-    const resolved = deps.registry.get(
-      // oxlint-disable-next-line obsidianmd/no-tfile-tfolder-cast -- the checks above already prove a file
-      fileProfileValueAtom((file as TFile).path),
-    );
-    if (!resolved?.ok) return null;
-    if (resolved.profile.selector === "default") return deps.defaultProfile;
+    const resolved = deps.registry.get(fileProfileValueAtom(file.path));
+    if (!resolved) return null;
+    if (!resolved.ok)
+      return {
+        kind: "unknown" as const,
+        diagnostic: unknownProfileDiagnostic(resolved.stamped.stamp, {
+          path: file.path,
+        }),
+      };
+    if (resolved.profile.selector === "default")
+      return { kind: "open" as const, target: deps.defaultProfile };
     const profile = (state()?.profiles ?? []).find(
       (entry) => entry.id === resolved.profile.selector,
     );
-    return profile ? app.vault.getFileByPath(profile.path) : null;
+    const target = profile ? app.vault.getFileByPath(profile.path) : null;
+    return target ? { kind: "open" as const, target } : null;
   };
-  const customizeTarget = (
+  const targetOf = (file: TFile | null): NativeProfileTarget | null => {
+    if (isProfile(file)) return file;
+    const note = noteProfile(file);
+    return note?.kind === "open" ? note.target : null;
+  };
+  /**
+   * "Open template workbench" for `file`: a Template Document opens itself,
+   * starting from `leaf` when that is the document's own Markdown leaf; a
+   * Literature Note opens its Profile with the note's Item, and the note as
+   * the one to update. A note on the built-in Default writes its document
+   * first, so the reader edits at once. `null` when `file` is neither.
+   */
+  const workbenchOpen = (
+    file: TFile | null,
+    leaf?: WorkspaceLeaf,
+  ): WorkbenchOpen | null => {
+    if (isPlainDocument(file) || isProfile(file)) {
+      const options: WorkbenchOpenOptions = {
+        ...(isPlainDocument(file) ? { explainUnsupported: false } : {}),
+        ...(leaf ? { from: { leaf, place: "replace" } } : {}),
+      };
+      return openTemplateWorkbench(file, options);
+    }
+    const note = noteProfile(file);
+    if (!note || !file) return null;
+    if (note.kind === "unknown")
+      return explainNoOpen(profileRecoveryNotice(app, note.diagnostic));
+    const itemIndexedKey = itemKeyFromFrontmatter(
+      app.metadataCache.getFileCache(file),
+    );
+    return openTemplateWorkbench(note.target, {
+      ...(itemIndexedKey ? { itemIndexedKey } : {}),
+      originatingNote: file,
+      customize: true,
+    });
+  };
+  /** The web Workbench launch for `target`, through the Customize flow. */
+  const webTarget = (
     target: NativeProfileTarget,
-    options: { itemIndexedKey?: string; destination?: "web" | "native" } = {},
+    options: { itemIndexedKey?: string } = {},
   ) => {
     const profileId =
       target instanceof TFile
@@ -81,20 +123,16 @@ function workbenchTargets(app: App, deps: RegistrationDeps) {
               (profile) => profile.path === target.path,
             )?.id
         : "default";
-    if (!profileId)
-      return openNativeProfile(target, {
-        ...options,
-        customize: true,
-      });
+    if (!profileId) return openTemplateWorkbench(target, options);
     return customizeProfile({
       profileId,
-      ...(options.destination ? { destination: options.destination } : {}),
+      destination: "web",
       ...(options.itemIndexedKey
         ? { item: { key: options.itemIndexedKey, title: null } }
         : {}),
     });
   };
-  return { isPlainDocument, isProfile, targetOf, customizeTarget };
+  return { isPlainDocument, isProfile, targetOf, workbenchOpen, webTarget };
 }
 
 /** Register the Template Workbench view, its commands, and its header actions. */
@@ -103,7 +141,7 @@ export function registerTemplateWorkbenchView(
   deps: RegistrationDeps,
 ): void {
   if (!Platform.isDesktopApp) return;
-  const { isPlainDocument, isProfile, targetOf, customizeTarget } =
+  const { isPlainDocument, isProfile, targetOf, workbenchOpen, webTarget } =
     workbenchTargets(plugin.app, deps);
   plugin.registerView(
     TEMPLATE_WORKBENCH_VIEW_TYPE,
@@ -119,31 +157,16 @@ export function registerTemplateWorkbenchView(
     id: "open-template-workbench",
     name: m.template_workbench_open_layout(),
     checkCallback(checking) {
-      const editor = plugin.app.workspace.getActiveViewOfType(
-        TemplateWorkbenchView,
-      );
-      if (!editor) return false;
-      if (!checking)
-        startTemplateWorkbenchAction(
-          deps,
-          "open-workbench",
-          openWorkbenchLayout(editor),
-        );
-      return true;
-    },
-  });
-  plugin.addCommand({
-    id: "customize-profile",
-    name: m.template_workbench_open_layout(),
-    checkCallback(checking) {
-      const target = plugin.app.workspace.getActiveFile();
-      if (!isProfile(target)) return false;
-      if (!checking)
-        startTemplateWorkbenchAction(
-          deps,
-          "customize",
-          customizeTarget(target, { destination: "native" }),
-        );
+      const { workspace } = plugin.app;
+      // The built-in Default draft has no file; its view opens it all the same.
+      const editor = workspace.getActiveViewOfType(TemplateWorkbenchView);
+      const active = workspace.getActiveFile();
+      const open =
+        editor && !editor.file && editor.isDefaultDraft
+          ? openTemplateWorkbench(deps.defaultProfile)
+          : workbenchOpen(active, activeLeafFor(plugin.app, active));
+      if (!open) return false;
+      if (!checking) startTemplateWorkbenchAction(deps, "open-workbench", open);
       return true;
     },
   });
@@ -155,52 +178,10 @@ export function registerTemplateWorkbenchView(
         const target = targetOf(plugin.app.workspace.getActiveFile());
         if (!target) return false;
         if (!checking)
-          startTemplateWorkbenchAction(
-            deps,
-            "open-web",
-            customizeTarget(target, { destination: "web" }),
-          );
+          startTemplateWorkbenchAction(deps, "open-web", webTarget(target));
         return true;
       },
     });
-  plugin.addCommand({
-    id: "open-template-workbench-view",
-    name: m.template_workbench_open(),
-    checkCallback(checking) {
-      const active = plugin.app.workspace.getActiveFile();
-      const leaf = activeLeafFor(plugin.app, active);
-      // A plain document opens without any Profile flow, on the route the
-      // file menu and the Markdown header action already take.
-      if (isPlainDocument(active)) {
-        if (!checking)
-          startTemplateWorkbenchAction(
-            deps,
-            "open-editor",
-            openTemplateWorkbench(active, {
-              explainUnsupported: false,
-              ...(leaf ? { leaf } : {}),
-            }),
-          );
-        return true;
-      }
-      const target = targetOf(active);
-      if (!target) return false;
-      if (!checking) {
-        const itemIndexedKey =
-          active &&
-          itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(active));
-        startTemplateWorkbenchAction(
-          deps,
-          "open-editor",
-          openNativeProfile(target, {
-            ...(itemIndexedKey ? { itemIndexedKey } : {}),
-            ...(leaf ? { leaf } : {}),
-          }),
-        );
-      }
-      return true;
-    },
-  });
   // A note operation that refused offers this route back: the Workbench opens
   // on the document whose call refused, so the repair is one click away. The
   // Default Profile stands in when the refusal named no document — a legacy
@@ -209,16 +190,13 @@ export function registerTemplateWorkbenchView(
     plugin.app.workspace.on("zotlit:open-template-workbench", (request) => {
       const { document, problem } = request;
       const file = document ? plugin.app.vault.getFileByPath(document) : null;
-      const options = {
-        explainUnsupported: false,
-        ...(problem ? { problem } : {}),
-      };
       startTemplateWorkbenchAction(
         deps,
         "open-workbench",
-        file
-          ? openTemplateWorkbench(file, options)
-          : openNativeProfile(deps.defaultProfile, options),
+        openTemplateWorkbench(file ?? deps.defaultProfile, {
+          explainUnsupported: false,
+          ...(problem ? { problem } : {}),
+        }),
       );
     }),
   );
@@ -243,18 +221,15 @@ export function registerTemplateWorkbenchView(
       if (!actions.has(view))
         actions.set(
           view,
-          view.addAction("file-pen-line", m.template_workbench_open(), () => {
-            const file = view.file;
-            if (!file) return;
-            startTemplateWorkbenchAction(
-              deps,
-              "open-editor",
-              openTemplateWorkbench(file, {
-                leaf: view.leaf,
-                ...(isPlainDocument(file) ? { explainUnsupported: false } : {}),
-              }),
-            );
-          }),
+          view.addAction(
+            "file-pen-line",
+            m.template_workbench_open_layout(),
+            () => {
+              const opening = workbenchOpen(view.file, view.leaf);
+              if (opening)
+                startTemplateWorkbenchAction(deps, "open-workbench", opening);
+            },
+          ),
         );
   }
   plugin.registerEvent(
@@ -274,54 +249,26 @@ export function templateWorkbenchFileMenu(
   deps: RegistrationDeps,
 ): FileMenuSegment {
   if (!Platform.isDesktopApp) return () => {};
-  const { isPlainDocument, isProfile, targetOf, customizeTarget } =
+  const { isPlainDocument, targetOf, workbenchOpen, webTarget } =
     workbenchTargets(app, deps);
   return (menu, { file, leaf: menuLeaf, itemKey }) => {
     // The Workbench view's own pane menu raises this event too. Inside the
     // view these entries repeat the routes it already offers, so the file
     // menu keeps them for the surfaces that stand outside the Workbench.
     if (menuLeaf?.view instanceof TemplateWorkbenchView) return;
-    if (isPlainDocument(file)) {
-      const leaf = activeLeafFor(app, file);
-      menu.addItem((item) =>
-        item
-          .setSection(MENU_SECTION.open)
-          .setTitle(m.template_workbench_open())
-          .setIcon("file-pen-line")
-          .onClick(() =>
-            startTemplateWorkbenchAction(
-              deps,
-              "open-editor",
-              openTemplateWorkbench(file, {
-                explainUnsupported: false,
-                ...(leaf ? { leaf } : {}),
-              }),
-            ),
-          ),
-      );
-      return;
-    }
-    const target = targetOf(file);
-    if (!target) return;
-    const options = itemKey ? { itemIndexedKey: itemKey } : {};
-    if (isProfile(file))
+    const open = workbenchOpen(file, activeLeafFor(app, file));
+    if (open)
       menu.addItem((item) =>
         item
           .setSection(MENU_SECTION.open)
           .setTitle(m.template_workbench_open_layout())
-          .setIcon("panels-top-left")
+          .setIcon("file-pen-line")
           .onClick(() =>
-            startTemplateWorkbenchAction(
-              deps,
-              "customize",
-              customizeTarget(target, {
-                ...options,
-                destination: "native",
-              }),
-            ),
+            startTemplateWorkbenchAction(deps, "open-workbench", open),
           ),
       );
-    if (deps.webWorkbenchEnabled)
+    const target = isPlainDocument(file) ? null : targetOf(file);
+    if (target && deps.webWorkbenchEnabled)
       menu.addItem((item) =>
         item
           .setSection(MENU_SECTION.open)
@@ -331,30 +278,10 @@ export function templateWorkbenchFileMenu(
             startTemplateWorkbenchAction(
               deps,
               "open-web",
-              customizeTarget(target, {
-                ...options,
-                destination: "web",
-              }),
+              webTarget(target, itemKey ? { itemIndexedKey: itemKey } : {}),
             ),
           ),
       );
-    menu.addItem((item) =>
-      item
-        .setSection(MENU_SECTION.open)
-        .setTitle(m.template_workbench_open())
-        .setIcon("file-pen-line")
-        .onClick(() => {
-          const leaf = activeLeafFor(app, file);
-          startTemplateWorkbenchAction(
-            deps,
-            "open-editor",
-            openNativeProfile(target, {
-              ...options,
-              ...(leaf ? { leaf } : {}),
-            }),
-          );
-        }),
-    );
   };
 }
 

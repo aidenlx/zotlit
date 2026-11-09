@@ -5,10 +5,13 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier, reportOutcome } from "@/lib/notifier";
+import type { NoticeMessage } from "@/lib/notifier";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import type { Customize } from "@/services/local-bridge/customize";
 import type { Profile } from "@/services/profile/service";
+
+import type { NativeOpenError } from "./open";
 
 /**
  * Run a Template Workbench action and report its outcome: a failure is logged
@@ -58,6 +61,20 @@ export type WorkbenchActionServices =
   | Workspace
   | Customize
   | Profile;
+
+/** An entry point's open of the Workbench, or the notice that stands in for it. */
+export type WorkbenchOpen = Effect.Effect<
+  WorkbenchOpened | void,
+  NativeOpenError,
+  WorkbenchActionServices
+>;
+
+/** Show `message` in place of an open, for an entry point that cannot open. */
+export const explainNoOpen = Effect.fn("TemplateWorkbench.explainNoOpen")(
+  function* (message: NoticeMessage) {
+    yield* (yield* Notifier).show(message);
+  },
+);
 
 /** What a plain Obsidian callback needs to start a Workbench action. */
 export interface WorkbenchActionDeps {

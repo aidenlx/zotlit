@@ -83,7 +83,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       vaultId,
       async ({ app }) => {
         return app.commands.executeCommandById(
-          "zotlit:customize-note-template",
+          "zotlit:open-template-workbench",
         );
       },
       undefined,
@@ -409,7 +409,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       vaultId,
       async ({ app }) => {
         return app.commands.executeCommandById(
-          "zotlit:customize-note-template",
+          "zotlit:open-template-workbench",
         );
       },
       undefined,
