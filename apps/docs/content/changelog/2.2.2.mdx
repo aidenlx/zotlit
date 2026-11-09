@@ -15,48 +15,15 @@ This release rebuilds the Template Workbench as one view. ZotLit Companion 2.2.2
 
 ### The Template Workbench in one view
 
-![The Template Workbench in its own window, with the Reading notes profile's note template on the left and the Note preview on the right showing the rendered note for Rougier et al. (2014), "Ten Simple Rules for Better Figures", with its properties, title, and highlighted annotations](/img/changelog/template-workbench-window.webp)
+![The Template Workbench in its own window, with the Reading notes profile's note template in the editor, the Note preview beside it, and the Fields panel open at the right with the details for the paper's three authors](/img/changelog/template-workbench-fields.webp)
 
-The template editor, the Fields panel, and the Note preview now sit together in one view. Before, they were three separate tabs. All three show the same paper, so you can choose a paper once and see it everywhere.
+The template editor, the Fields panel, and the Note preview now sit together in one view, in its own Obsidian window. Choose a paper once and all three show it.
 
-<Command inline name={m.template_workbench_open_layout()} /> opens the view in
-its own Obsidian window, with the Note preview shown. If that window is already
-open, ZotLit brings it to the front.
+- **Note preview:** beside the editor in a wide window, under it in a narrow one. A button in its header switches between reading view and Markdown.
+- **Fields panel:** select <UiLabel name={m.workbench_view_fields()} /> to find a field, see its value, and insert it. Pin it to keep it beside the editor.
+- **Dividers:** drag them to resize the parts, as in Obsidian.
 
-See [Template Workbench View](/docs/concepts/template-workbench-view) and [Customize a template](/docs/how-to/customize-a-template).
-
-### A layout that fits the window
-
-![The Template Workbench in a narrow window, with the note template at the top and the Note preview below it showing the rendered properties and title of the paper](/img/changelog/template-workbench-narrow.webp)
-
-- In a wide window, the Note preview stands beside the editor. In a narrow window, it moves under the editor, so you still see the template and its result together.
-- Drag the dividers between the parts to resize them. They look and work like Obsidian's own pane dividers. You can also focus a divider and use the arrow keys.
-- Resizing the window moves the parts and changes nothing else. The view remembers the sizes you set.
-
-See [Panels in a narrow view](/docs/concepts/template-workbench-view#narrow-view).
-
-### The Fields panel
-
-![The Template Workbench with the Fields panel open at the right, listing the paper's Zotero fields in collapsible sections, and the details for Authors beside it showing the three authors, the template path, a snippet that joins them in one line, and Insert and Copy buttons](/img/changelog/template-workbench-fields.webp)
-
-Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields panel. It lists the template fields of the chosen paper, with their values.
-
-- It opens as a popover at the right edge, and an insert closes it. To keep it open while you write, select <UiLabel name={m.workbench_fields_pin()} />. The panel then stays as a column beside the editor.
-- Type in the search box to find a field by name, template path, or value.
-- Fields sit in sections. Select a section header to collapse or expand it.
-- Select a row to see its details: the full value, the template path, and what the field writes in your note. <UiLabel name={m.workbench_fields_insert()} /> and <UiLabel name={m.workbench_fields_copy()} /> sit there too.
-- A list, such as the authors, now shows every item, not only the first. Insert it <UiLabel name={m.workbench_fields_details_form_joined()} />, or as <UiLabel name={m.workbench_fields_details_form_loop()} /> to write each item on its own list line. A note for a paper with three authors now names all three.
-- The panel's <UiLabel name={m.workbench_pane_more_options()} /> menu has <UiLabel name={m.workbench_choose_item()} />, <UiLabel name={m.template_data_explorer_menu_export_json()} />, and <UiLabel name={m.command_copy_item_key_name()} />.
-
-See [The Fields panel](/docs/concepts/template-workbench-view#fields-panel) and [Pin the Fields panel](/docs/concepts/template-workbench-view#pin-fields).
-
-### The Note preview
-
-- The header with the note's <UiLabel name={m.workbench_result_filename()} /> stays in view while you scroll a long preview.
-- A button in the header switches between reading view and Markdown.
-- The preview's own <UiLabel name={m.workbench_pane_more_options()} /> menu holds its settings. Examples are <UiLabel name={m.workbench_preview_as_new_note()} />, <UiLabel name={m.workbench_preview_as_updated_note()} />, and <UiLabel name={m.workbench_preview_auto_refresh()} />.
-
-See [The Preview panel](/docs/concepts/template-workbench-view#preview-panel).
+See [Template Workbench View](/docs/concepts/template-workbench-view).
 
 ## Breaking Changes
 
@@ -79,7 +46,6 @@ A workspace that kept a Note preview tab from 2.2.1 shows it as an empty tab. Cl
 ### Other improvements
 
 - The view's pane menu is shorter. Each action in the view header also has an entry there.
-- The web Template Workbench now has the same layout and Fields panel as Obsidian.
 - Note embeds in the Note preview now show a placeholder with the note's name and whether the note exists. Before, the preview loaded the embedded note or offered to create a missing one.
 - Query blocks and query file embeds in the Note preview now list each view with its layout and rows. They mark the views that show <UiLabel name={m.query_view_placeholder_note_item()} />, and they show problems in the query text.
 - Each Template Workbench tab now links to the docs page for that part of the template, such as <UiLabel name={m.workbench_docs_properties()} /> on the Properties tab. The <UiLabel name={m.workbench_help()} /> menu has the <UiLabel name={m.workbench_docs_guide()} />, <UiLabel name={m.workbench_docs_note()} />, and <UiLabel name={m.workbench_docs_data()} />. The template data explorer links to the <UiLabel name={m.template_data_explorer_docs()} />.
