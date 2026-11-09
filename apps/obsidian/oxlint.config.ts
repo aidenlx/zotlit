@@ -20,7 +20,7 @@ const obsidianImportPaths = [
     importNames: ["HoverPopover"],
     allowTypeImports: true,
     message:
-      "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
+      "Extend HoverPopover from @/lib/hover-popover; it cancels Obsidian's popover timers on the window that armed them and keeps a popover in its own window (see policies/hover-popover.md).",
   },
   ...uniqueIdPaths,
 ];
@@ -125,6 +125,7 @@ export default defineConfig({
     "effecttsgo/global-console": "error",
     "effecttsgo/global-console-in-effect": "error",
     "zotlit-obsidian/no-cross-window-instanceof": "error",
+    "zotlit-obsidian/no-global-resize-observer": "error",
     "zotlit-keyboard/no-layer-check": "error",
     "zotlit-menu/no-literal-section": "error",
     "zotlit-services/service-tag-id": "error",
@@ -528,6 +529,18 @@ export default defineConfig({
       rules: { "zotlit-obsidian/no-global-timer": "error" },
     },
     {
+      // So does UI that services draw, such as a picker; tests keep the
+      // timers their fakes replace.
+      files: ["src/**"],
+      excludeFiles: [
+        "**/*.test.{ts,tsx}",
+        "**/*.browser-test.ts",
+        "**/__fixtures__/**",
+        "**/__fixtures__.{ts,tsx}",
+      ],
+      rules: { "zotlit-obsidian/no-global-timer": "error" },
+    },
+    {
       // Guarded private API reaches its surface through obsidian-ex.d.ts.
       files: ["src/lib/obsidian-private/**"],
       rules: { "zotlit-private/no-unknown-cast": "error" },
@@ -637,7 +650,7 @@ export default defineConfig({
     },
     {
       // The one module that wraps Obsidian's popover itself.
-      files: ["src/lib/popout-aware-hover-popover.ts"],
+      files: ["src/lib/hover-popover.ts"],
       rules: {
         "no-restricted-imports": [
           "error",
@@ -682,14 +695,13 @@ export default defineConfig({
       rules: { "zotlit-css/no-obsidian-class": "off" },
     },
     {
-      // Code written before the rule; new code follows it, and a file moves
-      // off this list when it is next reworked.
+      // Background work that stands in no window, which lives as long as the
+      // plugin and so as the main window.
       files: [
-        "src/views/cited-by/CitedBy.tsx",
-        "src/views/query-view/query-file-document.ts",
-        "src/views/query-view/view.tsx",
-        "src/views/welcome/companion-refresh.ts",
-        "src/views/welcome/view.tsx",
+        "src/lib/disposables.ts",
+        "src/lib/plugin-lifecycle.ts",
+        "src/services/item-query/measure.ts",
+        "src/services/log/vault-sink.ts",
       ],
       rules: { "zotlit-obsidian/no-global-timer": "off" },
     },

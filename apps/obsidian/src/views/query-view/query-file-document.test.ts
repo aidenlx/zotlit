@@ -52,6 +52,7 @@ function open(
     {
       show: () => shows++,
       saveFailed: (value) => failed.push(value),
+      win: () => globalThis as unknown as Window,
     },
   );
   document.selectView(wanted);

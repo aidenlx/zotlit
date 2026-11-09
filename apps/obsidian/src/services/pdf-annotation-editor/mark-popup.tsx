@@ -21,8 +21,8 @@ import type { Root } from "react-dom/client";
 
 import { IconButton } from "@/components/obsidian/icon-button";
 import { AppContext } from "@/lib/app-context";
+import { HoverPopover } from "@/lib/hover-popover";
 import * as m from "@/lib/i18n/generated/messages";
-import { PopoutAwareHoverPopover } from "@/lib/popout-aware-hover-popover";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
@@ -444,6 +444,8 @@ export interface MarkPopupDeps {
   parent: HoverParent;
   /** The virtual point the popup hangs from, in client coordinates. */
   anchor: Point;
+  /** The document of the PDF view, whose client coordinates the anchor is in. */
+  doc: () => Document;
   /**
    * What the popup shows, run on open and on every refresh. `undefined`
    * leaves what it shows as it stands.
@@ -466,10 +468,11 @@ export interface MarkPopupDeps {
  * a render itself sets off — an editor ending its session as it unmounts —
  * runs once that render is done, rather than inside it.
  */
-export class MarkPopup extends PopoutAwareHoverPopover {
+export class MarkPopup extends HoverPopover {
   readonly #content: HTMLElement;
   readonly #root: Root;
   readonly #render;
+  readonly #doc;
   #anchor: Point;
   #mounted = true;
   #rendering = false;
@@ -478,9 +481,10 @@ export class MarkPopup extends PopoutAwareHoverPopover {
   #resize: ResizeObserver | null = null;
   #resizeWin: Window | null = null;
 
-  constructor({ parent, anchor, render, onHide }: MarkPopupDeps) {
+  constructor({ parent, anchor, doc, render, onHide }: MarkPopupDeps) {
     super(parent, null, 0, anchor);
     this.#anchor = anchor;
+    this.#doc = doc;
     this.setIsFocused(true);
     this.hoverEl.addClass(themeHook.pdfMarkPopup);
     this.#render = render;
@@ -538,6 +542,10 @@ export class MarkPopup extends PopoutAwareHoverPopover {
     } finally {
       this.#rendering = false;
     }
+  }
+
+  protected override homeDocument(): Document {
+    return this.#doc();
   }
 
   /**

@@ -162,6 +162,10 @@ if (typeof HTMLElement !== "undefined") {
   HTMLElement.prototype.toggle ??= function (visible) {
     this.style.display = visible ? "" : "none";
   };
+  HTMLElement.prototype.setCssProps ??= function (props) {
+    for (const [name, value] of Object.entries(props))
+      this.style.setProperty(name, value);
+  };
 }
 
 // Electron's renderer carries `requestIdleCallback`/`cancelIdleCallback`;

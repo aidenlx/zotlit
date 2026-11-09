@@ -12,7 +12,6 @@ import type {
   Workspace,
   WorkspaceLeaf,
 } from "obsidian";
-import type { DragEvent as ReactDragEvent } from "react";
 import { expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -482,11 +481,7 @@ function dragFixture() {
     const dataTransfer = new DataTransfer();
     const preventDefault = vi.fn();
     handler(
-      {
-        currentTarget: source,
-        dataTransfer,
-        preventDefault,
-      } as unknown as ReactDragEvent<HTMLElement>,
+      { currentTarget: source, dataTransfer, preventDefault },
       annotation,
     );
     return { dataTransfer, preventDefault };

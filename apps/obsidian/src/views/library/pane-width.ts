@@ -10,6 +10,7 @@
 // @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import { setTooltip } from "obsidian";
 
+import { observeResize } from "@/lib/observe-resize";
 import { paneDivider } from "@/lib/pane-divider";
 import { pointerDrag } from "@/lib/pointer-drag";
 import type { PointerDrag } from "@/lib/pointer-drag";
@@ -87,7 +88,7 @@ export class PaneWidth {
   readonly #axis: "x" | "y";
   /** The size on screen, in pixels. */
   #width: number;
-  #observer: ResizeObserver | null = null;
+  #observer: Disposable | null = null;
   #drag: AbortController | null = null;
 
   constructor(
@@ -129,13 +130,12 @@ export class PaneWidth {
 
   /** Follow the shell's size, which sets the most the pane can take. */
   load(): void {
-    if (typeof ResizeObserver === "undefined") return;
-    this.#observer = new ResizeObserver(() => this.apply());
-    this.#observer.observe(this.#options.shell);
+    const { shell } = this.#options;
+    this.#observer = observeResize(shell, [shell], () => this.apply());
   }
 
   unload(): void {
-    this.#observer?.disconnect();
+    this.#observer?.[Symbol.dispose]();
     this.#observer = null;
     this.#drag?.abort();
   }

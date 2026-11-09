@@ -42,6 +42,7 @@ export abstract class ItemSearchModal extends SuggestModal<SearchHit> {
         cls: "suggestion-empty",
         text: m.modal_item_search_loading(),
       }),
+    win: () => this.containerEl.win,
   });
 
   constructor(deps: ItemSearchDeps) {

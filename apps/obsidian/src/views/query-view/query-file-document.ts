@@ -43,6 +43,8 @@ export interface DocumentEvents {
   show: () => void;
   /** The last save failed, or a later one worked. */
   saveFailed: (failed: boolean) => void;
+  /** The window the view stands in, whose timer holds a typed save. */
+  win: () => Window;
 }
 
 /** How long typed text, such as a limit or a view name, waits after the last key before it is saved. */
@@ -64,7 +66,7 @@ export class QueryFileDocument {
   /** The place of the view on screen in the file's list; `-1` for none. */
   #shown = -1;
   /** The text of a typed change that waits for its delay before it is saved. */
-  #typedSave: { text: string; timer: number } | null = null;
+  #typedSave: { text: string; timer: number; win: Window } | null = null;
   /** The host's last write, which settles once it is done. Never rejects. */
   #writing: Promise<void> = Promise.resolve();
   /** How many writes the host has to do or to finish. */
@@ -318,16 +320,18 @@ export class QueryFileDocument {
     } else this.#choose();
     this.#cancelTypedSave();
     if (typed) {
-      const timer = window.setTimeout(() => {
+      const win = this.#events.win();
+      const timer = win.setTimeout(() => {
         this.#typedSave = null;
         this.#save(text);
       }, SAVE_DELAY_MS);
-      this.#typedSave = { text, timer };
+      this.#typedSave = { text, timer, win };
     } else this.#save(text);
   }
 
   #cancelTypedSave(): void {
-    if (this.#typedSave) window.clearTimeout(this.#typedSave.timer);
+    if (this.#typedSave)
+      this.#typedSave.win.clearTimeout(this.#typedSave.timer);
     this.#typedSave = null;
   }
 

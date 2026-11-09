@@ -8,6 +8,7 @@ function setup() {
     hide: () => calls.push("hide"),
     reveal: () => calls.push("reveal"),
     showLoading: () => calls.push("loading"),
+    win: () => globalThis as unknown as Window,
   });
   return { calls, gate };
 }

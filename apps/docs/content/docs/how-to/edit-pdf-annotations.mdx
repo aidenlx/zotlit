@@ -193,7 +193,7 @@ Press `Escape` during a drag to put the mark back without saving. A drag that en
 | Text                   | Six squares, on the four corners and the middle of the left and right sides.       | A side handle changes the width and keeps the font size. A corner scales the box and the font size together. The inside of the box moves it. |
 | Note                   | None.                                                                              | The note icon moves the note.                                                                                                                |
 
-An image rectangle stays on its page and keeps at least 10 points on each side. A text box keeps at least 10 points of width, and its height follows its text after a side handle moves. When you release a side handle on a box of one line, the box fits the width of its text. On a rotated text box, the handles rotate with the box. A highlight or underline range keeps at least one character. Its start stays on the annotation's page, and its end can move onto the next page but no further. A drag on the body of a highlight selects text as usual.
+An image rectangle stays on its page and keeps at least 10 points on each side. A text box keeps at least 10 points of width, and its height follows its text after a side handle moves. When you release a side handle on a box of one line, the box fits the width of its text. On a rotated text box, the handles rotate with the box. A highlight or underline range keeps at least one character. Its start stays on the annotation's page, and its end can move onto the next page but no further. A drag on the body of a selected highlight or underline puts it into a note; see [Drag an annotation into a note](#drag-into-note).
 
 ### Adjust from the keyboard
 
@@ -222,6 +222,23 @@ Each drag release and each key press is one change. ZotLit sends it to Zotero at
 If the annotation changed in Zotero while you adjusted it, the annotation card shows <UiLabel name={m.annot_view_conflict_title()} /> and says that the position changed in Zotero. For a highlight or underline, the card also shows the Zotero quote beside yours. Select <UiLabel name={m.annot_view_conflict_apply_again()} /> to save your position over the Zotero one, or <UiLabel name={m.annot_view_conflict_discard()} /> to keep the Zotero position. Until you select one, the mark shows the Zotero position.
 
 If Zotero refuses the change, the mark returns to its saved position, and a notice says that the annotation was not adjusted and why.
+
+## Drag an annotation into a note [#drag-into-note]
+
+Put an annotation into a literature note straight from the PDF.
+
+1. Open the note beside the PDF, in Source mode or Live Preview.
+2. Click the annotation mark in the PDF to select it.
+3. Press on the selected mark again and drag it into the note. A small label with the annotation's type icon and its text follows the pointer.
+4. Release the pointer where the annotation belongs in the note.
+
+ZotLit inserts the same text as a drag from the annotation view. See [Pull annotations into a note](/docs/how-to/use-annotation-view#pull-into-note).
+
+Only the selected mark drags. On a highlight or underline that is not selected, a press starts a text selection as usual. Highlights and underlines drag into the note by their body.
+
+While editing is enabled, a drag on the body of a note, text, image, or ink mark moves the mark; see [Adjust an annotation's position](#adjust-an-annotations-position). These marks drag into a note when editing is off or the annotation is [locked](#locked).
+
+When text is selected in the PDF, a drag of that text inserts only the plain text, with no template.
 
 ## Delete an annotation
 
