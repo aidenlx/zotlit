@@ -15,10 +15,7 @@ import type {
   EffectiveReadMode,
 } from "@/services/database/read-source";
 import { PluginSettings } from "@/services/settings/service";
-import {
-  getZoteroProfilesRoot,
-  PREFS_FILENAME,
-} from "@/services/zotero-pref/prefs-file";
+import { PREFS_FILENAME } from "@/services/zotero-pref/prefs-file";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type {
   ZoteroPrefSnapshot,
@@ -442,11 +439,21 @@ function renderProfileDirRow(
       if (value === PICKER_BROWSE) {
         const snapshot = ctx.tab.sync(currentPref);
         d.setValue(selectedValue(snapshot)); // browse isn't itself a saved choice
-        void browseForDir({
-          title: m.settings_db_profile_dir_dialog_title(),
-          startPath: snapshot.profileDirOverride ?? getZoteroProfilesRoot(),
-          onPick: setProfileDir,
-        });
+        void ctx.tab.run(
+          Effect.gen(function* () {
+            const pref = yield* ZoteroPref;
+            const startPath =
+              snapshot.profileDirOverride ?? (yield* pref.profilesRoot);
+            yield* Effect.promise(() =>
+              browseForDir({
+                title: m.settings_db_profile_dir_dialog_title(),
+                startPath,
+                onPick: setProfileDir,
+              }),
+            );
+          }),
+          m.settings_failed_db_profile_dir(),
+        );
       } else if (value === PICKER_AUTO) {
         setProfileDir(null);
       } else {

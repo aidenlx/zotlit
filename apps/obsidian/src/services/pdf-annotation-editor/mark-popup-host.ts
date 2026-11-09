@@ -12,22 +12,14 @@ import type { ReactNode } from "react";
 
 import { getLogger } from "@/lib/log";
 import { hasActiveMenu } from "@/lib/menu";
+import { watch } from "@/lib/view-atoms";
 
 import type { Point } from "./hit-test";
 import { MarkPopup } from "./mark-popup";
-import {
-  sameFlatList,
-  drawsNoPopup,
-  selectCreateRow,
-  selectFloatingHead,
-  selectSelectedRow,
-} from "./reader-surface-state";
-import type {
-  Floating,
-  PopuplessFloating,
-  ReaderSurfaceState,
-  ReaderSurfaceStore,
-} from "./reader-surface-state";
+import { current } from "./reader-surface-model";
+import type { ReaderSurface } from "./reader-surface-model";
+import { drawsNoPopup, selectFloatingHead } from "./reader-surface-state";
+import type { Floating, PopuplessFloating } from "./reader-surface-state";
 
 const logger = getLogger("pdf-annotation-editor");
 
@@ -56,7 +48,9 @@ export interface MarkPopupVariant {
 export interface MarkPopupHostDeps {
   /** The hover parent, which is the binding rather than the PDF view. */
   parent: HoverParent;
-  store: ReaderSurfaceStore;
+  /** The document of the PDF view, which the popup stands in. */
+  doc: () => Document;
+  surface: ReaderSurface;
   /**
    * What each floating kind draws, and where it hangs. An image capture, a
    * Text Draft and a group have no popup.
@@ -82,13 +76,11 @@ export class MarkPopupHost implements Disposable {
 
   constructor(deps: MarkPopupHostDeps) {
     this.#deps = deps;
-    this.#unsubscribe = deps.store.subscribe((state, previous) => {
-      if (
-        state.floating !== previous.floating ||
-        !sameFlatList(rowOf(state), rowOf(previous))
-      )
-        this.#place({ refresh: true });
-    });
+    this.#unsubscribe = watch(
+      deps.surface.registry,
+      deps.surface.model.popup,
+      () => this.#place({ refresh: true }),
+    );
     this.#place({ refresh: false });
   }
 
@@ -114,7 +106,7 @@ export class MarkPopupHost implements Disposable {
   }
 
   #place({ refresh }: { refresh: boolean }): void {
-    const state = this.#deps.store.getState();
+    const state = current(this.#deps.surface);
     const { floating } = state;
     // A press on a grip hides the popup, so it never covers the edge being
     // placed; the release hangs it again from the mark as it then stands.
@@ -157,6 +149,7 @@ export class MarkPopupHost implements Disposable {
     const popup: MarkPopup = new MarkPopup({
       parent: this.#deps.parent,
       anchor,
+      doc: this.#deps.doc,
       render: (content) => this.#render(content),
       onHide: () => {
         if (this.#popup === popup) this.#popup = null;
@@ -168,7 +161,7 @@ export class MarkPopupHost implements Disposable {
 
   /** The variant's content, keyed by what it floats for. */
   #render(content: HTMLElement): ReactNode | undefined {
-    const state = this.#deps.store.getState();
+    const state = current(this.#deps.surface);
     const { floating } = state;
     if (drawsNoPopup(floating)) return undefined;
     const view = this.#deps.variants[floating.kind].render(content);
@@ -179,7 +172,7 @@ export class MarkPopupHost implements Disposable {
 
   /**
    * The field is cleared before the popup hides: unmounting its content can
-   * end an editor's session, and the store change that follows must find no
+   * end an editor's session, and the state change that follows must find no
    * popup to refresh.
    */
   #hide(): void {
@@ -187,11 +180,4 @@ export class MarkPopupHost implements Disposable {
     this.#popup = null;
     popup?.hide();
   }
-}
-
-/** The row of whatever floats, as flat records. */
-function rowOf(state: ReaderSurfaceState): readonly object[] {
-  return state.floating.kind === "create"
-    ? selectCreateRow(state)
-    : selectSelectedRow(state);
 }

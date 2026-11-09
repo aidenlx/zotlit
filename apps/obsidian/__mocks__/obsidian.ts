@@ -121,6 +121,10 @@ const noticeElStub = {
   addClasses: (_classes: string[]) => {},
   toggle: (_show: boolean) => {},
   querySelector: (_selector: string): HTMLElement | null => null,
+  /** Obsidian opens a modal or a notice in `activeWindow`. */
+  get win(): Window {
+    return activeWindow;
+  },
 } as unknown as HTMLElement;
 
 export class Notice {
@@ -257,6 +261,7 @@ function armClickHandler(): void {
  * unload hook its content is torn down through, and the placement `position()`
  * records as an inline style. Placement is inert here — a test that asserts a
  * placement writes the style itself, the way Obsidian's positioning engine does.
+ * The document `position()` puts the popover in follows the runtime's.
  *
  * The opening sequence follows the runtime one — the constructor arms the wait
  * timer, and the timer opens the popover — so a subclass meets the lifecycle it
@@ -408,10 +413,13 @@ export class HoverPopover {
     this.#parent.hoverPopover = this.#self;
   }
 
+  /**
+   * Joins the target's document, or `activeDocument` when there is no target,
+   * on every call, as Obsidian 1.14.5 does.
+   */
   position(): void {
-    if (this.hoverEl.parentElement !== document.body) {
-      document.body.appendChild(this.hoverEl);
-    }
+    const { body } = this.targetEl?.ownerDocument ?? activeDocument;
+    if (this.hoverEl.parentElement !== body) body.appendChild(this.hoverEl);
   }
 
   watchResize(_el: HTMLElement): void {}
@@ -508,12 +516,14 @@ export class ItemView {
   readonly actions: HTMLElement[] = [];
 
   addAction(
-    _icon: string,
+    icon: string,
     title: string,
     callback: (evt: MouseEvent) => unknown,
   ): HTMLElement {
     const action = document.createElement("div");
     action.setAttribute("aria-label", title);
+    // Records the icon, which Obsidian draws, for a test to read.
+    action.dataset.icon = icon;
     action.addEventListener("click", callback);
     this.actions.push(action);
     return action;
@@ -975,6 +985,14 @@ export class Scope {
   }
 }
 
+/**
+ * The window a modal opens in. Obsidian's `Modal.open` takes `activeWindow`,
+ * the window that last took focus.
+ */
+function openingWindow(): Window | null {
+  return (globalThis as { activeWindow?: Window }).activeWindow ?? null;
+}
+
 export abstract class FuzzySuggestModal<T> {
   constructor(readonly app: App) {}
   setPlaceholder(_placeholder: string): void {}
@@ -985,7 +1003,14 @@ export abstract class FuzzySuggestModal<T> {
 }
 
 export abstract class SuggestModal<T> {
-  readonly containerEl = { addClass() {}, removeClass() {} };
+  readonly containerEl = {
+    addClass() {},
+    removeClass() {},
+    /** Obsidian opens a modal in `activeWindow`. */
+    get win(): Window {
+      return activeWindow;
+    },
+  };
   readonly resultContainerEl = {
     createDiv() {},
     setAttribute(_name: string, _value: string) {},
@@ -1007,7 +1032,11 @@ export abstract class SuggestModal<T> {
     return this;
   }
   setInstructions(_instructions: Instruction[]): void {}
-  open(): void {}
+  /** The window `open` put the modal in. */
+  win: Window | null = null;
+  open(): void {
+    this.win = openingWindow();
+  }
   close(): void {
     this.onClose();
   }
@@ -1412,8 +1441,11 @@ export class Modal {
     return this;
   }
 
+  /** The window `open` put the modal in. */
+  win: Window | null = null;
   open(): void {
     this.isOpen = true;
+    this.win = openingWindow();
   }
 
   close(): void {
@@ -1905,7 +1937,11 @@ export class ConfirmationModal {
     this.#closed = callback;
     return this;
   }
-  open(): void {}
+  /** The window `open` put the modal in. */
+  win: Window | null = null;
+  open(): void {
+    this.win = openingWindow();
+  }
   close(): void {
     this.#closed?.();
   }

@@ -1,5 +1,5 @@
 // Re-targets one native hover popover across a group of DOM targets.
-import { PopoutAwareHoverPopover } from "./popout-aware-hover-popover";
+import { HoverPopover } from "./hover-popover";
 
 /**
  * `targetEl` is read live by native consumers; its two constructor-bound
@@ -14,7 +14,7 @@ import { PopoutAwareHoverPopover } from "./popout-aware-hover-popover";
  *
  * @see https://github.com/aidenlx/zotlit/blob/fbcff12fa/docs/research/hover-popover-singleton.md
  */
-export class SingletonHoverPopover extends PopoutAwareHoverPopover {
+export class SingletonHoverPopover extends HoverPopover {
   retarget(target: HTMLElement): void {
     this.targetEl?.removeEventListener("mouseover", this.onMouseIn);
     this.targetEl?.removeEventListener("mouseout", this.onMouseOut);

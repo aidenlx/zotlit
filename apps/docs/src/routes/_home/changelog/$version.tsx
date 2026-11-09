@@ -8,6 +8,8 @@ import { getMDXComponents } from "@/components/mdx";
 import { betaFallbackUrl } from "@/lib/beta-fallback";
 import { cn } from "@/lib/cn";
 import { changelogs } from "@/lib/collections";
+import { localeInput } from "@/lib/i18n";
+import { getPageLocaleState } from "@/lib/locale-state";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import {
@@ -23,14 +25,17 @@ import {
   changelogArticleSchema,
 } from "@/lib/structured-data";
 import { m } from "@/paraglide/messages.js";
+import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 
 const getRelease = createServerFn({ method: "GET" })
-  .validator((version: string) => version)
-  .handler(({ data: version }) => {
-    const page = changelog.getPage([version]);
+  .validator(localeInput<{ version: string }>())
+  .handler(({ data: { version, locale } }) => {
+    const page = changelog.getPage([version], locale);
     if (!page) {
       // A version this build never published still lives on Pre-release Docs.
-      const href = betaFallbackUrl(`${changelogRoute}/${version}`);
+      const href = betaFallbackUrl(
+        localizeHref(`${changelogRoute}/${version}`, { locale }),
+      );
       throw href === undefined
         ? notFound()
         : redirect({ href, statusCode: 307 });
@@ -44,14 +49,17 @@ const getRelease = createServerFn({ method: "GET" })
       description: page.data.description,
       companion: page.data.companion,
       date: page.data.date,
-      latest: getChangelogPages()[0]?.data.version === page.data.version,
+      latest:
+        getChangelogPages({ locale })[0]?.data.version === page.data.version,
     };
   });
 
 export const Route = createFileRoute("/_home/changelog/$version")({
   component: ChangelogVersion,
   loader: async ({ params }) => {
-    const release = await getRelease({ data: params.version });
+    const release = await getRelease({
+      data: { version: params.version, locale: getLocale() },
+    });
     await changelogs.get(release.path)?.preload();
     return release;
   },
@@ -64,7 +72,7 @@ export const Route = createFileRoute("/_home/changelog/$version")({
             release.description ??
             m.docs_changelog_release_description({
               version: release.version,
-              date: formatReleaseDate(release.date),
+              date: formatReleaseDate(release.date, { locale: getLocale() }),
             }),
           path: release.url,
           card: {
@@ -79,7 +87,7 @@ export const Route = createFileRoute("/_home/changelog/$version")({
               title: release.title,
               version: release.version,
               date: release.date,
-              url: release.url,
+              url: getPageLocaleState(release.url, getLocale()).canonicalPath,
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },
@@ -110,7 +118,7 @@ function ChangelogVersion() {
             )}
           </h1>
           <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
-            {formatReleaseDate(release.date)}
+            {formatReleaseDate(release.date, { locale: getLocale() })}
           </p>
         </header>
         {release.companion && <CompanionNote version={release.companion} />}

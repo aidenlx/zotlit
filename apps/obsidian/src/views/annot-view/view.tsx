@@ -288,7 +288,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
           startTemplateWorkbenchAction(
             this.#deps.explorer,
             "open-template-data-explorer",
-            openTemplateDataExplorer(this.#deps.app, {
+            openTemplateDataExplorer({
               itemIndexedKey: this.#itemKey,
               anchorAnnotationKey: annotationKey,
             }),

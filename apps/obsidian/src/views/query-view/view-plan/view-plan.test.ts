@@ -446,8 +446,10 @@ views:
   });
 
   it("lays the rows out sorted by the vault property, and keeps `limit` of them", () => {
-    const row = (indexedKey: string, title: string): QueryViewRow =>
-      ({ indexedKey, values: { title } }) as unknown as QueryViewRow;
+    const row = (indexedKey: string, title: string): QueryViewRow => ({
+      indexedKey,
+      values: { title },
+    });
     const shown = plan(SORTED).layout([
       row("ITEMBBBB", "b"),
       row("ITEMDDDD", "d"),

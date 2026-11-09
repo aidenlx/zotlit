@@ -71,7 +71,6 @@ import type {
 import { QueryView, RERUN_DELAY_MS, SaveAsButton, SortButton } from "./view";
 import type { QueryViewDeps } from "./view";
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 vi.mock("obsidian", async (importOriginal) => {
   const obsidian = await importOriginal<typeof import("obsidian")>();
   return {
@@ -1199,7 +1198,7 @@ async function selectOptions(
     ...popup.querySelectorAll<HTMLElement>('[role="option"]'),
   ].map((option) => ({
     value: option.dataset.value!,
-    label: option.querySelector("[data-select-label]")!.textContent!,
+    label: option.querySelector("[data-select-label]")!.textContent,
   }));
   // A press beside the trigger shuts the Select's popup and leaves the popover
   // that holds the trigger open.
@@ -1566,6 +1565,21 @@ it("edits the filters for all views and for this view from the Filter popover", 
   );
 });
 
+/**
+ * A condition row's typed value field. It is named by a hidden element and
+ * carries no `aria-label`, which Obsidian would draw as a hover tooltip.
+ */
+const valueInput = (row: Element) =>
+  [...row.querySelectorAll<HTMLInputElement>("input")].find((input) => {
+    const nameId = input.getAttribute("aria-labelledby");
+    return (
+      !input.hasAttribute("aria-label") &&
+      nameId !== null &&
+      input.ownerDocument.getElementById(nameId)?.textContent ===
+        m.workbench_filter_value()
+    );
+  }) ?? null;
+
 it("offers the vault properties in the Filter popover of an Items view, in bracket form", async () => {
   const written: string[] = [];
   const { view, el, settle } = await mount(
@@ -1596,9 +1610,7 @@ it("offers the vault properties in the Filter popover of an Items view, in brack
   expect(kind.textContent).toContain(
     m.query_view_vault_property_label({ name: "reading-status" }),
   );
-  const input = status!.querySelector<HTMLInputElement>(
-    'input[aria-label="Value"]',
-  )!;
+  const input = valueInput(status!)!;
   expect(input.value).toBe("read");
   await act(() => {
     input.value = "unread";
@@ -1642,7 +1654,7 @@ it("filters by a checkbox vault property as true or false from the Filter popove
     m.workbench_filter_op_is_true(),
   );
   // A boolean has no value to type.
-  expect(done!.querySelector('input[aria-label="Value"]')).toBeNull();
+  expect(valueInput(done!)).toBeNull();
   await choose(operator!, "is-false");
   await settle();
   expect(written.at(-1)).toContain(

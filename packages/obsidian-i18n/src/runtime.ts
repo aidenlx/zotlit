@@ -288,20 +288,15 @@ function resolveExpression(
       const formatterName = expression.name;
       switch (formatterName) {
         case "plural":
-          return new Intl.PluralRules(
-            locale,
-            options as Intl.PluralRulesOptions,
-          ).select(Number(argument));
+          return new Intl.PluralRules(locale, options).select(Number(argument));
         case "number":
-          return new Intl.NumberFormat(
-            locale,
-            options as Intl.NumberFormatOptions,
-          ).format(Number(argument));
+          return new Intl.NumberFormat(locale, options).format(
+            Number(argument),
+          );
         case "datetime":
-          return new Intl.DateTimeFormat(
-            locale,
-            options as Intl.DateTimeFormatOptions,
-          ).format(toEpochMilliseconds(argument));
+          return new Intl.DateTimeFormat(locale, options).format(
+            toEpochMilliseconds(argument),
+          );
         default:
           formatterName satisfies never;
           return undefined;

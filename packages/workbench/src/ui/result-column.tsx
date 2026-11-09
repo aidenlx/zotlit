@@ -7,6 +7,7 @@ import type { ReactNode, Ref } from "react";
 import { useContainerName, useWorkbenchHost, useTooltip } from "./host";
 import type { WorkbenchMarkdownProps } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { pendingView } from "./pending-view";
 import { diagnosticText } from "./problems";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { useParts } from "./theme";
@@ -96,11 +97,15 @@ export interface ResultBodyProps {
    */
   retained?: TemplateRenderResult | null;
   mode: ResultMode;
-  stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while it is current. */
   staleReason: "hold" | "invalid" | "demand" | "live" | null;
   showMarkdown: boolean;
   showManaged: boolean;
+  /**
+   * Whether the region opens on the note's file name. A host that names the
+   * file in a header of its own, from `previewFilename`, leaves it out.
+   */
+  showFilename?: boolean;
   sourceAvailable?: boolean;
   /**
    * Reads the failure behind this preview in the editor's Problems area. A
@@ -114,23 +119,30 @@ export interface ResultBodyProps {
   busy?: boolean;
 }
 
-/** The stale notice and rendered result, without the heading `ResultColumn` adds. */
-export function ResultBody({
+/** What a preview reads its body from. */
+type ResultReading = Pick<
+  ResultBodyProps,
+  | "result"
+  | "annotationResult"
+  | "retained"
+  | "mode"
+  | "staleReason"
+  | "showManaged"
+>;
+
+/**
+ * What a preview paints: the failure it reports, the output that stands, and
+ * the result the region reads, which is retained output wherever a failure
+ * kept some.
+ */
+function readResult({
   result,
   annotationResult,
   retained = null,
   mode,
   staleReason,
-  showMarkdown,
   showManaged,
-  sourceAvailable = true,
-  onShowProblem,
-  onRun,
-  busy,
-}: ResultBodyProps) {
-  const m = useWorkbenchMessages();
-  const part = useParts("resultColumn");
-  const { markdown: Markdown, openCitationEngineSettings } = useWorkbenchHost();
+}: ResultReading) {
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
   const showCitation = mode === "citation";
@@ -156,10 +168,15 @@ export function ResultBody({
             ? source?.managedRegion
             : source?.creationBody) ?? null;
   const output = outputOf(showAnnotation ? annotationResult : result);
+  // What stands while a render is pending, under the examples' own rule.
+  const pendingState = pendingView(
+    { staleReason, result, retained },
+    (source) => outputOf(source) !== null,
+  );
   // A document the parser refuses never reached a render, and its explanation
   // is the editor's; the result on screen is as far behind as a failed one.
   const failed =
-    staleReason === "invalid" ||
+    pendingState.notice === "failed" ||
     (showNote &&
       result?.diagnostics.some(({ code }) => code === "property-error")) ||
     (previewProblem !== undefined && output === null);
@@ -169,13 +186,77 @@ export function ResultBody({
     failed && retained !== null && outputOf(retained) !== null
       ? retained
       : null;
-  // What the region paints: retained output wherever a failure kept some.
   const shown = kept ?? result;
-  const annotationShown = kept ?? annotationResult ?? null;
+  return {
+    previewProblem,
+    pendingState,
+    failed,
+    kept,
+    shown,
+    annotationShown: kept ?? annotationResult ?? null,
+  };
+}
+
+/**
+ * The file name a note preview names for its result, or null where it names
+ * none: another mode, a failure, or no result yet.
+ */
+export function previewFilename(reading: ResultReading): string | null {
+  const { failed, shown } = readResult(reading);
+  return reading.mode === "note" && !failed && shown ? shown.filename : null;
+}
+
+/**
+ * "File name: <name>", with the whole name as its tooltip where a host cuts
+ * it short. The region opens on it, and a host that keeps the name in a
+ * header of its own draws it there.
+ */
+export function PreviewFilenameLabel({ filename }: { filename: string }) {
+  const m = useWorkbenchMessages();
+  const part = useParts("resultColumn");
+  const tooltip = useTooltip(filename);
+  return (
+    <p {...part("filename-text")} {...tooltip}>
+      <span {...part("label-text")}>{m.workbench_result_filename()}: </span>
+      {filename}
+    </p>
+  );
+}
+
+/** The stale notice and rendered result, without the heading `ResultColumn` adds. */
+export function ResultBody({
+  result,
+  annotationResult,
+  retained = null,
+  mode,
+  staleReason,
+  showMarkdown,
+  showManaged,
+  showFilename = true,
+  sourceAvailable = true,
+  onShowProblem,
+  onRun,
+  busy,
+}: ResultBodyProps) {
+  const m = useWorkbenchMessages();
+  const part = useParts("resultColumn");
+  const { markdown: Markdown, openCitationEngineSettings } = useWorkbenchHost();
+  const showAnnotation = mode === "annotation";
+  const showNote = mode === "note";
+  const showCitation = mode === "citation";
+  const showPartial = mode === "partial";
+  const { previewProblem, pendingState, failed, kept, shown, annotationShown } =
+    readResult({
+      result,
+      annotationResult,
+      retained,
+      mode,
+      staleReason,
+      showManaged,
+    });
   const hint = (showAnnotation ? annotationResult : result)?.previewHints?.find(
     ({ part }) => part === (showAnnotation ? "annotation" : showNote && "note"),
   );
-  const filenameTooltip = useTooltip(shown?.filename ?? "");
   const pending = <p {...part("pending")}>{m.workbench_result_pending()}</p>;
   /** Show problem, which every failure this preview reports offers. */
   const showProblem = (diagnostic: RenderDiagnostic | null) =>
@@ -191,15 +272,15 @@ export function ResultBody({
     );
   // "Rendering…" is honest only while a render is on its way: on demand the
   // notice below says Run starts one, and a hold shows its own problem.
-  const showPending = staleReason === "live";
+  const showPending = pendingState.notice === "rendering";
   return (
     <>
-      {staleReason === "hold" && result && (
+      {pendingState.notice === "held" && (
         <p role="status" {...part("stale")}>
           {m.workbench_preview_stale()}
         </p>
       )}
-      {staleReason === "demand" && (
+      {pendingState.notice === "behind" && (
         <div role="status" {...part("behind")}>
           <span {...part("behind-text")}>
             {result ? m.workbench_preview_behind() : m.workbench_preview_none()}
@@ -223,14 +304,9 @@ export function ResultBody({
           // waits is the output, and a reader is never left reading
           // "Rendering…" in place of the failure it replaced.
           <>
-            {showNote && !failed && shown && (
-              <header {...part("filename")} {...filenameTooltip}>
-                <p {...part("filename-text")}>
-                  <span {...part("label-text")}>
-                    {m.workbench_result_filename()}:{" "}
-                  </span>
-                  {shown.filename}
-                </p>
+            {showFilename && showNote && !failed && shown?.filename != null && (
+              <header {...part("filename")}>
+                <PreviewFilenameLabel filename={shown.filename} />
               </header>
             )}
             {(previewProblem || failed) && (
@@ -347,7 +423,6 @@ export function ResultColumn({
   annotationResult,
   retained,
   mode,
-  stale,
   staleReason,
   showMarkdown,
   onShowMarkdown,
@@ -406,7 +481,6 @@ export function ResultColumn({
         annotationResult={annotationResult}
         retained={retained}
         mode={mode}
-        stale={stale}
         staleReason={staleReason}
         showMarkdown={showMarkdown}
         showManaged={showManaged}

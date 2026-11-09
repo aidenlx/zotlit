@@ -314,7 +314,7 @@ function noteExcerpts(
         result: { kind: "unavailable", reason: "source" },
         sourceLink: `[Zotero](${annotationOpenUri({ attachmentKey: annotation.parentKey, annotationKey: annotation.key, groupID: annotation.groupID, pageLabel: annotation.pageLabel })})`,
         used: false,
-        helper: (() => "") as TemplateLink,
+        helper: () => "",
       };
       candidate.helper = createExcerptLink(deps.markdownLink, candidate);
       candidates.set(annotation.indexedKey, candidate);

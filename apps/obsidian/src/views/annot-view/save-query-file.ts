@@ -13,8 +13,9 @@ import {
 } from "obsidian";
 import type { App, TFolder } from "obsidian";
 
+import { composing } from "@zotlit/ui";
+
 import * as m from "@/lib/i18n/generated/messages";
-import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import {

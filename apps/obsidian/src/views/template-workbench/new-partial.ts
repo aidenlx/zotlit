@@ -4,7 +4,7 @@
 // `zotlit-partial.<name>.md`, and opens the document in the Template Workbench
 // View.
 import { Modal, TextComponent } from "obsidian";
-import type { App } from "obsidian";
+import type { App, WorkspaceLeaf } from "obsidian";
 
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 
@@ -44,6 +44,11 @@ export interface CreateSharedPartialOptions {
    * @default "split"
    */
   open?: "split" | "tab" | false;
+  /**
+   * The Workbench leaf the create starts from: the document opens beside it
+   * in its window. Without one it opens in a Workbench window of its own.
+   */
+  from?: WorkspaceLeaf;
 }
 
 /**

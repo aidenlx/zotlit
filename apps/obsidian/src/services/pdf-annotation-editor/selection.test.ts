@@ -27,13 +27,13 @@ import {
   viewport,
 } from "./__fixtures__";
 import type { readerSurfaces } from "./__fixtures__";
+import { current, update } from "./reader-surface-model";
 import {
   ingestCapability,
-  selectMarkHandles,
   selectAdjust,
+  selectMarkHandles,
   setCommenting,
 } from "./reader-surface-state";
-import type { OverlayPageView } from "./render";
 import { geometryFailureMessage } from "./selection";
 
 /**
@@ -108,7 +108,7 @@ async function setup(
   );
   const reader = await readerOverZotero(stack, {
     containerEl,
-    page: page as unknown as OverlayPageView,
+    page,
     records,
     capability,
     sortIndex,
@@ -171,8 +171,8 @@ async function settled(h: Harness, annotationKey: string): Promise<void> {
  * after it, so call this right after the announcement.
  */
 async function reread(h: Harness): Promise<void> {
-  const drawn = h.store.getState().records;
-  await vi.waitFor(() => expect(h.store.getState().records).not.toBe(drawn));
+  const drawn = h.drawn();
+  await vi.waitFor(() => expect(h.drawn()).not.toBe(drawn));
 }
 
 /** One whole gesture: press and release at the same point unless told otherwise. */
@@ -546,10 +546,10 @@ it("steps back from the selected mark on Escape before the armed tool", async ()
 
   key(h, "Escape");
   expect(h.selection.selected.size).toBe(0);
-  expect(h.store.getState().armed).toBe("underline");
+  expect(current(h.surface).armed).toBe("underline");
 
   key(h, "Escape");
-  expect(h.store.getState().armed).toBeNull();
+  expect(current(h.surface).armed).toBeNull();
 });
 
 it("leaves a modified colour key to whatever else holds it", async () => {
@@ -635,7 +635,7 @@ it("keeps a comment editor open when an ordinary draft settles", async () => {
     expect(h.zotero.at("WRDS2222")?.comment).toBe("worth quoting"),
   );
   await vi.waitFor(() =>
-    expect(h.store.getState().commentDrafts.has("WRDS2222")).toBe(false),
+    expect(current(h.surface).commentDrafts.has("WRDS2222")).toBe(false),
   );
 
   expect(commentView(popup.hoverEl)).toBe(editor);
@@ -675,7 +675,7 @@ it("stands the selection down at once when its Annotation is deleted", async () 
   // A comment draft stands on the mark, so the repository announces the
   // deletion itself.
   commentField(popup.hoverEl)!.click();
-  expect(h.store.getState().commentDrafts.has("WRDS2222")).toBe(true);
+  expect(current(h.surface).commentDrafts.has("WRDS2222")).toBe(true);
 
   h.zotero.eraseInZotero("WRDS2222");
   await h.repository.refresh("RGRPDF24");
@@ -715,7 +715,7 @@ it("keeps the row's nodes through a write on another mark", async () => {
   // A write on the other mark is announced, and leaves this row as it was.
   const recolouring = h.repository.patchColor("PARA7777", "#5fb236");
   await reread(h);
-  expect(h.store.getState().mutations.get("PARA7777")?.kind).toBe("pending");
+  expect(current(h.surface).mutations.get("PARA7777")?.kind).toBe("pending");
   expect(del()).toBe(drawn);
 
   // This mark's own write stands its delete verb down.
@@ -749,7 +749,7 @@ it("keeps the row as it stands while a comment write is in flight", async () => 
 
   const saving = h.repository.submitTextField("comment", "WRDS2222");
   await reread(h);
-  expect(h.store.getState().mutations.get("WRDS2222")).toEqual({
+  expect(current(h.surface).mutations.get("WRDS2222")).toEqual({
     kind: "pending",
     write: "comment",
   });
@@ -772,7 +772,7 @@ it("keeps a pressed verb under the pointer through a write on its mark", async (
 
   const recolouring = h.repository.patchColor("WRDS2222", "#5fb236");
   await reread(h);
-  expect(h.store.getState().mutations.get("WRDS2222")?.kind).toBe("pending");
+  expect(current(h.surface).mutations.get("WRDS2222")?.kind).toBe("pending");
 
   expect(reveal()).toBe(pressed);
   release();
@@ -878,7 +878,7 @@ it("opens the comment editor in the comment's place from a click on the comment"
 
   commentField(popup.hoverEl)!.click();
 
-  expect(h.store.getState().floating).toMatchObject({ commenting: true });
+  expect(current(h.surface).floating).toMatchObject({ commenting: true });
   expect(commentView(popup.hoverEl)).not.toBeNull();
   expect(commentText(popup.hoverEl)).toBeNull();
 });
@@ -897,7 +897,7 @@ it("keeps a click that selected the comment's text a read", async () => {
   field.click();
   document.getSelection()!.removeAllRanges();
 
-  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(current(h.surface).floating).toMatchObject({ commenting: false });
   expect(commentView(popup.hoverEl)).toBeNull();
 });
 
@@ -934,7 +934,7 @@ it("keeps a blocked comment field in the tab order, and spends its press on the 
 
   field.click();
 
-  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(current(h.surface).floating).toMatchObject({ commenting: false });
   expect(commentView(popup.hoverEl)).toBeNull();
   expect(h.gestures.blockedPress).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ action: "allow-editing" }),
@@ -960,7 +960,7 @@ it("adds a comment from the empty comment field, and saves and closes it on Esca
   );
 
   expect(commentView(popup.hoverEl)).toBeNull();
-  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(current(h.surface).floating).toMatchObject({ commenting: false });
   await vi.waitFor(() =>
     expect(h.zotero.at("PARA7777")?.comment).toBe("new note"),
   );
@@ -997,13 +997,16 @@ it("closes the open editor on Escape after editing became blocked", async () => 
   commentField(popup.hoverEl)!.click();
   const editor = commentView(popup.hoverEl)!;
 
-  ingestCapability(h.store, { kind: "authorization-required" }, READER_NOW);
+  update(
+    h.surface,
+    ingestCapability({ kind: "authorization-required" }, READER_NOW),
+  );
   editor.contentDOM.dispatchEvent(
     new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
   );
 
   expect(commentView(popup.hoverEl)).toBeNull();
-  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(current(h.surface).floating).toMatchObject({ commenting: false });
   expect(h.gestures.blockedPress).not.toHaveBeenCalled();
 });
 
@@ -1034,13 +1037,13 @@ it("saves a tag session once as it ends, from the tag verb or a new selection", 
     popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!;
 
   verb().click();
-  expect(h.store.getState().floating).toMatchObject({ tagging: true });
+  expect(current(h.surface).floating).toMatchObject({ tagging: true });
   tagInput(popup.hoverEl)!.value = "figure";
   await settled(h, "WRDS2222");
   expect(h.writes()).toEqual([]);
 
   verb().click();
-  expect(h.store.getState().floating).toMatchObject({ tagging: false });
+  expect(current(h.surface).floating).toMatchObject({ tagging: false });
   await vi.waitFor(() =>
     expect(h.zotero.at("WRDS2222")?.tags).toEqual(["figure"]),
   );
@@ -1067,7 +1070,7 @@ it("closes only the tag editor for Escape, and keeps the selection", async () =>
   // one on a chip's remove button.
   expect(h.selection.escape()).toBe(true);
 
-  expect(h.store.getState().floating).toMatchObject({
+  expect(current(h.surface).floating).toMatchObject({
     key: "WRDS2222",
     tagging: false,
   });
@@ -1080,16 +1083,16 @@ it("takes no typed name into a tag draft a database switch hid", async () => {
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
-  expect(h.store.getState().tagDrafts.has("WRDS2222")).toBe(true);
+  expect(current(h.surface).tagDrafts.has("WRDS2222")).toBe(true);
   tagInput(popup.hoverEl)!.value = "typed before the switch";
 
   await h.switchDatabase();
 
   // The other database's list has no such mark, so the selection may end too.
-  expect(h.store.getState().floating).not.toMatchObject({ tagging: true });
+  expect(current(h.surface).floating).not.toMatchObject({ tagging: true });
   expect(tagInput(popup.hoverEl)).toBeNull();
   // The typed name starts no second draft, and nothing reaches Zotero.
-  expect(h.store.getState().tagDrafts.has("WRDS2222")).toBe(false);
+  expect(current(h.surface).tagDrafts.has("WRDS2222")).toBe(false);
   await settled(h, "WRDS2222");
   expect(h.writes()).toEqual([]);
 });
@@ -1107,7 +1110,7 @@ it("opens no tag editor while no tag session can start", async () => {
   expect(h.repository.capabilityFor("RGRPDF24").kind).not.toBe("writable");
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
 
-  expect(h.store.getState().floating).toMatchObject({ tagging: false });
+  expect(current(h.surface).floating).toMatchObject({ tagging: false });
   expect(tagInput(popup.hoverEl)).toBeNull();
 });
 
@@ -1144,7 +1147,7 @@ it("binds the held tags panel to Save tags and Discard, and keeps it through a r
   h.repository.editTextField("comment", "WRDS2222", "worth quoting");
   const commenting = h.repository.submitTextField("comment", "WRDS2222");
   await reread(h);
-  expect(h.store.getState().mutations.get("WRDS2222")).toEqual({
+  expect(current(h.surface).mutations.get("WRDS2222")).toEqual({
     kind: "pending",
     write: "comment",
   });
@@ -1163,7 +1166,10 @@ it("binds the held tags panel to Save tags and Discard, and keeps it through a r
 
   await holdTag("method");
   // Editing that needs Allow editing puts the reader's own route on the panel.
-  ingestCapability(h.store, { kind: "authorization-required" }, READER_NOW);
+  update(
+    h.surface,
+    ingestCapability({ kind: "authorization-required" }, READER_NOW),
+  );
   button(m.capability_enable_editing())!.click();
   expect(h.gestures.allowEditing).toHaveBeenCalledOnce();
 
@@ -1186,12 +1192,12 @@ it("falls back to the comment field, and closes the editor, when no draft can be
   expect(h.popup()).not.toBeNull();
   expect(h.repository.capabilityFor("RGRPDF24").kind).not.toBe("writable");
 
-  setCommenting(h.store, true);
+  update(h.surface, setCommenting(true));
 
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   expect(commentView(popup.hoverEl)).toBeNull();
   expect(commentField(popup.hoverEl)).not.toBeNull();
-  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(current(h.surface).floating).toMatchObject({ commenting: false });
 });
 
 /**
@@ -1352,8 +1358,8 @@ it("cancels a drag on Escape, writes nothing, and keeps the mark selected", asyn
   await geometrySaved(h, "FIGR3333");
 
   expect(h.writes()).toEqual([]);
-  expect(h.store.getState().floating).toMatchObject({ key: "FIGR3333" });
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).toMatchObject({ key: "FIGR3333" });
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
 });
 
 it("hides the Mark Popup during a drag and hangs it again on release", async () => {
@@ -1381,7 +1387,7 @@ it("takes a press on a handle as an ordinary click while editing is not live", a
   pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
   await geometrySaved(h, "FIGR3333");
 
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
   expect(h.writes()).toEqual([]);
 });
 
@@ -1392,19 +1398,19 @@ it("snaps a refused write back to the confirmed geometry", async () => {
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
   pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
   pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
-  expect(h.store.getState().floating).toMatchObject({
+  expect(current(h.surface).floating).toMatchObject({
     adjust: { phase: "saving" },
   });
   await geometrySaved(h, "FIGR3333");
 
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
   // Zotero keeps the confirmed geometry, and the mark draws it again.
   expect(h.zotero.at("FIGR3333")?.position).toMatchObject({
     rects: [[100, 300, 300, 500]],
   });
   await vi.waitFor(() =>
     expect(
-      h.store.getState().records.find(({ key }) => key === "FIGR3333")
+      current(h.surface).records.find(({ key }) => key === "FIGR3333")
         ?.position,
     ).toMatchObject({ rects: [[100, 300, 300, 500]] }),
   );
@@ -1447,7 +1453,7 @@ it("leaves a drag beside the selected image to the text selection", async () => 
   pointer(h.containerEl, "pointerup", { x: 450, y: 392 });
   await geometrySaved(h, "FIGR3333");
 
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
   expect(h.writes()).toEqual([]);
 });
 
@@ -1492,7 +1498,7 @@ it("drops a range the document answers after Escape took its drag back", async (
   await Promise.resolve();
   await Promise.resolve();
 
-  expect(h.store.getState().floating).toMatchObject({
+  expect(current(h.surface).floating).toMatchObject({
     adjust: { phase: "pressed", proposal: QUOTE.position },
   });
 });
@@ -1517,7 +1523,7 @@ it("leaves a press inside the selected highlight to the text selection", async (
   pointer(h.containerEl, "pointerup", { x: 180, y: 486 });
   await h.selection.adjusted;
 
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
   expect(h.adjustRange).not.toHaveBeenCalled();
 });
 
@@ -1538,7 +1544,7 @@ it("commits one Geometry Edit for Shift+ArrowRight on the selected image, with a
     position: { pageIndex: 0, rects: [[100, 300, 305, 500]] },
     sortIndex: "00000|000012|00517",
   });
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
 });
 
@@ -1580,7 +1586,7 @@ it("writes nothing for a Geometry Edit key while editing is not live, and says w
 
   expect(h.writes()).toEqual([]);
   expect(h.gestures.reportBlockedGesture).toHaveBeenCalledTimes(3);
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
 });
 
@@ -1622,7 +1628,7 @@ it("steps a highlight's end for Shift+ArrowDown, and writes nothing for a step t
     step: "down",
   });
   expect(h.writes()).toEqual([]);
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
   expect([...h.selection.selected]).toEqual(["QUTE5555"]);
 });
 
@@ -1647,7 +1653,7 @@ async function lockedSelected(
   capability?: EditingCapability,
 ) {
   const h = await setup([record], capability, { external: ["PUPR5FG5"] });
-  expect(h.store.getState().records[0]?.lock).toEqual({ reason: "external" });
+  expect(current(h.surface).records[0]?.lock).toEqual({ reason: "external" });
   click(h.page.div, at);
   expect([...h.selection.selected]).toEqual(["PUPR5FG5"]);
   return h;
@@ -1689,7 +1695,7 @@ it("spends a press on a Locked Annotation's comment on the Lock Reason, with no 
   field.click();
 
   expect(commentView(popup.hoverEl)).toBeNull();
-  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(current(h.surface).floating).toMatchObject({ commenting: false });
   expect(h.gestures.blockedPress.mock.calls).toEqual([
     [{ reason: LOCK_REASON, action: null, source: "lock" }],
     [{ reason: LOCK_REASON, action: null, source: "lock" }],
@@ -1698,7 +1704,7 @@ it("spends a press on a Locked Annotation's comment on the Lock Reason, with no 
 
 it("gives a Locked Annotation no Mark Handles, and moves it by no drag", async () => {
   await using h = await lockedSelected(LOCKED_FIGURE, ON_FIGURE);
-  expect(selectMarkHandles(h.store.getState())).toBe(false);
+  expect(selectMarkHandles(current(h.surface))).toBe(false);
 
   // Where a handle would sit, and then the body: neither press takes a grip.
   for (const [from, to] of [
@@ -1707,13 +1713,13 @@ it("gives a Locked Annotation no Mark Handles, and moves it by no drag", async (
   ] as const) {
     pointer(h.page.div, "pointerdown", from);
     pointer(h.containerEl, "pointermove", to);
-    expect(h.store.getState().floating).not.toHaveProperty("adjust");
+    expect(current(h.surface).floating).not.toHaveProperty("adjust");
     pointer(h.containerEl, "pointerup", to);
   }
   await geometrySaved(h, "PUPR5FG5");
 
   expect(h.writes()).toEqual([]);
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
 });
 
 it("refuses every edit key on a Locked Annotation with the Lock Reason, on every press", async () => {
@@ -1727,7 +1733,7 @@ it("refuses every edit key on a Locked Annotation with the Lock Reason, on every
   await geometrySaved(h, "PUPR5FG5");
 
   expect(h.writes()).toEqual([]);
-  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(current(h.surface).floating).not.toHaveProperty("adjust");
   expect(h.gestures.blockedPress.mock.calls).toEqual(
     Array.from({ length: 5 }, () => [
       { reason: LOCK_REASON, action: null, source: "lock" },
@@ -1741,7 +1747,7 @@ it("refuses a Geometry Edit the lock takes on during the drag, on release", asyn
   click(h.page.div, ON_FIGURE);
   /** What the repository answers each Geometry Edit with. */
   const answered: MutationState[] = [];
-  const patch = h.service.patchGeometry;
+  const patch = h.service.patchGeometry.bind(h.service);
   vi.spyOn(h.service, "patchGeometry").mockImplementation((...args) =>
     patch(...args).pipe(
       Effect.tap((state) => Effect.sync(() => answered.push(state))),
@@ -1753,7 +1759,7 @@ it("refuses a Geometry Edit the lock takes on during the drag, on release", asyn
   // Zotero imports the Annotation from the PDF file while the pointer is down.
   h.importFromPdf("PUPR5FG5");
   await vi.waitFor(() =>
-    expect(h.store.getState().records[0]?.lock).toEqual({ reason: "external" }),
+    expect(current(h.surface).records[0]?.lock).toEqual({ reason: "external" }),
   );
   pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
   await geometrySaved(h, "PUPR5FG5");
@@ -1814,7 +1820,7 @@ it("keeps the tag editor closed for a press on a Locked Annotation's tag verb", 
 
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
 
-  expect(h.store.getState().floating).toMatchObject({ tagging: false });
+  expect(current(h.surface).floating).toMatchObject({ tagging: false });
   expect(h.repository.tagDraftFor("PUPR5FG5")).toBeNull();
   expect(h.writes()).toEqual([]);
 });
@@ -1856,7 +1862,7 @@ it("ends a geometry edit whose PDF read fails without sending a patch (#1860)", 
 
   await expect(h.selection.adjusted).resolves.toBeUndefined();
   expect(h.writes()).toEqual([]);
-  expect(selectAdjust(h.store.getState())).toBeNull();
+  expect(selectAdjust(current(h.surface))).toBeNull();
 });
 
 /** The notice a write whose reply was lost raises. */
@@ -1922,5 +1928,113 @@ it("says why a Geometry Edit did not land, naming the edit", async () => {
         reason: m.annot_view_write_reason_unknown_outcome(),
       }),
     ],
+  ]);
+});
+
+/** The drag the browser starts from a press, heard where it begins. */
+function dragFrom(node: HTMLElement) {
+  const dataTransfer = new DataTransfer();
+  // happy-dom draws no drag image.
+  const setDragImage = vi.fn<DataTransfer["setDragImage"]>();
+  dataTransfer.setDragImage = setDragImage;
+  const event = new DragEvent("dragstart", { bubbles: true, cancelable: true });
+  // happy-dom leaves the init's `dataTransfer` off the event.
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+  node.dispatchEvent(event);
+  return { dataTransfer, setDragImage };
+}
+
+it("drags the selected highlight out of the reader as its Annotation", async () => {
+  const quoted = { ...WORD, text: "simple rules" };
+  await using h = await setup([PARAGRAPH, quoted]);
+  click(h.page.div, ON_WORD);
+
+  pointer(h.page.div, "pointerdown", ON_WORD);
+  expect(h.page.div.draggable).toBe(true);
+  const { dataTransfer, setDragImage } = dragFrom(h.page.div);
+
+  expect(h.draggedOut).toHaveBeenCalledOnce();
+  const [event, record] = h.draggedOut.mock.calls[0]!;
+  expect(event.dataTransfer).toBe(dataTransfer);
+  expect(event.currentTarget).toBe(h.containerEl);
+  expect(record.key).toBe("WRDS2222");
+  // The picture under the pointer names the Annotation, not the whole page.
+  const [ghost] = setDragImage.mock.calls[0]!;
+  expect(ghost).not.toBe(h.page.div);
+  expect(ghost.textContent).toBe("simple rules");
+
+  h.page.div.dispatchEvent(new DragEvent("dragend", { bubbles: true }));
+  expect(h.page.div.draggable).toBeFalsy();
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
+});
+
+it("leaves a drag from an unselected mark to the browser's own text drag", async () => {
+  await using h = await setup();
+
+  pointer(h.page.div, "pointerdown", ON_WORD);
+  dragFrom(h.page.div);
+
+  expect(h.page.div.draggable).toBeFalsy();
+  expect(h.draggedOut).not.toHaveBeenCalled();
+});
+
+it("leaves a press beside the selected mark to the browser's text selection", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+
+  pointer(h.page.div, "pointerdown", ON_PAGE);
+  dragFrom(h.page.div);
+
+  expect(h.page.div.draggable).toBeFalsy();
+  expect(h.draggedOut).not.toHaveBeenCalled();
+});
+
+it("leaves a drag of text selected over the selected mark to the text", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+  vi.mocked(window.getSelection).mockReturnValue({
+    isCollapsed: false,
+    anchorNode: h.page.div,
+  } as unknown as Selection);
+
+  pointer(h.page.div, "pointerdown", ON_WORD);
+  dragFrom(h.page.div);
+
+  expect(h.page.div.draggable).toBeFalsy();
+  expect(h.draggedOut).not.toHaveBeenCalled();
+});
+
+it("lets go of the drag a press armed once the press is released", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+
+  pointer(h.page.div, "pointerdown", ON_WORD);
+  pointer(h.containerEl, "pointerup", ON_WORD);
+
+  expect(h.page.div.draggable).toBeFalsy();
+});
+
+it("keeps a press on the body of a mark that moves by it a Geometry Edit", async () => {
+  await using h = await figureSelected();
+
+  pointer(h.page.div, "pointerdown", ON_FIGURE);
+  dragFrom(h.page.div);
+
+  expect(h.page.div.draggable).toBeFalsy();
+  expect(h.draggedOut).not.toHaveBeenCalled();
+  pointer(h.containerEl, "pointerup", ON_FIGURE);
+});
+
+it("drags a mark that moves by its body out while editing is not live", async () => {
+  await using h = await figureSelected({
+    kind: "read-only",
+    reason: "library-read-only",
+  });
+
+  pointer(h.page.div, "pointerdown", ON_FIGURE);
+  dragFrom(h.page.div);
+
+  expect(h.draggedOut.mock.calls.map(([, record]) => record.key)).toEqual([
+    "FIGR3333",
   ]);
 });

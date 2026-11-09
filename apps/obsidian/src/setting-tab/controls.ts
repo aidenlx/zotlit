@@ -3,7 +3,6 @@
 import { Effect } from "effect";
 
 import { PluginSettings } from "@/services/settings/service";
-import type { SettingsPatch } from "@/services/settings/service";
 
 import { decodeLogLevel, encodeLogLevel, LOG_LEVEL_KEY } from "./advanced";
 import type { ProfileControlKey, SettingsKey } from "./context";
@@ -85,7 +84,5 @@ export function writeControlValue(key: string, value: unknown) {
       : value;
   // `key` is constrained to schema keys by every `control` definition, and
   // `value` matches that key's control type, so the patch always validates.
-  return PluginSettings.use((settings) =>
-    settings.update({ [key]: next } as SettingsPatch),
-  );
+  return PluginSettings.use((settings) => settings.update({ [key]: next }));
 }

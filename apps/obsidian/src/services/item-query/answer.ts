@@ -559,7 +559,7 @@ function delimitedRows(
     group: () => "",
     rows(chunk, groupIndex) {
       const group = grouped
-        ? [valueText(result.groups![groupIndex!]!.value)]
+        ? [valueText(result.groups[groupIndex!]!.value)]
         : [];
       // A date is its ISO text in JSON, as the envelope writes it.
       const wire = JSON.parse(JSON.stringify(chunk)) as readonly {

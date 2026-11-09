@@ -4,6 +4,7 @@ import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata } from "obsidian";
 import { beforeEach, describe, expect, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
 import type { ChildNote, Library, Note } from "@zotlit/db";
@@ -171,7 +172,7 @@ function seedNotes(
   itemIDs: readonly number[],
   {
     libraryID = USER_LIBRARY_ID,
-    parentItemID = PARENT_ITEM_ID as number | null,
+    parentItemID = PARENT_ITEM_ID,
     key,
   }: { libraryID?: number; parentItemID?: number | null; key?: string } = {},
 ): void {
@@ -451,9 +452,9 @@ function makeDeps(
   } = {},
 ): {
   deps: ImportDeps;
-  importNote: ReturnType<typeof vi.fn>;
+  importNote: Mock<PromiseNoteImporter["importNote"]>;
 } {
-  const importNote = vi.fn(
+  const importNote = vi.fn<PromiseNoteImporter["importNote"]>(
     async () => options.importNoteResult ?? ("created" as const),
   );
   const zoteroReads = caseResources.use(

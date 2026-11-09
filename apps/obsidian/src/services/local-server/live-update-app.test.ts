@@ -71,7 +71,7 @@ describe("GET /literature-notes", () => {
   it("rejects a missing protocol version header with 426", async () => {
     const app = createLiveUpdateApp(makeDeps());
     const reqHeaders = headers();
-    delete (reqHeaders as Record<string, string>)[PROTOCOL_VERSION_HEADER];
+    delete reqHeaders[PROTOCOL_VERSION_HEADER];
 
     const res = await app.request("/literature-notes", {
       headers: reqHeaders,

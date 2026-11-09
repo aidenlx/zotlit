@@ -456,9 +456,7 @@ export function pluginLayer(
     ),
     layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
     layerViewRegistry.pipe(
-      Layer.provideMerge(
-        Layer.mergeAll(layerTemplateDataReads, layerAnnotationNoteActions),
-      ),
+      Layer.provideMerge(layerTemplateDataReads),
       startingAs("ViewRegistry"),
     ),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
@@ -487,12 +485,16 @@ export function pluginLayer(
   // and so do the Profile dialogs that callers outside the graph open.
   // The Notifier is the one the layers share: the setting tab's Language Pack
   // toast shows through it.
+  // An Annotation inserts into a note alike from the Annotation View and from
+  // a mark dragged out of the PDF reader, so its actions build below both.
   return registrations.pipe(
     Layer.provideMerge(
       layerPdfAnnotationEditor(pdfEditor).pipe(
         startingAs("PdfAnnotationEditor"),
         Layer.provide(layerNotifier),
-        Layer.provideMerge(noteFeature),
+        Layer.provideMerge(
+          layerAnnotationNoteActions.pipe(Layer.provideMerge(noteFeature)),
+        ),
       ),
     ),
     Layer.provideMerge(NodeFileSystem.layer),

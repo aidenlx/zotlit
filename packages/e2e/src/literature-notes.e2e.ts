@@ -222,7 +222,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         freshId,
         async ({ app }) => {
           return app.commands.executeCommandById(
-            "zotlit:customize-note-template",
+            "zotlit:open-template-workbench",
           );
         },
         undefined,
@@ -233,7 +233,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       async ({ app }, { notePath }) => {
         return !!(function () {
-          var leaves = app.workspace.getLeavesOfType(
+          const leaves = app.workspace.getLeavesOfType(
             "zotlit-template-workbench",
           ) as (import("obsidian").WorkspaceLeaf & {
             view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -257,7 +257,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       async ({ app }, { notePath, expectedTemplateText }) => {
         const view = (function () {
-          var leaves = app.workspace.getLeavesOfType(
+          const leaves = app.workspace.getLeavesOfType(
             "zotlit-template-workbench",
           ) as (import("obsidian").WorkspaceLeaf & {
             view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -270,7 +270,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         })()!;
         return (
           view.contentEl.textContent.includes(expectedTemplateText) &&
-          view.store.getState().item?.id === "RUGIER24"
+          view.registry.get(view.model.view).item?.id === "RUGIER24"
         );
       },
       {
@@ -288,11 +288,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultPath: freshPath,
       tabLabel: run.m.workbench_tab_annotation(),
       beforeEdit: async () => {
+        // The tab opens on its lede, the one line that says where the
+        // template applies, beside the shared-template banner.
         await obRunUntil(
           freshId,
-          async ({ app }, { notePath, helpButtonLabel }) => {
+          async ({ app }, { notePath, lede, bannerText }) => {
             const view = (function () {
-              var leaves = app.workspace.getLeavesOfType(
+              const leaves = app.workspace.getLeavesOfType(
                 "zotlit-template-workbench",
               ) as (import("obsidian").WorkspaceLeaf & {
                 view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -303,154 +305,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ) ?? leaves[0]
               )?.view;
             })()!;
-            const help = view.contentEl.querySelector<HTMLElement>(
-              `button[aria-label=${JSON.stringify(helpButtonLabel)}]`,
-            );
-            if (!help) return false;
-            view.leaf.getContainer().focus();
-            help!.focus();
-            return (
-              help === view.contentEl.ownerDocument.activeElement &&
-              help!.getAttribute("aria-expanded") === "false"
-            );
-          },
-          { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
-          {
-            what: "the Template Workbench help button to take focus while collapsed",
-          },
-        );
-        await obRun(
-          freshId,
-          async ({ app, page }, { notePath, helpButtonLabel }) => {
-            const { press } = page;
-            const view = (function () {
-              var leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === notePath,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            press(
-              view.contentEl.querySelector<HTMLElement>(
-                `button[aria-label=${JSON.stringify(helpButtonLabel)}]`,
-              ),
-              "Help",
-            );
-          },
-          { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
-        );
-        await obRunUntil(
-          freshId,
-          async (
-            { app },
-            { notePath, helpSectionLabel, guideText, bannerText },
-          ) => {
-            const view = (function () {
-              var leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === notePath,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            const guide = view.contentEl.querySelector<HTMLElement>(
-              `section[aria-label=${JSON.stringify(helpSectionLabel)}]`,
+            const panel = view.contentEl.querySelector<HTMLElement>(
+              '[role="tabpanel"]:not([hidden])',
             );
             const source = Array.from(
               view.contentEl.querySelectorAll<CodeMirrorElement>(".cm-content"),
             ).find((element) => element.textContent.includes("[!note]"));
             return (
-              !!guide &&
-              guide.textContent.includes("[!quote]") &&
-              guide.textContent.includes(guideText) &&
+              !!panel?.firstElementChild?.textContent?.startsWith(lede) &&
               view.contentEl.textContent.includes(bannerText) &&
-              guide!.getBoundingClientRect().height > 0 &&
-              source!.getBoundingClientRect().height > 0
+              !!source &&
+              source.getBoundingClientRect().height > 0
             );
           },
           {
             notePath: note.path!,
-            helpSectionLabel: run.m.workbench_annotation_help_title(),
-            guideText: run.m.workbench_annotation_help_finish_note(),
+            lede: run.m.workbench_annotation_lede(),
             bannerText: run.m.template_workbench_shared_annotation({
               name: run.m.settings_profile_default_name(),
             }),
           },
           {
-            what: "the Template Workbench guide section to render with its quote callout visible",
-          },
-        );
-        await obRun(
-          freshId,
-          async ({ app }, { notePath, helpSectionLabel }) => {
-            const view = (function () {
-              var leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === notePath,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            const guide = view.contentEl.querySelector<HTMLElement>(
-              `section[aria-label=${JSON.stringify(helpSectionLabel)}]`,
-            );
-            guide!.focus();
-            guide!.dispatchEvent(
-              new view.contentEl.ownerDocument.defaultView!.KeyboardEvent(
-                "keydown",
-                { key: "Escape", bubbles: true },
-              ),
-            );
-          },
-          {
-            notePath: note.path!,
-            helpSectionLabel: run.m.workbench_annotation_help_title(),
-          },
-        );
-        await obRunUntil(
-          freshId,
-          async ({ app }, { notePath, helpButtonLabel }) => {
-            const view = (function () {
-              var leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === notePath,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            const help = view.contentEl.querySelector<HTMLElement>(
-              `button[aria-label=${JSON.stringify(helpButtonLabel)}]`,
-            );
-            return (
-              help!.getAttribute("aria-expanded") === "false" &&
-              help === view.contentEl.ownerDocument.activeElement &&
-              Array.from(
-                view.contentEl.querySelectorAll<CodeMirrorElement>(
-                  ".cm-content",
-                ),
-              ).some((element) => element.textContent.includes("[!note]"))
-            );
-          },
-          { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
-          {
-            what: "the help button collapsed and focused with the note source visible",
+            what: "the Annotation tab to open on its lede with the note source visible",
           },
         );
       },
@@ -460,7 +336,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       async ({ app }, { notePath }) => {
         const view = (function () {
-          var leaves = app.workspace.getLeavesOfType(
+          const leaves = app.workspace.getLeavesOfType(
             "zotlit-template-workbench",
           ) as (import("obsidian").WorkspaceLeaf & {
             view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -500,7 +376,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       async ({ app }, { notePath }) => {
         const view = (function () {
-          var leaves = app.workspace.getLeavesOfType(
+          const leaves = app.workspace.getLeavesOfType(
             "zotlit-template-workbench",
           ) as (import("obsidian").WorkspaceLeaf & {
             view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -523,7 +399,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return (
           activeWindow ===
           (function () {
-            var leaves = app.workspace.getLeavesOfType(
+            const leaves = app.workspace.getLeavesOfType(
               "zotlit-template-workbench",
             ) as (import("obsidian").WorkspaceLeaf & {
               view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -543,7 +419,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       async ({ app }, { notePath, updateButtonText }) => {
         const view = (function () {
-          var leaves = app.workspace.getLeavesOfType(
+          const leaves = app.workspace.getLeavesOfType(
             "zotlit-template-workbench",
           ) as (import("obsidian").WorkspaceLeaf & {
             view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -590,7 +466,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ app, page }, { notePath, updateButtonText }) => {
         const { press } = page;
         const view = (function () {
-          var leaves = app.workspace.getLeavesOfType(
+          const leaves = app.workspace.getLeavesOfType(
             "zotlit-template-workbench",
           ) as (import("obsidian").WorkspaceLeaf & {
             view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -617,7 +493,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       async ({ app }, { notePath }) => {
         return !(function () {
-          var leaves = app.workspace.getLeavesOfType(
+          const leaves = app.workspace.getLeavesOfType(
             "zotlit-template-workbench",
           ) as (import("obsidian").WorkspaceLeaf & {
             view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -660,7 +536,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       async ({ app }, { notePath, updated }) => {
         const view = (function () {
-          var leaves = app.workspace.getLeavesOfType(
+          const leaves = app.workspace.getLeavesOfType(
             "zotlit-template-workbench",
           ) as (import("obsidian").WorkspaceLeaf & {
             view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
@@ -893,11 +769,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "citation.open-as-links": true,
           }),
         );
-        var file = await app.vault.create(
+        const file = await app.vault.create(
           "Profile flow source.md",
           citationText,
         );
-        var leaf = app.workspace.getLeaf(false);
+        const leaf = app.workspace.getLeaf(false);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
         (leaf.view as import("obsidian").MarkdownView).editor.setCursor({
           line: 0,
@@ -926,7 +802,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async (_context, { booksProfileLabel }) => {
-        var input =
+        const input =
           activeDocument.querySelector<HTMLInputElement>(".prompt input");
         input!.value = booksProfileLabel;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1003,8 +879,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ app }, { booksNotePath, edited }) => {
-        var file = app.vault.getFileByPath(booksNotePath)!;
-        var leaf = app.workspace.getLeaf(false);
+        const file = app.vault.getFileByPath(booksNotePath)!;
+        const leaf = app.workspace.getLeaf(false);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
         (leaf.view as import("obsidian").MarkdownView).editor.setValue(edited);
         return app.commands.executeCommandById("zotlit:update-note");
@@ -1044,7 +920,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ app }, { original }) => {
-        var view =
+        const view =
           app.workspace.getActiveFileView() as import("obsidian").MarkdownView;
         view.editor.setValue(original);
         await view.save();
@@ -1183,7 +1059,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       async ({ app }, { booksNotePath }) => {
-        var file = app.vault.getFileByPath(booksNotePath)!;
+        const file = app.vault.getFileByPath(booksNotePath)!;
         if (!file || file.extension !== "md") {
           return "missing";
         }
@@ -1319,8 +1195,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const response = await obRun(
         run.vaultId,
         async ({ app }, { booksNotePath }) => {
-          var file = app.vault.getFileByPath(booksNotePath)!;
-          var frontmatter =
+          const file = app.vault.getFileByPath(booksNotePath)!;
+          const frontmatter =
             file && app.metadataCache.getFileCache(file)?.frontmatter;
           return JSON.stringify({
             title: frontmatter?.["fixture-title"],
@@ -1446,8 +1322,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "citation.open-as-links": true,
           }),
         );
-        var file = await app.vault.create("Match flow source.md", fileContent);
-        var leaf = app.workspace.getLeaf(false);
+        const file = await app.vault.create(
+          "Match flow source.md",
+          fileContent,
+        );
+        const leaf = app.workspace.getLeaf(false);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
         (leaf.view as import("obsidian").MarkdownView).editor.setCursor({
           line: 0,
@@ -1508,7 +1387,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           for (const type of [
             "zotlit-template-workbench",
             "zotlit-template-data-explorer",
-            "zotlit-note-preview",
           ])
             app.workspace.detachLeavesOfType(type);
         },
@@ -1560,7 +1438,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     let rows: (string | null)[] = [];
     expect(
       await waitFor(async () => {
-        rows = (await obRun(
+        rows = await obRun(
           run.vaultId,
           async ({ page }) => {
             return Array.from(
@@ -1576,7 +1454,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           },
           undefined,
-        )) as (string | null)[];
+        );
         return rows.length === 2 && rows[1] !== null;
       }),
     ).toBe(true);
@@ -1590,7 +1468,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const underlines = async (expected: string) => {
       let marks: string[][] = [];
       await waitFor(async () => {
-        marks = (await obRun(
+        marks = await obRun(
           run.vaultId,
           async ({ page }) => {
             return Array.from(
@@ -1606,7 +1484,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           },
           undefined,
-        )) as string[][];
+        );
         return marks[1]?.join() === expected;
       });
       return marks;
@@ -1704,7 +1582,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const item of creating) {
       const note = await indexedNote(run.vaultId, item.itemID);
       if (note.path)
-        await cli([`vault=${run.vaultId}`, "delete", `path=${note.path!}`]);
+        await cli([`vault=${run.vaultId}`, "delete", `path=${note.path}`]);
       await waitForIndexedNotes(run.vaultId, note.indexedKey, 0);
     }
     const articlesSource = (
@@ -1737,8 +1615,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const server = (await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        var services = zotlit.services;
-        var settings = services.bridge.runSync(services.settings.current);
+        const services = zotlit.services;
+        const settings = services.bridge.runSync(services.settings.current);
         return {
           hostname: settings["server.hostname"],
           port: services.bridge.runSync(services.localServer.effectivePort),
@@ -1840,7 +1718,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async (_context, { booksProfileLabel }) => {
-        var input = Array.from(
+        const input = Array.from(
           activeDocument.querySelectorAll<HTMLElement>(".prompt"),
         )
           .at(-1)!
@@ -2008,7 +1886,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ page }, { filterOperator }) => {
         const { pick } = page;
-        var editor = page.workbench()!.contentEl;
+        const editor = page.workbench()!.contentEl;
         await pick(
           editor.querySelector<HTMLSelectElement>(
             `[data-condition-row] select[aria-label=${JSON.stringify(
@@ -2070,7 +1948,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ app }, { booksNotePath, appendedContent }) => {
         app.workspace.detachLeavesOfType("zotlit-template-workbench");
         app.vault.setConfig("trashOption", "local");
-        var file = app.vault.getFileByPath(booksNotePath)!;
+        const file = app.vault.getFileByPath(booksNotePath)!;
         await app.vault.append(file, appendedContent);
       },
       { booksNotePath: run.booksNotePath, appendedContent: `\n${exterior}\n` },
@@ -2101,18 +1979,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app, page }, { booksProfileLabel, moreActionsLabel }) => {
         const { press } = page;
-        var settings = app.setting.containerEl;
-        var row = Array.from(
+        const settings = app.setting.containerEl;
+        const row = Array.from(
           settings.querySelectorAll<HTMLElement>(".setting-item"),
         ).find(
           (row) =>
             row.querySelector<HTMLElement>(".setting-item-name")
               ?.textContent === booksProfileLabel,
         );
-        var button =
+        const button =
           row &&
           (Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find(
-            (button) => button!.getAttribute("aria-label") === moreActionsLabel,
+            (button) => button.getAttribute("aria-label") === moreActionsLabel,
           ) ??
             row.querySelector<HTMLElement>(".extra-setting-button"));
         if (!button) return false;
@@ -2131,11 +2009,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app, page }, { deleteTitleText }) => {
         const { press } = page;
-        var doc = app.setting.containerEl.ownerDocument;
-        var title = Array.from(
+        const doc = app.setting.containerEl.ownerDocument;
+        const title = Array.from(
           doc.querySelectorAll<HTMLElement>(".menu-item-title"),
         ).find((title) => title.textContent.trim() === deleteTitleText);
-        var item = title?.closest<HTMLElement>(".menu-item");
+        const item = title?.closest<HTMLElement>(".menu-item");
         if (!item) return false;
         press(item, "Delete");
         return true;
@@ -2174,15 +2052,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app, page }, { moveFilesLabel }) => {
           const { press } = page;
-          var doc = app.setting.containerEl.ownerDocument;
-          var label = Array.from(
+          const doc = app.setting.containerEl.ownerDocument;
+          const label = Array.from(
             doc.querySelectorAll<HTMLElement>(".modal label"),
           ).find((label) => label.textContent === moveFilesLabel);
-          var checkbox = label?.querySelector<HTMLInputElement>(
+          const checkbox = label?.querySelector<HTMLInputElement>(
             "input[type=checkbox]",
           );
           if (!checkbox || checkbox.checked) return false;
-          press(label!, "Move files");
+          press(label, "Move files");
           return checkbox.checked;
         },
         {
@@ -2258,7 +2136,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }, { movedPath }) => {
         app.setting.close();
-        var file = app.vault.getFileByPath(movedPath)!;
+        const file = app.vault.getFileByPath(movedPath)!;
         await app.fileManager.processFrontMatter(file, (frontmatter) => {
           frontmatter.title = "Not the Zotero title";
         });
@@ -2377,8 +2255,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const server = (await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          var services = zotlit.services;
-          var settings = services.bridge.runSync(services.settings.current);
+          const services = zotlit.services;
+          const settings = services.bridge.runSync(services.settings.current);
           return {
             port: services.bridge.runSync(services.localServer.effectivePort),
             sourceId: services.bridge.runSync(services.zoteroPref.current)
@@ -2417,7 +2295,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               templateSettingName,
             },
           ) => {
-            var names = Array.from(
+            const names = Array.from(
               app.setting.containerEl.querySelectorAll<HTMLElement>(
                 ".setting-item-name",
               ),
@@ -2445,7 +2323,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ app }, { liveUpdatesSettingName, advancedHeadingText }) => {
-            var names = Array.from(
+            const names = Array.from(
               app.setting.containerEl.querySelectorAll<HTMLElement>(
                 ".setting-item-name",
               ),

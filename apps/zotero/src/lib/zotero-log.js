@@ -14,13 +14,13 @@ export function logToBrowserConsole(
     "@mozilla.org/scripterror;1"
   ].createInstance(Components.interfaces.nsIScriptError);
 
-  var flagsByType = {
+  const flagsByType = {
     error: scriptError.errorFlag, // 0
     warning: scriptError.warningFlag, // 1
     info: scriptError.infoFlag, // 8
   };
 
-  var flags = Object.prototype.hasOwnProperty.call(flagsByType, type)
+  const flags = Object.prototype.hasOwnProperty.call(flagsByType, type)
     ? flagsByType[type]
     : scriptError.warningFlag;
 

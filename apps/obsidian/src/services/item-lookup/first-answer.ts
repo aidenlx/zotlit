@@ -9,6 +9,8 @@ export interface FirstAnswerView {
   reveal(): void;
   /** Put a loading row in the empty result list. */
   showLoading(): void;
+  /** The window the picker opened in, whose timer waits for the first answer. */
+  win(): Window;
 }
 
 /**
@@ -21,6 +23,8 @@ export interface FirstAnswerView {
 export class FirstAnswerGate {
   readonly #view: FirstAnswerView;
   #timer: number | undefined;
+  /** The window `#timer` was armed on. */
+  #timerWin: Window | null = null;
   /** The open that still waits for its first answer, or `null`. */
   #pendingOpen: object | null = null;
 
@@ -34,7 +38,9 @@ export class FirstAnswerGate {
     const pendingOpen = {};
     this.#pendingOpen = pendingOpen;
     this.#view.hide();
-    this.#timer = window.setTimeout(() => {
+    const win = this.#view.win();
+    this.#timerWin = win;
+    this.#timer = win.setTimeout(() => {
       if (this.#pendingOpen !== pendingOpen) return;
       this.#view.showLoading();
       this.#settle(pendingOpen);
@@ -42,8 +48,7 @@ export class FirstAnswerGate {
   }
 
   close(): void {
-    window.clearTimeout(this.#timer);
-    this.#timer = undefined;
+    this.#clearTimer();
     this.#pendingOpen = null;
   }
 
@@ -60,9 +65,14 @@ export class FirstAnswerGate {
 
   #settle(pendingOpen: object): void {
     if (this.#pendingOpen !== pendingOpen) return;
-    window.clearTimeout(this.#timer);
-    this.#timer = undefined;
+    this.#clearTimer();
     this.#pendingOpen = null;
     this.#view.reveal();
+  }
+
+  #clearTimer(): void {
+    this.#timerWin?.clearTimeout(this.#timer);
+    this.#timerWin = null;
+    this.#timer = undefined;
   }
 }

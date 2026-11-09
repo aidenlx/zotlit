@@ -4,7 +4,7 @@
 // hands this branch every input it reads.
 import { Effect, Schema } from "effect";
 
-import type { CitationTemplateData, CitationVariant } from "@zotlit/db";
+import type { CitationTemplateData } from "@zotlit/db";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
 import { serializeTemplateData } from "@zotlit/workbench/explorer";
 import { isCitationExampleId } from "@zotlit/workbench/render";
@@ -12,10 +12,10 @@ import type { RenderCallerSource } from "@zotlit/workbench/render";
 
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { Profile, ProfileOperationError } from "@/services/profile/service";
+import { checkDiagnostic } from "@/services/template-workbench/check-profile";
+import type { ProfileCheck } from "@/services/template-workbench/check-profile";
 import { plainTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
-import { checkDiagnostic } from "@/views/note-preview/check-profile";
-import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
 import type {
   CheckContext,
@@ -203,7 +203,7 @@ export const checkPlainDocument = Effect.fn(
               isCitationExampleId(params.example)
               ? { example: params.example }
               : { key: params.key as string },
-            (params.variant ?? "main") as CitationVariant,
+            params.variant ?? "main",
           )
         : readTemplateData(
             params.key as string,

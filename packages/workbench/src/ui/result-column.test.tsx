@@ -2,14 +2,17 @@ import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
 
+import type { PreviewSettings } from "./model";
 import { PreviewControls } from "./preview-controls";
 import { PropertyList } from "./property-list";
-import { ResultBody, ResultColumn } from "./result-column";
+import {
+  PreviewFilenameLabel,
+  previewFilename,
+  ResultBody,
+  ResultColumn,
+} from "./result-column";
 import type { ResultColumnProps } from "./result-column";
-import type { PreviewSettings } from "./store";
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
@@ -39,7 +42,6 @@ function column(
   const props: ResultColumnProps = {
     result,
     mode: "note",
-    stale: false,
     staleReason: null,
     showMarkdown: false,
     onShowMarkdown: vi.fn<(show: boolean) => void>(),
@@ -92,13 +94,10 @@ it.each(["note", "annotation"] as const)(
 );
 
 it("passes the complete note and folded properties to the host renderer", () => {
-  using mounted = column({ stale: true, staleReason: "hold" });
+  using mounted = column({ staleReason: "hold" });
   const { props } = mounted;
   expect(
-    screen
-      .getByText("Papers/Reading.md")
-      .closest("header")
-      ?.getAttribute("aria-description"),
+    screen.getByText("Papers/Reading.md").getAttribute("aria-description"),
   ).toBe("Papers/Reading.md");
   expect(
     screen
@@ -344,7 +343,7 @@ it("keeps Annotation output successful beside a failed Note Property", () => {
 });
 
 it("keeps the hold notice its own sentence while the last result stands", () => {
-  using _mounted = column({ stale: true, staleReason: "hold" });
+  using _mounted = column({ staleReason: "hold" });
   expect(screen.getByRole("status").textContent).toBe(
     m.workbench_preview_stale(),
   );
@@ -353,7 +352,6 @@ it("keeps the hold notice its own sentence while the last result stands", () => 
 
 it("reads a document the parser refuses as a failure, not as a wait", () => {
   using mounted = column({
-    stale: true,
     staleReason: "invalid",
     retained: result,
   });
@@ -375,7 +373,7 @@ it("reads a document the parser refuses as a failure, not as a wait", () => {
 it("names no preview for a refused document with nothing kept", () => {
   // Nothing successful stands for this selection, so the preview says so even
   // before any attempt has run.
-  using _none = column({ result: null, stale: true, staleReason: "invalid" });
+  using _none = column({ result: null, staleReason: "invalid" });
   expect(screen.getByRole("status").textContent).toContain(
     m.workbench_preview_unavailable(),
   );
@@ -385,14 +383,16 @@ it("names no preview for a refused document with nothing kept", () => {
 it("changes preview mode, runs on demand, and pauses future work", () => {
   const onRun = vi.fn<() => void>();
   function Controls() {
-    const [store] = useState(() =>
-      createStore<PreviewSettings>(() => ({ mode: "create", live: true })),
-    );
-    const preview = useStore(store);
+    const [preview, setPreview] = useState<PreviewSettings>({
+      mode: "create",
+      live: true,
+    });
     return (
       <PreviewControls
         preview={preview}
-        onChange={store.setState}
+        onChange={(value) =>
+          setPreview((current) => ({ ...current, ...value }))
+        }
         busy={false}
         onRun={onRun}
       />
@@ -405,8 +405,7 @@ it("changes preview mode, runs on demand, and pauses future work", () => {
     target: { value: "update" },
   });
   expect(
-    (screen.getByLabelText(m.workbench_preview_mode()) as HTMLSelectElement)
-      .value,
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_mode()).value,
   ).toBe("update");
   expect(
     screen.queryByRole("button", { name: m.workbench_preview_run() }),
@@ -415,7 +414,7 @@ it("changes preview mode, runs on demand, and pauses future work", () => {
     target: { value: "demand" },
   });
   expect(
-    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_refresh())
       .value,
   ).toBe("demand");
   fireEvent.click(
@@ -423,21 +422,21 @@ it("changes preview mode, runs on demand, and pauses future work", () => {
   );
   expect(onRun).toHaveBeenCalledOnce();
   expect(
-    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_refresh())
       .value,
   ).toBe("demand");
   fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
     target: { value: "live" },
   });
   expect(
-    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_refresh())
       .value,
   ).toBe("live");
   fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
     target: { value: "demand" },
   });
   expect(
-    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+    screen.getByLabelText<HTMLSelectElement>(m.workbench_preview_refresh())
       .value,
   ).toBe("demand");
 });
@@ -465,12 +464,12 @@ it("shows the behind notice with no Run button when none is given", () => {
 });
 
 it("shows no status while a live render is on its way", () => {
-  using _mounted = column({ stale: true, staleReason: "live" });
+  using _mounted = column({ staleReason: "live" });
   expect(screen.queryByRole("status")).toBeNull();
 });
 
 it("shows no status once the shown result is current", () => {
-  using _mounted = column({ stale: false, staleReason: null });
+  using _mounted = column({ staleReason: null });
   expect(screen.queryByRole("status")).toBeNull();
 });
 
@@ -479,7 +478,6 @@ it("renders ResultBody with no heading", () => {
     <ResultBody
       result={result}
       mode="note"
-      stale={false}
       staleReason={null}
       showMarkdown={false}
       showManaged={false}
@@ -488,4 +486,54 @@ it("renders ResultBody with no heading", () => {
   render(mounted.ui);
   expect(screen.queryByRole("heading")).toBeNull();
   expect(screen.getByText("Papers/Reading.md")).toBeDefined();
+});
+
+// #1965: a host that names the file in its own sticky header row leaves the
+// region's file name out and reads the name the region would show.
+it("leaves the file name to the host's header row", () => {
+  using mounted = mount(
+    <ResultBody
+      result={result}
+      mode="note"
+      staleReason={null}
+      showMarkdown={false}
+      showManaged={false}
+      showFilename={false}
+    />,
+  );
+  render(mounted.ui);
+  expect(screen.queryByText("Papers/Reading.md")).toBeNull();
+  expect(screen.getByRole("region")).toBeDefined();
+});
+
+it("labels the file name and gives its whole value as a tooltip", () => {
+  using mounted = mount(<PreviewFilenameLabel filename="Papers/Reading.md" />);
+  render(mounted.ui);
+  const label = screen.getByText("Papers/Reading.md", { exact: false });
+  expect(label.textContent).toBe(
+    `${m.workbench_result_filename()}: Papers/Reading.md`,
+  );
+  expect(label.getAttribute("aria-description")).toBe("Papers/Reading.md");
+});
+
+it("names the file a note preview shows, and none for a failure or another mode", () => {
+  const reading = {
+    result,
+    mode: "note",
+    staleReason: null,
+    showManaged: false,
+  } as const;
+  expect(previewFilename(reading)).toBe("Papers/Reading.md");
+  expect(previewFilename({ ...reading, mode: "annotation" })).toBeNull();
+  expect(
+    previewFilename({
+      ...reading,
+      result: {
+        ...result,
+        diagnostics: [
+          { code: "property-error", position: 2, message: "Invalid property" },
+        ],
+      },
+    }),
+  ).toBeNull();
 });

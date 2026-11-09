@@ -6,6 +6,7 @@ import { getMDXComponents } from "@/components/mdx";
 import { SiteFooter } from "@/components/site-footer";
 import { cn } from "@/lib/cn";
 import { changelogs } from "@/lib/collections";
+import { validateSiteLocale } from "@/lib/i18n";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import {
@@ -17,16 +18,19 @@ import {
 import { getChangelogPages } from "@/lib/source";
 import { breadcrumbListSchema } from "@/lib/structured-data";
 import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 
-const listReleases = createServerFn({ method: "GET" }).handler(() =>
-  getChangelogPages().map((page) => ({
-    path: page.path,
-    version: page.data.version,
-    description: page.data.description,
-    companion: page.data.companion,
-    date: page.data.date,
-  })),
-);
+const listReleases = createServerFn({ method: "GET" })
+  .validator(validateSiteLocale)
+  .handler(({ data: locale }) =>
+    getChangelogPages({ locale }).map((page) => ({
+      path: page.path,
+      version: page.data.version,
+      description: page.data.description,
+      companion: page.data.companion,
+      date: page.data.date,
+    })),
+  );
 
 const crumbs = () => [
   { name: appName, url: "/" },
@@ -45,7 +49,7 @@ export const Route = createFileRoute("/_home/changelog/")({
       schemas: [breadcrumbListSchema(crumbs())],
     }),
   loader: async () => {
-    const releases = await listReleases();
+    const releases = await listReleases({ data: getLocale() });
     await Promise.all(
       releases.map((release) => {
         const page = changelogs.get(release.path);
@@ -83,7 +87,7 @@ function ChangelogIndex() {
             >
               <div className="text-left md:text-right">
                 <time className="mb-2 block font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
-                  {formatReleaseDate(release.date)}
+                  {formatReleaseDate(release.date, { locale: getLocale() })}
                 </time>
                 <span
                   className={cn(

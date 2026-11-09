@@ -8,8 +8,6 @@ import {
 import { Effect } from "effect";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
 
 import { DataExplorer as ControlledDataExplorer } from "./data-explorer";
 import type { DataExplorerProps } from "./data-explorer";
@@ -26,22 +24,17 @@ function DataExplorer(
     | "onNavigationChange"
   >,
 ) {
-  const [store] = useState(() =>
-    createStore(() => ({
-      collapsedSections: new Set<string>() as ReadonlySet<string>,
-      navigation: initialTreeState(),
-    })),
-  );
-  const { collapsedSections, navigation } = useStore(store);
+  const [collapsedSections, setCollapsedSections] = useState<
+    ReadonlySet<string>
+  >(() => new Set<string>());
+  const [navigation, setNavigation] = useState(initialTreeState);
   return (
     <ControlledDataExplorer
       {...props}
       collapsedSections={collapsedSections}
       navigation={navigation}
-      onCollapsedSectionsChange={(collapsedSections) =>
-        store.setState({ collapsedSections })
-      }
-      onNavigationChange={(navigation) => store.setState({ navigation })}
+      onCollapsedSectionsChange={setCollapsedSections}
+      onNavigationChange={setNavigation}
     />
   );
 }
@@ -71,13 +64,29 @@ describe("shared Data Explorer", () => {
     ).toBe(true);
     expect(screen.getByText("Extra")).toBeTruthy();
     const identifiers = screen.getByRole("button", {
-      name: `${m.workbench_explorer_section_identifiers()} (1)`,
+      name: `${m.workbench_explorer_section_identifiers()} 1`,
     });
     expect(identifiers.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(identifiers);
     expect(screen.queryByText("Extra")).toBeNull();
     expect(identifiers.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByText(m.workbench_field_title())).toBeTruthy();
+  });
+
+  it("leaves the sections button to a host that offers it elsewhere", () => {
+    using mounted = mount(
+      <DataExplorer
+        root="note"
+        data={{ title: "A paper" }}
+        copy={() => Effect.void}
+      />,
+    );
+    render(mounted.ui);
+    expect(
+      screen.queryByRole("button", {
+        name: m.workbench_explorer_collapse_all(),
+      }),
+    ).toBeNull();
   });
 
   it("copies values from the row menu without an editor insertion target", () => {
@@ -121,7 +130,7 @@ describe("shared Data Explorer", () => {
       <DataExplorer
         root="note"
         data={{ title: "A paper" }}
-        engine="eta"
+        insertion={() => ({ engine: "eta", mode: "template" })}
         copy={() => Effect.void}
         onInsert={insert}
       />,
@@ -131,7 +140,44 @@ describe("shared Data Explorer", () => {
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_fields_put_in_note() }),
     );
-    expect(insert).toHaveBeenCalledWith("<%= zt.title %>");
+    expect(insert).toHaveBeenCalledWith("<%= zt.title %>", { keepOpen: false });
+  });
+  it("copies from the row menu the text an insert writes in a Properties value", () => {
+    const copy = vi.fn<DataExplorerProps["copy"]>(() => Effect.void);
+    const insert = vi.fn<(snippet: string) => void>();
+    using mounted = mount(
+      <DataExplorer
+        root="note"
+        data={{ title: "A paper" }}
+        insertion={() => ({ engine: "liquid", mode: "expression" })}
+        engines={() => ["liquid", "eta"]}
+        copy={copy}
+        onInsert={insert}
+      />,
+    );
+    const { ui, host } = mounted;
+    render(ui);
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_explorer_row_actions() }),
+    );
+    const menu = host.calls.menus[0]!;
+    // One form, in no engine: a Properties value reads the field itself.
+    expect(menu.submenus ?? []).toEqual([]);
+    const copies = menu.items.filter((item) =>
+      [
+        m.workbench_explorer_menu_copy_output(),
+        m.workbench_explorer_menu_copy_if_present(),
+      ].includes(item.label),
+    );
+    expect(copies.map((item) => item.label)).toEqual([
+      m.workbench_explorer_menu_copy_output(),
+    ]);
+    copies[0]!.onSelect();
+    expect(copy).toHaveBeenCalledWith("zt.title");
+    menu.items
+      .find((item) => item.label === m.workbench_fields_put_in_note())!
+      .onSelect();
+    expect(insert).toHaveBeenCalledWith("zt.title", { keepOpen: false });
   });
   it("expands nested values and opens the live engine menu", () => {
     let eta = false;
@@ -176,7 +222,7 @@ describe("shared Data Explorer", () => {
       render(ui);
       fireEvent.click(
         screen.getByRole("button", {
-          name: `${m.workbench_explorer_section_common()} (2)`,
+          name: `${m.workbench_explorer_section_common()} 2`,
         }),
       );
       expect(screen.queryByText("smith2026")).toBeNull();
@@ -189,7 +235,7 @@ describe("shared Data Explorer", () => {
       expect(
         screen
           .getByRole("button", {
-            name: `${m.workbench_explorer_section_common()} (1)`,
+            name: `${m.workbench_explorer_section_common()} 1`,
           })
           .getAttribute("aria-disabled"),
       ).toBe("true");
@@ -207,6 +253,14 @@ describe("shared Data Explorer", () => {
     const { ui } = mounted;
     render(ui);
     const input = screen.getByRole("searchbox");
+    // The placeholder shows the field's name; a host would draw an
+    // `aria-label` as a tooltip over it as well.
+    expect(input.hasAttribute("aria-label")).toBe(false);
+    expect(
+      screen.getByRole("searchbox", {
+        name: input.getAttribute("placeholder")!,
+      }),
+    ).toBe(input);
     fireEvent.input(input, { target: { value: "all creators" } });
     fireEvent.change(input, { target: { value: "all creators" } });
     const row = screen.getByRole("treeitem");
@@ -265,7 +319,7 @@ describe("shared Data Explorer", () => {
       <DataExplorer
         root="note"
         data={{ title: "A paper" }}
-        mode={mode}
+        insertion={() => ({ engine: "liquid", mode })}
         copy={() => Effect.void}
         onInsert={insert}
       />,
@@ -275,7 +329,7 @@ describe("shared Data Explorer", () => {
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_fields_put_in_note() }),
     );
-    expect(insert).toHaveBeenCalledWith(expected);
+    expect(insert).toHaveBeenCalledWith(expected, { keepOpen: false });
   });
 
   it("shows a refused copy as a notice", async () => {
@@ -331,9 +385,13 @@ it("keeps two Explorer owners independent through display and filter changes", (
   fireEvent.click(
     left.getByRole("button", { name: m.workbench_explorer_toggle_node() }),
   );
-  expect(left.getByText("Ada")).toBeTruthy();
-  expect(right.queryByText("Grace")).toBeNull();
-  const common = `${m.workbench_explorer_section_common()} (2)`;
+  const authorsRow = (explorer: typeof left) =>
+    explorer
+      .getAllByRole("treeitem")
+      .find((row) => row.dataset.workbenchField === "authors");
+  expect(authorsRow(left)?.getAttribute("aria-expanded")).toBe("true");
+  expect(authorsRow(right)?.getAttribute("aria-expanded")).toBe("false");
+  const common = `${m.workbench_explorer_section_common()} 2`;
   fireEvent.click(left.getByRole("button", { name: common }));
   expect(left.queryByText(m.workbench_field_title())).toBeNull();
   expect(right.getByText(m.workbench_field_title())).toBeTruthy();

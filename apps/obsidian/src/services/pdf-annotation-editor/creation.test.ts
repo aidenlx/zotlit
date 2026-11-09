@@ -38,6 +38,7 @@ import {
   readerSurfaces,
   toolColors,
 } from "./__fixtures__";
+import { current, update } from "./reader-surface-model";
 import { arm, ingestCapability, selectTextDraft } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 import type { ToolColorStore } from "./tools";
@@ -198,12 +199,12 @@ async function reader(
   // The repository reads Zotero on real time; the reader's own timers are
   // driven by hand from here on.
   useFakeTimers();
-  const { app, creation, store: surfaceState, revealed, zotero } = reader;
+  const { app, creation, surface, revealed, zotero } = reader;
 
   return {
     app,
     creation,
-    surfaceState,
+    surface,
     focusReader: reader.focusReader,
     containerEl,
     pageEl,
@@ -729,10 +730,10 @@ it("takes the marks off the pages and puts them back", async () => {
     '[data-zt-tool="visibility"]',
   )!;
   visibility.click();
-  expect(open.surfaceState.getState().marksVisible).toBe(false);
+  expect(current(open.surface).marksVisible).toBe(false);
 
   open.slot.querySelector<HTMLElement>('[data-zt-tool="visibility"]')!.click();
-  expect(open.surfaceState.getState().marksVisible).toBe(true);
+  expect(current(open.surface).marksVisible).toBe(true);
 });
 
 it("leaves the toolbar slot as Obsidian built it when it is disposed", async () => {
@@ -772,14 +773,13 @@ it("keeps the comment sheet and its text through capability announcements", asyn
   const editor = commentView(open.popup()!)!;
   editor.dispatch({ changes: { from: 0, insert: "worth quoting" } });
 
-  ingestCapability(open.surfaceState, { kind: "writable" }, NOW);
+  update(open.surface, ingestCapability({ kind: "writable" }, NOW));
   expect(commentView(open.popup()!)).toBe(editor);
 
   // A real block stands the sheet down where it is, rather than rebuilding it.
-  ingestCapability(
-    open.surfaceState,
-    { kind: "read-only", reason: "zotero-unavailable" },
-    NOW,
+  update(
+    open.surface,
+    ingestCapability({ kind: "read-only", reason: "zotero-unavailable" }, NOW),
   );
   expect(commentView(open.popup()!)).toBe(editor);
   expect(editor.state.doc.toString()).toBe("worth quoting");
@@ -812,12 +812,12 @@ it("drops the waiting selection once its page leaves the screen", async () => {
   open.containerEl.dispatchEvent(new Event("scroll"));
 
   expect(open.popup()).toBeNull();
-  expect(open.surfaceState.getState().floating).toEqual({ kind: "none" });
+  expect(current(open.surface).floating).toEqual({ kind: "none" });
 });
 
 it("refuses an image create from a text selection, and offers the popup instead", async () => {
   await using open = await reader();
-  arm(open.surfaceState, "image");
+  update(open.surface, arm("image"));
 
   await open.selectText();
   await open.creation.created;
@@ -906,7 +906,7 @@ async function imageReader(
   const surfaces = await readerOverZotero(stack, {
     containerEl,
     colors,
-    page: page as unknown as OverlayPageView,
+    page: page,
     records: [MARK],
     capability,
     structure: closed ? null : (given ?? (structure as never)),
@@ -918,7 +918,7 @@ async function imageReader(
   surfaces.creation.mountToolbar(slot);
   // Armed as a researcher arms it, from the toolbar; the arm itself stands
   // outside any block, which only the capture has to answer.
-  arm(surfaces.store, "image");
+  update(surfaces.surface, arm("image"));
 
   const pointer = pointerOn(page.div, containerEl);
   return {
@@ -957,12 +957,12 @@ it("cancels a capture on Escape and keeps the tool; a second Escape stands it do
   await open.creation.created;
 
   expect(open.drafts).toEqual([]);
-  expect(open.store.getState()).toMatchObject({
+  expect(current(open.surface)).toMatchObject({
     floating: { kind: "none" },
     armed: "image",
   });
   open.key("Escape");
-  expect(open.store.getState().armed).toBeNull();
+  expect(current(open.surface).armed).toBeNull();
 });
 
 it("reports a press while editing is not live, and captures nothing", async () => {
@@ -975,7 +975,7 @@ it("reports a press while editing is not live, and captures nothing", async () =
 
   expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
   expect(open.drafts).toEqual([]);
-  expect(open.store.getState().floating).toEqual({ kind: "none" });
+  expect(current(open.surface).floating).toEqual({ kind: "none" });
 });
 
 it("leaves a press on a mark to the mark while the image tool is armed", async () => {
@@ -989,7 +989,7 @@ it("leaves a press on a mark to the mark while the image tool is armed", async (
   await open.creation.created;
 
   expect(open.drafts).toEqual([]);
-  expect(open.store.getState().floating).toMatchObject({
+  expect(current(open.surface).floating).toMatchObject({
     kind: "selected",
     key: "PUPR5FG5",
   });
@@ -1026,7 +1026,7 @@ it("creates no note from a drag, and stays armed", async () => {
   await open.drag([100, 100], [140, 100]);
 
   expect(open.drafts).toEqual([]);
-  expect(open.store.getState().armed).toBe("note");
+  expect(current(open.surface).armed).toBe("note");
 });
 
 it("takes a note press from the browser, so a drag under it selects no text", async () => {
@@ -1059,7 +1059,10 @@ it.each([
         new PointerEvent("lostpointercapture", { pointerId: 1, bubbles: true }),
       ),
   ],
-  ["a tool change", (open: ImageReader) => arm(open.store, "highlight")],
+  [
+    "a tool change",
+    (open: ImageReader) => update(open.surface, arm("highlight")),
+  ],
   ["the tool standing down", (open: ImageReader) => open.key("Escape")],
 ])("creates no note from a press %s discarded", async (_, discard) => {
   await using open = await toolReader("note");
@@ -1076,10 +1079,9 @@ it.each([
 it("reports a note press while editing is not live, and creates nothing", async () => {
   // Armed while editing was live, and blocked since.
   await using open = await toolReader("note");
-  ingestCapability(
-    open.store,
-    { kind: "read-only", reason: "zotero-unavailable" },
-    NOW,
+  update(
+    open.surface,
+    ingestCapability({ kind: "read-only", reason: "zotero-unavailable" }, NOW),
   );
 
   open.pointer("pointerdown", [100, 100]);
@@ -1101,7 +1103,7 @@ it("leaves a press on a mark to the mark while the note tool is armed", async ()
   await open.creation.created;
 
   expect(open.drafts).toEqual([]);
-  expect(open.store.getState().floating).toMatchObject({
+  expect(current(open.surface).floating).toMatchObject({
     kind: "selected",
     key: "PUPR5FG5",
   });
@@ -1137,7 +1139,7 @@ it("creates one ink stroke as Zotero smooths it, and stays armed", async () => {
     },
   ]);
   expect(open.revealed).toEqual([]);
-  expect(open.store.getState()).toMatchObject({
+  expect(current(open.surface)).toMatchObject({
     floating: { kind: "none" },
     armed: "ink",
     liveStroke: null,
@@ -1155,13 +1157,13 @@ function secondInkView(open: ImageReader) {
   page.div.getBoundingClientRect = () => LETTER_AT_ORIGIN;
   const surfaces = readerSurfaces({
     containerEl,
-    page: page as unknown as OverlayPageView,
-    records: open.store.getState().records,
+    page: page,
+    records: current(open.surface).records,
     structure: open.structure as never,
     annotations: open.service,
     bridge: open.bridge,
   });
-  arm(surfaces.store, "ink");
+  update(surfaces.surface, arm("ink"));
   const pointer = pointerOn(page.div, containerEl);
   return {
     /** One stroke from a client point to another, released there. */
@@ -1224,13 +1226,13 @@ it("discards a stroke on Escape and keeps the tool; a second Escape stands it do
   await open.creation.created;
 
   expect(open.drafts).toEqual([]);
-  expect(open.store.getState()).toMatchObject({
+  expect(current(open.surface)).toMatchObject({
     armed: "ink",
     liveStroke: null,
     pendingStrokes: [],
   });
   open.key("Escape");
-  expect(open.store.getState().armed).toBeNull();
+  expect(current(open.surface).armed).toBeNull();
 });
 
 it.each([
@@ -1249,7 +1251,10 @@ it.each([
         new PointerEvent("lostpointercapture", { pointerId: 1, bubbles: true }),
       ),
   ],
-  ["a tool change", (open: ImageReader) => arm(open.store, "highlight")],
+  [
+    "a tool change",
+    (open: ImageReader) => update(open.surface, arm("highlight")),
+  ],
 ])("creates nothing from a stroke %s discarded", async (_, discard) => {
   await using open = await toolReader("ink");
 
@@ -1261,16 +1266,15 @@ it.each([
   await open.creation.created;
 
   expect(open.drafts).toEqual([]);
-  expect(open.store.getState().liveStroke).toBeNull();
+  expect(current(open.surface).liveStroke).toBeNull();
 });
 
 /** The ink reader, armed while editing was live and blocked since. */
 async function blockedInkReader() {
   const open = await toolReader("ink");
-  ingestCapability(
-    open.store,
-    { kind: "read-only", reason: "zotero-unavailable" },
-    NOW,
+  update(
+    open.surface,
+    ingestCapability({ kind: "read-only", reason: "zotero-unavailable" }, NOW),
   );
   return open;
 }
@@ -1279,7 +1283,7 @@ it("reports a press while editing is not live, and draws nothing", async () => {
   await using open = await blockedInkReader();
 
   open.pointer("pointerdown", [100, 100]);
-  expect(open.store.getState().liveStroke).toBeNull();
+  expect(current(open.surface).liveStroke).toBeNull();
   open.pointer("pointerup", [150, 150]);
   await open.creation.created;
 
@@ -1296,19 +1300,19 @@ it("leaves a mark unselected under a press while editing is not live", async () 
     new MouseEvent("click", { clientX: 300, clientY: 177, bubbles: true }),
   );
 
-  expect(open.store.getState().floating).toEqual({ kind: "none" });
+  expect(current(open.surface).floating).toEqual({ kind: "none" });
 });
 
 it("saves a stroke in the colour it was pressed in", async () => {
   await using open = await toolReader("ink");
-  const pressed = open.store.getState().colors.ink;
+  const pressed = current(open.surface).colors.ink;
 
   open.pointer("pointerdown", [100, 100]);
   open.key("5");
   open.pointer("pointerup", [100, 100]);
   await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
 
-  expect(open.store.getState().colors.ink).toBe(ANNOTATION_COLORS[4]);
+  expect(current(open.surface).colors.ink).toBe(ANNOTATION_COLORS[4]);
   expect(pressed).not.toBe(ANNOTATION_COLORS[4]);
   expect(open.drafts[0]!.color).toBe(pressed);
 });
@@ -1325,7 +1329,7 @@ it("creates an image while an ink stroke still saves", async () => {
   open.pointer("pointerup", [100, 100]);
   await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
 
-  arm(open.store, "image");
+  update(open.surface, arm("image"));
   await open.drag([300, 292], [100, 100]);
 
   expect(open.drafts.map(({ type }) => type)).toEqual(["ink", "image"]);
@@ -1345,7 +1349,7 @@ it("draws over a mark and leaves the mark unselected", async () => {
   await open.creation.created;
 
   expect(open.drafts.map(({ type }) => type)).toEqual(["ink"]);
-  expect(open.store.getState().floating).toEqual({ kind: "none" });
+  expect(current(open.surface).floating).toEqual({ kind: "none" });
 });
 
 it("draws while an earlier stroke saves, and creates in release order", async () => {
@@ -1360,7 +1364,7 @@ it("draws while an earlier stroke saves, and creates in release order", async ()
 
   // The second stroke waits on the first create, and both stay on the page.
   expect(
-    open.store.getState().pendingStrokes.map(({ paths }) => paths),
+    current(open.surface).pendingStrokes.map(({ paths }) => paths),
   ).toEqual([[[100, 692]], [[200, 592]]]);
   answerFirst();
   const answerSecond = open.zotero.holdWrites();
@@ -1403,7 +1407,7 @@ it("takes a refused stroke off the page", async () => {
   await open.drag([100, 100], [150, 150]);
 
   expect(open.drafts).toHaveLength(1);
-  expect(open.store.getState().pendingStrokes).toEqual([]);
+  expect(current(open.surface).pendingStrokes).toEqual([]);
 });
 
 it("takes a stroke off the page and says why when editing lapsed while it waited", async () => {
@@ -1416,10 +1420,9 @@ it("takes a stroke off the page and says why when editing lapsed while it waited
   await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
 
   // The second stroke was released while editing was live, and waits.
-  ingestCapability(
-    open.store,
-    { kind: "read-only", reason: "zotero-unavailable" },
-    NOW,
+  update(
+    open.surface,
+    ingestCapability({ kind: "read-only", reason: "zotero-unavailable" }, NOW),
   );
   answer();
   await open.creation.created;
@@ -1428,7 +1431,7 @@ it("takes a stroke off the page and says why when editing lapsed while it waited
   expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
   // The first stroke saved and draws from the record Zotero answered; the
   // second is gone.
-  const { records, pendingStrokes } = open.store.getState();
+  const { records, pendingStrokes } = current(open.surface);
   expect(records.map(({ key, type }) => [key, type])).toContainEqual([
     "MADE2345",
     "ink",
@@ -1443,7 +1446,7 @@ it("takes a stroke off the page when the viewer holds no document", async () => 
 
   expect(open.drafts).toEqual([]);
   expect(open.gestures.reportBlockedGesture).not.toHaveBeenCalled();
-  expect(open.store.getState().pendingStrokes).toEqual([]);
+  expect(current(open.surface).pendingStrokes).toEqual([]);
 });
 
 it("takes a stroke off the page when its create's reply is lost, and creates the next", async () => {
@@ -1453,7 +1456,7 @@ it("takes a stroke off the page when its create's reply is lost, and creates the
   );
 
   await open.drag([100, 100], [150, 150]);
-  expect(open.store.getState().pendingStrokes).toEqual([]);
+  expect(current(open.surface).pendingStrokes).toEqual([]);
 
   await open.drag([200, 200], [250, 250]);
   expect(open.drafts).toHaveLength(2);
@@ -1479,7 +1482,7 @@ it("finishes a stroke that reaches the position ceiling as its own Annotation, a
 
   // The pointer still draws, and the tool is still armed.
   expect(open.creation.capturing).toBe(true);
-  expect(open.store.getState()).toMatchObject({ armed: "ink" });
+  expect(current(open.surface)).toMatchObject({ armed: "ink" });
   open.pointer("pointerup", samples.at(-1)!);
   await vi.waitFor(() => expect(open.drafts).toHaveLength(2));
   await open.creation.created;
@@ -1493,7 +1496,7 @@ it("finishes a stroke that reaches the position ceiling as its own Annotation, a
   // The second part begins where the first one ends, so the two meet.
   expect(secondPath.slice(0, 2)).toEqual(firstPath.slice(-2));
   expect(firstPath.slice(0, 2)).toEqual([samples[0]![0], 792 - samples[0]![1]]);
-  expect(open.store.getState()).toMatchObject({
+  expect(current(open.surface)).toMatchObject({
     armed: "ink",
     liveStroke: null,
   });
@@ -1577,7 +1580,7 @@ it("says why when a Text Draft's create reply is lost, and takes the draft off t
   expect(open.reportCreateFailure.mock.calls).toEqual([
     [m.annot_view_write_reason_unknown_outcome()],
   ]);
-  expect(selectTextDraft(open.store.getState())).toBeNull();
+  expect(selectTextDraft(current(open.surface))).toBeNull();
 });
 
 it("says why when no document stands to create a Text Draft from", async () => {
@@ -1591,7 +1594,7 @@ it("says why when no document stands to create a Text Draft from", async () => {
   expect(open.reportCreateFailure.mock.calls).toEqual([
     [m.pdf_create_reason_no_document()],
   ]);
-  expect(selectTextDraft(open.store.getState())).toBeNull();
+  expect(selectTextDraft(current(open.surface))).toBeNull();
 });
 
 it("says why a Text Draft finished after editing lapsed was not created", async () => {
@@ -1602,7 +1605,7 @@ it("says why a Text Draft finished after editing lapsed was not created", async 
   };
 
   typeDraft(open, "Typed");
-  ingestCapability(open.store, lapsed, NOW);
+  update(open.surface, ingestCapability(lapsed, NOW));
   open.key("Escape");
   await open.creation.created;
 
@@ -1612,7 +1615,7 @@ it("says why a Text Draft finished after editing lapsed was not created", async 
     [blockedReason(lapsed, NOW)],
   ]);
   expect(open.gestures.reportBlockedGesture).not.toHaveBeenCalled();
-  expect(selectTextDraft(open.store.getState())).toBeNull();
+  expect(selectTextDraft(current(open.surface))).toBeNull();
 });
 
 it("creates a Text Draft finished as the view closes, from the page it read at the click", async () => {
@@ -1620,6 +1623,8 @@ it("creates a Text Draft finished as the view closes, from the page it read at t
   await using open = await toolReader("text", undefined, {
     structure: document_.structure,
   });
+  // The text tool's colour, read while the view's state stands.
+  const { text: color } = current(open.surface).colors;
   {
     // The view's own surfaces close; the repository outlives them.
     using _closing = open;
@@ -1634,7 +1639,7 @@ it("creates a Text Draft finished as the view closes, from the page it read at t
   expect(open.drafts).toEqual([
     {
       type: "text",
-      color: open.store.getState().colors.text,
+      color,
       comment: "Typed",
       pageLabel: "1",
       sortIndex: expect.stringMatching(/^00000\|/),

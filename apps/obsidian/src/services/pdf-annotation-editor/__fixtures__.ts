@@ -10,6 +10,8 @@ import {
   Stream,
 } from "effect";
 import type { Duration } from "effect";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { HoverParent, PDFPageViewport, Scope } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
@@ -52,15 +54,18 @@ import type { AttachmentReads } from "./binding";
 import { MarkCreation } from "./creation";
 import type { AnnotationCreates } from "./creation";
 import { MarkPopupHost } from "./mark-popup-host";
-import { bindingWrites } from "./operations";
+import { bindingResources } from "./operations";
 import { mountReaderKeymap } from "./reader-keymap";
 import type { HistoryVerb } from "./reader-keymap";
 import {
-  createReaderSurfaceState,
+  current,
   ingestAnnotations,
   listenAnnotationEvents,
-} from "./reader-surface-state";
-import type { AnnotationFacts } from "./reader-surface-state";
+  makeReaderSurfaceModel,
+} from "./reader-surface-model";
+import type { AnnotationFacts, ReaderSurface } from "./reader-surface-model";
+import { initialReaderSurfaceState } from "./reader-surface-state";
+import type { ReaderSurfaceState } from "./reader-surface-state";
 import { groupAnnotationsByPage } from "./render";
 import type { OverlayPageView } from "./render";
 import { MarkSelection } from "./selection";
@@ -626,6 +631,29 @@ export function failedIn(
 
 export { dispatchKey };
 
+/** A Reader Surface over a registry of its own, as a binding holds one. */
+export function readerSurface(
+  initial: Parameters<typeof initialReaderSurfaceState>[0],
+): ReaderSurface {
+  return {
+    registry: AtomRegistry.make(),
+    model: makeReaderSurfaceModel(initialReaderSurfaceState(initial)),
+  };
+}
+
+/**
+ * A selection of the state the model carries no atom for, as a derived atom
+ * with `equals`.
+ */
+export function selection<A>(
+  { model }: ReaderSurface,
+  select: (state: ReaderSurfaceState) => A,
+  equals?: (a: A, b: A) => boolean,
+): Atom.Atom<A> {
+  const selected = Atom.map(model.state, select);
+  return equals ? Atom.withEquality(selected, equals) : selected;
+}
+
 /** The instant the reader surfaces read their clock at. */
 export const READER_NOW = toInstant(
   DateTime.makeUnsafe("2026-09-17T10:00:00Z"),
@@ -688,20 +716,31 @@ export function readerSurfaces({
   notifier = testNotifier(),
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
-  const store = createReaderSurfaceState({
-    colors: colors.current(),
-    capability,
-    now: READER_NOW,
-  });
+  /** Each drag of a selected mark out of the reader, as the selection started it. */
+  const draggedOut = vi.fn<MarkSelectionDeps["dragOut"]>();
+  // The view's own Scope, which holds its registry and its writes, as the
+  // editor's does, and which the disposal closes.
+  const scope = EffectScope.makeUnsafe();
+  let closed = false;
+  const { registry, writes } = Effect.runSync(
+    bindingResources.pipe(EffectScope.provide(scope)),
+  );
+  const surface: ReaderSurface = {
+    registry,
+    model: makeReaderSurfaceModel(
+      initialReaderSurfaceState({
+        colors: colors.current(),
+        capability,
+        now: READER_NOW,
+      }),
+    ),
+  };
   // The view holds its Attachment's list while it is open, as the binding
   // does.
   const viewHold = bridge.runSync(annotations.hold(["RGRPDF24"]));
   let held = records;
-  ingestAnnotations(store, held, { annotations, bridge });
-  const listening = listenAnnotationEvents(store, annotations, bridge);
-  // The view's own Scope, which the writes run on and the disposal closes.
-  const scope = EffectScope.makeUnsafe();
-  const writes = Effect.runSync(bindingWrites.pipe(EffectScope.provide(scope)));
+  ingestAnnotations(surface, held, { annotations, bridge });
+  const listening = listenAnnotationEvents(surface, annotations, bridge);
   const gestures = {
     revealAnnotation: vi.fn(),
     blockedPress: vi.fn(),
@@ -746,7 +785,7 @@ export function readerSurfaces({
     renderCapability: vi.fn(),
     focusReader,
     colors,
-    surfaceState: store,
+    surface,
     annotations,
     bridge,
     writes,
@@ -763,7 +802,7 @@ export function readerSurfaces({
     popup,
     selectionSurfaces: session,
     marks: () =>
-      store.getState().marksVisible ? groupAnnotationsByPage(held) : new Map(),
+      current(surface).marksVisible ? groupAnnotationsByPage(held) : new Map(),
     records: () => held,
     pageAt: (pageIndex) => (pageIndex === 0 ? page : null),
     repaint: vi.fn(),
@@ -774,13 +813,14 @@ export function readerSurfaces({
     writes,
     notifier: notifier.service,
     colors,
-    surfaceState: store,
+    surface,
     gestures,
     creation,
     sortIndex,
     adjustRange,
     textRotation,
     now: () => READER_NOW,
+    dragOut: draggedOut,
   });
   selection.load();
   const view: { scope: Scope | null; app: typeof app } = { scope: null, app };
@@ -798,7 +838,8 @@ export function readerSurfaces({
   );
   const host = new MarkPopupHost({
     parent,
-    store,
+    doc: () => containerEl.doc,
+    surface,
     variants: {
       selected: {
         anchor: () => selection.anchor(),
@@ -814,7 +855,7 @@ export function readerSurfaces({
 
   return {
     app,
-    store,
+    surface,
     host,
     selection,
     creation,
@@ -823,6 +864,7 @@ export function readerSurfaces({
     colors,
     gestures,
     reportCreateFailure,
+    draggedOut,
     /** Every notice the surfaces showed, in order. */
     notices: notifier.notices,
     focusReader,
@@ -831,14 +873,22 @@ export function readerSurfaces({
     revealed,
     revealedWith,
     stepped,
-    /** What a refresh does once the read answers: the records, replaced. */
+    /** The records the last read answered, kept past the reader's close. */
+    drawn: (): readonly AnnotationRecord[] => held,
+    /**
+     * What a refresh does once the read answers: the records, replaced. A
+     * closed reader takes them into no state, as the binding's does.
+     */
     replace(next: readonly AnnotationRecord[]) {
       held = next;
-      ingestAnnotations(store, next, { annotations, bridge });
+      if (!closed) ingestAnnotations(surface, next, { annotations, bridge });
     },
-    /** What the binding does once a page re-rendered. */
+    /**
+     * What the binding does once a page re-rendered. A closed reader hears no
+     * page, as the binding's does.
+     */
     sync() {
-      host.sync();
+      if (!closed) host.sync();
     },
     /**
      * One keystroke as Obsidian delivers it: the view's Scope hears it first,
@@ -849,7 +899,11 @@ export function readerSurfaces({
     key(init: KeyboardEventInit, target: EventTarget = containerEl) {
       return dispatchKey(view.scope!, init, target);
     },
+    // Once, as the binding's own disposer runs: the Scope it closes takes
+    // the registry with it.
     [Symbol.dispose]() {
+      if (closed) return;
+      closed = true;
       unmountKeymap();
       selection[Symbol.dispose]();
       creation[Symbol.dispose]();

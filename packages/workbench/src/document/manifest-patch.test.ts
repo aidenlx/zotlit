@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { entrySlice, WorkbenchDocumentController } from "./controller";
+import { followEntries } from "./manifest-patch";
 import type { ManagedEntryAction } from "./manifest-patch";
 
 /**
@@ -252,7 +253,7 @@ describe("Managed Frontmatter patching", () => {
     const { source } = edit(HAND_WRITTEN, {
       action: "move",
       position: 1,
-      by: 1,
+      to: 2,
     });
 
     expect(source).toBe(
@@ -262,7 +263,7 @@ describe("Managed Frontmatter patching", () => {
       ),
     );
     expectOneUndoStep(HAND_WRITTEN, (controller) =>
-      controller.editManagedEntry({ action: "move", position: 1, by: 1 }),
+      controller.editManagedEntry({ action: "move", position: 1, to: 2 }),
     );
   });
 
@@ -272,13 +273,35 @@ describe("Managed Frontmatter patching", () => {
       '  # when I read it\n  - key: "read on"',
     );
 
-    const { source } = edit(commented, { action: "move", position: 1, by: 1 });
+    const { source } = edit(commented, { action: "move", position: 1, to: 2 });
 
     expect(source).toBe(
       commented.replace(
         '  - key: title\n    expr: zt.title\n    merge: replace\n  # when I read it\n  - key: "read on"\n    expr: zt.dateAdded\n',
         '  - key: "read on"\n    expr: zt.dateAdded\n  # when I read it\n  - key: title\n    expr: zt.title\n    merge: replace\n',
       ),
+    );
+  });
+
+  it("moves an entry past several others and keeps each comment in its place", () => {
+    const commented = HAND_WRITTEN.replace(
+      '  - key: "read on"',
+      '  # when I read it\n  - key: "read on"',
+    );
+
+    const { source } = edit(commented, { action: "move", position: 1, to: 3 });
+
+    expect(source).toBe(
+      commented.replace(
+        '  - key: title\n    expr: zt.title\n    merge: replace\n  # when I read it\n  - key: "read on"\n    expr: zt.dateAdded\n  - value: {"kind":{"$eval":"zt.itemType"}}\n    merge: keep\n',
+        '  - key: "read on"\n    expr: zt.dateAdded\n  # when I read it\n  - value: {"kind":{"$eval":"zt.itemType"}}\n    merge: keep\n  - key: title\n    expr: zt.title\n    merge: replace\n',
+      ),
+    );
+    expect(edit(source, { action: "move", position: 3, to: 1 }).source).toBe(
+      commented,
+    );
+    expectOneUndoStep(commented, (controller) =>
+      controller.editManagedEntry({ action: "move", position: 1, to: 3 }),
     );
   });
 
@@ -306,7 +329,7 @@ describe("Managed Frontmatter patching", () => {
     const controller = new WorkbenchDocumentController(HAND_WRITTEN);
 
     expect(
-      controller.editManagedEntry({ action: "move", position: 1, by: -1 }),
+      controller.editManagedEntry({ action: "move", position: 1, to: 0 }),
     ).toBe(false);
     expect(controller.source).toBe(HAND_WRITTEN);
   });
@@ -500,5 +523,55 @@ describe("Managed Frontmatter patching", () => {
     expect(controller.sliceText(entrySlice(3))).toBe(
       '[{"kind":{"$eval":"zt.itemType"}}',
     );
+  });
+});
+
+describe("followEntries", () => {
+  /** Every position of HAND_WRITTEN's three entries, read in `to`. */
+  const follow = (to: string) => {
+    const map = followEntries(HAND_WRITTEN, to);
+    return map && [1, 2, 3].map(map);
+  };
+
+  it("finds moved entries wherever they went", () => {
+    expect(
+      follow(edit(HAND_WRITTEN, { action: "move", position: 1, to: 2 }).source),
+    ).toEqual([2, 1, 3]);
+    expect(
+      follow(edit(HAND_WRITTEN, { action: "move", position: 1, to: 3 }).source),
+    ).toEqual([3, 1, 2]);
+    // A Spread Entry swapped with a static one is found by its own text.
+    expect(
+      follow(edit(HAND_WRITTEN, { action: "move", position: 3, to: 2 }).source),
+    ).toEqual([1, 3, 2]);
+  });
+
+  it("maps a removed entry to nothing and gives an added one no old entry", () => {
+    expect(
+      follow(edit(HAND_WRITTEN, { action: "remove", position: 1 }).source),
+    ).toEqual([undefined, 1, 2]);
+    expect(
+      follow(
+        edit(HAND_WRITTEN, { action: "add", kind: "property", after: 1 })
+          .source,
+      ),
+    ).toEqual([1, 3, 4]);
+  });
+
+  it("keeps the place of the entry the reader is typing in", () => {
+    const moved = edit(HAND_WRITTEN, {
+      action: "move",
+      position: 1,
+      to: 2,
+    }).source;
+    expect(
+      followEntries(
+        HAND_WRITTEN,
+        moved.replace("zt.dateAdded", "zt.date"),
+      )?.call(null, 2),
+    ).toBe(1);
+    const typed = HAND_WRITTEN.replace("expr: zt.dateAdded", "expr: zt.date");
+    // Nothing moved, so there is nothing to translate.
+    expect(followEntries(HAND_WRITTEN, typed)).toBeNull();
   });
 });

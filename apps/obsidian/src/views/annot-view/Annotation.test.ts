@@ -160,7 +160,7 @@ async function mountCard({
   const onApplyAgain = vi.fn();
   const onDiscardConflict = vi.fn();
   const onCloseEditors = vi.fn();
-  const actions = new Proxy(
+  const actions = new Proxy<Partial<AnnotActions>>(
     {
       onCloseEditors,
       onSelectAnnotation,
@@ -172,7 +172,7 @@ async function mountCard({
       onApplyAgain,
       onDiscardConflict,
       libraryTagNames: async () => [],
-    } as Partial<AnnotActions>,
+    },
     {
       get: (target, name: keyof AnnotActions) =>
         target[name] ??
@@ -642,7 +642,7 @@ describe("an image card's Excerpt Image demand", () => {
     const reading = { image: null, current: false, status: "reading" } as const;
     const resolutions: PromiseWithResolvers<ExcerptRequest | null>[] = [];
     const demanded: (ExcerptRequest | null)[] = [];
-    const actions = new Proxy(
+    const actions = new Proxy<Partial<AnnotActions>>(
       {
         excerptImageRequest: () => {
           const resolution = Promise.withResolvers<ExcerptRequest | null>();
@@ -655,7 +655,7 @@ describe("an image card's Excerpt Image demand", () => {
           subscribe: () => () => {},
           snapshot: () => reading,
         }),
-      } as Partial<AnnotActions>,
+      },
       {
         get: (target, name: keyof AnnotActions) =>
           target[name] ??

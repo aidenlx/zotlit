@@ -86,19 +86,7 @@ import { capabilityOf, fieldDraft, isEditing, selectedAlone } from "./state";
 import { tagChipVariants } from "./tag-chip";
 import { autoTags, HeldTagsPanel, TagEditor } from "./tag-editor";
 import type { EndTagSession } from "./tag-editor";
-
-const TYPE_ICON: Record<string, string> = {
-  highlight: "align-left",
-  underline: "underline",
-  image: "frame",
-  ink: "pen-line",
-  text: "type",
-  note: "sticky-note",
-};
-
-function typeIcon(type: ResolvedAnnotationTypeName): string {
-  return TYPE_ICON[type] ?? "file-question";
-}
+import { typeIcon } from "./type-icon";
 
 /**
  * A verb the Editing Capability blocks rests dimmed, as the state it reports is

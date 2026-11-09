@@ -1,7 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { WorkspaceLeaf, MarkdownView } from "obsidian";
+import type { WorkspaceLeaf, MarkdownView, WorkspaceSidedock } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import { ATTACHMENTS } from "@zotlit/scripts/fixture";
@@ -84,7 +84,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         page: run.m.annot_view_page({ page: pageLabel }),
         comment,
       }))
-      .toSorted((a, b) => a.key.localeCompare(b.key!));
+      .toSorted((a, b) => a.key.localeCompare(b.key));
     const authors = paper.creators
       .filter(({ creatorType }) => creatorType === "author")
       .map(({ firstName, lastName }) => `${firstName} ${lastName}`);
@@ -171,7 +171,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ].map((stat) => stat.getAttribute("data-library-card-stat")),
           counts: [
             ...stats.querySelectorAll<HTMLElement>("[data-library-card-stat]"),
-          ].map((stat) => Number(stat.textContent!.match(/\d+$/)?.[0])),
+          ].map((stat) => Number(stat.textContent.match(/\d+$/)?.[0])),
           selected: el.querySelector("[data-query-item-row][data-selected]")
             ? "row"
             : null,
@@ -310,7 +310,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                       ?.textContent ?? null,
                   text: n.textContent,
                 }))
-                .toSorted((a, b) => a.key!.localeCompare(b.key!)),
+                .toSorted((a, b) => a.key.localeCompare(b.key)),
             }
           : null;
       },
@@ -618,7 +618,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               card!.getBoundingClientRect().width -
                 shell!.getBoundingClientRect().width,
             ) < 2;
+          // The sidebar closes over a moment; the tab's share of the window
+          // sets the shell's width once it has closed.
           app.workspace.rightSplit.collapse();
+          await until(
+            "the right sidebar closed",
+            () =>
+              (
+                app.workspace.rightSplit as WorkspaceSidedock & {
+                  containerEl: HTMLElement;
+                }
+              ).containerEl.getBoundingClientRect().width === 0,
+            5000,
+          );
           const beside = (page.scratch.zotlitE2EBeside ??=
             app.workspace.createLeafBySplit(leaf!, "vertical"));
           (leaf!.parent as LibraryTabs).setDimension(positionInput);
@@ -675,8 +687,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       );
     // Under the list at 42rem wide or more, the card sets its parts in two
-    // columns, side by side.
-    expect(await placeCard(60, true)).toMatchObject({ below: true });
+    // columns, side by side: half of the 1600px window is that wide and
+    // still under 56rem, where the card moves beside the list.
+    expect(await placeCard(50, true)).toMatchObject({ below: true });
     const twoColumns = await cardColumns();
     expect(twoColumns.width).toBeGreaterThanOrEqual(672);
     expect(twoColumns).toMatchObject({ display: "grid", sideBySide: true });
@@ -969,7 +982,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await pdfOpened(run.vaultId, annotationAttachment.path!);
     // The keyboard that enters the list at its first row selects it, and
     // the card shows it. Selecting the node again lets go of the selection.
-    const entered = (await obRun(
+    const entered = await obRun(
       run.vaultId,
       async ({ app, page }) => {
         const { press, until } = page;
@@ -1026,12 +1039,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
       },
       undefined,
-    )) as {
-      card: boolean;
-      selected: string;
-      focused: string | null;
-      first: string;
-    };
+    );
     expect(entered).toEqual({
       card: true,
       selected: entered.first,

@@ -108,6 +108,12 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
 
     Replace each example path. Keep `--fail-if-warnings` so a warning stops the run instead of producing an unchecked document.
 
+    <Callout type="info" title="Add your own Lua filters after ZotLit's">
+      To run your own Lua filter, put its `--lua-filter` option after
+      `--defaults`. The ZotLit filter reads the note's Properties again from the
+      input file, so it replaces the changes of a filter that runs before it.
+    </Callout>
+
   </Step>
   <Step>
     ### Verify the result

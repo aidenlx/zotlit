@@ -4,10 +4,17 @@ import { defineConfig } from "vitest/config";
 
 import { testDefaults } from "@zotlit/config/vitest";
 
+import { scanChinesePages } from "./src/lib/content-scan.js";
+
 // Unit seam only — the app's own Vite config carries the Cloudflare and
 // TanStack Start plugins, which neither a pure-function test nor the
 // collection index has any use for.
 export default defineConfig({
+  define: {
+    __DOCS_CHINESE_PAGES__: JSON.stringify(
+      scanChinesePages(import.meta.dirname),
+    ),
+  },
   test: testDefaults,
   resolve: {
     alias: {

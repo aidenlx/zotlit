@@ -129,6 +129,24 @@ export function createPageHelpers(app: PageApp) {
         : el.value
       : undefined;
   }
+  /**
+   * The input in `root` whose accessible name is `name`. A Workbench text
+   * field is named by a hidden element it points `aria-labelledby` at, so it
+   * shows no hover tooltip in Obsidian.
+   */
+  function labelledInput(root: ParentNode | null | undefined, name: string) {
+    return (
+      [...(root?.querySelectorAll<HTMLInputElement>("input") ?? [])].find(
+        (input) => {
+          const nameId = input.getAttribute("aria-labelledby");
+          return (
+            nameId !== null &&
+            input.ownerDocument.getElementById(nameId)?.textContent === name
+          );
+        },
+      ) ?? null
+    );
+  }
   async function pick<T extends HTMLButtonElement | HTMLSelectElement>(
     el: T | null | undefined,
     value: string,
@@ -211,11 +229,15 @@ export function createPageHelpers(app: PageApp) {
         contents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
         await up;
       },
-      click: async (el: Element) => {
+      /**
+       * Clicks the centre of `el`, or the point `offset` from its top-left
+       * corner, in CSS px.
+       */
+      click: async (el: Element, offset?: { x: number; y: number }) => {
         const b = el.getBoundingClientRect();
         const at = {
-          x: Math.round((b.left + b.width / 2) * zoom),
-          y: Math.round((b.top + b.height / 2) * zoom),
+          x: Math.round((b.left + (offset?.x ?? b.width / 2)) * zoom),
+          y: Math.round((b.top + (offset?.y ?? b.height / 2)) * zoom),
           button: "left",
           clickCount: 1,
         };
@@ -277,7 +299,7 @@ export function createPageHelpers(app: PageApp) {
     });
     return [...docs];
   }
-  /** The Template Workbench leaves, their companions, and the focus they sit under. */
+  /** The Template Workbench leaves and their panels, the standalone explorers, and the focus they sit under. */
   function workbenchSurfaces() {
     const surfaces = (type: keyof WalkthroughViews) =>
       leavesOfType(type).map((leaf) => {
@@ -293,12 +315,15 @@ export function createPageHelpers(app: PageApp) {
           content:
             leaf.view.containerEl.querySelector(".view-content")
               ?.childElementCount ?? null,
+          panels: Array.from(
+            leaf.view.containerEl.querySelectorAll("[data-panel]"),
+            (panel) => panel.getAttribute("data-panel"),
+          ),
         };
       });
     return {
       workbench: surfaces("zotlit-template-workbench"),
       explorer: surfaces("zotlit-template-data-explorer"),
-      preview: surfaces("zotlit-note-preview"),
       activeLeaf: app.workspace.activeLeaf?.view.getViewType() ?? null,
       activeWindow: activeWindow === window ? "main" : "popout",
       focused: activeDocument.hasFocus(),
@@ -400,6 +425,7 @@ export function createPageHelpers(app: PageApp) {
     ) as PreparationService;
     if (!trial.preparation)
       throw new Error("ExcerptPreparation service missing");
+    // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
     trial.originalPreparation = trial.preparation.forCard;
     trial.preparation.forCard = (options) =>
       Effect.gen(function* () {
@@ -466,7 +492,7 @@ export function createPageHelpers(app: PageApp) {
         timers.adopt(setTimeout(resolve, 25), clearTimeout),
       );
     }
-    throw lastError;
+    throw lastError!;
   }
   async function pressKey(
     debugger_: {
@@ -544,6 +570,61 @@ export function createPageHelpers(app: PageApp) {
       "zotlit-template-workbench"
       ? (app.workspace.activeLeaf.view as TemplateWorkbenchView)
       : undefined;
+  }
+  /**
+   * The Fields popover `view` shows, or null while it is closed. It stands on
+   * the document's body; the view's Fields action names it while it is open.
+   */
+  function fieldsPopover(view: TemplateWorkbenchView | undefined) {
+    const id = view?.containerEl
+      .querySelector(
+        '.view-action[aria-haspopup="dialog"][aria-controls^="zt-fields-popover-"]',
+      )
+      ?.getAttribute("aria-controls");
+    return (id && view?.contentEl.doc.getElementById(id)) || null;
+  }
+  /** The Fields Panel docked in `view`, or null while it is not docked. */
+  function fieldsDock(view: TemplateWorkbenchView | undefined) {
+    return (
+      view?.contentEl.querySelector<HTMLElement>('[data-panel="fields"]') ??
+      null
+    );
+  }
+  /** The Preview panel `view` shows, or null while it hides the panel. */
+  function previewPanel(view: TemplateWorkbenchView | undefined) {
+    return (
+      view?.contentEl.querySelector<HTMLElement>('[data-panel="preview"]') ??
+      null
+    );
+  }
+  /** The one row above `view`'s panels that names the item they all read. */
+  function itemRow(view: TemplateWorkbenchView | undefined) {
+    return (
+      view?.contentEl.querySelector<HTMLElement>("[data-workbench-item-row]") ??
+      null
+    );
+  }
+  /**
+   * The room, in pixels, between `view`'s item row and its first editor tab
+   * (`above`), and between that tab and the rule under the tab strip
+   * (`below`), with the tabs on one line.
+   */
+  function tabStripInsets(view: TemplateWorkbenchView | undefined) {
+    const row = itemRow(view);
+    const strip = view?.contentEl.querySelector<HTMLElement>("[role=tablist]");
+    const tab = strip?.querySelector<HTMLElement>("[role=tab]");
+    if (!row || !strip || !tab) return null;
+    const rule = Number.parseFloat(getComputedStyle(strip).borderBottomWidth);
+    return {
+      above: Math.round(
+        tab.getBoundingClientRect().top - row.getBoundingClientRect().bottom,
+      ),
+      below: Math.round(
+        strip.getBoundingClientRect().bottom -
+          rule -
+          tab.getBoundingClientRect().bottom,
+      ),
+    };
   }
   function pdfView(path: string): PagePdfView | undefined {
     return app.workspace
@@ -959,6 +1040,11 @@ export function createPageHelpers(app: PageApp) {
     restoreAnnotationPreparation,
     annotationOpenSubpath,
     workbench,
+    fieldsPopover,
+    fieldsDock,
+    previewPanel,
+    itemRow,
+    tabStripInsets,
     workbenchSurfaces,
     pdfView,
     clientOfFirstPage,
@@ -969,6 +1055,7 @@ export function createPageHelpers(app: PageApp) {
     until,
     stands,
     valueOf,
+    labelledInput,
     pick,
     fire,
     tap,

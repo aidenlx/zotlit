@@ -534,8 +534,7 @@ export function VaultEditCell(props: VaultCellProps) {
         // ends the edit; focus that moves inside it does not.
         onBlur={(event) => {
           if (draft === null) return;
-          if (event.currentTarget.contains(event.relatedTarget as Node | null))
-            return;
+          if (event.currentTarget.contains(event.relatedTarget)) return;
           end(true, draft, "leave");
         }}
       >

@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 import { Effect } from "effect";
-import type { WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import type { ReactNode } from "react";
@@ -9,19 +8,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { WorkbenchHostProvider } from "@zotlit/workbench/ui";
-import type { WorkbenchHost } from "@zotlit/workbench/ui";
+import type {
+  TemplateRoot,
+  WorkbenchHost,
+  WorkbenchItemChoice,
+} from "@zotlit/workbench/ui";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import { answerOf, makeViewRunner } from "@/lib/view-runner";
+import type { SearchHit } from "@/services/item-lookup/service";
 import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
 import { workbenchAnnotationChoice } from "@/views/template-workbench/item-choice";
-import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import { makeExplorerHost, waitFor } from "./__fixtures__";
-import type { ExplorerHost, ExplorerReads } from "./__fixtures__";
+import type {
+  ExplorerHost,
+  ExplorerReads,
+  ExplorerSessionHandle,
+} from "./__fixtures__";
 import { ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
 import { Explorer } from "./Explorer";
@@ -34,17 +41,16 @@ import {
 } from "./model";
 import type { ExplorerModel } from "./model";
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 const read = vi.fn<NonNullable<ExplorerReads["read"]>>();
+/** What the next Item list's read of the recent Items answers. */
+let recent: Effect.Effect<SearchHit[]> = Effect.succeed([]);
 let host: ExplorerHost;
 beforeEach(async () => {
   vi.resetAllMocks();
-  host = await makeExplorerHost({ read });
+  recent = Effect.succeed([]);
+  host = await makeExplorerHost({ read, recent: () => recent });
 });
 afterEach(() => host.close());
-const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-  updateHeader: vi.fn(),
-});
 /** Gives `child` the host's registry and one Explorer model. */
 function withModel(model: ExplorerModel, child: ReactNode) {
   return createElement(
@@ -53,45 +59,37 @@ function withModel(model: ExplorerModel, child: ReactNode) {
     createElement(ExplorerModelContext, { value: model }, child),
   );
 }
-function context(
-  patch: Partial<TemplateAuthoringContext> = {},
-): TemplateAuthoringContext {
-  return {
-    leaf,
-    path: "profiles/paper.md",
-    kind: "profile",
-    item: { id: "PAPER234", title: "Paper" },
-    root: "note",
-    tab: "note",
-    advanced: false,
-    annotationId: null,
-    citation: null,
-    partial: null,
-    ...patch,
-  };
+const PAPER: WorkbenchItemChoice = { id: "PAPER234", title: "Paper" };
+/** Shows `root` of `item` in `session`, as a choice in the Explorer does. */
+function show(
+  session: ExplorerSessionHandle,
+  {
+    item = PAPER,
+    root = "note",
+    annotationId = null,
+  }: {
+    item?: WorkbenchItemChoice | null;
+    root?: TemplateRoot;
+    annotationId?: string | null;
+  } = {},
+) {
+  session.setTarget(item, root, annotationId);
 }
 describe("independent native Explorer", () => {
-  it("keeps filter, collapse, and closed sections local across editor display changes", async () => {
+  it("keeps filter, collapse, and closed sections local to each Explorer", async () => {
     read.mockResolvedValue({
       kind: "data",
       data: { title: "Paper", tags: ["methods"] },
     });
     using first = host.openSession();
     using second = host.openSession();
-    first.setContext(context());
-    second.setContext(context());
+    show(first);
+    show(second);
     await Promise.all([first.ready(), second.ready()]);
     first.apply(toggleNode("tags"));
     first.apply(setFilter("methods"));
     first.apply(toggleNode("tags"));
     first.apply(setCollapsedSections(new Set(["record"])));
-    first.setContext(
-      context({
-        advanced: true,
-        tab: "properties",
-        annotationId: SAMPLE_ANNOTATIONS[0]!.id,
-      }),
-    );
     expect(first.state().navigation.filterCollapsed.has("tags")).toBe(true);
     expect(first.state().navigation.filterQuery).toBe("methods");
     expect(second.state().navigation.filterQuery).toBe("");
@@ -106,19 +104,18 @@ describe("independent native Explorer", () => {
       data: { text: "Evidence" },
     });
     using session = host.openSession();
-    session.setContext(context());
+    show(session);
     await session.ready();
     session.apply(toggleNode("annotations"));
     const item = session.state().item;
     session.setTarget(item, "annotation", "ANNT2345");
     await session.ready();
     expect(session.state().navigation.expanded.size).toBe(0);
-    session.setContext(context({ advanced: true }));
     expect(session.state().root).toBe("annotation");
     session.setTarget(item, "note");
     await session.ready();
     expect(session.state().navigation.expanded.has("annotations")).toBe(true);
-    session.setContext(context({ item: { id: "PAPER235", title: "Other" } }));
+    show(session, { item: { id: "PAPER235", title: "Other" } });
     await session.ready();
     expect(session.state().navigation.expanded.size).toBe(0);
   });
@@ -132,14 +129,14 @@ describe("independent native Explorer", () => {
         : { kind: "data", data: { title: "Current" } },
     );
     const session = host.openSession();
-    session.setContext(context());
+    show(session);
     await waitFor(() => expect(read).toHaveBeenCalledOnce());
-    session.setContext(context({ item: { id: "PAPER235", title: "Other" } }));
+    show(session, { item: { id: "PAPER235", title: "Other" } });
     await session.ready();
     resolveOld({ kind: "data", data: { title: "Obsolete" } });
     await session.ready();
     expect(session.state().data?.title).toBe("Current");
-    session.setContext(context());
+    show(session);
     await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
     // The new Item interrupted the first read; the close interrupts the last.
     expect(host.cancelled).toEqual(["PAPER234"]);
@@ -152,7 +149,7 @@ describe("independent native Explorer", () => {
     using session = host.openSession();
     expect(session.state().status).toBe("no-item");
     read.mockRejectedValueOnce(new Error("Disconnected"));
-    session.setContext(context());
+    show(session);
     expect(session.state().status).toBe("loading");
     await session.ready();
     expect(session.state().status).toBe("error");
@@ -185,7 +182,6 @@ describe("independent native Explorer", () => {
     using session = host.openSession();
     const choose = vi.fn();
     using cleanup = new DisposableStack();
-    const { run } = cleanup.use(makeViewRunner(host.registry));
     const container = cleanup.adopt(document.createElement("div"), (element) =>
       element.remove(),
     );
@@ -202,7 +198,6 @@ describe("independent native Explorer", () => {
               messages: workbenchM,
               getLocale: () => "en",
               persistence: { read: () => null, write: () => {} },
-              run,
             }),
           },
           withModel(
@@ -216,7 +211,6 @@ describe("independent native Explorer", () => {
               },
               createElement(Explorer, {
                 explorer: { copy: () => Effect.void },
-                recentItems: Effect.succeed([]),
                 onSearchItem: choose,
                 onSelectItem: (item) => session.setTarget(item, "note"),
                 onSelectAnnotation: (id) =>
@@ -241,13 +235,12 @@ describe("independent native Explorer", () => {
   it("lists the recent Items the host reads, and stops the read at unmount", async () => {
     using session = host.openSession();
     using cleanup = new DisposableStack();
-    const { run } = cleanup.use(makeViewRunner(host.registry));
     const container = cleanup.adopt(document.createElement("div"), (element) =>
       element.remove(),
     );
     document.body.append(container);
     const root = createRoot(container);
-    const renderList = (recentItems: Effect.Effect<readonly never[]>) =>
+    const renderList = () =>
       act(async () =>
         root.render(
           createElement(
@@ -257,7 +250,6 @@ describe("independent native Explorer", () => {
                 messages: workbenchM,
                 getLocale: () => "en",
                 persistence: { read: () => null, write: () => {} },
-                run,
               }),
             },
             withModel(
@@ -271,7 +263,6 @@ describe("independent native Explorer", () => {
                 },
                 createElement(Explorer, {
                   explorer: { copy: () => Effect.void },
-                  recentItems,
                   onSearchItem: () => {},
                   onSelectItem: () => {},
                   onSelectAnnotation: () => {},
@@ -283,9 +274,10 @@ describe("independent native Explorer", () => {
         ),
       );
     const interrupted = vi.fn();
-    await renderList(
-      Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(interrupted))),
+    recent = Effect.never.pipe(
+      Effect.onInterrupt(() => Effect.sync(interrupted)),
     );
+    await renderList();
     expect(interrupted).not.toHaveBeenCalled();
 
     await act(async () => root.unmount());
@@ -293,9 +285,19 @@ describe("independent native Explorer", () => {
     await waitFor(() => expect(interrupted).toHaveBeenCalledOnce());
   });
   it("lists the recent Items the host reads", async () => {
+    recent = Effect.succeed([
+      stubService<SearchHit>("SearchHit", {
+        item: stubService<SearchHit["item"]>("Item", {
+          key: "PAPER234",
+          indexedKey: "PAPER234g42",
+          creators: [],
+          primaryCreatorType: null,
+          fields: { itemType: "book", title: "Recent paper" },
+        }),
+      }),
+    ]);
     using session = host.openSession();
     using cleanup = new DisposableStack();
-    const { run } = cleanup.use(makeViewRunner(host.registry));
     const container = cleanup.adopt(document.createElement("div"), (element) =>
       element.remove(),
     );
@@ -312,7 +314,6 @@ describe("independent native Explorer", () => {
               messages: workbenchM,
               getLocale: () => "en",
               persistence: { read: () => null, write: () => {} },
-              run,
             }),
           },
           withModel(
@@ -326,9 +327,6 @@ describe("independent native Explorer", () => {
               },
               createElement(Explorer, {
                 explorer: { copy: () => Effect.void },
-                recentItems: Effect.succeed([
-                  { id: "PAPER234g42", title: "Recent paper" },
-                ]),
                 onSearchItem: () => {},
                 onSelectItem: () => {},
                 onSelectAnnotation: () => {},
@@ -369,14 +367,9 @@ it("switches annotation data locally through the annotation chooser", async () =
   }));
   using session = host.openSession();
   using other = host.openSession();
-  const authoring = context({
-    item: { id: "PAPER234g42", title: "Group paper" },
-    root: "annotation",
-    tab: "annotation",
-    annotationId: "ANNT2345",
-  });
-  session.setContext(authoring);
-  other.setContext(authoring);
+  const group = { id: "PAPER234g42", title: "Group paper" };
+  for (const each of [session, other])
+    show(each, { item: group, root: "annotation", annotationId: "ANNT2345" });
   await Promise.all([session.ready(), other.ready()]);
   const suggester = vi.fn((_request: unknown) =>
     Effect.succeed<string | null>("ANNT2346g42"),
@@ -401,34 +394,35 @@ it("switches annotation data locally through the annotation chooser", async () =
             tooltip: (text: string) => ({ title: text }),
             persistence: { read: () => null, write: () => {} },
             suggester,
-            run,
           }),
         },
         withModel(
           session.model,
           createElement(Explorer, {
             explorer: { copy: () => Effect.void },
-            recentItems: Effect.succeed([]),
             onSelectItem: (item) => session.setTarget(item, "note"),
             onSearchItem: () => {},
-            onChooseAnnotation: async () => {
-              const state = session.state();
-              const chooser = stubService<WorkbenchHost>("WorkbenchHost", {
-                suggester,
-                run,
-              });
-              const id = await answerOf(
-                chooser.run(
-                  workbenchAnnotationChoice(
-                    chooser,
-                    state.annotations ?? [],
-                    annotationIndexedKey(state.item!.id, state.annotationId) ??
-                      state.annotationId,
+            onChooseAnnotation: () => {
+              void (async () => {
+                const state = session.state();
+                const chooser = stubService<WorkbenchHost>("WorkbenchHost", {
+                  suggester,
+                });
+                const id = await answerOf(
+                  run(
+                    workbenchAnnotationChoice(
+                      chooser,
+                      state.annotations ?? [],
+                      annotationIndexedKey(
+                        state.item!.id,
+                        state.annotationId,
+                      ) ?? state.annotationId,
+                    ),
                   ),
-                ),
-                null,
-              );
-              if (id) session.setTarget(state.item, "annotation", id);
+                  null,
+                );
+                if (id) session.setTarget(state.item, "annotation", id);
+              })();
             },
             onSelectAnnotation: (id) =>
               session.setTarget(session.state().item, "annotation", id),
@@ -451,7 +445,6 @@ it("switches annotation data locally through the annotation chooser", async () =
   });
   expect(session.state().data?.comment).toBe("Check the method");
   expect(session.state().annotationId).toBe("ANNT2346g42");
-  expect(session.state().context).toBe(authoring);
   expect(other.state().annotationId).toBe("ANNT2345");
   suggester.mockReturnValueOnce(Effect.succeed(SAMPLE_ANNOTATIONS[1]!.id));
   await act(async () => {
@@ -463,9 +456,7 @@ it("switches annotation data locally through the annotation chooser", async () =
   });
   await act(async () => session.ready());
   expect(session.state().data?.text).toBe(SAMPLE_ANNOTATIONS[1]!.root.text);
-  session.setContext({ ...authoring, advanced: true });
-  expect(session.state().annotationId).toBe(SAMPLE_ANNOTATIONS[1]!.id);
-  await act(async () => session.setTarget(authoring.item, "note"));
+  await act(async () => session.setTarget(group, "note"));
   await act(async () => session.ready());
   expect(
     container.querySelector(
@@ -489,17 +480,16 @@ it("discards annotation choices loaded for a superseded Item", async () => {
         },
   );
   using session = host.openSession();
-  session.setContext(
-    context({ root: "annotation", annotationId: SAMPLE_ANNOTATIONS[0]!.id }),
-  );
+  show(session, {
+    root: "annotation",
+    annotationId: SAMPLE_ANNOTATIONS[0]!.id,
+  });
   await waitFor(() => expect(read).toHaveBeenCalledOnce());
-  session.setContext(
-    context({
-      item: { id: "PAPER235", title: "Next paper" },
-      root: "annotation",
-      annotationId: SAMPLE_ANNOTATIONS[0]!.id,
-    }),
-  );
+  show(session, {
+    item: { id: "PAPER235", title: "Next paper" },
+    root: "annotation",
+    annotationId: SAMPLE_ANNOTATIONS[0]!.id,
+  });
   await session.ready();
   finish({ kind: "data", data: { annotations: [{ key: "OLD23456" }] } });
   await session.ready();

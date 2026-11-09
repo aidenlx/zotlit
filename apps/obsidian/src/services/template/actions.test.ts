@@ -2,7 +2,13 @@ import { expect, it } from "@effect/vitest";
 // @vitest-environment happy-dom
 import { Effect, Exit, Fiber, Layer } from "effect";
 import { TFile } from "obsidian";
-import type { App, Command, WorkspaceContainer, WorkspaceLeaf } from "obsidian";
+import type {
+  App,
+  Command,
+  WorkspaceContainer,
+  WorkspaceLeaf,
+  WorkspaceRoot,
+} from "obsidian";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -12,6 +18,7 @@ import { Notifier } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { PluginHostShape } from "@/lib/plugin-host";
+import { Profile } from "@/services/profile/service";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE } from "@/views/template-workbench/view";
 
 import {
@@ -39,10 +46,11 @@ function workspaceApp() {
       }),
     view: stubService<WorkspaceLeaf["view"]>("View", {}),
   });
-  // No Workbench is open, so the open takes a new tab: `leaf`.
+  // No Workbench is open, so the open takes a new window: `leaf`.
   const workspace = Layer.mock(Workspace, {
     leavesOfType: () => Effect.succeed([]),
-    getLeaf: () => Effect.succeed(leaf),
+    rootSplit: Effect.succeed(stubService<WorkspaceRoot>("WorkspaceRoot", {})),
+    openPopoutLeaf: () => Effect.succeed(leaf),
     revealLeaf: () => Effect.void,
   });
   return { app: stubService<App>("App", {}), opened, workspace };
@@ -58,6 +66,7 @@ const servicesOver = (
     Layer.mock(Template, { materializeCitationTemplate }),
     Layer.succeed(Notifier, notifier),
     Layer.mock(Vault, {}),
+    Layer.mock(Profile, {}),
     workspace,
   );
 
@@ -78,7 +87,7 @@ it.effect("registers Customize citation text as a command", () =>
       },
     );
     const context = yield* Effect.context<
-      Template | Notifier | Vault | Workspace
+      Template | Notifier | Vault | Workspace | Profile
     >().pipe(Effect.provide(servicesOver(Effect.succeed(CITATION))));
     yield* addCitationTemplateActions(host, {
       context,
@@ -99,7 +108,7 @@ it.effect(
     Effect.gen(function* () {
       const { opened, workspace } = workspaceApp();
 
-      yield* openCitationTemplate.pipe(
+      yield* openCitationTemplate().pipe(
         Effect.provide(
           servicesOver(Effect.succeed(CITATION), undefined, workspace),
         ),
@@ -115,7 +124,7 @@ it.effect("fails with the Template failure and opens nothing", () =>
   Effect.gen(function* () {
     const { opened } = workspaceApp();
 
-    const error = yield* openCitationTemplate.pipe(
+    const error = yield* openCitationTemplate().pipe(
       Effect.provide(servicesOver(Effect.fail(failure))),
       Effect.flip,
     );
@@ -129,7 +138,7 @@ it.effect("opens nothing once interrupted", () =>
   Effect.gen(function* () {
     const { opened } = workspaceApp();
 
-    const fiber = yield* openCitationTemplate.pipe(
+    const fiber = yield* openCitationTemplate().pipe(
       Effect.provide(servicesOver(Effect.never)),
       Effect.forkChild,
     );
@@ -148,7 +157,7 @@ it.effect(
     Effect.gen(function* () {
       const notifier = testNotifier();
       const report = (materialize: Effect.Effect<TFile, TemplateFailure>) =>
-        reportCitationTemplateOpen.pipe(
+        reportCitationTemplateOpen().pipe(
           Effect.provide(servicesOver(materialize, notifier.service)),
         );
 

@@ -328,7 +328,7 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
         // row whose button materialized the file would keep its old state.
         btn.buttonEl.blur();
         void ctx.tab.run(
-          reportCitationTemplateOpen.pipe(Effect.ensuring(rebuild)),
+          reportCitationTemplateOpen().pipe(Effect.ensuring(rebuild)),
         );
       }),
   );

@@ -62,7 +62,7 @@ export function parsePrefsFile(
   const entries: PrefEntry[] = [];
 
   for (const e of result.errors) {
-    if (e.severity === "Error") {
+    if (String(e.severity) === "Error") {
       errors.push(`  ${displayPath}: parse error: ${e.message}`);
     }
   }

@@ -38,14 +38,7 @@ it.effect(
 
           constructor() {
             super();
-            queueMicrotask(() =>
-              Queue.offerUnsafe(
-                spawned,
-                this as EventTarget & {
-                  terminated: boolean;
-                },
-              ),
-            );
+            queueMicrotask(() => Queue.offerUnsafe(spawned, this));
           }
 
           postMessage() {

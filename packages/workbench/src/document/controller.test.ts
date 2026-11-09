@@ -686,6 +686,18 @@ it.each([
 });
 
 describe("a plain Template Document", () => {
+  it("reads a Shared Partial's caller from the host at each read", () => {
+    let caller: "note" | "annotation" = "note";
+    const controller = new WorkbenchDocumentController("{{ zt.title }}", {
+      kind: "partial",
+      context: () => caller,
+    });
+    expect(controller.templateRegions[0]!.root).toBe("note");
+    caller = "annotation";
+    expect(controller.partialContext).toBe("annotation");
+    expect(controller.templateRegions[0]!.root).toBe("annotation");
+  });
+
   const CITATION = `---
 language: liquid
 ---

@@ -70,21 +70,26 @@ export function obsidianI18n(options: ObsidianI18nViteOptions = {}): Plugin {
     port: number,
   ): Promise<string> {
     await using resources = new AsyncDisposableStack();
-    const server = createServer(async (request, response) => {
-      const fileName = request.url?.slice(1) ?? "";
-      try {
-        if (!isLanguagePackFileName(fileName)) {
-          throw new Error("Unsupported Language Pack path");
+    const server = createServer((request, response) => {
+      void (async () => {
+        const fileName = request.url?.slice(1) ?? "";
+        try {
+          if (!isLanguagePackFileName(fileName)) {
+            throw new Error("Unsupported Language Pack path");
+          }
+          const contents = await readFile(
+            join(packDirectory, fileName),
+            "utf8",
+          );
+          response.writeHead(200, {
+            "content-type": "application/json",
+          });
+          response.end(contents);
+        } catch {
+          response.writeHead(404);
+          response.end();
         }
-        const contents = await readFile(join(packDirectory, fileName), "utf8");
-        response.writeHead(200, {
-          "content-type": "application/json",
-        });
-        response.end(contents);
-      } catch {
-        response.writeHead(404);
-        response.end();
-      }
+      })();
     });
     resources.defer(async () => {
       if (server.listening) await server[Symbol.asyncDispose]();

@@ -26,8 +26,10 @@ import {
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import { useListingProfile } from "./listing-profile.ts";
+import { verifyMarkPopupWindow } from "./mark-popup-window.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import { clearNotices } from "./obsidian-cli.ts";
+import { verifyReaderAnnotationDrag } from "./reader-annotation-drag.ts";
 import { clearVault, e2eVaultDir } from "./vault-script.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -64,6 +66,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ) as typeof import("@/lib/effect");
         const repository = zotlit.services.annotationRepository;
         page.scratch.__zotlitCapabilitySubjects = [];
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         page.scratch.__zotlitCapabilityFor = repository.capabilityFor;
         repository.capabilityFor = (key) => {
           page.scratch.__zotlitCapabilitySubjects!.push(key);
@@ -197,6 +200,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await using cleanup = new AsyncDisposableStack();
         const pending: [Worker, Parameters<Worker["postMessage"]>][] = [];
         const started = Promise.withResolvers<void>();
+        // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
         const post = Worker.prototype.postMessage;
         const release = () => {
           Worker.prototype.postMessage = post;
@@ -250,6 +254,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ) as PropertyDescriptor & {
             value: typeof repository.annotationsChanged;
           },
+          // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
           read = repository.read;
         const afterClose = { subscriptions: 0, reads: 0 };
         cleanup.defer(() => {
@@ -271,9 +276,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             args: Parameters<typeof read>,
           ) => {
             afterClose.reads++;
-            return Reflect.apply(target, receiver, args) as ReturnType<
-              typeof read
-            >;
+            return Reflect.apply(target, receiver, args);
           },
         });
         release();
@@ -327,6 +330,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           const clipboard = (require("electron") as typeof import("electron"))
             .clipboard;
+          // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
           const write = navigator.clipboard.writeText;
           cleanup.defer(() => {
             navigator.clipboard.writeText = write;
@@ -382,6 +386,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     },
     120000,
   );
+
+  it("drags the selected highlight out of the PDF reader into a note", async () => {
+    await verifyReaderAnnotationDrag(run.vaultId, {
+      pdfPath: annotationAttachment.path!,
+      annotationKey: "Q8ZR4TDH",
+    });
+  }, 120000);
+
+  it("keeps a pop-out PDF's Mark Popup in the pop-out while focus is in the main window", async () => {
+    await verifyMarkPopupWindow(run.vaultId, {
+      pdfPath: annotationAttachment.path!,
+      annotationKey: "Q8ZR4TDH",
+    });
+  }, 120000);
 
   it("creates durable image and ink excerpts with PDF readers closed", async () => {
     const path = e2eVaultDir(workspaceRoot, "excerpt-note-vault");

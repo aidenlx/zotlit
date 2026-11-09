@@ -12,7 +12,7 @@
 // @see apps/obsidian/docs/adr/0065-the-mark-popup-is-one-preact-root-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
 import type { App } from "obsidian";
-import { Keymap } from "obsidian";
+import { Keymap, setIcon } from "obsidian";
 import { createElement } from "react";
 import type { ReactNode, RefObject } from "react";
 
@@ -31,6 +31,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import type { Notifier } from "@/lib/notifier";
+import { watch } from "@/lib/view-atoms";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { CopyInstant } from "@/services/annotation-repository/capability-copy";
 import {
@@ -64,10 +65,10 @@ import {
   textFieldWording,
 } from "@/views/annot-view/card-controls";
 import type { CardBlock, CardControl } from "@/views/annot-view/card-controls";
-import { sameKeys } from "@/views/annot-view/card-selection";
 import { copyText, deleteConfirmation } from "@/views/annot-view/card-verbs";
 import { controlEntry } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
+import type { AnnotationDragStart } from "@/views/annot-view/drag-insert";
 import type {
   CaretPoint,
   TextDraftActions,
@@ -75,6 +76,7 @@ import type {
   HeldDraftActions,
 } from "@/views/annot-view/editor-sheet";
 import type { EndTagSession } from "@/views/annot-view/tag-editor";
+import { typeIcon } from "@/views/annot-view/type-icon";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import type { CreationGestures } from "./creation";
@@ -130,11 +132,17 @@ import {
 } from "./operations";
 import type { BindingWrites } from "./operations";
 import {
+  current,
+  modify,
+  recordColorUse,
+  update,
+} from "./reader-surface-model";
+import type { ReaderSurface } from "./reader-surface-model";
+import {
   beginAdjust,
   cancelAdjust,
   endAdjust,
   moveAdjust,
-  sameFlat,
   selectAdjust,
   selectSelectedRowInput,
   selectFloatingHead,
@@ -145,14 +153,12 @@ import {
   selectSelectedKey,
   selectSelectedKeys,
   selectSelectedTagDraft,
-  recordColorUse,
   setCommenting,
   setTagging,
   stepStack,
 } from "./reader-surface-state";
 import type {
   ReaderSurfaceState,
-  ReaderSurfaceStore,
   SelectedRowInput,
 } from "./reader-surface-state";
 import { readingOrder, stepReadingOrder } from "./reading-order";
@@ -277,7 +283,7 @@ export interface MarkSelectionDeps {
   /** The colours used last, which a recolour puts a colour first in. */
   colors: ToolColorStore;
   /** What this view's surfaces draw from, the Editing Capability among it. */
-  surfaceState: ReaderSurfaceStore;
+  surface: ReaderSurface;
   gestures: MarkGestures;
   /**
    * The creation surfaces, which hear the same pointer and key gestures this
@@ -301,6 +307,11 @@ export interface MarkSelectionDeps {
   textRotation: TextRotation;
   /** The clock a cooldown's remaining seconds are read against. */
   now: () => Temporal.Instant;
+  /**
+   * Takes a drag of the selected mark out of the reader: a drop into a note
+   * inserts the Annotation, as a card dragged from the Annotation View does.
+   */
+  dragOut: (event: AnnotationDragStart, annotation: AnnotationRecord) => void;
 }
 
 /**
@@ -332,6 +343,12 @@ export class MarkSelection implements Disposable {
   #pressedHandle = false;
   /** Whether the last press was the armed ink tool's, whose click selects nothing. */
   #pressedStroke = false;
+  /**
+   * The page a press on the selected mark made draggable, so the browser
+   * starts a drag of the mark rather than a text selection; `null` once the
+   * press ends or the drag begins.
+   */
+  #dragOutPage: HTMLElement | null = null;
   #adjusting = Promise.resolve();
   /**
    * The text range the pointer last asked for, which a release waits on so
@@ -374,6 +391,31 @@ export class MarkSelection implements Disposable {
         // could, as Zotero's reader does, whether or not the press drew.
         this.#pressedStroke =
           event.button === 0 && this.#state().armed === "ink";
+        this.#armDragOut(event);
+      }),
+    );
+    // A drag the press on the selected mark armed carries its Annotation; any
+    // other drag, such as one of selected text, stays the browser's own.
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "dragstart", (event) => {
+        const armed = this.#dragOutPage !== null;
+        this.#disarmDragOut();
+        const record = armed ? this.#record() : null;
+        const { dataTransfer } = event;
+        if (!record || !dataTransfer) return;
+        dragGhost(
+          containerEl.doc,
+          { dataTransfer, clientX: event.clientX, clientY: event.clientY },
+          record,
+        );
+        this.#deps.dragOut(
+          {
+            dataTransfer,
+            currentTarget: containerEl,
+            preventDefault: () => event.preventDefault(),
+          },
+          record,
+        );
       }),
     );
     this.#surfaces.use(
@@ -421,9 +463,10 @@ export class MarkSelection implements Disposable {
     // The browser has settled the selection by the time a release bubbles, so
     // this is where a drag on the page becomes a selection worth acting on.
     this.#surfaces.use(
-      registerDomEvent(containerEl.doc, "pointerup", () =>
-        this.#deps.creation?.settle(),
-      ),
+      registerDomEvent(containerEl.doc, "pointerup", () => {
+        this.#disarmDragOut();
+        this.#deps.creation?.settle();
+      }),
     );
     this.#surfaces.use(
       registerDomEvent(containerEl, "keydown", (event) => {
@@ -473,34 +516,26 @@ export class MarkSelection implements Disposable {
         this.#deps.creation?.changed();
       }),
     );
-    const state = this.#deps.surfaceState;
+    const { registry, model } = this.#deps.surface;
     this.#surfaces.defer(
-      state.subscribe(
-        selectSelectedKeys,
-        (keys) => {
-          this.#deps.repaint();
-          this.#deps.report(keys);
-        },
-        { equalityFn: sameKeys },
-      ),
+      watch(registry, model.selectedKeys, (keys) => {
+        this.#deps.repaint();
+        this.#deps.report(keys);
+      }),
     );
     // The editor goes with the episode it was opened for: a closed editor, a
     // stepped or dropped selection, and a hidden or conflicting draft alike.
     // A tag editing session is saved as it ends, however it ends.
     this.#surfaces.defer(
-      state.subscribe(
-        selectFloatingHead,
-        (head, previous) => {
-          const { kind, commenting } = head;
-          if (kind !== "selected" || !commenting) this.#closeCommentEditor();
-          if (!previous.tagging || previous.key === null) return;
-          if (head.tagging && head.key === previous.key) return;
-          // The editor adds the text still typed before the save reads it.
-          this.#endTags();
-          this.#submitTags(previous.key);
-        },
-        { equalityFn: sameFlat },
-      ),
+      watch(registry, model.floatingHead, (head, previous) => {
+        const { kind, commenting } = head;
+        if (kind !== "selected" || !commenting) this.#closeCommentEditor();
+        if (!previous.tagging || previous.key === null) return;
+        if (head.tagging && head.key === previous.key) return;
+        // The editor adds the text still typed before the save reads it.
+        this.#endTags();
+        this.#submitTags(previous.key);
+      }),
     );
   }
 
@@ -536,15 +571,18 @@ export class MarkSelection implements Disposable {
     }
     this.#submitAndCloseCommentEditor();
     this.#at = null;
-    selectGroup(this.#deps.surfaceState, annotationKeys);
+    update(this.#deps.surface, selectGroup(annotationKeys));
   }
 
   [Symbol.dispose](): void {
     this.#submitAndCloseCommentEditor();
     this.#endTagSession();
+    this.#disarmDragOut();
     this.#surfaces.dispose();
+    // A range step still in flight lands on no surface.
+    this.#rangeAsk++;
     if (this.#selectedKeys().length > 0)
-      selectMark(this.#deps.surfaceState, null);
+      update(this.#deps.surface, selectMark(null));
   }
 
   #apply(
@@ -563,11 +601,14 @@ export class MarkSelection implements Disposable {
       key !== null && at !== null
         ? { pageIndex: at.pageIndex, point: at.point }
         : null;
-    selectMark(this.#deps.surfaceState, key, {
-      stack: at?.stack,
-      quiet: !popup,
-      commenting,
-    });
+    update(
+      this.#deps.surface,
+      selectMark(key, {
+        stack: at?.stack,
+        quiet: !popup,
+        commenting,
+      }),
+    );
   }
 
   #click(event: MouseEvent): void {
@@ -747,25 +788,25 @@ export class MarkSelection implements Disposable {
       this.#deps.gestures.blockedPress(locked);
       return true;
     }
-    const store = this.#deps.surfaceState;
+    const surface = this.#deps.surface;
     const { position } = record;
     if (edit.kind === "range") {
       if (position.kind !== "pdf-rects") return true;
-      beginAdjust(store, { grip: edit.end, from: [0, 0] });
+      update(surface, beginAdjust({ grip: edit.end, from: [0, 0] }));
       const ask = ++this.#rangeAsk;
       this.#adjusting = this.#deps
         .adjustRange({ position, end: edit.end, step: arrow })
         .then((selected) => {
           if (ask !== this.#rangeAsk) return;
           if (!selected) {
-            cancelAdjust(store);
+            update(surface, cancelAdjust);
             return;
           }
-          moveAdjust(store, rectsPositionOf(selected), selected.text);
+          update(surface, moveAdjust(rectsPositionOf(selected), selected.text));
           return this.#settle(record.key, "keyboard");
         })
         .catch((error: unknown) => {
-          cancelAdjust(store);
+          if (!this.#surfaces.disposed) update(surface, cancelAdjust);
           logger.warn("Could not step a highlight's range", {
             error,
             annotationKey: record.key,
@@ -784,8 +825,8 @@ export class MarkSelection implements Disposable {
         text: this.#textContent(record),
       });
     if (!keyed) return true;
-    beginAdjust(store, { grip: keyed.grip, from: [0, 0] });
-    moveAdjust(store, keyed.proposal);
+    update(surface, beginAdjust({ grip: keyed.grip, from: [0, 0] }));
+    update(surface, moveAdjust(keyed.proposal));
     const saving = this.#settle(record.key, "keyboard");
     if (saving) this.#adjusting = saving;
     return true;
@@ -853,7 +894,7 @@ export class MarkSelection implements Disposable {
       client: { x: event.clientX, y: event.clientY },
     };
     this.#pressedHandle = grip !== "body";
-    beginAdjust(this.#deps.surfaceState, { grip, from });
+    update(this.#deps.surface, beginAdjust({ grip, from }));
   }
 
   /**
@@ -898,16 +939,18 @@ export class MarkSelection implements Disposable {
     }
     const page = this.#deps.pageAt(record.position.pageIndex);
     if (!page) return;
-    moveAdjust(
-      this.#deps.surfaceState,
-      proposePosition({
-        confirmed: record.position,
-        grip: adjust.grip,
-        from: adjust.from,
-        to: pdfPointAt(page, dragging.client),
-        viewBox: page.viewport.viewBox,
-        text: this.#textContent(record),
-      }),
+    update(
+      this.#deps.surface,
+      moveAdjust(
+        proposePosition({
+          confirmed: record.position,
+          grip: adjust.grip,
+          from: adjust.from,
+          to: pdfPointAt(page, dragging.client),
+          viewBox: page.viewport.viewBox,
+          text: this.#textContent(record),
+        }),
+      ),
     );
   }
 
@@ -956,7 +999,7 @@ export class MarkSelection implements Disposable {
     if (!on) return;
     const [x, y] = pdfPointAt(on.page, client);
     const ask = ++this.#rangeAsk;
-    const store = this.#deps.surfaceState;
+    const surface = this.#deps.surface;
     this.#ranging = this.#deps
       .adjustRange({
         position,
@@ -965,7 +1008,7 @@ export class MarkSelection implements Disposable {
       })
       .then((selected) => {
         if (ask !== this.#rangeAsk || !selected) return;
-        moveAdjust(store, rectsPositionOf(selected), selected.text);
+        update(surface, moveAdjust(rectsPositionOf(selected), selected.text));
       })
       .catch((error: unknown) => {
         logger.warn("Could not place a highlight's dragged range", {
@@ -978,11 +1021,14 @@ export class MarkSelection implements Disposable {
   #release(): void {
     this.#dragging = releaseCapture(this.#deps.containerEl, this.#dragging);
     const key = this.#selectedKey();
-    const store = this.#deps.surfaceState;
+    const surface = this.#deps.surface;
+    // A range that answers after the view closed has no surface to save from.
     const settle = () =>
-      key === null ? undefined : this.#settle(key, "pointer");
+      key === null || this.#surfaces.disposed
+        ? undefined
+        : this.#settle(key, "pointer");
     // A text range's last proposal may still be on its way from the document.
-    const adjust = selectAdjust(store.getState());
+    const adjust = selectAdjust(current(surface));
     if (isRangeGrip(adjust?.grip ?? "body")) {
       this.#adjusting = this.#ranging.then(settle);
       return;
@@ -994,14 +1040,16 @@ export class MarkSelection implements Disposable {
       isEditablePosition(record.position) &&
       this.#deps.pageAt(record.position.pageIndex);
     if (adjust?.phase === "dragging" && record && page) {
-      moveAdjust(
-        store,
-        releasedPosition({
-          proposal: adjust.proposal,
-          grip: adjust.grip,
-          viewBox: page.viewport.viewBox,
-          text: this.#textContent(record),
-        }),
+      update(
+        surface,
+        moveAdjust(
+          releasedPosition({
+            proposal: adjust.proposal,
+            grip: adjust.grip,
+            viewBox: page.viewport.viewBox,
+            text: this.#textContent(record),
+          }),
+        ),
       );
     }
     const saving = settle();
@@ -1016,9 +1064,9 @@ export class MarkSelection implements Disposable {
    * @returns the save, or `undefined` where nothing is written.
    */
   #settle(key: string, input: GeometryInput): Promise<void> | undefined {
-    const store = this.#deps.surfaceState;
-    const text = selectAdjust(store.getState())?.text;
-    const proposal = endAdjust(store);
+    const surface = this.#deps.surface;
+    const text = selectAdjust(current(surface))?.text;
+    const proposal = modify(surface, endAdjust);
     return proposal
       ? this.#saveGeometry(key, proposal, { text, input })
       : undefined;
@@ -1027,7 +1075,7 @@ export class MarkSelection implements Disposable {
   #cancelDrag(): void {
     this.#dragging = releaseCapture(this.#deps.containerEl, this.#dragging);
     this.#rangeAsk++;
-    cancelAdjust(this.#deps.surfaceState);
+    update(this.#deps.surface, cancelAdjust);
   }
 
   /**
@@ -1043,10 +1091,10 @@ export class MarkSelection implements Disposable {
     proposal: EditablePosition,
     { text, input }: { text?: string; input: GeometryInput },
   ): Promise<void> {
-    const store = this.#deps.surfaceState;
+    const surface = this.#deps.surface;
     const end = () => {
-      if (selectAdjust(store.getState())?.proposal === proposal)
-        cancelAdjust(store);
+      if (selectAdjust(current(surface))?.proposal === proposal)
+        update(surface, cancelAdjust);
     };
     // The capability can lapse while the pointer is down.
     if (!this.#live()) {
@@ -1123,7 +1171,7 @@ export class MarkSelection implements Disposable {
     const { readOnly, hint } = tagEditorControls(block, draft, input.now);
     const held = heldTagDraft(block, draft, input.now);
     if (!tagSectionShows({ annotation, draft, tagging, held })) return null;
-    const { annotations, surfaceState } = this.#deps;
+    const { annotations, surface } = this.#deps;
     return {
       sectionRef: this.#tagSection,
       endSession: this.#endSession,
@@ -1148,7 +1196,7 @@ export class MarkSelection implements Disposable {
           return;
         this.#deps.bridge.runSync(annotations.editTags(annotation.key, names));
       },
-      onClose: () => setTagging(surfaceState, false),
+      onClose: () => update(surface, setTagging(false)),
       within: content,
     };
   }
@@ -1324,12 +1372,12 @@ export class MarkSelection implements Disposable {
           ));
     if (!draft && !this.#sheet.current) {
       // Closed in the state too, so a later refresh does not try again.
-      setCommenting(this.#deps.surfaceState, false);
+      update(this.#deps.surface, setCommenting(false));
       return null;
     }
     const close = (): void => {
       this.#submitCommentEditor(annotation, true);
-      setCommenting(this.#deps.surfaceState, false);
+      update(this.#deps.surface, setCommenting(false));
     };
     // The sheet places the caret once, as it mounts; a later mount opens at
     // the end.
@@ -1451,7 +1499,7 @@ export class MarkSelection implements Disposable {
         this.#deps.annotations.editTextField("comment", annotation.key),
       )
     )
-      setCommenting(this.#deps.surfaceState, true);
+      update(this.#deps.surface, setCommenting(true));
   }
 
   /**
@@ -1471,7 +1519,7 @@ export class MarkSelection implements Disposable {
     )
       return;
     this.#submitCommentEditor(annotation, true);
-    setTagging(this.#deps.surfaceState, true);
+    update(this.#deps.surface, setTagging(true));
   }
 
   /**
@@ -1479,7 +1527,7 @@ export class MarkSelection implements Disposable {
    * the typed text first; a popup that stands hidden has no editor to end.
    */
   #endTagSession(): void {
-    if (!this.#endTags()) setTagging(this.#deps.surfaceState, false);
+    if (!this.#endTags()) update(this.#deps.surface, setTagging(false));
   }
 
   /**
@@ -1487,7 +1535,7 @@ export class MarkSelection implements Disposable {
    * does.
    */
   #recolor(annotationKeys: readonly string[], color: string): void {
-    recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
+    recordColorUse(this.#deps.surface, this.#deps.colors, color);
     this.#writes(
       recolorMarks(this.#deps.annotations, annotationKeys, color),
       "recolour",
@@ -1504,7 +1552,7 @@ export class MarkSelection implements Disposable {
 
   /** Forward through the stack under the last click, wrapping at its end. */
   #step(): void {
-    stepStack(this.#deps.surfaceState);
+    update(this.#deps.surface, stepStack);
   }
 
   /**
@@ -1582,7 +1630,7 @@ export class MarkSelection implements Disposable {
   }
 
   #state(): ReaderSurfaceState {
-    return this.#deps.surfaceState.getState();
+    return current(this.#deps.surface);
   }
 
   #selectedKey(): string | null {
@@ -1595,6 +1643,34 @@ export class MarkSelection implements Disposable {
 
   #record(): AnnotationRecord | null {
     return selectSelectedRowInput(this.#state())?.annotation ?? null;
+  }
+
+  /**
+   * A main-button press on the selected mark that no Geometry Edit and no
+   * armed tool took makes its page draggable for this press alone, so moving
+   * the pointer drags the mark out, as Zotero's reader drags it. A mark that
+   * moves by its body keeps that press for the move while editing is live,
+   * and text selected in the PDF keeps the press for its own drag.
+   */
+  #armDragOut(event: PointerEvent): void {
+    this.#disarmDragOut();
+    if (event.button !== 0 || this.#dragging || this.#pressedStroke) return;
+    if (this.#deps.creation?.capturing) return;
+    if (!selectionCollapsed(this.#deps.containerEl)) return;
+    const record = this.#record();
+    if (!record) return;
+    const page = this.#pageUnder({ x: event.clientX, y: event.clientY });
+    if (!page || !marksAtPoint(page.targets, page.at).includes(record.key))
+      return;
+    const div = this.#deps.pageAt(page.index)?.div;
+    if (!div) return;
+    div.draggable = true;
+    this.#dragOutPage = div;
+  }
+
+  #disarmDragOut(): void {
+    if (this.#dragOutPage) this.#dragOutPage.draggable = false;
+    this.#dragOutPage = null;
   }
 
   /** Whether an Annotation Mark lies under a press. */
@@ -1686,6 +1762,30 @@ function linkUnder(target: EventTarget | null): boolean {
     ? node
     : (node?.parentElement ?? null);
   return element?.closest("a[href], .linkAnnotation") != null;
+}
+
+/**
+ * The picture under the pointer while a mark is dragged out: Obsidian's own
+ * drag ghost, with the Annotation's type and its text, in place of the whole
+ * page the browser would draw for the draggable page.
+ */
+function dragGhost(
+  doc: Document,
+  {
+    dataTransfer,
+    clientX,
+    clientY,
+  }: Pick<DragEvent, "clientX" | "clientY"> & { dataTransfer: DataTransfer },
+  { type, text, comment }: AnnotationRecord,
+): void {
+  const ghost = doc.body.createDiv({ cls: "drag-ghost" });
+  ghost.setCssProps({ left: `${clientX}px`, top: `${clientY}px` });
+  const self = ghost.createDiv({ cls: "drag-ghost-self" });
+  setIcon(self, typeIcon(type));
+  self.createSpan({ text: text || comment || "" });
+  dataTransfer.setDragImage(ghost, 0, 0);
+  // The browser takes its picture of the ghost as the drag starts.
+  doc.win.setTimeout(() => ghost.remove(), 0);
 }
 
 /**

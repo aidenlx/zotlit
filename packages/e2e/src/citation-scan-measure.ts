@@ -57,7 +57,7 @@ export async function measureCitationScan(vaultId: string) {
         const db = await new Promise<IDBDatabase>((resolve, reject) => {
           const request = indexedDB.open(`${app.appId}-zotlit-citation-index`);
           request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
+          request.onerror = () => reject(request.error!);
         });
         cleanup.defer(() => db.close());
 
@@ -96,7 +96,7 @@ export async function measureCitationScan(vaultId: string) {
             const transaction = db.transaction("scans", "readonly");
             transaction.objectStore("scans").count(file.path);
             transaction.oncomplete = () => resolve();
-            transaction.onabort = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error!);
           });
         const samples = [];
         const floorSamples = [];
@@ -127,7 +127,7 @@ export async function measureCitationScan(vaultId: string) {
                 .objectStore("scans")
                 .get(file.path);
               request.onsuccess = () => resolve(request.result);
-              request.onerror = () => reject(request.error);
+              request.onerror = () => reject(request.error!);
             },
           );
           if (persisted?.citekeys[0]?.raw !== key)

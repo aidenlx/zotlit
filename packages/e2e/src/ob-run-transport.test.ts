@@ -129,6 +129,7 @@ it("awaits a callback promise", async () => {
 it("names a non-Error thrown by the page", async () => {
   await expect(
     obRun("vault", () => {
+      // oxlint-disable-next-line typescript/only-throw-error -- The case checks how a non-Error thrown by the page is named.
       throw "plain";
     }),
   ).rejects.toThrow("plain");

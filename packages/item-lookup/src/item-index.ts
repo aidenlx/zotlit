@@ -342,7 +342,9 @@ function makeItemIndex(initial: IndexSettings) {
           languageLookup: lookupFor(settings.locale),
         }).pipe(Effect.provideService(Segmenter, segmenter));
         for (const libraryID of entry.libraries) {
-          yield* Stream.runForEach(pinned.items(libraryID), builder.add);
+          yield* Stream.runForEach(pinned.items(libraryID), (slice) =>
+            builder.add(slice),
+          );
         }
         const engine = yield* builder.build;
         yield* holdOnce({

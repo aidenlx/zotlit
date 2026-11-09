@@ -227,8 +227,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "[data-query-view-list] [data-chooser-page]",
           )!
           .querySelector<HTMLSelectElement>("[data-query-view-dataset]")!;
-        select!.value = "items";
-        select!.dispatchEvent(new Event("change", { bubbles: true }));
+        select.value = "items";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
       },
       undefined,
     );
@@ -285,7 +285,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             .querySelector<HTMLElement>(
               "[data-query-view-list] [data-chooser-page]",
             )!
-            .querySelector<HTMLElement>("[data-chooser-page-close]")!,
+            .querySelector<HTMLElement>("[data-chooser-page-close]"),
           "Close",
         );
       },
@@ -347,7 +347,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             (
               app.workspace.getMostRecentLeaf()!
                 .view as import("obsidian").ItemView
-            ).contentEl.querySelector<HTMLElement>(selector)!,
+            ).contentEl.querySelector<HTMLElement>(selector),
             selector,
           );
           return String(true);
@@ -399,8 +399,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).contentEl.querySelector<HTMLTableRowElement>(
             `[data-query-table-row="attachment"][data-query-key="${annotationAttachmentKey}"] [data-query-open="attachment"]`,
           )!;
-          el!.dispatchEvent(
-            new el!.ownerDocument.defaultView!.MouseEvent("click", {
+          el.dispatchEvent(
+            new el.ownerDocument.defaultView!.MouseEvent("click", {
               bubbles: true,
               cancelable: true,
               button: 0,
@@ -438,8 +438,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).contentEl.querySelector<HTMLTableRowElement>(
             `[data-query-table-row="attachment"][data-query-key="${annotationAttachmentKey}"] [data-query-open="attachment"]`,
           )!;
-          el!.dispatchEvent(
-            new el!.ownerDocument.defaultView!.MouseEvent("auxclick", {
+          el.dispatchEvent(
+            new el.ownerDocument.defaultView!.MouseEvent("auxclick", {
               bubbles: true,
               cancelable: true,
               button: 1,
@@ -547,7 +547,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   .view as import("obsidian").ItemView
               ).contentEl.querySelector<HTMLTableRowElement>(
                 `[data-query-table-row="attachment"][data-query-key="${snapshotKey}"] [data-query-open="attachment"]`,
-              )!,
+              ),
               "snapshot link",
             );
             return await until(
@@ -693,7 +693,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
     );
     const seeded = [notePath(tieFirst), notePath(tieSecond)];
-    const originals = (await obRun(
+    const originals = await obRun(
       run.vaultId,
       async ({ app }, { seeded }) => {
         return await Promise.all(
@@ -701,7 +701,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { seeded },
-    )) as string[];
+    );
     const created: string[] = [path];
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
@@ -845,7 +845,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
     await tableWhen((table) => table.rows.length === 3);
     const frontmatter = async (path: string) =>
-      (await obRun(
+      await obRun(
         run.vaultId,
         async ({ app }, { path }) => {
           return (
@@ -854,7 +854,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
         },
         { path },
-      )) as Record<string, unknown> | null;
+      );
     const frontmatterWhen = async (
       path: string,
       ready: (properties: Record<string, unknown>) => boolean,
@@ -896,9 +896,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   ),
                 ].find((entry) => entry.textContent === menuLabel)
               : part === "td"
-                ? cell?.closest<HTMLElement>("td")!
+                ? cell?.closest<HTMLElement>("td")
                 : part
-                  ? cell?.querySelector<HTMLElement>(part)!
+                  ? cell?.querySelector<HTMLElement>(part)
                   : cell;
             if (!target) return "missing";
             target.scrollIntoView({
@@ -1010,19 +1010,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).contentEl.querySelector<HTMLElement>(
             `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="${name}"]`,
           )!;
-          const row = el!
+          const row = el
             .closest<HTMLTableRowElement>("tr")!
             .getBoundingClientRect().top;
-          const editor = el!.querySelector<HTMLElement>(
+          const editor = el.querySelector<HTMLElement>(
             "[data-query-vault-editor]",
           )!;
-          const chip = (editor ?? el)!.querySelector<HTMLElement>(
+          const chip = (editor ?? el).querySelector<HTMLElement>(
             "[data-query-vault-chip]",
           )!;
           if (chip) return chip.getBoundingClientRect().top - row;
           const field = editor
             ? editor.querySelector<HTMLInputElement>("textarea,input")!
-            : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
+            : el.querySelector<HTMLElement>("[data-query-vault-date]")!;
           if (field) {
             const style = getComputedStyle(field);
             return (
@@ -1033,7 +1033,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           }
           const walker = activeDocument.createTreeWalker(
-            el!,
+            el,
             NodeFilter.SHOW_TEXT,
             { acceptNode: (n) => (n.textContent!.trim() ? 1 : 3) },
           );
@@ -1076,19 +1076,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).contentEl.querySelector<HTMLElement>(
             `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="${name}"]`,
           )!;
-          const row = el!
+          const row = el
             .closest<HTMLTableRowElement>("tr")!
             .getBoundingClientRect().top;
-          const editor = el!.querySelector<HTMLElement>(
+          const editor = el.querySelector<HTMLElement>(
             "[data-query-vault-editor]",
           )!;
-          const chip = (editor ?? el)!.querySelector<HTMLElement>(
+          const chip = (editor ?? el).querySelector<HTMLElement>(
             "[data-query-vault-chip]",
           )!;
           if (chip) return chip.getBoundingClientRect().top - row;
           const field = editor
             ? editor.querySelector<HTMLInputElement>("textarea,input")!
-            : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
+            : el.querySelector<HTMLElement>("[data-query-vault-date]")!;
           if (field) {
             const style = getComputedStyle(field);
             return (
@@ -1099,7 +1099,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           }
           const walker = activeDocument.createTreeWalker(
-            el!,
+            el,
             NodeFilter.SHOW_TEXT,
             { acceptNode: (n) => (n.textContent!.trim() ? 1 : 3) },
           );
@@ -1451,7 +1451,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               found =
                 !!hit &&
                 el.contains(hit) &&
-                !table!.contains(hit) &&
+                !table.contains(hit) &&
                 !hit.closest<HTMLInputElement>(
                   "button,input,select,a,[role],[tabindex],[popover]",
                 )!;

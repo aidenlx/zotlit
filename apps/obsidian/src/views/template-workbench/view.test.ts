@@ -1,23 +1,30 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
-import { Menu, TextFileView as MockTextFileView } from "@mock/obsidian";
+import {
+  Menu,
+  resetMockPlatform,
+  setMockPlatform,
+  TextFileView as MockTextFileView,
+} from "@mock/obsidian";
 import type {
   ItemView as MockItemView,
+  MenuItem,
   Scope as MockScope,
 } from "@mock/obsidian";
 import { Cause, Effect, Exit } from "effect";
 import { Stream } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import { SuggestModal, TFile } from "obsidian";
-import type { App, ViewState, WorkspaceLeaf } from "obsidian";
+import type { App, Scope, ViewState, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createStore } from "zustand/vanilla";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   formatPlainTemplateDocument,
   parsePlainTemplateDocument,
 } from "@zotlit/templates/facade";
+import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
   captureRenderReport,
   emptyRender,
@@ -25,11 +32,14 @@ import {
   renderIdentity,
   SAMPLE_ITEMS,
 } from "@zotlit/workbench/render";
+import { fieldForm } from "@zotlit/workbench/ui";
 
 import { answerConfirmation } from "@/lib/__fixtures__/confirm";
+import { dispatchKey, keymapApp } from "@/lib/__fixtures__/keymap";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { MENU_SECTION } from "@/lib/menu-section";
 import { VaultError } from "@/lib/vault-errors";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
@@ -39,20 +49,39 @@ import {
   memoryOpener,
   seedWorksSql,
 } from "@/services/zotero-reads/test-utils";
-import { createRenderFixture } from "@/views/note-preview/__fixtures__/render";
+import { createRenderFixture } from "@/views/template-workbench/preview/__fixtures__/render";
 
-import { makeWorkbenchHost } from "./__fixtures__";
+import {
+  chooseSample,
+  makeWorkbenchHost,
+  renderState,
+  runRender,
+  setViewItem,
+  viewState,
+} from "./__fixtures__";
 import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "./__fixtures__";
 import { createSharedPartialEffect } from "./partial-command";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
+import { windowMigration } from "./test-window-migration";
 import {
   TemplateWorkbenchView,
   originatingNoteUpdateNotice,
   unpackedPartialNotices,
 } from "./view";
 
+/**
+ * Every entry of `menu` and of the submenus under it, each before its own
+ * submenu's, as a reader meets them by opening each submenu in turn.
+ */
+const menuEntries = (menu: Menu | null): MenuItem[] =>
+  (menu?.items ?? []).flatMap((item) => [item, ...menuEntries(item.submenu)]);
+
+/** Inserts `node` as the Fields Panel does: in its first form, as the place the caret is in reads it. */
+const insertNode = (view: TemplateWorkbenchView, node: DisplayNode) =>
+  view.insertField(fieldForm(node, view.fieldInsertion()).snippet);
+
 // The real leaf edges stand in: the layout module imports this view.
-vi.mock("@/views/note-preview/layout", () => ({
+vi.mock("./layout", () => ({
   setLeafState: (leaf: WorkspaceLeaf, state: ViewState) =>
     Effect.tryPromise(() => leaf.setViewState(state)),
   WORKBENCH_WINDOW: { width: 1440, height: 900 },
@@ -66,13 +95,13 @@ vi.mock("./partial-command", () => ({
   createSharedPartialEffect: vi.fn(() => Effect.succeed(null)),
 }));
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-
-// The renderers are note-preview's own; here they stand in, so a render reports
+// The renderers are the Preview panel's own; here they stand in, so a render reports
 // which document kind the view asked for and what the session fed it.
-vi.mock("@/views/note-preview/render", async (importOriginal) => {
+vi.mock("@/views/template-workbench/preview/render", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@/views/note-preview/render")>();
+    await importOriginal<
+      typeof import("@/views/template-workbench/preview/render")
+    >();
   const { failedRender, renderIdentity } =
     await import("@zotlit/workbench/render");
   return {
@@ -146,7 +175,8 @@ function setup(
   const app =
     sharedApp ??
     stubService<App>("App", {
-      scope: stubService<App["scope"]>("Scope", {}),
+      // The Fields popover holds a Scope on the keymap while it stands.
+      ...keymapApp(),
       workspace: stubService<App["workspace"]>("Workspace", {
         requestSaveLayout,
         trigger: vi.fn(),
@@ -312,16 +342,16 @@ describe("TemplateWorkbenchView", () => {
     using _activeFile = vi
       .spyOn(h.app.workspace, "getActiveFile")
       .mockReturnValue(other);
-    h.view.store.getState().setItem({ id: "BBBBBBBB", title: "Other paper" });
+    setViewItem(h.view, { id: "BBBBBBBB", title: "Other paper" });
     const updating = run(h.view.updateOriginatingNote());
     // A second press while the update runs joins it.
     const again = run(h.view.updateOriginatingNote());
     await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
-    expect(h.view.updatingNote).toBe(true);
+    expect(h.view.registry.get(h.view.model.updating)).toBe(true);
     expect(h.updateNote).not.toHaveBeenCalled();
     saved.resolve();
     expect(await again).toBe(await updating);
-    expect(h.view.updatingNote).toBe(false);
+    expect(h.view.registry.get(h.view.model.updating)).toBe(false);
     expect(await updating).toMatchObject({
       outcome: "updated",
       name: "Original",
@@ -407,8 +437,8 @@ describe("TemplateWorkbenchView", () => {
       name: "Original",
       result: { bodyUpdated: false, noManagedBlock: true },
     });
-    expect(originatingNoteUpdateNotice(h.app, result!)).toContain("Original");
-    expect(originatingNoteUpdateNotice(h.app, result!)).toContain(
+    expect(originatingNoteUpdateNotice(h.app, result)).toContain("Original");
+    expect(originatingNoteUpdateNotice(h.app, result)).toContain(
       m.notice_updated_note_no_managed_block(),
     );
     const error = new Error("write failed");
@@ -432,7 +462,7 @@ describe("TemplateWorkbenchView", () => {
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
       true,
     );
-    expect(h.view.updatingNote).toBe(false);
+    expect(h.view.registry.get(h.view.model.updating)).toBe(false);
     expect(h.updateNote).not.toHaveBeenCalled();
   });
 
@@ -491,7 +521,7 @@ describe("TemplateWorkbenchView", () => {
     h.updateNote.mockResolvedValueOnce(result);
     const outcome = await run(h.view.updateOriginatingNote());
     expect(outcome).toEqual({ outcome: "refused", name: "Original", result });
-    expect(originatingNoteUpdateNotice(h.app, outcome!)).toBe(
+    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
       m.notice_literature_note_template_missing({ document: "missing.md" }),
     );
   });
@@ -540,7 +570,7 @@ describe("TemplateWorkbenchView", () => {
     });
     const outcome = await run(h.view.updateOriginatingNote());
     expect(outcome).toEqual({ outcome: "unavailable", name: "Original" });
-    expect(originatingNoteUpdateNotice(h.app, outcome!)).toBe(
+    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
       m.template_workbench_update_unavailable({ name: "Original" }),
     );
   });
@@ -573,107 +603,79 @@ describe("TemplateWorkbenchView", () => {
     expect(h.updateNote).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])(
-    "clears an arrival after a fresh matching success and retains its report (unrelated preview: %s)",
-    async (unrelatedPreview) => {
-      await using cleanup = new AsyncDisposableStack();
-      const copy = vi
-        .spyOn(navigator.clipboard, "writeText")
-        .mockResolvedValue();
-      cleanup.defer(() => copy.mockRestore());
-      const { view } = setup({
-        runtime: testRuntime(),
-        render: (request) =>
-          Effect.succeed({
-            ...emptyRender(renderIdentity(request)),
-            creationBody: "Repaired note",
-          }),
-      });
-      const file = new TFile();
-      file.path = "templates/paper.md";
-      view.file = file;
-      cleanup.defer(() => act(async () => view.close()));
-      await act(async () => view.open());
-      await act(async () =>
-        view.scheduler.setInput({
-          snapshot: SAMPLE_ITEMS[0]!,
-          live: false,
-          hold: false,
+  it("clears an arrival after a fresh matching success and retains its report", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    cleanup.defer(() => copy.mockRestore());
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "Repaired note",
         }),
-      );
-      const run = async () => {
-        const attempt = view.scheduler.getState().attempt;
-        await act(async () => {
-          view.scheduler.run();
-          await vi.waitFor(() =>
-            expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
-          );
-        });
-      };
-      await run();
-      const diagnostic = {
-        code: "missing-partial" as const,
-        params: { name: "venue-line" },
-        part: "render" as const,
-      };
-      const report = captureRenderReport({
-        diagnostic,
-        identity: {
-          sourceRevision: "",
-          snapshotRevision: SAMPLE_ITEMS[0]!.revision,
-        },
-        trigger: "explicit",
-        sequence: 0,
-        capturedAt: "2026-09-13T00:00:00Z",
-        context: { document: file.path },
-      });
-      await act(async () =>
-        view.explainArrival({ diagnostic: { ...diagnostic, report } }),
-      );
-      expect(view.contentEl.textContent).toContain(
-        m.workbench_problems_object_partial({ name: "venue-line" }),
-      );
-      // A result from before arrival does not prove a repair.
-      expect(view.contentEl.textContent).not.toContain(
-        m.workbench_problems_none(),
-      );
-      await act(async () =>
-        view.scheduler.setInput({ snapshot: SAMPLE_ITEMS[1]! }),
-      );
-      await run();
-      expect(view.contentEl.textContent).toContain(
-        m.workbench_problems_object_partial({ name: "venue-line" }),
-      );
-      await act(async () =>
-        view.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! }),
-      );
-      if (unrelatedPreview) {
-        await act(async () =>
-          view.publishPreviewProblems("pinned-B", [
-            {
-              code: "missing-partial",
-              part: "render",
-              params: { name: "other-partial" },
-            },
-          ]),
+    });
+    const file = new TFile();
+    file.path = "templates/paper.md";
+    view.file = file;
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    const run = async () => {
+      const attempt = renderState(view).attempt;
+      await act(async () => {
+        runRender(view);
+        await vi.waitFor(() =>
+          expect(renderState(view).attempt).toBeGreaterThan(attempt),
         );
-      }
-      await run();
-      expect(view.contentEl.textContent).toContain(
-        unrelatedPreview
-          ? m.workbench_problems_resolved()
-          : m.workbench_problems_none(),
-      );
-      expect(view.contentEl.textContent).toContain(
-        m.workbench_problems_copy_last(),
-      );
-      const copyLast = [...view.contentEl.querySelectorAll("button")].find(
-        (button) => button.textContent === m.workbench_problems_copy_last(),
-      )!;
-      await act(async () => copyLast.click());
-      expect(copy).toHaveBeenCalledExactlyOnceWith(formatRenderReport(report));
-    },
-  );
+      });
+    };
+    await run();
+    const diagnostic = {
+      code: "missing-partial" as const,
+      params: { name: "venue-line" },
+      part: "render" as const,
+    };
+    const report = captureRenderReport({
+      diagnostic,
+      identity: {
+        sourceRevision: "",
+        snapshotRevision: SAMPLE_ITEMS[0]!.revision,
+      },
+      trigger: "explicit",
+      sequence: 0,
+      capturedAt: "2026-09-13T00:00:00Z",
+      context: { document: file.path },
+    });
+    await act(async () =>
+      view.explainArrival({ diagnostic: { ...diagnostic, report } }),
+    );
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
+    // A result from before arrival does not prove a repair.
+    expect(view.contentEl.textContent).not.toContain(
+      m.workbench_problems_none(),
+    );
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[1]!));
+    await run();
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
+    await run();
+    expect(view.contentEl.textContent).toContain(m.workbench_problems_none());
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_copy_last(),
+    );
+    const copyLast = [...view.contentEl.querySelectorAll("button")].find(
+      (button) => button.textContent === m.workbench_problems_copy_last(),
+    )!;
+    await act(async () => copyLast.click());
+    expect(copy).toHaveBeenCalledExactlyOnceWith(formatRenderReport(report));
+  });
 
   it("clears a repaired Annotation arrival while a Property failure remains", async () => {
     await using cleanup = new AsyncDisposableStack();
@@ -696,11 +698,7 @@ describe("TemplateWorkbenchView", () => {
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
     await act(async () => {
-      view.scheduler.setInput({
-        snapshot: SAMPLE_ITEMS[0]!,
-        live: false,
-        hold: false,
-      });
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false });
       view.explainArrival({
         diagnostic: {
           code: "render-error",
@@ -709,11 +707,11 @@ describe("TemplateWorkbenchView", () => {
         },
       });
     });
-    const attempt = view.scheduler.getState().attempt;
+    const attempt = renderState(view).attempt;
     await act(async () => {
-      view.scheduler.run();
+      runRender(view);
       await vi.waitFor(() =>
-        expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
       );
     });
     expect(view.contentEl.textContent).toContain(
@@ -741,11 +739,7 @@ describe("TemplateWorkbenchView", () => {
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
     await act(async () => {
-      view.scheduler.setInput({
-        snapshot: SAMPLE_ITEMS[0]!,
-        live: false,
-        hold: false,
-      });
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false });
       view.explainArrival({
         diagnostic: {
           code: "missing-partial",
@@ -754,11 +748,11 @@ describe("TemplateWorkbenchView", () => {
         },
       });
     });
-    const attempt = view.scheduler.getState().attempt;
+    const attempt = renderState(view).attempt;
     await act(async () => {
-      view.scheduler.run();
+      runRender(view);
       await vi.waitFor(() =>
-        expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
       );
     });
     expect(view.contentEl.textContent).not.toContain(
@@ -820,12 +814,12 @@ describe("TemplateWorkbenchView", () => {
           ).querySelectorAll(`.${hook}`),
         ].map((node) => node.textContent);
       for (const tab of ["annotation", "name"] as const) {
-        await act(async () => view.store.getState().setTab(tab));
+        await act(async () => view.change.setTab(tab));
         expect(tokens("zt-template-delimiter")).toEqual(
           engine === "eta" ? ["<%=", "%>"] : ["{{", "}}"],
         );
       }
-      await act(async () => view.store.getState().setAdvanced(true));
+      await act(async () => view.change.setAdvanced(true));
       expect(tokens("zt-template-frontmatter")).toContain("id: paper");
       expect(tokens("zt-template-yaml-key")).toEqual([]);
       expect(tokens("zt-template-delimiter")).toEqual(
@@ -845,13 +839,13 @@ describe("TemplateWorkbenchView", () => {
     const note = view.contentEl.querySelector<HTMLElement>(".cm-editor")!;
     expect(view.contentEl.querySelectorAll(".cm-editor")).toHaveLength(1);
 
-    await act(async () => view.store.getState().setTab("annotation"));
+    await act(async () => view.change.setTab("annotation"));
     const editors = view.contentEl.querySelectorAll<HTMLElement>(".cm-editor");
     expect(editors).toHaveLength(2);
     expect([...editors]).toContain(note);
     const annotation = editors[1]!;
 
-    await act(async () => view.store.getState().setTab("note"));
+    await act(async () => view.change.setTab("note"));
     expect([...view.contentEl.querySelectorAll(".cm-editor")]).toEqual([
       note,
       annotation,
@@ -864,11 +858,11 @@ describe("TemplateWorkbenchView", () => {
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
     const note = view.contentEl.querySelector<HTMLElement>(".cm-editor")!;
-    await act(async () => view.store.getState().setTab("annotation"));
+    await act(async () => view.change.setTab("annotation"));
     const annotation =
       view.contentEl.querySelectorAll<HTMLElement>(".cm-editor")[1]!;
 
-    await act(async () => view.store.getState().setAdvanced(true));
+    await act(async () => view.change.setAdvanced(true));
     const source = view.contentEl.querySelector<HTMLElement>(
       '[data-workbench-mode="source"] .cm-editor',
     )!;
@@ -877,7 +871,7 @@ describe("TemplateWorkbenchView", () => {
       annotation.closest<HTMLElement>('[role="tabpanel"]')!;
     expect(sourcePanel.hidden).toBe(false);
     expect(annotationPanel.hidden).toBe(true);
-    await act(async () => view.store.getState().setAdvanced(false));
+    await act(async () => view.change.setAdvanced(false));
 
     expect(view.contentEl.contains(note)).toBe(true);
     expect(view.contentEl.contains(annotation)).toBe(true);
@@ -885,7 +879,7 @@ describe("TemplateWorkbenchView", () => {
     expect(sourcePanel.hidden).toBe(true);
     expect(annotationPanel.hidden).toBe(false);
 
-    await act(async () => view.store.getState().setAdvanced(true));
+    await act(async () => view.change.setAdvanced(true));
     expect(
       view.contentEl.querySelector('[data-workbench-mode="source"] .cm-editor'),
     ).toBe(source);
@@ -918,25 +912,25 @@ An annotation.
       view.contentEl.querySelector<HTMLElement>(
         '[data-part="filename-editor"] .cm-editor',
       )!;
-    await act(async () => view.store.getState().setTab("name"));
+    await act(async () => view.change.setTab("name"));
     const name = filename();
     expect(name).not.toBeNull();
-    await act(async () => view.store.getState().setTab("note"));
-    await act(async () => view.store.getState().setTab("name"));
+    await act(async () => view.change.setTab("note"));
+    await act(async () => view.change.setTab("name"));
     expect(filename()).toBe(name);
 
     const expression = () =>
       view.contentEl.querySelector<HTMLElement>(
         '[data-part="expression"] .cm-editor',
       )!;
-    await act(async () => view.store.getState().setTab("properties"));
+    await act(async () => view.change.setTab("properties"));
     await act(async () =>
       view.setPresentation({ selected: 1, reveal: null, fieldFocus: null }),
     );
     const expr = expression();
     expect(expr).not.toBeNull();
-    await act(async () => view.store.getState().setTab("note"));
-    await act(async () => view.store.getState().setTab("properties"));
+    await act(async () => view.change.setTab("note"));
+    await act(async () => view.change.setTab("properties"));
     expect(expression()).toBe(expr);
   });
 
@@ -974,7 +968,7 @@ An annotation.
     expect(view.getViewData()).toContain("<% title %>");
     expect(editor.state.selection.main.from).toBe(3);
     expect(editor.state.selection.main.to).toBe(8);
-    await act(async () => view.store.getState().setAdvanced(true));
+    await act(async () => view.change.setAdvanced(true));
     await act(async () => {
       view.controller.undo();
     });
@@ -993,7 +987,7 @@ An annotation.
     );
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
-    await act(async () => view.store.getState().setAdvanced(true));
+    await act(async () => view.change.setAdvanced(true));
     expect(
       [...view.contentEl.querySelectorAll(".zt-template-delimiter")].map(
         (node) => node.textContent,
@@ -1069,13 +1063,13 @@ An annotation.
     view.setViewData("---\nid: [", true);
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
-    await act(async () => view.store.getState().setTab("match"));
-    expect(view.store.getState().tab).toBe("note");
+    await act(async () => view.change.setTab("match"));
+    expect(viewState(view).tab).toBe("note");
     const match = [
       ...view.contentEl.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
     ].find((tab) => tab.textContent === m.workbench_tab_match())!;
     expect(match.disabled).toBe(true);
-    await act(async () => view.store.getState().setTab("name"));
+    await act(async () => view.change.setTab("name"));
     expect(
       [...view.contentEl.querySelectorAll("button")].some(
         (button) => button.textContent === m.workbench_open_settings(),
@@ -1104,7 +1098,7 @@ An annotation.
     await act(async () => redo.click());
     expect(view.getViewData()).toContain("name: Edited");
     await act(async () => source.click());
-    expect(view.store.getState().advanced).toBe(true);
+    expect(viewState(view).advanced).toBe(true);
     expect(source.getAttribute("aria-pressed")).toBe("true");
     await act(async () => view.setViewData(SOURCE, true));
     expect(undo.getAttribute("aria-disabled")).toBe("true");
@@ -1146,7 +1140,9 @@ An annotation.
     expect(view.getViewData()).toBe(SOURCE);
     expect(materializeDefault).not.toHaveBeenCalled();
     const creating = run(view.customizeDefault());
-    expect(view.store.getState().customization === "pending").toBe(true);
+    expect(view.registry.get(view.model.customization) === "pending").toBe(
+      true,
+    );
     // A second press while the document is written joins that write.
     const again = run(view.customizeDefault());
     await vi.waitFor(() =>
@@ -1207,15 +1203,19 @@ An annotation.
     });
     await view.setState({ defaultDraft: true }, { history: false });
     await run(view.customizeDefault());
-    expect(view.store.getState().customization === "failed").toBe(true);
-    expect(view.store.getState().customization === "pending").toBe(false);
+    expect(view.registry.get(view.model.customization) === "failed").toBe(true);
+    expect(view.registry.get(view.model.customization) === "pending").toBe(
+      false,
+    );
     view.controller.setManifestKey("name", "Attempt after failure");
     view.controller.undo();
     expect(view.getViewData()).toBe(SOURCE);
     expect(materializeDefault).toHaveBeenCalledOnce();
     expect(requestSave).not.toHaveBeenCalled();
     await run(view.customizeDefault());
-    expect(view.store.getState().customization === "failed").toBe(false);
+    expect(view.registry.get(view.model.customization) === "failed").toBe(
+      false,
+    );
     expect(view.isDefaultDraft).toBe(false);
   });
 
@@ -1289,7 +1289,7 @@ An annotation.
     await act(async () => {
       customize.click();
       await vi.waitFor(() =>
-        expect(view.store.getState().customization).toBe("failed"),
+        expect(view.registry.get(view.model.customization)).toBe("failed"),
       );
     });
     expect(view.contentEl.querySelectorAll('[role="alert"]')).toHaveLength(1);
@@ -1344,7 +1344,7 @@ An annotation.
     expect(await run(view.selectItem(choice))).toBe(true);
     loaded.resolve();
     await restoring;
-    expect(view.store.getState().item).toMatchObject({ id: choice.id });
+    expect(viewState(view).item).toMatchObject({ id: choice.id });
   });
 
   it("keeps authoring and restored state available when the database fails", async () => {
@@ -1363,8 +1363,8 @@ An annotation.
         { history: false },
       ),
     ).resolves.toBeUndefined();
-    expect(view.store.getState().advanced).toBe(true);
-    expect(view.unavailableDependencies).toHaveLength(1);
+    expect(viewState(view).advanced).toBe(true);
+    expect(view.registry.get(view.model.unavailable)).toHaveLength(1);
     view.controller.setManifestKey("name", "Offline edit");
     expect(view.getViewData()).toContain("Offline edit");
     expect(requestSave).toHaveBeenCalledOnce();
@@ -1385,12 +1385,12 @@ An annotation.
       ),
     });
     await expect(run(view.refreshStyles())).resolves.toBeUndefined();
-    expect(view.unavailableDependencies).toHaveLength(1);
+    expect(view.registry.get(view.model.unavailable)).toHaveLength(1);
     expect(view.getViewData()).toBe(SOURCE);
-    expect(view.citationStyles).toEqual([]);
+    expect(view.registry.get(view.model.styles).list).toEqual([]);
     failed = false;
     await run(view.refreshStyles());
-    expect(view.unavailableDependencies).toEqual([]);
+    expect(view.registry.get(view.model.unavailable)).toEqual([]);
   });
 
   it("routes the view shortcut to shared history while leaving text inputs their own shortcut", () => {
@@ -1464,7 +1464,7 @@ An annotation.
         { history: false },
       );
 
-      expect(view.store.getState()).toMatchObject({
+      expect(viewState(view)).toMatchObject({
         tab,
         root,
         advanced,
@@ -1480,13 +1480,13 @@ An annotation.
       { history: false },
     );
     await view.setState({ tab: "unknown" }, { history: false });
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "note",
       root: "annotation",
     });
 
     await view.setState({ tab: "name" }, { history: false });
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "name",
       root: "filename",
     });
@@ -1494,7 +1494,7 @@ An annotation.
       { tab: "note", root: "annotation" },
       { history: false },
     );
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "note",
       root: "annotation",
     });
@@ -1523,20 +1523,29 @@ An annotation.
       advanced: true,
       itemIndexedKey: null,
       annotationId: null,
+      variant: "main",
+      citationExample: "one-item",
+      panels: {
+        fields: { pinned: false, hidden: false, width: 320 },
+        preview: { shown: false, width: 400, height: 40 },
+      },
+      preview: {
+        mode: "create",
+        live: true,
+        showMarkdown: false,
+        showManaged: false,
+      },
     });
   });
   it("labels a built-in annotation sample export as selected paper data", () => {
     const { view } = setup();
-    view.store.getState().setItem({ id: "PAPER001g42", title: "Paper" });
-    view.store.getState().setRoot("annotation");
-    Object.defineProperty(view, "preview", {
-      value: {
-        [Symbol.dispose]() {},
-        state: createStore(() => ({
-          current: [],
-          example: { id: "builtin", root: { indexedKey: "EXAMP001" } },
-        })),
-      },
+    setViewItem(view, { id: "PAPER001g42", title: "Paper" });
+    view.change.setRoot("annotation");
+    Object.defineProperty(view.workbench, "examples", {
+      value: Atom.make({
+        current: [],
+        example: { id: "builtin", root: { indexedKey: "EXAMP001" } },
+      }),
     });
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
@@ -1544,24 +1553,18 @@ An annotation.
       indexedKey: "PAPER001g42",
       root: "note",
     });
-    expect(menu.items.map((item) => item.title)).toContain(
+    expect(menuEntries(menu).map((item) => item.title)).toContain(
       "Export selected paper data",
     );
   });
 
   it("keeps a real selected annotation export on its exact Indexed Key", () => {
     const { view } = setup();
-    view.store.getState().setItem({ id: "PAPER001g42", title: "Paper" });
-    view.store.getState().setRoot("annotation");
+    setViewItem(view, { id: "PAPER001g42", title: "Paper" });
+    view.change.setRoot("annotation");
     const annotation = { id: "real", root: { indexedKey: "ANNO0001g42" } };
-    Object.defineProperty(view, "preview", {
-      value: {
-        [Symbol.dispose]() {},
-        state: createStore(() => ({
-          current: [annotation],
-          example: annotation,
-        })),
-      },
+    Object.defineProperty(view.workbench, "examples", {
+      value: Atom.make({ current: [annotation], example: annotation }),
     });
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
@@ -1569,7 +1572,7 @@ An annotation.
       indexedKey: "ANNO0001g42",
       root: "annotation",
     });
-    expect(menu.items.map((item) => item.title)).toContain(
+    expect(menuEntries(menu).map((item) => item.title)).toContain(
       "Save template data as JSON",
     );
   });
@@ -1615,8 +1618,8 @@ An annotation.
     }
   });
 
-  it("addresses insertion to one editor and resolves its current language", async () => {
-    const { view, leaf, requestSave } = setup();
+  it("inserts a field in the editor's current language", async () => {
+    const { view, requestSave } = setup();
     const node = {
       kind: "value",
       path: ["title"],
@@ -1636,21 +1639,12 @@ An annotation.
         editor.focus();
         editor.dispatch({ selection: { anchor: 3 } });
       });
-      expect(
-        view.insertTemplateField({
-          leaf: stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-            updateHeader: vi.fn(),
-          }),
-          node,
-        }),
-      ).toBe(false);
-      expect(requestSave).not.toHaveBeenCalled();
       await act(() => {
         view.controller.setManifestKey("language", "eta");
       });
       requestSave.mockClear();
       await act(() => {
-        expect(view.insertTemplateField({ leaf, node })).toBe(true);
+        expect(insertNode(view, node)).toBe(true);
       });
       expect(view.getViewData()).toContain("A s<%= zt.title %>table note.");
       expect(requestSave).toHaveBeenCalledOnce();
@@ -1662,7 +1656,50 @@ An annotation.
       await act(async () => view.close());
       view.contentEl.remove();
     }
-    expect(view.insertTemplateField({ leaf, node })).toBe(false);
+    expect(insertNode(view, node)).toBe(false);
+  });
+
+  // A pane that only came on screen reports where its caret starts; the
+  // start of the note is no place the reader chose.
+  it("refuses an insertion before the reader places the caret", async () => {
+    const { view } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => view.open());
+      const before = view.getViewData();
+      expect(view.registry.get(view.fields.canInsert)).toBe(false);
+      await act(() => {
+        expect(view.insertField("{{ zt.title }}")).toBe(false);
+      });
+      expect(view.getViewData()).toBe(before);
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
+  });
+
+  it("offers the Fields panel's insert while the editor takes edits", async () => {
+    const { view } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => view.open());
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 3 } });
+      });
+      const canInsert = () => view.registry.get(view.fields.canInsert);
+      expect(canInsert()).toBe(true);
+      await act(() => view.controller.setReadOnly(true));
+      expect(canInsert()).toBe(false);
+      await act(() => view.controller.setReadOnly(false));
+      expect(canInsert()).toBe(true);
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
   });
 
   it("keeps the caret target mapped when external text moves an unchanged focused slice", async () => {
@@ -1702,7 +1739,7 @@ An annotation.
   });
   it("rejects insertion after the remembered filename slice is removed", async () => {
     const { view } = setup();
-    view.store.getState().setTab("name");
+    view.change.setTab("name");
     document.body.append(view.contentEl);
     try {
       await act(async () => {
@@ -1744,17 +1781,17 @@ function sharedWorkspace() {
     name: "quick-preview",
     callback: (file: TFile, source: string) => unknown,
     ctx?: unknown,
-  ): {};
+  ): object;
   function on(
     name: string,
     callback: (...data: never[]) => unknown,
     ctx?: unknown,
-  ): {};
+  ): object;
   function on(
     name: string,
     callback: (...data: never[]) => unknown,
     _ctx?: unknown,
-  ): {} {
+  ): object {
     if (name === "quick-preview")
       listeners.add(callback as (file: TFile, source: string) => void);
     return {};
@@ -1805,9 +1842,9 @@ describe("native Profile source exchange", () => {
     const second = editor();
     const firstController = first.view.controller;
     const secondController = second.view.controller;
-    first.view.store.getState().setItem({ id: "AAAA0001", title: "First" });
-    second.view.store.getState().setItem({ id: "BBBB0002", title: "Second" });
-    second.view.store.getState().setAdvanced(true);
+    setViewItem(first.view, { id: "AAAA0001", title: "First" });
+    setViewItem(second.view, { id: "BBBB0002", title: "Second" });
+    second.view.change.setAdvanced(true);
     const cursor = SOURCE.indexOf("stable") + 2;
     secondController.dispatch({ selection: { anchor: cursor } });
     firstController.setManifestKey("name", "Longer name");
@@ -1823,10 +1860,10 @@ describe("native Profile source exchange", () => {
     expect(first.view.controller).toBe(firstController);
     expect(second.view.controller).toBe(secondController);
     expect(secondController).not.toBe(firstController);
-    expect(first.view.store.getState().item?.id).toBe("AAAA0001");
-    expect(second.view.store.getState().item?.id).toBe("BBBB0002");
-    expect(second.view.store.getState().advanced).toBe(true);
-    expect(first.view.store.getState().advanced).toBe(false);
+    expect(viewState(first.view).item?.id).toBe("AAAA0001");
+    expect(viewState(second.view).item?.id).toBe("BBBB0002");
+    expect(viewState(second.view).advanced).toBe(true);
+    expect(viewState(first.view).advanced).toBe(false);
     expect(secondController.undo()).toBe(true);
     expect(first.view.getViewData()).toBe(SOURCE);
     expect(second.view.getViewData()).toBe(SOURCE);
@@ -1980,7 +2017,7 @@ it("recreates persisted editor choices and restores namespaced presentation afte
   document.body.append(original.view.contentEl);
   cleanup.defer(() => original.view.contentEl.remove());
   await act(async () => original.view.open());
-  await act(async () => original.view.store.getState().setAdvanced(true));
+  await act(async () => original.view.change.setAdvanced(true));
   const editor = EditorView.findFromDOM(
     original.view.contentEl.querySelector<HTMLElement>(".cm-editor")!,
   )!;
@@ -2039,7 +2076,7 @@ it("clamps stale restored ranges, ignores removed Properties, and discards a dif
   cleanup.defer(() => act(async () => view.close()));
   await act(async () => {
     await view.open();
-    view.store.getState().setAdvanced(true);
+    view.change.setAdvanced(true);
   });
   const saved = view.getEphemeralState() as {
     zotlitTemplateWorkbench: Record<string, unknown>;
@@ -2055,10 +2092,8 @@ it("clamps stale restored ranges, ignores removed Properties, and discards a dif
   )!;
   expect(editor.state.selection.main.from).toBe(0);
   expect(editor.state.selection.main.to).toBe(SOURCE.length);
-  expect(view.store.getState().presentation.selected).toBeNull();
-  await act(async () =>
-    view.store.getState().setItem({ id: "OTHER001", title: "Other" }),
-  );
+  expect(viewState(view).presentation.selected).toBeNull();
+  await act(async () => setViewItem(view, { id: "OTHER001", title: "Other" }));
   await act(async () => editor.dispatch({ selection: { anchor: 3 } }));
   await act(async () => view.setEphemeralState(saved));
   expect(editor.state.selection.main.head).toBe(3);
@@ -2105,6 +2140,18 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     advanced: false,
     itemIndexedKey: null,
     annotationId: null,
+    variant: "main",
+    citationExample: "one-item",
+    panels: {
+      fields: { pinned: false, hidden: false, width: 320 },
+      preview: { shown: false, width: 400, height: 40 },
+    },
+    preview: {
+      mode: "create",
+      live: true,
+      showMarkdown: false,
+      showManaged: false,
+    },
   });
   expect(view.controller.readOnly).toBe(true);
   expect(view.getViewData()).toBe(builtin);
@@ -2159,12 +2206,25 @@ language: liquid
 
     expect(view.getDisplayText()).toBe(m.template_workbench_title_citation());
     expect(tabLabels(view)).toEqual([m.workbench_tab_citation()]);
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "citation",
       root: "citation",
       advanced: false,
     });
     expect(sourceAction(view).style.display).toBe("none");
+  });
+
+  it("names the Citation example set in the item row as an example", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const row = view.contentEl.querySelector("[data-workbench-item-row]");
+    expect(row?.textContent).toContain(
+      m.workbench_example_title({
+        name: m.workbench_citation_example_one_item(),
+      }),
+    );
   });
 
   it("reveals a Citation Template problem in the one editor it opens with", async () => {
@@ -2177,7 +2237,7 @@ language: liquid
     // behind its own view; a plain document has nowhere else to open.
     await act(async () => view.revealSlice("advanced"));
 
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "citation",
       root: "citation",
       advanced: false,
@@ -2277,7 +2337,7 @@ language: liquid
     await press(m.workbench_problems_return());
     // The area gives the editor back whole, and the caret is where it was.
     expect(area.dataset.state).toBe("compact");
-    expect(view.store.getState().presentation.reveal).toMatchObject({
+    expect(viewState(view).presentation.reveal).toMatchObject({
       from: caret,
       to: caret,
       slice: left.slice,
@@ -2286,7 +2346,7 @@ language: liquid
     expect(editor.contentDOM).toBe(document.activeElement);
   });
 
-  it("reclaims the reading space before navigating to a source problem", async () => {
+  it("reclaims the reading space and opens the Annotation tab for a missing section", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
@@ -2309,13 +2369,15 @@ language: liquid
 
     await press('[data-part="problems-open"]');
     expect(area.dataset.state).toBe("compact");
-    expect(view.store.getState().advanced).toBe(true);
-    const editor = EditorView.findFromDOM(
-      view.contentEl.querySelector<HTMLElement>(
-        '[data-workbench-mode="source"] .cm-editor',
-      )!,
-    )!;
-    expect(editor.contentDOM).toBe(document.activeElement);
+    // The section is added from the Annotation tab, as on the web.
+    expect(viewState(view)).toMatchObject({
+      advanced: false,
+      tab: "annotation",
+      root: "annotation",
+    });
+    expect(
+      view.contentEl.querySelector('[data-part="section-bar"]'),
+    ).not.toBeNull();
   });
 
   it("keeps a Profile document on its six tabs, titled by its name", async () => {
@@ -2343,7 +2405,7 @@ language: liquid
     const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "citation",
       root: "citation",
     });
@@ -2357,7 +2419,7 @@ language: liquid
 
     // The Citation tab names no panel a Profile document has, so the six
     // Profile tabs open on the first of them rather than on none.
-    expect(view.store.getState()).toMatchObject({ tab: "note", root: "note" });
+    expect(viewState(view)).toMatchObject({ tab: "note", root: "note" });
     expect(tabLabels(view)).toEqual([
       m.workbench_tab_note(),
       m.workbench_tab_properties(),
@@ -2372,7 +2434,7 @@ language: liquid
     ).toBe(m.workbench_tab_note());
   });
 
-  it("offers Open citation text on every kind, and the language switch on the Citation Template", async () => {
+  it("offers Customize citation text on every kind, and the language switch on the Citation Template", async () => {
     await using cleanup = new AsyncDisposableStack();
     const profile = openKind("templates/zotlit-profile.paper.md", SOURCE);
     cleanup.defer(() => act(async () => profile.view.close()));
@@ -2382,16 +2444,20 @@ language: liquid
     const titles = (view: TemplateWorkbenchView) => {
       const menu = new Menu();
       view.onPaneMenu(menu as never, "more-options");
-      return menu.items.map((item) => item.title);
+      return menuEntries(menu).map((item) => item.title);
     };
     expect(titles(profile.view)).toContain(
-      m.template_workbench_open_citation(),
+      m.command_customize_citation_text_name(),
+    );
+    // The view already stands in its Workbench window: no entry opens it.
+    expect(titles(profile.view)).not.toContain(
+      m.template_workbench_open_layout(),
     );
     expect(titles(profile.view)).not.toContain(
       m.template_workbench_change_language(),
     );
     expect(titles(citation.view)).toContain(
-      m.template_workbench_open_citation(),
+      m.command_customize_citation_text_name(),
     );
     expect(titles(citation.view)).toContain(
       m.template_workbench_change_language(),
@@ -2582,10 +2648,7 @@ language: liquid
   });
 
   it("writes an Explorer field into the Citation Template's one editor", async () => {
-    const { view, leaf } = openKind(
-      "templates/zotlit-citation.md",
-      CITATION_SOURCE,
-    );
+    const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
     await using cleanup = new AsyncDisposableStack();
     document.body.append(view.contentEl);
     cleanup.defer(() => view.contentEl.remove());
@@ -2600,17 +2663,14 @@ language: liquid
     });
     await act(() => {
       expect(
-        view.insertTemplateField({
-          leaf,
-          node: {
-            kind: "value",
-            path: ["variant"],
-            key: "variant",
-            label: "variant",
-            valueType: "string",
-            value: "main",
-            expandable: false,
-          },
+        insertNode(view, {
+          kind: "value",
+          path: ["variant"],
+          key: "variant",
+          label: "variant",
+          valueType: "string",
+          value: "main",
+          expandable: false,
         }),
       ).toBe(true);
     });
@@ -2632,7 +2692,7 @@ language: liquid
       m.template_workbench_title_partial({ name: "authors" }),
     );
     expect(tabLabels(view)).toEqual([m.workbench_tab_partial()]);
-    expect(view.store.getState()).toMatchObject({
+    expect(viewState(view)).toMatchObject({
       tab: "partial",
       root: "note",
       advanced: false,
@@ -2648,7 +2708,7 @@ language: liquid
     );
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
-    const titles = menu.items.map((item) => item.title);
+    const titles = menuEntries(menu).map((item) => item.title);
 
     expect(titles).toContain(m.template_workbench_change_language());
     expect(titles).toContain(m.workbench_choose_annotation());
@@ -2665,13 +2725,9 @@ language: liquid
       view.setPartialSelection({ context: "annotation", profile: "reading1" }),
     );
 
-    expect(view.store.getState().root).toBe("annotation");
+    expect(viewState(view).root).toBe("annotation");
     expect(view.controller.templateRegions[0]!.root).toBe("annotation");
-    expect(view.authoringContext.partial).toEqual({
-      name: "authors",
-      context: "annotation",
-      profile: "reading1",
-    });
+    expect(view.partialProfile).toBe("reading1");
     const saved = view.getState();
     expect(saved).toMatchObject({
       partialContext: "annotation",
@@ -2772,14 +2828,14 @@ language: liquid
       view.setViewData(SOURCE, true);
     });
 
-    expect(view.store.getState()).toMatchObject({ tab: "note", root: "note" });
+    expect(viewState(view)).toMatchObject({ tab: "note", root: "note" });
   });
 
   it("switches the rendering language on the manifest key alone", () => {
     const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
     const menu = new Menu();
     view.onPaneMenu(menu as never, "more-options");
-    const language = menu.items.find(
+    const language = menuEntries(menu).find(
       (item) => item.title === m.template_workbench_change_language(),
     )!;
     language
@@ -2899,6 +2955,7 @@ An annotation.
       source: SELECTION,
       language: "liquid",
       open: "split",
+      from: view.leaf,
     });
     expect(view.getViewData()).toBe(EXTRACT_SOURCE.replace(SELECTION, CALL));
   });
@@ -2925,6 +2982,7 @@ An annotation.
       source: ruled,
       language: "liquid",
       open: "split",
+      from: view.leaf,
     });
     expect(
       parsePlainTemplateDocument(
@@ -2948,6 +3006,7 @@ An annotation.
       source: SELECTION,
       language: "eta",
       open: "split",
+      from: view.leaf,
     });
     expect(view.getViewData()).toBe(
       EXTRACT_SOURCE.replace("language: liquid", "language: eta").replace(
@@ -3114,19 +3173,19 @@ language: liquid
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
 
-    expect(view.preview!.state.getState()).toMatchObject({
-      context: expect.objectContaining({
-        kind: "citation",
-        path: "templates/zotlit-citation.md",
-      }),
-      source: CITATION_SOURCE,
-      sourceProblem: null,
+    expect(view.registry.get(view.model.document)).toMatchObject({
+      path: "templates/zotlit-citation.md",
     });
+    expect(view.registry.get(view.workbench.document.kind)).toBe("citation");
+    expect(view.registry.get(view.workbench.document.source)).toBe(
+      CITATION_SOURCE,
+    );
+    expect(view.registry.get(view.workbench.input).hold).toBe(false);
 
     const edited = CITATION_SOURCE.replace("pandoc_cite", "pandoc_cite: 'alt'");
     await act(async () => view.setViewData(edited, false));
 
-    expect(view.preview!.state.getState().source).toBe(edited);
+    expect(view.registry.get(view.workbench.document.source)).toBe(edited);
   });
 });
 
@@ -3166,7 +3225,8 @@ describe("Template Workbench Item choice", () => {
     });
     const first = run(view.selectItem({ id: FIRST, title: "First" }));
     await vi.waitFor(() => expect(reads.started).toEqual([FIRST]));
-    void run(view.selectItem({ id: LATER, title: "Later" }));
+    // The later read holds until the leaf closes, which interrupts it.
+    void Effect.runPromiseExit(view.selectItem({ id: LATER, title: "Later" }));
     await vi.waitFor(() => expect(reads.started).toEqual([FIRST, LATER]));
     await expect(first).resolves.toBe(false);
     // The later read still runs.
@@ -3192,7 +3252,7 @@ describe("Template Workbench Item choice", () => {
     const extracting = Effect.runPromiseExit(view.extractPartial("venue"));
     await vi.waitFor(() => expect(reads.started).toEqual([FIRST]));
     await view.close();
-    expect(reads.interrupted).toEqual([FIRST]);
+    await vi.waitFor(() => expect(reads.interrupted).toEqual([FIRST]));
     expect(prompts).toEqual(["closed"]);
     const extracted = await extracting;
     expect(
@@ -3205,7 +3265,7 @@ describe("Template Workbench Item choice", () => {
     ).toBe(false);
   });
 
-  it("keeps a later selection and leaves the outrun choice unpublished", async () => {
+  it("keeps a later selection over a chosen Item whose read still runs", async () => {
     // The read that confirms the chosen Item holds until the test lets it go.
     const firstRead = Promise.withResolvers<void>();
     const firstReading = Promise.withResolvers<void>();
@@ -3249,7 +3309,7 @@ describe("Template Workbench Item choice", () => {
     );
     const first = items.get(FIRST)!;
     gated = true;
-    const { view, app } = setup({
+    const { view } = setup({
       runtime: testRuntime(),
       services: { zoteroReads },
       itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
@@ -3273,7 +3333,6 @@ describe("Template Workbench Item choice", () => {
       ),
     });
     using open = vi.spyOn(SuggestModal.prototype, "open");
-    using trigger = vi.spyOn(app.workspace, "trigger");
 
     const chosen = run(view.chooseItem());
     await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
@@ -3291,12 +3350,13 @@ describe("Template Workbench Item choice", () => {
     ).resolves.toBe(true);
     firstRead.resolve();
 
-    await expect(chosen).resolves.toBe(false);
-    expect(view.store.getState().item).toMatchObject({ id: LATER });
-    expect(trigger).not.toHaveBeenCalledWith(
-      "zotlit:workbench-selection",
-      expect.objectContaining({ item: expect.objectContaining({ id: FIRST }) }),
+    // The chooser's Item was the choice; the later one replaced it.
+    await expect(chosen).resolves.toBe(true);
+    expect(viewState(view).item).toMatchObject({ id: LATER });
+    await vi.waitFor(() =>
+      expect(view.registry.get(view.model.read).status).toBe("ready"),
     );
+    expect(view.registry.get(view.model.title)).toContain("Later paper");
   });
   it("closes the Zotero search when the view closes while it is open", async () => {
     const { view } = setup({
@@ -3328,10 +3388,1052 @@ describe("Template Workbench Item choice", () => {
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
     const picker = open.mock.contexts[1];
     await view.close();
-    expect(close.mock.contexts).toContain(picker);
+    await vi.waitFor(() => expect(close.mock.contexts).toContain(picker));
     const exit = await chosen;
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
       true,
     );
+  });
+});
+
+// #1945: the Preview is a side panel of the one view, which the reader shows,
+// hides and widens, and which the workspace saves with the view.
+describe("the side panels of the Template Workbench View", () => {
+  const actionOf = (view: TemplateWorkbenchView, title: string) =>
+    (view as unknown as MockItemView).actions.find(
+      (element) => element.getAttribute("aria-label") === title,
+    )!;
+  // A region names itself through `aria-labelledby`: Obsidian draws an
+  // `aria-label` as a hover tooltip over the whole region.
+  const region = (view: TemplateWorkbenchView, name: string) =>
+    [...view.contentEl.querySelectorAll<HTMLElement>("[role=region]")].find(
+      (element) => {
+        const nameId = element.getAttribute("aria-labelledby");
+        return (
+          !element.hasAttribute("aria-label") &&
+          nameId !== null &&
+          element.querySelector(`[id="${nameId}"]`)?.textContent === name
+        );
+      },
+    ) ?? null;
+  const handleOf = (view: TemplateWorkbenchView, name: string) =>
+    [...view.contentEl.querySelectorAll<HTMLElement>("[role=separator]")].find(
+      (element) => element.getAttribute("aria-label") === name,
+    )!;
+  const press = (element: HTMLElement, key: string) =>
+    act(async () => {
+      element.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true }),
+      );
+    });
+
+  it("shows and hides the Preview panel from its pressed view action", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    const show = actionOf(view, m.workbench_show_preview());
+    // The eye names what the action shows; its pressed state says it is shown.
+    expect(show.dataset.icon).toBe("eye");
+    expect(show.getAttribute("aria-pressed")).toBe("false");
+    expect(region(view, m.workbench_view_preview())).toBeNull();
+    await act(async () => show.click());
+    expect(show.getAttribute("aria-pressed")).toBe("true");
+    expect(region(view, m.workbench_view_preview())).not.toBeNull();
+    await act(async () => show.click());
+    expect(show.getAttribute("aria-pressed")).toBe("false");
+    expect(region(view, m.workbench_view_preview())).toBeNull();
+    await act(async () => view.close());
+  });
+
+  it("resizes the Preview panel from the keyboard within its limits", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const handle = handleOf(view, m.workbench_preview_resize());
+    expect(handle.tabIndex).toBe(0);
+    expect(handle.getAttribute("aria-orientation")).toBe("vertical");
+    const width = () => Number(handle.getAttribute("aria-valuenow"));
+    const initial = width();
+    // The Preview sits on the right, so moving its edge left widens it.
+    await press(handle, "ArrowLeft");
+    expect(width()).toBeGreaterThan(initial);
+    // A window splitter's Home is the smallest panel and End the largest.
+    await press(handle, "Home");
+    expect(width()).toBe(Number(handle.getAttribute("aria-valuemin")));
+    await press(handle, "End");
+    expect(width()).toBe(Number(handle.getAttribute("aria-valuemax")));
+    await act(async () => view.close());
+  });
+
+  it("restores the panel's visibility and width with the view state", async () => {
+    const original = setup();
+    await act(async () => original.view.open());
+    await act(async () =>
+      actionOf(original.view, m.workbench_show_preview()).click(),
+    );
+    await press(
+      handleOf(original.view, m.workbench_preview_resize()),
+      "ArrowLeft",
+    );
+    const width = handleOf(
+      original.view,
+      m.workbench_preview_resize(),
+    ).getAttribute("aria-valuenow");
+    const saved = original.view.getState();
+    await act(async () => original.view.close());
+    const restored = setup();
+    await act(async () => restored.view.setState(saved, { history: false }));
+    await act(async () => restored.view.open());
+    expect(region(restored.view, m.workbench_view_preview())).not.toBeNull();
+    expect(
+      handleOf(restored.view, m.workbench_preview_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe(width);
+    expect(
+      actionOf(restored.view, m.workbench_show_preview()).getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+    expect(restored.view.getState()).toEqual(saved);
+    await act(async () => restored.view.close());
+  });
+
+  // A ResizeObserver hears only the window it was made in, so a tab moved to
+  // another window watches its size from there (#1952).
+  it("measures the leaf from the window its tab moves to", async () => {
+    using migration = windowMigration();
+    const { view } = setup();
+    await act(async () => view.open());
+    // The box under the item row, which the panels and the editor share.
+    const box = view.contentEl.querySelector("[data-workbench-panels]")!;
+    expect(box).not.toBeNull();
+    const size = { width: 1200, height: 800 };
+    for (const [name, axis] of [
+      ["clientWidth", "width"],
+      ["clientHeight", "height"],
+    ] as const)
+      Object.defineProperty(box, name, {
+        configurable: true,
+        get: () => size[axis],
+      });
+    let resized: (() => void) | null = null;
+    const observed: Element[] = [];
+    class PopoutResizeObserver {
+      constructor(listener: () => void) {
+        resized = listener;
+      }
+      observe(element: Element) {
+        observed.push(element);
+      }
+      disconnect() {}
+    }
+    // The window the tab lands in brings its own observer.
+    vi.stubGlobal("ResizeObserver", PopoutResizeObserver);
+    await act(async () => migration.move(window));
+    vi.unstubAllGlobals();
+    expect(observed).toEqual([box]);
+    size.width = 520;
+    await act(async () => resized?.());
+    expect(view.registry.get(view.viewSize)).toMatchObject({
+      width: 520,
+      height: 800,
+    });
+    await act(async () => view.close());
+  });
+
+  // #1954: the leaf's size places the Preview; it never changes what shows.
+  it("puts the Preview under a narrow leaf and beside a wide one, keeping the saved panels", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const saved = view.getState();
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 560, height: 800 }),
+    );
+    const split = handleOf(view, m.workbench_preview_resize());
+    expect(split.getAttribute("aria-orientation")).toBe("horizontal");
+    expect(region(view, m.workbench_view_preview())).not.toBeNull();
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    expect(
+      handleOf(view, m.workbench_preview_resize()).getAttribute(
+        "aria-orientation",
+      ),
+    ).toBe("vertical");
+    expect(view.getState()).toEqual(saved);
+    await act(async () => view.close());
+  });
+
+  it("restores the Preview's height under the editor with the view state", async () => {
+    const original = setup();
+    await act(async () => original.view.open());
+    await act(async () =>
+      actionOf(original.view, m.workbench_show_preview()).click(),
+    );
+    await act(async () =>
+      original.view.registry.set(original.view.viewSize, {
+        width: 560,
+        height: 800,
+      }),
+    );
+    await press(
+      handleOf(original.view, m.workbench_preview_resize()),
+      "ArrowUp",
+    );
+    const saved = original.view.getState();
+    await act(async () => original.view.close());
+    const restored = setup();
+    await act(async () => restored.view.setState(saved, { history: false }));
+    await act(async () => restored.view.open());
+    await act(async () =>
+      restored.view.registry.set(restored.view.viewSize, {
+        width: 560,
+        height: 800,
+      }),
+    );
+    expect(
+      handleOf(restored.view, m.workbench_preview_resize()).getAttribute(
+        "aria-valuenow",
+      ),
+    ).toBe("45");
+    await act(async () => restored.view.close());
+  });
+  const paneMenuOf = (view: TemplateWorkbenchView) => {
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    return menu;
+  };
+  const paneMenu = (view: TemplateWorkbenchView) => paneMenuOf(view).items;
+  /** The entry `title` of the pane menu, or of a submenu under it. */
+  const entry = (view: TemplateWorkbenchView, title: string) =>
+    menuEntries(paneMenuOf(view)).find((item) => item.title === title);
+
+  // #1962: the most-used entries lead, the rare ones wait in a submenu, and
+  // every view action is in the menu for a reader who hides the header.
+  it("leads the pane menu with the view's own actions, and folds the rare ones away", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () => view.togglePreview());
+    setViewItem(view, { id: "PAPER001g42", title: "Paper" });
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    const items = paneMenu(view);
+    expect(
+      items
+        .filter((item) => item.section === MENU_SECTION.pane)
+        .map((item) => item.title),
+    ).toEqual([
+      m.workbench_show_fields(),
+      m.workbench_show_preview(),
+      m.workbench_choose_item(),
+      m.workbench_choose_annotation(),
+      m.workbench_view_preview(),
+      m.workbench_advanced(),
+      m.workbench_undo(),
+      m.workbench_redo(),
+    ]);
+    expect(
+      items
+        .filter((item) => item.section === MENU_SECTION.action)
+        .map((item) => item.title),
+      // The pane edges size the panels, so the menu holds no sizes.
+    ).toEqual([
+      m.template_data_explorer_menu_export_json(),
+      m.workbench_help(),
+    ]);
+    // Nothing is left to undo in a document just opened.
+    expect(entry(view, m.workbench_undo())?.disabled).toBe(true);
+    const preview = entry(view, m.workbench_view_preview())!;
+    expect(preview.submenu?.items.map((item) => item.title)).toEqual([
+      m.workbench_preview_as_new_note(),
+      m.workbench_preview_as_updated_note(),
+      m.workbench_preview_updated_section(),
+      m.workbench_preview_auto_refresh(),
+      m.workbench_show_markdown(),
+      m.workbench_refresh_item(),
+    ]);
+    // The Help submenu lists what the Help view action opens.
+    expect(
+      entry(view, m.workbench_help())?.submenu?.items.map((item) => item.title),
+    ).toEqual([
+      m.workbench_docs_guide(),
+      m.workbench_docs_note(),
+      m.workbench_docs_data(),
+      m.workbench_problems_community(),
+    ]);
+    // The Source entry is the view action's own toggle.
+    expect(entry(view, m.workbench_advanced())?.checked).toBe(false);
+    await act(async () => entry(view, m.workbench_advanced())!.click());
+    expect(viewState(view).advanced).toBe(true);
+    expect(entry(view, m.workbench_advanced())?.checked).toBe(true);
+  });
+
+  it("opens the docs from the Help view action", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const actions = (view as unknown as MockItemView).actions.map((element) =>
+      element.getAttribute("aria-label"),
+    );
+    // The item row holds the item's chooser; the header holds Help.
+    expect(actions).toContain(m.workbench_help());
+    expect(actions).not.toContain(m.workbench_choose_item());
+    const before = Menu.instances.length;
+    await act(async () => actionOf(view, m.workbench_help()).click());
+    const menu = Menu.instances[before]!;
+    expect(menu.items.map((item) => item.title)).toEqual([
+      m.workbench_docs_guide(),
+      m.workbench_docs_note(),
+      m.workbench_docs_data(),
+      m.workbench_problems_community(),
+    ]);
+    expect(menu.position).not.toBeNull();
+  });
+
+  it("shows the editor's own render of the chosen Item in the Preview panel", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "A rendered paper note",
+        }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    await act(async () => entry(view, m.workbench_show_markdown())!.click());
+    const attempt = renderState(view).attempt;
+    await act(async () => {
+      runRender(view);
+      await vi.waitFor(() =>
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
+      );
+    });
+    const panel = region(view, m.workbench_view_preview())!;
+    expect(panel.querySelector("h2")?.textContent).toBe(
+      m.workbench_result_heading(),
+    );
+    // The view's one item row names the Item; the panel's head holds only
+    // what is the Preview's own.
+    const title = SAMPLE_ITEMS[0]!.item.title!;
+    expect(panel.textContent).not.toContain(title);
+    expect(
+      view.contentEl.textContent.split(
+        m.workbench_example_title({ name: title }),
+      ),
+    ).toHaveLength(2);
+    expect(panel.textContent).toContain(m.workbench_preview_on_demand());
+    expect(panel.textContent).toContain("A rendered paper note");
+  });
+
+  // #1962: the Preview pane has its own actions, as a view header has.
+  it("switches the Preview between reading view and Markdown from its header, and opens its settings there", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "A rendered paper note",
+        }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const header = () =>
+      region(view, m.workbench_view_preview())!.querySelector<HTMLElement>(
+        "[data-workbench-preview-header]",
+      )!;
+    const action = (label: string) =>
+      [...header().querySelectorAll<HTMLElement>("[aria-label]")].find(
+        (element) => element.getAttribute("aria-label") === label,
+      );
+    // The header row names its pane, and leaves the tooltips to its actions.
+    expect(header().hasAttribute("aria-label")).toBe(false);
+    // The toggle names what a press does, as Obsidian's own does.
+    expect(
+      action(m.workbench_show_markdown())!.querySelector(".lucide-code"),
+    ).not.toBeNull();
+    await act(async () => action(m.workbench_show_markdown())!.click());
+    expect(view.registry.get(view.workbench.preview).showMarkdown).toBe(true);
+    expect(action(m.workbench_show_markdown())).toBeUndefined();
+    expect(
+      action(m.workbench_show_reading_view())!.querySelector(
+        ".lucide-book-open",
+      ),
+    ).not.toBeNull();
+    await act(async () => action(m.workbench_show_reading_view())!.click());
+    expect(view.registry.get(view.workbench.preview).showMarkdown).toBe(false);
+    // More options lists the settings the view's Preview submenu holds.
+    const before = Menu.instances.length;
+    await act(async () => action(m.workbench_pane_more_options())!.click());
+    const menu = Menu.instances[before]!;
+    expect(menu.position).not.toBeNull();
+    expect(menu.items.map((item) => item.title)).toEqual(
+      entry(view, m.workbench_view_preview())?.submenu?.items.map(
+        (item) => item.title,
+      ),
+    );
+    expect(menu.items.map((item) => item.title)).toContain(
+      m.workbench_show_markdown(),
+    );
+  });
+
+  it("offers the Preview's settings in the pane menu while the panel shows, and saves them", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    expect(entry(view, m.workbench_preview_auto_refresh())).toBeUndefined();
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    expect(entry(view, m.workbench_show_preview())?.checked).toBe(true);
+    const choices = [
+      m.workbench_preview_as_new_note(),
+      m.workbench_preview_as_updated_note(),
+      m.workbench_preview_updated_section(),
+      m.workbench_preview_auto_refresh(),
+      m.workbench_show_markdown(),
+    ];
+    // In the Preview submenu, which sits among the display choices.
+    expect(entry(view, m.workbench_view_preview())?.section).toBe("pane");
+    expect(
+      entry(view, m.workbench_view_preview())?.submenu?.items.map(
+        (item) => item.title,
+      ),
+    ).toEqual(expect.arrayContaining(choices));
+    expect(entry(view, m.workbench_preview_as_new_note())?.checked).toBe(true);
+    expect(entry(view, m.workbench_preview_auto_refresh())?.checked).toBe(true);
+    await act(async () =>
+      entry(view, m.workbench_preview_as_updated_note())!.click(),
+    );
+    await act(async () =>
+      entry(view, m.workbench_preview_auto_refresh())!.click(),
+    );
+    expect(entry(view, m.workbench_preview_as_updated_note())?.checked).toBe(
+      true,
+    );
+    expect(entry(view, m.workbench_preview_auto_refresh())?.checked).toBe(
+      false,
+    );
+    const saved = view.getState();
+    const restored = setup();
+    cleanup.defer(() => act(async () => restored.view.close()));
+    await act(async () => restored.view.setState(saved, { history: false }));
+    expect(restored.view.registry.get(restored.view.workbench.preview)).toEqual(
+      {
+        mode: "update",
+        live: false,
+        showMarkdown: false,
+        showManaged: false,
+      },
+    );
+  });
+
+  it("restores the reader's choices from a view an older build saved", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    // The shape the build before one owner for the choices wrote.
+    await act(async () =>
+      view.setState(
+        {
+          file: "Templates/Profile.md",
+          tab: "note",
+          itemIndexedKey: null,
+          annotationId: "example:underline",
+          variant: "alt",
+          citationExample: null,
+          advanced: false,
+          preview: {
+            mode: "update",
+            live: false,
+            showMarkdown: true,
+            showManaged: false,
+          },
+        },
+        { history: false },
+      ),
+    );
+    expect(view.registry.get(view.workbench.choices)).toMatchObject({
+      annotationId: "example:underline",
+      variant: "alt",
+      citationExample: null,
+      preview: {
+        mode: "update",
+        live: false,
+        showMarkdown: true,
+        showManaged: false,
+      },
+    });
+    expect(view.registry.get(view.workbench.examples).example?.id).toBe(
+      "example:underline",
+    );
+  });
+
+  // Story 17: what the Preview's render finds is the editor's own problem.
+  it("opens the editor's Problems area on a failed Run from the Preview panel", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      runtime: testRuntime(),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          diagnostics: [
+            {
+              code: "missing-partial",
+              part: "render",
+              params: { name: "venue-line" },
+            },
+          ],
+        }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      chooseSample(view, SAMPLE_ITEMS[0]!, { live: false }),
+    );
+    await act(async () => actionOf(view, m.workbench_show_preview()).click());
+    const toggle = () =>
+      [...view.contentEl.querySelectorAll<HTMLElement>("[aria-expanded]")].find(
+        (button) =>
+          button.getAttribute("aria-label") === m.workbench_problem_show() ||
+          button.getAttribute("aria-label") === m.workbench_problems_return(),
+      )!;
+    const run = [
+      ...region(view, m.workbench_view_preview())!.querySelectorAll("button"),
+    ].find((button) => button.textContent === m.workbench_preview_run())!;
+    const attempt = renderState(view).attempt;
+    await act(async () => {
+      run.click();
+      await vi.waitFor(() =>
+        expect(renderState(view).attempt).toBeGreaterThan(attempt),
+      );
+    });
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
+  });
+});
+
+// #1943: Fields is the left side panel of the one view. It reads the view's
+// own Item and root, and inserts a field straight into the editor.
+describe("the Fields panel of the Template Workbench View", () => {
+  // The panel's key hint names Mod+Enter as the platform does.
+  beforeEach(() => setMockPlatform({ isMacOS: false }));
+  afterEach(resetMockPlatform);
+  const actionOf = (view: TemplateWorkbenchView, title: string) =>
+    (view as unknown as MockItemView).actions.find(
+      (element) => element.getAttribute("aria-label") === title,
+    )!;
+  /** The Fields popover, which stands on the body while it is open. */
+  const fields = (_view: TemplateWorkbenchView) =>
+    document.querySelector<HTMLElement>('.zt-pinned-popover [role="dialog"]');
+  const openFields = (view: TemplateWorkbenchView) =>
+    view.registry.set(view.workbench.fieldsPanel, "open");
+  /**
+   * Opens the view in the document with its actions: the Fields popover
+   * opens from the Fields action, which Obsidian keeps in the view header.
+   */
+  const openView = async (view: ReturnType<typeof setup>["view"]) => {
+    await view.open();
+    document.body.append(
+      view.contentEl,
+      ...(view as unknown as MockItemView).actions,
+    );
+  };
+
+  it("opens and closes the Fields popover from its view action and the pane menu, at every width", async () => {
+    const { view } = setup();
+    await act(async () => openView(view));
+    const show = actionOf(view, m.workbench_view_fields());
+    expect(show.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    expect(fields(view)).toBeNull();
+    for (const width of [320, 1200]) {
+      await act(async () =>
+        view.registry.set(view.viewSize, { width, height: 800 }),
+      );
+      await act(async () => show.click());
+      expect(show.getAttribute("aria-expanded")).toBe("true");
+      const popover = fields(view)!;
+      // A popover, not a modal: the view under it stays in reach.
+      expect(popover.hasAttribute("aria-modal")).toBe(false);
+      expect(view.contentEl.querySelector("[inert]")).toBeNull();
+      expect(show.getAttribute("aria-controls")).toBe(popover.id);
+      await act(async () => show.click());
+      expect(fields(view)).toBeNull();
+    }
+    await act(async () => show.click());
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    const entry = menu.items.find(
+      (item) => item.title === m.workbench_show_fields(),
+    );
+    expect(entry?.checked).toBe(true);
+    await act(async () => entry?.click());
+    expect(fields(view)).toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    // The popover is view state, never saved.
+    expect(JSON.stringify(view.getState())).not.toContain("fieldsPanel");
+    await act(async () => view.close());
+  });
+
+  it("pins the Fields Panel beside the editor, and restores its pin, hidden state and width with the view state", async () => {
+    const original = setup();
+    await act(async () => openView(original.view));
+    /** The docked panel's region, which its visible title names. */
+    const docked = (view: TemplateWorkbenchView) => {
+      const region = view.contentEl.querySelector<HTMLElement>(
+        '[data-panel="fields"][role="region"]',
+      );
+      const title = region?.getAttribute("aria-labelledby");
+      return region &&
+        title &&
+        view.contentEl.ownerDocument.getElementById(title)?.textContent ===
+          m.workbench_view_fields()
+        ? region
+        : null;
+    };
+    const edge = (view: TemplateWorkbenchView) =>
+      [
+        ...view.contentEl.querySelectorAll<HTMLElement>("[role=separator]"),
+      ].find(
+        (element) =>
+          element.getAttribute("aria-label") === m.workbench_fields_resize(),
+      ) ?? null;
+    await act(async () =>
+      original.view.registry.set(original.view.viewSize, {
+        width: 1200,
+        height: 800,
+      }),
+    );
+    const show = actionOf(original.view, m.workbench_view_fields());
+    await act(async () => show.click());
+    const pin = [...fields(original.view)!.querySelectorAll("button")].find(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_pin(),
+    )!;
+    await act(async () => pin.click());
+    expect(fields(original.view)).toBeNull();
+    expect(docked(original.view)).not.toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("true");
+    expect(show.getAttribute("aria-controls")).toBe(docked(original.view)!.id);
+    // The edge of a column at the leading edge widens it with ArrowRight.
+    const handle = edge(original.view)!;
+    await act(async () => {
+      handle.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+    expect(handle.getAttribute("aria-valuenow")).toBe("336");
+    const pinned = original.view.getState();
+    // The action hides the docked panel and keeps its pin.
+    await act(async () => show.click());
+    expect(docked(original.view)).toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    const hidden = original.view.getState();
+    await act(async () => original.view.close());
+
+    const restored = setup();
+    await act(async () => restored.view.setState(pinned, { history: false }));
+    await act(async () => openView(restored.view));
+    expect(docked(restored.view)).not.toBeNull();
+    expect(edge(restored.view)!.getAttribute("aria-valuenow")).toBe("336");
+    expect(restored.view.getState()).toEqual(pinned);
+    await act(async () => restored.view.close());
+
+    const again = setup();
+    await act(async () => again.view.setState(hidden, { history: false }));
+    await act(async () => openView(again.view));
+    expect(docked(again.view)).toBeNull();
+    await act(async () =>
+      actionOf(again.view, m.workbench_view_fields()).click(),
+    );
+    expect(docked(again.view)).not.toBeNull();
+    expect(edge(again.view)!.getAttribute("aria-valuenow")).toBe("336");
+    await act(async () => again.view.close());
+  });
+
+  it("hands focus to the Fields action when a narrower leaf takes the docked panel that held it", async () => {
+    const { view } = setup();
+    await act(async () => openView(view));
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 1200, height: 800 }),
+    );
+    const show = actionOf(view, m.workbench_view_fields());
+    await act(async () => show.click());
+    const pin = [...fields(view)!.querySelectorAll("button")].find(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_pin(),
+    )!;
+    await act(async () => pin.click());
+    const dock = view.contentEl.querySelector<HTMLElement>(
+      '[data-panel="fields"]',
+    )!;
+    expect(dock.contains(document.activeElement)).toBe(true);
+    await act(async () =>
+      view.registry.set(view.viewSize, { width: 560, height: 800 }),
+    );
+    expect(view.contentEl.querySelector('[data-panel="fields"]')).toBeNull();
+    expect(document.activeElement).toBe(show);
+    await act(async () => view.close());
+  });
+
+  it("closes the Fields popover on Escape", async () => {
+    const { view, app } = setup();
+    await act(async () => openView(view));
+    const show = actionOf(view, m.workbench_view_fields());
+    await act(async () => show.click());
+    expect(fields(view)).not.toBeNull();
+    const { scopes } = app as unknown as { scopes: Scope[] };
+    await act(async () => {
+      dispatchKey(scopes.at(-1)!, { key: "Escape" }, fields(view)!);
+    });
+    expect(fields(view)).toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => view.close());
+  });
+
+  it("closes the Fields popover on a press outside it", async () => {
+    const { view } = setup();
+    await act(async () => openView(view));
+    const show = actionOf(view, m.workbench_view_fields());
+    await act(async () => show.click());
+    await act(async () => {
+      view.contentEl.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true }),
+      );
+    });
+    expect(fields(view)).toBeNull();
+    expect(show.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => view.close());
+  });
+
+  const insertButtons = (panel: HTMLElement) =>
+    [...panel.querySelectorAll<HTMLElement>('[role="button"]')].filter(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_fields_put_in_note(),
+    );
+
+  it("shows the fields of the Item the editor chose, and follows a new choice", async () => {
+    const { view } = setup();
+    const [first, second] = SAMPLE_ITEMS;
+    await act(async () => openView(view));
+    await act(async () => openFields(view));
+    await act(async () => chooseSample(view, first!));
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain(first!.item.title),
+    );
+    await act(async () => chooseSample(view, second!));
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain(second!.item.title),
+    );
+    expect(fields(view)?.textContent).not.toContain(first!.item.title);
+    await act(async () => view.close());
+  });
+
+  it("follows the editor's root, and keeps the root the reader moved to until the editor's root changes", async () => {
+    const { view } = setup();
+    // The conference paper carries annotations of its own.
+    const paper = SAMPLE_ITEMS[1]!;
+    await act(async () => openView(view));
+    await act(async () => openFields(view));
+    await act(async () => chooseSample(view, paper));
+    const back = () =>
+      [...fields(view)!.querySelectorAll<HTMLElement>("[aria-label]")].find(
+        (button) =>
+          button.getAttribute("aria-label") ===
+          m.template_data_explorer_back_to_note_root(),
+      );
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain(paper.item.title),
+    );
+    expect(back()).toBeUndefined();
+    await act(async () => view.change.setRoot("annotation"));
+    await vi.waitFor(() => expect(back()).toBeDefined());
+    await act(async () => back()!.click());
+    expect(back()).toBeUndefined();
+    // The editor keeps its own root.
+    expect(viewState(view).root).toBe("annotation");
+    // A new editor root drops the root the reader moved to, for good.
+    await act(async () => view.change.setRoot("filename"));
+    expect(view.registry.get(view.fields.root)).toBe("filename");
+    await act(async () => view.change.setRoot("annotation"));
+    expect(view.registry.get(view.fields.root)).toBe("annotation");
+    expect(back()).toBeDefined();
+    // So does a new Item.
+    await act(async () => back()!.click());
+    expect(view.registry.get(view.fields.root)).toBe("note");
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
+    expect(view.registry.get(view.fields.root)).toBe("annotation");
+    await act(async () => view.close());
+  });
+
+  it("shows the annotation the editor chose on its Annotation root", async () => {
+    const { view } = setup();
+    await act(async () => openView(view));
+    await act(async () => openFields(view));
+    await act(async () => chooseSample(view, SAMPLE_ITEMS[1]!));
+    await act(async () => view.change.setRoot("annotation"));
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain("CNPAN26A"),
+    );
+    const { current } = view.registry.get(view.workbench.examples);
+    await act(async () =>
+      view.registry.update(view.workbench.choices, (picks) => ({
+        ...picks,
+        annotationId: current[1]!.id,
+      })),
+    );
+    await vi.waitFor(() =>
+      expect(fields(view)?.textContent).toContain("CNPVL26A"),
+    );
+    expect(fields(view)?.textContent).not.toContain("CNPAN26A");
+    await act(async () => view.close());
+  });
+
+  it("lists the Citation example set and Variant the editor chose on the Citation root", async () => {
+    const { view } = setup();
+    await act(async () => openView(view));
+    await act(async () => view.change.setRoot("citation"));
+    const data = () => view.registry.get(view.fields.state).data;
+    await act(async () =>
+      view.registry.update(view.workbench.choices, (picks) => ({
+        ...picks,
+        variant: "alt" as const,
+        citationExample: "two-items" as const,
+      })),
+    );
+    expect(data()).toMatchObject({ variant: "alt" });
+    expect(data()!["citations"]).toHaveLength(2);
+    // With no example set, the chosen Item's own one-item set stands.
+    await act(async () => {
+      view.registry.update(view.workbench.choices, (picks) => ({
+        ...picks,
+        citationExample: null,
+      }));
+      chooseSample(view, SAMPLE_ITEMS[0]!);
+    });
+    await vi.waitFor(() => expect(data()!["citations"]).toHaveLength(1));
+    expect(data()).toMatchObject({ variant: "alt" });
+    await act(async () => view.close());
+  });
+
+  it("names an unavailable Item with its message", async () => {
+    const { view } = setup();
+    await act(async () => openView(view));
+    await act(async () =>
+      setViewItem(view, { id: "sample:missing", title: null }),
+    );
+    await vi.waitFor(() =>
+      expect(view.registry.get(view.fields.state)).toMatchObject({
+        status: "error",
+        error: m.workbench_example_missing_item(),
+      }),
+    );
+    await act(async () => view.close());
+  });
+
+  // #1962: the Fields pane has its own More options, beside its pin.
+  it("opens the Fields pane's own More options from its header", async () => {
+    await using zoteroReads = inProcessReadsService(
+      memoryOpener(() =>
+        seedWorksSql([{ itemID: 1, key: "FIRST234", title: "First paper" }]),
+      ).open,
+    );
+    const { view } = setup({
+      runtime: testRuntime(),
+      services: { zoteroReads },
+      pluginVersion: "2.1.3",
+    });
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => openView(view));
+      await act(async () => openFields(view));
+      const more = () =>
+        [...fields(view)!.querySelectorAll<HTMLElement>("[aria-label]")].find(
+          (element) =>
+            element.getAttribute("aria-label") ===
+            m.workbench_pane_more_options(),
+        );
+      const open = async () => {
+        const before = Menu.instances.length;
+        await act(async () => more()!.click());
+        const menu = Menu.instances[before]!;
+        expect(menu.position).not.toBeNull();
+        return menu;
+      };
+      // With no Item yet, the menu offers to choose one.
+      expect((await open()).items.map((item) => item.title)).toEqual([
+        m.workbench_choose_item(),
+      ]);
+      await act(async () =>
+        setViewItem(view, { id: "FIRST234", title: "First paper" }),
+      );
+      await vi.waitFor(async () => {
+        const menu = await open();
+        expect(menu.sections).toEqual([MENU_SECTION.action, MENU_SECTION.info]);
+        expect(menu.items.map((item) => [item.section, item.title])).toEqual([
+          [MENU_SECTION.action, m.workbench_choose_item()],
+          [MENU_SECTION.action, m.template_data_explorer_menu_export_json()],
+          [MENU_SECTION.info, m.command_copy_item_key_name()],
+        ]);
+      });
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
+  });
+
+  it("exports the root the panel shows", async () => {
+    await using zoteroReads = inProcessReadsService(
+      memoryOpener(() =>
+        seedWorksSql([{ itemID: 1, key: "FIRST234", title: "First paper" }]),
+      ).open,
+    );
+    const { view } = setup({
+      runtime: testRuntime(),
+      services: { zoteroReads },
+      pluginVersion: "2.1.3",
+    });
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => openView(view));
+      await act(async () => {
+        openFields(view);
+        setViewItem(view, { id: "FIRST234", title: "First paper" });
+        view.change.setRoot("annotation");
+      });
+      const back = () =>
+        [...fields(view)!.querySelectorAll<HTMLElement>("[aria-label]")].find(
+          (button) =>
+            button.getAttribute("aria-label") ===
+            m.template_data_explorer_back_to_note_root(),
+        );
+      await vi.waitFor(() => expect(back()).toBeDefined());
+      const exportEntry = () => {
+        const menu = new Menu();
+        view.onPaneMenu(menu as never, "more-options");
+        return menuEntries(menu).find((item) => item.icon === "file-json");
+      };
+      // The paper has no annotations, so its own data stands in.
+      await vi.waitFor(() =>
+        expect(exportEntry()?.title).toBe(
+          m.template_data_explorer_export_selected_paper(),
+        ),
+      );
+      await act(async () => back()!.click());
+      expect(viewState(view).root).toBe("annotation");
+      using set = vi.spyOn(view.registry, "set");
+      const entry = exportEntry()!;
+      expect(entry.title).toBe(m.template_data_explorer_menu_export_json());
+      entry.click();
+      expect(set).toHaveBeenCalledWith(expect.anything(), {
+        indexedKey: "FIRST234",
+        root: "note",
+        pluginVersion: "2.1.3",
+      });
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
+  });
+
+  it("inserts a field from its row at the editor's caret, and closes the Fields popover", async () => {
+    const { view } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => openView(view));
+      await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
+      // The reader places the caret, then opens the Fields popover.
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 3 } });
+      });
+      await act(async () => openFields(view));
+      await vi.waitFor(() =>
+        expect(fields(view)?.textContent).toContain(
+          SAMPLE_ITEMS[0]!.item.title,
+        ),
+      );
+      const title = insertButtons(fields(view)!).find(
+        (button) =>
+          button
+            .closest("[data-workbench-field]")
+            ?.getAttribute("data-workbench-field") === "title",
+      );
+      expect(title).toBeDefined();
+      await act(async () => title!.click());
+      expect(view.getViewData()).toContain("A s{{ zt.title }}table note.");
+      // The insert closes the Fields popover.
+      expect(fields(view)).toBeNull();
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
+  });
+
+  it("keeps the Fields popover, its Insert button and the focus on a Shift insert", async () => {
+    const { view } = setup();
+    try {
+      await act(async () => openView(view));
+      await act(async () => chooseSample(view, SAMPLE_ITEMS[0]!));
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 3 } });
+      });
+      await act(async () => openFields(view));
+      const title = () =>
+        insertButtons(fields(view)!).find(
+          (button) =>
+            button
+              .closest("[data-workbench-field]")
+              ?.getAttribute("data-workbench-field") === "title",
+        );
+      await vi.waitFor(() => expect(title()).toBeDefined());
+      const button = title()!;
+      await act(async () => button.focus());
+      await act(async () => {
+        button.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, shiftKey: true }),
+        );
+      });
+      expect(view.getViewData()).toContain("A s{{ zt.title }}table note.");
+      // The row keeps its Insert button, and the button keeps the focus.
+      expect(fields(view)).not.toBeNull();
+      expect(title()).toBe(button);
+      expect(document.activeElement).toBe(button);
+      // The next field goes after the first.
+      await act(async () => {
+        button.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, shiftKey: true }),
+        );
+      });
+      expect(view.getViewData()).toContain(
+        "A s{{ zt.title }}{{ zt.title }}table note.",
+      );
+    } finally {
+      await act(async () => view.close());
+    }
   });
 });

@@ -445,7 +445,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         ).toBe("[1]");
         expect(markers(includedEntries)).toEqual(["[1]", "[2]"]);
 
-        settings.bridge!.runSync(
+        settings.bridge.runSync(
           settings.update({ "citation.wikilink-citations": false }),
         );
         const excludedSet = await index.bridge.runPromise(

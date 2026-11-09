@@ -111,11 +111,11 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             app.workspace.getRightLeaf(false)!,
             (leaf) => leaf.detach(),
           ) as WorkspaceLeaf & { view: AnnotationView };
-          await s.annotations!.setViewState({
+          await s.annotations.setViewState({
             type: "zotero-annotation-view",
             state: { followMode: "pinned", pinnedItemKey: "RUGIER24" },
           });
-          await s.annotations!.view.read;
+          await s.annotations.view.read;
           const literature = await app.vault.create(
             literaturePath,
             literatureContent,
@@ -126,15 +126,15 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           s.leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
             leaf.detach(),
           ) as WorkspaceLeaf & { view: MarkdownView };
-          await s.leaf!.setViewState({
+          await s.leaf.setViewState({
             type: "markdown",
-            state: { file: s.file!.path, mode: "source", source: true },
+            state: { file: s.file.path, mode: "source", source: true },
             active: true,
           });
           cleanup.defer(() => s.leaf!.view.save());
-          s.editor = s.leaf!.view.editor;
-          s.editor!.setValue(body);
-          await s.leaf!.view.save();
+          s.editor = s.leaf.view.editor;
+          s.editor.setValue(body);
+          await s.leaf.view.save();
         },
         {
           templateText: "\n![]({{ zt.backlink }})\n",
@@ -215,7 +215,7 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             app.workspace.getRightLeaf(false)!,
             (leaf) => leaf.detach(),
           ) as WorkspaceLeaf & { view: ReferencesView };
-          await s.references!.setViewState({ type: "zotlit-references" });
+          await s.references.setViewState({ type: "zotlit-references" });
           app.workspace.setActiveLeaf(s.leaf!, { focus: true });
         },
         undefined,

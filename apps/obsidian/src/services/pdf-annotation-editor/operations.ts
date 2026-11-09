@@ -42,6 +42,8 @@ import type {
 } from "@/services/annotation-repository/write";
 
 import type { EditablePosition } from "./geometry-edit";
+import { readerSurfaceRegistry } from "./reader-surface-model";
+import type { ReaderSurfaceRegistry } from "./reader-surface-model";
 
 /** One write a PDF view started on its own Scope. */
 export type WriteRun = Fiber.Fiber<unknown, never>;
@@ -79,6 +81,22 @@ export const bindingWrites: Effect.Effect<BindingWrites, never, Scope.Scope> =
         ),
       ),
   );
+
+/**
+ * What one PDF view holds on its own Scope: the registry of its Reader Surface
+ * Model, and its write runner. The registry is taken first, so the Scope's
+ * close ends the writes before it disposes the registry: a create that
+ * settles as the view closes still writes the state it leaves.
+ */
+export const bindingResources: Effect.Effect<
+  { readonly registry: ReaderSurfaceRegistry; readonly writes: BindingWrites },
+  never,
+  Scope.Scope
+> = Effect.gen(function* () {
+  const registry = yield* readerSurfaceRegistry;
+  const writes = yield* bindingWrites;
+  return { registry, writes };
+});
 
 /**
  * Settles when `run` has ended, however it ended: answered, interrupted by the

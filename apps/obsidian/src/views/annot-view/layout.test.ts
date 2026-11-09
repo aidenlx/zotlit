@@ -368,7 +368,7 @@ it("drags each card with the Annotation Source of its own Attachment", async () 
         clientY: 0,
         dataTransfer,
         preventDefault: () => {},
-      } as unknown as DragEvent,
+      },
       editor,
       info,
     );

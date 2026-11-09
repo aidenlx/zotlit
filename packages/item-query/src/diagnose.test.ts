@@ -378,7 +378,7 @@ it.each(reports)("reports $name", async ({ request, report, ...setup }) => {
   const outcome = goldenOutcome(exit, dataset);
   // A read that succeeds reports one warning; a read that fails, its Fault.
   expect(outcome.diagnostics).toHaveLength(1);
-  const diagnostic = outcome.diagnostics[0]!;
+  const diagnostic = outcome.diagnostics[0];
   expect(outcome.dataset).toBe(dataset);
   expect(diagnostic.report).toEqual(report);
   expect(diagnostic.severity).toBe(outcome.severity);

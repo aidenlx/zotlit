@@ -109,7 +109,13 @@ function pendingResolve() {
   const resolve = (_request: ExcerptRequest, signal?: AbortSignal) => {
     started.resolve(signal);
     return new Promise<never>((_resolve, reject) => {
-      signal?.addEventListener("abort", () => reject(signal.reason));
+      signal?.addEventListener("abort", () =>
+        reject(
+          signal.reason instanceof Error
+            ? signal.reason
+            : new Error(String(signal.reason)),
+        ),
+      );
     });
   };
   return { started: started.promise, resolve };

@@ -52,7 +52,12 @@ export type ManagedEntryAction =
       readonly after?: number;
     }
   | { readonly action: "remove"; readonly position: number }
-  | { readonly action: "move"; readonly position: number; readonly by: -1 | 1 }
+  | {
+      readonly action: "move";
+      readonly position: number;
+      /** The position the entry holds once it has moved. */
+      readonly to: number;
+    }
   | {
       readonly action: "language";
       readonly position: number;
@@ -231,6 +236,60 @@ export function managedFrontmatterEntries(
   return read.status === "rows"
     ? { status: "rows", entries: read.list.entries.map(({ entry }) => entry) }
     : read;
+}
+
+/**
+ * Where each Managed Frontmatter entry of `from` stands in `to`, by 1-based
+ * position. Output rendered from one draft names its entries by position, and
+ * an edit that moves, adds, or removes an entry shifts every position after
+ * it, so output that stands across the edit is read through this map. An
+ * entry whose whole text survives is found wherever it went, the first copy
+ * before a second; an entry the reader is typing in keeps the position it had
+ * when that position's entry is gone as well. An entry the edit removed maps
+ * to nothing.
+ * @returns null when every entry keeps its position, or either draft names no
+ *   list to compare.
+ */
+export function followEntries(
+  from: string,
+  to: string,
+): ((position: number) => number | undefined) | null {
+  if (from === to) return null;
+  const before = managedFrontmatterEntries(from);
+  const after = managedFrontmatterEntries(to);
+  if (before.status !== "rows" || after.status !== "rows") return null;
+  const text = (source: string, { block }: ManagedEntrySource) =>
+    source.slice(block.from, block.to);
+  const unclaimed = Map.groupBy(
+    after.entries.map((entry, index) => ({ text: text(to, entry), index })),
+    (entry) => entry.text,
+  );
+  const target = before.entries.map(
+    (entry) => unclaimed.get(text(from, entry))?.shift()?.index,
+  );
+  // An entry whose text changed is one the reader edited in place. When as
+  // many entries changed as are left over, they pair in list order; otherwise
+  // only a leftover still at its own position is known to be the same entry.
+  const claimed = new Set(target);
+  const left = target.flatMap((found, index) =>
+    found === undefined ? [index] : [],
+  );
+  const open = after.entries.flatMap((_, index) =>
+    claimed.has(index) ? [] : [index],
+  );
+  for (const [order, index] of left.entries()) {
+    if (left.length === open.length) target[index] = open[order];
+    else if (open.includes(index)) target[index] = index;
+  }
+  if (
+    before.entries.length === after.entries.length &&
+    target.every((found, index) => found === index)
+  )
+    return null;
+  return (position) => {
+    const found = target[position - 1];
+    return found === undefined ? undefined : found + 1;
+  };
 }
 
 /**
@@ -475,22 +534,31 @@ function removeEntry(list: ManagedList, position: number): ChangeSpec | null {
 function moveEntry(
   source: string,
   list: ManagedList,
-  { position, by }: { position: number; by: -1 | 1 },
+  { position, to }: { position: number; to: number },
 ): ChangeSpec | null {
-  const moved = entryAt(list, position);
-  const other = entryAt(list, position + by);
-  if (!moved || !other) return null;
-  const [first, second] =
-    by === 1 ? [moved.entry, other.entry] : [other.entry, moved.entry];
+  if (position === to || !entryAt(list, position) || !entryAt(list, to))
+    return null;
+  // The entries from the one that moves to the place it takes, in order.
+  const run = list.entries
+    .slice(Math.min(position, to) - 1, Math.max(position, to))
+    .map(({ entry }) => entry.block);
+  const blocks = run.map(({ from, to }) => source.slice(from, to));
+  const order =
+    position < to
+      ? [...blocks.slice(1), blocks[0]!]
+      : [blocks.at(-1)!, ...blocks.slice(0, -1)];
   return {
-    from: first.block.from,
-    to: second.block.to,
-    insert:
-      source.slice(second.block.from, second.block.to) +
-      // Whatever the author wrote between the two entries — a comment, a blank
-      // line — stays between them.
-      source.slice(first.block.to, second.block.from) +
-      source.slice(first.block.from, first.block.to),
+    from: run[0]!.from,
+    to: run.at(-1)!.to,
+    // Whatever the author wrote between two entries — a comment, a blank
+    // line — stays in its own place between the entries that now stand there.
+    insert: order
+      .map((block, index) =>
+        index === 0
+          ? block
+          : source.slice(run[index - 1]!.to, run[index]!.from) + block,
+      )
+      .join(""),
   };
 }
 

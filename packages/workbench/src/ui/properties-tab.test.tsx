@@ -1,19 +1,44 @@
 import { EditorView } from "@codemirror/view";
+import { useAtomValue } from "@effect/atom-react";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
-import { useDocumentRevision, useWorkbenchController } from "./editor";
+import { useWorkbenchController } from "./editor";
 import { WorkbenchHostProvider } from "./host";
 import { PropertiesPane } from "./properties-tab";
 import { fakeHost, mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
+import { documentRevision } from "#/document/atoms";
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 import { renderProfile, SAMPLE_ITEMS } from "#/render/index";
 
 afterEach(cleanup);
+
+// Preact takes `onDragStart` as the `dragstart` event only where the element
+// has an `ondragstart` property, as every browser's has; happy-dom's lacks the
+// drag ones, so the file lends them for its run.
+const lent = ["dragstart", "dragend", "dragover", "dragleave", "drop"]
+  .map((type) => `on${type}`)
+  .filter((name) => !(name in HTMLElement.prototype));
+beforeAll(() => {
+  for (const name of lent)
+    Object.defineProperty(HTMLElement.prototype, name, {
+      value: null,
+      writable: true,
+      configurable: true,
+    });
+});
+afterAll(() => {
+  for (const name of lent)
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name];
+});
+
+/** Every row's drag handle, in list order. */
+const handles = () =>
+  screen.getAllByRole("button", { name: m.workbench_drag_to_reorder() });
 
 function Pane({
   controller,
@@ -22,7 +47,7 @@ function Pane({
   controller: WorkbenchDocumentController;
   onShowProblem?: (id: string) => void;
 }) {
-  useDocumentRevision(controller);
+  useAtomValue(documentRevision(controller));
   const [selected, onSelect] = useState<number | null>(null);
   return (
     <PropertiesPane
@@ -59,6 +84,45 @@ function setup(
   return { ...result, controller, press };
 }
 
+it("drags a row past two others, and the open row goes with it", () => {
+  const { controller, container, press } = setup();
+  const keys = () => controller.managedEntries?.map((entry) => entry.key);
+  expect(keys()).toEqual(["title", "related", "collections", "citekey"]);
+  press(m.workbench_properties_edit(), 0);
+  const rows = container.querySelectorAll<HTMLElement>('[data-part="row"]');
+
+  fireEvent.dragStart(handles()[0]!);
+  // happy-dom has no DragEvent and lays nothing out, so the third row gets a
+  // height and the pointer stands in its lower half: the drop lands after it.
+  vi.spyOn(rows[2]!, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 100, 20),
+  );
+  fireEvent(
+    rows[2]!,
+    new MouseEvent("dragover", {
+      bubbles: true,
+      cancelable: true,
+      clientY: 15,
+    }),
+  );
+  fireEvent.drop(rows[2]!);
+
+  expect(keys()).toEqual(["related", "collections", "title", "citekey"]);
+  const edit = screen.getAllByRole("button", {
+    name: m.workbench_properties_edit(),
+  });
+  expect(edit.map((button) => button.getAttribute("aria-pressed"))).toEqual([
+    "false",
+    "false",
+    "true",
+    "false",
+  ]);
+  act(() => {
+    controller.undo();
+  });
+  expect(keys()).toEqual(["title", "related", "collections", "citekey"]);
+});
+
 it("adds an override, renames it, sets merge, moves and removes it through master history", () => {
   const { controller, press } = setup();
   press(m.workbench_properties_add_override());
@@ -77,7 +141,7 @@ it("adds an override, renames it, sets merge, moves and removes it through maste
     key: "status",
     merge: "keep",
   });
-  press(m.workbench_properties_move_down(), 1);
+  fireEvent.keyDown(handles()[1]!, { key: "ArrowDown", altKey: true });
   expect(controller.managedEntries?.map((entry) => entry.key)).toEqual([
     "title",
     "related",
@@ -406,7 +470,7 @@ it.each(["\n", "\r\n"])(
     expect(button(m.workbench_properties_add_override(), 3).disabled).toBe(
       true,
     );
-    expect(button(m.workbench_properties_move_up(), 3).disabled).toBe(true);
+    expect(handles()[3]!.getAttribute("aria-disabled")).toBe("true");
     const format = screen.getByRole<HTMLSelectElement>("combobox", {
       name: m.workbench_properties_format(),
     });

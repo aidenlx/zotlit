@@ -8,7 +8,6 @@ import { createFieldEditor } from "@/views/annot-view/field-editor";
 
 import { annotation, pageView, readerOverZotero } from "./__fixtures__";
 import { historyVerbOf } from "./reader-keymap";
-import type { OverlayPageView } from "./render";
 import { createTextDraftArea } from "./text-draft";
 
 const MARK: AnnotationRecord = annotation("PARA7777", "highlight", {
@@ -25,7 +24,7 @@ async function setup(isMacOS: boolean) {
   containerEl.append(page.div);
   const reader = await readerOverZotero(stack, {
     containerEl,
-    page: page as unknown as OverlayPageView,
+    page,
     records: [MARK],
     isMacOS,
   });

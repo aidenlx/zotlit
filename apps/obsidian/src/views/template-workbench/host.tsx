@@ -41,7 +41,8 @@ import type {
 
 import { Toggle } from "@/components/obsidian/toggle";
 import { citationStyleLabel } from "@/lib/citation-style";
-import { awaitModal } from "@/lib/effect-modal";
+import { DOCS_SITE_URL } from "@/lib/constants";
+import { awaitModal, openModalIn } from "@/lib/effect-modal";
 import { obsidianPopupKeys } from "@/lib/field-popup";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
@@ -357,11 +358,15 @@ function addWorkbenchMenuItems(
 
 export function createTemplateWorkbenchHost(
   app: App,
-  ports: Pick<WorkbenchHost, "run" | "render" | "matchData" | "insertTarget"> &
-    Partial<
+  ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget"> & {
+    /** The leaf's runner, for the host's own popups. */
+    readonly run: WorkbenchRunner;
+    /** The window the leaf is in, where its modals open. */
+    readonly window: () => Window;
+  } & Partial<
       Pick<
         WorkbenchHost,
-        "markdown" | "partials" | "openCitationEngineSettings"
+        "markdown" | "partials" | "openCitationEngineSettings" | "fieldsAction"
       >
     > & {
       /** The view an editor hover popover belongs to; one popover shows at a time. */
@@ -374,13 +379,16 @@ export function createTemplateWorkbenchHost(
       extractPartial?: ExtractPartial;
     },
   wrap: (content: ReactNode) => ReactNode = (content) => content,
-): WorkbenchHost & Disposable {
+): WorkbenchHost & Disposable & { readonly run: WorkbenchRunner } {
   const open = new Set<() => void>();
   const {
     hoverParent = { hoverPopover: null },
     extractPartial,
+    window: leafWindow,
     ...rest
   } = ports;
+  const openInLeaf = (modal: { open(): void }) =>
+    openModalIn(modal, leafWindow());
   function track(close: () => void): () => void {
     const release = () => {
       if (open.delete(release)) close();
@@ -455,7 +463,7 @@ export function createTemplateWorkbenchHost(
         },
       });
       const close = track(() => modal.close());
-      modal.open();
+      openInLeaf(modal);
       return { close };
     },
     confirm: (request) =>
@@ -472,7 +480,7 @@ export function createTemplateWorkbenchHost(
           open.delete(close);
           settle(false);
         });
-        modal.open();
+        openInLeaf(modal);
         return modal;
       }),
     suggester: (request) =>
@@ -485,7 +493,7 @@ export function createTemplateWorkbenchHost(
           },
         });
         const close = track(() => modal.close());
-        modal.open();
+        openInLeaf(modal);
         return modal;
       }),
     tooltip: tooltipAttrs,
@@ -494,6 +502,7 @@ export function createTemplateWorkbenchHost(
     },
     copy: copyToClipboard,
     communityUrl: COMMUNITY,
+    docsUrl: DOCS_SITE_URL,
     persistence: {
       read(scope, key) {
         const value: unknown = app.loadLocalStorage(

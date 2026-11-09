@@ -26,6 +26,7 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import type { Notifier } from "@/lib/notifier";
 import { registerFileMenu } from "@/services/file-menu";
 import type {
   Customize,
@@ -35,10 +36,6 @@ import type {
 import { ProfileOperationError } from "@/services/profile/service";
 import type { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
-import {
-  findWorkbenchLayout,
-  openWorkbenchLayout,
-} from "@/views/note-preview/layout";
 
 import { makeWorkbenchHost, workbenchActionContext } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
@@ -65,14 +62,12 @@ const builtInDefault = defaultTarget({
 type LaunchServices = {
   customize?: Partial<Customize["Service"]>;
   profile?: Partial<Profile["Service"]>;
+  notifier?: Notifier["Service"];
 };
 
 import type { WorkbenchActionServices } from "./actions";
-import {
-  customizeProfile,
-  openNativeProfile,
-  openTemplateWorkbench,
-} from "./open";
+import { findWorkbenchLayout, openWorkbenchLayout } from "./layout";
+import { customizeProfile, openTemplateWorkbench } from "./open";
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
   registerTemplateWorkbenchView,
@@ -81,7 +76,7 @@ import {
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
 // The real leaf edges stand in: the layout module imports this view.
-vi.mock("@/views/note-preview/layout", () => ({
+vi.mock("./layout", () => ({
   setLeafState: (leaf: WorkspaceLeaf, state: ViewState) =>
     Effect.tryPromise(() => leaf.setViewState(state)),
   WORKBENCH_WINDOW: { width: 1440, height: 900 },
@@ -89,7 +84,6 @@ vi.mock("@/views/note-preview/layout", () => ({
   findWorkbenchLayout: vi.fn(() => Effect.succeed(null)),
 }));
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 const setOriginatingNote = vi.fn<
   (file: TFile | null) => Effect.Effect<string | null>
 >(() => Effect.succeed(null));
@@ -108,8 +102,11 @@ afterEach(() => {
 });
 
 /** The workspace and vault a launch reads, over the test's App. */
-function appContext(app: App, services: LaunchServices = {}) {
-  return workbenchActionContext(testNotifier().service, {
+function appContext(
+  app: App,
+  { notifier = testNotifier().service, ...services }: LaunchServices = {},
+) {
+  return workbenchActionContext(notifier, {
     ...services,
     vault: {
       cachedRead: (file) => Effect.promise(() => app.vault.cachedRead(file)),
@@ -123,6 +120,9 @@ function appContext(app: App, services: LaunchServices = {}) {
         Effect.sync(() => app.workspace.openPopoutLeaf({ size })),
       revealLeaf: (leaf) =>
         Effect.promise(async () => app.workspace.revealLeaf(leaf)),
+      createLeafBySplit: (leaf) =>
+        Effect.sync(() => app.workspace.createLeafBySplit(leaf)),
+      rootSplit: Effect.sync(() => app.workspace.rootSplit),
     },
   });
 }
@@ -176,12 +176,16 @@ function setup() {
       return stubService<EventRef>("EventRef", {});
     },
   );
+  const getLeaf = vi.fn(() => leaf);
+  const openPopoutLeaf = vi.fn(() => leaf);
   const workspace = stubService<App["workspace"]>("Workspace", {
     activeLeaf: null,
+    rootSplit: stubService<App["workspace"]["rootSplit"]>("WorkspaceRoot", {}),
     getActiveFile: () => file,
+    getActiveViewOfType: () => null,
     getLeavesOfType: () => [],
-    getLeaf: vi.fn(() => leaf),
-    openPopoutLeaf: vi.fn(() => leaf),
+    getLeaf,
+    openPopoutLeaf,
     revealLeaf: vi.fn(),
     on: workspaceOn,
     onLayoutReady: vi.fn(),
@@ -214,6 +218,7 @@ function setup() {
     },
     registerEvent: vi.fn(),
     register: vi.fn(),
+    registerMarkdownPostProcessor: vi.fn(),
   });
   const deps = stubService<RegistrationHostDeps>("TemplateWorkbenchDeps", {
     runtime: testRuntime(),
@@ -238,6 +243,8 @@ function setup() {
   return {
     app,
     workspace,
+    getLeaf,
+    openPopoutLeaf,
     loadLocalStorage,
     saveLocalStorage,
     file,
@@ -258,11 +265,16 @@ function setup() {
 }
 
 /** Register the view, and place its file-menu entries as the plugin does. */
-function register(plugin: Plugin, deps: RegistrationHostDeps): void {
+function register(
+  plugin: Plugin,
+  deps: RegistrationHostDeps,
+  notifier?: Notifier["Service"],
+): void {
   const options = {
     ...makeWorkbenchHost(deps).deps,
     bridge: testBridge(),
     context: appContext(plugin.app, {
+      ...(notifier ? { notifier } : {}),
       profile: deps.profile,
       customize: {
         open: (request) =>
@@ -279,32 +291,104 @@ function register(plugin: Plugin, deps: RegistrationHostDeps): void {
 }
 
 describe("Template Workbench entry points", () => {
-  it.each(["file", "built-in Default"])(
-    "opens a new %s Customize editor directly in a popout",
-    async (target) => {
-      const { app, workspace, file, setViewState } = setup();
+  it.each([
+    ["file", false],
+    ["built-in Default", false],
+    ["file", true],
+    ["built-in Default", true],
+  ] as const)(
+    "opens a %s no window holds in a new Workbench window (customize: %s)",
+    async (target, customize) => {
+      const { app, openPopoutLeaf, getLeaf, file, setViewState } = setup();
       await launch(
         app,
-        openNativeProfile(target === "file" ? file : builtInDefault, {
-          customize: true,
+        openTemplateWorkbench(target === "file" ? file : builtInDefault, {
+          customize,
         }),
         { profile: { getSource: () => Effect.succeed("Built-in source") } },
       );
 
-      expect(workspace.getLeaf).not.toHaveBeenCalled();
-      expect(workspace.openPopoutLeaf).toHaveBeenCalledWith({
+      expect(getLeaf).not.toHaveBeenCalled();
+      expect(openPopoutLeaf).toHaveBeenCalledWith({
         size: { width: 1440, height: 900 },
       });
       expect(setViewState).toHaveBeenCalledOnce();
     },
   );
 
+  it("shows the Preview of every document it opens, through the window layout", async () => {
+    const { app, file, leaf } = setup();
+    const view = Object.create(
+      TemplateWorkbenchView.prototype,
+    ) as TemplateWorkbenchView;
+    Object.assign(leaf, { view });
+    await launch(app, openTemplateWorkbench(file));
+    expect(openWorkbenchLayout).toHaveBeenCalledWith(view);
+  });
+
+  it("reveals the window that already holds the document instead of opening another", async () => {
+    const { app, file, leaf, openPopoutLeaf, getLeaf } = setup();
+    const view = Object.assign(Object.create(TemplateWorkbenchView.prototype), {
+      file,
+      leaf,
+    }) as TemplateWorkbenchView;
+    Object.assign(leaf, { view });
+    vi.mocked(findWorkbenchLayout).mockReturnValue(Effect.succeed(view));
+    await launch(app, openTemplateWorkbench(file));
+    await launch(app, openTemplateWorkbench(file));
+    expect(openPopoutLeaf).not.toHaveBeenCalled();
+    expect(getLeaf).not.toHaveBeenCalled();
+    expect(openWorkbenchLayout).toHaveBeenLastCalledWith(view);
+  });
+
+  it.each(["replace", "tab", "split"] as const)(
+    "opens beside a leaf that stands in a Workbench window: %s",
+    async (place) => {
+      const { app, file, leaf, openPopoutLeaf, getLeaf } = setup();
+      const split = vi.fn(() => leaf);
+      Object.assign(app.workspace, { createLeafBySplit: split });
+      const window = stubService<App["workspace"]["rootSplit"]>(
+        "WorkspaceContainer",
+        { focus: vi.fn() },
+      );
+      const fromState = vi.fn(async () => {});
+      const from = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+        updateHeader: vi.fn(),
+        view: stubService<WorkspaceLeaf["view"]>("View", {}),
+        setViewState: fromState,
+        getContainer: () => window,
+      });
+      await launch(
+        app,
+        openTemplateWorkbench(file, { from: { leaf: from, place } }),
+      );
+      expect(openPopoutLeaf).not.toHaveBeenCalled();
+      const made = { replace: fromState, tab: getLeaf, split }[place];
+      expect(made).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("opens a new window for an open that starts in the main window", async () => {
+    const { app, file, openPopoutLeaf } = setup();
+    const fromState = vi.fn(async () => {});
+    const from = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+      setViewState: fromState,
+      getContainer: () => app.workspace.rootSplit,
+    });
+    await launch(
+      app,
+      openTemplateWorkbench(file, { from: { leaf: from, place: "replace" } }),
+    );
+    expect(fromState).not.toHaveBeenCalled();
+    expect(openPopoutLeaf).toHaveBeenCalledOnce();
+  });
+
   it.each(["named", "copied-default", "default"])(
     "applies a Customize launch Item to the existing %s workbench and leaves its compact editor unchanged",
     async (kind) => {
       const {
         app,
-        workspace,
+        openPopoutLeaf,
         file,
         leaf: compactLeaf,
         setViewState: compactSetState,
@@ -352,7 +436,7 @@ Annotation`);
       );
       await launch(
         app,
-        openNativeProfile(file, {
+        openTemplateWorkbench(file, {
           customize: true,
           itemIndexedKey: "MAIN2345",
           originatingNote: file,
@@ -368,7 +452,7 @@ Annotation`);
         active: true,
       });
       expect(compactSetState).not.toHaveBeenCalled();
-      expect(workspace.openPopoutLeaf).not.toHaveBeenCalled();
+      expect(openPopoutLeaf).not.toHaveBeenCalled();
       expect(openWorkbenchLayout).toHaveBeenLastCalledWith(workbench);
       expect(setOriginatingNote).toHaveBeenLastCalledWith(file);
       expect(chooseWorkbenchItem).not.toHaveBeenCalled();
@@ -448,7 +532,7 @@ Annotation`);
     vi.spyOn(app.vault, "getFileByPath").mockReturnValue(file);
     await launch(
       app,
-      openNativeProfile(
+      openTemplateWorkbench(
         defaultTarget({ defaultDocumentPath: Effect.succeed(file.path) }),
         { customize: true, itemIndexedKey: "MAIN2345" },
       ),
@@ -480,7 +564,7 @@ Annotation`);
     });
     await launch(
       app,
-      openNativeProfile(builtInDefault, {
+      openTemplateWorkbench(builtInDefault, {
         customize: true,
         itemIndexedKey: "0:ABCDEFGH",
       }),
@@ -494,27 +578,17 @@ Annotation`);
     expect(customizeDefault).toHaveBeenCalledOnce();
   });
 
-  it("opens an existing customized document in the full workbench", async () => {
-    const { app, file, leaf } = setup();
-    const view = Object.create(
-      TemplateWorkbenchView.prototype,
-    ) as TemplateWorkbenchView;
-    Object.assign(leaf, { view });
-    await launch(app, openNativeProfile(file, { customize: true }));
-    expect(openWorkbenchLayout).toHaveBeenCalledWith(view);
-  });
-
   it.each(["file", "built-in Default"])(
     "brings the %s editor window forward after its leaf is ready",
     async (target) => {
-      const { app, workspace, file, leaf, focusWindow } = setup();
+      const { app, getLeaf, openPopoutLeaf, file, leaf, focusWindow } = setup();
       const reveal = Promise.withResolvers<void>();
       const revealLeaf = vi
         .spyOn(app.workspace, "revealLeaf")
         .mockReturnValue(reveal.promise);
       const opening = launch(
         app,
-        openNativeProfile(target === "file" ? file : builtInDefault),
+        openTemplateWorkbench(target === "file" ? file : builtInDefault),
         {
           profile: {
             getSource: () => Effect.succeed("Configured built-in document"),
@@ -528,12 +602,12 @@ Annotation`);
       await opening;
 
       expect(focusWindow).toHaveBeenCalledOnce();
-      expect(workspace.getLeaf).toHaveBeenCalledWith("tab");
-      expect(workspace.openPopoutLeaf).not.toHaveBeenCalled();
+      expect(getLeaf).not.toHaveBeenCalled();
+      expect(openPopoutLeaf).toHaveBeenCalledOnce();
     },
   );
 
-  it("focuses the supplied editor leaf's window when the leaf is reused", async () => {
+  it("focuses the starting leaf's Workbench window when the open replaces that leaf", async () => {
     const { app, file, focusWindow } = setup();
     const revealLeaf = vi.spyOn(app.workspace, "revealLeaf");
     const focusExistingWindow = vi.fn();
@@ -548,7 +622,12 @@ Annotation`);
       getContainer: () => existingContainer,
     });
 
-    await launch(app, openTemplateWorkbench(file, { leaf: existing }));
+    await launch(
+      app,
+      openTemplateWorkbench(file, {
+        from: { leaf: existing, place: "replace" },
+      }),
+    );
 
     expect(revealLeaf).toHaveBeenCalledWith(existing);
     expect(focusExistingWindow).toHaveBeenCalledOnce();
@@ -562,118 +641,111 @@ Annotation`);
 
     register(plugin, deps);
 
-    expect(commands.map(({ id }) => id)).toEqual([
-      "customize-profile",
-      "open-template-workbench-view",
-    ]);
+    expect(commands.map(({ id }) => id)).toEqual(["open-template-workbench"]);
     expect(commands.map(({ name }) => name)).toEqual([
       m.template_workbench_open_layout(),
-      m.template_workbench_open(),
     ]);
     expect(fileMenu().items.map(({ title }) => title)).toEqual([
       m.template_workbench_open_layout(),
-      m.template_workbench_open(),
     ]);
   });
 
-  it.each([
-    "customize-profile",
-    "open-template-workbench-view",
-    "open-profile-web-workbench",
-  ])("handles a source read failure from %s", async (id) => {
+  it("offers one open and the web launch, each once, on a Profile", () => {
     setMockPlatform({ isDesktopApp: true });
-    const { app, deps, plugin, commands, setViewState } = setup();
-    const read = vi
-      .spyOn(app.vault, "cachedRead")
-      .mockRejectedValue(new Error("File unavailable"));
+    const { deps, plugin, commands, fileMenu } = setup();
     register(plugin, deps);
-    expect(
-      commands.find((command) => command.id === id)!.checkCallback?.(false),
-    ).toBe(true);
-    await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
-    expect(setViewState).not.toHaveBeenCalled();
+    expect(commands.map(({ name }) => name)).toEqual([
+      m.template_workbench_open_layout(),
+      m.template_workbench_web_open(),
+    ]);
+    const items = fileMenu().items;
+    expect(items.map(({ title }) => title)).toEqual([
+      m.template_workbench_open_layout(),
+      m.template_workbench_web_open(),
+    ]);
+    expect(items.map(({ section }) => section)).toEqual(["open", "open"]);
   });
-  it.each(["customize-profile", "open-profile-web-workbench"])(
-    "routes a registered Profile through the shared flow from %s",
+
+  it.each(["open-template-workbench", "open-profile-web-workbench"])(
+    "handles a source read failure from %s",
     async (id) => {
       setMockPlatform({ isDesktopApp: true });
-      const { app, file, deps, plugin, commands } = setup();
-      const read = vi.spyOn(app.vault, "cachedRead");
-      deps.profile = {
-        ...deps.profile,
-        defaultDocumentPath: Effect.succeed(file.path),
-      };
-      deps.customize = vi.fn();
+      const { app, deps, plugin, commands, setViewState } = setup();
+      const read = vi
+        .spyOn(app.vault, "cachedRead")
+        .mockRejectedValue(new Error("File unavailable"));
       register(plugin, deps);
       expect(
-        commands.find((entry) => entry.id === id)!.checkCallback?.(false),
+        commands.find((command) => command.id === id)!.checkCallback?.(false),
       ).toBe(true);
-      await vi.waitFor(() =>
-        expect(deps.customize).toHaveBeenCalledWith({
-          profileId: "default",
-          ...(id === "open-profile-web-workbench"
-            ? { destination: "web" }
-            : { destination: "native" }),
-        }),
-      );
-      expect(read).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
+      expect(setViewState).not.toHaveBeenCalled();
     },
   );
-  it("opens the Citation Template from the command, the file menu, and no Profile flow", async () => {
+  it("routes a registered Profile to the web Workbench through the shared flow", async () => {
     setMockPlatform({ isDesktopApp: true });
-    const { file, deps, plugin, commands, fileMenu, setViewState } = setup();
-    file.path = "templates/zotlit-citation.md";
-    file.basename = "zotlit-citation";
+    const { app, file, deps, plugin, commands } = setup();
+    const read = vi.spyOn(app.vault, "cachedRead");
+    deps.profile = {
+      ...deps.profile,
+      defaultDocumentPath: Effect.succeed(file.path),
+    };
     deps.customize = vi.fn();
     register(plugin, deps);
-
-    const command = commands.find(
-      (entry) => entry.id === "open-template-workbench-view",
-    )!;
-    expect(command.checkCallback?.(true)).toBe(true);
-    expect(command.checkCallback?.(false)).toBe(true);
+    expect(
+      commands
+        .find((entry) => entry.id === "open-profile-web-workbench")!
+        .checkCallback?.(false),
+    ).toBe(true);
     await vi.waitFor(() =>
-      expect(setViewState).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-          state: expect.objectContaining({ file: file.path }),
-        }),
-      ),
+      expect(deps.customize).toHaveBeenCalledWith({
+        profileId: "default",
+        destination: "web",
+      }),
     );
-    // The file menu offers the one action, on the same route.
-    expect(fileMenu().items.map(({ title }) => title)).toEqual([
-      m.template_workbench_open(),
-    ]);
-    expect(deps.customize).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
   });
-  it("opens a Shared Partial on the same plain-document route", async () => {
-    setMockPlatform({ isDesktopApp: true });
-    const { file, deps, plugin, commands, fileMenu, setViewState } = setup();
-    file.path = "templates/zotlit-partial.authors.md";
-    file.basename = "zotlit-partial.authors";
-    deps.customize = vi.fn();
-    register(plugin, deps);
+  it.each([
+    ["Citation Template", "templates/zotlit-citation.md", "zotlit-citation"],
+    [
+      "Shared Partial",
+      "templates/zotlit-partial.authors.md",
+      "zotlit-partial.authors",
+    ],
+  ])(
+    "opens the %s from the command and the file menu, with no Profile flow",
+    async (_kind, path, basename) => {
+      setMockPlatform({ isDesktopApp: true });
+      const { file, deps, plugin, commands, fileMenu, setViewState } = setup();
+      file.path = path;
+      file.basename = basename;
+      deps.customize = vi.fn();
+      register(plugin, deps);
 
-    const command = commands.find(
-      (entry) => entry.id === "open-template-workbench-view",
-    )!;
-    expect(command.checkCallback?.(false)).toBe(true);
-    await vi.waitFor(() =>
-      expect(setViewState).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-          state: expect.objectContaining({ file: file.path }),
-        }),
-      ),
-    );
-    expect(fileMenu().items.map(({ title }) => title)).toEqual([
-      m.template_workbench_open(),
-    ]);
-    expect(deps.customize).not.toHaveBeenCalled();
-  });
-  it("routes Open template workbench through the shared flow", async () => {
+      const command = commands.find(
+        (entry) => entry.id === "open-template-workbench",
+      )!;
+      expect(command.checkCallback?.(true)).toBe(true);
+      expect(command.checkCallback?.(false)).toBe(true);
+      await vi.waitFor(() =>
+        expect(setViewState).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+            state: expect.objectContaining({ file: file.path }),
+          }),
+        ),
+      );
+      // The file menu offers the one action, on the same route.
+      expect(fileMenu().items.map(({ title }) => title)).toEqual([
+        m.template_workbench_open_layout(),
+      ]);
+      expect(deps.customize).not.toHaveBeenCalled();
+    },
+  );
+  it("opens a Profile from its file menu in the Workbench, with no Customize flow", async () => {
     setMockPlatform({ isDesktopApp: true });
-    const { file, deps, plugin, fileMenu } = setup();
+    const { file, deps, plugin, fileMenu, openPopoutLeaf, setViewState } =
+      setup();
     deps.profile = {
       ...deps.profile,
       defaultDocumentPath: Effect.succeed(file.path),
@@ -686,56 +758,144 @@ Annotation`);
       .click();
 
     await vi.waitFor(() =>
-      expect(deps.customize).toHaveBeenCalledExactlyOnceWith({
-        profileId: "default",
-        destination: "native",
+      expect(setViewState).toHaveBeenCalledWith({
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+        state: { file: file.path },
+        active: true,
       }),
     );
+    expect(openPopoutLeaf).toHaveBeenCalledOnce();
+    expect(deps.customize).not.toHaveBeenCalled();
   });
-  it("switches the active Markdown view to the Template Workbench view", async () => {
+  // #1945: inside the view, the command reveals the view's own window.
+  it("reveals the active editor's Workbench window from Open template workbench", async () => {
     setMockPlatform({ isDesktopApp: true });
-    const { app, file, leaf, deps, plugin, commands, setViewState } = setup();
-    const markdownView = Object.assign(new MarkdownView(leaf), { file, leaf });
-    Object.assign(leaf, { view: markdownView });
-    app.workspace.activeLeaf = leaf;
-    deps.profile = {
-      ...deps.profile,
-      profiles: Effect.succeed([{ id: "paper", path: file.path }]),
-    } as unknown as typeof deps.profile;
-    deps.customize = vi.fn();
+    const { app, file, leaf, deps, plugin, commands, openPopoutLeaf } = setup();
     register(plugin, deps);
-
     const command = commands.find(
-      (entry) => entry.id === "open-template-workbench-view",
+      (entry) => entry.id === "open-template-workbench",
     )!;
-    expect(command.checkCallback?.(false)).toBe(true);
-
+    expect(command.name).toBe(m.template_workbench_open_layout());
+    Object.assign(app.workspace, { getActiveFile: () => null });
+    expect(command.checkCallback!(true)).toBe(false);
+    const editor = Object.assign(
+      Object.create(TemplateWorkbenchView.prototype),
+      { file, leaf },
+    ) as TemplateWorkbenchView;
+    Object.assign(leaf, { view: editor });
+    Object.assign(app.workspace, {
+      getActiveFile: () => file,
+      getActiveViewOfType: () => editor,
+    });
+    vi.mocked(findWorkbenchLayout).mockReturnValue(Effect.succeed(editor));
+    expect(command.checkCallback!(true)).toBe(true);
+    command.checkCallback!(false);
     await vi.waitFor(() =>
-      expect(setViewState).toHaveBeenCalledWith({
-        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-        state: { file: file.path },
-        active: true,
-      }),
+      expect(openWorkbenchLayout).toHaveBeenCalledWith(editor),
     );
-    expect(deps.customize).not.toHaveBeenCalled();
-    expect(openWorkbenchLayout).not.toHaveBeenCalled();
+    expect(openPopoutLeaf).not.toHaveBeenCalled();
   });
-  it("switches the file menu's active Markdown view to the Template Workbench view", async () => {
+  it("opens the built-in Default draft's own window from Open template workbench", async () => {
     setMockPlatform({ isDesktopApp: true });
-    const { app, file, leaf, deps, plugin, fileMenu, setViewState } = setup();
+    const { app, leaf, deps, plugin, commands } = setup();
+    deps.profile.getSource = vi.fn(() => Effect.succeed("Built-in source"));
+    register(plugin, deps);
+    const draft = Object.create(TemplateWorkbenchView.prototype, {
+      file: { value: null },
+      leaf: { value: leaf },
+      isDefaultDraft: { value: true },
+    }) as TemplateWorkbenchView;
+    Object.assign(leaf, { view: draft });
+    Object.assign(app.workspace, {
+      getActiveFile: () => null,
+      getActiveViewOfType: () => draft,
+    });
+    vi.mocked(findWorkbenchLayout).mockReturnValue(Effect.succeed(draft));
+    const command = commands.find(
+      (entry) => entry.id === "open-template-workbench",
+    )!;
+    expect(command.checkCallback!(false)).toBe(true);
+    await vi.waitFor(() =>
+      expect(openWorkbenchLayout).toHaveBeenCalledWith(draft),
+    );
+  });
+  it.each(["command", "file menu"])(
+    "opens a Markdown view's Profile from the %s in a Workbench window, leaving the Markdown view in place",
+    async (surface) => {
+      setMockPlatform({ isDesktopApp: true });
+      const {
+        app,
+        file,
+        leaf,
+        deps,
+        plugin,
+        commands,
+        fileMenu,
+        openPopoutLeaf,
+        setViewState,
+      } = setup();
+      // The Markdown leaf stands in the main window.
+      Object.assign(app.workspace, { rootSplit: leaf.getContainer() });
+      const markdownView = Object.assign(new MarkdownView(leaf), {
+        file,
+        leaf,
+      });
+      Object.assign(leaf, { view: markdownView });
+      app.workspace.activeLeaf = leaf;
+      const popoutState = vi.fn(async () => {});
+      const popout = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
+        updateHeader: vi.fn(),
+        setViewState: popoutState,
+        getContainer: () =>
+          stubService<App["workspace"]["rootSplit"]>("WorkspaceContainer", {
+            focus: vi.fn(),
+          }),
+        view: stubService<WorkspaceLeaf["view"]>("View", {}),
+      });
+      openPopoutLeaf.mockReturnValue(popout);
+      register(plugin, deps);
+
+      if (surface === "command")
+        commands
+          .find((entry) => entry.id === "open-template-workbench")!
+          .checkCallback?.(false);
+      else
+        fileMenu()
+          .items.find(
+            (item) => item.title === m.template_workbench_open_layout(),
+          )!
+          .click();
+
+      await vi.waitFor(() =>
+        expect(popoutState).toHaveBeenCalledWith({
+          type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+          state: { file: file.path },
+          active: true,
+        }),
+      );
+      expect(setViewState).not.toHaveBeenCalled();
+    },
+  );
+  it("switches a Markdown view back to the Workbench in the Workbench window it stands in", async () => {
+    setMockPlatform({ isDesktopApp: true });
+    const {
+      app,
+      file,
+      leaf,
+      deps,
+      plugin,
+      commands,
+      openPopoutLeaf,
+      setViewState,
+    } = setup();
     const markdownView = Object.assign(new MarkdownView(leaf), { file, leaf });
     Object.assign(leaf, { view: markdownView });
     app.workspace.activeLeaf = leaf;
-    deps.profile = {
-      ...deps.profile,
-      profiles: Effect.succeed([{ id: "paper", path: file.path }]),
-    } as unknown as typeof deps.profile;
-    deps.customize = vi.fn();
     register(plugin, deps);
 
-    fileMenu()
-      .items.find((item) => item.title === m.template_workbench_open())!
-      .click();
+    commands
+      .find((entry) => entry.id === "open-template-workbench")!
+      .checkCallback?.(false);
 
     await vi.waitFor(() =>
       expect(setViewState).toHaveBeenCalledWith({
@@ -744,16 +904,87 @@ Annotation`);
         active: true,
       }),
     );
-    expect(deps.customize).not.toHaveBeenCalled();
-    expect(openWorkbenchLayout).not.toHaveBeenCalled();
+    expect(openPopoutLeaf).not.toHaveBeenCalled();
   });
-  it("opens the current Literature Note's resolved Default with that paper selected", async () => {
+  it.each(["command", "file menu"])(
+    "opens the current Literature Note's resolved Default from the %s with that paper and note",
+    async (surface) => {
+      setMockPlatform({ isDesktopApp: true });
+      const {
+        app,
+        file,
+        leaf,
+        deps,
+        plugin,
+        commands,
+        fileMenu,
+        openPopoutLeaf,
+        setViewState,
+      } = setup();
+      deps.customize = vi.fn();
+      file.path = "Literature/Figures.md";
+      file.basename = "Figures";
+      // The note's Profile resolves through the vault, by path.
+      Object.assign(deps, { app });
+      vi.spyOn(app.vault, "getFileByPath").mockImplementation((path) =>
+        path === file.path ? file : null,
+      );
+      vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
+        frontmatter: { "zotero-key": "PAPER234" },
+      });
+      deps.profile.profileOf = vi.fn(() =>
+        Effect.succeed({
+          ok: true,
+          profile: { selector: "default" },
+        } as Effect.Success<ReturnType<typeof deps.profile.profileOf>>),
+      );
+      deps.profile.getSource = vi.fn(() =>
+        Effect.succeed("Configured Default"),
+      );
+      const customizeDefault = vi.fn(() => Effect.void);
+      Object.assign(leaf, {
+        view: Object.assign(Object.create(TemplateWorkbenchView.prototype), {
+          customizeDefault,
+        }),
+      });
+      setOriginatingNote.mockClear();
+      register(plugin, deps);
+      if (surface === "command")
+        commands
+          .find((entry) => entry.id === "open-template-workbench")!
+          .checkCallback?.(false);
+      else
+        fileMenu()
+          .items.find(
+            (item) => item.title === m.template_workbench_open_layout(),
+          )!
+          .click();
+      await vi.waitFor(() =>
+        expect(setViewState).toHaveBeenCalledWith({
+          type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+          state: {
+            defaultDraft: true,
+            file: null,
+            itemIndexedKey: "PAPER234",
+          },
+          active: true,
+        }),
+      );
+      expect(openPopoutLeaf).toHaveBeenCalledOnce();
+      await vi.waitFor(() =>
+        expect(setOriginatingNote).toHaveBeenCalledWith(file),
+      );
+      // The built-in Default writes its document, so the note's template is
+      // editable at once.
+      expect(customizeDefault).toHaveBeenCalledOnce();
+      expect(deps.customize).not.toHaveBeenCalled();
+    },
+  );
+  it("explains a Literature Note stamped with a Profile the vault no longer holds", async () => {
     setMockPlatform({ isDesktopApp: true });
     const { app, file, deps, plugin, commands, setViewState } = setup();
-    deps.customize = vi.fn();
     file.path = "Literature/Figures.md";
     file.basename = "Figures";
-    // The note's Profile resolves through the vault, by path.
     Object.assign(deps, { app });
     vi.spyOn(app.vault, "getFileByPath").mockImplementation((path) =>
       path === file.path ? file : null,
@@ -763,28 +994,20 @@ Annotation`);
     });
     deps.profile.profileOf = vi.fn(() =>
       Effect.succeed({
-        ok: true,
-        profile: { selector: "default" },
-      } as Effect.Success<ReturnType<typeof deps.profile.profileOf>>),
+        ok: false,
+        stamped: { stamp: "books" },
+      } as unknown as Effect.Success<
+        ReturnType<typeof deps.profile.profileOf>
+      >),
     );
-    deps.profile.getSource = vi.fn(() => Effect.succeed("Configured Default"));
-    register(plugin, deps);
+    const notifier = testNotifier();
+    register(plugin, deps, notifier.service);
     const command = commands.find(
-      (entry) => entry.id === "open-template-workbench-view",
+      (entry) => entry.id === "open-template-workbench",
     )!;
     expect(command.checkCallback?.(false)).toBe(true);
-    await vi.waitFor(() =>
-      expect(setViewState).toHaveBeenCalledWith({
-        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-        state: {
-          defaultDraft: true,
-          file: null,
-          itemIndexedKey: "PAPER234",
-        },
-        active: true,
-      }),
-    );
-    expect(deps.customize).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(notifier.notices).toHaveLength(1));
+    expect(setViewState).not.toHaveBeenCalled();
   });
   it.each([
     "language: eta",
@@ -795,7 +1018,7 @@ Annotation`);
       const { app, file, setViewState } = setup();
       const source = `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`;
       vi.spyOn(app.vault, "cachedRead").mockResolvedValue(source);
-      expect(await launch(app, openNativeProfile(file))).toEqual({
+      expect(await launch(app, openTemplateWorkbench(file))).toEqual({
         nativeRequired: true,
         unavailableNote: null,
       });
@@ -821,7 +1044,7 @@ Annotation`);
       loadLocalStorage.mockReturnValue(preference);
       await launch(
         app,
-        openNativeProfile(file, { itemIndexedKey: "0:ABCDEFGH" }),
+        openTemplateWorkbench(file, { itemIndexedKey: "0:ABCDEFGH" }),
       );
       expect(setViewState).toHaveBeenCalledWith({
         type: TEMPLATE_WORKBENCH_VIEW_TYPE,
@@ -839,7 +1062,7 @@ Annotation`);
       });
       await launch(
         app,
-        openNativeProfile(kind === "file" ? file : builtInDefault),
+        openTemplateWorkbench(kind === "file" ? file : builtInDefault),
         {
           profile: {
             getSource: () => Effect.succeed("Configured built-in document"),
@@ -862,7 +1085,7 @@ Annotation`);
     const getSource = vi.fn(() =>
       Effect.succeed("Configured built-in document"),
     );
-    await launch(app, openNativeProfile(builtInDefault), {
+    await launch(app, openTemplateWorkbench(builtInDefault), {
       profile: { getSource },
     });
     expect(getSource).toHaveBeenCalledWith("default");
@@ -880,7 +1103,7 @@ Annotation`);
     });
     const error = await launch(
       app,
-      Effect.flip(openNativeProfile(builtInDefault)),
+      Effect.flip(openTemplateWorkbench(builtInDefault)),
       {
         profile: { getSource: () => Effect.fail(failure) },
       },

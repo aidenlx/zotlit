@@ -4,8 +4,12 @@ import { RuleTester } from "oxlint/plugins-dev";
 
 import plugin from "./oxlint-plugin-obsidian.ts";
 
-RuleTester.describe = describe;
-RuleTester.it = it;
+RuleTester.describe = (name, fn) => {
+  void describe(name, fn);
+};
+RuleTester.it = (name, fn) => {
+  void it(name, fn);
+};
 
 const tester = new RuleTester({
   languageOptions: { parserOptions: { lang: "ts" } },
@@ -30,6 +34,21 @@ tester.run("no-static-styles-assignment", rule("no-static-styles-assignment"), {
       code: "el.style.setProperty('font-variant', 'small-caps');",
       errors: [{ messageId: "avoidStyleAssignment" }],
     },
+  ],
+});
+
+tester.run("no-restricted-globals", rule("no-restricted-globals"), {
+  valid: [
+    "window.fetch(url);",
+    "const o = { fetch: 1 }; o.fetch;",
+    "function f(fetch) { return fetch(1); }",
+    "const app = plugin.app; app.vault;",
+    "type F = typeof fetch;",
+  ],
+  invalid: [
+    { code: "fetch(url);", errors: [{ messageId: "restricted" }] },
+    { code: "localStorage.getItem(k);", errors: [{ messageId: "restricted" }] },
+    { code: "app.vault.read(f);", errors: [{ messageId: "restricted" }] },
   ],
 });
 

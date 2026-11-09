@@ -56,7 +56,7 @@ async function recordFrames(vaultId: string): Promise<
   await obRun(
     vaultId,
     async ({ page }) => {
-      var record: FrameRecord = {
+      const record: FrameRecord = {
         frames: 0,
         maxFrameGapMs: 0,
         longTasks: 0,
@@ -64,8 +64,8 @@ async function recordFrames(vaultId: string): Promise<
         live: true,
         observer: null,
       };
-      var previous = performance.now();
-      var tick = function (now: number) {
+      let previous = performance.now();
+      const tick = function (now: number) {
         record.frames++;
         record.maxFrameGapMs = Math.max(record.maxFrameGapMs, now - previous);
         previous = now;
@@ -73,7 +73,7 @@ async function recordFrames(vaultId: string): Promise<
       };
       requestAnimationFrame(tick);
       record.observer = new PerformanceObserver(function (list) {
-        for (var entry of list.getEntries()) {
+        for (let entry of list.getEntries()) {
           record.longTasks++;
           record.longestTaskMs = Math.max(record.longestTaskMs, entry.duration);
         }
@@ -85,10 +85,10 @@ async function recordFrames(vaultId: string): Promise<
   );
   return {
     async read() {
-      return (await obRun(
+      return await obRun(
         vaultId,
         async ({ page }) => {
-          var r = page.scratch.frames!;
+          const r = page.scratch.frames!;
           return {
             frames: r.frames,
             maxFrameGapMs: Math.round(r.maxFrameGapMs),
@@ -97,18 +97,13 @@ async function recordFrames(vaultId: string): Promise<
           };
         },
         undefined,
-      )) as {
-        frames: number;
-        maxFrameGapMs: number;
-        longTasks: number;
-        longestTaskMs: number;
-      };
+      );
     },
     async [Symbol.asyncDispose]() {
       await obRun(
         vaultId,
         async ({ page }) => {
-          var r = page.scratch.frames!;
+          const r = page.scratch.frames!;
           r.live = false;
           r.observer!.disconnect();
           delete page.scratch.frames;
@@ -260,7 +255,7 @@ async function selectItemSuggestion(
   await obRun(
     vaultId,
     async (_context, { query }) => {
-      var input = Array.from(activeDocument.querySelectorAll(".prompt"))
+      const input = Array.from(activeDocument.querySelectorAll(".prompt"))
         .at(-1)!
         .querySelector("input")!;
       input.value = query;
@@ -366,13 +361,13 @@ async function observeNotices(vaultId: string) {
   );
   return {
     async read(): Promise<string[]> {
-      return (await obRun(
+      return await obRun(
         vaultId,
         async ({ page }) => {
           return [...page.scratch.notices!.values.values()];
         },
         undefined,
-      )) as string[];
+      );
     },
     async [Symbol.asyncDispose]() {
       await obRun(
@@ -546,8 +541,8 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
   const server = (await obRun(
     vaultId,
     async ({ zotlit }) => {
-      var services = zotlit.services;
-      var settings = services.bridge.runSync(services.settings.current);
+      const services = zotlit.services;
+      const settings = services.bridge.runSync(services.settings.current);
       return {
         hostname: settings["server.hostname"],
         port: services.bridge.runSync(services.localServer.effectivePort),
@@ -580,7 +575,7 @@ async function rendererHeap(vaultId: string): Promise<number> {
     vaultId,
     async (_context) => {
       require("v8").setFlagsFromString("--expose-gc");
-      var gc = (require("vm") as typeof import("node:vm")).runInNewContext(
+      const gc = (require("vm") as typeof import("node:vm")).runInNewContext(
         "gc",
       ) as () => void;
       gc();

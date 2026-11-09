@@ -148,8 +148,10 @@ export class ImportProfileModal extends Modal {
     this.#partials(this.contentEl);
     const error = note(this.contentEl, { status: true });
     const footer = dialogFooter(this);
-    const button = footerButton(footer, m.profile_import_replace(), () =>
-      this.#save(plan, button, error),
+    const button: ButtonComponent = footerButton(
+      footer,
+      m.profile_import_replace(),
+      () => this.#save(plan, button, error),
     ).setWarning();
     footerButton(footer, m.profile_import_cancel(), () => this.close());
   }

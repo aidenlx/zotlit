@@ -1,26 +1,21 @@
 import type { RenderDiagnostic } from "#/render/result";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
-import type { Effect } from "effect";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EditToolbar } from "./edit-toolbar";
+import { setAdvanced, setTab } from "./model";
 import type { WorkbenchDiagnosis } from "./problems";
 import { workbenchDiagnoses } from "./problems";
-import {
-  ProblemsFooter,
-  usePublishedProblems,
-  useWorkbenchProblems,
-} from "./problems-footer";
-import type { RenderTrigger } from "./scheduler";
+import { ProblemsFooter, useWorkbenchProblems } from "./problems-footer";
+import type { RenderTrigger } from "./scheduler-atoms";
 import { TabBar, TabPanel } from "./tab-bar";
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
-import { failedRender } from "#/render/result";
 
 afterEach(cleanup);
 
@@ -75,7 +70,7 @@ describe("the tab bar", () => {
         </TabPanel>
       </>,
     );
-    const { store, ui } = mounted;
+    const { registry, model, ui } = mounted;
     render(ui);
 
     expect(tabs().map((tab) => tab.textContent)).toEqual([
@@ -97,7 +92,7 @@ describe("the tab bar", () => {
       screen.getByRole("tab", { name: m.workbench_tab_properties() }),
     );
 
-    expect(store.getState().tab).toBe("properties");
+    expect(registry.get(model.view).tab).toBe("properties");
     expect(selectedTab()).toBe(m.workbench_tab_properties());
     // The note pane stays in the page, hidden, so its editor keeps its state.
     const note = screen.getByText("note body");
@@ -109,34 +104,34 @@ describe("the tab bar", () => {
     );
   });
 
-  it("follows the store and moves through the tabs from the keyboard", () => {
+  it("follows the view state and moves through the tabs from the keyboard", () => {
     using mounted = mount(<TabBar />, {
       source: DEFAULT_PROFILE_SOURCE.replace("id: default", "id: reading"),
     });
-    const { store, ui } = mounted;
+    const { registry, model, ui } = mounted;
     render(ui);
-    act(() => store.getState().setTab("annotation"));
+    act(() => registry.update(model.view, setTab("annotation")));
     expect(selectedTab()).toBe(m.workbench_tab_annotation());
 
     const list = screen.getByRole("tablist");
     fireEvent.keyDown(list, { key: "ArrowRight" });
-    expect(store.getState().tab).toBe("name");
+    expect(registry.get(model.view).tab).toBe("name");
     expect(document.activeElement?.textContent).toBe(
       m.workbench_tab_name_and_folder(),
     );
     fireEvent.keyDown(list, { key: "ArrowRight" });
-    expect(store.getState().tab).toBe("match");
+    expect(registry.get(model.view).tab).toBe("match");
     expect(document.activeElement?.textContent).toBe(m.workbench_tab_match());
     fireEvent.keyDown(list, { key: "ArrowRight" });
-    expect(store.getState().tab).toBe("profile");
+    expect(registry.get(model.view).tab).toBe("profile");
     fireEvent.keyDown(list, { key: "ArrowRight" });
-    expect(store.getState().tab).toBe("note");
+    expect(registry.get(model.view).tab).toBe("note");
     fireEvent.keyDown(list, { key: "ArrowLeft" });
-    expect(store.getState().tab).toBe("profile");
+    expect(registry.get(model.view).tab).toBe("profile");
     fireEvent.keyDown(list, { key: "Home" });
-    expect(store.getState().tab).toBe("note");
+    expect(registry.get(model.view).tab).toBe("note");
     fireEvent.keyDown(list, { key: "End" });
-    expect(store.getState().tab).toBe("profile");
+    expect(registry.get(model.view).tab).toBe("profile");
     // Only the chosen tab is in the tab order.
     expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, -1, -1, -1, 0]);
   });
@@ -149,20 +144,20 @@ describe("the tab bar", () => {
       </>,
       { state: { tab: "match" } },
     );
-    const { store, ui } = mounted;
-    expect(store.getState().tab).toBe("note");
+    const { registry, model, ui } = mounted;
+    expect(registry.get(model.view).tab).toBe("note");
     render(ui);
     const match = screen.getByRole("tab", { name: m.workbench_tab_match() });
     expect(match).toHaveProperty("disabled", true);
     fireEvent.click(match);
-    expect(store.getState().tab).toBe("note");
-    act(() => store.getState().setTab("annotation"));
+    expect(registry.get(model.view).tab).toBe("note");
+    act(() => registry.update(model.view, setTab("annotation")));
     fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowRight" });
-    expect(store.getState().tab).toBe("name");
+    expect(registry.get(model.view).tab).toBe("name");
     fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowLeft" });
-    expect(store.getState().tab).toBe("annotation");
-    act(() => store.getState().setTab("match"));
-    expect(store.getState().tab).toBe("note");
+    expect(registry.get(model.view).tab).toBe("annotation");
+    act(() => registry.update(model.view, setTab("match")));
+    expect(registry.get(model.view).tab).toBe("note");
     // A visited pane stays in the page, hidden, rather than leaving.
     expect(
       screen.getByText("match rules").closest("[role=tabpanel]"),
@@ -178,8 +173,8 @@ describe("the tab bar", () => {
     );
     expect(mounted.controller.document).toBeNull();
     expect(match).toHaveProperty("disabled", true);
-    act(() => store.getState().setTab("match"));
-    expect(store.getState().tab).toBe("note");
+    act(() => registry.update(model.view, setTab("match")));
+    expect(registry.get(model.view).tab).toBe("note");
   });
 
   it("uses the host's Default identity when the first source cannot parse", () => {
@@ -191,7 +186,7 @@ describe("the tab bar", () => {
     expect(
       screen.getByRole("tab", { name: m.workbench_tab_match() }),
     ).toHaveProperty("disabled", true);
-    expect(mounted.store.getState().tab).toBe("note");
+    expect(mounted.registry.get(mounted.model.tab)).toBe("note");
   });
 
   it("runs host navigation effects only for user tab and mode actions", () => {
@@ -203,11 +198,11 @@ describe("the tab bar", () => {
         <EditToolbar onModeChange={onModeChange} />
       </>,
     );
-    const { store, ui } = mounted;
+    const { registry, model, ui } = mounted;
     render(ui);
     act(() => {
-      store.getState().setTab("properties");
-      store.getState().setAdvanced(true);
+      registry.update(model.view, setTab("properties"));
+      registry.update(model.view, setAdvanced(true));
     });
     expect(onTabChange).not.toHaveBeenCalled();
     expect(onModeChange).not.toHaveBeenCalled();
@@ -224,9 +219,9 @@ describe("the tab bar", () => {
 });
 
 describe("the edit toolbar", () => {
-  it("switches Basic and Advanced through the store", () => {
+  it("switches Basic and Advanced through the view state", () => {
     using mounted = mount(<EditToolbar />);
-    const { store, ui } = mounted;
+    const { registry, model, ui } = mounted;
     render(ui);
     const basic = screen.getByRole("button", { name: m.workbench_basic() });
     const advanced = screen.getByRole("button", {
@@ -240,11 +235,11 @@ describe("the edit toolbar", () => {
     );
 
     fireEvent.click(advanced);
-    expect(store.getState().advanced).toBe(true);
+    expect(registry.get(model.view).advanced).toBe(true);
     expect(advanced.getAttribute("aria-pressed")).toBe("true");
     expect(basic.dataset.state).toBe("off");
 
-    act(() => store.getState().setAdvanced(false));
+    act(() => registry.update(model.view, setAdvanced(false)));
     expect(basic.getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -1101,7 +1096,7 @@ describe("the error report", () => {
     );
     const { ui, host } = mounted;
     render(ui);
-    const options = screen.getAllByRole("option") as HTMLOptionElement[];
+    const options = screen.getAllByRole<HTMLOptionElement>("option");
     expect(options).toHaveLength(2);
     expect(options[0]!.value).not.toBe(options[1]!.value);
     expect(reportBlock().textContent).toContain("FIRST234");
@@ -1190,52 +1185,6 @@ describe("the error report", () => {
     expect(host.calls.copies).toEqual([CAPTURED_TEXT, laterText, laterText]);
   });
 
-  it("opens the originating occurrence when a linked preview fails an explicit Run", () => {
-    const first: RenderDiagnostic = {
-      ...CAPTURED,
-      callSite: { from: 4, to: 16 },
-    };
-    const second: RenderDiagnostic = {
-      ...first,
-      report: {
-        ...CAPTURED.report!,
-        context: { ...CAPTURED.report!.context, selection: "SECOND23" },
-      },
-    };
-    const diagnoses = workbenchDiagnoses([], [first, second]);
-    expect(diagnoses).toHaveLength(1);
-    const showProblem =
-      vi.fn<(id: string, occurrence?: RenderDiagnostic) => void>();
-    const publish = vi.fn<(diagnostics: readonly RenderDiagnostic[]) => void>();
-    const result = failedRender(
-      { sourceRevision: "1a2b3c4d", snapshotRevision: "r7" },
-      second,
-    );
-    function Preview(): ReactNode {
-      const [attempt, setAttempt] = useState(0);
-      usePublishedProblems({
-        result,
-        trigger: "explicit",
-        attempt,
-        publish,
-        showProblem,
-      });
-      return (
-        <button type="button" onClick={() => setAttempt(attempt + 1)}>
-          Run second preview
-        </button>
-      );
-    }
-    using mounted = mount(<Preview />);
-    render(mounted.ui);
-    expect(showProblem).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Run second preview" }));
-    expect(showProblem).toHaveBeenCalledExactlyOnceWith(
-      diagnoses[0]!.id,
-      second,
-    );
-  });
-
   it("does not capture a validation report before Temporal is available", () => {
     const present = globalThis.Temporal;
     Reflect.deleteProperty(globalThis, "Temporal");
@@ -1262,27 +1211,5 @@ describe("the error report", () => {
     } finally {
       globalThis.Temporal = present;
     }
-  });
-});
-
-describe("the host runner", () => {
-  it("interrupts a pending confirm and chooser when the Workbench closes", () => {
-    const mounted = mount(<TabBar />);
-    render(mounted.ui);
-    const { host } = mounted;
-    host.hold = true;
-    const answers: unknown[] = [];
-    const effects: Effect.Effect<unknown>[] = [
-      host.confirm({ title: "Replace?", body: "", confirm: "Replace" }),
-      host.suggester({ title: "Choose", groups: [] }),
-    ];
-    for (const effect of effects)
-      host.run(effect).addObserver((exit) => answers.push(exit._tag));
-    expect(host.held.map(({ kind }) => kind)).toEqual(["confirm", "suggester"]);
-
-    mounted[Symbol.dispose]();
-
-    expect(host.held.every(({ interrupted }) => interrupted)).toBe(true);
-    expect(answers).toEqual(["Failure", "Failure"]);
   });
 });

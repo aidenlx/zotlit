@@ -28,13 +28,13 @@ The built-in annotation format uses `[!note]` as the Obsidian callout type. You 
   <Step>
     ### Open the Template Workbench View
 
-    Open the literature note in Obsidian. Run <Command name={m.command_customize_note_template_name()} />.
+    Open the literature note in Obsidian. Run <Command name={m.template_workbench_open_layout()} />.
 
     ZotLit opens the template document used by this note in a new window and selects its paper for the preview. When you customize the built-in template, ZotLit saves an editable copy in your template folder. The copy remains if you close the window without changes.
 
     Read the shared-template guidance above the editor: The Annotation tab changes annotations you insert from now on, in every note that uses this template. Annotations you inserted earlier stay as they are.
 
-    The window has three panes. Template fields are on the left, the editor is in the middle, and the preview is on the right.
+    The window shows one view with the editor on the left and the Preview panel on the right. The Fields popover stays closed until you select <UiLabel name={m.workbench_view_fields()} /> in the view header.
 
   </Step>
   <Step>
@@ -44,8 +44,6 @@ The built-in annotation format uses `[!note]` as the Obsidian callout type. You 
 
     The first annotation may be an ink drawing with no text, so the preview can look nearly empty. Select the search icon (<UiLabel name={m.workbench_choose_annotation()} />) in the header above the editor and pick a highlight, such as `Highlight: Identify Your Message`. The preview shows it under <UiLabel name={m.workbench_annotation_example()} />.
 
-    For a short explanation of the format, you can select the question-mark icon (<UiLabel name={m.workbench_help()} />) beside the annotation instructions.
-
   </Step>
   <Step>
     ### Change the callout type
@@ -54,7 +52,7 @@ The built-in annotation format uses `[!note]` as the Obsidian callout type. You 
 
     ZotLit saves the template document automatically. Check that the highlight now appears in a quote callout in the preview.
 
-    ![The Template Workbench window with the Annotation tab open. The callout line in the editor now uses the quote type, and the preview on the right shows the chosen highlight in a quote callout titled Page 1](/img/tutorial/customize-template-workbench-quote.webp)
+    ![The Template Workbench window with the Annotation tab open. The callout line in the editor now uses the quote type, and the Preview panel on the right shows the chosen highlight in a quote callout titled Page 1](/img/tutorial/customize-template-workbench-quote.webp)
 
   </Step>
   <Step>
@@ -86,7 +84,7 @@ Template fields insert data from Zotero. You will add the annotation's `colorNam
   <Step>
     ### Return to the annotation format
 
-    Go back to the Workbench window and stay on the <UiLabel name={m.workbench_tab_annotation()} /> tab. If you closed the window, run <Command name={m.command_customize_note_template_name()} /> from the literature note and select the tab again.
+    Go back to the Workbench window and stay on the <UiLabel name={m.workbench_tab_annotation()} /> tab. If you closed the window, run <Command name={m.template_workbench_open_layout()} /> from the literature note and select the tab again.
 
   </Step>
   <Step>

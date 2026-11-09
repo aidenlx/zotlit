@@ -27,6 +27,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { Notifier } from "@/lib/notifier";
 import { themeAttribute } from "@/lib/theme-hooks";
+import { watch } from "@/lib/view-atoms";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
@@ -34,6 +35,7 @@ import type {
   AnnotationList,
   AnnotationRecord,
   AnnotationRepository,
+  AnnotationSource,
   HistoryDirection,
 } from "@/services/annotation-repository/service";
 import type {
@@ -46,6 +48,8 @@ import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { editingLive } from "@/views/annot-view/card-controls";
 import { createCommentRenderer } from "@/views/annot-view/comment-render";
+import { createDragInsertHandler } from "@/views/annot-view/drag-insert";
+import type { InsertRunner } from "@/views/annot-view/insert-run";
 
 import { dropPendingAnchor, peekPendingAnchor } from "./anchor-capture";
 import { borrowReaderDocument } from "./borrow";
@@ -72,20 +76,26 @@ import {
 import type { BindingWrites, WriteRun } from "./operations";
 import { mountReaderKeymap } from "./reader-keymap";
 import {
-  createReaderSurfaceState,
+  current,
   ingestAnnotations,
-  ingestCapability,
   listenAnnotationEvents,
-  sameCapability,
-  sameFlat,
+  makeReaderSurfaceModel,
+  update,
+} from "./reader-surface-model";
+import type {
+  ReaderSurface,
+  ReaderSurfaceRegistry,
+} from "./reader-surface-model";
+import {
+  ingestCapability,
+  initialReaderSurfaceState,
   selectAdjust,
-  selectCapabilityAffordance,
   selectCapture,
   selectMarkHandles,
   selectSelectedKey,
   selectTextDraft,
 } from "./reader-surface-state";
-import type { Adjustment, ReaderSurfaceStore } from "./reader-surface-state";
+import type { Adjustment, ReaderSurfaceState } from "./reader-surface-state";
 import type { PdfReads } from "./reads";
 import {
   groupAnnotationsByPage,
@@ -244,6 +254,15 @@ export interface PdfViewBindingDeps {
   openedAt?: Temporal.Instant | null;
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
+  /** The atom registry this view's Reader Surface Model lives in. */
+  registry: ReaderSurfaceRegistry;
+  /**
+   * Inserts an Annotation dragged out of this view into a note, on the view's
+   * own Scope, so the view's close interrupts an insert still running.
+   */
+  inserts: InsertRunner<never>;
+  /** The Zotero data directory a read's source belongs to, as the Annotation View reads it. */
+  sourceScope: () => string | null;
 }
 
 /**
@@ -277,7 +296,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   readonly #now;
   readonly #reads;
   readonly #openedAt;
+  readonly #registry;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
+  /** Drags the selected mark out of this view and into a note. */
+  readonly #dragOut: ReturnType<typeof createDragInsertHandler<never>>;
   /**
    * This view as a reader: what it holds and what is selected in it. ZotLit
    * owns the selection here, so a consumer's `setSelectedAnnotations` is taken
@@ -317,6 +339,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   #controller: PDFViewerController | null = null;
   #marks: ReadonlyMap<number, readonly PdfPageAnnotation[]> = new Map();
   #records: readonly AnnotationRecord[] = [];
+  /** Where the last read of {@link #records} came from; `null` before one. */
+  #source: AnnotationSource | null = null;
   /** Whether a read of this Attachment's Annotations has answered yet. */
   #read = false;
   /** The selected Annotation Mark of this view; `null` until one can be made. */
@@ -338,7 +362,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** The one Mark Popup of this view; `null` until the surfaces are mounted. */
   #popupHost: MarkPopupHost | null = null;
   /** What the reader surfaces draw from; `null` until they are mounted. */
-  #surfaceState: ReaderSurfaceStore | null = null;
+  #surface: ReaderSurface | null = null;
   /**
    * This Reader Session's Structured Characters, memoized per page beside the
    * document they were read from. The view opens its document after the
@@ -394,6 +418,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     now = () => Temporal.Now.instant(),
     reads,
     openedAt = null,
+    registry,
+    inserts,
+    sourceScope,
   }: PdfViewBindingDeps) {
     this.#view = view;
     this.#adapter = adapter;
@@ -409,7 +436,20 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#libraryTagNames = libraryTagNames;
     this.#now = now;
     this.#reads = reads;
+    this.#registry = registry;
     this.#openedAt = openedAt;
+    // The same drag insert as an Annotation Card's, over this view's records.
+    this.#dragOut = createDragInsertHandler({
+      ...inserts,
+      app: view.app,
+      notify: (message) => bridge.runAndForget(notifier.show(message)),
+      snapshot: (annotation) => ({
+        source: this.#records.some(({ key }) => key === annotation.key)
+          ? this.#source
+          : null,
+        sourceScope: sourceScope(),
+      }),
+    });
   }
 
   /**
@@ -620,6 +660,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   [Symbol.dispose](): void {
     this.#session[Symbol.dispose]();
     this.#surfaces.dispose();
+    this.#dragOut.cancel();
   }
 
   /**
@@ -859,8 +900,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    */
   #mountToolbar(): void {
     const creation = this.#creation;
-    const state = this.#surfaceState;
-    if (this.#toolbarMounted || !creation || !state) return;
+    const surface = this.#surface;
+    if (this.#toolbarMounted || !creation || !surface) return;
+    const { registry, model } = surface;
     const controller = this.#controller;
     const slot = controller && toolbarSlotOf(controller);
     if (!slot) return;
@@ -899,18 +941,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       this.#capabilitySlot = null;
     });
     this.#surfaces.defer(
-      state.subscribe(
-        selectCapabilityAffordance,
-        (affordance) => this.#drawCapability(affordance),
-        { equalityFn: sameFlat },
+      watch(registry, model.capabilityAffordance, (affordance) =>
+        this.#drawCapability(affordance),
       ),
     );
-    this.#surfaces.defer(
-      state.subscribe(({ capability }) => capability, runClock, {
-        equalityFn: sameCapability,
-        fireImmediately: true,
-      }),
-    );
+    runClock(registry.get(model.capability));
+    this.#surfaces.defer(watch(registry, model.capability, runClock));
     this.#surfaces.use(
       registerDomEvent(this.#view.containerEl, "keydown", (event) => {
         if (isEditGesture(event)) this.#editGesture();
@@ -930,13 +966,17 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    */
   #mountSelection(attachmentKey: string): void {
     if (this.#selection) return;
-    const state = createReaderSurfaceState({
-      colors: this.#toolColors.current(),
-      recentColors: this.#toolColors.recent(),
-      capability: this.#capability(),
-      now: this.#now(),
-    });
-    this.#surfaceState = state;
+    const registry = this.#registry;
+    const model = makeReaderSurfaceModel(
+      initialReaderSurfaceState({
+        colors: this.#toolColors.current(),
+        recentColors: this.#toolColors.recent(),
+        capability: this.#capability(),
+        now: this.#now(),
+      }),
+    );
+    const surface: ReaderSurface = { registry, model };
+    this.#surface = surface;
     // The one listener the reader surfaces hear the Editing Capability through.
     this.#surfaces.defer(
       this.#bridge.subscribe(this.#annotations.capabilityChanges, () =>
@@ -945,7 +985,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     );
     // The per-Annotation facts the Mark Popup reads come in the same way.
     this.#surfaces.use(
-      listenAnnotationEvents(state, this.#annotations, this.#bridge),
+      listenAnnotationEvents(surface, this.#annotations, this.#bridge),
     );
     const popup = {
       contains: (node: Node | null) => host.contains(node),
@@ -974,7 +1014,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         ),
       renderCapability: (slot) => {
         this.#capabilitySlot = slot;
-        this.#drawCapability(selectCapabilityAffordance(state.getState()));
+        this.#drawCapability(registry.get(model.capabilityAffordance));
       },
       // Obsidian's own way into a view: the PDF view focuses its pages.
       focusReader: () =>
@@ -982,7 +1022,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
           focus: true,
         }),
       colors: this.#toolColors,
-      surfaceState: state,
+      surface,
       annotations: this.#annotations,
       bridge: this.#bridge,
       writes: this.#writes,
@@ -1012,7 +1052,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       writes: this.#writes,
       notifier: this.#notifier,
       colors: this.#toolColors,
-      surfaceState: state,
+      surface,
       gestures: {
         revealAnnotation: (annotationKey) =>
           this.#markGestures.revealAnnotation(annotationKey),
@@ -1025,6 +1065,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       adjustRange: (adjustment) => this.adjustRange(adjustment),
       textRotation: this.#textRotation,
       now: this.#now,
+      dragOut: this.#dragOut,
     });
     this.#selection = selection;
     this.#surfaces.defer(
@@ -1042,73 +1083,58 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     // A Geometry Edit redraws the one mark it moves; the handles come and go
     // with the capability to save one.
     this.#surfaces.defer(
-      state.subscribe(selectAdjust, (adjust) => {
+      watch(registry, model.adjust, (adjust) => {
         this.#patchSelected();
         this.#showAdjusting(adjust);
       }),
     );
     this.#surfaces.defer(() => this.#showAdjusting(null));
     this.#surfaces.defer(
-      state.subscribe(selectSelectedKey, (key) => this.#readRangeText(key)),
+      watch(registry, model.selectedKey, (key) => this.#readRangeText(key)),
     );
     // An image capture draws its rectangle on the page it was pressed on.
     this.#surfaces.defer(
-      state.subscribe(selectCapture, () => this.#drawCapture()),
+      watch(registry, model.capture, () => this.#drawCapture()),
     );
     // A Text Draft stands as a textarea over its page until it goes.
     this.#surfaces.defer(
-      state.subscribe(selectTextDraft, () => this.#drawTextDraft()),
+      watch(registry, model.textDraft, () => this.#drawTextDraft()),
     );
     this.#surfaces.defer(() => this.#dropTextDraftArea());
     // An ink stroke draws on the page it was pressed on, one `d` per frame;
     // the strokes saving draw under the marks until their records arrive.
     this.#surfaces.defer(
-      state.subscribe(
-        ({ liveStroke }) => liveStroke,
-        () => this.#drawLiveStroke(),
-      ),
+      watch(registry, model.liveStroke, () => this.#drawLiveStroke()),
     );
     this.#surfaces.defer(
-      state.subscribe(
-        (current) =>
-          current.liveStroke !== null || selectCapture(current) !== null,
-        (drawing) => this.#showDrawing(drawing),
-      ),
+      watch(registry, model.drawing, (drawing) => this.#showDrawing(drawing)),
     );
     this.#surfaces.defer(() => this.#showDrawing(false));
     this.#surfaces.defer(
-      state.subscribe(
-        ({ pendingStrokes }) => pendingStrokes,
-        (pending, before) => {
-          const pages = new Set(
-            [...pending, ...before].map(({ pageIndex }) => pageIndex),
-          );
-          for (const pageIndex of pages) this.#paint(pageIndex);
-        },
-      ),
+      watch(registry, model.pendingStrokes, (pending, before) => {
+        const pages = new Set(
+          [...pending, ...before].map(({ pageIndex }) => pageIndex),
+        );
+        for (const pageIndex of pages) this.#paint(pageIndex);
+      }),
     );
     // A finger on an armed ink tool draws rather than pans, which the browser
     // decides at contact, so the page takes it before any press.
+    this.#showArmed(registry.get(model.armed));
     this.#surfaces.defer(
-      state.subscribe(
-        ({ armed }) => armed,
-        (armed) => this.#showArmed(armed),
-        { fireImmediately: true },
-      ),
+      watch(registry, model.armed, (armed) => this.#showArmed(armed)),
     );
     this.#surfaces.defer(() => this.#showArmed(null));
     this.#surfaces.defer(
-      state.subscribe(
-        ({ capability }) => editingLive(capability),
-        () => this.#repaint(),
-      ),
+      watch(registry, model.editingLive, () => this.#repaint()),
     );
     // The owners subscribe first, so an editor that closes is let go before
     // the host redraws or hides the popup it stood in.
     selection.load();
     const host = new MarkPopupHost({
       parent: this,
-      store: state,
+      doc: () => this.#view.containerEl.doc,
+      surface,
       variants: {
         selected: {
           anchor: () => selection.anchor(),
@@ -1127,7 +1153,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       this.#selection = null;
       this.#creation = null;
       this.#popupHost = null;
-      this.#surfaceState = null;
+      this.#surface = null;
       selection[Symbol.dispose]();
       creation[Symbol.dispose]();
       host[Symbol.dispose]();
@@ -1189,6 +1215,11 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     });
   }
 
+  /** The Reader Surface State; `undefined` until the surfaces are mounted. */
+  #state(): ReaderSurfaceState | undefined {
+    return this.#surface ? current(this.#surface) : undefined;
+  }
+
   /**
    * The marks the overlay draws, which mark visibility can stand down whole.
    * The selected mark is drawn from a Geometry Edit's proposal while one
@@ -1196,7 +1227,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    * it.
    */
   #visibleMarks(): ReadonlyMap<number, readonly PdfPageAnnotation[]> {
-    const state = this.#surfaceState?.getState();
+    const state = this.#state();
     if (state?.marksVisible === false) return new Map();
     const key = state ? selectSelectedKey(state) : null;
     const adjust = state ? selectAdjust(state) : null;
@@ -1207,7 +1238,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
 
   /** Whether the selected mark carries its Mark Handles. */
   #handles(): boolean {
-    const state = this.#surfaceState?.getState();
+    const state = this.#state();
     return state !== undefined && selectMarkHandles(state);
   }
 
@@ -1217,7 +1248,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    */
   #patchSelected(): void {
     const controller = this.#controller;
-    const state = this.#surfaceState?.getState();
+    const state = this.#state();
     const key = state ? selectSelectedKey(state) : null;
     if (!controller || key === null) return;
     const drawn = new Set<number>();
@@ -1253,7 +1284,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    */
   #drawCapture(): void {
     const controller = this.#controller;
-    const state = this.#surfaceState?.getState();
+    const state = this.#state();
     const capture = state ? selectCapture(state) : null;
     const held = this.#capturedOn;
     this.#capturedOn = capture?.pageIndex ?? null;
@@ -1276,7 +1307,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   #drawTextDraft(): void {
     const controller = this.#controller;
     const creation = this.#creation;
-    const state = this.#surfaceState?.getState();
+    const state = this.#state();
     const draft = state ? selectTextDraft(state) : null;
     if (!draft || !controller || !creation) {
       this.#dropTextDraftArea();
@@ -1313,7 +1344,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** Draws the Live Stroke on its page, as {@link #drawCapture} does. */
   #drawLiveStroke(): void {
     const controller = this.#controller;
-    const stroke = this.#surfaceState?.getState().liveStroke ?? null;
+    const stroke = this.#state()?.liveStroke ?? null;
     const held = this.#strokeOn;
     this.#strokeOn = stroke?.pageIndex ?? null;
     if (!controller) return;
@@ -1359,8 +1390,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
 
   /** Takes the Attachment's capability as the repository now answers it. */
   #ingestCapability(): void {
-    const state = this.#surfaceState;
-    if (state) ingestCapability(state, this.#capability(), this.#now());
+    const surface = this.#surface;
+    if (surface)
+      update(surface, ingestCapability(this.#capability(), this.#now()));
   }
 
   /** What this view may do to its Attachment's Annotations right now. */
@@ -1607,9 +1639,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** Draws one list the repository answered: its marks, and what floats. */
   #draw(list: AnnotationList): void {
     this.#records = list.annotations;
+    this.#source = list.source;
     this.#marks = groupAnnotationsByPage(list.annotations);
-    if (this.#surfaceState)
-      ingestAnnotations(this.#surfaceState, list.annotations, {
+    if (this.#surface)
+      ingestAnnotations(this.#surface, list.annotations, {
         annotations: this.#annotations,
         bridge: this.#bridge,
       });
@@ -1669,9 +1702,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     const page = controller && pageViewOf(controller, pageIndex + 1);
     if (!page) return;
     const annotations = this.#visibleMarks().get(pageIndex) ?? [];
-    const pending = (
-      this.#surfaceState?.getState().pendingStrokes ?? []
-    ).filter((stroke) => stroke.pageIndex === pageIndex);
+    const pending = (this.#state()?.pendingStrokes ?? []).filter(
+      (stroke) => stroke.pageIndex === pageIndex,
+    );
     renderAnnotationOverlay(page, {
       annotations,
       pending,
@@ -1685,8 +1718,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     if (this.#capturedOn === pageIndex) this.#drawCapture();
     if (this.#strokeOn === pageIndex) this.#drawLiveStroke();
     if (
-      this.#surfaceState &&
-      selectTextDraft(this.#surfaceState.getState())?.pageIndex === pageIndex
+      this.#surface &&
+      selectTextDraft(current(this.#surface))?.pageIndex === pageIndex
     )
       this.#drawTextDraft();
     if (annotations.length > 0 || pending.length > 0)
@@ -1699,6 +1732,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#landing = null;
     this.#marks = new Map();
     this.#records = [];
+    this.#source = null;
     this.#repaint();
     this.#controller = null;
   }

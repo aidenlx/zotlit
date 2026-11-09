@@ -4,6 +4,7 @@ import type { SelectedText } from "@zotlit/pdf-structure";
 
 import { passAborted } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
+import { watch } from "@/lib/view-atoms";
 import { deadlineAfter } from "@/services/annotation-repository/__fixtures__/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
@@ -12,10 +13,24 @@ import type {
 } from "@/services/annotation-repository/service";
 import { IDLE, writePosition } from "@/services/annotation-repository/write";
 
-import { annotation, repositoryOver, toolColors } from "./__fixtures__";
+import {
+  annotation,
+  readerSurface,
+  repositoryOver,
+  selection,
+  toolColors,
+} from "./__fixtures__";
 import type { CreationToolbarControl } from "./creation-toolbar";
 import { freeTextLines } from "./free-text-layout";
 import type { EditablePosition } from "./geometry-edit";
+import {
+  current,
+  ingestAnnotations,
+  listenAnnotationEvents,
+  modify,
+  setToolColor,
+  update,
+} from "./reader-surface-model";
 import {
   appendPendingStroke,
   arm,
@@ -26,7 +41,6 @@ import {
   captureSelection,
   clearFloating,
   clearLiveStroke,
-  createReaderSurfaceState,
   dropPendingStroke,
   dropRecord,
   dropTextDraft,
@@ -34,22 +48,18 @@ import {
   endCapture,
   finishTextDraft,
   hideCommentDraft,
-  ingestAnnotations,
   ingestCapability,
   ingestCommentDraft,
   ingestMutation,
   ingestRecords,
-  listenAnnotationEvents,
   moveAdjust,
   moveCapture,
   openTextDraft,
   publishLiveStroke,
   refitTextDraft,
-  sameCapability,
   sameFlat,
   sameFlatList,
   selectAdjust,
-  selectCapabilityAffordance,
   selectCapture,
   selectCreateRow,
   selectCreationToolbar,
@@ -58,9 +68,8 @@ import {
   selectSelectedRow,
   selectTextDraft,
   setCommenting,
-  setTagging,
   setInFlight,
-  setToolColor,
+  setTagging,
   settlePendingStroke,
   settleTextDraft,
   stepStack,
@@ -76,7 +85,7 @@ const RETRY_AFTER = deadlineAfter(NOW, 45);
  */
 function observed(capability: EditingCapability = { kind: "writable" }) {
   const colors = toolColors();
-  const store = createReaderSurfaceState({
+  const surface = readerSurface({
     colors: colors.current(),
     capability,
     now: NOW,
@@ -84,16 +93,11 @@ function observed(capability: EditingCapability = { kind: "writable" }) {
   const toolbar = vi.fn();
   const affordance = vi.fn();
   const capabilitySlice = vi.fn();
-  store.subscribe(selectCreationToolbar, toolbar, {
-    equalityFn: sameFlatList,
-  });
-  store.subscribe(selectCapabilityAffordance, affordance, {
-    equalityFn: sameFlat,
-  });
-  store.subscribe((state) => state.capability, capabilitySlice, {
-    equalityFn: sameCapability,
-  });
-  return { store, colors, toolbar, affordance, capability: capabilitySlice };
+  const { registry, model } = surface;
+  watch(registry, model.toolbar, toolbar);
+  watch(registry, model.capabilityAffordance, affordance);
+  watch(registry, model.capability, capabilitySlice);
+  return { surface, colors, toolbar, affordance, capability: capabilitySlice };
 }
 
 /** A new object that means what the given capability means. */
@@ -127,14 +131,14 @@ it.each([
   "fires no subscriber when an announcement ingests the same $kind again",
   (capability) => {
     const {
-      store,
+      surface,
       toolbar,
       affordance,
       capability: slice,
     } = observed(capability);
 
     // A fresh object with the same meaning, as a repeated probe answers it.
-    ingestCapability(store, sameMeaning(capability), NOW);
+    update(surface, ingestCapability(sameMeaning(capability), NOW));
 
     expect(toolbar).not.toHaveBeenCalled();
     expect(affordance).not.toHaveBeenCalled();
@@ -143,27 +147,29 @@ it.each([
 );
 
 it("fires the capability slice when a cooldown's deadline moves", () => {
-  const { store, capability } = observed({
+  const { surface, capability } = observed({
     kind: "cooldown",
     retryAfter: RETRY_AFTER,
   });
 
-  ingestCapability(
-    store,
-    { kind: "cooldown", retryAfter: deadlineAfter(NOW, 75) },
-    NOW,
+  update(
+    surface,
+    ingestCapability(
+      { kind: "cooldown", retryAfter: deadlineAfter(NOW, 75) },
+      NOW,
+    ),
   );
 
   expect(capability).toHaveBeenCalledOnce();
 });
 
 it("counts a cooldown down in the affordance and leaves the toolbar alone", () => {
-  const { store, toolbar, affordance } = observed({
+  const { surface, toolbar, affordance } = observed({
     kind: "cooldown",
     retryAfter: RETRY_AFTER,
   });
 
-  tick(store, NOW.add({ seconds: 1 }));
+  update(surface, tick(NOW.add({ seconds: 1 })));
 
   expect(affordance).toHaveBeenCalledOnce();
   expect(affordance.mock.calls[0]![0]).toMatchObject({ countdown: 44 });
@@ -171,10 +177,10 @@ it("counts a cooldown down in the affordance and leaves the toolbar alone", () =
 });
 
 it("changes only the armed tool's toggle when a tool is armed", () => {
-  const { store, toolbar } = observed();
-  const before = selectCreationToolbar(store.getState());
+  const { surface, toolbar } = observed();
+  const before = selectCreationToolbar(current(surface));
 
-  arm(store, "highlight");
+  update(surface, arm("highlight"));
 
   expect(toolbar).toHaveBeenCalledOnce();
   const after = toolbar.mock.calls[0]![0] as CreationToolbarControl[];
@@ -183,11 +189,11 @@ it("changes only the armed tool's toggle when a tool is armed", () => {
 });
 
 it("changes only that tool's toggle on a colour change, and keeps the colour", () => {
-  const { store, colors, toolbar } = observed();
-  const before = selectCreationToolbar(store.getState());
+  const { surface, colors, toolbar } = observed();
+  const before = selectCreationToolbar(current(surface));
   const chosen = ANNOTATION_COLORS[3]!;
 
-  setToolColor(store, colors, { tool: "underline", color: chosen });
+  setToolColor(surface, colors, { tool: "underline", color: chosen });
 
   expect(toolbar).toHaveBeenCalledOnce();
   const after = toolbar.mock.calls[0]![0] as CreationToolbarControl[];
@@ -216,13 +222,13 @@ const ANCHOR_AT = { pageIndex: 0, fx: 0.5, fy: 0.25 };
 
 /** A store holding two marks, the second inside the first. */
 function reader() {
-  const store = createReaderSurfaceState({
+  const surface = readerSurface({
     colors: toolColors().current(),
     capability: { kind: "writable" },
     now: NOW,
   });
-  ingestRecords(store, [PARAGRAPH, WORD]);
-  return store;
+  update(surface, ingestRecords([PARAGRAPH, WORD]));
+  return surface;
 }
 
 /** One Annotation's comment draft, as the repository holds it. */
@@ -241,11 +247,11 @@ function draft(
 }
 
 it("selects a mark from the stack under a point, at its place in it", () => {
-  const store = reader();
+  const surface = reader();
 
-  selectMark(store, "PARA7777", { stack: ["WRDS2222", "PARA7777"] });
+  update(surface, selectMark("PARA7777", { stack: ["WRDS2222", "PARA7777"] }));
 
-  expect(store.getState().floating).toEqual({
+  expect(current(surface).floating).toEqual({
     kind: "selected",
     key: "PARA7777",
     stack: ["WRDS2222", "PARA7777"],
@@ -257,71 +263,71 @@ it("selects a mark from the stack under a point, at its place in it", () => {
 });
 
 it("holds a Landing's selection quiet, and the next selection loud", () => {
-  const store = reader();
+  const surface = reader();
 
-  selectMark(store, "WRDS2222", { quiet: true });
-  expect(store.getState().floating).toMatchObject({
+  update(surface, selectMark("WRDS2222", { quiet: true }));
+  expect(current(surface).floating).toMatchObject({
     key: "WRDS2222",
     stack: ["WRDS2222"],
     quiet: true,
   });
 
-  selectMark(store, "PARA7777");
-  expect(store.getState().floating).toMatchObject({ quiet: false });
+  update(surface, selectMark("PARA7777"));
+  expect(current(surface).floating).toMatchObject({ quiet: false });
 });
 
 it("keeps the comment editor open for a repeat selection of the same mark", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  setCommenting(store, true);
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(surface, setCommenting(true));
 
-  selectMark(store, "WRDS2222");
-  expect(store.getState().floating).toMatchObject({ commenting: true });
+  update(surface, selectMark("WRDS2222"));
+  expect(current(surface).floating).toMatchObject({ commenting: true });
 
-  selectMark(store, "PARA7777");
-  expect(store.getState().floating).toMatchObject({ commenting: false });
+  update(surface, selectMark("PARA7777"));
+  expect(current(surface).floating).toMatchObject({ commenting: false });
 });
 
 it("opens the tag editor in place of the comment editor, and the reverse", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  setCommenting(store, true);
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(surface, setCommenting(true));
 
-  setTagging(store, true);
-  expect(store.getState().floating).toMatchObject({
+  update(surface, setTagging(true));
+  expect(current(surface).floating).toMatchObject({
     commenting: false,
     tagging: true,
   });
 
-  setCommenting(store, true);
-  expect(store.getState().floating).toMatchObject({
+  update(surface, setCommenting(true));
+  expect(current(surface).floating).toMatchObject({
     commenting: true,
     tagging: false,
   });
 });
 
 it("keeps the tag editor open for a repeat selection of the same mark only", () => {
-  const store = reader();
+  const surface = reader();
   const stack = ["WRDS2222", "PARA7777"];
-  selectMark(store, "WRDS2222", { stack });
-  setTagging(store, true);
+  update(surface, selectMark("WRDS2222", { stack }));
+  update(surface, setTagging(true));
 
-  selectMark(store, "WRDS2222", { stack });
-  expect(selectFloatingHead(store.getState()).tagging).toBe(true);
+  update(surface, selectMark("WRDS2222", { stack }));
+  expect(selectFloatingHead(current(surface)).tagging).toBe(true);
 
-  stepStack(store);
-  expect(selectFloatingHead(store.getState())).toMatchObject({
+  update(surface, stepStack);
+  expect(selectFloatingHead(current(surface))).toMatchObject({
     key: "PARA7777",
     tagging: false,
   });
 });
 
 it("selects a mark with its comment editor open when asked to", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
 
-  selectMark(store, "PARA7777", { commenting: true });
-  expect(store.getState().floating).toMatchObject({
+  update(surface, selectMark("PARA7777", { commenting: true }));
+  expect(current(surface).floating).toMatchObject({
     key: "PARA7777",
     quiet: false,
     commenting: true,
@@ -329,24 +335,30 @@ it("selects a mark with its comment editor open when asked to", () => {
 });
 
 it("clears a floating surface of either kind, and a null selection clears too", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  clearFloating(store);
-  expect(store.getState().floating).toEqual({ kind: "none" });
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(surface, clearFloating);
+  expect(current(surface).floating).toEqual({ kind: "none" });
 
-  captureSelection(store, { captured: CAPTURED, anchorAt: ANCHOR_AT });
-  selectMark(store, null);
-  expect(store.getState().floating).toEqual({ kind: "none" });
+  update(
+    surface,
+    captureSelection({ captured: CAPTURED, anchorAt: ANCHOR_AT }),
+  );
+  update(surface, selectMark(null));
+  expect(current(surface).floating).toEqual({ kind: "none" });
 });
 
 it("lets a captured selection take the place of a selected mark", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  setCommenting(store, true);
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(surface, setCommenting(true));
 
-  captureSelection(store, { captured: CAPTURED, anchorAt: ANCHOR_AT });
+  update(
+    surface,
+    captureSelection({ captured: CAPTURED, anchorAt: ANCHOR_AT }),
+  );
 
-  expect(store.getState().floating).toEqual({
+  expect(current(surface).floating).toEqual({
     kind: "create",
     captured: CAPTURED,
     anchorAt: ANCHOR_AT,
@@ -356,32 +368,35 @@ it("lets a captured selection take the place of a selected mark", () => {
 });
 
 it("steps forward through the stack and wraps, closing the editor", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222", { stack: ["WRDS2222", "PARA7777"] });
-  setCommenting(store, true);
+  const surface = reader();
+  update(surface, selectMark("WRDS2222", { stack: ["WRDS2222", "PARA7777"] }));
+  update(surface, setCommenting(true));
 
-  stepStack(store);
-  expect(store.getState().floating).toMatchObject({
+  update(surface, stepStack);
+  expect(current(surface).floating).toMatchObject({
     key: "PARA7777",
     index: 1,
     commenting: false,
   });
 
-  stepStack(store);
-  expect(store.getState().floating).toMatchObject({
+  update(surface, stepStack);
+  expect(current(surface).floating).toMatchObject({
     key: "WRDS2222",
     index: 0,
   });
 });
 
 it("opens the comment sheet and marks a create in flight on the create variant", () => {
-  const store = reader();
-  captureSelection(store, { captured: CAPTURED, anchorAt: ANCHOR_AT });
+  const surface = reader();
+  update(
+    surface,
+    captureSelection({ captured: CAPTURED, anchorAt: ANCHOR_AT }),
+  );
 
-  setCommenting(store, true);
-  setInFlight(store, true);
+  update(surface, setCommenting(true));
+  update(surface, setInFlight(true));
 
-  expect(store.getState().floating).toMatchObject({
+  expect(current(surface).floating).toMatchObject({
     kind: "create",
     commenting: true,
     inFlight: true,
@@ -389,27 +404,33 @@ it("opens the comment sheet and marks a create in flight on the create variant",
 });
 
 it("stands the selection down when the next read no longer holds its Annotation", () => {
-  const store = reader();
-  selectMark(store, "PARA7777");
+  const surface = reader();
+  update(surface, selectMark("PARA7777"));
 
-  ingestRecords(store, [PARAGRAPH]);
-  expect(store.getState().floating).toMatchObject({ key: "PARA7777" });
+  update(surface, ingestRecords([PARAGRAPH]));
+  expect(current(surface).floating).toMatchObject({ key: "PARA7777" });
 
-  ingestRecords(store, [WORD]);
-  expect(store.getState().floating).toEqual({ kind: "none" });
-  expect(store.getState().records).toEqual([WORD]);
+  update(surface, ingestRecords([WORD]));
+  expect(current(surface).floating).toEqual({ kind: "none" });
+  expect(current(surface).records).toEqual([WORD]);
 });
 
 it("drops a deleted Annotation, its selection, and what was held on it at once", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  ingestMutation(store, "WRDS2222", { kind: "pending", write: "color" });
-  ingestCommentDraft(store, "WRDS2222", draft("WRDS2222"));
-  ingestMutation(store, "PARA7777", { kind: "pending", write: "color" });
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(
+    surface,
+    ingestMutation("WRDS2222", { kind: "pending", write: "color" }),
+  );
+  update(surface, ingestCommentDraft("WRDS2222", draft("WRDS2222")));
+  update(
+    surface,
+    ingestMutation("PARA7777", { kind: "pending", write: "color" }),
+  );
 
-  dropRecord(store, "WRDS2222");
+  update(surface, dropRecord("WRDS2222"));
 
-  const { records, floating, mutations, commentDrafts } = store.getState();
+  const { records, floating, mutations, commentDrafts } = current(surface);
   expect(records).toEqual([PARAGRAPH]);
   expect(floating).toEqual({ kind: "none" });
   expect([...mutations.keys()]).toEqual(["PARA7777"]);
@@ -418,7 +439,7 @@ it("drops a deleted Annotation, its selection, and what was held on it at once",
 
 it("takes a read's records with the drafts and write states that stood before it", async () => {
   await using stack = new AsyncDisposableStack();
-  const store = reader();
+  const surface = reader();
   const { repository, service, bridge, zotero } = await repositoryOver(stack, [
     PARAGRAPH,
     WORD,
@@ -428,9 +449,12 @@ it("takes a read's records with the drafts and write states that stood before it
   void repository.patchColor("PARA7777", "#ff6666").catch(passAborted);
   repository.editTextField("comment", "WRDS2222", "worth quoting");
 
-  ingestAnnotations(store, [PARAGRAPH, WORD], { annotations: service, bridge });
+  ingestAnnotations(surface, [PARAGRAPH, WORD], {
+    annotations: service,
+    bridge,
+  });
 
-  const { records, mutations, commentDrafts } = store.getState();
+  const { records, mutations, commentDrafts } = current(surface);
   expect(records).toEqual([PARAGRAPH, WORD]);
   expect([...mutations]).toEqual([
     ["PARA7777", { kind: "pending", write: "color" }],
@@ -440,44 +464,44 @@ it("takes a read's records with the drafts and write states that stood before it
 
 it("takes a write's state and a comment draft as the repository announces them", async () => {
   await using stack = new AsyncDisposableStack();
-  const store = reader();
+  const surface = reader();
   const { repository, service, bridge, zotero } = await repositoryOver(stack, [
     PARAGRAPH,
     WORD,
   ]);
-  using _listening = listenAnnotationEvents(store, service, bridge);
+  using _listening = listenAnnotationEvents(surface, service, bridge);
   const release = zotero.holdWrites();
 
   const saving = repository.patchColor("PARA7777", "#ff6666");
   repository.editTextField("comment", "WRDS2222", "worth quoting");
-  expect(store.getState().mutations.get("PARA7777")).toEqual({
+  expect(current(surface).mutations.get("PARA7777")).toEqual({
     kind: "pending",
     write: "color",
   });
-  expect(store.getState().commentDrafts.get("WRDS2222")?.text).toBe(
+  expect(current(surface).commentDrafts.get("WRDS2222")?.text).toBe(
     "worth quoting",
   );
 
   release();
   await saving;
-  expect(store.getState().mutations.has("PARA7777")).toBe(false);
+  expect(current(surface).mutations.has("PARA7777")).toBe(false);
 });
 
 it("drops the selected mark Zotero erased while it held a draft", async () => {
   await using stack = new AsyncDisposableStack();
-  const store = reader();
-  selectMark(store, "WRDS2222");
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
   const { repository, service, bridge, zotero } = await repositoryOver(stack, [
     PARAGRAPH,
     WORD,
   ]);
-  using _listening = listenAnnotationEvents(store, service, bridge);
+  using _listening = listenAnnotationEvents(surface, service, bridge);
   repository.editTextField("comment", "WRDS2222", "worth quoting");
 
   zotero.eraseInZotero("WRDS2222");
   await repository.refresh("RGRPDF24");
 
-  const { records, floating, commentDrafts } = store.getState();
+  const { records, floating, commentDrafts } = current(surface);
   expect(records).toEqual([PARAGRAPH]);
   expect(floating).toEqual({ kind: "none" });
   expect(commentDrafts.has("WRDS2222")).toBe(false);
@@ -485,145 +509,171 @@ it("drops the selected mark Zotero erased while it held a draft", async () => {
 
 it("takes no announcement once disposed", async () => {
   await using stack = new AsyncDisposableStack();
-  const store = reader();
+  const surface = reader();
   const { repository, service, bridge } = await repositoryOver(stack, [
     PARAGRAPH,
     WORD,
   ]);
-  const listening = listenAnnotationEvents(store, service, bridge);
+  const listening = listenAnnotationEvents(surface, service, bridge);
 
   listening[Symbol.dispose]();
   repository.editTextField("comment", "WRDS2222", "worth quoting");
 
-  expect(store.getState().commentDrafts.has("WRDS2222")).toBe(false);
+  expect(current(surface).commentDrafts.has("WRDS2222")).toBe(false);
 });
 
 it("holds what a write left on an Annotation, and forgets it once idle", () => {
-  const store = reader();
+  const surface = reader();
 
-  ingestMutation(store, "WRDS2222", { kind: "pending", write: "color" });
-  expect(store.getState().mutations.get("WRDS2222")).toEqual({
+  update(
+    surface,
+    ingestMutation("WRDS2222", { kind: "pending", write: "color" }),
+  );
+  expect(current(surface).mutations.get("WRDS2222")).toEqual({
     kind: "pending",
     write: "color",
   });
 
-  ingestMutation(store, "WRDS2222", IDLE);
-  expect(store.getState().mutations.has("WRDS2222")).toBe(false);
+  update(surface, ingestMutation("WRDS2222", IDLE));
+  expect(current(surface).mutations.has("WRDS2222")).toBe(false);
 });
 
 it("fires no row subscriber for a mutation announced again unchanged", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  ingestMutation(store, "WRDS2222", { kind: "pending", write: "color" });
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(
+    surface,
+    ingestMutation("WRDS2222", { kind: "pending", write: "color" }),
+  );
   const row = vi.fn();
-  store.subscribe(selectSelectedRow, row, { equalityFn: sameFlatList });
+  watch(
+    surface.registry,
+    selection(surface, selectSelectedRow, sameFlatList),
+    row,
+  );
 
-  ingestMutation(store, "WRDS2222", { kind: "pending", write: "color" });
+  update(
+    surface,
+    ingestMutation("WRDS2222", { kind: "pending", write: "color" }),
+  );
   expect(row).not.toHaveBeenCalled();
 
-  ingestMutation(store, "WRDS2222", IDLE);
+  update(surface, ingestMutation("WRDS2222", IDLE));
   expect(row).toHaveBeenCalledOnce();
 });
 
 it("fires the row subscriber for a change to the stored tags, not a re-read", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
   const tagged = (names: string[]): AnnotationRecord => ({
     ...WORD,
     tags: names,
     tagDetails: names.map((name) => ({ name, type: 0 })),
   });
-  ingestRecords(store, [PARAGRAPH, tagged(["to read"])]);
+  update(surface, ingestRecords([PARAGRAPH, tagged(["to read"])]));
   const row = vi.fn();
-  store.subscribe(selectSelectedRow, row, { equalityFn: sameFlatList });
+  watch(
+    surface.registry,
+    selection(surface, selectSelectedRow, sameFlatList),
+    row,
+  );
 
-  ingestRecords(store, [PARAGRAPH, tagged(["to read"])]);
+  update(surface, ingestRecords([PARAGRAPH, tagged(["to read"])]));
   expect(row).not.toHaveBeenCalled();
 
-  ingestRecords(store, [PARAGRAPH, tagged(["to read", "method"])]);
+  update(surface, ingestRecords([PARAGRAPH, tagged(["to read", "method"])]));
   expect(row).toHaveBeenCalledOnce();
 });
 
 it("fires no row subscriber for a mutation on an Annotation not selected", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
   const row = vi.fn();
-  store.subscribe(selectSelectedRow, row, { equalityFn: sameFlatList });
+  watch(
+    surface.registry,
+    selection(surface, selectSelectedRow, sameFlatList),
+    row,
+  );
 
-  ingestMutation(store, "PARA7777", { kind: "pending", write: "color" });
+  update(
+    surface,
+    ingestMutation("PARA7777", { kind: "pending", write: "color" }),
+  );
 
   expect(row).not.toHaveBeenCalled();
 });
 
 it("holds a comment draft, and forgets one the repository dropped", () => {
-  const store = reader();
+  const surface = reader();
   const held = draft("WRDS2222");
 
-  ingestCommentDraft(store, "WRDS2222", held);
-  expect(store.getState().commentDrafts.get("WRDS2222")).toBe(held);
+  update(surface, ingestCommentDraft("WRDS2222", held));
+  expect(current(surface).commentDrafts.get("WRDS2222")).toBe(held);
 
-  ingestCommentDraft(store, "WRDS2222", null);
-  expect(store.getState().commentDrafts.has("WRDS2222")).toBe(false);
+  update(surface, ingestCommentDraft("WRDS2222", null));
+  expect(current(surface).commentDrafts.has("WRDS2222")).toBe(false);
 });
 
 it("keeps the editor open when an ordinary draft settles and is dropped", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  setCommenting(store, true);
-  ingestCommentDraft(store, "WRDS2222", draft("WRDS2222"));
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(surface, setCommenting(true));
+  update(surface, ingestCommentDraft("WRDS2222", draft("WRDS2222")));
 
-  ingestCommentDraft(store, "WRDS2222", null);
+  update(surface, ingestCommentDraft("WRDS2222", null));
 
-  expect(store.getState().floating).toMatchObject({ commenting: true });
+  expect(current(surface).floating).toMatchObject({ commenting: true });
 });
 
 it("closes the editor when the selected draft turns into a Write Conflict", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  setCommenting(store, true);
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(surface, setCommenting(true));
 
-  ingestCommentDraft(
-    store,
-    "WRDS2222",
-    draft("WRDS2222", { kind: "conflict", fresh: "theirs" }),
+  update(
+    surface,
+    ingestCommentDraft(
+      "WRDS2222",
+      draft("WRDS2222", { kind: "conflict", fresh: "theirs" }),
+    ),
   );
 
-  expect(store.getState().floating).toMatchObject({
+  expect(current(surface).floating).toMatchObject({
     key: "WRDS2222",
     commenting: false,
   });
 });
 
 it("closes the editor when a database switch hides the selected draft", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  setCommenting(store, true);
-  ingestCommentDraft(store, "WRDS2222", draft("WRDS2222"));
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(surface, setCommenting(true));
+  update(surface, ingestCommentDraft("WRDS2222", draft("WRDS2222")));
 
-  hideCommentDraft(store, "WRDS2222");
+  update(surface, hideCommentDraft("WRDS2222"));
 
-  expect(store.getState().commentDrafts.has("WRDS2222")).toBe(false);
-  expect(store.getState().floating).toMatchObject({ commenting: false });
+  expect(current(surface).commentDrafts.has("WRDS2222")).toBe(false);
+  expect(current(surface).floating).toMatchObject({ commenting: false });
 });
 
 it("closes the editors when a database switch hides their drafts", async () => {
   await using stack = new AsyncDisposableStack();
-  const store = reader();
-  selectMark(store, "WRDS2222");
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
   const zotero = await repositoryOver(stack, [PARAGRAPH, WORD]);
   const { repository, service, bridge } = zotero;
-  using _listening = listenAnnotationEvents(store, service, bridge);
+  using _listening = listenAnnotationEvents(surface, service, bridge);
   repository.editTextField("comment", "WRDS2222", "worth quoting");
-  setCommenting(store, true);
+  update(surface, setCommenting(true));
   repository.editTags("WRDS2222", ["to read"]);
-  setTagging(store, true);
-  expect(store.getState().tagDrafts.get("WRDS2222")?.names).toEqual([
+  update(surface, setTagging(true));
+  expect(current(surface).tagDrafts.get("WRDS2222")?.names).toEqual([
     "to read",
   ]);
 
   await zotero.switchDatabase();
 
-  const { tagDrafts, commentDrafts, floating } = store.getState();
+  const { tagDrafts, commentDrafts, floating } = current(surface);
   expect(tagDrafts.has("WRDS2222")).toBe(false);
   expect(commentDrafts.has("WRDS2222")).toBe(false);
   expect(floating).toMatchObject({
@@ -634,26 +684,31 @@ it("closes the editors when a database switch hides their drafts", async () => {
 });
 
 it("leaves another Annotation's editor alone when a draft is hidden", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  setCommenting(store, true);
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  update(surface, setCommenting(true));
 
-  hideCommentDraft(store, "PARA7777");
-  ingestCommentDraft(
-    store,
-    "PARA7777",
-    draft("PARA7777", { kind: "conflict", fresh: "theirs" }),
+  update(surface, hideCommentDraft("PARA7777"));
+  update(
+    surface,
+    ingestCommentDraft(
+      "PARA7777",
+      draft("PARA7777", { kind: "conflict", fresh: "theirs" }),
+    ),
   );
 
-  expect(store.getState().floating).toMatchObject({ commenting: true });
+  expect(current(surface).floating).toMatchObject({ commenting: true });
 });
 
 it("draws the selected row from the record, its mutation, and its stack", () => {
-  const store = reader();
-  selectMark(store, "PARA7777", { stack: ["WRDS2222", "PARA7777"] });
-  ingestMutation(store, "PARA7777", { kind: "pending", write: "color" });
+  const surface = reader();
+  update(surface, selectMark("PARA7777", { stack: ["WRDS2222", "PARA7777"] }));
+  update(
+    surface,
+    ingestMutation("PARA7777", { kind: "pending", write: "color" }),
+  );
 
-  const row = selectSelectedRow(store.getState());
+  const row = selectSelectedRow(current(surface));
 
   expect(
     row.flatMap((part) =>
@@ -672,30 +727,36 @@ it("draws the selected row from the record, its mutation, and its stack", () => 
     stackIndex: 1,
     stackTotal: 2,
   });
-  expect(selectSelectedRow(reader().getState())).toEqual([]);
+  expect(selectSelectedRow(current(reader()))).toEqual([]);
 });
 
 it("draws the create row only while a selection waits, pressing the comment toggle", () => {
-  const store = reader();
-  expect(selectCreateRow(store.getState())).toEqual([]);
+  const surface = reader();
+  expect(selectCreateRow(current(surface))).toEqual([]);
 
-  captureSelection(store, { captured: CAPTURED, anchorAt: ANCHOR_AT });
-  setCommenting(store, true);
+  update(
+    surface,
+    captureSelection({ captured: CAPTURED, anchorAt: ANCHOR_AT }),
+  );
+  update(surface, setCommenting(true));
 
-  const row = selectCreateRow(store.getState());
+  const row = selectCreateRow(current(surface));
   expect(row.find(({ id }) => id === "comment")).toMatchObject({
     pressed: true,
   });
-  expect(sameFlatList(row, selectCreateRow(store.getState()))).toBe(true);
+  expect(sameFlatList(row, selectCreateRow(current(surface)))).toBe(true);
 });
 
 it("stands the create row down while its create is in flight", () => {
-  const store = reader();
-  captureSelection(store, { captured: CAPTURED, anchorAt: ANCHOR_AT });
+  const surface = reader();
+  update(
+    surface,
+    captureSelection({ captured: CAPTURED, anchorAt: ANCHOR_AT }),
+  );
 
-  setInFlight(store, true);
+  update(surface, setInFlight(true));
 
-  const row = selectCreateRow(store.getState());
+  const row = selectCreateRow(current(surface));
   expect(row.find(({ id }) => id === "highlight")).toMatchObject({
     disabled: true,
   });
@@ -721,20 +782,20 @@ function widened(x2: number): EditablePosition {
 
 /** A store with the figure selected, and a listener on the adjustment. */
 function adjusting() {
-  const store = reader();
-  ingestRecords(store, [PARAGRAPH, WORD, FIGURE]);
-  selectMark(store, "FDRFQ7C2");
+  const surface = reader();
+  update(surface, ingestRecords([PARAGRAPH, WORD, FIGURE]));
+  update(surface, selectMark("FDRFQ7C2"));
   const heard = vi.fn();
-  store.subscribe(selectAdjust, heard);
-  return { store, heard };
+  watch(surface.registry, surface.model.adjust, heard);
+  return { surface, heard };
 }
 
 it("begins an adjustment that proposes the confirmed position", () => {
-  const { store } = adjusting();
+  const { surface } = adjusting();
 
-  beginAdjust(store, { grip: "br", from: [570, 395.509] });
+  update(surface, beginAdjust({ grip: "br", from: [570, 395.509] }));
 
-  expect(selectAdjust(store.getState())).toEqual({
+  expect(selectAdjust(current(surface))).toEqual({
     grip: "br",
     from: [570, 395.509],
     proposal: FIGURE.position,
@@ -743,70 +804,70 @@ it("begins an adjustment that proposes the confirmed position", () => {
 });
 
 it("moves the proposal, and notifies no one for a move that changes nothing", () => {
-  const { store, heard } = adjusting();
-  beginAdjust(store, { grip: "r", from: [570, 569] });
+  const { surface, heard } = adjusting();
+  update(surface, beginAdjust({ grip: "r", from: [570, 569] }));
   heard.mockClear();
 
-  moveAdjust(store, widened(600));
-  moveAdjust(store, widened(600.0001));
+  update(surface, moveAdjust(widened(600)));
+  update(surface, moveAdjust(widened(600.0001)));
 
   expect(heard).toHaveBeenCalledTimes(1);
-  expect(selectAdjust(store.getState())).toMatchObject({
+  expect(selectAdjust(current(surface))).toMatchObject({
     proposal: widened(600),
     phase: "dragging",
   });
 });
 
 it("cancels an adjustment and keeps the mark selected", () => {
-  const { store } = adjusting();
-  beginAdjust(store, { grip: "r", from: [570, 569] });
-  moveAdjust(store, widened(600));
+  const { surface } = adjusting();
+  update(surface, beginAdjust({ grip: "r", from: [570, 569] }));
+  update(surface, moveAdjust(widened(600)));
 
-  cancelAdjust(store);
+  update(surface, cancelAdjust);
 
-  expect(selectAdjust(store.getState())).toBeNull();
-  expect(store.getState().floating).toMatchObject({ key: "FDRFQ7C2" });
+  expect(selectAdjust(current(surface))).toBeNull();
+  expect(current(surface).floating).toMatchObject({ key: "FDRFQ7C2" });
 });
 
 it("ends a release that moved nothing with nothing to save", () => {
-  const { store } = adjusting();
-  beginAdjust(store, { grip: "r", from: [570, 569] });
+  const { surface } = adjusting();
+  update(surface, beginAdjust({ grip: "r", from: [570, 569] }));
 
-  expect(endAdjust(store)).toBeNull();
-  expect(selectAdjust(store.getState())).toBeNull();
+  expect(modify(surface, endAdjust)).toBeNull();
+  expect(selectAdjust(current(surface))).toBeNull();
 });
 
 it("ends a drag back to the confirmed geometry with nothing to save", () => {
-  const { store } = adjusting();
-  beginAdjust(store, { grip: "r", from: [570, 569] });
-  moveAdjust(store, widened(600));
-  moveAdjust(store, widened(570.0002));
+  const { surface } = adjusting();
+  update(surface, beginAdjust({ grip: "r", from: [570, 569] }));
+  update(surface, moveAdjust(widened(600)));
+  update(surface, moveAdjust(widened(570.0002)));
 
-  expect(endAdjust(store)).toBeNull();
-  expect(selectAdjust(store.getState())).toBeNull();
+  expect(modify(surface, endAdjust)).toBeNull();
+  expect(selectAdjust(current(surface))).toBeNull();
 });
 
 it("holds a changed release's proposal while it saves, and takes no more moves", () => {
-  const { store } = adjusting();
-  beginAdjust(store, { grip: "r", from: [570, 569] });
-  moveAdjust(store, widened(600));
+  const { surface } = adjusting();
+  update(surface, beginAdjust({ grip: "r", from: [570, 569] }));
+  update(surface, moveAdjust(widened(600)));
 
-  expect(endAdjust(store)).toEqual(widened(600));
+  expect(modify(surface, endAdjust)).toEqual(widened(600));
 
-  moveAdjust(store, widened(610));
-  expect(selectAdjust(store.getState())).toMatchObject({
+  update(surface, moveAdjust(widened(610)));
+  expect(selectAdjust(current(surface))).toMatchObject({
     proposal: widened(600),
     phase: "saving",
   });
 });
 
 it("drops the adjustment with the selection it stood on", () => {
-  const { store } = adjusting();
-  beginAdjust(store, { grip: "r", from: [570, 569] });
+  const { surface } = adjusting();
+  update(surface, beginAdjust({ grip: "r", from: [570, 569] }));
 
-  selectMark(store, "WRDS2222");
+  update(surface, selectMark("WRDS2222"));
 
-  expect(selectAdjust(store.getState())).toBeNull();
+  expect(selectAdjust(current(surface))).toBeNull();
 });
 
 it("adjusts selected ink and a selected free-text mark", () => {
@@ -827,83 +888,83 @@ it("adjusts selected ink and a selected free-text mark", () => {
     fontSize: 12,
     rotation: 0,
   });
-  const store = reader();
-  ingestRecords(store, [stroke, typed]);
+  const surface = reader();
+  update(surface, ingestRecords([stroke, typed]));
 
-  selectMark(store, "TEXT1111");
-  beginAdjust(store, { grip: "body", from: [150, 110] });
-  expect(selectAdjust(store.getState())?.proposal).toEqual(typed.position);
-  cancelAdjust(store);
+  update(surface, selectMark("TEXT1111"));
+  update(surface, beginAdjust({ grip: "body", from: [150, 110] }));
+  expect(selectAdjust(current(surface))?.proposal).toEqual(typed.position);
+  update(surface, cancelAdjust);
 
-  selectMark(store, "4PE492KU");
-  beginAdjust(store, { grip: "body", from: [220, 680] });
-  moveAdjust(store, moved);
-  expect(endAdjust(store)).toEqual(moved);
+  update(surface, selectMark("4PE492KU"));
+  update(surface, beginAdjust({ grip: "body", from: [220, 680] }));
+  update(surface, moveAdjust(moved));
+  expect(modify(surface, endAdjust)).toEqual(moved);
 });
 
 it("carries a text range's quoted text with its proposal", () => {
-  const store = reader();
-  ingestRecords(store, [PARAGRAPH]);
-  selectMark(store, PARAGRAPH.key);
-  beginAdjust(store, { grip: "end", from: [300, 700] });
+  const surface = reader();
+  update(surface, ingestRecords([PARAGRAPH]));
+  update(surface, selectMark(PARAGRAPH.key));
+  update(surface, beginAdjust({ grip: "end", from: [300, 700] }));
   const longer: EditablePosition = {
     kind: "pdf-rects",
     pageIndex: 0,
     rects: [[72, 700, 330, 712]],
   };
 
-  moveAdjust(store, longer, "the longer quote");
+  update(surface, moveAdjust(longer, "the longer quote"));
 
-  expect(selectAdjust(store.getState())).toMatchObject({
+  expect(selectAdjust(current(surface))).toMatchObject({
     proposal: longer,
     text: "the longer quote",
   });
-  expect(endAdjust(store)).toEqual(longer);
-  expect(selectAdjust(store.getState())?.text).toBe("the longer quote");
+  expect(modify(surface, endAdjust)).toEqual(longer);
+  expect(selectAdjust(current(surface))?.text).toBe("the longer quote");
 });
 
 /** A store with an image capture pressed on page one at (100, 500). */
 function capturing() {
-  const store = reader();
-  beginCapture(store, { pageIndex: 0, from: [100, 500] });
-  return store;
+  const surface = reader();
+  update(surface, beginCapture({ pageIndex: 0, from: [100, 500] }));
+  return surface;
 }
 
 it("keeps nothing from a capture released under ten points on a side", () => {
-  const store = capturing();
-  moveCapture(store, [100, 491, 300, 500]);
+  const surface = capturing();
+  update(surface, moveCapture([100, 491, 300, 500]));
 
-  expect(endCapture(store)).toBeNull();
-  expect(store.getState().floating).toEqual({ kind: "none" });
+  expect(modify(surface, endCapture)).toBeNull();
+  expect(current(surface).floating).toEqual({ kind: "none" });
 });
 
 it("keeps nothing from a capture released where it was pressed", () => {
-  const store = capturing();
+  const surface = capturing();
 
-  expect(endCapture(store)).toBeNull();
-  expect(selectCapture(store.getState())).toBeNull();
+  expect(modify(surface, endCapture)).toBeNull();
+  expect(selectCapture(current(surface))).toBeNull();
 });
 
 it("begins no second capture while one stands", () => {
-  const store = capturing();
-  moveCapture(store, [100, 300, 300, 500]);
+  const surface = capturing();
+  update(surface, moveCapture([100, 300, 300, 500]));
 
-  beginCapture(store, { pageIndex: 1, from: [5, 5] });
+  update(surface, beginCapture({ pageIndex: 1, from: [5, 5] }));
 
-  expect(selectCapture(store.getState())).toMatchObject({
+  expect(selectCapture(current(surface))).toMatchObject({
     pageIndex: 0,
     rect: [100, 300, 300, 500],
   });
 });
 
 it("holds a released capture while it saves, and takes no more moves", () => {
-  const store = capturing();
-  moveCapture(store, [100, 300, 300, 500]);
+  const surface = capturing();
+  update(surface, moveCapture([100, 300, 300, 500]));
 
-  expect(endCapture(store)).toEqual([100, 300, 300, 500]);
-  moveCapture(store, [100, 400, 300, 500]);
+  expect(modify(surface, endCapture)).toEqual([100, 300, 300, 500]);
+  update(surface, moveCapture([100, 400, 300, 500]));
 
-  expect(selectCapture(store.getState())).toEqual({
+  expect(selectCapture(current(surface))).toEqual({
     kind: "capture",
     pageIndex: 0,
     from: [100, 500],
@@ -913,23 +974,23 @@ it("holds a released capture while it saves, and takes no more moves", () => {
 });
 
 it("takes the floating surface from a selected mark, and cancels to nothing", () => {
-  const store = reader();
-  ingestRecords(store, [PARAGRAPH, WORD]);
-  selectMark(store, "WRDS2222");
+  const surface = reader();
+  update(surface, ingestRecords([PARAGRAPH, WORD]));
+  update(surface, selectMark("WRDS2222"));
 
-  beginCapture(store, { pageIndex: 0, from: [100, 500] });
-  expect(selectFloatingHead(store.getState())).toEqual({
+  update(surface, beginCapture({ pageIndex: 0, from: [100, 500] }));
+  expect(selectFloatingHead(current(surface))).toEqual({
     kind: "capture",
     key: null,
     commenting: false,
     tagging: false,
   });
   // A capture has no comment to open.
-  setCommenting(store, true);
-  expect(selectFloatingHead(store.getState()).commenting).toBe(false);
+  update(surface, setCommenting(true));
+  expect(selectFloatingHead(current(surface)).commenting).toBe(false);
 
-  cancelCapture(store);
-  expect(store.getState().floating).toEqual({ kind: "none" });
+  update(surface, cancelCapture);
+  expect(current(surface).floating).toEqual({ kind: "none" });
 });
 
 /** A stroke released on page one, rounded as a create sends it. */
@@ -941,9 +1002,9 @@ const STROKE = {
 };
 
 it("publishes the Live Stroke beside the floating surface, and clears it", () => {
-  const store = reader();
-  selectMark(store, "WRDS2222");
-  const floating = store.getState().floating;
+  const surface = reader();
+  update(surface, selectMark("WRDS2222"));
+  const floating = current(surface).floating;
   const live = {
     pageIndex: 0,
     paths: [[120, 600]],
@@ -951,82 +1012,86 @@ it("publishes the Live Stroke beside the floating surface, and clears it", () =>
     color: "#2ea8e5",
   };
 
-  publishLiveStroke(store, live);
-  expect(store.getState().liveStroke).toEqual(live);
+  update(surface, publishLiveStroke(live));
+  expect(current(surface).liveStroke).toEqual(live);
   // The popup host reads the floating surface alone, which a stroke leaves be.
-  expect(store.getState().floating).toBe(floating);
+  expect(current(surface).floating).toBe(floating);
 
-  clearLiveStroke(store);
-  expect(store.getState().liveStroke).toBeNull();
+  update(surface, clearLiveStroke);
+  expect(current(surface).liveStroke).toBeNull();
 });
 
 it.each(["highlight", "underline", "image"] as const)(
   "keeps the floating surface when %s is armed",
   (tool) => {
-    const store = reader();
-    selectMark(store, "WRDS2222");
+    const surface = reader();
+    update(surface, selectMark("WRDS2222"));
 
-    arm(store, tool);
+    update(surface, arm(tool));
 
-    expect(selectFloatingHead(store.getState()).key).toBe("WRDS2222");
+    expect(selectFloatingHead(current(surface)).key).toBe("WRDS2222");
   },
 );
 
 it.each(["ink", "note", "text"] as const)(
   "clears the floating surface when %s is armed",
   (tool) => {
-    const store = reader();
-    selectMark(store, "WRDS2222");
+    const surface = reader();
+    update(surface, selectMark("WRDS2222"));
 
-    arm(store, tool);
+    update(surface, arm(tool));
 
-    expect(store.getState().floating).toEqual({ kind: "none" });
+    expect(current(surface).floating).toEqual({ kind: "none" });
   },
 );
 
 it("appends Pending Strokes in release order", () => {
-  const store = reader();
+  const surface = reader();
 
-  appendPendingStroke(store, { id: 1, ...STROKE });
-  appendPendingStroke(store, { id: 2, ...STROKE, pageIndex: 1 });
+  update(surface, appendPendingStroke({ id: 1, ...STROKE }));
+  update(surface, appendPendingStroke({ id: 2, ...STROKE, pageIndex: 1 }));
 
-  expect(store.getState().pendingStrokes.map(({ id }) => id)).toEqual([1, 2]);
+  expect(current(surface).pendingStrokes.map(({ id }) => id)).toEqual([1, 2]);
 });
 
 it("swaps a Pending Stroke for its record in one update", () => {
-  const store = reader();
-  appendPendingStroke(store, { id: 1, ...STROKE });
+  const surface = reader();
+  update(surface, appendPendingStroke({ id: 1, ...STROKE }));
   const record = annotation("INK11111", "ink", {
     pageIndex: 0,
     width: 2,
     paths: [[120.5, 600.25, 130.125, 610.5, 140, 606.75]],
   });
   const frames: { records: number; pending: number }[] = [];
-  store.subscribe(
-    ({ records, pendingStrokes }) => ({ records, pendingStrokes }),
+  watch(
+    surface.registry,
+    selection(
+      surface,
+      ({ records, pendingStrokes }) => ({ records, pendingStrokes }),
+      sameFlat,
+    ),
     ({ records, pendingStrokes }) =>
       frames.push({ records: records.length, pending: pendingStrokes.length }),
-    { equalityFn: sameFlat },
   );
 
-  ingestRecords(store, [PARAGRAPH, WORD, record]);
+  update(surface, ingestRecords([PARAGRAPH, WORD, record]));
 
   // Never both drawn, and never neither.
   expect(frames).toEqual([{ records: 3, pending: 0 }]);
 });
 
 it("keeps a Pending Stroke through a read that does not yet hold it", () => {
-  const store = reader();
-  appendPendingStroke(store, { id: 1, ...STROKE });
+  const surface = reader();
+  update(surface, appendPendingStroke({ id: 1, ...STROKE }));
   const other = annotation("INK22222", "ink", {
     pageIndex: 0,
     width: 2,
     paths: [[120.5, 600.25, 130.125, 610.5]],
   });
 
-  ingestRecords(store, [PARAGRAPH, WORD, other]);
+  update(surface, ingestRecords([PARAGRAPH, WORD, other]));
 
-  expect(store.getState().pendingStrokes.map(({ id }) => id)).toEqual([1]);
+  expect(current(surface).pendingStrokes.map(({ id }) => id)).toEqual([1]);
 });
 
 it.each([
@@ -1035,8 +1100,8 @@ it.each([
 ])(
   "keeps a Pending Stroke through a record of its points in %s",
   (_, colour, width) => {
-    const store = reader();
-    appendPendingStroke(store, { id: 1, ...STROKE });
+    const surface = reader();
+    update(surface, appendPendingStroke({ id: 1, ...STROKE }));
     const other = {
       ...annotation("INK22222", "ink", {
         pageIndex: 0,
@@ -1046,86 +1111,95 @@ it.each([
       ...colour,
     };
 
-    ingestRecords(store, [PARAGRAPH, WORD, other]);
+    update(surface, ingestRecords([PARAGRAPH, WORD, other]));
 
-    expect(store.getState().pendingStrokes.map(({ id }) => id)).toEqual([1]);
+    expect(current(surface).pendingStrokes.map(({ id }) => id)).toEqual([1]);
   },
 );
 
 it("swaps a Pending Stroke for a record that differs only in colour case", () => {
-  const store = reader();
-  appendPendingStroke(store, { id: 1, ...STROKE, color: "#2EA8E5" });
+  const surface = reader();
+  update(surface, appendPendingStroke({ id: 1, ...STROKE, color: "#2EA8E5" }));
 
-  ingestRecords(store, [
-    PARAGRAPH,
-    WORD,
-    annotation("INK11111", "ink", {
-      pageIndex: 0,
-      width: 2,
-      paths: [[120.5, 600.25, 130.125, 610.5, 140, 606.75]],
-    }),
-  ]);
+  update(
+    surface,
+    ingestRecords([
+      PARAGRAPH,
+      WORD,
+      annotation("INK11111", "ink", {
+        pageIndex: 0,
+        width: 2,
+        paths: [[120.5, 600.25, 130.125, 610.5, 140, 606.75]],
+      }),
+    ]),
+  );
 
-  expect(store.getState().pendingStrokes).toEqual([]);
+  expect(current(surface).pendingStrokes).toEqual([]);
 });
 
 it("drops a settled Pending Stroke whose record already stands", () => {
-  const store = reader();
-  appendPendingStroke(store, { id: 1, ...STROKE });
+  const surface = reader();
+  update(surface, appendPendingStroke({ id: 1, ...STROKE }));
   // Zotero stored other points than were sent, so no geometry matches.
   const stored = annotation("INK11111", "ink", {
     pageIndex: 0,
     width: 2,
     paths: [[121, 601]],
   });
-  ingestRecords(store, [PARAGRAPH, WORD, stored]);
-  expect(store.getState().pendingStrokes).toHaveLength(1);
+  update(surface, ingestRecords([PARAGRAPH, WORD, stored]));
+  expect(current(surface).pendingStrokes).toHaveLength(1);
 
-  settlePendingStroke(store, { id: 1, key: "INK11111" });
+  update(surface, settlePendingStroke({ id: 1, key: "INK11111" }));
 
-  expect(store.getState().pendingStrokes).toEqual([]);
+  expect(current(surface).pendingStrokes).toEqual([]);
 });
 
 it("swaps a settled Pending Stroke for the record of its key when the read lands", () => {
-  const store = reader();
-  appendPendingStroke(store, { id: 1, ...STROKE });
+  const surface = reader();
+  update(surface, appendPendingStroke({ id: 1, ...STROKE }));
 
-  settlePendingStroke(store, { id: 1, key: "INK11111" });
-  expect(store.getState().pendingStrokes).toHaveLength(1);
-  ingestRecords(store, [
-    PARAGRAPH,
-    WORD,
-    annotation("INK11111", "ink", {
-      pageIndex: 0,
-      width: 2,
-      paths: [[121, 601]],
-    }),
-  ]);
+  update(surface, settlePendingStroke({ id: 1, key: "INK11111" }));
+  expect(current(surface).pendingStrokes).toHaveLength(1);
+  update(
+    surface,
+    ingestRecords([
+      PARAGRAPH,
+      WORD,
+      annotation("INK11111", "ink", {
+        pageIndex: 0,
+        width: 2,
+        paths: [[121, 601]],
+      }),
+    ]),
+  );
 
-  expect(store.getState().pendingStrokes).toEqual([]);
+  expect(current(surface).pendingStrokes).toEqual([]);
 });
 
 it("drops a failed create's Pending Stroke and leaves the others", () => {
-  const store = reader();
-  appendPendingStroke(store, { id: 1, ...STROKE });
-  appendPendingStroke(store, { id: 2, ...STROKE, pageIndex: 1 });
+  const surface = reader();
+  update(surface, appendPendingStroke({ id: 1, ...STROKE }));
+  update(surface, appendPendingStroke({ id: 2, ...STROKE, pageIndex: 1 }));
 
-  dropPendingStroke(store, 1);
+  update(surface, dropPendingStroke(1));
 
-  expect(store.getState().pendingStrokes.map(({ id }) => id)).toEqual([2]);
+  expect(current(surface).pendingStrokes.map(({ id }) => id)).toEqual([2]);
 });
 
 /** A text box opened by a click at `[100, 500]` on page one, at 14 points. */
 function drafting() {
-  const store = reader();
-  arm(store, "text");
-  openTextDraft(store, {
-    pageIndex: 0,
-    at: [100, 500],
-    fontSize: 14,
-    color: "#ffd400",
-  });
-  return store;
+  const surface = reader();
+  update(surface, arm("text"));
+  update(
+    surface,
+    openTextDraft({
+      pageIndex: 0,
+      at: [100, 500],
+      fontSize: 14,
+      color: "#ffd400",
+    }),
+  );
+  return surface;
 }
 
 /** Half a font size per character, so a box is worked out by hand. */
@@ -1155,87 +1229,97 @@ function typed(key: string, overrides: Partial<AnnotationRecord> = {}) {
 it.each(["", " \n\t "])(
   "discards a Text Draft finished with nothing but %j, and commits nothing",
   (text) => {
-    const store = drafting();
-    refitTextDraft(store, text, FIT);
+    const surface = drafting();
+    update(surface, refitTextDraft(text, FIT));
 
-    expect(finishTextDraft(store)).toBeNull();
-    expect(store.getState().floating).toEqual({ kind: "none" });
+    expect(modify(surface, finishTextDraft)).toBeNull();
+    expect(current(surface).floating).toEqual({ kind: "none" });
   },
 );
 
 it("takes no more typing once a Text Draft is saving, and commits it once", () => {
-  const store = drafting();
-  refitTextDraft(store, "abcd", FIT);
-  expect(finishTextDraft(store)?.phase).toBe("saving");
+  const surface = drafting();
+  update(surface, refitTextDraft("abcd", FIT));
+  expect(modify(surface, finishTextDraft)?.phase).toBe("saving");
 
-  refitTextDraft(store, "abcde", FIT);
+  update(surface, refitTextDraft("abcde", FIT));
 
-  expect(selectTextDraft(store.getState())?.text).toBe("abcd");
-  expect(finishTextDraft(store)).toBeNull();
+  expect(selectTextDraft(current(surface))?.text).toBe("abcd");
+  expect(modify(surface, finishTextDraft)).toBeNull();
 });
 
 it("takes a failed create's Text Draft off the page", () => {
-  const store = drafting();
-  refitTextDraft(store, "abcd", FIT);
-  finishTextDraft(store);
+  const surface = drafting();
+  update(surface, refitTextDraft("abcd", FIT));
+  modify(surface, finishTextDraft);
 
-  dropTextDraft(store);
+  update(surface, dropTextDraft);
 
-  expect(store.getState().floating).toEqual({ kind: "none" });
+  expect(current(surface).floating).toEqual({ kind: "none" });
 });
 
 it("keeps a saving Text Draft through a read that does not yet hold it", () => {
-  const store = drafting();
-  refitTextDraft(store, "abcd", FIT);
-  finishTextDraft(store);
+  const surface = drafting();
+  update(surface, refitTextDraft("abcd", FIT));
+  modify(surface, finishTextDraft);
 
-  ingestRecords(store, [
-    PARAGRAPH,
-    WORD,
-    typed("TEXT2222", { comment: "abcde" }),
-    typed("TEXT3333", { color: "#ff6666" }),
-  ]);
+  update(
+    surface,
+    ingestRecords([
+      PARAGRAPH,
+      WORD,
+      typed("TEXT2222", { comment: "abcde" }),
+      typed("TEXT3333", { color: "#ff6666" }),
+    ]),
+  );
 
-  expect(selectTextDraft(store.getState())?.phase).toBe("saving");
+  expect(selectTextDraft(current(surface))?.phase).toBe("saving");
 });
 
 it("keeps a Text Draft still typing through a read of the very same text", () => {
-  const store = drafting();
-  refitTextDraft(store, "abcd", FIT);
+  const surface = drafting();
+  update(surface, refitTextDraft("abcd", FIT));
 
-  ingestRecords(store, [PARAGRAPH, WORD, typed("TEXT1111")]);
+  update(surface, ingestRecords([PARAGRAPH, WORD, typed("TEXT1111")]));
 
-  expect(selectTextDraft(store.getState())?.phase).toBe("typing");
+  expect(selectTextDraft(current(surface))?.phase).toBe("typing");
 });
 
 it("keeps a Text Draft when a tool is armed, which finishes it instead", () => {
-  const store = drafting();
+  const surface = drafting();
 
-  arm(store, "note");
+  update(surface, arm("note"));
 
-  expect(selectTextDraft(store.getState())).not.toBeNull();
+  expect(selectTextDraft(current(surface))).not.toBeNull();
 });
 
 it("opens a Text Draft on a font-size square round the press, and stands the tool down in the same update", () => {
-  const store = reader();
-  arm(store, "text");
-  selectMark(store, "WRDS2222");
+  const surface = reader();
+  update(surface, arm("text"));
+  update(surface, selectMark("WRDS2222"));
   const frames: { armed: string | null; kind: string }[] = [];
-  store.subscribe(
-    ({ armed, floating }) => ({ armed, kind: floating.kind }),
+  watch(
+    surface.registry,
+    selection(
+      surface,
+      ({ armed, floating }) => ({ armed, kind: floating.kind }),
+      sameFlat,
+    ),
     (frame) => frames.push(frame),
-    { equalityFn: sameFlat },
   );
 
-  openTextDraft(store, {
-    pageIndex: 0,
-    at: [100, 500],
-    fontSize: 14,
-    color: "#ffd400",
-  });
+  update(
+    surface,
+    openTextDraft({
+      pageIndex: 0,
+      at: [100, 500],
+      fontSize: 14,
+      color: "#ffd400",
+    }),
+  );
 
   expect(frames).toEqual([{ armed: null, kind: "text-draft" }]);
-  expect(selectTextDraft(store.getState())).toEqual({
+  expect(selectTextDraft(current(surface))).toEqual({
     kind: "text-draft",
     pageIndex: 0,
     fontSize: 14,
@@ -1248,13 +1332,13 @@ it("opens a Text Draft on a font-size square round the press, and stands the too
 });
 
 it("refits the box to what is typed, keeping its top-left corner", () => {
-  const store = drafting();
+  const surface = drafting();
 
-  refitTextDraft(store, "abcd", FIT);
+  update(surface, refitTextDraft("abcd", FIT));
 
   // Four characters at 7 points, plus Zotero's 5 points; one line of 1.2
   // font sizes hangs from the corner at [93, 507].
-  const draft = selectTextDraft(store.getState());
+  const draft = selectTextDraft(current(surface));
   expect(draft?.text).toBe("abcd");
   draft?.box.forEach((value, index) =>
     expect(value).toBeCloseTo(FITTED[index]!, 9),
@@ -1262,12 +1346,12 @@ it("refits the box to what is typed, keeping its top-left corner", () => {
 });
 
 it("stores a box as wide as each line the fit measured, once Zotero rounds it", () => {
-  const store = drafting();
+  const surface = drafting();
   // Two lines, each a hair over ten points in the draft's font.
   const measure = (text: string) => text.length * 5.0002;
-  refitTextDraft(store, "ab\ncd", { ...FIT, measure });
+  update(surface, refitTextDraft("ab\ncd", { ...FIT, measure }));
 
-  const { box } = selectTextDraft(store.getState())!;
+  const { box } = selectTextDraft(current(surface))!;
   const [stored] = JSON.parse(
     writePosition({ pageIndex: 0, fontSize: 14, rotation: 0, rects: [box] }),
   ).rects as number[][];
@@ -1281,65 +1365,74 @@ it("stores a box as wide as each line the fit measured, once Zotero rounds it", 
 });
 
 it("holds a finished Text Draft as saving and hands it to the create", () => {
-  const store = drafting();
-  refitTextDraft(store, "abcd", FIT);
+  const surface = drafting();
+  update(surface, refitTextDraft("abcd", FIT));
 
-  const committed = finishTextDraft(store);
+  const committed = modify(surface, finishTextDraft);
 
   expect(committed).toMatchObject({ text: "abcd", phase: "saving" });
-  expect(selectTextDraft(store.getState())).toBe(committed);
+  expect(selectTextDraft(current(surface))).toBe(committed);
 });
 
 it("swaps a saving Text Draft for its record in one update", () => {
-  const store = drafting();
-  refitTextDraft(store, "abcd", FIT);
-  finishTextDraft(store);
+  const surface = drafting();
+  update(surface, refitTextDraft("abcd", FIT));
+  modify(surface, finishTextDraft);
   const frames: { records: number; draft: boolean }[] = [];
-  store.subscribe(
-    (state) => ({
-      records: state.records.length,
-      draft: selectTextDraft(state) !== null,
-    }),
+  watch(
+    surface.registry,
+    selection(
+      surface,
+      (state) => ({
+        records: state.records.length,
+        draft: selectTextDraft(state) !== null,
+      }),
+      sameFlat,
+    ),
     (frame) => frames.push(frame),
-    { equalityFn: sameFlat },
   );
 
   // Zotero stores the rects rounded and the colour as it likes.
-  ingestRecords(store, [
-    PARAGRAPH,
-    WORD,
-    typed("TEXT1111", { color: "#FFD400" }),
-  ]);
+  update(
+    surface,
+    ingestRecords([PARAGRAPH, WORD, typed("TEXT1111", { color: "#FFD400" })]),
+  );
 
   // Never both drawn, and never neither.
   expect(frames).toEqual([{ records: 3, draft: false }]);
 });
 
 it("drops a settled Text Draft whose record already stands", () => {
-  const store = drafting();
-  refitTextDraft(store, "abcd", FIT);
-  finishTextDraft(store);
+  const surface = drafting();
+  update(surface, refitTextDraft("abcd", FIT));
+  modify(surface, finishTextDraft);
   // Zotero stored another box than was sent, so no identity matches.
-  ingestRecords(store, [
-    PARAGRAPH,
-    WORD,
-    { ...typed("TEXT1111"), position: typed("X").position, comment: "abcd " },
-  ]);
-  expect(selectTextDraft(store.getState())).not.toBeNull();
+  update(
+    surface,
+    ingestRecords([
+      PARAGRAPH,
+      WORD,
+      { ...typed("TEXT1111"), position: typed("X").position, comment: "abcd " },
+    ]),
+  );
+  expect(selectTextDraft(current(surface))).not.toBeNull();
 
-  settleTextDraft(store, "TEXT1111");
+  update(surface, settleTextDraft("TEXT1111"));
 
-  expect(store.getState().floating).toEqual({ kind: "none" });
+  expect(current(surface).floating).toEqual({ kind: "none" });
 });
 
 it("swaps a settled Text Draft for the record of its key when the read lands", () => {
-  const store = drafting();
-  refitTextDraft(store, "abcd", FIT);
-  finishTextDraft(store);
+  const surface = drafting();
+  update(surface, refitTextDraft("abcd", FIT));
+  modify(surface, finishTextDraft);
 
-  settleTextDraft(store, "TEXT1111");
-  expect(selectTextDraft(store.getState())?.key).toBe("TEXT1111");
-  ingestRecords(store, [PARAGRAPH, WORD, typed("TEXT1111", { comment: "x" })]);
+  update(surface, settleTextDraft("TEXT1111"));
+  expect(selectTextDraft(current(surface))?.key).toBe("TEXT1111");
+  update(
+    surface,
+    ingestRecords([PARAGRAPH, WORD, typed("TEXT1111", { comment: "x" })]),
+  );
 
-  expect(store.getState().floating).toEqual({ kind: "none" });
+  expect(current(surface).floating).toEqual({ kind: "none" });
 });

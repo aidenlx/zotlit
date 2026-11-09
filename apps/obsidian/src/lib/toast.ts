@@ -150,7 +150,14 @@ export function rethrowWithNotice(
   error: unknown,
   options: RethrowWithNoticeOptions,
 ): never {
-  promiseToast(Promise.reject(error), options).catch(() => void 0);
+  promiseToast(
+    Promise.reject(
+      error instanceof Error
+        ? error
+        : new Error(String(error), { cause: error }),
+    ),
+    options,
+  ).catch(() => void 0);
   throw error;
 }
 

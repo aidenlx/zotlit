@@ -95,7 +95,7 @@ describe("openScenarioDatabase", () => {
 
 describe("scenario seed", () => {
   const item = (scenario: ScenarioDatabase, name: ScenarioItemName): Item => {
-    const { db } = scenario!;
+    const { db } = scenario;
     const { key, library } = SCENARIO_ITEMS[name];
     const [found] = getItemsByKey(db, [key], {
       libraryID: SCENARIO_LIBRARIES[library].libraryID,

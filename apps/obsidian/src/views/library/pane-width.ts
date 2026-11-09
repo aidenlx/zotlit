@@ -10,6 +10,8 @@
 // @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import { setTooltip } from "obsidian";
 
+import { observeResize } from "@/lib/observe-resize";
+import { paneDivider } from "@/lib/pane-divider";
 import { pointerDrag } from "@/lib/pointer-drag";
 import type { PointerDrag } from "@/lib/pointer-drag";
 
@@ -25,17 +27,6 @@ const STEP = 16;
 const RESIZING = {
   x: "zt-is-resizing-library-card",
   y: "zt-is-resizing-library-card-height",
-} as const;
-
-/**
- * The pane's inner edge, by its axis: a strip with the resize cursor, whose
- * line shows on hover and focus and holds the accent while it is dragged.
- */
-const HANDLE_LINE =
-  "zt:absolute zt:z-(--layer-cover) zt:touch-none zt:outline-none zt:after:absolute zt:hover:after:bg-(--interactive-accent) zt:focus-visible:after:bg-(--interactive-accent) zt:[&.is-active]:after:bg-(--interactive-accent)";
-const HANDLE = {
-  x: `${HANDLE_LINE} zt:inset-y-0 zt:w-2 zt:cursor-col-resize zt:after:inset-y-0 zt:after:start-[3px] zt:after:w-0.5`,
-  y: `${HANDLE_LINE} zt:inset-x-0 zt:-top-1 zt:h-2 zt:cursor-row-resize zt:after:inset-x-0 zt:after:top-[3px] zt:after:h-0.5`,
 } as const;
 
 export interface PaneWidthHost {
@@ -97,7 +88,7 @@ export class PaneWidth {
   readonly #axis: "x" | "y";
   /** The size on screen, in pixels. */
   #width: number;
-  #observer: ResizeObserver | null = null;
+  #observer: Disposable | null = null;
   #drag: AbortController | null = null;
 
   constructor(
@@ -111,11 +102,9 @@ export class PaneWidth {
     this.#width = options.fallback;
     const axis = options.side === "top" ? "y" : "x";
     this.#axis = axis;
-    const place = { start: "zt:-start-1", end: "zt:-end-1", top: "" }[
-      options.side
-    ];
+    // The divider draws the pane's line on that edge.
     const handle = pane.createDiv({
-      cls: `${HANDLE[axis]} ${place} ${options.cls}`,
+      cls: `${paneDivider({ flow: "overlay", edge: options.side })} ${options.cls}`,
       attr: {
         role: "separator",
         tabindex: "0",
@@ -141,13 +130,12 @@ export class PaneWidth {
 
   /** Follow the shell's size, which sets the most the pane can take. */
   load(): void {
-    if (typeof ResizeObserver === "undefined") return;
-    this.#observer = new ResizeObserver(() => this.apply());
-    this.#observer.observe(this.#options.shell);
+    const { shell } = this.#options;
+    this.#observer = observeResize(shell, [shell], () => this.apply());
   }
 
   unload(): void {
-    this.#observer?.disconnect();
+    this.#observer?.[Symbol.dispose]();
     this.#observer = null;
     this.#drag?.abort();
   }

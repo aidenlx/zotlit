@@ -2,9 +2,12 @@
 // live in memory, and the theme names each part's class after the part.
 
 import type { RenderRequest } from "#/render/request";
-import type { TemplateRenderResult } from "#/render/result";
+import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { render as renderUI } from "@testing-library/react";
-import { Effect } from "effect";
+import { Effect, Layer, Queue } from "effect";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { createWorkbenchEditor, WorkbenchEditorProvider } from "./editor";
@@ -14,15 +17,21 @@ import {
   WorkbenchHostProvider,
 } from "./host";
 import type {
+  WorkbenchFieldDetailsProps,
+  WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchMenuRequest,
   WorkbenchPreferenceScope,
   WorkbenchSuggesterRequest,
 } from "./host";
 import { WorkbenchMessagesProvider } from "./messages";
-import { makeWorkbenchRunner } from "./run";
-import type { RenderScheduler } from "./scheduler";
-import type { WorkbenchStore, WorkbenchViewState } from "./store";
+import { patch } from "./model";
+import type {
+  WorkbenchItemData,
+  WorkbenchModel,
+  WorkbenchViewState,
+} from "./model";
+import type { ViewSize, WorkbenchPanels } from "./panel-layout";
 import { m } from "./test-messages";
 import { WorkbenchThemeProvider } from "./theme";
 import type { WorkbenchClassMap, WorkbenchTheme } from "./theme";
@@ -40,6 +49,8 @@ export interface PendingRender {
   reject(error: unknown): void;
   /** Whether the tree interrupted the render before it was answered. */
   readonly interrupted: boolean;
+  /** Settles once the tree interrupts the render. */
+  readonly interruption: Promise<void>;
 }
 
 /** A request the host holds open while `hold` is set. */
@@ -57,6 +68,8 @@ export interface HeldRequest {
   fail(error: unknown): void;
   /** Whether the tree interrupted the request before it was answered. */
   readonly interrupted: boolean;
+  /** Settles once the tree interrupts the request. */
+  readonly interruption: Promise<void>;
 }
 
 export interface FakeHost extends WorkbenchHost {
@@ -67,9 +80,13 @@ export interface FakeHost extends WorkbenchHost {
     confirms: string[];
     /** Every text handed to the clipboard, in order. */
     copies: string[];
+    /** How many times the tree moved focus to the Fields action. */
+    actionFocuses: number;
   };
   /** Every render asked for, in order, none of them answered yet. */
   readonly renders: PendingRender[];
+  /** Takes each render as it starts: the signal a render was asked for. */
+  readonly started: Queue.Queue<PendingRender>;
   /**
    * While set, `confirm`, `suggester`, `copy` and every Match data read wait
    * in `held` until the test answers them; otherwise they answer at once.
@@ -81,8 +98,6 @@ export interface FakeHost extends WorkbenchHost {
   confirmAnswer: boolean;
   /** Whether `copy` fails, which stands for a clipboard the host refused. */
   copyFails: boolean;
-  /** Closes the runner, as a host does when its mount goes. */
-  close(): void;
 }
 
 export function fakeHost(): FakeHost {
@@ -90,8 +105,8 @@ export function fakeHost(): FakeHost {
   const key = (scope: WorkbenchPreferenceScope, name: string) =>
     `${scope}:${name}`;
   const renders: PendingRender[] = [];
+  const started = Effect.runSync(Queue.unbounded<PendingRender>());
   const held: HeldRequest[] = [];
-  const runner = makeWorkbenchRunner();
   /** A request that answers at once, or waits in `held` while `hold` is set. */
   function holdable<A, E>(
     kind: HeldRequest["kind"],
@@ -101,6 +116,7 @@ export function fakeHost(): FakeHost {
       host.hold
         ? Effect.callback<A, E>((resume) => {
             let interrupted = false;
+            const { promise, resolve } = Promise.withResolvers<void>();
             held.push({
               kind,
               answer: (value) => resume(Effect.succeed(value as A)),
@@ -108,9 +124,11 @@ export function fakeHost(): FakeHost {
               get interrupted() {
                 return interrupted;
               },
+              interruption: promise,
             });
             return Effect.sync(() => {
               interrupted = true;
+              resolve();
             });
           })
         : immediate(),
@@ -118,11 +136,17 @@ export function fakeHost(): FakeHost {
   }
   const host: FakeHost = {
     messages: m,
-    run: runner.run,
-    close: runner.close,
     getLocale: () => "en",
-    calls: { menus: [], suggesters: [], notices: [], confirms: [], copies: [] },
+    calls: {
+      menus: [],
+      suggesters: [],
+      notices: [],
+      confirms: [],
+      copies: [],
+      actionFocuses: 0,
+    },
     renders,
+    started,
     hold: false,
     held,
     preferences,
@@ -154,13 +178,15 @@ export function fakeHost(): FakeHost {
           : Effect.void;
       }),
     communityUrl: "https://example.invalid/community",
+    docsUrl: "https://example.invalid",
     // Every render is held open, so a test decides when a result lands and
     // what the reader had time to change before it did.
     render: (request) =>
       Effect.callback<TemplateRenderResult, WorkbenchHostError>((resume) => {
         const identity = renderIdentity(request);
         let interrupted = false;
-        renders.push({
+        const { promise, resolve } = Promise.withResolvers<void>();
+        const pending: PendingRender = {
           request,
           answer: (result) =>
             resume(
@@ -175,9 +201,13 @@ export function fakeHost(): FakeHost {
           get interrupted() {
             return interrupted;
           },
-        });
+          interruption: promise,
+        };
+        renders.push(pending);
+        Queue.offerUnsafe(started, pending);
         return Effect.sync(() => {
           interrupted = true;
+          resolve();
         });
       }),
     markdown: ({ markdown }) => <div role="document">{markdown}</div>,
@@ -198,6 +228,13 @@ export function fakeHost(): FakeHost {
       ),
     },
     insertTarget: () => null,
+    fieldsAction: {
+      popover: FakeFieldsPopover,
+      popoverId: "fake-fields-panel",
+      details: FakeFieldDetails,
+      insertShortcut: "Ctrl+Enter",
+      focus: () => void host.calls.actionFocuses++,
+    },
     persistence: {
       read: (scope, name) => preferences.get(key(scope, name)) ?? null,
       write: (scope, name, value) => {
@@ -222,14 +259,20 @@ export const FAKE_THEME: WorkbenchTheme = {
   icon: (name) => <i data-icon={name} />,
 };
 
-/** Disposing it disposes the scheduler `mount` built, so bind it with `using`. */
+/** Disposing it disposes the editor and registry `mount` built, so bind it with `using`. */
 export interface Mounted extends Disposable {
   host: FakeHost;
-  store: WorkbenchStore;
+  /** The registry the editor's model lives in. */
+  registry: AtomRegistry.AtomRegistry;
+  model: WorkbenchModel;
   controller: WorkbenchDocumentController;
-  scheduler: RenderScheduler;
   ui: ReactNode;
+  /** Puts other children under the same host and editor, for a rerender. */
+  wrap(children: ReactNode): ReactNode;
 }
+
+/** The one runtime of the test host, as a host keeps one for all its editors. */
+export const TEST_RUNTIME = Atom.runtime(Layer.empty);
 
 /** The tree under a fake host and theme, over the built-in Default. */
 export function mount(
@@ -237,39 +280,83 @@ export function mount(
   {
     source = DEFAULT_PROFILE_SOURCE,
     state,
-  }: { source?: string; state?: Partial<WorkbenchViewState> } = {},
+    panels,
+    viewSize,
+  }: {
+    source?: string;
+    state?: Partial<WorkbenchViewState>;
+    panels?: WorkbenchPanels;
+    viewSize?: Atom.Atom<ViewSize | null>;
+  } = {},
 ): Mounted {
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(source);
+  const registry = AtomRegistry.make({
+    defaultIdleTTL: 0,
+    timeoutResolution: 1,
+  });
   const editor = createWorkbenchEditor({
     host,
     controller,
-    state,
+    registry,
+    runtime: TEST_RUNTIME,
+    ...(state ? { state } : {}),
+    ...(panels ? { panels } : {}),
+    ...(viewSize ? { viewSize } : {}),
   });
-  const { store, scheduler } = editor;
+  const { model } = editor;
+  const wrap = (children: ReactNode) => (
+    <WorkbenchThemeProvider theme={FAKE_THEME}>
+      <WorkbenchHostProvider host={host}>
+        <WorkbenchEditorProvider editor={editor}>
+          {children}
+        </WorkbenchEditorProvider>
+      </WorkbenchHostProvider>
+    </WorkbenchThemeProvider>
+  );
   return {
     host,
-    store,
+    registry,
+    model,
     controller,
-    scheduler,
-    ui: (
-      <WorkbenchThemeProvider theme={FAKE_THEME}>
-        <WorkbenchHostProvider host={host}>
-          <WorkbenchEditorProvider
-            store={store}
-            controller={controller}
-            scheduler={scheduler}
-          >
-            {children}
-          </WorkbenchEditorProvider>
-        </WorkbenchHostProvider>
-      </WorkbenchThemeProvider>
-    ),
+    ui: wrap(children),
+    wrap,
     [Symbol.dispose]() {
       editor[Symbol.dispose]();
-      host.close();
+      registry.dispose();
     },
   };
+}
+
+/** What a test drives: the registry and the model the editor keeps in it. */
+type Driven = Pick<Mounted, "registry" | "model">;
+
+/** Sets the chosen Item's data, which the test host keeps in a writable atom. */
+export function setItemData(
+  { registry, model }: Driven,
+  data: Partial<WorkbenchItemData>,
+): void {
+  if (!Atom.isWritable(model.itemData))
+    throw new Error("The test host keeps the Item data in a writable atom.");
+  registry.update(model.itemData, patch(data));
+}
+
+/** Presses Run on the model's scheduler. */
+export function pressRun({ registry, model }: Driven): void {
+  registry.set(model.scheduler.run, undefined);
+}
+
+/** Shows `diagnostic` as the host's report of a render it could not run. */
+export function reportFailure(
+  { registry, model }: Driven,
+  diagnostic: RenderDiagnostic,
+): void {
+  registry.set(model.scheduler.fail, diagnostic);
+}
+
+/** The state the preview reads. */
+export function schedulerState({ registry, model }: Driven) {
+  return registry.get(model.scheduler.state);
 }
 
 /** Supply messages for component tests that exercise the optional-host surface. */
@@ -285,4 +372,70 @@ export function renderWithMessages(
     ),
     ...options,
   });
+}
+
+/**
+ * The fake host's Fields popover: it closes on Escape the panel leaves to it,
+ * and on a press outside, as a host's does. Closed, it records whether focus went back to the Fields
+ * action in `data-return-focus`.
+ */
+function FakeFieldsPopover({
+  open,
+  onClose,
+  labelledBy,
+  returnFocus,
+  onEscape,
+  children,
+}: WorkbenchFieldsPopoverProps) {
+  const surface = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const doc = surface.current?.ownerDocument;
+    if (!doc) return;
+    const outside = (event: Event) => {
+      if (!surface.current?.contains(event.target as Node)) onClose();
+    };
+    doc.addEventListener("pointerdown", outside, true);
+    return () => doc.removeEventListener("pointerdown", outside, true);
+  }, [open, onClose]);
+  if (!open) return <span hidden data-return-focus={String(returnFocus)} />;
+  return (
+    <div
+      ref={surface}
+      id="fake-fields-panel"
+      role="dialog"
+      aria-labelledby={labelledBy}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.defaultPrevented && !onEscape())
+          onClose();
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The fake host's popover for a field's details: it stands inside the Fields
+ * popover, so a press in it is inside that one, and names the row it stands
+ * level with in `data-anchor`.
+ */
+function FakeFieldDetails({
+  anchor,
+  panel,
+  labelledBy,
+  children,
+}: WorkbenchFieldDetailsProps) {
+  return (
+    <div
+      data-fake-details=""
+      data-beside={panel.dataset.state}
+      data-anchor={anchor
+        .closest("[data-workbench-field]")
+        ?.getAttribute("data-workbench-field")}
+      aria-labelledby={labelledBy}
+    >
+      {children}
+    </div>
+  );
 }

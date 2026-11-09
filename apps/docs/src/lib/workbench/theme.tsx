@@ -1,13 +1,14 @@
 import { EditorView } from "@codemirror/view";
 import {
+  Braces,
+  Pin,
+  PinOff,
   Copy,
   Check,
   Code2,
   Plus,
   Trash2,
   X,
-  ArrowUp,
-  ArrowDown,
   Search,
   Eye,
   Pencil,
@@ -19,6 +20,8 @@ import {
   ChevronUp,
   CircleAlert,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Ellipsis,
   TextAlignStart,
   Tags,
@@ -27,8 +30,19 @@ import {
   SquareCheck,
   Calendar,
   Clock,
-  CircleHelp,
   GripVertical,
+  TextCursorInput,
+  CornerDownRight,
+  LayoutList,
+  BookMarked,
+  Fingerprint,
+  Paperclip,
+  FolderTree,
+  Link,
+  Database,
+  Highlighter,
+  FileText,
+  Quote,
 } from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
@@ -50,13 +64,10 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   "chevron-right": ChevronRight,
   more: Ellipsis,
   copy: Copy,
-  help: CircleHelp,
   confirm: Check,
   add: Plus,
   remove: Trash2,
   close: X,
-  "move-up": ArrowUp,
-  "move-down": ArrowDown,
   "choose-sample": Search,
   "chevron-up": ChevronUp,
   error: CircleAlert,
@@ -77,6 +88,23 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   "property-date": Calendar,
   "property-datetime": Clock,
   drag: GripVertical,
+  "expand-all": ChevronsUpDown,
+  "collapse-all": ChevronsDownUp,
+  fields: Braces,
+  insert: TextCursorInput,
+  result: CornerDownRight,
+  pin: Pin,
+  unpin: PinOff,
+  "section-common": LayoutList,
+  "section-reference": BookMarked,
+  "section-identifiers": Fingerprint,
+  "section-content": Paperclip,
+  "section-organization": FolderTree,
+  "section-links": Link,
+  "section-record": Database,
+  "section-annotation": Highlighter,
+  "section-source": FileText,
+  "section-citation": Quote,
 };
 
 /** A read-only Properties block: one row per property, key beside value. */
@@ -90,6 +118,29 @@ const nameInput = inputVariants({ size: "xs" });
 const nameRow =
   "flex flex-col gap-2 rounded-md border border-fd-border bg-fd-card px-2.5 py-2";
 
+/**
+ * The width each column's handle takes between the column and the editor,
+ * in pixels: the `w-3` of the `edge` part below. The placement counts it.
+ */
+export const PANEL_HANDLE_WIDTH = 12;
+
+/**
+ * A row that drags by its handle: it fades while it moves, and a primary line
+ * centred in the gap beside it marks the place it lands. The line is the row's
+ * positioned `::before`, so it takes no room and nothing moves. A list whose
+ * rows sit further apart than `gap-2` sets `--row-gap`, and a row with a
+ * border sets `--row-border`, since the line is placed from inside it. The
+ * Match tree and the Properties list share it.
+ */
+const dragRow = cn(
+  "relative data-dragging:opacity-50",
+  "before:pointer-events-none before:absolute before:inset-x-0 before:hidden before:h-0.5 before:rounded-full before:bg-fd-primary",
+  "data-[drop=before]:before:top-[calc(-0.5*(var(--row-gap,calc(var(--spacing)*2))+var(--spacing)*0.5)-var(--row-border,0px))] data-[drop=before]:before:block",
+  "data-[drop=after]:before:bottom-[calc(-0.5*(var(--row-gap,calc(var(--spacing)*2))+var(--spacing)*0.5)-var(--row-border,0px))] data-[drop=after]:before:block",
+);
+/** The grip a row drags by: shown while the pointer is over its row or it has focus. */
+const dragHandle =
+  "flex min-w-6 shrink-0 items-center justify-center rounded-sm text-fd-muted-foreground cursor-grab active:cursor-grabbing opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-fd-ring aria-disabled:hidden [&_svg]:size-4";
 export const WEB_THEME: WorkbenchTheme = {
   editorExtension: (slice, language) => [
     editorTheme,
@@ -122,9 +173,11 @@ export const WEB_THEME: WorkbenchTheme = {
       group:
         "flex min-w-0 flex-1 flex-col gap-2 rounded-md border border-fd-border p-2 data-[state=root]:border-0 data-[state=root]:p-0 [&>[data-part=actions]:first-child]:justify-between data-[drop=into]:ring-2 data-[drop=into]:ring-fd-primary",
       rows: "flex flex-col gap-2 list-none m-0 p-0",
-      row: "grid min-w-0 grid-cols-[auto_4.5rem_minmax(0,1fr)] items-start gap-2 [&>[data-part=group]]:col-span-2 data-dragging:opacity-50 [&:hover>[data-part=handle]]:opacity-100 data-[drop=before]:shadow-[0_calc(var(--spacing)*-0.5)_0_0_var(--color-fd-primary)] data-[drop=after]:shadow-[0_calc(var(--spacing)*0.5)_0_0_var(--color-fd-primary)]",
-      handle:
-        "flex min-h-8 min-w-6 shrink-0 items-center justify-center -me-1 rounded-sm text-fd-muted-foreground cursor-grab active:cursor-grabbing opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-fd-ring aria-disabled:hidden [&_svg]:size-4",
+      row: cn(
+        "grid min-w-0 grid-cols-[auto_4.5rem_minmax(0,1fr)] items-start gap-2 [&:hover>[data-part=handle]]:opacity-100 [&>[data-part=group]]:col-span-2",
+        dragRow,
+      ),
+      handle: cn(dragHandle, "-me-1 min-h-8"),
       condition: "min-w-0 flex-1",
       statement:
         "flex flex-wrap min-w-0 items-start gap-1 [&_[data-part=wrapper]]:w-auto",
@@ -152,30 +205,48 @@ export const WEB_THEME: WorkbenchTheme = {
       explorer: "flex min-h-0 flex-1 flex-col gap-2 p-2",
       header: "flex flex-wrap items-center justify-between gap-2",
       heading: "text-xs font-semibold",
-      search: "w-full",
-      body: "min-h-0 flex-1 overflow-auto",
+      "search-row": "flex items-center gap-1",
+      search:
+        "h-7 min-w-0 flex-1 rounded-md border border-fd-border bg-fd-background px-2 text-xs placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-fd-ring",
+      "sections-toggle": cn(historyButton, "shrink-0"),
+      /** Never shorter than a sticky section header and one whole row. */
+      body: "min-h-18 flex-1 overflow-auto overscroll-contain",
+      "keys-hint":
+        "-mx-2 -mb-2 shrink-0 border-t border-fd-border px-3 py-1.5 text-xs text-fd-muted-foreground",
       empty: "text-fd-muted-foreground text-xs",
     },
     explorerTree: {
       sections: "flex flex-col gap-2",
       section: "",
+      /** Stays at the top while its section scrolls past, on the panel's ground. */
+      "section-heading": "sticky top-0 z-10 bg-fd-card",
       "section-header":
         "flex w-full cursor-pointer items-center gap-1 rounded px-1 py-1 text-start text-xs font-semibold text-fd-muted-foreground hover:bg-fd-muted hover:text-fd-foreground aria-disabled:cursor-default",
+      "section-icon":
+        "flex size-3 shrink-0 text-fd-muted-foreground [&_svg]:size-3",
       "section-chevron":
-        "flex size-3 shrink-0 items-center justify-center transition-transform duration-100 ease-out data-[expanded]:rotate-90",
-      "section-label": "min-w-0 flex-1",
+        "ms-auto flex size-3 shrink-0 items-center justify-center transition-transform duration-100 ease-out data-[expanded]:rotate-90 motion-reduce:transition-none",
+      "section-label": "min-w-0 truncate",
       "section-count": "font-normal tabular-nums text-fd-muted-foreground",
       tree: "text-xs leading-relaxed",
       spacer: "mt-[3px] size-3 shrink-0",
       /** Key and value share one line while both fit; a longer value drops to its own line beneath the key. */
       contents:
-        "flex min-w-0 flex-1 flex-wrap gap-x-1.5 select-text [overflow-wrap:anywhere]",
-      group: "ms-3 border-s border-fd-border ps-2",
+        "flex min-w-0 flex-1 flex-wrap gap-x-1.5 select-text [overflow-wrap:anywhere] data-[state=line]:cursor-pointer data-[state=line]:items-center data-[state=line]:self-stretch data-[state=line]:flex-nowrap data-[state=line]:overflow-hidden data-[state=line]:whitespace-nowrap data-[state=line]:*:data-[part=value]:truncate",
+      /**
+       * A Fields Panel row's label, from the section icon's edge, with the
+       * chevron of a field that opens after it. A nested field's label
+       * stands a little in, behind the guide line its siblings continue.
+       */
+      "field-label":
+        "flex w-2/5 min-w-0 shrink-0 items-center gap-1 self-stretch *:data-[part=chevron]:mt-0 *:data-[part=key]:truncate data-[state=nested]:ms-1 data-[state=nested]:border-s data-[state=nested]:border-fd-border data-[state=nested]:ps-2",
+      group:
+        "ms-3 border-s border-fd-border ps-2 data-[state=line]:ms-0 data-[state=line]:border-0 data-[state=line]:ps-0 data-[state=line]:in-data-[part=group]:ps-3",
       chevron:
         "mt-[3px] flex size-3 shrink-0 cursor-pointer items-center justify-center text-fd-muted-foreground transition-transform duration-100 ease-out hover:text-fd-foreground data-[expanded]:rotate-90",
       "chevron-icon": "size-3 [&_svg]:size-3",
       actions:
-        "absolute top-0.5 end-0 flex items-center gap-0.5 bg-linear-to-l from-fd-background from-60% to-transparent ps-6 opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
+        "absolute top-0.5 end-0 flex items-center gap-0.5 bg-linear-to-l from-fd-background from-60% to-transparent ps-6 group-data-line:static group-data-line:bg-none group-data-line:ps-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-data-selected:opacity-100 group-data-open:opacity-100 [@media(hover:none)]:opacity-100",
       action:
         "rounded-xs flex size-4 cursor-pointer items-center justify-center text-fd-muted-foreground hover:bg-fd-muted hover:text-fd-foreground",
       key: "font-mono text-fd-foreground data-[state=labeled]:font-sans data-[state=labeled]:font-medium",
@@ -186,7 +257,8 @@ export const WEB_THEME: WorkbenchTheme = {
       link: "break-all text-fd-primary underline decoration-dotted hover:decoration-solid",
       "long-toggle":
         "rounded-xs ms-0.5 cursor-pointer px-1 text-fd-muted-foreground underline decoration-dotted underline-offset-2 select-none hover:bg-fd-muted hover:text-fd-foreground",
-      row: "group rounded relative flex min-w-0 items-start gap-x-1 px-0.5 hover:bg-fd-muted data-[state=matched]:bg-fd-accent",
+      // The row ↑/↓ selected wears a ring that hover never shows.
+      row: "group rounded relative flex min-w-0 items-start gap-x-1 px-0.5 data-line:h-7 data-line:items-center data-line:px-1 hover:bg-fd-muted data-[state=matched]:bg-fd-accent data-selected:bg-fd-muted data-selected:ring-1 data-selected:ring-inset data-selected:ring-fd-ring data-open:bg-fd-accent",
       opaque: "break-words text-cyan-700 dark:text-cyan-400",
       color:
         "inline-flex min-w-0 items-center gap-1 text-emerald-700 dark:text-emerald-400",
@@ -262,16 +334,21 @@ export const WEB_THEME: WorkbenchTheme = {
       empty:
         "rounded-md border border-dashed border-fd-border p-3 text-xs leading-normal text-pretty text-fd-muted-foreground",
       rows: "flex flex-col gap-2",
-      row: "rounded-md border border-fd-border bg-fd-card",
-      "row-header": "grid grid-cols-[minmax(0,1fr)_auto] px-2.5 py-1.5",
+      row: cn(
+        "rounded-md border border-fd-border bg-fd-card [--row-border:1px] [&:hover_[data-part=handle]]:opacity-100",
+        dragRow,
+      ),
+      "row-header":
+        "grid grid-cols-[auto_minmax(0,1fr)_auto] px-2.5 py-1.5 ps-1",
+      handle: cn(dragHandle, "col-start-1 row-start-1 min-h-7 self-start"),
       "row-toggle":
-        "col-span-2 col-start-1 row-start-1 grid min-w-0 cursor-pointer grid-cols-subgrid rounded-md text-start",
+        "col-span-2 col-start-2 row-start-1 grid min-w-0 cursor-pointer grid-cols-subgrid rounded-md text-start",
       "row-name":
         "col-start-1 row-start-1 flex min-h-7 min-w-0 items-center gap-2 pe-2",
       key: "min-w-0 flex-1 font-mono text-sm font-medium break-words",
       label: "text-xs font-medium data-[state=problem]:text-destructive",
       "row-actions":
-        "z-10 col-start-2 row-start-1 flex items-center gap-0.5 self-start",
+        "z-10 col-start-3 row-start-1 flex items-center gap-0.5 self-start",
       edit: cn(
         buttonVariants({ variant: "ghost", size: "icon-xs" }),
         "aria-pressed:bg-fd-muted",
@@ -302,18 +379,13 @@ export const WEB_THEME: WorkbenchTheme = {
       "secondary-action": buttonVariants({ variant: "ghost", size: "xs" }),
     },
     annotation: {
-      "help-bar": "mb-3 shrink-0 leading-normal",
-      "help-button": buttonVariants({ variant: "ghost", size: "icon-xs" }),
-      "help-lede": "text-xs text-pretty text-fd-muted-foreground",
-      "help-toggle": "ms-1 inline-block align-baseline",
-      help: "mb-3 flex max-h-40 shrink-0 flex-col gap-1 overflow-auto text-xs leading-normal text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-fd-ring",
-
-      "sample-bar": "mb-2 flex shrink-0 items-center gap-2",
+      // The inline Note-tab chooser keeps its own space; the compact
+      // trigger sits in the item row, which spaces its controls.
+      "sample-bar":
+        "flex shrink-0 items-center gap-2 data-[state=labelled]:mb-2",
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",
       pane: "flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card",
-      pointer:
-        "mt-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-2.5 py-1.5 text-xs leading-normal",
       heading: "font-semibold",
       hint: "text-pretty text-fd-muted-foreground",
       "section-bar":
@@ -346,9 +418,9 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     sliceEditor: {
       "slice-editor":
-        "flex min-h-0 flex-1 flex-col rounded-md has-[.cm-content:focus-visible]:outline-2 has-[.cm-content:focus-visible]:outline-offset-2 has-[.cm-content:focus-visible]:outline-fd-ring",
+        "flex flex-1 flex-col rounded-md has-[.cm-content:focus-visible]:outline-2 has-[.cm-content:focus-visible]:outline-offset-2 has-[.cm-content:focus-visible]:outline-fd-ring",
       "slice-scroll":
-        "min-h-0 flex-1 overflow-auto rounded-md [&_.cm-content]:min-w-0 [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent",
+        "flex-1 rounded-md [&_.cm-content]:min-w-0 [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent",
     },
     notePane: {
       "annotation-toggle": cn(
@@ -356,8 +428,9 @@ export const WEB_THEME: WorkbenchTheme = {
         "aria-pressed:bg-fd-muted",
       ),
       "annotation-edit": buttonVariants({ variant: "ghost", size: "icon-2xs" }),
+      // At least five source lines; the tab scrolls when it needs more room.
       "note-pane":
-        "flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]",
+        "flex min-h-30 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]",
       "annotation-box":
         "inline-flex max-w-full items-center gap-1 rounded-md border border-fd-border bg-fd-card p-0.5 ps-2 align-middle text-xs font-medium text-fd-muted-foreground",
       "annotation-label": "min-w-0 whitespace-normal",
@@ -392,7 +465,9 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     resultRegion: {
       region:
-        "group flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-fd-border bg-fd-card p-4",
+        // The scroll padding keeps a focused control clear of the sticky file
+        // name at the top of the region.
+        "group flex min-h-0 flex-1 scroll-pt-10 flex-col overflow-auto rounded-md border border-fd-border bg-fd-card p-4",
     },
     resultColumn: {
       stale: "mb-2 text-xs font-medium",
@@ -400,8 +475,11 @@ export const WEB_THEME: WorkbenchTheme = {
         "mb-2 flex flex-wrap items-center justify-between gap-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
       "behind-text": "text-pretty",
       run: buttonVariants({ variant: "outline", size: "xs" }),
+      // The file name stays at the top of the region while the note scrolls
+      // under it: the muted tint lies over the card colour, so nothing shows
+      // through.
       filename:
-        "-mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-muted/40 px-3 py-1.5 text-xs font-medium",
+        "sticky -top-4 z-10 -mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-card bg-linear-to-b from-fd-muted/40 to-fd-muted/40 px-3 py-1.5 text-xs font-medium",
       "filename-text": "truncate",
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",
@@ -430,13 +508,103 @@ export const WEB_THEME: WorkbenchTheme = {
       checkbox: "m-0 size-3.5 accent-fd-primary",
       empty: "text-fd-muted-foreground italic",
     },
+    // The one row above the panels that names the item they all read: its
+    // name and badge first, then its controls right after them at every
+    // width. A name too long for the row ends in an ellipsis, and the
+    // controls stay beside it.
+    itemRow: {
+      row: "flex min-w-0 shrink-0 items-center gap-x-2 border-b border-fd-border px-3 py-1.5",
+      label: "min-w-0 truncate text-xs text-fd-muted-foreground",
+    },
+    // The side panels: the model places them, so the classes only draw each
+    // placement. Each handle is the 12 px gap between two parts
+    // (PANEL_HANDLE_WIDTH, which the placement counts), with a rule
+    // down its middle that turns the primary color while it is used.
+    panels: {
+      panels: "flex min-h-0 min-w-0 flex-1",
+      stack: "flex min-h-0 min-w-0 flex-1 data-[state=below]:flex-col",
+      status: "sr-only",
+      editor: "flex min-h-0 min-w-0 flex-1 flex-col",
+      panel:
+        "flex min-h-0 min-w-0 shrink-0 flex-col data-[state=fields]:w-(--workbench-panel-width) data-[state=preview]:w-(--workbench-panel-width) data-[state=below]:h-(--workbench-panel-height)",
+      edge: "relative w-3 shrink-0 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:start-1/2 after:w-px after:bg-fd-muted-foreground hover:after:w-0.5 hover:after:bg-fd-primary focus-visible:after:w-0.5 focus-visible:after:bg-fd-primary",
+      split:
+        "relative h-3 shrink-0 cursor-row-resize touch-none outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-fd-muted-foreground hover:after:h-0.5 hover:after:bg-fd-primary focus-visible:after:h-0.5 focus-visible:after:bg-fd-primary",
+    },
+    // The Fields Panel in the Fields popover, which stands inset at the right
+    // edge of the panels as tall as they are: it slides in from that edge,
+    // and a still motion setting shows it at once. Docked, it is a card in
+    // its column, as the Preview is.
+    fieldsPanel: {
+      panel: cn(
+        "flex h-full min-w-0 flex-col rounded-lg border border-fd-border bg-fd-card text-fd-card-foreground",
+        "data-[state=popover]:w-80 data-[state=popover]:max-w-full data-[state=popover]:shadow-xl data-[state=popover]:transition-[translate,opacity] data-[state=popover]:duration-150 data-[state=popover]:ease-out motion-reduce:transition-none data-[state=popover]:starting:translate-x-2 data-[state=popover]:starting:opacity-0",
+      ),
+      header: "flex shrink-0 items-center gap-1 px-2 pt-2",
+      icon: "flex shrink-0 ps-1 text-fd-muted-foreground [&_svg]:size-4",
+      title: "min-w-0 flex-1 truncate px-1 text-sm font-semibold",
+      actions: "contents",
+      // With no room to dock, the pin steps back and keeps its focus and
+      // its tooltip.
+      pin: cn(
+        historyButton,
+        "shrink-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 data-[state=pinned]:bg-fd-accent data-[state=pinned]:text-fd-accent-foreground",
+      ),
+      close: cn(historyButton, "shrink-0"),
+      note: "shrink-0 px-3 pt-0.5 text-xs text-pretty text-fd-muted-foreground",
+      body: "flex min-h-0 flex-1 flex-col overflow-auto",
+    },
+    fieldDetails: {
+      /**
+       * A fixed height at the panel's foot, so the list above never moves; in
+       * a short panel it gives way to the list, which keeps one whole row.
+       */
+      "details-bar":
+        "-mx-2 h-48 max-h-1/2 overflow-y-auto border-t border-fd-border bg-fd-background",
+      details:
+        "flex flex-col gap-3 p-3 text-xs data-[state=bar]:gap-2 data-[state=bar]:p-2 data-[state=popover]:max-h-(--available-height) data-[state=popover]:overflow-y-auto data-[state=popover]:rounded-lg data-[state=popover]:bg-fd-popover data-[state=popover]:text-fd-popover-foreground data-[state=popover]:shadow-lg data-[state=popover]:ring-1 data-[state=popover]:ring-fd-border",
+      header: "flex items-start gap-1",
+      heading: "flex min-w-0 flex-1 flex-col",
+      context: "truncate text-fd-muted-foreground",
+      title: "truncate text-sm font-semibold",
+      close: cn(historyButton, "shrink-0"),
+      value:
+        "in-data-[state=bar]:order-2 max-h-40 overflow-auto rounded-md border border-fd-border p-2 whitespace-pre-wrap [overflow-wrap:anywhere] text-emerald-700 dark:text-emerald-400 data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
+      /** A list's values, one per line and numbered. */
+      values:
+        "in-data-[state=bar]:order-2 flex max-h-40 flex-col gap-1 overflow-auto rounded-md border border-fd-border p-2 text-emerald-700 dark:text-emerald-400",
+      "values-item": "flex gap-2 [overflow-wrap:anywhere]",
+      "values-index":
+        "w-4 shrink-0 text-end tabular-nums text-fd-muted-foreground",
+      "values-text":
+        "min-w-0 whitespace-pre-wrap data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
+      // The bar shows what the note gets right under its heading.
+      item: "flex flex-col gap-0.5 in-data-[state=bar]:data-[state=path]:order-3",
+      "item-header": "flex flex-wrap items-center gap-x-2 gap-y-1",
+      label: "text-fd-muted-foreground",
+      forms: "ms-auto flex flex-wrap gap-x-3",
+      form: "inline-flex cursor-pointer items-center gap-1 text-fd-muted-foreground has-checked:text-fd-foreground",
+      path: "font-mono break-all text-fd-muted-foreground",
+      snippet: "font-mono break-all whitespace-pre-wrap text-fd-foreground",
+      result:
+        "flex gap-1.5 whitespace-pre-line [overflow-wrap:anywhere] text-emerald-700 dark:text-emerald-400 data-[state=empty]:text-fd-muted-foreground data-[state=empty]:italic",
+      "result-icon":
+        "mt-0.5 flex shrink-0 text-fd-muted-foreground [&_svg]:size-3",
+      /** In the bar they stay in view at its foot while the details scroll. */
+      actions:
+        "flex flex-wrap gap-2 in-data-[state=bar]:order-4 in-data-[state=bar]:sticky in-data-[state=bar]:bottom-0 in-data-[state=bar]:-mx-2 in-data-[state=bar]:bg-fd-background in-data-[state=bar]:px-2 in-data-[state=bar]:py-2",
+      insert: buttonVariants({ size: "xs" }),
+      copy: buttonVariants({ variant: "outline", size: "xs" }),
+      reason: "text-fd-muted-foreground",
+    },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",
       tab: "disabled:cursor-default disabled:opacity-50 flex min-h-7 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-sm px-2 py-0.5 text-xs font-medium text-fd-muted-foreground data-[state=active]:bg-fd-card data-[state=active]:text-fd-foreground data-[state=active]:shadow-sm [&_svg]:size-4",
     },
     tabPanel: {
       description: "mb-3 shrink-0 text-xs text-pretty text-fd-muted-foreground",
-      "tab-panel": "flex min-h-0 min-w-0 flex-1 flex-col [&[hidden]]:hidden",
+      "tab-panel": "flex min-w-0 flex-1 flex-col [&[hidden]]:hidden",
+      "docs-link": "text-fd-primary underline underline-offset-2",
     },
     editToolbar: {
       "edit-toolbar":
@@ -460,6 +628,7 @@ export const WEB_THEME: WorkbenchTheme = {
       "problems-heading": "font-semibold",
       // A value that changes as problems are repaired, so its digits hold
       // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-announcement": "sr-only",
       "problems-count":
         "shrink-0 rounded-sm bg-destructive/10 px-1.5 font-medium tabular-nums whitespace-nowrap",
       "problems-text": "min-w-0 text-pretty font-medium",
@@ -482,7 +651,7 @@ export const WEB_THEME: WorkbenchTheme = {
       // A reader with no pointer scrolls it from the keyboard, so it takes the
       // site's focus indicator the way the other focusable regions do.
       "problems-scroll":
-        "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary",
+        "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pb-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary",
       // The chooser leads the explanation where the object line otherwise
       // would, at its own width rather than stretched across the column.
       "problems-select": "min-w-0 max-w-full self-start",
@@ -504,9 +673,11 @@ export const WEB_THEME: WorkbenchTheme = {
         "mt-1 max-h-56 overflow-auto rounded-md border border-fd-border bg-fd-muted/60 p-2 font-mono whitespace-pre select-text",
       "problems-copy-failed": "mt-1 text-pretty text-destructive",
       // Under the scroll, never inside it: every one of these stays put while
-      // a long explanation and an open disclosure move past above them.
+      // a long explanation and an open disclosure move past above them. The
+      // rule over them marks where the explanation scrolls out of view, so a
+      // line cut at that edge reads as more to scroll, not as covered.
       "problems-controls":
-        "mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2 [&>*]:max-w-full [&>*]:min-w-0",
+        "flex min-w-0 shrink-0 flex-wrap border-t border-fd-border pt-2 items-center gap-2 [&>*]:max-w-full [&>*]:min-w-0",
       "problems-open": "cursor-pointer underline underline-offset-2",
       "problems-copy": "cursor-pointer underline underline-offset-2",
       "problems-community": "underline underline-offset-2",

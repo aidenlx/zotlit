@@ -1,30 +1,21 @@
-// Native selection shares examples, search, and labels across independent views.
+// Shared selection UI: Item and annotation lists, search, and labels.
 import "./selection.css";
-import type { ItemView, WorkspaceLeaf } from "obsidian";
-import { useState } from "react";
+import type { ItemView } from "obsidian";
 
 import { isPageNumber } from "@zotlit/db";
-import type { CitationVariant } from "@zotlit/db";
 import { useUniqueId } from "@zotlit/ui";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
-import type {
-  AnnotationExample,
-  CitationExampleId,
-  PartialChoice,
-} from "@zotlit/workbench/render";
-import {
-  annotationOption,
-  useForkedEffect,
-  useWorkbenchHost,
-} from "@zotlit/workbench/ui";
+import type { AnnotationExample } from "@zotlit/workbench/render";
+import { annotationOption } from "@zotlit/workbench/ui";
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
+import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 
-import type { RecentItems } from "./item-choice";
+import { useRecentItems } from "./item-choice";
 import {
   getSampleItem,
   getSampleItemType,
@@ -43,54 +34,7 @@ import {
 
 type AnnotationChoice = Pick<AnnotationExample, "id" | "root">;
 
-export type WorkbenchSelection =
-  | { kind: "item"; item: WorkbenchItemChoice }
-  | { kind: "annotation"; annotationId: string }
-  /** The Citation set and Variant a Citation Template preview renders under. */
-  | {
-      kind: "citation";
-      variant: CitationVariant;
-      example: CitationExampleId | null;
-    }
-  /** The caller and the Profile a Shared Partial preview renders under. */
-  | ({ kind: "partial" } & PartialChoice);
-export type WorkbenchSelectionEvent = WorkbenchSelection & {
-  leaf: WorkspaceLeaf;
-  editor: WorkspaceLeaf | null;
-};
-
 const selectionOption = selectionControl({ kind: "option" });
-
-/** Native association scopes user choices; receivers never echo a selection. */
-export function subscribeWorkbenchSelection(
-  view: ItemView,
-  options: {
-    editor: () => WorkspaceLeaf | null;
-    apply: (selection: WorkbenchSelection) => void;
-  },
-): () => void {
-  const ref = view.app.workspace.on("zotlit:workbench-selection", (event) => {
-    if (event.leaf === view.leaf || view.leaf.pinned) return;
-    const follows = view.leaf.group
-      ? view.leaf.group === event.leaf.group
-      : event.editor !== null &&
-        (view.leaf === event.editor || options.editor() === event.editor);
-    if (follows) options.apply(event);
-  });
-  return () => view.app.workspace.offref(ref);
-}
-
-export function publishWorkbenchSelection(
-  view: ItemView,
-  selection: WorkbenchSelection,
-  editor: WorkspaceLeaf | null,
-): void {
-  view.app.workspace.trigger("zotlit:workbench-selection", {
-    ...selection,
-    leaf: view.leaf,
-    editor,
-  });
-}
 
 export function sampleTypeLabel(id: string): string {
   switch (getSampleItemType(id)) {
@@ -156,20 +100,12 @@ export function selectionViewTitle(input: {
   item: WorkbenchItemChoice | null;
   annotation?: AnnotationChoice | null;
   annotationMode: boolean;
-  view: "preview" | "fields";
+  view: "fields";
 }): string {
   const name = selectionName(input);
   return name
-    ? m.workbench_selection_title({
-        name,
-        view:
-          input.view === "preview"
-            ? m.workbench_view_preview()
-            : m.workbench_view_fields(),
-      })
-    : input.view === "preview"
-      ? m.profile_preview_name()
-      : m.template_data_explorer_view_name();
+    ? m.workbench_selection_title({ name, view: m.workbench_view_fields() })
+    : m.template_data_explorer_view_name();
 }
 
 export function updateSelectionTitle(view: ItemView): void {
@@ -232,25 +168,27 @@ function SelectionOption({
 }
 
 export function ItemSelectionList({
-  recentItems,
   onSelect,
   onSearch,
 }: {
-  /** The read of the recent Items, with the services it needs provided. */
-  recentItems: RecentItems;
   onSelect: (item: WorkbenchItemChoice) => void;
   onSearch: () => void;
 }) {
-  const [recent, setRecent] = useState<readonly WorkbenchItemChoice[]>([]);
-  // The host's runner interrupts the read when the list unmounts.
-  useForkedEffect(useWorkbenchHost().run, () => recentItems, {
-    deps: [recentItems],
-    onSuccess: setRecent,
-  });
+  const recent = useRecentItems();
   return (
     <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
       <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">
-        <p className={selectionHint}>{m.workbench_choose_preview_data()}</p>
+        <p className={selectionHint}>
+          {m.workbench_choose_preview_data()}{" "}
+          <a
+            className="external-link"
+            href={`${DOCS_SITE_URL}/docs/how-to/explore-template-data`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {m.template_data_explorer_docs()}
+          </a>
+        </p>
         <SelectionSearch
           label={m.workbench_search_zotero()}
           onSearch={onSearch}

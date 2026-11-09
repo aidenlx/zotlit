@@ -10,10 +10,11 @@ import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { debounce, ItemView, Keymap, Scope } from "obsidian";
 import type { Component, Modifier, WorkspaceLeaf } from "obsidian";
 
+import { composing } from "@zotlit/ui";
+
 import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
-import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
@@ -480,9 +481,10 @@ export class LibraryView extends ItemView {
       cls: "zt:relative zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1",
     });
     // Beside a wide list the tree shows unless the researcher collapsed it;
-    // over a narrow one it shows while it is open.
+    // over a narrow one it shows while it is open, with its own end line
+    // where its divider does not show.
     const treePane = top.createDiv({
-      cls: "zt:relative zt:hidden zt:w-[var(--zt-library-tree-width,14rem)] zt:shrink-0 zt:flex-col zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:flex zt:@xl:group-data-tree-collapsed:hidden zt:@max-xl:group-data-tree-open:flex zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
+      cls: "zt:relative zt:hidden zt:w-[var(--zt-library-tree-width,14rem)] zt:shrink-0 zt:flex-col zt:@max-xl:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:flex zt:@xl:group-data-tree-collapsed:hidden zt:@max-xl:group-data-tree-open:flex zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
       attr: { "data-library-tree": "" },
     });
     const treeEl = treePane.createDiv({
@@ -498,7 +500,7 @@ export class LibraryView extends ItemView {
     // The item details show while the researcher keeps them on: the
     // selected paper, or what fills them when none is selected.
     const cardEl = frame.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:@container/card zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-[var(--zt-library-card-height,16rem)] zt:@max-4xl:border-s-0 zt:@max-4xl:border-t-(length:--border-width)",
+      cls: "zt:@container/card zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-[var(--zt-library-card-height,16rem)]",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;

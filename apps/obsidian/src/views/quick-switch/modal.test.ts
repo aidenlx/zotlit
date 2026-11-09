@@ -322,6 +322,9 @@ describe("QuickSwitchModal Profile creation", () => {
         ),
     );
     const openLinkText = vi.fn(async () => {});
+    const getLeavesOfType = vi.fn((): WorkspaceLeaf[] => []);
+    const revealLeaf = vi.fn(async () => {});
+    const setActiveLeaf = vi.fn();
     const app = stubService<App>("App", {
       metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
         getFileCache: () => ({
@@ -330,9 +333,9 @@ describe("QuickSwitchModal Profile creation", () => {
       }),
       workspace: stubService<App["workspace"]>("Workspace", {
         openLinkText,
-        getLeavesOfType: vi.fn((): WorkspaceLeaf[] => []),
-        revealLeaf: vi.fn(async () => {}),
-        setActiveLeaf: vi.fn(),
+        getLeavesOfType,
+        revealLeaf,
+        setActiveLeaf,
       }),
     });
     const workspace = Object.assign(new MemoryWorkspace(), app.workspace);
@@ -374,6 +377,9 @@ describe("QuickSwitchModal Profile creation", () => {
       deps,
       planCreations,
       openLinkText,
+      getLeavesOfType,
+      revealLeaf,
+      setActiveLeaf,
       modal: makeQuickSwitchModal(deps),
     };
   }
@@ -391,8 +397,15 @@ describe("QuickSwitchModal Profile creation", () => {
 
   async function chooseOpenNote(newPane: boolean) {
     const openFile = file("Books/Existing.md");
-    const { modal, deps, planCreations, openLinkText } =
-      await creationDeps(openFile);
+    const {
+      modal,
+      deps,
+      planCreations,
+      openLinkText,
+      getLeavesOfType,
+      revealLeaf,
+      setActiveLeaf,
+    } = await creationDeps(openFile);
     const view = Object.assign(
       new MarkdownView(
         stubService<WorkspaceLeaf>("WorkspaceLeaf", {
@@ -405,18 +418,26 @@ describe("QuickSwitchModal Profile creation", () => {
       updateHeader: vi.fn(),
     });
     Object.defineProperty(leaf, "view", { value: view });
-    vi.mocked(deps.app.workspace.getLeavesOfType).mockReturnValue([leaf]);
+    getLeavesOfType.mockReturnValue([leaf]);
     using _mod = vi.spyOn(Keymap, "isModEvent").mockReturnValue(newPane);
 
     await modal.onChooseSuggestion(searchHit("PAPER234"), {} as KeyboardEvent);
-    return { file: openFile, leaf, deps, planCreations, openLinkText };
+    return {
+      file: openFile,
+      leaf,
+      deps,
+      planCreations,
+      openLinkText,
+      revealLeaf,
+      setActiveLeaf,
+    };
   }
 
   it("reveals the resolved note's open leaf without the new-pane modifier", async () => {
-    const { leaf, deps, planCreations, openLinkText } =
+    const { leaf, revealLeaf, setActiveLeaf, planCreations, openLinkText } =
       await chooseOpenNote(false);
-    expect(deps.app.workspace.revealLeaf).toHaveBeenCalledExactlyOnceWith(leaf);
-    expect(deps.app.workspace.setActiveLeaf).toHaveBeenCalledWith(leaf, {
+    expect(revealLeaf).toHaveBeenCalledExactlyOnceWith(leaf);
+    expect(setActiveLeaf).toHaveBeenCalledWith(leaf, {
       focus: true,
     });
     expect(openLinkText).not.toHaveBeenCalled();
@@ -424,12 +445,12 @@ describe("QuickSwitchModal Profile creation", () => {
   });
 
   it("opens the already-open resolved note in a new pane with the new-pane modifier", async () => {
-    const { file, deps, planCreations, openLinkText } =
+    const { file, revealLeaf, planCreations, openLinkText } =
       await chooseOpenNote(true);
     expect(openLinkText).toHaveBeenCalledWith(file.path, "", true, {
       active: true,
     });
-    expect(deps.app.workspace.revealLeaf).not.toHaveBeenCalled();
+    expect(revealLeaf).not.toHaveBeenCalled();
     expect(planCreations).not.toHaveBeenCalled();
   });
 

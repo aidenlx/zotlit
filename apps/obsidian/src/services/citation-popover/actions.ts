@@ -42,7 +42,11 @@ export interface CitationPopoverActionDeps {
   switchProfile: (path: string) => void;
   /** Refresh source-less Item availability before any action. */
   prepare?: (block: CitationEntryBlock) => Promise<CitationEntryBlock | null>;
-  log(level: "debug", message: string, fields: Record<string, unknown>): void;
+  log: (
+    level: "debug",
+    message: string,
+    fields: Record<string, unknown>,
+  ) => void;
 }
 
 export function createCitationPopoverActions({

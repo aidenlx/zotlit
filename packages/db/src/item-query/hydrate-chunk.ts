@@ -363,7 +363,7 @@ export function readHydrateChunk(chunk: {
         for (const row of rows) {
           const item = result.get(row.itemID!);
           if (!item || row.fieldID === null || row.value == null) continue;
-          const value = String(row.value as unknown);
+          const value = String(row.value);
           const custom = customByID.get(row.fieldID);
           if (custom !== undefined) item.custom.set(custom, value);
           for (const [name, table] of tables) {

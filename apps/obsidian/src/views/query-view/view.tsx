@@ -379,7 +379,7 @@ function warningText(warning: QueryViewWarning): string {
     : warning.message;
 }
 
-function problemText(problem: QueryFileProblem): string {
+export function problemText(problem: QueryFileProblem): string {
   switch (problem.code) {
     case "invalid-yaml":
       return m.query_view_problem_invalid_yaml({ message: problem.message });
@@ -528,7 +528,9 @@ export class QueryView extends Component implements HistorySurface {
   #drawnCards: AnnotState["annotations"] | undefined = undefined;
   /** What waits for the list to draw the cards the store holds now. */
   #drawWaiters: (() => void)[] = [];
-  #rerunTimer: number | null = null;
+  #rerunTimer: { id: number; win: Window } | null = null;
+  /** The element the view draws into, once it draws. */
+  #el: HTMLElement | null = null;
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
     this.#deps = deps;
@@ -543,6 +545,7 @@ export class QueryView extends Component implements HistorySurface {
       saveFailed: (saveFailed) => {
         if (this.#release) this.state.setState({ saveFailed });
       },
+      win: () => this.#win(),
     });
     this.#layout = new AnnotationsLayout(deps, {
       ...host.layout,
@@ -703,15 +706,25 @@ export class QueryView extends Component implements HistorySurface {
   /** Run again, after a short wait, once a shown Attachment gains or loses an Annotation. */
   #listChanged(): void {
     this.#cancelRerun();
-    this.#rerunTimer = window.setTimeout(() => {
+    const win = this.#win();
+    const id = win.setTimeout(() => {
       this.#rerunTimer = null;
       this.#refresh(true);
     }, RERUN_DELAY_MS);
+    this.#rerunTimer = { id, win };
   }
 
   #cancelRerun(): void {
-    if (this.#rerunTimer !== null) window.clearTimeout(this.#rerunTimer);
+    this.#rerunTimer?.win.clearTimeout(this.#rerunTimer.id);
     this.#rerunTimer = null;
+  }
+
+  /**
+   * The window the view draws in, whose timers its waits use. A view that
+   * has not drawn stands in no window of its own, and waits on the main one.
+   */
+  #win(): Window {
+    return this.#el?.win ?? window;
   }
 
   override onunload(): void {
@@ -729,6 +742,7 @@ export class QueryView extends Component implements HistorySurface {
     this.#shownRequest = null;
     this.#runRequest = null;
     this.#rendered = false;
+    this.#el = null;
     const waiters = this.#drawWaiters;
     this.#drawWaiters = [];
     for (const resolve of waiters) resolve();
@@ -737,6 +751,7 @@ export class QueryView extends Component implements HistorySurface {
   /** Draw the toolbar and the cards into `el`. Call it once the view has loaded. */
   render(el: HTMLElement): void {
     el.addClass("zt-query-view");
+    this.#el = el;
     this.#rendered = true;
     this.#layout.render(
       el,

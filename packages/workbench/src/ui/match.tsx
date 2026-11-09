@@ -1,5 +1,7 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import { Effect } from "effect";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
@@ -9,7 +11,7 @@ import type { MatchTree } from "@zotlit/templates/facade";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
 
 import { useCustomFieldNames } from "./custom-fields";
-import { useWorkbenchStore } from "./editor";
+import { useWorkbenchModel } from "./editor";
 import { ExampleActions } from "./example-state";
 import { schemaLocale } from "./explorer-sections";
 import { useWorkbenchHost } from "./host";
@@ -24,6 +26,7 @@ import {
   fromFilter,
   isExpression,
   isGroup,
+  moveAt,
   placeholderRow,
   removeAt,
   replaceAt,
@@ -44,12 +47,12 @@ import type {
 import { MatchExpressionInput } from "./match.expression";
 import { filterVocabulary } from "./match.fields";
 import type { FilterValues } from "./match.fields";
-import { useMatchReorder } from "./match.reorder";
-import type { MatchReorder } from "./match.reorder";
 import { MatchSelect } from "./match.rows";
 // One Match tree over the document controller; rows write through the master history.
 import { useWorkbenchMessages } from "./messages";
-import { useForkedEffect } from "./run";
+import { useReorder } from "./reorder";
+import type { Reorder } from "./reorder";
+import { TabDocsLink } from "./tab-bar";
 import { useParts, useIcon } from "./theme";
 
 import { datasetVocabulary } from "#/language/expression-vocabulary";
@@ -67,6 +70,11 @@ export type {
 } from "./match.draft";
 
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
+
+/** What a Match test reads while there is no Item or no filter to test. */
+const NO_TEST = Atom.make(
+  AsyncResult.initial<WorkbenchMatchResult | "failed", unknown>(),
+);
 
 /**
  * The Match of the open Profile document: the Match editor with the
@@ -90,66 +98,29 @@ export function MatchPane({
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("match");
-  const item = useWorkbenchStore((state) => state.item);
-  const [match, setMatch] = useState<MatchTree | undefined>(
-    controller.document?.manifest.match,
-  );
-  const [readable, setReadable] = useState(controller.document !== null);
-  const [values, setValues] = useState<FilterValues>(NO_VALUES);
+  const model = useWorkbenchModel();
+  const item = useAtomValue(model.item);
+  useAtomValue(model.document.revision);
+  const readable = controller.document !== null;
+  // The last filter that parsed, which stands while the draft does not.
+  const match = useAtomValue(model.match);
   const [writeProblem, setWriteProblem] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    const read = () => {
-      setReadable(controller.document !== null);
-      if (controller.document) setMatch(controller.document.manifest.match);
-    };
-    read();
-    return controller.subscribe(read);
-  }, [controller]);
-  useForkedEffect(
-    host.run,
-    () => {
-      setLoading(true);
-      return Effect.all(
-        [
-          host.matchData.tags,
-          host.matchData.collections,
-          host.matchData.libraries,
-        ],
-        { concurrency: "unbounded" },
-      );
-    },
-    {
-      deps: [host.matchData, vocabularyRevision, m, retry],
-      onSuccess: ([tags, collections, libraries]) => {
-        setValues({
-          tags,
-          collections: collections.map((path) => path.join("/")),
-          libraries: libraries.map(({ id, name }) => ({
-            id,
-            name: name ?? null,
-          })),
-        });
-        setProblem(null);
-        setLoading(false);
-      },
-      onFailure: () => {
-        setProblem(m.workbench_example_failed());
-        setLoading(false);
-      },
-    },
-  );
+  const retry = useAtomSet(model.matchRetry);
+  const revision = String(vocabularyRevision ?? "");
+  const vocabularyResult = useAtomValue(model.matchVocabulary(revision));
+  const loading =
+    AsyncResult.isInitial(vocabularyResult) || vocabularyResult.waiting;
+  const values = AsyncResult.isSuccess(vocabularyResult)
+    ? vocabularyResult.value
+    : NO_VALUES;
+  const problem = AsyncResult.isFailure(vocabularyResult)
+    ? m.workbench_example_failed()
+    : null;
   const filter = useMemo(
     () => (match === undefined ? null : composeFilterTree(match)),
     [match],
   );
-  const test = useMatchTest(
-    item?.id ?? null,
-    filter?.text ?? null,
-    `${vocabularyRevision ?? ""}:${retry}`,
-  );
+  const test = useMatchTest(item?.id ?? null, filter?.text ?? null, revision);
   const answer = typeof test === "object" ? test : null;
   // A mistake shows on the condition it is in, where it has a place.
   const span = answer?.kind === "problem" ? answer.span : undefined;
@@ -174,10 +145,7 @@ export function MatchPane({
     [filter, faulty, span],
   );
   const locale = host.getLocale();
-  const custom = useCustomFieldNames(host.matchData.customFields, {
-    run: host.run,
-    revision: vocabularyRevision,
-  });
+  const custom = useCustomFieldNames(revision);
   // What a condition reads: the fields of an Item, labelled as Zotero labels
   // them, and the source's custom fields. A Profile binds no Query Context,
   // has no Formulas and reads no vault property.
@@ -276,7 +244,9 @@ export function MatchPane({
         }
       }}
     >
-      <p>{m.workbench_match_conditions_desc()}</p>
+      <p>
+        {m.workbench_match_conditions_desc()} <TabDocsLink tab="match" />
+      </p>
       <MatchEditor
         value={match}
         vocabulary={vocabulary}
@@ -297,7 +267,7 @@ export function MatchPane({
           onRetry={
             onRetry ??
             (problem || test === "failed"
-              ? () => setRetry((value) => value + 1)
+              ? () => retry((value) => value + 1)
               : undefined)
           }
         />
@@ -318,33 +288,13 @@ function useMatchTest(
   filter: string | null,
   revision: string,
 ): WorkbenchMatchResult | "failed" | undefined {
-  const host = useWorkbenchHost();
-  const key =
+  const model = useWorkbenchModel();
+  const answer = useAtomValue(
     indexedKey === null || filter === null
-      ? null
-      : JSON.stringify([indexedKey, filter, revision]);
-  const [answer, setAnswer] = useState<{
-    key: string;
-    value: WorkbenchMatchResult | "failed";
-  } | null>(null);
-  useForkedEffect(
-    host.run,
-    () =>
-      key === null || indexedKey === null || filter === null
-        ? null
-        : host.matchData.matches(indexedKey, filter).pipe(
-            Effect.map((value) => ({ key, value })),
-            // A defect fails the test as a failure does.
-            Effect.catchCause(() =>
-              Effect.succeed({ key, value: "failed" as const }),
-            ),
-          ),
-    {
-      deps: [host.matchData, key, indexedKey, filter],
-      onSuccess: setAnswer,
-    },
+      ? NO_TEST
+      : model.matchTest(JSON.stringify([indexedKey, filter, revision])),
   );
-  return answer?.key === key ? answer.value : undefined;
+  return AsyncResult.isSuccess(answer) ? answer.value : undefined;
 }
 
 /**
@@ -408,9 +358,17 @@ export function MatchEditor<Row extends LabelledRow>({
     if (!onChange(filter)) setRoot(fromFilter(value, vocabulary));
   }
   const { places } = storedFilter(tree, vocabulary);
-  const reorder = useMatchReorder({ root: tree, disabled, onChange: change });
+  const reorder = useReorder({
+    disabled,
+    onMove: (from, to) => {
+      const next = moveAt(tree, from, to);
+      if (next === tree) return false;
+      change(next);
+      return true;
+    },
+  });
   return (
-    <fieldset disabled={disabled} {...part("fieldset")} {...reorder.fieldset}>
+    <fieldset disabled={disabled} {...part("fieldset")} {...reorder.list}>
       <Group
         root={tree}
         group={tree}
@@ -439,7 +397,7 @@ function Group<Row extends LabelledRow>({
   /** Where each row sits in the stored filter, as {@link storedFilter} finds it. */
   places: ReadonlyMap<string, FilterPath>;
   vocabulary: MatchVocabulary<Row>;
-  reorder: MatchReorder;
+  reorder: Reorder;
   onChange: (root: ConditionGroup<Row>) => void;
 }) {
   const m = useWorkbenchMessages();
@@ -504,8 +462,8 @@ function Group<Row extends LabelledRow>({
           >
             <span
               {...part("handle")}
-              aria-label={m.workbench_match_drag_to_reorder()}
-              {...host.tooltip(m.workbench_match_drag_to_reorder())}
+              aria-label={m.workbench_drag_to_reorder()}
+              {...host.tooltip(m.workbench_drag_to_reorder())}
               {...reorder.handle([...path, index], group.conditions.length)}
             >
               {icon("drag")}

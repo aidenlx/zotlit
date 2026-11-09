@@ -56,7 +56,9 @@ export async function verifyExcerptRefresh(vaultId: string): Promise<void> {
       const { Effect } = require(effectPath) as typeof import("@/lib/effect");
       const services = zotlit.services;
       const service = services.excerptImage;
+      // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
       const original = service.resolve;
+      // oxlint-disable-next-line typescript/unbound-method -- the original method is replaced for the test and restored by identity
       const stored = service.stored;
       const state: ExcerptRefreshTrial = {
         service,

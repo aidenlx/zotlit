@@ -30,12 +30,12 @@ import type {
 
 import { valueText } from "@zotlit/item-query";
 import type { ProjectionJson } from "@zotlit/item-query";
+import { composing } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
-import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { hasActiveMenu, showMenuAtButton } from "@/lib/menu";
 import {
@@ -943,8 +943,7 @@ function ListEditor({
                   // focus that leaves it is the cell's to end.
                   onBlur={(event) => {
                     if (chipEnded.current) return;
-                    if (!root.current?.contains(event.relatedTarget as Node))
-                      return;
+                    if (!root.current?.contains(event.relatedTarget)) return;
                     chipEnded.current = true;
                     onDraft(withChip(latest.current));
                   }}

@@ -148,7 +148,7 @@ export interface ActiveTab {
 }
 
 export async function activeTab(vaultId: string): Promise<ActiveTab> {
-  return (await obRun(
+  return obRun(
     vaultId,
     async ({ app }) => {
       const view = app.workspace.activeLeaf?.view as
@@ -163,15 +163,12 @@ export async function activeTab(vaultId: string): Promise<ActiveTab> {
               "zotero-key"
             ] ?? null)
           : null,
-        opening: !!(
-          app.workspace.activeLeaf as
-            | (import("obsidian").WorkspaceLeaf & { working?: boolean })
-            | null
-        )?.working,
+        opening: !!(app.workspace.activeLeaf as { working?: boolean } | null)
+          ?.working,
       };
     },
     undefined,
-  )) as ActiveTab;
+  );
 }
 
 export function pdfOpened(vaultId: string, path: string): Promise<boolean> {

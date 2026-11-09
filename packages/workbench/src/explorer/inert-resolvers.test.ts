@@ -386,7 +386,7 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
 
   it("browses the full tree read-only and resolves both real and inert values correctly", () => {
     const client = createClient(":memory:");
-    seedFullContext(client.$client as DatabaseSync);
+    seedFullContext(client.$client);
 
     const noteIndex = {
       getNotesByItemKey: (indexedKey: string) => {
@@ -453,6 +453,6 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
 
     fullyWalk(ctx, new WeakSet());
 
-    (client.$client as DatabaseSync).close();
+    client.$client.close();
   });
 });

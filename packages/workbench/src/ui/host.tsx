@@ -9,7 +9,6 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/controller";
 import type { SuggestionSource } from "#/language/completion";
-import type { WorkbenchRunner } from "#/language/host-effects";
 import type { RenderRequest } from "#/render/request";
 import type {
   TemplateRenderResult,
@@ -178,6 +177,11 @@ export interface WorkbenchInsertTarget {
   readonly range: WorkbenchSliceRange & {
     readonly anchor?: number;
     readonly head?: number;
+    /**
+     * The reader put the caret here: the pane has held focus. A pane that
+     * only came on screen reports where its caret starts, without it.
+     */
+    readonly placed?: true;
   };
 }
 
@@ -208,10 +212,79 @@ export interface WorkbenchMarkdownProps {
 /** State and accessible name for a host-native boolean control. */
 export interface WorkbenchToggleProps {
   readonly id: string;
-  readonly "aria-label": string;
+  /** The id of the label shown beside the control, which names it. */
+  readonly "aria-labelledby": string;
   readonly value: boolean;
   readonly disabled: boolean;
   readonly onChange: (value: boolean) => void;
+}
+
+/**
+ * The Fields popover: the surface the Fields Panel opens in while it is not
+ * pinned, at the right edge of the view. The host owns Escape, a press
+ * outside, and focus at closing; it mounts `children` as the surface opens,
+ * and the panel moves focus into its search field as it mounts.
+ */
+export interface WorkbenchFieldsPopoverProps {
+  readonly open: boolean;
+  /** The host closed the surface: Escape or a press outside. */
+  readonly onClose: () => void;
+  /** The id of the element that names the surface. */
+  readonly labelledBy: string;
+  /**
+   * Whether focus the surface holds as it closes goes back to the Fields
+   * action. False after an insert: the editor takes focus at the inserted
+   * text.
+   */
+  readonly returnFocus: boolean;
+  /**
+   * Escape reached the surface. The panel answers `true` when it took the
+   * key: it closed a field's details or cleared the search, and the surface
+   * stays open. `false` leaves the key to the surface, which closes.
+   */
+  readonly onEscape: () => boolean;
+  readonly children: ReactNode;
+}
+
+/**
+ * One field's details in a wide view: a popover beside the Fields Panel, level
+ * with the field's row. Inside the Fields popover it is a popover in that one,
+ * so a press in either is inside both. The host closes it on Escape and on a
+ * press outside it and its row, and leaves focus where it is as it opens.
+ */
+export interface WorkbenchFieldDetailsProps {
+  /** The field's row, which the popover stands level with. */
+  readonly anchor: HTMLElement;
+  /** The Fields Panel, which the popover stands beside. */
+  readonly panel: HTMLElement;
+  /** The host closed the surface: Escape or a press outside. */
+  readonly onClose: () => void;
+  /** The id of the element that names the surface. */
+  readonly labelledBy: string;
+  readonly children: ReactNode;
+}
+
+/** The host's Fields action, and the Fields popover it opens. */
+export interface WorkbenchFieldsAction {
+  readonly popover: ComponentType<WorkbenchFieldsPopoverProps>;
+  /** The id of the surface `popover` draws, which the action names while it stands. */
+  readonly popoverId: string;
+  /**
+   * Moves focus to the action, as when a resize or a hide takes away the
+   * docked panel that held it.
+   */
+  focus(): void;
+  /**
+   * The popover a field's details open in, in a view wide enough for it
+   * beside the panel; mounted while the details stand open. A host without
+   * one shows the details in the bar at the panel's foot at every width.
+   */
+  readonly details?: ComponentType<WorkbenchFieldDetailsProps>;
+  /**
+   * The keyboard shortcut that inserts the selected field, as the platform
+   * names it, such as "Ctrl+Enter" or "Command+Enter".
+   */
+  readonly insertShortcut: string;
 }
 
 /** The partial registry and the create flow one host owns for its editors. */
@@ -228,11 +301,6 @@ export interface WorkbenchPartials {
 
 export interface WorkbenchHost {
   readonly messages: WorkbenchMessages;
-  /**
-   * Forks each host Effect the tree starts. It belongs to one mounted
-   * Workbench: closing it interrupts every Effect it still runs.
-   */
-  readonly run: WorkbenchRunner;
   readonly toggle?: ComponentType<WorkbenchToggleProps>;
   /** The locale currently used by the host's displayed messages. */
   getLocale(): string;
@@ -271,6 +339,11 @@ export interface WorkbenchHost {
    * host that names none leaves the link out.
    */
   readonly communityUrl?: string;
+  /**
+   * The docs site this build belongs to, which each tab's guide link opens a
+   * page of. A host that names none leaves the guide links out.
+   */
+  readonly docsUrl?: string;
   /** Renders one request; the tree schedules it through the Render Scheduler. */
   render: (
     request: RenderRequest,
@@ -289,6 +362,11 @@ export interface WorkbenchHost {
   matchData: WorkbenchMatchData;
   /** The focused slice editor, or `null` when none has had focus. */
   insertTarget(): WorkbenchInsertTarget | null;
+  /**
+   * The Fields action and the Fields popover it opens. A host that supplies
+   * none shows no Fields Panel.
+   */
+  readonly fieldsAction?: WorkbenchFieldsAction;
   persistence: WorkbenchPersistence;
 }
 

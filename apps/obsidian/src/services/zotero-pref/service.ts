@@ -34,7 +34,6 @@ import {
 } from "./device-paths";
 import {
   EXTENSIONS_FILENAME,
-  getZoteroProfilesRoot,
   isAddonActive,
   parsePrefsJs,
   parseZoteroProfiles,
@@ -47,12 +46,14 @@ import {
   ZOTERO_HTTP_PORT_PREF,
 } from "./prefs-file";
 import type { PrefValue } from "./prefs-file";
+import { zoteroProfilesRoot } from "./profile-root";
 
 /** The file-system boundary, replaced by controlled reads in lifecycle tests. */
 export class ZoteroPrefFiles extends Context.Service<
   ZoteroPrefFiles,
   {
     read(path: string): Effect.Effect<string, PlatformError.PlatformError>;
+    readonly profilesRoot: Effect.Effect<string, PlatformError.PlatformError>;
   }
 >()("zotlit/zotero-pref/ZoteroPrefFiles") {}
 
@@ -61,6 +62,9 @@ export const layerZoteroPrefFiles = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     return ZoteroPrefFiles.of({
+      profilesRoot: zoteroProfilesRoot.pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+      ),
       read: Effect.fn("ZoteroPrefFiles.read")(function* (path: string) {
         return yield* fs.readFileString(path);
       }),
@@ -109,6 +113,7 @@ export class ZoteroPref extends Context.Service<
     /** Read the add-on list fresh, so a new Companion install is visible. */
     readonly companionInstalled: Effect.Effect<boolean>;
     readonly listProfiles: Effect.Effect<ZoteroProfileInfo[]>;
+    readonly profilesRoot: Effect.Effect<string, PlatformError.PlatformError>;
   }
 >()("zotlit/zotero-pref/ZoteroPref") {}
 
@@ -146,7 +151,7 @@ export const layerZoteroPref = Layer.effect(
     let closed = false;
 
     const readProfiles = Effect.fn("ZoteroPref.readProfiles")(function* () {
-      const root = getZoteroProfilesRoot();
+      const root = yield* files.profilesRoot;
       const profiles = parseZoteroProfiles(
         yield* files.read(join(root, PROFILES_INI_FILENAME)),
       );
@@ -268,6 +273,7 @@ export const layerZoteroPref = Layer.effect(
     );
 
     return ZoteroPref.of({
+      profilesRoot: files.profilesRoot,
       current,
       changes: SubscriptionRef.changes(state),
       get: Effect.fn("ZoteroPref.get")(function* (name: string) {

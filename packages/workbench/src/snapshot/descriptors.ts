@@ -40,7 +40,7 @@ export function collectRootDescriptors(root: object): SnapshotRootDescriptors {
     }
     const toString = Object.getOwnPropertyDescriptor(value, "toString")?.value;
     if (typeof toString === "function") {
-      const rendered = Reflect.apply(toString, value, []) as unknown;
+      const rendered = Reflect.apply(toString, value, []);
       if (typeof rendered === "string") {
         stringCoercions.push({ path, value: rendered });
       }

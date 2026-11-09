@@ -1,20 +1,27 @@
 import gelasioLatinItalic from "@fontsource-variable/gelasio/files/gelasio-latin-wght-italic.woff2?url";
 import gelasioLatin from "@fontsource-variable/gelasio/files/gelasio-latin-wght-normal.woff2?url";
 import { TanStackDevtools } from "@tanstack/react-devtools";
-import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
+import {
+  HeadContent,
+  Scripts,
+  createRootRoute,
+  useRouterState,
+} from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
-import { RootProvider } from "fumadocs-ui/provider/tanstack";
 
-import { DocsImage } from "@/components/docs-image";
 import { LegacyBanner } from "@/components/legacy-banner";
+import { LocaleFallbackNotice } from "@/components/locale-fallback-notice";
+import { LocaleProvider } from "@/components/locale-provider";
 import { Message } from "@/components/message";
 import { Toaster } from "@/components/ui/toast";
 import { Header } from "@/layouts/home/slots/header";
 import { baseOptions } from "@/lib/layout.shared";
+import { getPageLocaleState } from "@/lib/locale-state";
 import { appDescription, HOME_OG_ALT, ogImageMeta } from "@/lib/seo";
 import { appName, baseURL } from "@/lib/shared";
 import { m } from "@/paraglide/messages.js";
+import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 import appCss from "@/styles.css?url";
 
 /**
@@ -75,18 +82,23 @@ export const Route = createRootRoute({
 });
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const localeState = getPageLocaleState(pathname, getLocale());
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={localeState.contentLocale} suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body className="flex min-h-screen flex-col">
         {/* The search dialog fetches `/api/search`, the fumadocs default. */}
-        <RootProvider components={{ Image: DocsImage }}>
+        <LocaleProvider>
           <LegacyBanner />
+          <LocaleFallbackNotice state={localeState} />
           {children}
           <Toaster />
-        </RootProvider>
+        </LocaleProvider>
         {analyticsToken && (
           <script
             defer
@@ -123,7 +135,10 @@ function NotFound() {
             text={m.docs_not_found_description({ link: "{link}" })}
             slots={{
               link: (
-                <a href="/docs" className="text-fd-primary underline">
+                <a
+                  href={localizeHref("/docs")}
+                  className="text-fd-primary underline"
+                >
                   {m.docs_not_found_docs()}
                 </a>
               ),

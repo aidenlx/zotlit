@@ -102,7 +102,7 @@ export const effectNativeResources: Rule = {
           context.report({ node, messageId: "stack" });
       },
       CallExpression(node) {
-        if (inEffect() && isDisposeKey(node.callee as AstNode))
+        if (inEffect() && isDisposeKey(node.callee))
           context.report({ node, messageId: "dispose" });
       },
     };
@@ -298,7 +298,7 @@ export const workerRpc: Rule = {
     };
     return {
       NewExpression(node) {
-        if (isConstructor(node.callee as AstNode))
+        if (isConstructor(node.callee))
           context.report({ node, messageId: "rpc" });
       },
       CallExpression(node) {
@@ -308,7 +308,7 @@ export const workerRpc: Rule = {
           !isWorker(callee.object as WorkerNode)
         )
           return;
-        const method = memberName(callee as AstNode);
+        const method = memberName(callee);
         if (
           method === "postMessage" ||
           ((method === "addEventListener" ||
@@ -322,7 +322,7 @@ export const workerRpc: Rule = {
       AssignmentExpression(node) {
         if (
           node.left.type === "MemberExpression" &&
-          memberName(node.left as AstNode) === "onmessage" &&
+          memberName(node.left) === "onmessage" &&
           isWorker(node.left.object as WorkerNode)
         )
           context.report({ node, messageId: "rpc" });
@@ -449,12 +449,12 @@ export const obsidianCapabilities: Rule = {
       },
       MemberExpression(node) {
         if (!effectNative) return;
-        const name = appMember(node as AstNode);
+        const name = appMember(node);
         const tag = name === undefined ? undefined : CAPABILITY_TAGS[name];
         // `app.vault.on(…)` is reported once, as an event.
-        if (!tag || isAppOn(node.parent as AstNode)) return;
+        if (!tag || isAppOn(node.parent)) return;
         context.report({
-          node: node as never,
+          node: node,
           messageId: "capability",
           data: { name: name!, tag },
         });
@@ -519,7 +519,7 @@ export const layerStreamConsumer: Rule = {
         if (
           node.callee.type === "Identifier" &&
           node.callee.name === "subscribe" &&
-          inLayerBody(node as AstNode)
+          inLayerBody(node)
         )
           context.report({ node, messageId: "forkEach" });
       },
@@ -550,7 +550,7 @@ export const interruptPredicate: Rule = {
       CallExpression(node) {
         if (
           isMemberOf(
-            node.callee as AstNode,
+            node.callee,
             CAUSE_OR_EXIT,
             (name) => name === "hasInterrupts",
           )
@@ -925,7 +925,7 @@ export const clockTime: Rule = {
 
 /** `Temporal` as the object of a member access or the left of a type name. */
 function isTemporalRoot(node: TypeNode): boolean {
-  const parent = node.parent as TypeNode | null | undefined;
+  const parent: TypeNode | null | undefined = node.parent;
   return (
     (parent?.type === "MemberExpression" && parent.object === node) ||
     (parent?.type === "TSQualifiedName" && parent.left === node)

@@ -1,10 +1,7 @@
-// Each web Explorer restores its own input data and owns its display choices and navigation.
-import { useLayoutEffect, useState } from "react";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
+// Each web Explorer restores the chosen paper's data and owns its display choices and navigation.
+import { useMemo, useState } from "react";
 
 import { initialTreeState, setAnchor } from "@zotlit/workbench/explorer";
-import type { TreeState } from "@zotlit/workbench/explorer";
 import type { AnnotationExample } from "@zotlit/workbench/render";
 import { DataExplorer } from "@zotlit/workbench/ui";
 import type { DataExplorerProps, TemplateRoot } from "@zotlit/workbench/ui";
@@ -34,13 +31,6 @@ export type FieldListProps = Omit<
   | "onNavigationChange"
 > &
   FieldListInput;
-interface FieldListState extends FieldListInput {
-  itemKey: string | null;
-  data: Record<string, unknown> | null;
-  status: "no-item" | "loading" | "ready" | "empty";
-  collapsedSections: ReadonlySet<string>;
-  navigation: TreeState;
-}
 function itemKey(sample: SampleItem | null): string | null {
   return sample
     ? JSON.stringify([
@@ -51,9 +41,10 @@ function itemKey(sample: SampleItem | null): string | null {
       ])
     : null;
 }
-function restore(
-  input: FieldListInput,
-): Pick<FieldListState, "data" | "status"> {
+function restore(input: FieldListInput): {
+  data: Record<string, unknown> | null;
+  status: "no-item" | "loading" | "ready" | "empty";
+} {
   if (!input.sample) return { data: null, status: "no-item" };
   if (!input.ready) return { data: null, status: "loading" };
   const data = rootData(input.sample, input.root, input.annotation);
@@ -61,6 +52,18 @@ function restore(
     data.citation = input.citation ?? null;
   return { data, status: data && Object.keys(data).length ? "ready" : "empty" };
 }
+/** What the field list says while the paper has no fields to list. */
+function emptyText(
+  status: ReturnType<typeof restore>["status"],
+  root: TemplateRoot,
+): string | undefined {
+  if (status === "no-item")
+    return root === "annotation"
+      ? m.workbench_fields_choose_annotation()
+      : m.workbench_fields_choose_item();
+  return status === "loading" ? m.workbench_loading_item() : undefined;
+}
+
 export function FieldList({
   sample,
   annotation,
@@ -75,66 +78,34 @@ export function FieldList({
       : props.root === "filename"
         ? "filename"
         : `annotation:${annotation?.id ?? ""}`;
-  const [store] = useState(() =>
-    createStore<FieldListState>()(() => ({
-      sample,
-      annotation,
-      citation,
-      ready,
-      root: props.root,
-      itemKey: itemKey(sample),
-      ...restore({ sample, annotation, citation, ready, root: props.root }),
-      collapsedSections: new Set<string>(),
-      navigation: initialTreeState(anchor),
-    })),
+  const { data, status } = useMemo(
+    () => restore({ sample, annotation, citation, ready, root: props.root }),
+    [sample, annotation, citation, ready, props.root],
   );
-  const { collapsedSections, navigation, data, status } = useStore(store);
-  useLayoutEffect(() => {
-    const current = store.getState();
-    if (
-      current.sample === sample &&
-      current.annotation === annotation &&
-      current.citation === citation &&
-      current.ready === ready &&
-      current.root === props.root
-    )
-      return;
-    const key = itemKey(sample);
-    store.setState({
-      sample,
-      annotation,
-      citation,
-      ready,
-      root: props.root,
-      itemKey: key,
-      ...restore({ sample, annotation, citation, ready, root: props.root }),
-      navigation:
-        current.itemKey !== key
-          ? initialTreeState(anchor)
-          : current.navigation.anchorKey !== anchor
-            ? setAnchor(current.navigation, anchor)
-            : current.navigation,
-    });
-  }, [store, sample, annotation, citation, ready, props.root, anchor]);
+  const [collapsedSections, setCollapsedSections] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  // The explorer's place belongs to one paper and one root: another paper
+  // starts it over, another root moves its anchor.
+  const key = itemKey(sample);
+  const [place, setPlace] = useState(() => ({
+    key,
+    navigation: initialTreeState(anchor),
+  }));
+  let navigation = place.navigation;
+  if (place.key !== key) navigation = initialTreeState(anchor);
+  else if (navigation.anchorKey !== anchor)
+    navigation = setAnchor(navigation, anchor);
+  if (navigation !== place.navigation) setPlace({ key, navigation });
   return (
     <DataExplorer
       {...props}
       data={data}
-      empty={
-        status === "no-item"
-          ? props.root === "annotation"
-            ? m.workbench_fields_choose_annotation()
-            : m.workbench_fields_choose_item()
-          : status === "loading"
-            ? m.workbench_loading_item()
-            : undefined
-      }
+      empty={emptyText(status, props.root)}
       collapsedSections={collapsedSections}
-      onCollapsedSectionsChange={(collapsedSections) =>
-        store.setState({ collapsedSections })
-      }
+      onCollapsedSectionsChange={setCollapsedSections}
       navigation={navigation}
-      onNavigationChange={(navigation) => store.setState({ navigation })}
+      onNavigationChange={(next) => setPlace({ key, navigation: next })}
       trigger={FIELD_TRIGGER}
       copy={copyThrough(bridge)}
     />

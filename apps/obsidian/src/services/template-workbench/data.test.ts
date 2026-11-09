@@ -853,7 +853,7 @@ async function createFixture(options?: {
   [Symbol.asyncDispose](): Promise<void>;
 }> {
   const client = createClient(":memory:");
-  const sqlite = client.$client as DatabaseSync;
+  const sqlite = client.$client;
   const writeCalls: string[] = [];
   try {
     seed(sqlite);

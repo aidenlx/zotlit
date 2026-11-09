@@ -20,7 +20,7 @@ const obsidianImportPaths = [
     importNames: ["HoverPopover"],
     allowTypeImports: true,
     message:
-      "Extend PopoutAwareHoverPopover from @/lib/popout-aware-hover-popover; it cancels Obsidian's popover timers on the window that armed them (see policies/hover-popover.md).",
+      "Extend HoverPopover from @/lib/hover-popover; it cancels Obsidian's popover timers on the window that armed them and keeps a popover in its own window (see policies/hover-popover.md).",
   },
   ...uniqueIdPaths,
 ];
@@ -58,18 +58,6 @@ const commonImports = {
   ],
   paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
 };
-
-/**
- * What a view gives up when it moves onto view atoms
- * (docs/adr/0082-obsidian-views-read-effect-services-through-view-atoms.md).
- */
-const viewStorePaths = ["zustand", "zustand/vanilla", "zustand/middleware"].map(
-  (name) => ({
-    name,
-    message:
-      "A view on view atoms keeps its state in a per-leaf model of atoms (ADR 0082).",
-  }),
-);
 
 // LogTape's own configure and reset leave a host-process listener and a
 // window-wide root logger that hold a disabled plugin in memory (#1882);
@@ -137,6 +125,7 @@ export default defineConfig({
     "effecttsgo/global-console": "error",
     "effecttsgo/global-console-in-effect": "error",
     "zotlit-obsidian/no-cross-window-instanceof": "error",
+    "zotlit-obsidian/no-global-resize-observer": "error",
     "zotlit-keyboard/no-layer-check": "error",
     "zotlit-menu/no-literal-section": "error",
     "zotlit-services/service-tag-id": "error",
@@ -195,6 +184,7 @@ export default defineConfig({
         "obsidianmd/hardcoded-config-path": "error",
         "obsidianmd/no-forbidden-elements": "error",
         "obsidianmd/no-global-this": "error",
+        "obsidianmd/no-restricted-globals": "error",
         "obsidianmd/no-sample-code": "error",
         "obsidianmd/no-tfile-tfolder-cast": "error",
         "obsidianmd/no-static-styles-assignment": "error",
@@ -251,7 +241,6 @@ export default defineConfig({
         "src/views/library/library-tree.tsx",
         "src/views/library/reading-card.tsx",
         "src/views/library/view.ts",
-        "src/views/note-preview/session.ts",
         "src/views/query-view/view.tsx",
         "src/views/references/view.tsx",
         "src/views/template-workbench/view.tsx",
@@ -352,7 +341,6 @@ export default defineConfig({
       // A file moves off the list when its view reads the tags.
       files: [
         "src/views/annot-view/view.tsx",
-        "src/views/note-preview/view.tsx",
         "src/views/references/view.tsx",
         "src/views/template-data-explorer/view.tsx",
         "src/views/template-workbench/view.tsx",
@@ -407,10 +395,7 @@ export default defineConfig({
     {
       // Plain async code, or an Effect.fn, that reaches the App through
       // `deps.app`: the deps must carry the tag first.
-      files: [
-        "src/views/note-preview/render.ts",
-        "src/views/note-preview/session.ts",
-      ],
+      files: ["src/views/template-workbench/preview/render.ts"],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
@@ -449,8 +434,7 @@ export default defineConfig({
         "src/views/library/item-actions.ts",
         "src/views/library/library-tree.tsx",
         "src/views/library/view.ts",
-        "src/views/note-preview/citations.ts",
-        "src/views/note-preview/session.ts",
+        "src/views/template-workbench/preview/citations.ts",
         "src/views/query-view/table-notes.ts",
         "src/views/query-view/view.tsx",
         "src/views/template-workbench/match-data.ts",
@@ -545,6 +529,18 @@ export default defineConfig({
       rules: { "zotlit-obsidian/no-global-timer": "error" },
     },
     {
+      // So does UI that services draw, such as a picker; tests keep the
+      // timers their fakes replace.
+      files: ["src/**"],
+      excludeFiles: [
+        "**/*.test.{ts,tsx}",
+        "**/*.browser-test.ts",
+        "**/__fixtures__/**",
+        "**/__fixtures__.{ts,tsx}",
+      ],
+      rules: { "zotlit-obsidian/no-global-timer": "error" },
+    },
+    {
       // Guarded private API reaches its surface through obsidian-ex.d.ts.
       files: ["src/lib/obsidian-private/**"],
       rules: { "zotlit-private/no-unknown-cast": "error" },
@@ -566,29 +562,6 @@ export default defineConfig({
       // The wrappers that hand Obsidian's control classes to everything else.
       files: ["src/components/obsidian/**"],
       rules: { "zotlit-css/no-obsidian-class": "off" },
-    },
-    {
-      // Views on view atoms. A view joins when it migrates (ADR 0082).
-      files: [
-        "src/views/library/**",
-        "src/views/query-view/**",
-        "src/views/cited-by/**",
-        "src/views/references/**",
-        "src/views/note-preview/**",
-        "src/views/template-workbench/**",
-        "src/views/welcome/**",
-        "src/views/template-data-explorer/**",
-        "src/views/annot-view/**",
-      ],
-      rules: {
-        "no-restricted-imports": [
-          "error",
-          {
-            ...runtimeImports,
-            paths: [...runtimeImports.paths, ...viewStorePaths],
-          },
-        ],
-      },
     },
     {
       // Tests can inspect the schema; the plugin's other import rules remain.
@@ -677,7 +650,7 @@ export default defineConfig({
     },
     {
       // The one module that wraps Obsidian's popover itself.
-      files: ["src/lib/popout-aware-hover-popover.ts"],
+      files: ["src/lib/hover-popover.ts"],
       rules: {
         "no-restricted-imports": [
           "error",
@@ -705,7 +678,7 @@ export default defineConfig({
     {
       // A reading view of a note: the app's own classes draw its Properties
       // block, so the sheet reads as the note does in the editor.
-      files: ["src/views/note-preview/markdown.tsx"],
+      files: ["src/views/template-workbench/preview/markdown.tsx"],
       rules: { "zotlit-css/no-obsidian-class": "off" },
     },
     {
@@ -722,14 +695,13 @@ export default defineConfig({
       rules: { "zotlit-css/no-obsidian-class": "off" },
     },
     {
-      // Code written before the rule; new code follows it, and a file moves
-      // off this list when it is next reworked.
+      // Background work that stands in no window, which lives as long as the
+      // plugin and so as the main window.
       files: [
-        "src/views/cited-by/CitedBy.tsx",
-        "src/views/query-view/query-file-document.ts",
-        "src/views/query-view/view.tsx",
-        "src/views/welcome/companion-refresh.ts",
-        "src/views/welcome/view.tsx",
+        "src/lib/disposables.ts",
+        "src/lib/plugin-lifecycle.ts",
+        "src/services/item-query/measure.ts",
+        "src/services/log/vault-sink.ts",
       ],
       rules: { "zotlit-obsidian/no-global-timer": "off" },
     },

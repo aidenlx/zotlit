@@ -1,28 +1,27 @@
-// Annotation format editing, example selection, and access to the source section.
-
 import type {
   WorkbenchDocumentController,
   WorkbenchSliceRange,
 } from "#/document/index";
+// Annotation format editing, example selection, and access to the source section.
 import type { AnnotationExample } from "#/render/index";
-import { useRef, useState } from "react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 
 import { isPageNumber } from "@zotlit/db";
 import { useUniqueId } from "@zotlit/ui";
 
-import { useDocumentRevision } from "./editor";
+import { useWorkbenchModel } from "./editor";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useWorkbenchHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { usePartialBoxes } from "./partial-boxes";
 import type { PartialPlaceholderHost } from "./partial-boxes";
-import { useFork } from "./run";
 import { SampleSuggester } from "./sample-suggester";
 import type { SampleOption } from "./sample-suggester";
 import { SliceEditor } from "./slice-editor";
 import type { SliceEditorProps } from "./slice-editor";
 import { useIcon, useParts } from "./theme";
 
+import { documentRevision } from "#/document/atoms";
 import { SAMPLE_ANNOTATIONS } from "#/render/index";
 
 export function AnnotationSampleBar({
@@ -45,9 +44,10 @@ export function AnnotationSampleBar({
   const part = useParts("annotation");
   const triggerPart = useParts("sampleSuggester");
   const host = useWorkbenchHost();
-  const fork = useFork(host.run);
+  const command = useWorkbenchModel().choose(useUniqueId());
+  const open = useAtomValue(command).waiting;
+  const choose = useAtomSet(command);
   const icon = useIcon();
-  const [open, setOpen] = useState(false);
   const title = example
     ? m.workbench_change_annotation()
     : m.workbench_choose_annotation();
@@ -76,9 +76,8 @@ export function AnnotationSampleBar({
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={(event) => {
-            setOpen(true);
-            fork(
-              host.suggester({
+            choose({
+              choose: host.suggester({
                 anchor: event.currentTarget,
                 title,
                 selected: example?.id ?? "",
@@ -92,14 +91,8 @@ export function AnnotationSampleBar({
                   })),
                 })),
               }),
-              {
-                onSuccess: (choice) => {
-                  setOpen(false);
-                  if (choice !== null) onSelect(choice);
-                },
-                onFailure: () => setOpen(false),
-              },
-            );
+              chosen: onSelect,
+            });
           }}
         >
           {icon("choose-sample")}
@@ -157,30 +150,19 @@ export function AnnotationPane({
   controller,
   problem,
   partials,
-  finishHelp,
   ...editor
 }: Pick<
   SliceEditorProps,
   "controller" | "reveal" | "suggest" | "onSelection"
 > & {
   problem: string | null;
-  /** The host explains its save and existing-note update actions. */
-  finishHelp?: string;
   /** The Shared Partials this section's calls name, previewed as an annotation. */
   partials?: PartialPlaceholderHost;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
-  const icon = useIcon();
   const problemId = useUniqueId();
-  const helpId = useUniqueId();
-  const helpButton = useRef<HTMLButtonElement>(null);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const closeHelp = () => {
-    setHelpOpen(false);
-    helpButton.current?.focus();
-  };
-  useDocumentRevision(controller);
+  useAtomValue(documentRevision(controller));
   const boxes = usePartialBoxes(controller, "annotation", partials);
   if (
     !controller.annotationSection ||
@@ -196,44 +178,6 @@ export function AnnotationPane({
         <p id={problemId} role="status" {...part("problem")}>
           {problem}
         </p>
-      )}
-      <p {...part("help-bar")}>
-        <span {...part("help-lede")}>{m.workbench_annotation_lede()}</span>{" "}
-        <span {...part("help-toggle")}>
-          <button
-            ref={helpButton}
-            type="button"
-            {...part("help-button")}
-            aria-label={m.workbench_help()}
-            aria-expanded={helpOpen}
-            aria-controls={helpId}
-            onClick={() => setHelpOpen(!helpOpen)}
-          >
-            {icon("help")}
-          </button>
-        </span>
-      </p>
-      {helpOpen && (
-        <section
-          id={helpId}
-          tabIndex={0}
-          aria-label={m.workbench_annotation_help_title()}
-          {...part("help")}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape") return;
-            event.stopPropagation();
-            closeHelp();
-          }}
-        >
-          <p>
-            {m.workbench_annotation_help_edit({
-              before: "[!note]",
-              after: "[!quote]",
-            })}{" "}
-            {m.workbench_annotation_help_preview()}
-          </p>
-          <p>{finishHelp ?? m.workbench_annotation_help_finish_web()}</p>
-        </section>
       )}
       <div {...part("pane")}>
         <SliceEditor
@@ -252,36 +196,6 @@ export function AnnotationPane({
 }
 
 /**
- * Offers annotation insertion at the end of a note that has no render call.
- */
-export function AnnotationPointer({
-  onInsert,
-  disabled = false,
-}: {
-  onInsert: () => void;
-  disabled?: boolean;
-}) {
-  const m = useWorkbenchMessages();
-  const part = useParts("annotation");
-  return (
-    <div {...part("pointer")}>
-      <span {...part("heading")}>
-        {m.workbench_annotation_pointer_heading()}
-      </span>
-      <span {...part("hint")}>{m.workbench_annotation_pointer()}</span>
-      <button
-        type="button"
-        disabled={disabled}
-        {...part("primary-action")}
-        onClick={onInsert}
-      >
-        {m.workbench_annotation_insert()}
-      </button>
-    </div>
-  );
-}
-
-/**
  * Advanced's own bar over the whole file: the section it holds, or the repair
  * action for the document that has none.
  */
@@ -294,7 +208,7 @@ export function AnnotationSectionBar({
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
-  useDocumentRevision(controller);
+  useAtomValue(documentRevision(controller));
   const section = controller.annotationSection;
   // A document mid-repair can hold the section ranges it had, so the refusal
   // the parser raises decides which of the two actions the bar offers.

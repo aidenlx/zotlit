@@ -93,7 +93,7 @@ export const logTapeLogger = Logger.make<unknown, void>(
     const category = fiber.getRef(LogCategory);
     const logger =
       category[0] === "zotlit"
-        ? getLogTapeLogger(category as [string, ...string[]])
+        ? getLogTapeLogger(category)
         : category.length
           ? rootLogger.getChild(category as [string, ...string[]])
           : rootLogger;

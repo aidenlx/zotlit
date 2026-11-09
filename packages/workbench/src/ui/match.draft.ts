@@ -9,6 +9,9 @@ import type {
   FilterTree,
 } from "@zotlit/filter-expression";
 
+import { pathStartsWith, samePath } from "./row-path";
+import type { RowPath } from "./row-path";
+
 // Preserve nested Match trees and expression rows through labelled edits.
 
 /** A leaf the visual rows cannot show: its Filter Expression, as written. */
@@ -39,7 +42,7 @@ export type EditorCondition<Row extends LabelledRow> =
   | RowCondition<Row>;
 
 /** A child's position in the tree: the index at each nesting level. */
-export type ConditionPath = readonly number[];
+export type ConditionPath = RowPath;
 
 /**
  * A stored filter: a Filter Tree, whose `and`, `or`, and `not` groups the
@@ -347,21 +350,6 @@ export function appendAt<Row extends LabelledRow>(
     ...group,
     conditions: [...group.conditions, child],
   }));
-}
-
-/** Whether `path` is `prefix` or names a node inside it. */
-export function pathStartsWith(
-  path: ConditionPath,
-  prefix: ConditionPath,
-): boolean {
-  return (
-    prefix.length <= path.length &&
-    prefix.every((at, depth) => path[depth] === at)
-  );
-}
-
-export function samePath(a: ConditionPath, b: ConditionPath): boolean {
-  return a.length === b.length && pathStartsWith(a, b);
 }
 
 function nodeAt<Row extends LabelledRow>(

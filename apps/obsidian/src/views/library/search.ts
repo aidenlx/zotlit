@@ -44,7 +44,7 @@ export function searchTokens<const Name extends string>(
   for (let match = TOKEN.exec(text); match; match = TOKEN.exec(text)) {
     const name = match.groups.name.toLowerCase();
     if (!isName(name)) continue;
-    tokens[name].push((match.groups.quoted ?? match.groups.bare)!);
+    tokens[name].push(match.groups.quoted ?? match.groups.bare);
     rest += `${text.slice(from, match.index)} `;
     from = match.index + match[0].length;
   }

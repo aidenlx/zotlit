@@ -8,8 +8,6 @@ import { Context, Duration, Effect, Layer, Option, Stream } from "effect";
 import type { CachedMetadata, TFile } from "obsidian";
 
 import { DOCS_SITE_URL } from "@/lib/constants";
-import { valueOr } from "@/lib/effect-bridge";
-import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import type { ClosableModal } from "@/lib/effect-modal";
@@ -131,9 +129,6 @@ export type CustomizeServices =
   | ObsidianEnv
   | Vault;
 
-/** Open a template in the chosen editor, with approval for web access. */
-export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
-
 /** The one Customize flow every entry action shares, the setting tab included. */
 export class Customize extends Context.Service<
   Customize,
@@ -158,23 +153,6 @@ export const layerCustomize = (ports: CustomizePorts) =>
       });
     }),
   );
-
-/**
- * The Customize flow for callers outside Effect: the entry actions and the
- * Workbench view. A run rejects with what failed. Unload interrupts a run,
- * which closes an open launch sheet, and the run resolves.
- */
-export function bindCustomize(
-  bridge: Pick<EffectBridge, "runPromiseExit">,
-  service: Customize["Service"],
-): CustomizeAction {
-  return (request) =>
-    bridge
-      .runPromiseExit(
-        service.open(request).pipe(Effect.mapError(({ cause }) => cause)),
-      )
-      .then((exit) => valueOr(exit, undefined));
-}
 
 export const customize = Effect.fn("LocalBridge.customize")(function* (
   request: CustomizeRequest,

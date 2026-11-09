@@ -17,13 +17,13 @@ import {
 } from "@/lib/profile-stamp";
 import { bindDraftProfile, Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
-import { Template } from "@/services/template/service";
 import {
   checkDiagnostic,
   checkNativeProfile,
   PROFILE_OUTPUTS,
-} from "@/views/note-preview/check-profile";
-import type { ProfileCheck } from "@/views/note-preview/check-profile";
+} from "@/services/template-workbench/check-profile";
+import type { ProfileCheck } from "@/services/template-workbench/check-profile";
+import { Template } from "@/services/template/service";
 
 import type {
   CheckOutcome,
@@ -249,10 +249,7 @@ export const checkProfileDocument = Effect.fn(
     const load = (key: string, root: "note" | "filename" | "annotation") =>
       loadRoot(key, root).pipe(withSettings(profile.settings), selectedNote);
     const [note, filename] = yield* Effect.all(
-      [
-        load(params.key as string, "note"),
-        load(params.key as string, "filename"),
-      ],
+      [load(params.key, "note"), load(params.key, "filename")],
       { concurrency: "unbounded" },
     );
     if (note.kind !== "data" || filename.kind !== "data")

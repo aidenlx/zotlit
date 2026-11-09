@@ -271,7 +271,7 @@ export const saveLogArchive = Effect.fnUntraced(function* (path: string) {
   const text = yield* (yield* Vault).readPath(path);
   yield* Effect.sync(() => {
     const zipBytes = zipSync({ [LOG_FILENAME]: strToU8(text) });
-    const blob = new Blob([zipBytes as BlobPart], {
+    const blob = new Blob([zipBytes], {
       type: "application/zip",
     });
     saveFile(blob, `zotlit-logs-${exportTimestamp()}.zip`);

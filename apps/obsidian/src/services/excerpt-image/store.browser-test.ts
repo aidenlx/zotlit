@@ -46,14 +46,16 @@ async function writeRaw(
   const database = await new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(databaseName);
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () =>
+      reject(request.error ?? new Error("IndexedDB request failed"));
   });
   try {
     const transaction = database.transaction("images", "readwrite");
     await new Promise<void>((resolve, reject) => {
       const request = transaction.objectStore("images").put(record);
       request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      request.onerror = () =>
+        reject(request.error ?? new Error("IndexedDB request failed"));
     });
   } finally {
     database.close();
@@ -396,7 +398,8 @@ export async function run(): Promise<string[]> {
     request.onupgradeneeded = () =>
       request.result.createObjectStore("old-format").put("obsolete", "old");
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () =>
+      reject(request.error ?? new Error("IndexedDB request failed"));
   });
   legacy.close();
   {

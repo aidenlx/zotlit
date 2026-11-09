@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
+import { TestClock } from "effect/testing";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, vi } from "vitest";
@@ -22,12 +23,13 @@ import type {
   TemplateRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
-import type { WorkbenchHostError } from "@zotlit/workbench/ui";
+import type { ViewSize, WorkbenchHostError } from "@zotlit/workbench/ui";
 
 import { Toaster } from "@/components/ui/toast";
 // Browser storage, render, and Local Bridge fixtures for web host tests.
 import { m } from "@/paraglide/messages.js";
 
+import type { Rendering } from "./rendering";
 import { layerPage } from "./runtime";
 import { Workbench } from "./workbench";
 
@@ -153,8 +155,15 @@ export interface OpenPage extends AsyncDisposable {
   show: (key: string) => Promise<void>;
   /** Waits out the autosave's quiet time and the render's own. */
   settle: () => Promise<void>;
+  /** Lays the page's frame out at `size`, as a resized window does. */
+  resizeFrame: (size: ViewSize) => void;
   /** Waits until immediate Local Bridge responses produce `assertion`. */
   waitFor: (assertion: () => void) => Promise<void>;
+  /**
+   * Moves the page runtime's clock on by `ms`, running the Effect sleeps it
+   * passes, such as the render's quiet time. Only a page opened with `clock`.
+   */
+  adjust: (ms: number) => Promise<void>;
 }
 
 /**
@@ -164,8 +173,69 @@ export interface OpenPage extends AsyncDisposable {
  */
 export async function open({
   strict = false,
-}: { strict?: boolean } = {}): Promise<OpenPage> {
+  rendering,
+  clock = false,
+  frame = null,
+}: {
+  strict?: boolean;
+  /**
+   * The size the page's frame is laid out at; the test document lays out
+   * nothing, so a page without one has not measured its frame.
+   */
+  frame?: ViewSize | null;
+  /** Renders and loads `Temporal` in place of the page's own service. */
+  rendering?: Layer.Layer<Rendering>;
+  /** Runs the page runtime's Effect time on a `TestClock` the case adjusts. */
+  clock?: boolean;
+} = {}): Promise<OpenPage> {
+  let testClock: TestClock.TestClock | null = null;
+  const clockLayer = clock
+    ? Layer.effectDiscard(
+        TestClock.testClockWith((held) =>
+          Effect.sync(() => {
+            testClock = held;
+          }),
+        ),
+      ).pipe(Layer.provideMerge(TestClock.layer()))
+    : Layer.empty;
   await using resources = new AsyncDisposableStack();
+  // The test document lays nothing out, so the browser's geometry boundary
+  // reports the frame's size: the page measures its frame through the
+  // observer as it does in a browser, and every other element through the
+  // document's own.
+  let size = frame;
+  const frames = new Set<{ report: (next: ViewSize) => void }>();
+  const { ResizeObserver: DocumentObserver } = window;
+  class FrameObserver extends DocumentObserver {
+    readonly #callback: ResizeObserverCallback;
+    #frame: { report: (next: ViewSize) => void } | null = null;
+    constructor(callback: ResizeObserverCallback) {
+      super(callback);
+      this.#callback = callback;
+    }
+    override observe(target: Element, options?: ResizeObserverOptions) {
+      if (target.id !== "workbench-editor")
+        return super.observe(target, options);
+      const frame = {
+        report: (next: ViewSize) =>
+          this.#callback(
+            [{ target, contentRect: next } as unknown as ResizeObserverEntry],
+            this,
+          ),
+      };
+      this.#frame = frame;
+      frames.add(frame);
+      if (size) frame.report(size);
+    }
+    override disconnect() {
+      if (this.#frame) frames.delete(this.#frame);
+      super.disconnect();
+    }
+  }
+  window.ResizeObserver = FrameObserver;
+  resources.defer(() => {
+    window.ResizeObserver = DocumentObserver;
+  });
   const host = resources.adopt(document.createElement("div"), (element) => {
     element.remove();
   });
@@ -175,13 +245,17 @@ export async function open({
   const content = (
     <>
       <Workbench
-        layer={layerPage.pipe(
-          Layer.provide([
-            FetchHttpClient.layer.pipe(
-              Layer.provide(Layer.succeed(FetchHttpClient.Fetch, bridge)),
-            ),
-            Layer.succeed(LocalBridgeStorage, sessionStorage),
-          ]),
+        layer={Layer.mergeAll(
+          layerPage.pipe(
+            Layer.provide([
+              FetchHttpClient.layer.pipe(
+                Layer.provide(Layer.succeed(FetchHttpClient.Fetch, bridge)),
+              ),
+              Layer.succeed(LocalBridgeStorage, sessionStorage),
+            ]),
+          ),
+          rendering ?? Layer.empty,
+          clockLayer,
         )}
       />
       <Toaster />
@@ -211,6 +285,12 @@ export async function open({
         option.click();
       });
     },
+    resizeFrame(next) {
+      size = next;
+      act(() => {
+        for (const frame of frames) frame.report(next);
+      });
+    },
     async settle() {
       await act(async () => {});
       await act(() => vi.advanceTimersByTimeAsync(SETTLE_MS));
@@ -236,6 +316,11 @@ export async function open({
         step = Math.min(step === 0 ? 25 : step * 2, WAIT_MS - elapsed);
       }
     },
+    async adjust(ms) {
+      const held = testClock;
+      if (!held) throw new Error("The page was opened without a test clock.");
+      await act(() => Effect.runPromise(held.adjust(ms)));
+    },
     async [Symbol.asyncDispose]() {
       await lifetime.disposeAsync();
     },
@@ -257,10 +342,15 @@ export function press(scope: HTMLElement, label: string): void {
   act(() => target.click());
 }
 
-/** Finds the field row named `label`, including its insertion controls. */
+/**
+ * Finds the field row named `label`, including its insertion controls. The
+ * rows stand in the Fields popover, which it opens from the header's Fields
+ * action, as the reader does, while the popover is closed.
+ */
 export function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
+  const popover = openFieldsPopover(scope);
   const target = [
-    ...scope.querySelectorAll('[role="treeitem"] [data-part="key"]'),
+    ...(popover?.querySelectorAll('[role="treeitem"] [data-part="key"]') ?? []),
   ]
     .find((span) => span.textContent === label)
     ?.closest("li");
@@ -268,11 +358,43 @@ export function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
   return target;
 }
 
+/**
+ * Opens the Fields popover from the header's Fields action, unless it stands
+ * open, and returns it. The popover stands on the document's body.
+ */
+export function openFieldsPopover(scope: HTMLElement): HTMLElement | null {
+  const action = [...scope.querySelectorAll("header button")].find(
+    (button) => button.textContent === m.workbench_view_fields(),
+  );
+  if (!action) return null;
+  if (action.getAttribute("aria-expanded") !== "true")
+    act(() => (action as HTMLButtonElement).click());
+  const id = action.getAttribute("aria-controls");
+  return id ? scope.ownerDocument.getElementById(id) : null;
+}
+
+/**
+ * Opens the item row's annotation chooser, which reads "Change annotation"
+ * once one is chosen.
+ */
+export function openAnnotationChooser(page: OpenPage): void {
+  const row = page.host.querySelector<HTMLElement>("[data-workbench-item-row]");
+  const names: readonly string[] = [
+    m.workbench_choose_annotation(),
+    m.workbench_change_annotation(),
+  ];
+  const target = [...(row?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+    (button) => names.includes(button.getAttribute("aria-label") ?? ""),
+  );
+  if (!target) throw new Error("The item row has no annotation chooser.");
+  act(() => target.click());
+}
+
 export async function chooseAnnotation(
   page: OpenPage,
   text: string,
 ): Promise<void> {
-  page.press(m.workbench_choose_annotation());
+  openAnnotationChooser(page);
   const option = [
     ...document.querySelectorAll<HTMLElement>(
       '[role="dialog"] [role="option"]',
@@ -300,7 +422,7 @@ export function sourceView(host: HTMLElement): EditorView {
 /** The pane tab the page reads as chosen. */
 export function chosenTab(host: HTMLElement): string {
   const tabs = host.querySelector('[role="tablist"]')!;
-  return tabs.querySelector('[aria-selected="true"]')!.textContent!;
+  return tabs.querySelector('[aria-selected="true"]')!.textContent;
 }
 
 /** Hands `source` to the page as the file a reader picked. */
@@ -328,20 +450,12 @@ export function resize(width: number): void {
   act(() => happyDOM.setViewport({ width }));
 }
 
-/** The field list the narrow layout's "Add a field" opened. */
-export function openSheet(host: HTMLElement): HTMLElement {
-  const sheet =
+/** The dialog open over the page. */
+export function openDialog(host: HTMLElement): HTMLElement {
+  const dialog =
     host.ownerDocument.querySelector<HTMLElement>('[role="dialog"]');
-  if (!sheet) throw new Error("No field sheet is open.");
-  return sheet;
-}
-
-/** The tab the narrow layout reads as chosen: the pane, or the result. */
-export function chosenView(host: HTMLElement): string {
-  const tabs = host.querySelector(
-    `[role="group"][aria-label="${m.workbench_view_label()}"]`,
-  )!;
-  return tabs.querySelector('[aria-pressed="true"]')!.textContent!;
+  if (!dialog) throw new Error("No dialog is open.");
+  return dialog;
 }
 
 /** Every source a render was started over. */
@@ -366,8 +480,7 @@ export function title(host: HTMLElement): string {
 export function shownItem(host: HTMLElement): string {
   return (
     host
-      .querySelector("#workbench-sample")
-      ?.parentElement?.querySelector("span[title]")
+      .querySelector("[data-workbench-item-row] span[title]")
       ?.getAttribute("title") ?? ""
   );
 }
@@ -534,7 +647,7 @@ export function bridgeFetch(
     return new Response(JSON.stringify(payload), {
       headers: { "Content-Type": "application/json" },
     });
-  } as typeof fetch;
+  };
 }
 
 export function bridgeResponse({

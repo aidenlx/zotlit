@@ -288,7 +288,7 @@ async function callBuildStart(
 
 /** Invokes a plugin hook when the plugin defines one, so absent hooks stay observable. */
 async function callHook(hook: unknown): Promise<void> {
-  if (typeof hook === "function") await hook.call({} as never);
+  if (typeof hook === "function") await hook.call({});
 }
 
 function devServerPort(config: UserConfig | null | void): number {

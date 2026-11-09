@@ -1,9 +1,9 @@
 {
   "id": "zotlit",
   "name": "ZotLit",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "minAppVersion": "1.14.5",
-  "description": "Plugin to integrate with Zotero, create literature notes and insert citations from a Zotero library.",
+  "description": "Your Zotero research desk in Obsidian: browse and query your library, read and annotate PDFs, take literature notes, cite as you write, and export to Word with a formatted reference list.",
   "author": "AidenLx",
   "authorUrl": "https://github.com/aidenlx",
   "fundingUrl": {

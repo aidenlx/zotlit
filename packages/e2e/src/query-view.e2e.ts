@@ -49,10 +49,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "query-files/Reading annotations.zotquery",
         )!;
         const wide = app.workspace.getLeaf("tab");
-        await wide.openFile(file!);
+        await wide.openFile(file);
         app.workspace.setActiveLeaf(wide, { focus: true });
         const narrow = app.workspace.createLeafBySplit(wide, "vertical");
-        await narrow.openFile(file!);
+        await narrow.openFile(file);
         await Promise.all([
           (wide.view as import("@/views/query-view/file-view").QueryFileView)
             .query.settled,
@@ -84,14 +84,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The sidebars fold with an animation; a width the same over three frames
     // is the settled pane.
 
-    interface Pane {
-      width: number;
-      overflow: boolean;
-      buttons: Record<
-        string,
-        { tooltip: string | null; nameShown: boolean; iconShown: boolean }
-      >;
-    }
     const each = (nameShown: boolean) =>
       Object.fromEntries(
         Object.entries(names).map(([hook, name]) => [
@@ -100,7 +92,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ]),
       );
 
-    const narrow = (await obRun(
+    const narrow = await obRun(
       run.vaultId,
       async ({ page: pageHelpers }, { hookNames }) => {
         const { until } = pageHelpers;
@@ -112,20 +104,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           steady = 0;
         await until("toolbar width settles", async () => {
           await new Promise((r) => requestAnimationFrame(r));
-          const width = bar!.clientWidth;
+          const width = bar.clientWidth;
           steady = width > 0 && width === last ? steady + 1 : 0;
           last = width;
           return steady >= 3;
         });
         const button = (hook: string) =>
           hook === "properties"
-            ? bar!.querySelector<HTMLElement>("[data-query-properties]")!
-            : bar!.querySelector<HTMLElement>(
-                `[data-query-toolbar="${hook}"]`,
-              )!;
+            ? bar.querySelector<HTMLElement>("[data-query-properties]")!
+            : bar.querySelector<HTMLElement>(`[data-query-toolbar="${hook}"]`)!;
         const out = {
-          width: bar!.clientWidth,
-          overflow: bar!.scrollWidth > bar!.clientWidth,
+          width: bar.clientWidth,
+          overflow: bar.scrollWidth > bar.clientWidth,
           buttons: {} as Record<
             string,
             { tooltip: string | null; nameShown: boolean; iconShown: boolean }
@@ -133,26 +123,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         for (const hook of hookNames) {
           const el = button(hook);
-          const name = [...el!.querySelectorAll<HTMLElement>("span")].find(
+          const name = [...el.querySelectorAll<HTMLElement>("span")].find(
             (s) => s.textContent.trim() !== "",
           );
           out.buttons[hook] = {
-            tooltip: el!.getAttribute("aria-label"),
+            tooltip: el.getAttribute("aria-label"),
             nameShown: !!name && getComputedStyle(name).display !== "none",
             iconShown:
-              !!el!.querySelector<SVGSVGElement>("svg")! &&
-              el!.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
+              !!el.querySelector<SVGSVGElement>("svg")! &&
+              el.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
                 .width > 0,
           };
         }
         return out;
       },
       { hookNames: Object.keys(names) },
-    )) as Pane;
+    );
     expect(narrow.width).toBeLessThan(400);
     expect(narrow).toMatchObject({ overflow: false, buttons: each(false) });
 
-    const wide = (await obRun(
+    const wide = await obRun(
       run.vaultId,
       async ({ page: pageHelpers }, { hookNames }) => {
         const { until } = pageHelpers;
@@ -164,20 +154,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           steady = 0;
         await until("toolbar width settles", async () => {
           await new Promise((r) => requestAnimationFrame(r));
-          const width = bar!.clientWidth;
+          const width = bar.clientWidth;
           steady = width > 0 && width === last ? steady + 1 : 0;
           last = width;
           return steady >= 3;
         });
         const button = (hook: string) =>
           hook === "properties"
-            ? bar!.querySelector<HTMLElement>("[data-query-properties]")!
-            : bar!.querySelector<HTMLElement>(
-                `[data-query-toolbar="${hook}"]`,
-              )!;
+            ? bar.querySelector<HTMLElement>("[data-query-properties]")!
+            : bar.querySelector<HTMLElement>(`[data-query-toolbar="${hook}"]`)!;
         const out = {
-          width: bar!.clientWidth,
-          overflow: bar!.scrollWidth > bar!.clientWidth,
+          width: bar.clientWidth,
+          overflow: bar.scrollWidth > bar.clientWidth,
           buttons: {} as Record<
             string,
             { tooltip: string | null; nameShown: boolean; iconShown: boolean }
@@ -185,22 +173,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         for (const hook of hookNames) {
           const el = button(hook);
-          const name = [...el!.querySelectorAll<HTMLElement>("span")].find(
+          const name = [...el.querySelectorAll<HTMLElement>("span")].find(
             (s) => s.textContent.trim() !== "",
           );
           out.buttons[hook] = {
-            tooltip: el!.getAttribute("aria-label"),
+            tooltip: el.getAttribute("aria-label"),
             nameShown: !!name && getComputedStyle(name).display !== "none",
             iconShown:
-              !!el!.querySelector<SVGSVGElement>("svg")! &&
-              el!.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
+              !!el.querySelector<SVGSVGElement>("svg")! &&
+              el.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
                 .width > 0,
           };
         }
         return out;
       },
       { hookNames: Object.keys(names) },
-    )) as Pane;
+    );
     expect(wide.width).toBeGreaterThan(700);
     expect(wide).toMatchObject({ overflow: false, buttons: each(true) });
 
@@ -213,7 +201,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           pageHelpers.scratch.zotlitE2EPanes!.narrow
             .view as import("obsidian").ItemView
         ).contentEl.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!;
-        const r = el!.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
         const at = {
           bubbles: true,
           pointerType: "mouse",
@@ -221,14 +209,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           clientY: r.y + 5,
         };
         for (let i = 0; i < 3; i++) {
-          el!.dispatchEvent(
+          el.dispatchEvent(
             new PointerEvent("pointermove", { ...at, clientX: at.clientX + i }),
           );
-          el!.dispatchEvent(
+          el.dispatchEvent(
             new MouseEvent("mousemove", { ...at, clientX: at.clientX + i }),
           );
         }
-        el!.dispatchEvent(new PointerEvent("pointerover", at));
+        el.dispatchEvent(new PointerEvent("pointerover", at));
         return (
           await until(
             "tooltip shows",
@@ -286,7 +274,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   .ownerDocument !== document,
               10000,
             );
-          } else {
           }
         },
         { isPopout: host === "popout" },
@@ -409,7 +396,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ).contentEl.ownerDocument.hasFocus(),
               5000,
             );
-          } else {
           }
         },
         {
@@ -462,11 +448,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expect(hint.text).not.toContain("The elements of the list");
       };
 
-      const inFilter = (await obRun(
+      const inFilter = await obRun(
         run.vaultId,
         async (
           { page: pageHelpers },
-          { shouldSelect, undefined, cursorAnchor },
+          { shouldSelect, undefined: insertText, cursorAnchor },
         ) => {
           const { until } = pageHelpers;
           const el = (
@@ -482,7 +468,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   .querySelector<HTMLElement>(
                     '[data-filter-section="view"] [data-condition-row]',
                   )
-                  ?.querySelector<CodeMirrorContent>(".cm-content")!,
+                  ?.querySelector<CodeMirrorContent>(".cm-content"),
               5000,
             );
             const root = content.closest<HTMLElement>(
@@ -491,13 +477,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const doc = content.ownerDocument;
             const win = doc.defaultView;
             const view = content.cmTile.root.view;
-            if (shouldSelect) {
-            } else {
+            if (!shouldSelect) {
               view.dispatch({
                 changes: {
                   from: 0,
                   to: view.state.doc.length,
-                  insert: undefined,
+                  insert: insertText,
                 },
                 userEvent: "input.type",
               });
@@ -570,11 +555,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           }
         },
         {
-          shouldSelect: undefined === undefined,
+          shouldSelect: true,
           undefined,
           cursorAnchor: "title.slice(0, ".length,
         },
-      )) as Hint;
+      );
       // The focus keeps the caret where it was, in the state and on screen.
       expect(inFilter).toMatchObject({
         ...expected,
@@ -583,7 +568,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       });
       isStringSlice(inFilter);
 
-      const inFormula = (await obRun(
+      const inFormula = await obRun(
         run.vaultId,
         async (
           { page: pageHelpers },
@@ -595,7 +580,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .view as import("obsidian").ItemView
           ).contentEl;
           press(
-            el.querySelector<HTMLElement>("[data-query-properties]")!,
+            el.querySelector<HTMLElement>("[data-query-properties]"),
             "Properties",
           );
           const popup = await until("Properties popover", () =>
@@ -603,7 +588,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .querySelector<HTMLElement>(
                 "[data-query-properties-popup] [data-query-property]",
               )
-              ?.closest<HTMLElement>("[data-query-properties-popup]")!,
+              ?.closest<HTMLElement>("[data-query-properties-popup]"),
           );
           press(
             [...popup.querySelectorAll<HTMLElement>('[role="option"]')].find(
@@ -619,7 +604,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   .querySelector<HTMLElement>(
                     "[data-chooser-page] [data-query-formula-expression]",
                   )
-                  ?.querySelector<CodeMirrorContent>(".cm-content")!,
+                  ?.querySelector<CodeMirrorContent>(".cm-content"),
               5000,
             );
             const root = content.closest<HTMLElement>(
@@ -628,8 +613,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const doc = content.ownerDocument;
             const win = doc.defaultView;
             const view = content.cmTile.root.view;
-            if (shouldClear) {
-            } else {
+            if (!shouldClear) {
               view.dispatch({
                 changes: {
                   from: 0,
@@ -708,11 +692,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         {
           buttonLabel: run.m.query_view_formula_add(),
-          shouldClear: "title.slice(1, )" === undefined,
+          shouldClear: false,
           insertText: "title.slice(1, )",
           cursorAnchor: "title.slice(1, ".length,
         },
-      )) as Hint;
+      );
       expect(inFormula).toMatchObject({
         ...expected,
         caret: "title.slice(1, ".length,
@@ -769,7 +753,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 .querySelector<HTMLElement>(
                   '[data-filter-section="view"] [data-condition-row]',
                 )
-                ?.querySelector<CodeMirrorContent>(".cm-content")!,
+                ?.querySelector<CodeMirrorContent>(".cm-content"),
             5000,
           );
           const doc = content.ownerDocument;
@@ -1005,7 +989,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ).contentEl.doc.hasFocus(),
               5000,
             );
-          } else {
           }
           const formula = await (async () => {
             const view = leaf.view;
@@ -1241,7 +1224,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ).contentEl.doc.hasFocus(),
               5000,
             );
-          } else {
           }
           const el = (leaf.view as import("obsidian").ItemView).contentEl;
           const input = trusted(el.win);
@@ -1268,7 +1250,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const page = await until("Configure view", () =>
             popup
               .querySelector<HTMLElement>("[data-query-configure-view]")
-              ?.closest<HTMLElement>("[data-chooser-page]")!,
+              ?.closest<HTMLElement>("[data-chooser-page]"),
           );
           await input.click(
             page.querySelector<HTMLElement>("[data-chooser-page-menu]")!,
@@ -1320,7 +1302,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // What the list offers for each text typed over the expression row's
     // text; the row is never left empty, which would remove it. The eval
     // restores the vault and the layout before it answers.
-    const offered = (await obRun(
+    const offered = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }, { path, source, texts }) => {
         const { until } = pageHelpers;
@@ -1388,7 +1370,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return out;
       },
       { path, source, texts },
-    )) as Record<string, string[]>;
+    );
     const has = (text: string, names: string[], not: string[] = []) => {
       expect(offered[text], text).toEqual(expect.arrayContaining(names));
       for (const name of not) expect(offered[text], text).not.toContain(name);
@@ -1565,8 +1547,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const modal = capture.modal!;
           modal.close();
           let page: PrintedQueryPage | null = null;
-          const print = modal!.print.bind(modal);
-          modal!.print = async (
+          const print = modal.print.bind(modal);
+          modal.print = async (
             el: HTMLElement,
             component: import("obsidian").Component,
             includeName: boolean,
@@ -1609,7 +1591,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             };
             return out;
           };
-          await modal!.printToPdf({
+          await modal.printToPdf({
             filepath: pdfPath,
             includeName: true,
             pageSize: "A4",
@@ -1803,9 +1785,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           view: section("view").querySelector<HTMLElement>(
             "[data-filter-heading]",
           )!.textContent,
-          tag: section("view").querySelector<HTMLInputElement>(
-            `[data-condition-row] input[aria-label="${filterLabel}"]`,
-          )!.value,
+          tag: pageHelpers.labelledInput(section("view"), filterLabel)!.value,
         };
       },
       { filterLabel: run.m.workbench_filter_value() },
@@ -1839,9 +1819,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
 
         set(
-          section("view").querySelector<HTMLInputElement>(
-            `[data-condition-row] input[aria-label="${filterLabel}"]`,
-          )!,
+          pageHelpers.labelledInput(section("view"), filterLabel)!,
           "methodology",
         );
       },
@@ -1878,13 +1856,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           section("all").querySelector<HTMLDetailsElement>("details")!;
         if (!fold.open)
           press(
-            fold.querySelector<HTMLElement>("summary")!,
+            fold.querySelector<HTMLElement>("summary"),
             "All views heading",
           );
         await pick(
           section("all").querySelector<HTMLSelectElement>(
             `[data-condition-row] select[aria-label="${filterLabel}"]`,
-          )!,
+          ),
           "yellow",
           "Value",
         );
@@ -1928,7 +1906,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         press(
           section("view").querySelector<HTMLButtonElement>(
             `[data-condition-row] button[aria-label="${editButtonLabel}"]`,
-          )!,
+          ),
           "Edit as expression",
         );
         write(
@@ -1995,7 +1973,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await underlines(["nosuchfield"])).toEqual(["nosuchfield"]);
     // The condition shows no tooltip over the underline, not even an empty
     // one, well past CodeMirror's hover delay.
-    const hovered = (await obRun(
+    const hovered = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }) => {
         const el = (
@@ -2026,7 +2004,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ].map((n) => n.className);
       },
       undefined,
-    )) as string[];
+    );
     expect(hovered).toEqual([]);
 
     // The expression field colors each kind of token with Obsidian's code
@@ -2118,11 +2096,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // One line of expression reads as a native text input: the field fills
     // the row's input-high box, and its text and caret sit at the centre of
     // it. Wrapped text grows the box, as a textarea does.
-    type Alignment = Record<
-      "text" | "caret" | "field" | "line" | "box",
-      number
-    >;
-    const aligned = (await obRun(
+    const aligned = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }) => {
         const el = (
@@ -2189,7 +2163,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
       },
       undefined,
-    )) as { one: Alignment; wrapped: Alignment; input: number };
+    );
     expect(aligned.one.box).toBeCloseTo(aligned.input, 0);
     expect(Math.abs(aligned.one.field)).toBeLessThanOrEqual(1);
     expect(Math.abs(aligned.one.text)).toBeLessThanOrEqual(1);
@@ -2336,9 +2310,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )!;
 
           return String(
-            section("view").querySelector<HTMLInputElement>(
-              `[data-condition-row] input[aria-label="${filterLabel}"]`,
-            )?.value ?? null,
+            pageHelpers.labelledInput(section("view"), filterLabel)?.value ??
+              null,
           );
         },
         { filterLabel: run.m.workbench_filter_value() },
@@ -2403,7 +2376,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return String(
             popover.ownerDocument.activeElement?.closest<HTMLElement>(
               "[data-condition-row]",
-            )! ===
+            ) ===
               [
                 ...section("view").querySelectorAll<HTMLElement>(
                   "[data-condition-row]",
@@ -2431,7 +2404,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await pick(
           section("view").querySelector<HTMLSelectElement>(
             `[data-condition-row] select[aria-label="${filterLabel}"]`,
-          )!,
+          ),
           "red",
           "Value",
         );
@@ -2929,7 +2902,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )!
             .querySelector<HTMLButtonElement>(
               `[data-condition-row] button[aria-label="${removeConditionLabel}"]`,
-            )!,
+            ),
           "Remove condition",
         );
       },
@@ -2958,7 +2931,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )!
             .querySelector<HTMLButtonElement>(
               `[data-condition-row] button[aria-label="${removeConditionLabel}"]`,
-            )!,
+            ),
           "Remove condition",
         );
       },
@@ -3008,7 +2981,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         press(
           section("view").querySelector<HTMLButtonElement>(
             `[data-condition-row] button[aria-label="${removeConditionLabel}"]`,
-          )!,
+          ),
           "Remove condition",
         );
       },
@@ -3030,7 +3003,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         press(
           section("view").querySelector<HTMLButtonElement>(
             `[data-condition-row] button[aria-label="${removeConditionLabel}"]`,
-          )!,
+          ),
           "Remove condition",
         );
       },
@@ -3106,7 +3079,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ].join("\n"),
       },
     );
-    const shown = (await obRun(
+    const shown = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }, { notePath }) => {
         const { until } = pageHelpers;
@@ -3136,14 +3109,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const mark = await until(
           "underline",
           () =>
-            popover!.querySelector<HTMLElement>(
+            popover.querySelector<HTMLElement>(
               '[data-filter-section="view"] [data-condition-row] .cm-lintRange-error',
             )!,
           20000,
         );
         const probe = doc.createElement("span");
         probe.style.color = "var(--text-error)";
-        popover!.append(probe);
+        popover.append(probe);
         const error = getComputedStyle(probe).color;
         probe.remove();
         const style = getComputedStyle(mark);
@@ -3155,7 +3128,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
       },
       { notePath: path },
-    )) as { popout: boolean; text: string; line: string; color: boolean };
+    );
     expect(shown).toEqual({
       popout: true,
       text: "nosuchfield",
@@ -3258,7 +3231,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           const popover = await pageHelpers.openToolbarPopover(el, "filter");
           const pickers = () => [
-            ...popover!.querySelectorAll<HTMLElement>(
+            ...popover.querySelectorAll<HTMLElement>(
               `[data-filter-section="view"] [data-condition-row] [aria-label=${JSON.stringify(conditionKindLabel)}]`,
             ),
           ];
@@ -3280,11 +3253,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const row = picker.closest<HTMLElement>("[data-condition-row]")!;
             return {
               kind: picker.dataset.value,
-              label: Math.round(label!.getBoundingClientRect().width),
-              clipped: label!.scrollWidth > label!.clientWidth,
+              label: Math.round(label.getBoundingClientRect().width),
+              clipped: label.scrollWidth > label.clientWidth,
               chips: Object.fromEntries(
                 [
-                  ...row!.querySelectorAll<HTMLInputElement>(
+                  ...row.querySelectorAll<HTMLInputElement>(
                     "[data-chip-input] .multi-select-pill-content",
                   ),
                 ].map((content) => [content.textContent, lines(content)]),
@@ -3492,7 +3465,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         press(
           el.doc.querySelector<HTMLElement>(
             '[data-query-popover="sort"] [data-sort-add]',
-          )!,
+          ),
           "Add sort",
         );
       },
@@ -3522,7 +3495,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await pick(
             el.doc.querySelector<HTMLButtonElement | HTMLSelectElement>(
               `[data-query-popover="sort"] [${control}]`,
-            )!,
+            ),
             value,
             `${control}`,
           );
@@ -3616,8 +3589,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const select = el.doc.querySelector<HTMLButtonElement>(
           '[data-query-popover="sort"] [data-sort-direction]',
         )!;
-        select!.value = "ASC";
-        select!.dispatchEvent(new Event("change", { bubbles: true }));
+        select.value = "ASC";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
       },
       { sectionView },
     );
@@ -3768,7 +3741,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const leaf = pageHelpers.scratch.zotlitE2EBlockLeaf;
           const el = await pageHelpers.revealQueryView(block);
           press(
-            el.querySelector<HTMLElement>("[data-query-results]")!,
+            el.querySelector<HTMLElement>("[data-query-results]"),
             "Results",
           );
           const input = await until("limit field", () =>
@@ -3900,7 +3873,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           (
             app.workspace.getMostRecentLeaf()!
               .view as import("obsidian").ItemView
-          ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]")!,
+          ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]"),
           "View menu",
         );
       },
@@ -3933,8 +3906,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ).contentEl.doc.querySelector<HTMLInputElement>(
           "[data-query-view-list] input",
         )!;
-        input!.value = inputText;
-        input!.dispatchEvent(new Event("input", { bubbles: true }));
+        input.value = inputText;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
       },
       { inputText: "fig" },
     );
@@ -3964,8 +3937,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ).contentEl.doc.querySelector<HTMLInputElement>(
           "[data-query-view-list] input",
         )!;
-        input!.value = inputText;
-        input!.dispatchEvent(new Event("input", { bubbles: true }));
+        input.value = inputText;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
       },
       { inputText: "" },
     );
@@ -3982,7 +3955,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .view as import("obsidian").ItemView
           ).contentEl.doc.querySelector<HTMLElement>(
             '[data-query-view-action="add"]',
-          )!,
+          ),
           "Add view",
         );
       },
@@ -4026,9 +3999,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const input = activeDocument.querySelector<HTMLInputElement>(
           "[data-query-view-list] [data-chooser-page] [data-query-view-name]",
         )!;
-        input!.value = "Methods";
-        input!.dispatchEvent(new Event("input", { bubbles: true }));
-        input!.dispatchEvent(
+        input.value = "Methods";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(
           new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
         );
       },
@@ -4061,13 +4034,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "[data-query-view-list] [data-chooser-page]",
         )!;
         press(
-          page!.querySelector<HTMLElement>(
+          page.querySelector<HTMLElement>(
             '[data-query-view-option="showPage"] [role="switch"]',
-          )!,
+          ),
           "Show page",
         );
         press(
-          page!.querySelector<HTMLElement>("[data-chooser-page-close]")!,
+          page.querySelector<HTMLElement>("[data-chooser-page-close]"),
           "Close",
         );
       },
@@ -4102,7 +4075,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           (
             app.workspace.getMostRecentLeaf()!
               .view as import("obsidian").ItemView
-          ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]")!,
+          ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]"),
           "View menu",
         );
       },
@@ -4136,7 +4109,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ).contentEl.doc.querySelector<HTMLElement>(
           '[data-query-view-row="Methods"]',
         )!;
-        row!.dispatchEvent(
+        row.dispatchEvent(
           new MouseEvent("contextmenu", {
             bubbles: true,
             cancelable: true,
@@ -4149,10 +4122,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             .querySelector<HTMLElement>(
               '[data-query-view-list] [data-query-configure-view="Methods"]',
             )
-            ?.closest<HTMLElement>("[data-chooser-page]")!,
+            ?.closest<HTMLElement>("[data-chooser-page]"),
         );
         press(
-          page.querySelector<HTMLElement>("[data-chooser-page-menu]")!,
+          page.querySelector<HTMLElement>("[data-chooser-page-menu]"),
           "More options",
         );
         const item = await until("Default view", () =>
@@ -4162,7 +4135,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         press(item, "Default view");
         press(
-          page.querySelector<HTMLElement>("[data-chooser-page-close]")!,
+          page.querySelector<HTMLElement>("[data-chooser-page-close]"),
           "Close",
         );
       },
@@ -4227,7 +4200,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           (
             app.workspace.getMostRecentLeaf()!
               .view as import("obsidian").ItemView
-          ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]")!,
+          ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]"),
           "View menu",
         );
       },
@@ -4265,7 +4238,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .view as import("obsidian").ItemView
           ).contentEl.doc.querySelector<HTMLElement>(
             '[data-query-view-list] [data-query-view-configure="Figures"]',
-          )!,
+          ),
           "Configure Figures",
         );
       },
@@ -4292,7 +4265,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         press(
           activeDocument.querySelector<HTMLElement>(
             "[data-query-view-list] [data-chooser-page] [data-chooser-page-close]",
-          )!,
+          ),
           "Close",
         );
       },
@@ -4454,8 +4427,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const select = activeDocument.querySelector<HTMLSelectElement>(
           '[data-query-view-list] [data-chooser-page] [data-query-view-option="markers"]',
         )!;
-        select!.value = "number";
-        select!.dispatchEvent(new Event("change", { bubbles: true }));
+        select.value = "number";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
       },
       undefined,
     );
@@ -4627,13 +4600,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const page = activeDocument.querySelector<HTMLElement>(
             "[data-query-view-list] [data-chooser-page]",
           )!;
-          const select = page!.querySelector<HTMLSelectElement>(
+          const select = page.querySelector<HTMLSelectElement>(
             "[data-query-view-layout]",
           )!;
-          select!.value = type;
-          select!.dispatchEvent(new Event("change", { bubbles: true }));
+          select.value = type;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
           press(
-            page!.querySelector<HTMLElement>("[data-chooser-page-close]")!,
+            page.querySelector<HTMLElement>("[data-chooser-page-close]"),
             "Close",
           );
           return String(true);
@@ -4652,7 +4625,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).contentEl;
           if (!el.querySelector<HTMLInputElement>("[data-query-search]")!) {
             press(
-              el.querySelector<HTMLElement>('[data-query-toolbar="search"]')!,
+              el.querySelector<HTMLElement>('[data-query-toolbar="search"]'),
               "Search",
             );
             await until("search field", () =>
@@ -4666,7 +4639,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             HTMLInputElement.prototype,
             "value",
           )!.set!.call(input, text);
-          input!.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("input", { bubbles: true }));
           return String(true);
         },
         { text },
@@ -4716,14 +4689,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // and a card stays for each Item with nothing in it.
     await pickLayout("table");
     await tabWhen((tab) => tab.layout === "table" && tab.rows.length === total);
-    const hidden = (await obRun(
+    const hidden = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }) => {
         const { press, until } = pageHelpers;
         const view = app.workspace.getMostRecentLeaf()!.view;
         const el = (view as import("obsidian").ItemView).contentEl;
         press(
-          el.querySelector<HTMLElement>("[data-query-properties]")!,
+          el.querySelector<HTMLElement>("[data-query-properties]"),
           "Properties",
         );
         const popup = () =>
@@ -4731,7 +4704,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "[data-query-properties-popup]",
           )!;
         const selected = () => [
-          ...popup()!.querySelectorAll<HTMLElement>(
+          ...popup().querySelectorAll<HTMLElement>(
             '[data-query-property][aria-selected="true"]',
           ),
         ];
@@ -4740,14 +4713,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           () => popup()?.isConnected && selected().length > 0,
         );
         press(
-          popup()!.querySelector<HTMLElement>(
+          popup().querySelector<HTMLElement>(
             '[data-query-properties-action="hide-all"]',
-          )!,
+          ),
           "Hide all",
         );
         await until("Hide all clears the ticks", () => selected().length === 0);
         const ticks = selected().length;
-        pageHelpers.closePopovers(popup()!.ownerDocument);
+        pageHelpers.closePopovers(popup().ownerDocument);
         await until(
           "Table drops the columns",
           () =>
@@ -4768,7 +4741,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
       },
       undefined,
-    )) as { header: string[]; rows: number; ticks: number };
+    );
     expect(hidden).toEqual({
       header: [""],
       rows: total,
@@ -4820,7 +4793,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ app }, { path }) => {
         const file = app.vault.getFileByPath(path)!;
         const leaf = app.workspace.getLeaf("tab");
-        await leaf.openFile(file!);
+        await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
       },
       { path },
@@ -4886,9 +4859,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).contentEl;
           const popover = await pageHelpers.openToolbarPopover(el, "group");
           await pick(
-            popover!.querySelector<HTMLButtonElement | HTMLSelectElement>(
+            popover.querySelector<HTMLButtonElement | HTMLSelectElement>(
               `${selector}`,
-            )!,
+            ),
             value,
             selector,
           );
@@ -4936,9 +4909,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ).contentEl;
         const popover = await pageHelpers.openToolbarPopover(el, "group");
         press(
-          popover!.querySelector<HTMLInputElement>(
+          popover.querySelector<HTMLInputElement>(
             `[data-group-row=${hidden}] input`,
-          )!,
+          ),
           `group row ${hidden}`,
         );
         await pageHelpers.closeToolbarPopover(el, "group");
@@ -4981,7 +4954,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ app }, { path }) => {
         const file = app.vault.getFileByPath(path)!;
         const leaf = app.workspace.getLeaf("tab");
-        await leaf.openFile(file!);
+        await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
       },
       { path },
@@ -5213,7 +5186,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .view as import("obsidian").ItemView
           ).contentEl.querySelector<HTMLElement>(
             `[data-query-group=${secondKey}] button`,
-          )!,
+          ),
           "group heading",
         );
       },
@@ -5246,7 +5219,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .view as import("obsidian").ItemView
           ).contentEl.querySelector<HTMLElement>(
             `[data-query-group=${secondKey}] button`,
-          )!,
+          ),
           "group heading",
         );
       },
@@ -5267,7 +5240,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .view as import("obsidian").ItemView
           ).contentEl.querySelector<HTMLElement>(
             `[data-query-group=${secondKey}] button`,
-          )!,
+          ),
           "group heading",
         );
       },
@@ -5419,7 +5392,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             out[path] = [
               {
                 ...(await show(el, el.zotlitQueryView!)),
-                interactive: el!.classList.contains("interactive-child"),
+                interactive: el.classList.contains("interactive-child"),
               },
             ];
           for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
@@ -5512,23 +5485,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const fold = popover.querySelector<HTMLDetailsElement>(
           '[data-filter-section="all"] details',
         )!;
-        if (!fold!.open)
+        if (!fold.open)
           press(
-            fold!.querySelector<HTMLElement>("summary")!,
+            fold.querySelector<HTMLElement>("summary"),
             "All views heading",
           );
         await until("placeholder row", all);
         await pick(
-          all()!.querySelector<HTMLButtonElement>(
+          all().querySelector<HTMLButtonElement>(
             `button[aria-label="${conditionKindLabel}"]`,
-          )!,
+          ),
           "tags",
           "Condition type",
         );
         set(
           await until("tag value field", () =>
-            all()!.querySelector<HTMLInputElement>(
-              `input[aria-label="${filterValueLabel}"]`,
+            // Named by a hidden element, so the field shows no tooltip.
+            [...all().querySelectorAll<HTMLInputElement>("input")].find(
+              (input) =>
+                input.ownerDocument.getElementById(
+                  input.getAttribute("aria-labelledby") ?? "",
+                )?.textContent === filterValueLabel,
             )!,
           ),
           "figure",
@@ -5567,7 +5544,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(after[labNote]![0]!.cards).toEqual(myFigures);
 
     // The count in each pane opens that pane's own Results menu.
-    const results = (await obRun(
+    const results = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }, { labEmbed, overviewEmbed }) => {
         const { press, until } = pageHelpers;
@@ -5583,7 +5560,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ]) {
           const el = await view();
           press(
-            el.querySelector<HTMLElement>("[data-query-results]")!,
+            el.querySelector<HTMLElement>("[data-query-results]"),
             "Results",
           );
           out.push(
@@ -5600,13 +5577,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return out;
       },
       { labEmbed, overviewEmbed },
-    )) as boolean[];
+    );
     expect(results).toEqual([true, true, true]);
 
     // A click in the Live Preview embed leaves the editor's selection alone.
     // The 400 ms after the click is the window an absent selection change is
     // checked over; no event marks "nothing happened".
-    const selection = (await obRun(
+    const selection = await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }, { overview, overviewEmbed }) => {
         const leaf = app.workspace
@@ -5621,7 +5598,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const target = (
           await pageHelpers.revealQueryView(overviewEmbed)
         ).querySelector<HTMLElement>("[role=toolbar]")!;
-        const rect = target!.getBoundingClientRect();
+        const rect = target.getBoundingClientRect();
         const init = {
           bubbles: true,
           cancelable: true,
@@ -5630,16 +5607,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           button: 0,
           detail: 1,
         };
-        target!.dispatchEvent(new MouseEvent("mousedown", init));
-        target!.dispatchEvent(new MouseEvent("mouseup", init));
-        target!.dispatchEvent(new MouseEvent("click", init));
+        target.dispatchEvent(new MouseEvent("mousedown", init));
+        target.dispatchEvent(new MouseEvent("mouseup", init));
+        target.dispatchEvent(new MouseEvent("click", init));
         await new Promise((r) => setTimeout(r, 400));
 
         const { from, to } = cm.state.selection.main;
         return { from, to };
       },
       { overview, overviewEmbed },
-    )) as { from: number; to: number };
+    );
     expect(selection).toEqual({ from: 0, to: 0 });
 
     // A hover popover over a link to the file shows the embed's first view.
@@ -5737,7 +5714,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         press(
           (
             await pageHelpers.revealQueryView(labEmbed)
-          ).querySelector<HTMLElement>("[data-query-open-file]")!,
+          ).querySelector<HTMLElement>("[data-query-open-file]"),
           "Open query file",
         );
       },
@@ -5842,16 +5819,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ];
         const el = views[1];
         press(
-          el!.querySelector<HTMLElement>("[data-query-results]")!,
+          el!.querySelector<HTMLElement>("[data-query-results]"),
           "Results",
         );
         const popup = await until("Results opens", () =>
           el!.doc.querySelector<HTMLElement>("[data-query-results-popup]"),
         );
         const field = await until("limit field", () =>
-          popup!.querySelector<HTMLInputElement>("[data-query-limit]")!,
+          popup.querySelector<HTMLInputElement>("[data-query-limit]")!,
         );
-        const label = popup!.querySelector<HTMLLabelElement>("label")!;
+        const label = popup.querySelector<HTMLLabelElement>("label")!;
         field.blur();
         const blurred = activeDocument.activeElement !== field;
         press(label, "limit label");
@@ -5861,7 +5838,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         const out = {
           blurred,
-          sameId: label!.htmlFor === field.id,
+          sameId: label.htmlFor === field.id,
           unique:
             activeDocument.querySelectorAll<HTMLElement>(
               `#${CSS.escape(field.id)}`,

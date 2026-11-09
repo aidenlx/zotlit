@@ -427,7 +427,7 @@ describe("ReferencesView citekey resolution", () => {
     });
     const failedScan = scans.at(-1);
     citekeyResolution = "fresh";
-    await act(() => onCitedByInvalidated!());
+    await act(() => onCitedByInvalidated());
     await vi.waitFor(() => expect(scans.at(-1)).not.toBe(failedScan));
     await act(async () => {
       scans.at(-1)!.resolve({ ...citationSet, citations: [] });

@@ -13,7 +13,7 @@ import { m } from "@/paraglide/messages.js";
 import { useWebHost } from "./host";
 import { PageRuntime } from "./runtime";
 
-let host!: WorkbenchHost;
+let host!: ReturnType<typeof useWebHost>["host"];
 const notices: string[] = [];
 
 interface PageProps {
@@ -140,7 +140,7 @@ describe("the web host", () => {
   it("takes a confirmation away when the Workbench interrupts it", async () => {
     let fiber!: Fiber.Fiber<boolean>;
     act(() => {
-      fiber = host.run(
+      fiber = Effect.runFork(
         host.confirm({ title: "Replace?", body: "", confirm: "Replace" }),
       );
     });

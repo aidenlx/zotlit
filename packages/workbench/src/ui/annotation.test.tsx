@@ -5,7 +5,6 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import {
   AnnotationPane,
-  AnnotationPointer,
   AnnotationSampleBar,
   annotationOption,
 } from "./annotation";
@@ -176,6 +175,27 @@ it("keeps Item selection unchanged when its host chooser is dismissed", async ()
   expect(trigger.getAttribute("aria-description")).toBe("Choose Item");
 });
 
+it("draws the Item chooser alone where a row names the Item beside it", () => {
+  const { container } = render(
+    <WorkbenchHostProvider host={fakeHost()}>
+      <SampleSuggester
+        title="Choose Item"
+        selected="a"
+        groups={[
+          {
+            heading: "Items",
+            options: [{ value: "a", label: "Item A", description: "Author A" }],
+          },
+        ]}
+        onSelect={() => {}}
+      />
+    </WorkbenchHostProvider>,
+  );
+  const trigger = screen.getByRole("button", { name: "Choose Item" });
+  expect(container.firstElementChild).toBe(trigger);
+  expect(container.textContent).not.toContain("Item A");
+});
+
 it("keeps bundled annotation identity when the Item changes and current identity when reordered", () => {
   const bundled = SAMPLE_ANNOTATIONS[2]!;
   expect(annotationSamples(SAMPLE_ITEMS[0]!, bundled.id).example).toBe(bundled);
@@ -220,11 +240,9 @@ it("keeps bundled annotation identity when the Item changes and current identity
   );
 });
 
-it("delegates insertion to the host and uses distinct problem descriptions per pane", () => {
-  const insert = vi.fn<() => void>();
+it("uses distinct problem descriptions per pane", () => {
   const { container } = render(
     <>
-      <AnnotationPointer onInsert={insert} />
       {[1, 2].map((id) => (
         <AnnotationPane
           key={id}
@@ -234,10 +252,6 @@ it("delegates insertion to the host and uses distinct problem descriptions per p
       ))}
     </>,
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_annotation_insert() }),
-  );
-  expect(insert).toHaveBeenCalledOnce();
   const problems = [...container.querySelectorAll('[role="status"]')];
   expect(new Set(problems.map((p) => p.id)).size).toBe(2);
   expect(
@@ -323,74 +337,6 @@ it("offers annotation examples before an annotation has been selected", async ()
   expect(selected).toHaveBeenCalledWith(SAMPLE_ANNOTATIONS[1]!.id);
 });
 
-it("keeps the annotation editor position and history while Help opens and closes", () => {
-  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
-  const { container } = render(
-    <AnnotationPane
-      controller={controller}
-      problem={null}
-      finishHelp={m.workbench_annotation_help_finish_note()}
-    />,
-  );
-  const content = container.querySelector<HTMLElement>(".cm-editor")!;
-  const view = EditorView.findFromDOM(content)!;
-  const start = view.state.doc.toString().indexOf("[!note]");
-  act(() => view.dispatch({ selection: { anchor: start, head: start + 7 } }));
-  view.scrollDOM.scrollTop = 24;
-  const help = screen.getByRole("button", { name: m.workbench_help() });
-  expect(help.getAttribute("aria-expanded")).toBe("false");
-  expect(screen.queryByRole("region")).toBeNull();
-  fireEvent.click(help);
-  const guide = screen.getByRole("region", {
-    name: m.workbench_annotation_help_title(),
-  });
-  expect(guide.textContent).toContain("[!note]");
-  expect(guide.textContent).toContain("[!quote]");
-  expect(guide.textContent).toContain(
-    m.workbench_annotation_help_finish_note(),
-  );
-  expect(EditorView.findFromDOM(container.querySelector(".cm-editor")!)).toBe(
-    view,
-  );
-  expect(view.state.selection.main.from).toBe(start);
-  expect(view.state.selection.main.to).toBe(start + 7);
-  expect(view.scrollDOM.scrollTop).toBe(24);
-  expect(screen.getAllByRole("button", { name: m.workbench_help() })).toEqual([
-    help,
-  ]);
-  guide.focus();
-  fireEvent.keyDown(guide, { key: "Escape" });
-  expect(screen.queryByRole("region")).toBeNull();
-  expect(document.activeElement).toBe(help);
-  expect(view.state.selection.main.from).toBe(start);
-  expect(view.state.selection.main.to).toBe(start + 7);
-  act(() =>
-    view.dispatch({
-      changes: { from: start, to: start + 7, insert: "[!quote]" },
-      userEvent: "input.type",
-    }),
-  );
-  fireEvent.click(help);
-  fireEvent.click(help);
-  expect(document.activeElement).toBe(help);
-  act(() => {
-    controller.undo();
-  });
-  expect(controller.source).toBe(DEFAULT_PROFILE_SOURCE);
-});
-
-it("uses host-specific finish guidance without offering a native note action to web editing", () => {
-  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
-  render(<AnnotationPane controller={controller} problem={null} />);
-  fireEvent.click(screen.getByRole("button", { name: m.workbench_help() }));
-  expect(
-    screen.getByText(m.workbench_annotation_help_finish_web()),
-  ).toBeTruthy();
-  expect(
-    screen.queryByText(m.workbench_annotation_help_finish_note()),
-  ).toBeNull();
-});
-
 it("closes a chooser it opened when the sample bar goes", async () => {
   const host = fakeHost();
   host.hold = true;
@@ -409,7 +355,7 @@ it("closes a chooser it opened when the sample bar goes", async () => {
   expect(chooser?.kind).toBe("suggester");
 
   act(() => unmount());
+  await chooser!.interruption;
 
-  expect(chooser!.interrupted).toBe(true);
   expect(selected).not.toHaveBeenCalled();
 });

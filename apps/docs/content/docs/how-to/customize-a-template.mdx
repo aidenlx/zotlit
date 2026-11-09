@@ -16,7 +16,7 @@ A profile is the document that authors one literature note. See [Profiles](/docs
 
 ## Edit a literature note profile
 
-![The Template Workbench layout for The Semantic Web: the Fields pane on the left, the Default profile in the middle with its shared-template notice and the template text, and the Note preview on the right](/img/how-to/template-workbench-layout.webp)
+![The Template Workbench for Rougier et al. (2014), Ten Simple Rules for Better Figures: the Reading notes profile's note template in the editor on the left, the Note preview in the middle with the rendered properties, title, and annotations, and the Fields popover open at the right edge with the paper's fields in sections](/img/how-to/template-workbench-layout.webp)
 
 <Steps>
   <Step>
@@ -26,23 +26,23 @@ A profile is the document that authors one literature note. See [Profiles](/docs
 
     Customizing the built-in Default creates its document in the configured template folder before editing becomes available. If a custom document already exists, ZotLit opens it. If creation fails, use the retry action beside the error.
 
-    To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. ZotLit opens the Template Workbench View with that note's item selected.
+    To edit the profile used by an existing literature note, open that note and run <Command name={m.template_workbench_open_layout()} />. The same action is in the note's file menu. ZotLit opens the Template Workbench View with that note's item selected.
 
-    From a compact Template Workbench View, open its pane menu and select <UiLabel name={m.template_workbench_open_layout()} />. This opens the editor, Data Explorer, and preview together in a separate Obsidian window.
+    Every way opens the view in its own Obsidian window, with the Preview panel shown. If that window is already open, ZotLit brings it to the front. Select <UiLabel name={m.workbench_show_preview()} /> in the view header to hide or show the Preview panel. Select <UiLabel name={m.workbench_view_fields()} /> in the view header to open the Fields popover. See [The Preview and Fields panels](/docs/concepts/template-workbench-view#panels).
 
   </Step>
   <Step>
     ### Choose preview data
 
-    If no item is selected, choose one in Data Explorer or select <UiLabel name={m.workbench_choose_item()} />. You can try a built-in journal article, conference paper, book, or thesis example.
+    If no item is selected, choose one in the Fields panel, or with <UiLabel name={m.workbench_choose_item()} /> in the row above the panels. You can try a built-in journal article, conference paper, book, or thesis example.
 
-    Choose a library item under <UiLabel name={m.workbench_recently_updated()} />, or select <UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library. Selecting an item replaces the Explorer's list with its fields.
+    Choose a library item under <UiLabel name={m.workbench_recently_updated()} />, or select <UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library. The editor tabs, the Preview panel and the Fields panel then show that item, and the Fields panel lists its fields.
 
     For annotation formatting, select <UiLabel name={m.workbench_choose_annotation()} />. Search annotations from the selected item or try a highlight, underline, note, text, image, or ink example. Annotation examples keep their own parent item data; the note preview keeps its selected item.
 
-    Choosing data in any linked pane updates the other linked panes. Separate workbenches keep their own selections. Full panels have selection actions in the header; sidebars have a small selection control. Right-click the pane header to access its menu in either layout.
+    One view holds one chosen item and one chosen annotation, whichever surface you choose them from. A second Template Workbench View keeps its own choice.
 
-    Data used for the preview updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu. In <UiLabel name={m.workbench_preview_on_demand()} /> mode, select <UiLabel name={m.workbench_preview_run()} /> to render the preview.
+    Data used for the preview updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu while the Preview panel is shown. In <UiLabel name={m.workbench_preview_on_demand()} /> mode, select <UiLabel name={m.workbench_preview_run()} /> to render the preview.
 
   </Step>
   <Step>
@@ -50,7 +50,7 @@ A profile is the document that authors one literature note. See [Profiles](/docs
 
     Use the <UiLabel name={m.workbench_tab_note()} />, <UiLabel name={m.workbench_tab_properties()} />, <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_match()} />, and <UiLabel name={m.workbench_tab_name_and_folder()} /> tabs to edit the profile. The Default profile does not use <UiLabel name={m.workbench_tab_match()} /> conditions.
 
-    Check the <UiLabel name={m.profile_preview_name()} /> as you edit. <UiLabel name={m.workbench_advanced()} /> is a toggle: select it to edit the complete profile document as Markdown, and select it again to return to the tabs.
+    Check the <UiLabel name={m.workbench_result_heading()} /> in the Preview panel as you edit. To add a field, place your cursor in the template, select <UiLabel name={m.workbench_view_fields()} />, and select the insert button on a field's row, or open its row menu and select <UiLabel name={m.workbench_fields_put_in_note()} />. ZotLit puts the field at your cursor, closes the Fields popover, and returns the cursor to the editor. Hold Shift while you select the insert button to keep the Fields popover open for more fields, or [pin the Fields panel](/docs/concepts/template-workbench-view#pin-fields) to keep it beside the editor. For a list, such as the authors, select its row, choose <UiLabel name={m.workbench_fields_details_form_joined()} /> or <UiLabel name={m.workbench_fields_details_form_loop()} />, and select <UiLabel name={m.workbench_fields_insert()} />. <UiLabel name={m.workbench_advanced()} /> is a toggle: select it to edit the complete profile document as Markdown, and select it again to return to the tabs.
 
     On the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab, the <UiLabel name={m.workbench_name_path_heading()} /> group holds the <UiLabel name={m.workbench_name_binding_folder()} />, the <UiLabel name={m.workbench_name_filename_label()} />, and a <UiLabel name={m.workbench_name_filename_result()} /> of the full path the note gets, with `.md`. A slash (`/`) in the note name makes a subfolder in the folder. For the Default profile, change the folder in <SettingsPath />. The <UiLabel name={m.workbench_tab_match()} /> tab reports <UiLabel name={m.workbench_match_result_yes()} /> or <UiLabel name={m.workbench_match_result_no()} /> for the selected item.
 
@@ -83,7 +83,7 @@ The **citation text** is one template document, `zotlit-citation.md`, that rende
 
     The row's second line shows the document's vault path, or <UiLabel name={m.settings_template_using_default()} /> while your vault holds no file. With no file, that button writes `zotlit-citation.md` from the built-in text first, then opens it.
 
-    Two other entry points open the same document: the command <Command inline name={m.command_customize_citation_text_name()} />, and <UiLabel name={m.template_workbench_open_citation()} /> in the Template Workbench View's pane menu.
+    The command <Command inline name={m.command_customize_citation_text_name()} /> opens the same document. The Template Workbench View's pane menu has the same entry.
 
   </Step>
   <Step>
@@ -99,7 +99,7 @@ The **citation text** is one template document, `zotlit-citation.md`, that rende
 
     <UiLabel name={m.workbench_citation_result_heading()} /> renders what you have typed, including bytes you have not saved.
 
-    Its pane menu offers <UiLabel name={m.template_workbench_use_example()} /> with six built-in citation shapes: <UiLabel name={m.workbench_citation_example_one_item()} />, <UiLabel name={m.workbench_citation_example_two_items()} />, <UiLabel name={m.workbench_citation_example_item_with_page()} />, <UiLabel name={m.workbench_citation_example_suppressed_author()} />, <UiLabel name={m.workbench_citation_example_prefix_and_suffix()} />, and <UiLabel name={m.workbench_citation_example_annotation_citation()} />. It opens on <UiLabel name={m.workbench_citation_example_one_item()} />.
+    Show the Preview panel to see it. While the panel is shown, the view's pane menu offers <UiLabel name={m.template_workbench_use_example()} /> with six built-in citation shapes: <UiLabel name={m.workbench_citation_example_one_item()} />, <UiLabel name={m.workbench_citation_example_two_items()} />, <UiLabel name={m.workbench_citation_example_item_with_page()} />, <UiLabel name={m.workbench_citation_example_suppressed_author()} />, <UiLabel name={m.workbench_citation_example_prefix_and_suffix()} />, and <UiLabel name={m.workbench_citation_example_annotation_citation()} />. It opens on <UiLabel name={m.workbench_citation_example_one_item()} />.
 
     Select <UiLabel name={m.workbench_choose_item()} /> instead to preview one of your own Zotero items, by citation key alone. That clears the example.
 
@@ -154,7 +154,7 @@ In a profile's tabs, with <UiLabel name={m.workbench_advanced()} /> off, a call 
 
 The five reserved names are never partial names, so none of them draws one: `{% render "annotation" %}` draws the annotation placeholder for the profile's annotation section, and a call on `filename`, `note`, `content`, or `citation` draws nothing. A call inside a fenced code block is prose about a call, and draws nothing either.
 
-A partial has no data of its own, so its own editor asks you which caller to render as: <UiLabel name={m.template_workbench_preview_as_note()} />, <UiLabel name={m.template_workbench_preview_as_annotation()} />, or <UiLabel name={m.template_workbench_preview_as_citation()} />, from the preview pane menu. It opens on Note and remembers your choice for that file.
+A partial has no data of its own, so its own editor asks you which caller to render as: <UiLabel name={m.template_workbench_preview_as_note()} />, <UiLabel name={m.template_workbench_preview_as_annotation()} />, or <UiLabel name={m.template_workbench_preview_as_citation()} />, from the view's pane menu while the Preview panel is shown. It opens on Note and remembers your choice for that file.
 
 ### Rename or delete a partial [#rename-a-partial]
 

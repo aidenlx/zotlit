@@ -1559,7 +1559,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { app },
             { createdKey, edited }: { createdKey: string; edited: "#a28ae5" },
           ) => {
-            var card = app.workspace
+            const card = app.workspace
               .getLeavesOfType("zotero-annotation-view")
               .map((leaf) =>
                 leaf.view.containerEl.querySelector<HTMLElement>(
@@ -1802,11 +1802,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             }: { attachmentPath: string; createdKey: string },
           ) => {
             const { tap } = pageHelpers;
-            const rect = (pageHelpers
-              .pdfView(attachmentPath)
-              ?.containerEl.querySelector<SVGGraphicsElement>(
+            const rect = pageHelpers
+              .pdfView(attachmentPath)!
+              .containerEl.querySelector<SVGGraphicsElement>(
                 `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
-              ))!.getBoundingClientRect();
+              )!
+              .getBoundingClientRect();
             tap(rect.left + rect.width / 2, rect.top + rect.height / 2);
           },
           { attachmentPath, createdKey },
@@ -2723,7 +2724,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ) as Settings["reader.ink-width"],
                   }),
                 );
-                app.vault.setConfig("nativeMenus", nativeMenusEnabled!);
+                app.vault.setConfig("nativeMenus", nativeMenusEnabled);
               },
               { width, nativeMenusEnabled: nativeMenus === "true" },
             );
@@ -4518,7 +4519,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ) as Settings["reader.text-font-size"],
                   }),
                 );
-                app.vault.setConfig("nativeMenus", nativeMenusEnabled!);
+                app.vault.setConfig("nativeMenus", nativeMenusEnabled);
               },
               { size, nativeMenusEnabled: nativeMenus === "true" },
             );
@@ -4786,7 +4787,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ]);
           // The box was fitted to the comment in Zotero's font; the page
           // draws it in Obsidian's, and the run still ends inside the box.
-          expect(lines[0]![2]).toBeLessThanOrEqual(right! - left!);
+          expect(lines[0]![2]).toBeLessThanOrEqual(right - left);
         }, 120000);
 
         it("draws a two-line text Annotation from Zotero as two lines", async () => {
@@ -4988,7 +4989,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               .find(
                 ({ view }) => (view as FileView).file?.path === attachmentPath,
               );
-            const viewer = (leaf?.view as PagePdfView).viewer.child?.pdfViewer
+            const viewer = (leaf!.view as PagePdfView).viewer.child?.pdfViewer
               ?.pdfViewer;
             if (viewer) viewer.currentPageNumber = 2;
           },
@@ -5303,7 +5304,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               annotationKey: imageKey,
               comment: "",
             });
-            if (closeFailure) throw closeFailure;
+            if (closeFailure)
+              // oxlint-disable-next-line no-unsafe-finally -- the close failure must surface after the comment is restored
+              throw closeFailure instanceof Error
+                ? closeFailure
+                : new Error("The Mark Popup comment editor failed to close", {
+                    cause: closeFailure,
+                  });
           }
         });
 
@@ -6035,11 +6042,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             if (!view) return "no view";
             view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
             return (
-              pageHelpers
+              (pageHelpers
                 .pdfView(attachmentPath)
                 ?.containerEl.querySelector<HTMLElement>(
                   '.page[data-page-number="1"] .textLayer',
-                )?.textContent.length! > 0
+                )?.textContent.length ?? 0) > 0
             );
           },
           { attachmentPath },
@@ -6056,13 +6063,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             const { fire } = pageHelpers;
             const walker = document.createTreeWalker(
               pageHelpers
-                .pdfView(attachmentPath)
-                ?.containerEl.querySelector<HTMLElement>(
+                .pdfView(attachmentPath)!
+                .containerEl.querySelector<HTMLElement>(
                   '.page[data-page-number="1"] .textLayer',
                 )!,
               NodeFilter.SHOW_TEXT,
             );
-            let node;
+            let node: Node | null;
             while (
               (node = walker.nextNode()) &&
               !(
@@ -7759,7 +7766,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       describe("the Annotation History in the reader", () => {
         const historyKey = "PUPR5FG5";
         const seeded = ANNOTATIONS.find(({ key }) => key === historyKey)!;
-        const seedColor = seeded.color!;
+        const seedColor = seeded.color;
         /** The swatch the number row's second key picks. */
         const picked = "#ff6666";
 
@@ -7848,7 +7855,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               recordField: field === "annotationColor" ? "color" : "comment",
             },
             {
-              ready: (value) => value === value,
+              ready: () => true,
               what: "the refreshed PUPR5FG5 comment or color field to read back",
             },
           );
@@ -8475,7 +8482,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   )
                   .find(Boolean);
                 if (!card) return "no card";
-                press(card as HTMLElement, "card");
+                press(card, "card");
                 return card.hasAttribute("data-alone");
               },
               { historyKey },
@@ -9252,7 +9259,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]`,
                 );
               if (!card) return "no card";
-              press(card as HTMLElement, "card");
+              press(card, "card");
               return "clicked";
             },
             { key },
@@ -9358,7 +9365,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.view?.containerEl.querySelector<HTMLElement>(
                       `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
                     );
-                  (card! as HTMLElement).focus();
+                  card!.focus();
                   const event = new KeyboardEvent("keydown", {
                     key: "Escape",
                     code: "Escape",
@@ -10779,12 +10786,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ) => {
                 const target = [
                   ...app.workspace
-                    .getLeavesOfType("zotero-annotation-view")[0]
-                    ?.view?.containerEl.querySelector(
+                    .getLeavesOfType("zotero-annotation-view")[0]!
+                    .view.containerEl.querySelector(
                       `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                    )
-                    ?.querySelector("blockquote .zt-annot-conflict")!
-                    .querySelectorAll("button")!,
+                    )!
+                    .querySelector("blockquote .zt-annot-conflict")!
+                    .querySelectorAll("button"),
                 ].find((button) => button.textContent === "Keep Zotero's text");
                 target!.scrollIntoView({
                   block: "center",
@@ -11114,10 +11121,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             async ({ app }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
               const rows = [
                 ...app.workspace
-                  .getLeavesOfType("zotero-annotation-view")[0]
-                  ?.view.containerEl.querySelectorAll<HTMLElement>(
+                  .getLeavesOfType("zotero-annotation-view")[0]!
+                  .view.containerEl.querySelectorAll<HTMLElement>(
                     '[role="grid"] > [role="row"]',
-                  )!,
+                  ),
               ].map((row) => row.dataset.zoteroAnnotationKey);
               return String(rows[rows.indexOf(cardKey) + 1]);
             },
@@ -11722,10 +11729,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               async ({ app }) => {
                 return [
                   ...app.workspace
-                    .getLeavesOfType("zotero-annotation-view")[0]
-                    ?.view.containerEl.querySelectorAll<HTMLElement>(
+                    .getLeavesOfType("zotero-annotation-view")[0]!
+                    .view.containerEl.querySelectorAll<HTMLElement>(
                       '[role="grid"] > [role="row"]',
-                    )!,
+                    ),
                 ].map((row) => row.dataset.zoteroAnnotationKey);
               },
               undefined,
@@ -12432,7 +12439,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.view?.containerEl.querySelector<HTMLElement>(
                       `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(second)}]`,
                     );
-                  (card! as HTMLElement).focus();
+                  card!.focus();
                   const event = new KeyboardEvent("keydown", {
                     key: "Delete",
                     code: "Delete",
@@ -12817,7 +12824,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.view?.containerEl.querySelector<HTMLElement>(
                       `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]`,
                     );
-                  (card! as HTMLElement).focus();
+                  card!.focus();
                   const event = new KeyboardEvent("keydown", {
                     key: "3",
                     bubbles: true,
@@ -12826,8 +12833,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   Object.defineProperty(event, "target", { value: card });
                   const handled =
                     (
-                      app.workspace.getLeavesOfType("zotero-annotation-view")[0]
-                        ?.view.scope! as PairedScope
+                      app.workspace.getLeavesOfType(
+                        "zotero-annotation-view",
+                      )[0]!.view.scope! as PairedScope
                     ).handleKey(event, {
                       modifiers: "",
                       key: "3",
@@ -12882,7 +12890,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.view?.containerEl.querySelector<HTMLElement>(
                       `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]`,
                     );
-                  (card! as HTMLElement).focus();
+                  card!.focus();
                   const event = new KeyboardEvent("keydown", {
                     key: "c",
                     [platformKey]: true,
@@ -12892,8 +12900,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   Object.defineProperty(event, "target", { value: card });
                   const handled =
                     (
-                      app.workspace.getLeavesOfType("zotero-annotation-view")[0]
-                        ?.view.scope! as PairedScope
+                      app.workspace.getLeavesOfType(
+                        "zotero-annotation-view",
+                      )[0]!.view.scope! as PairedScope
                     ).handleKey(event, {
                       modifiers: modifierKey,
                       key: "c",
@@ -13056,7 +13065,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               )
               .find(Boolean);
             if (!card) return false;
-            press(card as HTMLElement, "card");
+            press(card, "card");
             return card.hasAttribute("data-alone");
           },
           { createdKey },
@@ -13138,7 +13147,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           },
           { createdKey, shortcutComment },
         );
-        const shortcut = (await obRun(
+        const shortcut = await obRun(
           vaultId!,
           async ({ app }, { createdKey }: { createdKey: string }) => {
             const editor = app.workspace
@@ -13166,17 +13175,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               open: editor!.isConnected,
               owned:
                 editor!.win !==
-                (app.workspace
+                app.workspace
                   .getLeavesOfType("pdf")
                   .find(({ view }) =>
                     view.containerEl.querySelector<SVGGraphicsElement>(
                       `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
                     ),
-                  )?.view.containerEl)!.win,
+                  )!.view.containerEl.win,
             };
           },
           { createdKey },
-        )) as { prevented: boolean; open: boolean; owned: boolean };
+        );
         expect(shortcut).toEqual({ prevented: true, open: true, owned: true });
         expect(
           await waitFor(
@@ -13594,7 +13603,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               let timers = 0;
               if (pending === "unsent draft") {
                 const pageWindow = window as Window;
-                const schedule = pageWindow.setTimeout;
+                const schedule = pageWindow.setTimeout.bind(pageWindow);
                 pageWindow.setTimeout = (
                   ...args: Parameters<Window["setTimeout"]>
                 ) => {
@@ -14258,7 +14267,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               app.setting.close();
               app.vault.setConfig("settingsPopoutWindow", popoutEnabled);
             },
-            { popoutEnabled: popout as boolean },
+            { popoutEnabled: popout },
           );
         });
 
@@ -14936,7 +14945,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             }
             getSelection()!.removeAllRanges();
             press(
-              card!.querySelector<HTMLElement>(".zt-annot-comment-field")!,
+              card!.querySelector<HTMLElement>(".zt-annot-comment-field"),
               "comment field",
             );
             return String(
@@ -15434,7 +15443,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               }
               getSelection()!.removeAllRanges();
               press(
-                card!.querySelector<HTMLElement>(".zt-annot-comment-field")!,
+                card!.querySelector<HTMLElement>(".zt-annot-comment-field"),
                 "comment field",
               );
               return String(
@@ -15619,7 +15628,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               await pick(
                 el.doc.querySelector<HTMLButtonElement>(
                   `[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]`,
-                )!,
+                ),
                 value,
                 control,
               );

@@ -90,7 +90,7 @@ Every note records the profile that made it, so a later update uses the same tem
 
 ![The Template Workbench layout with the Fields pane, the profile editor showing a Liquid template with a field hover card, and the Note preview pane](/img/changelog/template-workbench-layout.webp)
 
-Your templates have a view of their own now, with the fields beside the editor and the resulting note on the other side. <Command inline name={m.template_workbench_open()} /> opens the document in your active note, and <Command inline name={m.template_workbench_open_layout()} /> opens all three panes together, in a window of their own when the editor would otherwise share one. From a literature note, <Command inline name={m.command_customize_note_template_name()} /> opens the profile that made it with that paper already selected.
+Your templates have a view of their own now, with the fields beside the editor and the resulting note on the other side. <Command inline>ZotLit: Switch to template workbench view</Command> opens the document in your active note, and <Command inline name={m.template_workbench_open_layout()} /> opens all three panes together, in a window of their own when the editor would otherwise share one. From a literature note, <Command inline>ZotLit: Customize this note's template</Command> opens the profile that made it with that paper already selected.
 
 The layout has three columns. The <UiLabel name={m.workbench_fields_heading()} /> pane lists the Zotero data a template can read, the middle column edits the document, and the <UiLabel name={m.workbench_result_heading()} /> pane shows the note that comes out. The panes are linked through Obsidian's own linked tabs, so choosing a paper or an annotation in one follows in the others.
 

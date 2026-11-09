@@ -242,7 +242,7 @@ describe("PluginSettings loading", () => {
       expect(
         highlightEmoji(
           "blue",
-          reloaded.current!["note.import-highlight-mappings"],
+          reloaded.current["note.import-highlight-mappings"],
         ),
       ).toBe("👩‍🔬");
     }),

@@ -226,7 +226,7 @@ export async function evalAsync(
     for (let i = 0; i < pollAttempts; i++) {
       await pause(pollMs);
       const res = await evaluate(resultRef);
-      const value = res.result as unknown;
+      const value = res.result;
       if (typeof value === "string") return { ...res, result: value };
     }
     throw new Error("async eval timed out");

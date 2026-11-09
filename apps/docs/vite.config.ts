@@ -13,12 +13,13 @@ import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
 
 import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
+import { chinesePagesPlugin } from "./src/lib/chinese-pages-plugin.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
+import { renderSiteRedirectsFile } from "./src/lib/redirects.js";
 import type { DocsLine } from "./src/lib/shared.js";
-import { renderRedirectsFile } from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
 // Keep Miniflare's local Worker registry with the package's other ignored
@@ -68,9 +69,10 @@ function resolvedDocsLine(): DocsLine {
 }
 
 /**
- * Emits the Cloudflare asset-layer rule files into the client build, so legacy
- * permalinks and the giscus CORS header resolve without a Worker invocation.
- * @see src/lib/v1-redirects.ts
+ * Emits the Cloudflare asset-layer rule files into the client build, so moved
+ * pages, legacy permalinks, and the giscus CORS header resolve without a Worker
+ * invocation.
+ * @see src/lib/redirects.ts
  * @see src/lib/headers.ts
  */
 function cloudflareAssetRules(): Plugin {
@@ -82,7 +84,7 @@ function cloudflareAssetRules(): Plugin {
       this.emitFile({
         type: "asset",
         fileName: "_redirects",
-        source: renderRedirectsFile(),
+        source: renderSiteRedirectsFile(),
       });
       this.emitFile({
         type: "asset",
@@ -138,24 +140,26 @@ function machineAssets(): Plugin {
         return { type: "image/webp", body: await renderCard(card) };
       }
 
-      server.middlewares.use(async (req, res, next) => {
-        const path = req.url?.split("?")[0];
-        if (!path) {
-          next();
-          return;
-        }
-
-        try {
-          const asset = await resolveAsset(path);
-          if (!asset) {
+      server.middlewares.use((req, res, next) => {
+        void (async () => {
+          const path = req.url?.split("?")[0];
+          if (!path) {
             next();
             return;
           }
-          res.setHeader("content-type", asset.type);
-          res.end(Buffer.from(asset.body));
-        } catch (error) {
-          next(error as Error);
-        }
+
+          try {
+            const asset = await resolveAsset(path);
+            if (!asset) {
+              next();
+              return;
+            }
+            res.setHeader("content-type", asset.type);
+            res.end(Buffer.from(asset.body));
+          } catch (error) {
+            next(error);
+          }
+        })();
       });
     },
   };
@@ -196,6 +200,7 @@ export default defineConfig(({ command }) => ({
     },
   },
   plugins: [
+    chinesePagesPlugin(packageRoot),
     fumadocsServerOnWorker(),
     paraglideVitePlugin({
       ...paraglideOptions,

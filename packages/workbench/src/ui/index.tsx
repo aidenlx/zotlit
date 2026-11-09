@@ -26,8 +26,9 @@ export type {
 // (ADR 0044). It renders structure and behaviour; the host supplies the look
 // through `WorkbenchThemeProvider` and its popups through
 // `WorkbenchHostProvider`, and each editor instance keeps its view state in
-// the store `WorkbenchEditorProvider` carries beside the document controller
-// and the one Render Scheduler its result surfaces share.
+// the Workbench model `WorkbenchEditorProvider` puts in context: the
+// document controller in use, the reader's choices, and the one Render
+// Scheduler its result surfaces share.
 
 export { WorkbenchMessagesProvider, useWorkbenchMessages } from "./messages";
 export type { WorkbenchMessages } from "./generated/messages";
@@ -36,15 +37,67 @@ export { EditToolbar } from "./edit-toolbar";
 export {
   createWorkbenchEditor,
   WorkbenchEditorProvider,
-  useDocumentRevision,
   useOptionalEditor,
-  useRenderScheduler,
-  useRenderState,
   useWorkbenchController,
   useWorkbenchEditor,
-  useWorkbenchStore,
+  useWorkbenchModel,
 } from "./editor";
 export type { WorkbenchEditor, WorkbenchEditorInstance } from "./editor";
+export {
+  chooseAnnotation,
+  chooseCitation,
+  chooseItem,
+  choosePartialProfile,
+  INITIAL_CHOICES,
+  INITIAL_VIEW,
+  makeWorkbenchModel,
+  patch,
+  patchAt,
+  pressFieldsAction,
+  setAdvanced,
+  setPreview,
+  setRoot,
+  setTab,
+} from "./model";
+export type {
+  ChooseJob,
+  CopyJob,
+  CreatePartialJob,
+  PreviewMode,
+  PreviewSettings,
+  TemplateRoot,
+  WorkbenchChoices,
+  WorkbenchItemChoice,
+  WorkbenchItemData,
+  WorkbenchItemDataInput,
+  WorkbenchModel,
+  WorkbenchModelOptions,
+  WorkbenchMatchVocabulary,
+  WorkbenchPreviewSettings,
+  WorkbenchRuntime,
+  WorkbenchViewState,
+} from "./model";
+export {
+  savedPanelWidth,
+  clampPreviewHeight,
+  INITIAL_PANELS,
+  setPanelWidth,
+  setPreviewHeight,
+  showPreview,
+} from "./panel-layout";
+export type {
+  FieldsDock,
+  PanelSide,
+  PreviewPanel,
+  ViewSize,
+  WorkbenchPanel,
+  WorkbenchPanels,
+} from "./panel-layout";
+export { panelSizeMenus, pickPanelSize } from "./panel-menu";
+export { HELP_PAGES } from "./help-pages";
+export { ItemRow } from "./item-row";
+export { SidePanels } from "./panels";
+export { fieldsActionAttributes } from "./fields-panel";
 export {
   NO_MATCH_DATA,
   WorkbenchClipboardError,
@@ -53,13 +106,15 @@ export {
   useTooltip,
   useWorkbenchHost,
 } from "./host";
-export { useFork, useForkedEffect } from "./run";
 export { joinForked, observeExit } from "#/language/host-effects";
 export type { ExitHandlers, WorkbenchRunner } from "#/language/host-effects";
 export type {
   WorkbenchConfirmRequest,
   WorkbenchDialogHandle,
   WorkbenchDialogRequest,
+  WorkbenchFieldsAction,
+  WorkbenchFieldDetailsProps,
+  WorkbenchFieldsPopoverProps,
   WorkbenchHost,
   WorkbenchInsertTarget,
   WorkbenchInputSuggestionsRequest,
@@ -95,37 +150,37 @@ export type {
 export {
   ProblemsFooter,
   problemWhere,
-  usePublishedProblems,
   useWorkbenchProblems,
 } from "./problems-footer";
 export type {
   WorkbenchProblemCapture,
   WorkbenchProblemsState,
 } from "./problems-footer";
-export { createRenderScheduler } from "./scheduler";
+export { makeRenderSchedulerAtoms } from "./scheduler-atoms";
 export type {
-  RenderScheduler,
+  RenderSchedulerAtoms,
+  RenderSchedulerAtomsOptions,
   RenderSchedulerInput,
-  RenderSchedulerOptions,
   RenderSchedulerState,
   RenderTrigger,
-} from "./scheduler";
-export { createWorkbenchStore } from "./store";
-export type {
-  PreviewMode,
-  PreviewSettings,
-  TemplateRoot,
-  WorkbenchItemChoice,
-  WorkbenchStore,
-  WorkbenchViewActions,
-  WorkbenchViewState,
-} from "./store";
+} from "./scheduler-atoms";
 export { citationExampleLabel, citationVariantLabel } from "./citation-preview";
 export { partialContextLabel } from "./partial-preview";
 export { TabBar, TabPanel } from "./tab-bar";
-export { TABS, tabLabel, tabLede, tabsFor } from "./tabs";
+export { isProfileProblem, TABS, tabLabel, tabLede, tabsFor } from "./tabs";
+export { routeDiagnosis, routeProblem } from "./problem-route";
+export {
+  insertionTarget,
+  repairCommands,
+  selectionInDocument,
+} from "./repair-commands";
 export type { WorkbenchTab } from "./tabs";
-export { WorkbenchThemeProvider, useIcon, useParts } from "./theme";
+export {
+  WorkbenchThemeProvider,
+  useIcon,
+  usePanelProperties,
+  useParts,
+} from "./theme";
 export type {
   PartAttributes,
   WorkbenchClassMap,
@@ -152,6 +207,8 @@ export { COMMON_FIELDS, completionFields } from "./completion-fields";
 export type { CommonField } from "./completion-fields";
 export { tagDescription } from "./tag-help";
 export {
+  PreviewFilenameLabel,
+  previewFilename,
   ResultBody,
   ResultColumn,
   ResultHeader,
@@ -174,27 +231,29 @@ export { PreviewControls } from "./preview-controls";
 
 export { NameFolderPane, BUILT_IN_BINDING_DEFAULTS } from "./name-folder";
 export type { NameFolderPaneProps } from "./name-folder";
-export { PropertiesPane } from "./properties-tab";
+export { entryDiagnostics, PropertiesPane } from "./properties-tab";
 export type { EntryDiagnostic, PropertiesPaneProps } from "./properties-tab";
 export {
   AnnotationPane,
-  AnnotationPointer,
   AnnotationSampleBar,
   annotationOption,
   AnnotationSectionBar,
 } from "./annotation";
 export { annotationSamples } from "./annotation-samples";
+export type { AnnotationExamples } from "./annotation-samples";
 export { SampleSuggester } from "./sample-suggester";
 export type { SampleOption } from "./sample-suggester";
 
 export { DisplayTree } from "./explorer-tree";
 export type { DisplaySection, DisplayTreeProps } from "./explorer-tree";
-export {
-  commonRows,
-  fieldValueText,
-  rowMatches,
-  fieldSnippet,
-} from "./explorer-fields";
+export { commonRows, fieldValueText, rowMatches } from "./explorer-fields";
+export { fieldForm, fieldForms } from "./field-insertion";
+export type {
+  FieldForm,
+  FieldInsertionContext,
+  FieldInsertionMode,
+  FieldInsertOptions,
+} from "./field-insertion";
 export {
   explorerSectionIds,
   explorerSections,

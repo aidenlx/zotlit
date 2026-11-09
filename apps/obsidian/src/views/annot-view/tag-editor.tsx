@@ -13,12 +13,12 @@ import type { RefObject } from "react";
 
 import { tagTypeToName } from "@zotlit/db";
 import { TagsInput, useTagsInput, useUniqueId } from "@zotlit/ui";
+import { composing } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
-import { composing } from "@/lib/ime";
 import { tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 

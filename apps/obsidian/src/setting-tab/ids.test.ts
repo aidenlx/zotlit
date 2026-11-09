@@ -3,9 +3,6 @@ import { Context, Effect, Stream } from "effect";
 import type {
   App,
   SettingDefinitionItem,
-  SettingDefinitionGroup,
-  SettingDefinitionList,
-  SettingDefinitionPage,
   SettingTab,
   SettingsModal,
 } from "obsidian";
@@ -36,7 +33,6 @@ import { resourcesGroup } from "./resources";
 import { zoteroPageItems } from "./zotero";
 
 vi.mock("@/views/template-workbench/open", () => ({
-  openNativeProfile: vi.fn(() => Effect.void),
   openTemplateWorkbench: vi.fn(() => Effect.void),
 }));
 
@@ -146,10 +142,7 @@ function check(label: string, items: readonly SettingDefinitionItem[]): void {
 
   for (const item of items) {
     if (!("type" in item)) continue;
-    const group = item as
-      | SettingDefinitionGroup
-      | SettingDefinitionList
-      | SettingDefinitionPage;
+    const group = item;
     if (group.items) {
       check(`${label} > ${group.type}:${item.id}`, group.items);
     }

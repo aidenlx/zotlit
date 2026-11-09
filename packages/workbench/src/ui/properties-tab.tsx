@@ -5,27 +5,29 @@
 import type {
   ManagedEntrySource,
   WorkbenchDocumentController,
+  WorkbenchProblem,
   WorkbenchSliceRange,
 } from "#/document/index";
-import type { RenderedProperty } from "#/render/result";
+import type { RenderDiagnostic, RenderedProperty } from "#/render/result";
 import { useEffect, useState, useRef, useMemo } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { ExampleActions, useExampleState } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
-import { useOptionalHost } from "./host";
+import { useContainerName, useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
 import { useWorkbenchMessages } from "./messages";
-import { documentDiagnosis } from "./problems";
+import { diagnosticText, documentDiagnosis, problemText } from "./problems";
 import { PropertyList, propertyText } from "./property-list";
+import { indexAfterMove, useListReorder } from "./reorder";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
 import { useIcon, useParts } from "./theme";
 import { useRetention } from "./visited";
 
-import { entrySlice, sliceShownText } from "#/document/index";
+import { entryPosition, entrySlice, sliceShownText } from "#/document/index";
 
 const MERGE_LABEL: Record<string, WorkbenchMessageLabel> = {
   replace: "workbench_properties_merge_replace",
@@ -38,6 +40,35 @@ export interface EntryDiagnostic {
   /** 1-based position of the Managed Frontmatter entry it belongs to. */
   readonly position: number;
   readonly message: string;
+}
+
+/**
+ * The problems the rows carry: the renderer's own that name an entry, and
+ * the manifest errors the parser pinned to one entry.
+ */
+export function entryDiagnostics(
+  m: WorkbenchMessages,
+  diagnostics: readonly RenderDiagnostic[],
+  problems: readonly WorkbenchProblem[],
+): EntryDiagnostic[] {
+  return [
+    ...diagnostics.flatMap((diagnostic) =>
+      diagnostic.position === undefined
+        ? []
+        : [
+            {
+              position: diagnostic.position,
+              message: diagnosticText(m, diagnostic),
+            },
+          ],
+    ),
+    ...problems.flatMap((problem) => {
+      const position = entryPosition(problem.slice);
+      return position === null
+        ? []
+        : [{ position, message: problemText(m, problem).message }];
+    }),
+  ];
 }
 
 export interface PropertiesPaneProps {
@@ -137,7 +168,18 @@ export function PropertiesPane({
   const part = useParts("properties");
   const example = useExampleState("properties");
   const exampleMessage = example.message;
-  const produced = byEntry(exampleMessage ? [] : properties);
+  // The output the rows read: this attempt's own, or the output that stands
+  // beside the example's condition. Without either, each row shows its rule.
+  const standing =
+    exampleMessage === null
+      ? { properties, fold }
+      : example.retained
+        ? {
+            properties: example.retained.properties,
+            fold: example.retained.fold,
+          }
+        : null;
+  const produced = byEntry(standing?.properties ?? []);
   const icon = useIcon();
   const instanceId = useUniqueId();
   const host = useOptionalHost();
@@ -170,6 +212,23 @@ export function PropertiesPane({
   }, [openRow, openRetained]);
   // A held list stays on screen for repair, but no list change can patch it.
   const locked = controller.readOnly || controller.managedEntriesHeld;
+
+  // The list counts rows from 0; an entry's position counts from 1.
+  const reorder = useListReorder({
+    disabled: locked,
+    onMove: (from, to) => {
+      const position = from + 1;
+      if (
+        !controller.editManagedEntry({ action: "move", position, to: to + 1 })
+      )
+        return false;
+      if (selected !== null) {
+        const next = indexAfterMove(selected, position, to + 1);
+        if (next !== selected) onSelect(next);
+      }
+      return true;
+    },
+  });
 
   function add(kind: "property" | "spread", after = entries.length) {
     if (controller.editManagedEntry({ action: "add", kind, after })) {
@@ -218,7 +277,7 @@ export function PropertiesPane({
           />
         </div>
       )}
-      <ul {...part("rows")}>
+      <ul {...part("rows")} {...reorder.list}>
         {entries.map((entry) => {
           const fields = produced.get(entry.position) ?? [];
           const raised = problems.get(entry.position) ?? [];
@@ -231,14 +290,26 @@ export function PropertiesPane({
             !open && raised.length > 0 ? raised[0]!.message : null;
           const summary =
             failure ??
-            (exampleMessage
+            (standing === null
               ? entry.language === "expr"
                 ? sliceShownText(controller, entrySlice(entry.position))
                 : controller.sliceText(entrySlice(entry.position))
-              : summarize(m, { entry, produced: fields, fold }));
+              : summarize(m, { entry, produced: fields, fold: standing.fold }));
           return (
-            <li key={entry.position} {...part("row")}>
+            <li
+              key={entry.position}
+              {...part("row")}
+              {...reorder.row(entry.position - 1, entries.length)}
+            >
               <div {...part("row-header")}>
+                <span
+                  {...part("handle")}
+                  aria-label={m.workbench_drag_to_reorder()}
+                  {...tooltip(m.workbench_drag_to_reorder())}
+                  {...reorder.handle(entry.position - 1, entries.length)}
+                >
+                  {icon("drag")}
+                </span>
                 <button
                   type="button"
                   aria-expanded={open}
@@ -264,7 +335,7 @@ export function PropertiesPane({
                       )}
                       {...tooltip(summary)}
                     >
-                      {exampleMessage && !failure ? (
+                      {standing === null && !failure ? (
                         <code>{summary}</code>
                       ) : (
                         summary
@@ -295,42 +366,6 @@ export function PropertiesPane({
                   >
                     {icon("add")}
                   </button>
-                  {([-1, 1] as const).map((by) => {
-                    const label =
-                      by === -1
-                        ? m.workbench_properties_move_up()
-                        : m.workbench_properties_move_down();
-                    return (
-                      <button
-                        type="button"
-                        {...part("row-action")}
-                        key={by}
-                        aria-label={label}
-                        {...tooltip(label)}
-                        disabled={
-                          locked ||
-                          (by === -1
-                            ? entry.position === 1
-                            : entry.position === entries.length)
-                        }
-                        onClick={() => {
-                          if (
-                            controller.editManagedEntry({
-                              action: "move",
-                              position: entry.position,
-                              by,
-                            })
-                          ) {
-                            if (open) onSelect(entry.position + by);
-                            else if (selected === entry.position + by)
-                              onSelect(entry.position);
-                          }
-                        }}
-                      >
-                        {by === -1 ? icon("move-up") : icon("move-down")}
-                      </button>
-                    );
-                  })}
                   <button
                     type="button"
                     {...part("row-action")}
@@ -361,7 +396,7 @@ export function PropertiesPane({
                   instanceId={instanceId}
                   entry={entry}
                   produced={fields}
-                  showResult={!exampleMessage}
+                  showResult={standing !== null}
                   diagnostics={raised}
                   focusName={newRow === entry.position}
                   onOpenSource={onOpenSource}
@@ -432,6 +467,8 @@ function EntryForm({
 }: EntryFormProps) {
   const m = useWorkbenchMessages();
   const part = useParts("properties");
+  // Named as the expression editor is, by a hidden element: no tooltip.
+  const textName = useContainerName(m.workbench_properties_expression());
   const [pendingLanguage, setPendingLanguage] = useState<
     "text" | "expr" | "value" | null
   >(null);
@@ -580,11 +617,12 @@ function EntryForm({
               </div>
             </div>
           )}
+          {format === "text" && textName.hiddenName}
           {format === "text" ? (
             <input
               type="text"
               readOnly={controller.readOnly}
-              aria-label={m.workbench_properties_expression()}
+              {...textName.attrs}
               value={fixedText ?? ""}
               onInput={(event) =>
                 controller.dispatch({

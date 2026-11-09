@@ -213,9 +213,7 @@ export function citationPopoverFixture(
                   deps.citationText
                     ? deps.citationText.read(path, { signal })
                     : Promise.resolve(null),
-                ).pipe(
-                  Effect.map((value) => value as DocumentCitations | null),
-                ),
+                ).pipe(Effect.map((value) => value)),
             }),
         ),
         Layer.succeed(

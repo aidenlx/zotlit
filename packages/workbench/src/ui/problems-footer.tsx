@@ -1,3 +1,5 @@
+import type { RenderReport, WorkbenchReportContext } from "#/render/report";
+import type { RenderDiagnostic } from "#/render/result";
 // The editor's Problems area: one detected problem at a time, led by the
 // object it is about, and the disclosure the reader controls. Automatic checks
 // leave that choice alone; Show problem, a source marker, and a failed
@@ -19,9 +21,7 @@
 //
 // Source and explanation share the pane. The divider adjusts that share;
 // the chevron closes the explanation and returns focus to the source.
-
-import type { RenderReport, WorkbenchReportContext } from "#/render/report";
-import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
+import { useAtomSet } from "@effect/atom-react";
 import {
   useCallback,
   useEffect,
@@ -33,6 +33,7 @@ import {
 
 import { useUniqueId } from "@zotlit/ui";
 
+import { useWorkbenchModel } from "./editor";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
@@ -40,15 +41,14 @@ import type { WorkbenchDiagnosis } from "./problems";
 import {
   diagnosisEngineSources,
   diagnosisExplanation,
+  diagnosisForOccurrence,
   diagnosisLabel,
   diagnosisLocated,
   diagnosisReport,
   diagnosisWhere,
   problemText,
-  renderDiagnosis,
 } from "./problems";
-import { useFork } from "./run";
-import type { RenderTrigger } from "./scheduler";
+import type { RenderTrigger } from "./scheduler-atoms";
 import { WorkbenchOption, WorkbenchSelect } from "./select";
 import { useParts, useIcon } from "./theme";
 
@@ -82,10 +82,20 @@ export interface WorkbenchProblemsState {
    * the reader moves the explanation on, so a check never selects it.
    */
   readonly next: WorkbenchDiagnosis | null;
-  /** Reads one problem in full, which a source marker and Show problem do. */
-  readonly select: (id: string) => void;
+  /**
+   * Reads one problem in full, which a source marker and Show problem do.
+   * `occurrence` is the one of its grouped occurrences the area reads, as the
+   * preview reported it.
+   */
+  readonly select: (id: string, occurrence?: RenderDiagnostic) => void;
   /** Opens or reclaims the area; reclaiming it also gives back the editor. */
   readonly setOpen: (open: boolean) => void;
+  /**
+   * What the area's polite status says: why a problem Show problem revealed
+   * fails, while focus is on the call in the editor rather than in the area.
+   */
+  readonly announcement: string;
+  readonly announce: (text: string) => void;
 }
 
 /**
@@ -103,7 +113,7 @@ export interface WorkbenchProblemCapture {
 }
 
 export function useWorkbenchProblems({
-  diagnoses,
+  diagnoses: found,
   trigger,
   attempt,
   capture,
@@ -116,7 +126,15 @@ export function useWorkbenchProblems({
   readonly capture?: WorkbenchProblemCapture;
 }): WorkbenchProblemsState {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [occurrence, setOccurrence] = useState<RenderDiagnostic | null>(null);
   const [open, setOpen] = useState(false);
+  const [announcement, announce] = useState("");
+  // The occurrence the reader asked about stands for its grouped problem while
+  // a check still reports it.
+  const diagnoses =
+    occurrence === null
+      ? found
+      : found.map((diagnosis) => diagnosisForOccurrence(diagnosis, occurrence));
   // Reclaiming the area hands the editor back whole, so the next Show problem
   // starts from the split rather than from the space the last reading took.
   // The reading is over with it: a compact area follows the first problem
@@ -126,7 +144,9 @@ export function useWorkbenchProblems({
   const openArea = useCallback((next: boolean) => {
     setOpen(next);
     if (!next) {
+      announce("");
       setSelectedId(null);
+      setOccurrence(null);
     }
   }, []);
   // Selection keys on the problem's identity rather than its place in the
@@ -213,62 +233,18 @@ export function useWorkbenchProblems({
     // Offered rather than taken: a check that resolves the selected problem
     // leaves the reader on its resolved state until they ask for the next one.
     next: selected === null ? first : null,
-    select(id) {
+    select(id, asked) {
       setSelectedId(id);
+      setOccurrence(asked ?? null);
       setOpen(true);
     },
     setOpen: openArea,
+    announcement,
+    announce,
   };
 }
 
 /** Nothing found, as one value, so an idle preview publishes no new list. */
-const NO_DIAGNOSTICS: readonly RenderDiagnostic[] = [];
-
-/**
- * The preview's half of the Problems contract, which both hosts keep alike:
- * what this preview's render found goes to the editor that explains it, a
- * preview that closes takes its findings back with it, and a deliberate Run
- * that failed asks for its explanation at once. A failure while the reader
- * types asks for nothing, which is what leaves the editor as they left it.
- *
- * `publish` and `showProblem` are read through refs, so a host may pass a
- * fresh callback on every draw without republishing on every draw.
- */
-export function usePublishedProblems({
-  result,
-  trigger,
-  attempt,
-  publish,
-  showProblem,
-}: {
-  /** The newest landed result, whose diagnostics this preview publishes. */
-  readonly result: TemplateRenderResult | null;
-  /** How the attempt behind that result started. */
-  readonly trigger: RenderTrigger | null;
-  /** Counts published results, so one deliberate failure opens the area once. */
-  readonly attempt: number;
-  readonly publish: (diagnostics: readonly RenderDiagnostic[]) => void;
-  readonly showProblem: (id: string, occurrence?: RenderDiagnostic) => void;
-}): void {
-  const diagnostics = result?.diagnostics ?? NO_DIAGNOSTICS;
-  const publishing = useRef(publish);
-  publishing.current = publish;
-  const open = useRef(showProblem);
-  open.current = showProblem;
-  useEffect(() => {
-    publishing.current(diagnostics);
-  }, [diagnostics]);
-  useEffect(() => () => publishing.current(NO_DIAGNOSTICS), []);
-  const opened = useRef(attempt);
-  useEffect(() => {
-    if (attempt === opened.current) return;
-    opened.current = attempt;
-    const first = diagnostics[0];
-    if (trigger === "explicit" && first)
-      open.current(renderDiagnosis(first).id, first);
-  }, [attempt, trigger, diagnostics]);
-}
-
 export function ProblemsFooter({
   problems,
   onOpen,
@@ -287,12 +263,14 @@ export function ProblemsFooter({
 }) {
   const m = useWorkbenchMessages();
   const host = useOptionalHost();
-  const fork = useFork(host?.run);
+  const startCopy = useAtomSet(useWorkbenchModel().copy(useUniqueId()));
   const part = useParts("problemsFooter");
   const icon = useIcon();
   const panel = useRef<HTMLElement>(null);
   const [size, setSize] = useState(55);
   const drag = useRef<{ y: number; size: number; height: number } | null>(null);
+  // The divider says it is dragged, so the host can draw it as held.
+  const [dragging, setDragging] = useState(false);
   const headingId = useUniqueId();
   const bodyId = useUniqueId();
   const {
@@ -341,9 +319,10 @@ export function ProblemsFooter({
   function copyReport(text: string): void {
     if (host?.copy === undefined) return;
     setCopyFailed(false);
-    fork(host.copy(text), {
-      onSuccess: () => host.notice(m.workbench_problems_copy_done()),
-      onFailure: () => {
+    startCopy({
+      copy: host.copy(text),
+      copied: () => host.notice(m.workbench_problems_copy_done()),
+      failed: () => {
         // A denied clipboard leaves the reader the report itself: the
         // disclosure opens so the text is there to select and copy by hand.
         setCopyFailed(true);
@@ -431,11 +410,13 @@ export function ProblemsFooter({
           aria-valuemax={85}
           aria-valuenow={Math.round(size)}
           aria-controls={selected || reportText || next ? bodyId : undefined}
+          data-dragging={dragging ? "" : undefined}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             const height =
               panel.current!.parentElement!.getBoundingClientRect().height;
             drag.current = { y: event.clientY, size, height };
+            setDragging(true);
             event.currentTarget.setPointerCapture(event.pointerId);
             event.preventDefault();
           }}
@@ -455,10 +436,12 @@ export function ProblemsFooter({
           }}
           onPointerUp={(event) => {
             drag.current = null;
+            setDragging(false);
             event.currentTarget.releasePointerCapture(event.pointerId);
           }}
           onLostPointerCapture={() => {
             drag.current = null;
+            setDragging(false);
           }}
           onKeyDown={(event) => {
             const next =
@@ -501,6 +484,9 @@ export function ProblemsFooter({
         {!open && explanation !== null && (
           <p {...part("problems-text")}>{explanation.condition}</p>
         )}
+        <p role="status" {...part("problems-announcement")}>
+          {problems.announcement}
+        </p>
         {/* How much of the editor this reading takes, on the trailing edge and
             together: one grows the area, the other gives it all back. */}
         <div {...part("problems-space")}>

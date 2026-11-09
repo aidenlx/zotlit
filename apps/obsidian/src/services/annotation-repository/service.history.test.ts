@@ -766,7 +766,7 @@ it.effect(
               request.url.pathname.endsWith("HRK7BG32")
             )
               await held.promise;
-            return zotero.answers.write!(request);
+            return zotero.answers.write(request);
           },
         }),
       );
@@ -820,7 +820,7 @@ it.effect(
             request.method === "DELETE" &&
             request.url.pathname.endsWith("PUPR5FG5")
               ? staleVersion()
-              : zotero.answers.write!(request),
+              : zotero.answers.write(request),
         }),
       );
       yield* service.openHistory("RGRPDF24");
@@ -902,7 +902,7 @@ it.effect(
             request.method === "PATCH" &&
             request.url.pathname.endsWith("K3JRFLFQ")
               ? staleVersion()
-              : zotero.answers.write!(request),
+              : zotero.answers.write(request),
         }),
       );
       yield* service.openHistory("RGRPDF24");

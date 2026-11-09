@@ -44,12 +44,12 @@ import type {
 } from "react";
 
 import { useUniqueId } from "@zotlit/ui";
+import { composing } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { useObsidianApp } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
-import { composing } from "@/lib/ime";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -1443,6 +1443,11 @@ export interface ChooserPageFieldProps {
    * does not reach the control twice.
    */
   inline?: boolean;
+  /**
+   * The id the label text takes, so an inline control names itself with
+   * `aria-labelledby` and shows no tooltip of the words beside it.
+   */
+  labelId?: string;
   children: ReactNode;
 }
 
@@ -1455,6 +1460,7 @@ function PageField({
   description,
   invalid,
   inline,
+  labelId,
   after,
   children,
 }: ChooserPageFieldProps) {
@@ -1467,7 +1473,9 @@ function PageField({
       )}
     >
       <span className="zt:flex zt:min-w-0 zt:flex-col zt:gap-0.5">
-        <span className="zt:text-foreground">{label}</span>
+        <span id={labelId} className="zt:text-foreground">
+          {label}
+        </span>
         {description && (
           <span
             className={cn(
