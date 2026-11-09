@@ -52,8 +52,6 @@ import {
   fieldsActionAttributes,
   patchAt,
   pressFieldsAction,
-  panelSizeMenus,
-  pickPanelSize,
   repairCommands,
   insertionTarget,
   setAdvanced,
@@ -179,6 +177,7 @@ import {
 import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
 import {
+  FieldsMoreOptions,
   FieldsPanel,
   makeFieldsActions,
   makeFieldsPanelModel,
@@ -1898,12 +1897,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       );
   }
   /**
-   * The entries a template author needs now and then: the panel sizes, the
-   * rendering language and the Template data export. Each one takes the
-   * action section, so the submenu reads as one group.
+   * The entries a template author needs now and then: the rendering language
+   * and the Template data export. Each one takes the action section, so the
+   * submenu reads as one group.
    */
   #addMoreOptions(menu: Menu): void {
-    this.#addPanelSizeMenu(menu);
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
     // With the Fields popover or the docked panel open, the export saves
     // the root it shows.
@@ -1919,38 +1917,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .onClick(() => this.exportTemplateData(target)),
       );
   }
-  /**
-   * One submenu per handle the leaf draws, named as the handle is, to grow,
-   * shrink or reset its panel without a drag (WCAG 2.5.7).
-   */
-  #addPanelSizeMenu(menu: Menu): void {
-    const { registry } = this;
-    const { panels, panelDefaults } = this.workbench;
-    const menus = panelSizeMenus(workbenchM, registry.get(panels), {
-      size: registry.get(this.viewSize),
-      defaults: panelDefaults,
-    });
-    for (const { axis, label, items } of menus)
-      menu.addItem((item) => {
-        item
-          .setSection(MENU_SECTION.action)
-          .setTitle(label)
-          .setIcon(`move-${axis}`);
-        const submenu = item.setSubmenu();
-        for (const size of items)
-          submenu.addItem((entry) =>
-            entry
-              .setTitle(size.label)
-              .setIcon(
-                size.resize === "reset"
-                  ? "rotate-ccw"
-                  : `${size.resize === "grow" ? "unfold" : "fold"}-${axis}`,
-              )
-              .setDisabled(size.disabled)
-              .onClick(() => pickPanelSize(registry, this.workbench, size)),
-          );
-      });
-  }
   /** The Preview panel's settings in a submenu of their own, while the panel shows. */
   #addPreviewMenu(menu: Menu): void {
     if (!this.registry.get(this.workbench.panels).preview.shown) return;
@@ -1963,8 +1929,38 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     });
   }
   /**
+   * The Preview pane's More options, opened under `trigger`: the same
+   * settings the view's Preview submenu holds.
+   */
+  showPreviewMenu(trigger: HTMLElement): void {
+    const menu = new Menu();
+    this.#addPreviewSettings(menu);
+    showMenuAtButton(menu, trigger, "end");
+  }
+  /**
+   * The Fields pane's More options, opened under `trigger`: choosing the
+   * Item, the export of the root the pane shows, and its Indexed Key.
+   */
+  showFieldsMenu(trigger: HTMLElement): void {
+    const menu = new Menu().addSections([
+      MENU_SECTION.action,
+      MENU_SECTION.info,
+    ]);
+    menu.addItem((item) =>
+      item
+        .setSection(MENU_SECTION.action)
+        .setTitle(m.workbench_choose_item())
+        .setIcon("search")
+        .onClick(() => this.startItemChoice()),
+    );
+    this.fieldsActions.addExportMenuItem(menu);
+    this.fieldsActions.addCopyKeyMenuItem(menu);
+    showMenuAtButton(menu, trigger, "end");
+  }
+  /**
    * The Preview panel's settings (ADR 0048): what the render reads beside the
-   * Item and which note it shows, then how it refreshes.
+   * Item and which note it shows, then how it refreshes. The view's Preview
+   * submenu and the Preview pane's More options both list them.
    */
   #addPreviewSettings(menu: Menu): void {
     const { registry } = this;
@@ -3261,6 +3257,7 @@ function EditorContent({
                 content: (
                   <FieldsPanel view={view} actions={view.fieldsActions} />
                 ),
+                actions: <FieldsMoreOptions view={view} />,
               },
               preview: {
                 label: m.workbench_view_preview(),

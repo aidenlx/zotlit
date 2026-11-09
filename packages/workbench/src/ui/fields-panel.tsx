@@ -27,6 +27,11 @@ interface FieldsPanelContent {
   readonly label: string;
   /** The fields: the host's field tree and its search. */
   readonly content: ReactNode;
+  /**
+   * The host's own pane actions, such as a More options menu, drawn in the
+   * header before the pin; a host without any leaves it out.
+   */
+  readonly actions?: ReactNode;
 }
 
 /** The id of the docked Fields Panel, beside the Fields popover's `popoverId`. */
@@ -134,6 +139,7 @@ function FieldsPanelBody({
   titleId,
   placement,
   escape,
+  actions: hostActions,
 }: FieldsPanelContent & {
   readonly titleId: string;
   readonly placement: "popover" | "docked";
@@ -197,6 +203,7 @@ function FieldsPanelBody({
           {label}
         </span>
         <span ref={setActions} {...part("actions")} />
+        {hostActions}
         {/* Disabled by aria-disabled, so the pin keeps its focus and its
             tooltip says why it does not work. */}
         <button

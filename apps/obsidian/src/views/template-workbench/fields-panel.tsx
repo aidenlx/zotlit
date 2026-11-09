@@ -20,7 +20,9 @@ import type {
   WorkbenchModel,
 } from "@zotlit/workbench/ui";
 
+import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
+import { tooltipAttrs } from "@/lib/utils";
 import { javascriptTemplatesEnabledAtom } from "@/services/template/atoms";
 import {
   createExplorerActions,
@@ -339,6 +341,22 @@ export function makeFieldsActions(
         ? m.template_data_explorer_export_selected_paper()
         : m.template_data_explorer_menu_export_json(),
   });
+}
+
+/**
+ * The Fields pane's More options, which the shared panel draws in its header
+ * beside the pin; a host without one, as the web page, shows none.
+ */
+export function FieldsMoreOptions({ view }: { view: TemplateWorkbenchView }) {
+  return (
+    <IconButton
+      icon="more-horizontal"
+      aria-haspopup="menu"
+      className="zt:shrink-0"
+      onClick={(event) => view.showFieldsMenu(event.currentTarget)}
+      {...tooltipAttrs(m.workbench_pane_more_options())}
+    />
+  );
 }
 
 /** The Explorer's tree in the leaf's Fields Panel. */

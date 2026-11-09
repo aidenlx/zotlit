@@ -180,6 +180,8 @@
   "workbench_preview_updated_section": "仅预览更新的部分",
   "workbench_preview_auto_refresh": "自动刷新预览",
   "workbench_show_markdown": "显示 Markdown",
+  "workbench_show_reading_view": "显示阅读视图",
+  "workbench_pane_more_options": "更多选项",
   "workbench_preview_behind": "预览落后于您的编辑。",
   "workbench_preview_none": "尚无预览。",
   "$schema": "https://inlang.com/schema/inlang-message-format",

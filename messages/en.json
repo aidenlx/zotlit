@@ -1575,6 +1575,8 @@
   "workbench_preview_updated_section": "Preview updated section only",
   "workbench_preview_auto_refresh": "Automatically refresh preview",
   "workbench_show_markdown": "Show Markdown",
+  "workbench_show_reading_view": "Show reading view",
+  "workbench_pane_more_options": "More options",
   "workbench_preview_behind": "Preview is behind your edits.",
   "workbench_preview_none": "No preview yet.",
   "workbench_properties_format": "Value format",

@@ -59,13 +59,13 @@ The edge also works from the keyboard. Press Tab to focus it; a screen reader na
 
 Double-click the edge to give the panel its default width again.
 
-You can also size the panel without the edge. In the view's pane menu, point to <UiLabel name={m.workbench_preview_resize()} />, and select <UiLabel name={m.workbench_panel_wider()} />, <UiLabel name={m.workbench_panel_narrower()} />, or <UiLabel name={m.workbench_panel_reset_width()} />. Each step is 64 pixels. In the web Workbench, the same entries are in the <UiLabel name={m.workbench_view_menu()} /> menu, which stays open so you can take several steps. After each step, a screen reader reads the panel and its new size, such as "Preview: 464 pixels".
+In the web Workbench, you can also size the panel without the edge. In the <UiLabel name={m.workbench_view_menu()} /> menu, point to <UiLabel name={m.workbench_preview_resize()} />, and select <UiLabel name={m.workbench_panel_wider()} />, <UiLabel name={m.workbench_panel_narrower()} />, or <UiLabel name={m.workbench_panel_reset_width()} />. Each step is 64 pixels, and the menu stays open so you can take several steps. After each step, a screen reader reads the panel and its new size, such as "Preview: 464 pixels".
 
 ### Panels in a narrow view [#narrow-view]
 
 The Preview panel stands beside the editor in a view at least 896 pixels wide (56rem), so you can compare the template with its result as you edit.
 
-In a view narrower than 896 pixels, the Preview moves under the editor. It takes 40% of the view's height at first. Drag the edge above it, or focus the edge and press Up Arrow or Down Arrow, to give it more or less height; Home and End set its smallest and largest share. Double-click the edge to give it 40% again. In the pane menu, <UiLabel name={m.workbench_preview_resize()} /> then offers <UiLabel name={m.workbench_panel_taller()} />, <UiLabel name={m.workbench_panel_shorter()} />, and <UiLabel name={m.workbench_panel_reset_height()} />, in steps of 10%. The editor always keeps room for its toolbar, its tabs and at least five lines of your template; the Preview gets shorter first. Each step starts from the height you see. When the editor needs more room, it scrolls.
+In a view narrower than 896 pixels, the Preview moves under the editor. It takes 40% of the view's height at first. Drag the edge above it, or focus the edge and press Up Arrow or Down Arrow, to give it more or less height; Home and End set its smallest and largest share. Double-click the edge to give it 40% again. In the web Workbench's <UiLabel name={m.workbench_view_menu()} /> menu, <UiLabel name={m.workbench_preview_resize()} /> then offers <UiLabel name={m.workbench_panel_taller()} />, <UiLabel name={m.workbench_panel_shorter()} />, and <UiLabel name={m.workbench_panel_reset_height()} />, in steps of 10%. The editor always keeps room for its toolbar, its tabs and at least five lines of your template; the Preview gets shorter first. Each step starts from the height you see. When the editor needs more room, it scrolls.
 
 The Fields popover works the same at every width. A pinned Fields panel docks only where the view has room for it; see [Pin the Fields panel](#pin-fields).
 
@@ -107,6 +107,8 @@ The panel opens on the same root as the editor, such as the note fields or the a
 
 While the Fields panel is open, <UiLabel name={m.template_data_explorer_menu_export_json()} /> in the pane menu saves the data of the root the panel shows. Otherwise it saves the data of the editor's root.
 
+The <UiLabel name={m.workbench_pane_more_options()} /> button in the Fields panel's header has <UiLabel name={m.workbench_choose_item()} />, <UiLabel name={m.template_data_explorer_menu_export_json()} /> for the root the panel shows, and <UiLabel name={m.command_copy_item_key_name()} /> (or the annotation's key, on the annotation root).
+
 ### The Fields popover [#fields-popover]
 
 The Fields panel opens in the Fields popover until you pin it. The popover opens at the right edge of the view and fills its height. It looks the same at every width. The editor and the Preview panel stay usable while it is open, so you can read the preview and write in the template beside it.
@@ -141,7 +143,9 @@ The pinned panel needs a view that keeps the editor at least 360 pixels wide bes
 
 The Preview panel's header row names the preview, such as <UiLabel name={m.workbench_result_heading()} />, and the note's <UiLabel name={m.workbench_result_filename()} />. The row stays at the top while you scroll through a long preview, so you always see which note you are reading.
 
-While the Preview panel is shown, the view's pane menu adds the choices that shape the preview. For a profile, these are:
+Two buttons sit at the end of the header row. The first switches the preview between reading view and Markdown source; its tooltip names the mode it switches to, <UiLabel name={m.workbench_show_markdown()} /> or <UiLabel name={m.workbench_show_reading_view()} />. The second, <UiLabel name={m.workbench_pane_more_options()} />, opens the preview choices below.
+
+While the Preview panel is shown, the view's pane menu also adds the choices that shape the preview. For a profile, these are:
 
 - <UiLabel name={m.workbench_preview_as_new_note()} />,
   <UiLabel name={m.workbench_preview_as_updated_note()} />, or
