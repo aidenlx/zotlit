@@ -64,10 +64,12 @@ function host() {
   const parent: HoverParent = { hoverPopover: null };
   const selected = variant("selected row", { x: 220, y: 182 });
   const create = variant("create row", { x: 100, y: 300 });
+  let shown = true;
   const popupHost = new MarkPopupHost({
     parent,
     doc: () => document,
     surface,
+    shown: () => shown,
     variants: { selected, create },
   });
   return {
@@ -75,6 +77,10 @@ function host() {
     selected,
     create,
     host: popupHost,
+    /** Another tab covers the PDF view, or uncovers it. */
+    cover(covered: boolean) {
+      shown = !covered;
+    },
     popup: () =>
       parent.hoverPopover as unknown as {
         hoverEl: HTMLElement;
@@ -138,6 +144,35 @@ it("hides while the anchor is off screen, and shows again once it is back", () =
   h.host.sync();
   expect(h.popup()?.staticPos).toEqual({ x: 40, y: 50 });
   expect(h.popup()?.hoverEl.textContent).toBe("selected row");
+});
+
+// A new tab (Cmd+T) left the popup of a new highlight over it (Lesson 2 of
+// the /learn course); a comment typed in the create popup survives the cover.
+it("hides while another tab covers the PDF, keeps its content mounted, and shows it again once the PDF is back", () => {
+  using h = host();
+  update(
+    h.surface,
+    captureSelection({
+      captured: CAPTURED,
+      anchorAt: { pageIndex: 0, fx: 0.5, fy: 0.5 },
+    }),
+  );
+
+  const opened = h.popup()!;
+  const row = opened.hoverEl.querySelector("span");
+
+  h.cover(true);
+  h.host.sync();
+  expect(h.popup()).toBe(opened);
+  expect(opened.hoverEl.hasAttribute("data-zt-covered")).toBe(true);
+  expect(h.create.unanchored).not.toHaveBeenCalled();
+  expect(current(h.surface).floating).toMatchObject({ kind: "create" });
+
+  h.cover(false);
+  h.host.sync();
+  expect(h.popup()).toBe(opened);
+  expect(opened.hoverEl.hasAttribute("data-zt-covered")).toBe(false);
+  expect(opened.hoverEl.querySelector("span")).toBe(row);
 });
 
 it("opens nothing for a quiet selection, and opens for the next one", () => {

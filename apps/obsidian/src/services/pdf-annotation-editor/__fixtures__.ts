@@ -840,6 +840,7 @@ export function readerSurfaces({
     parent,
     doc: () => containerEl.doc,
     surface,
+    shown: () => true,
     variants: {
       selected: {
         anchor: () => selection.anchor(),

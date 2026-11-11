@@ -607,6 +607,15 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     return this.#creation?.settled ?? Promise.resolve();
   }
 
+  /**
+   * Hang the Mark Popup again, or hide it, once the workspace's active tab
+   * changes: a PDF whose tab another tab hides has no mark on screen, so its
+   * popup goes with it, and comes back when the tab shows again.
+   */
+  placePopup(): void {
+    this.#popupHost?.sync();
+  }
+
   /** Revalidates this PDF surface when Obsidian activates its leaf. */
   activate(): void {
     if (this.#attachment.kind === "resolved") {
@@ -1135,6 +1144,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       parent: this,
       doc: () => this.#view.containerEl.doc,
       surface,
+      shown: () => this.#view.containerEl.isShown(),
       variants: {
         selected: {
           anchor: () => selection.anchor(),

@@ -6151,6 +6151,360 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
       });
 
+      it("hides the Mark Popup of a new highlight when a new tab covers the PDF, and shows it again when the PDF's tab comes back", async () => {
+        await raiseWindow(vaultId!);
+        await obRunUntil(
+          vaultId!,
+          async (
+            { page: pageHelpers },
+            { attachmentPath }: { attachmentPath: string },
+          ) => {
+            const view = pageHelpers.pdfView(attachmentPath)!;
+            if (!view) return "no view";
+            view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+            return (
+              (pageHelpers
+                .pdfView(attachmentPath)
+                ?.containerEl.querySelector<HTMLElement>(
+                  '.page[data-page-number="1"] .textLayer',
+                )?.textContent.length ?? 0) > 0
+            );
+          },
+          { attachmentPath },
+          { what: "the PDF text layer on page 1 to render text" },
+        );
+        const marks = () =>
+          obRun(
+            vaultId!,
+            (
+              { page: pageHelpers },
+              { attachmentPath }: { attachmentPath: string },
+            ) =>
+              [
+                ...pageHelpers
+                  .pdfView(attachmentPath)!
+                  .containerEl.querySelectorAll<HTMLElement>(
+                    ".zt-pdf-annotation-mark[data-zotero-annotation-key]",
+                  ),
+              ].map((n) => n.dataset.zoteroAnnotationKey!),
+            { attachmentPath },
+          );
+        const before = new Set(await marks());
+        await using local = new AsyncDisposableStack();
+        local.defer(async () => {
+          await eraseAnnotations(
+            rdp,
+            (await marks()).filter((key) => !before.has(key)),
+          );
+        });
+        // The reader selects a passage and presses Highlight with a real
+        // click; the new highlight is selected, with its popup over it.
+        await obRun(
+          vaultId!,
+          async (
+            { page: pageHelpers },
+            { attachmentPath }: { attachmentPath: string },
+          ) => {
+            const { fire, trusted, until } = pageHelpers;
+            const walker = document.createTreeWalker(
+              pageHelpers
+                .pdfView(attachmentPath)!
+                .containerEl.querySelector<HTMLElement>(
+                  '.page[data-page-number="1"] .textLayer',
+                )!,
+              NodeFilter.SHOW_TEXT,
+            );
+            let node: Node | null;
+            let seen = 0;
+            while ((node = walker.nextNode()))
+              if (
+                (node as Text).data.length > 12 &&
+                node.parentElement!.getBoundingClientRect().height > 0 &&
+                seen++ === 3
+              )
+                break;
+            const range = document.createRange();
+            range.setStart(node!, 0);
+            range.setEnd(node!, 8);
+            const box = range.getBoundingClientRect();
+            const x = box.left + 2,
+              y = box.top + box.height / 2;
+            const pressed = fire("pointerdown", x, y);
+            getSelection()!.removeAllRanges();
+            getSelection()!.addRange(range);
+            fire("pointerup", x, y, pressed);
+            const highlight = await until(
+              "the create popup's Highlight",
+              () =>
+                document.querySelector<HTMLElement>(
+                  '.zt-pdf-mark-popup [data-zt-verb="highlight"]',
+                ),
+              5000,
+            );
+            await trusted(window).click(highlight);
+          },
+          { attachmentPath },
+        );
+        // Zotero holds the highlight, and the popup stands over it as the
+        // selected mark's, with nothing left to write that would place it.
+        await obRunUntil(
+          vaultId!,
+          async (
+            { zotlit },
+            { attachmentPath }: { attachmentPath: string },
+          ) => {
+            const services = zotlit.services;
+            await Promise.all(
+              services.bridge
+                .runSync(services.pdfAnnotationEditor.bindings)
+                .filter((binding) => binding.filePath === attachmentPath)
+                .map((binding) => binding.settled),
+            );
+            const popup =
+              document.querySelector<HTMLElement>(".zt-pdf-mark-popup");
+            return (
+              (popup?.checkVisibility() ?? false) &&
+              !!popup!.querySelector('[data-zt-verb="delete"]')
+            );
+          },
+          { attachmentPath },
+          { what: "the new highlight's Mark Popup" },
+        );
+        await waitFor(async () =>
+          (await marks()).some((key) => !before.has(key)),
+        );
+        // The reads that follow a write, Zotero's notice of it among them, end.
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        // A new tab (Cmd+T on macOS) covers the PDF, and its popup with it.
+        await obRun(vaultId!, async ({ page: pageHelpers }) => {
+          await pageHelpers
+            .trusted(window)
+            .key("T", [process.platform === "darwin" ? "meta" : "control"]);
+        });
+        local.defer(async () => {
+          await obRun(vaultId!, ({ app }) => {
+            for (const leaf of app.workspace.getLeavesOfType("empty"))
+              leaf.detach();
+          });
+        });
+        // The tab change alone hides it: no read lands in this half second
+        // to place the popup again.
+        expect(
+          await obRun(vaultId!, async ({ app }) => {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            return {
+              shown:
+                document
+                  .querySelector<HTMLElement>(".zt-pdf-mark-popup")
+                  ?.checkVisibility() ?? false,
+              tab:
+                app.workspace.getMostRecentLeaf()?.view.getViewType() ?? null,
+            };
+          }),
+        ).toEqual({ shown: false, tab: "empty" });
+        // The PDF's tab in front again: the highlight is still selected.
+        await obRun(
+          vaultId!,
+          ({ app }, { attachmentPath }: { attachmentPath: string }) => {
+            app.workspace.setActiveLeaf(
+              app.workspace
+                .getLeavesOfType("pdf")
+                .find(
+                  (leaf) =>
+                    (leaf.view as FileView).file?.path === attachmentPath,
+                )!,
+              { focus: true },
+            );
+          },
+          { attachmentPath },
+        );
+        expect(
+          await obRunUntil(
+            vaultId!,
+            ({ app }) => ({
+              shown:
+                document
+                  .querySelector<HTMLElement>(".zt-pdf-mark-popup")
+                  ?.checkVisibility() ?? false,
+              tab:
+                app.workspace.getMostRecentLeaf()?.view.getViewType() ?? null,
+            }),
+            undefined,
+            {
+              what: "the Mark Popup back over the highlight",
+              ready: (value) => value.shown,
+            },
+          ),
+        ).toEqual({ shown: true, tab: "pdf" });
+        // Escape closes it, as before.
+        await obRun(vaultId!, async ({ page: pageHelpers }) => {
+          await pageHelpers.trusted(window).key("Escape");
+        });
+        await obRunUntil(
+          vaultId!,
+          ({ app }) => ({
+            shown:
+              document
+                .querySelector<HTMLElement>(".zt-pdf-mark-popup")
+                ?.checkVisibility() ?? false,
+            tab: app.workspace.getMostRecentLeaf()?.view.getViewType() ?? null,
+          }),
+          undefined,
+          {
+            what: "the Mark Popup to close on Escape",
+            ready: (value) => !value.shown,
+          },
+        );
+      }, 120000);
+
+      it("keeps a comment typed in the create popup while a new tab covers the PDF", async () => {
+        await raiseWindow(vaultId!);
+        await obRunUntil(
+          vaultId!,
+          async (
+            { page: pageHelpers },
+            { attachmentPath }: { attachmentPath: string },
+          ) => {
+            const view = pageHelpers.pdfView(attachmentPath)!;
+            if (!view) return "no view";
+            view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+            return (
+              (pageHelpers
+                .pdfView(attachmentPath)
+                ?.containerEl.querySelector<HTMLElement>(
+                  '.page[data-page-number="1"] .textLayer',
+                )?.textContent.length ?? 0) > 0
+            );
+          },
+          { attachmentPath },
+          { what: "the PDF text layer on page 1 to render text" },
+        );
+        await using local = new AsyncDisposableStack();
+        local.defer(async () => {
+          await obRun(vaultId!, async ({ app, page: pageHelpers }) => {
+            for (const leaf of app.workspace.getLeavesOfType("empty"))
+              leaf.detach();
+            // The editor, then the selection: nothing reaches Zotero.
+            await pageHelpers.trusted(window).key("Escape");
+            await pageHelpers.trusted(window).key("Escape");
+          });
+        });
+        // The reader selects a passage, presses Add comment and types.
+        await obRun(
+          vaultId!,
+          async (
+            { page: pageHelpers },
+            { attachmentPath }: { attachmentPath: string },
+          ) => {
+            const { fire, trusted, until } = pageHelpers;
+            const walker = document.createTreeWalker(
+              pageHelpers
+                .pdfView(attachmentPath)!
+                .containerEl.querySelector<HTMLElement>(
+                  '.page[data-page-number="1"] .textLayer',
+                )!,
+              NodeFilter.SHOW_TEXT,
+            );
+            let node: Node | null;
+            let seen = 0;
+            while ((node = walker.nextNode()))
+              if (
+                (node as Text).data.length > 12 &&
+                node.parentElement!.getBoundingClientRect().height > 0 &&
+                seen++ === 7
+              )
+                break;
+            const range = document.createRange();
+            range.setStart(node!, 0);
+            range.setEnd(node!, 8);
+            const box = range.getBoundingClientRect();
+            const x = box.left + 2,
+              y = box.top + box.height / 2;
+            const pressed = fire("pointerdown", x, y);
+            getSelection()!.removeAllRanges();
+            getSelection()!.addRange(range);
+            fire("pointerup", x, y, pressed);
+            await trusted(window).click(
+              await until(
+                "the create popup's Add comment",
+                () =>
+                  document.querySelector<HTMLElement>(
+                    '.zt-pdf-mark-popup [data-zt-verb="comment"]',
+                  ),
+                5000,
+              ),
+            );
+            (
+              await until("the comment editor", pageHelpers.popupEditor, 5000)
+            ).focus();
+            (
+              require("@electron/remote") as {
+                getCurrentWebContents(): { insertText(text: string): void };
+              }
+            )
+              .getCurrentWebContents()
+              .insertText("Read before the seminar");
+          },
+          { attachmentPath },
+        );
+        await obRun(vaultId!, async ({ page: pageHelpers }) => {
+          await pageHelpers
+            .trusted(window)
+            .key("T", [process.platform === "darwin" ? "meta" : "control"]);
+        });
+        expect(
+          await obRunUntil(
+            vaultId!,
+            ({ app }) => ({
+              shown:
+                document
+                  .querySelector<HTMLElement>(".zt-pdf-mark-popup")
+                  ?.checkVisibility() ?? false,
+              tab:
+                app.workspace.getMostRecentLeaf()?.view.getViewType() ?? null,
+            }),
+            undefined,
+            {
+              what: "the create popup to hide behind the new tab",
+              ready: (value) => value.tab === "empty",
+            },
+          ),
+        ).toEqual({ shown: false, tab: "empty" });
+        await obRun(
+          vaultId!,
+          ({ app }, { attachmentPath }: { attachmentPath: string }) => {
+            app.workspace.setActiveLeaf(
+              app.workspace
+                .getLeavesOfType("pdf")
+                .find(
+                  (leaf) =>
+                    (leaf.view as FileView).file?.path === attachmentPath,
+                )!,
+              { focus: true },
+            );
+          },
+          { attachmentPath },
+        );
+        // Back on the PDF, the comment is as the reader left it.
+        expect(
+          await obRunUntil(
+            vaultId!,
+            ({ page: pageHelpers }) => ({
+              shown:
+                document
+                  .querySelector<HTMLElement>(".zt-pdf-mark-popup")
+                  ?.checkVisibility() ?? false,
+              comment: pageHelpers.popupEditor()?.textContent ?? null,
+            }),
+            undefined,
+            {
+              what: "the create popup back with its comment",
+              ready: (value) => value.shown,
+            },
+          ),
+        ).toEqual({ shown: true, comment: "Read before the seminar" });
+      }, 120000);
+
       describe("Mark Handles on the seeded ink", () => {
         const inkKey = "4PE492KU";
         const ink = seededMark(inkKey, { image: true });
