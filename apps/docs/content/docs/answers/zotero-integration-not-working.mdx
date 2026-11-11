@@ -1,0 +1,75 @@
+---
+title: "Obsidian Zotero Integration not working: what to check"
+description: "What to check when Obsidian Zotero Integration stops working, and how ZotLit handles connection, templates, and Zotero 9 or 10."
+faq:
+  - question: 'Why does Obsidian say "No citation found"?'
+    answer: "That message comes from the Pandoc Reference List plugin, which shows a reference for each citation key in a note. Its README asks for Pandoc 2.11 or later and a path to a bibliography file, so check both in its settings."
+  - question: "Does Zotero Integration work with Zotero 9 or 10?"
+    answer: "Its README and documentation do not state which Zotero versions it supports, and no maintainer has replied in its issue tracker since 1 January 2025. Some users report it working with Zotero 9 after they updated Better BibTeX and restarted Zotero."
+  - question: "Will switching to ZotLit change my existing notes?"
+    answer: "No. Your Zotero Integration notes are Markdown files and stay in your vault as they are. Their %% begin notes %% markers stay as comments that ZotLit ignores."
+  - question: "Do I need Better BibTeX for ZotLit?"
+    answer: "No. ZotLit reads citation keys from Zotero's own Citation Key field, and the keys Better BibTeX makes are stored there too. ZotLit's migration guide suggests keeping Better BibTeX for its citation key patterns."
+---
+
+Zotero Integration needs Zotero running with the Better BibTeX add-on installed, so match the message you see to the table below. "No citation found" is a message from a different plugin, Pandoc Reference List, not from Zotero Integration.
+
+ZotLit's authors do not maintain Zotero Integration. This page gives only the checks that Zotero Integration's own README, documentation, source code and issue tracker give, checked on 11 November 2026.
+
+| What you see                                                                                      | What to check                                                                                                                                                                                                        | Where this check comes from                    |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| "Cannot connect to Zotero. Please ensure it is running and the Better BibTeX plugin is installed" | Zotero is open, and the Better BibTeX add-on is installed and enabled in Zotero.                                                                                                                                     | Zotero Integration's source code and README    |
+| "Import failed for" and a note path, "check developer console for details"                        | Open Obsidian's developer console and read the error. Check the template for a typo. Check that the bibliography style you chose is installed in Zotero. Run the Data explorer command to see the data Zotero sends. | Its source code and its FAQ                    |
+| An error when you insert a citation or a bibliography                                             | In Zotero, a Quick Copy style is selected, and you can copy a citation from Zotero's Edit menu with an item selected.                                                                                                | Its README                                     |
+| The plugin does not load                                                                          | Your Obsidian installer is version 0.13.24 or later.                                                                                                                                                                 | Its README                                     |
+| "Unexpected end of JSON input"                                                                    | Update Zotero Integration. In January 2024 three Better BibTeX updates caused this message; its maintainer released a fix on 4 January 2024.                                                                         | Issue #329 in its tracker, maintainer reply    |
+| "No citation found for" and a citation key                                                        | This message comes from the Pandoc Reference List plugin. Its README asks for Pandoc 2.11 or later and a path to a bibliography file.                                                                                | Pandoc Reference List's source code and README |
+
+## User reports: "Nothing happens" after you pick a paper
+
+These steps come from user reports in Zotero Integration's issue tracker in 2026, not from maintainer advice. Users reported that the picker opens and no note is created. Two fixes other users said worked for them:
+
+- An item with an empty Citation Key: in Zotero, select the items, right-click, open Better BibTeX, and regenerate the citation key (issue #469).
+- After a Zotero update: update Better BibTeX in Zotero and restart Zotero (issues #463 and #481).
+
+## Zotero 8, 9 and 10
+
+Zotero Integration's README and documentation state no Zotero version. Its issue tracker holds no reply from a maintainer since 1 January 2025 (checked on 11 November 2026). Its last release is 3.2.1, 11 August 2024. Its repository is held by the Obsidian Community Archive, which describes itself as "a landing space for popular community plugins and themes which can no longer be taken care of by their creators".
+
+## Doing the same job in ZotLit
+
+- Connecting to Zotero: ZotLit reads Zotero's database. Better BibTeX is not required, and Zotero can stay closed while you browse, read and make notes.
+- Importing highlights: highlights and comments go into a marked part of the literature note, the managed region. An update rewrites only that part; your own writing outside it stays as it was.
+- Inserting a citation: type `[@` in a note and pick the paper.
+- Templates: ZotLit uses Liquid; Zotero Integration uses Nunjucks. The migration guide has a table that maps one to the other.
+- Your existing notes: they are ordinary Markdown files and stay in your vault.
+
+## Before you switch, check your Zotero version
+
+- ZotLit reads Zotero 9 and Zotero 10.
+- ZotLit Companion, the optional Zotero add-on, installs on Zotero 9 or later.
+- Editing highlights from Obsidian needs Zotero 10.
+- ZotLit needs Obsidian 1.14.5 or later, with installer 1.13.4 or later.
+- On Zotero 8 or earlier, update Zotero before you install ZotLit.
+
+## Questions [#questions]
+
+### Why does Obsidian say "No citation found"?
+
+That message comes from the Pandoc Reference List plugin, which shows a reference for each citation key in a note. Its README asks for Pandoc 2.11 or later and a path to a bibliography file, so check both in its settings.
+
+### Does Zotero Integration work with Zotero 9 or 10?
+
+Its README and documentation do not state which Zotero versions it supports, and no maintainer has replied in its issue tracker since 1 January 2025. Some users report it working with Zotero 9 after they updated Better BibTeX and restarted Zotero.
+
+### Will switching to ZotLit change my existing notes?
+
+No. Your Zotero Integration notes are Markdown files and stay in your vault as they are. Their `%% begin notes %%` markers stay as comments that ZotLit ignores.
+
+### Do I need Better BibTeX for ZotLit?
+
+No. ZotLit reads citation keys from Zotero's own Citation Key field, and the keys Better BibTeX makes are stored there too. ZotLit's migration guide suggests keeping Better BibTeX for its citation key patterns.
+
+## Next step [#next-step]
+
+To switch, follow the [step-by-step migration from Zotero Integration](/docs/how-to/migrate-from-zotero-integration), see how to [migrate from Pandoc Reference List](/docs/how-to/migrate-from-pandoc-reference-list), or start with [Lesson 1](/learn).
