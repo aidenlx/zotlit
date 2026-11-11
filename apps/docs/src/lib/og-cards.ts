@@ -16,6 +16,7 @@ import type { ContentEntry } from "./content-scan.js";
 import type { CardProps } from "./og-card.js";
 import {
   baseURL,
+  docsPageTitle,
   formatReleaseDate,
   ogImageUrl,
   publishedOn,
@@ -24,6 +25,7 @@ import type { OgType } from "./shared.js";
 
 const docsCard = v.object({
   title: v.string(),
+  searchTitle: v.optional(v.string()),
   description: v.optional(v.string()),
 });
 
@@ -132,7 +134,7 @@ export async function ogCards(
       schema: docsCard,
       toCard: (page) => ({
         kind: m.docs_og_documentation_kind(),
-        title: page.title,
+        title: docsPageTitle(page),
         description: page.description,
         meta: baseURL,
       }),

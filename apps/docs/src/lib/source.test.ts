@@ -4,6 +4,7 @@
 import { rcompare } from "semver";
 import { describe, expect, it } from "vitest";
 
+import { docsPageTitle } from "./shared";
 import { getBlogPages, getChangelogPages, source } from "./source";
 
 describe("docs collection", () => {
@@ -14,6 +15,24 @@ describe("docs collection", () => {
     // standing on their own, so they stay out of the collection.
     expect(pages.map((page) => page.url)).not.toContainEqual(
       expect.stringContaining("/_"),
+    );
+  });
+
+  // A search result shows about 60 characters of title and 160 of
+  // description; two pages with one title compete for the same query.
+  it("titles each page once, within search-result limits", () => {
+    const pages = source.getPages("en").map((page) => ({
+      url: page.url,
+      title: docsPageTitle(page.data),
+      description: page.data.description ?? "",
+    }));
+    expect(pages.filter(({ title }) => title.length > 60)).toEqual([]);
+    expect(pages.filter(({ description }) => description.length > 160)).toEqual(
+      [],
+    );
+    const titles = pages.map(({ title }) => title.toLowerCase());
+    expect(titles.filter((title, i) => titles.indexOf(title) !== i)).toEqual(
+      [],
     );
   });
 });

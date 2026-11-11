@@ -29,6 +29,14 @@ export function docsSourceBranch(docsLine: DocsLine) {
   return docsSourceBranches[docsLine];
 }
 
+/**
+ * A docs page's own title — its H1, `<title>`, and every edition of it: the
+ * searcher-facing `searchTitle` when the page sets one, else the sidebar `title`.
+ */
+export function docsPageTitle(data: { title: string; searchTitle?: string }) {
+  return data.searchTitle ?? data.title;
+}
+
 /** `owner/name`, the form GitHub's API and giscus both name the repository by. */
 export const repoSlug = `${gitConfig.user}/${gitConfig.repo}` as const;
 
