@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Duration, Effect, Option } from "effect";
 // Live bibliography data for the built-in export: Better BibTeX when its
 // endpoint answers, else Zotero's local HTTP API, else a guided error.
 //
@@ -24,6 +24,13 @@ export const LOCAL_API_PREF = "httpServer.localAPI.enabled";
 
 /** Endpoint Better BibTeX registers on Zotero's HTTP server. */
 const JSON_RPC_PATH = "/better-bibtex/json-rpc";
+
+/**
+ * How long one request waits for Zotero's answer. A Zotero that has just
+ * started can leave a local API read of CSL JSON unanswered while Better BibTeX
+ * starts, and the export would otherwise wait for it with no end.
+ */
+const ZOTERO_ANSWER_TIMEOUT = Duration.seconds(30);
 
 /** Better BibTeX's Better CSL JSON translator, which writes `id` from the citation key. */
 const BETTER_CSL_JSON = "f4b52ab0-f878-4556-85a0-c7aeedd09dfc";
@@ -57,6 +64,8 @@ export type BibliographyFailure =
   | { code: "zotero-port-automatic"; pref: string }
   /** Nothing answered on the active profile's Zotero HTTP port. */
   | { code: "zotero-unreachable"; port: number }
+  /** Zotero took the request and gave no answer within {@link ZOTERO_ANSWER_TIMEOUT}. */
+  | { code: "zotero-timeout"; seconds: number }
   /** Zotero runs with its local API off. Guidance: turn {@link pref} on. */
   | { code: "local-api-disabled"; pref: string }
   /** The chosen source answered, and refused. */
@@ -107,6 +116,7 @@ export const fetchBibliography = Effect.fn("Bibliography.fetchBibliography")(
     if (probe.reason === "unreachable") {
       return { error: zoteroUnreachable(ports.httpPort) };
     }
+    if (probe.reason === "timeout") return { error: zoteroTimeout() };
     yield* Effect.logDebug(
       "Better BibTeX did not answer; falling back to the local API",
     );
@@ -197,7 +207,9 @@ const fromLocalApi = Effect.fn("Bibliography.fromLocalApi")(
         path: `/api/${library}/items?${query.toString()}`,
         method: "GET",
       });
-      if (!response) return { error: zoteroUnreachable(ports.httpPort) };
+      if (response === "unreachable")
+        return { error: zoteroUnreachable(ports.httpPort) };
+      if (response === "timeout") return { error: zoteroTimeout() };
       if (response.status === 403) return { error: localApiDisabled() };
       if (response.status !== 200) {
         return {
@@ -250,6 +262,8 @@ type RpcOutcome =
   | { ok: true; result: unknown }
   /** Nothing answered on Zotero's port. */
   | { ok: false; reason: "unreachable" }
+  /** Zotero gave no answer in time. */
+  | { ok: false; reason: "timeout" }
   /** Zotero answered, but no JSON-RPC reply came back. */
   | { ok: false; reason: "absent" }
   | { ok: false; reason: "error"; message: string };
@@ -271,7 +285,8 @@ const callJsonRpc = Effect.fn("Bibliography.callJsonRpc")(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
     });
-    if (!response) return { ok: false, reason: "unreachable" };
+    if (response === "unreachable" || response === "timeout")
+      return { ok: false, reason: response };
     if (response.status !== 200) return { ok: false, reason: "absent" };
 
     const body = asRecord(parseJson(response.text));
@@ -292,6 +307,7 @@ function rpcFailure(
   httpPort: number,
 ): BibliographyFailure {
   if (outcome.reason === "unreachable") return zoteroUnreachable(httpPort);
+  if (outcome.reason === "timeout") return zoteroTimeout();
   return {
     code: "source-failed",
     source: "better-bibtex",
@@ -302,26 +318,41 @@ function rpcFailure(
   };
 }
 
-/** `null` when the configured Zotero HTTP server cannot be reached. */
+/**
+ * Zotero's answer; `"unreachable"` when the configured Zotero HTTP server
+ * cannot be reached, and `"timeout"` when it gave no answer within
+ * {@link ZOTERO_ANSWER_TIMEOUT}, which abandons the request.
+ */
 const send = Effect.fnUntraced(function* (request: ZoteroRequest) {
   const http = yield* ZoteroHttp;
-  return yield* exchangeWithZotero(http, request).pipe(
+  const url = `${zoteroOrigin(request.port)}${request.path}`;
+  const answer = yield* exchangeWithZotero(http, request).pipe(
     Effect.catchTag("HttpClientError", (error) =>
       Effect.as(
         Effect.logDebug("Zotero's HTTP server did not answer").pipe(
-          Effect.annotateLogs({
-            url: `${zoteroOrigin(request.port)}${request.path}`,
-            error,
-          }),
+          Effect.annotateLogs({ url, error }),
         ),
-        null,
+        "unreachable" as const,
       ),
     ),
+    Effect.timeoutOption(ZOTERO_ANSWER_TIMEOUT),
   );
+  if (Option.isSome(answer)) return answer.value;
+  yield* Effect.logDebug("Zotero gave no answer in time").pipe(
+    Effect.annotateLogs({ url }),
+  );
+  return "timeout" as const;
 });
 
 function zoteroUnreachable(port: number): BibliographyFailure {
   return { code: "zotero-unreachable", port };
+}
+
+function zoteroTimeout(): BibliographyFailure {
+  return {
+    code: "zotero-timeout",
+    seconds: Duration.toSeconds(ZOTERO_ANSWER_TIMEOUT),
+  };
 }
 
 function localApiDisabled(): BibliographyFailure {

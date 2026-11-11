@@ -9,7 +9,7 @@ import { discardFixture, getFixtureLayout } from "@zotlit/scripts/fixture";
 import type { FixtureLayout } from "@zotlit/scripts/fixture";
 import { createNodePairedRunPorts } from "@zotlit/scripts/fixture/paired-run-node";
 
-import { zoteroFetch } from "./paired-zotero.ts";
+import { waitForBetterBibtex, zoteroFetch } from "./paired-zotero.ts";
 import { clearVault, e2eVaultDir, vaultScript } from "./vault-script.ts";
 
 /** One End-to-end Run's Paired Run, torn down whole by its disposal. */
@@ -91,6 +91,7 @@ export async function openPairedEnvironment(
   const reply = await zoteroFetch(baseUrl, "");
   if (reply.status !== 200)
     throw new Error(`Paired Zotero answered ${reply.status} at ${baseUrl}`);
+  await waitForBetterBibtex(baseUrl);
 
   const owned = stack.move();
   return {
