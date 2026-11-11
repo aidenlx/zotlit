@@ -123,6 +123,10 @@
     0 2px 4px 0 oklch(0 0 0 / 0.06);
   --zotlit-ink: oklch(34.62% 0.0736 256.04); /* #1e3a5f */
   --zotlit-accent: oklch(65.74% 0.1789 40.45); /* #e8622c */
+  /* The lesson check line and its "Lesson N complete" label. @see DESIGN.md → Learn */
+  --zt-check: #1f5c39;
+  --zt-check-bg: #e9f3ec;
+  --zt-check-label: #2f7d4f;
 }
 
 .dark {
@@ -146,12 +150,18 @@
   --zt-shadow-ring-hover: 0 0 0 1px oklch(1 0 0 / 0.13);
   --zotlit-ink: oklch(90.94% 0.022 256.73); /* #d8e2f0 */
   --zotlit-accent: oklch(70.36% 0.163 44.66); /* #f0793f */
+  --zt-check: #7cc79a;
+  --zt-check-bg: #17261d;
+  --zt-check-label: #7cc79a;
 }
 
 @theme inline {
   /* Elevation: `shadow-ring` raises a surface; `shadow-ring-hover` lifts it. */
   --shadow-ring: var(--zt-shadow-ring);
   --shadow-ring-hover: var(--zt-shadow-ring-hover);
+  --color-check: var(--zt-check);
+  --color-check-bg: var(--zt-check-bg);
+  --color-check-label: var(--zt-check-label);
 
   /* shadcn controls share the site's semantic palette. */
   --color-background: var(--color-fd-background);
@@ -185,6 +195,17 @@
   --font-serif:
     "Newsreader Variable", "Newsreader Fallback", "Iowan Old Style", Charter,
     Georgia, serif;
+}
+
+@theme {
+  /* A lesson part fades and rises 6px as it comes on screen. @see DESIGN.md → Learn */
+  --animate-lesson-in: lesson-in 220ms ease both;
+  @keyframes lesson-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
 }
 
 /* Accepted stable-id anchor: the TOC "On this page" h3 ships with this exact

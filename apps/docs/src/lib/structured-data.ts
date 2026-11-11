@@ -119,6 +119,30 @@ export function changelogArticleSchema(input: {
   };
 }
 
+/**
+ * A `/learn` lesson.
+ * @param modified last commit day in ISO form, when git knows one.
+ */
+export function lessonArticleSchema(input: {
+  title: string;
+  description: string;
+  modified?: string;
+  url: string;
+  /** Root-relative path of the lesson's social card. */
+  image: string;
+}): WithContext<Article> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: input.title,
+    description: input.description,
+    ...(input.modified !== undefined && { dateModified: input.modified }),
+    publisher: organization,
+    url: absoluteUrl(input.url),
+    image: absoluteUrl(input.image),
+  };
+}
+
 export interface Crumb {
   name: string;
   url: string;

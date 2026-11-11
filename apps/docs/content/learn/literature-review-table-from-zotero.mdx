@@ -1,0 +1,128 @@
+---
+title: Build a literature review table from a Zotero collection
+description: Build a literature review table in Obsidian from a Zotero collection with authors, dates, journals, and your own ratings.
+lesson: 6
+minutes: 10
+media: build-a-literature-review-table
+lede: You will finish this lesson with a comparison table of your papers—showing authors, year, journal, and your own rating—pasted directly into Chapter 3.
+note: This table reads directly from Zotero every time it opens, so it updates automatically as you add papers. Your ratings are saved in each paper's literature note in Obsidian; nothing in your Zotero library is altered. The version you paste into your draft is a snapshot, so copy it once more before you send the draft to your supervisor.
+map:
+  zotero:
+    title: Research library
+    items: [Reproducibility collection, Paper metadata]
+  arrow: to-obsidian
+  label: Reads collection papers and details into a live table
+  obsidian:
+    title: Chapter workspace
+    items:
+      [
+        Reproducibility.zotquery file,
+        Literature review table,
+        Ratings in literature notes,
+      ]
+needs:
+  - item: Lesson 1
+    detail: Completed with ZotLit connected
+  - item: Zotero collection
+    detail: Reproducibility, with your papers
+  - item: Obsidian folder
+    detail: Thesis, for your chapter
+steps:
+  - name: Save
+    title: Save the collection as a table file
+    alt: The new tab Reproducibility.zotquery opens in Obsidian, listing papers from the collection.
+  - name: Table
+    title: Switch to a table
+    alt: A table view displays the papers with columns Item Type, Title, Modified, and Literature note.
+  - name: Columns
+    title: Choose the columns to compare
+    alt: The table displays columns for Title, Literature note, Year, Publication, and Creators.
+  - name: Rate
+    title: Add your own rating
+    alt: The column rating (note) shows ratings for each paper alongside a Literature note created notice.
+  - name: Sort
+    title: Sort by year
+    alt: The table displays the papers sorted by Date from Old to new.
+  - name: Copy
+    title: Copy the table into your chapter
+    alt: The literature review table is pasted into the chapter note with all columns preserved.
+end:
+  title: A literature review table in your chapter
+  caption: The review table pasted into Chapter 3, comparing authors, years, journals, and ratings.
+  next: Browse the how-to guides to adapt ZotLit to your research workflow.
+---
+
+import { Check, Step } from "@/components/learn/lesson-mdx";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+In the <UiLabel name={m.library_view_name()} /> tab, select the `Reproducibility` collection in the list on the left. Select <UiLabel name={m.annot_view_save_as_query_file()} />, the page icon with a plus at the top right of the list. Type `Thesis` as the folder, then select <UiLabel name={m.annot_view_save_action()} />.
+
+<Check>
+  The dialog reads{" "}
+  <UiLabel
+    name={m.annot_view_save_file({ file: "Thesis/Reproducibility.zotquery" })}
+  />
+  . After selecting <UiLabel name={m.annot_view_save_action()} />, the file
+  opens in a new tab and lists the papers from your collection.
+</Check>
+
+</Step>
+
+<Step n={2}>
+
+Select <UiLabel name={m.query_view_views()} /> at the top left of the tab, then select <UiLabel name={m.query_view_configure_view()} />, the arrow at the end of the row. Set <UiLabel name={m.query_view_layout()} /> to <UiLabel name={m.query_view_layout_table()} />.
+
+<Check>
+  The papers appear as rows with four columns: **Item Type**, **Title**,
+  **Modified**, and <UiLabel name={m.query_view_table_literature_note()} />.
+</Check>
+
+</Step>
+
+<Step n={3}>
+
+Select <UiLabel name={m.query_view_properties()} />. Clear the check boxes for **Item Type** and **Modified**. Type `year` and select **Year**. Type `publication` and select **Publication**, which holds the journal. Type `creators` and select <UiLabel name={m.query_view_properties_add({ name: "creators" })} />.
+
+<Check>
+  The visible columns are **Title**,{" "}
+  <UiLabel name={m.query_view_table_literature_note()} />, **Year**,
+  **Publication**, and **Creators** (the authors).
+</Check>
+
+</Step>
+
+<Step n={4}>
+
+Select <UiLabel name={m.query_view_properties()} /> and type `rating`. Select the second "Add" entry, <UiLabel name={m.query_view_properties_add_vault({ name: "rating" })} />. In each paper's cell under the new column, type a rating, such as `5`, and press Enter.
+
+<Check>
+  A new column named **rating (note)** shows your ratings. Entering the first
+  rating for a paper without a note displays the notice{" "}
+  <UiLabel name={m.notice_created_note()} />
+</Check>
+
+</Step>
+
+<Step n={5}>
+
+Select <UiLabel name={m.query_view_sort()} />, then select <UiLabel name={m.query_view_sort_add()} />. Set the first box to <UiLabel name={m.query_view_property_date()} /> and the second box to <UiLabel name={m.query_view_sort_old_new()} />.
+
+<Check>
+  The papers reorder from the oldest publication date to the newest.
+</Check>
+
+</Step>
+
+<Step n={6}>
+
+Select the result count in the toolbar, such as <UiLabel name={m.query_view_results({ count: 4 })} />. Select <UiLabel name={m.query_view_copy()} />. Open your Chapter 3 draft and paste.
+
+<Check>
+  The table appears in the draft with all columns in the exact order you
+  arranged.
+</Check>
+
+</Step>

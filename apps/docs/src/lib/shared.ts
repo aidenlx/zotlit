@@ -12,6 +12,7 @@ export const docsRoute = "/docs";
 export const changelogRoute = "/changelog";
 export const changelogFeedRoute = `${changelogRoute}/rss.xml`;
 export const blogRoute = "/blog";
+export const learnRoute = "/learn";
 
 export const gitConfig = {
   user: "aidenlx",
@@ -50,6 +51,7 @@ export const ogTypes = [
   "blog",
   "changelog",
   "docs",
+  "learn",
   "workbench",
 ] as const;
 export type OgType = (typeof ogTypes)[number];

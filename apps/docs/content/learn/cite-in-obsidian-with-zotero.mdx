@@ -1,0 +1,124 @@
+---
+title: How to cite in Obsidian using Zotero
+description: Insert a Zotero citation in Obsidian, add page numbers to your draft, and quote highlights directly from your paper.
+lesson: 3
+minutes: 10
+media: cite-while-writing
+lede: At the end of this lesson, you will have a formatted citation with a page number in your draft, and a quoted highlight with its citation.
+note: ZotLit cites a paper by the citation key in its Zotero record, such as sandve2013. What you type stays plain text in the note; ZotLit shows it formatted.
+map:
+  zotero:
+    title: Research library
+    items: [Citation keys, PDF highlights]
+  arrow: to-obsidian
+  label: Formats citations and pulls highlights into your draft
+  obsidian:
+    title: Chapter draft
+    items: [Formatted citations, Quote blocks]
+needs:
+  - item: Earlier lessons
+    detail: Lessons 1 and 2 completed
+  - item: Draft note
+    detail: Chapter 3 - Presenting the results, in Obsidian
+steps:
+  - name: Install
+    title: Install the citation engine
+    alt: Under Citations in ZotLit settings, the Pandoc engine row reads Pandoc 3.10 is installed.
+  - name: Search
+    title: Type [@ and a name
+    alt: A citation menu opens in the draft, showing Sandve et al. (2013), PLOS Computational Biology, 9(10), e1003285.
+  - name: Choose
+    title: Choose the paper
+    alt: The draft note displays the plain text citation key [@sandve2013] at the cursor.
+  - name: Page
+    title: Add the page
+    alt: The draft displays the citation formatted as (Sandve et al. 2013, 2).
+  - name: Preview
+    title: Check it is the right paper
+    alt: Pointing at the citation opens a preview card with the full Sandve 2013 reference.
+  - name: Quote
+    title: Quote a highlight
+    alt: The draft shows a quote block titled Page 2 containing the highlighted text, citation, and note.
+end:
+  title: Formatted citations and quotes in your draft
+  caption: Your draft now contains a formatted citation with a page number and a linked quote block from your reading.
+  next: Export your draft to Word with a formatted reference list for your supervisor.
+---
+
+import { Check, Fix, Step } from "@/components/learn/lesson-mdx";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+<Step n={1}>
+
+Open **Settings**, then **ZotLit**, then <UiLabel name={m.settings_page_citations()} />. At <UiLabel name={m.settings_citation_engine_name()} />, select <UiLabel name={m.settings_citation_engine_install()} />. This engine comes with ZotLit; you do not install Pandoc yourself. You do this once on each computer.
+
+<Check>
+  The row reads{" "}
+  <UiLabel
+    name={m.settings_citation_engine_status_installed({ version: "3.10" })}
+  />{" "}
+  (the number can be higher).
+</Check>
+
+</Step>
+
+<Step n={2}>
+
+In `Chapter 3 - Presenting the results`, place your cursor where the citation goes and type `[@sandve`.
+
+<Check>
+  A list opens under the cursor. The row shows the title, then **Sandve et al.
+  (2013), PLOS Computational Biology, 9(10), e1003285**.
+</Check>
+
+<Fix title="The paper is not in the list">
+  In Zotero, look at the paper's **Citation Key** field. A paper with no key
+  cannot be cited.
+</Fix>
+
+</Step>
+
+<Step n={3}>
+
+Press Enter to choose the highlighted paper from the list.
+
+<Check>The draft holds `[@sandve2013]`.</Check>
+
+</Step>
+
+<Step n={4}>
+
+Before the closing bracket, type `, p. 2`, so it reads `[@sandve2013, p. 2]`. Move the cursor away.
+
+<Check>The citation shows as **(Sandve et al. 2013, 2)**.</Check>
+
+<Fix title="It still reads [@sandve2013, p. 2]">
+  The engine is not installed. Do step 1.
+</Fix>
+
+</Step>
+
+<Step n={5}>
+
+Point your cursor at the formatted citation.
+
+<Check>
+  A preview shows the full reference: Sandve, Geir Kjetil, and others, 2013,
+  "Ten Simple Rules for Reproducible Computational Research", PLOS Computational
+  Biology 9 (10): e1003285.
+</Check>
+
+</Step>
+
+<Step n={6}>
+
+Open the paper's PDF beside the draft. In the sidebar on the right, drag the page label of a highlight, such as **p. 2**, into the draft.
+
+<Check>
+  The draft holds a quote block titled **Page 2**. Under the title are the
+  highlighted passage with its citation and page, and the comment from Lesson 2.
+  The title links back to the passage.
+</Check>
+
+</Step>

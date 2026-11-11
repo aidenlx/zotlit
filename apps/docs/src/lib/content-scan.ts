@@ -35,6 +35,7 @@ const sections: Record<MarkdownSection, { dir: string; files: string }> = {
   docs: { dir: "content/docs", files: "**/[!_]*.mdx" },
   changelog: { dir: "content/changelog", files: "**/*.{mdx,md}" },
   blog: { dir: "content/blog", files: "**/*.{mdx,md}" },
+  learn: { dir: "content/learn", files: "*.mdx" },
 };
 
 /**

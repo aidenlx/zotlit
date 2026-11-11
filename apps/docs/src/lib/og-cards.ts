@@ -41,6 +41,14 @@ const changelogCard = v.object({
   date: publishedOn,
 });
 
+const lessonCard = v.object({
+  title: v.string(),
+  description: v.string(),
+  lesson: v.number(),
+  minutes: v.number(),
+  steps: v.array(v.unknown()),
+});
+
 /** The landing cards, which carry hand-written copy instead of frontmatter. */
 function landingCards(m: Messages): [OgType, CardProps][] {
   return [
@@ -71,6 +79,15 @@ function landingCards(m: Messages): [OgType, CardProps][] {
         description:
           "Edit a literature note profile in the browser and see the note it produces.",
         meta: `${baseURL}/workbench`,
+      },
+    ],
+    [
+      "learn",
+      {
+        kind: m.docs_nav_learn(),
+        title: m.docs_learn_title(),
+        description: m.docs_learn_description(),
+        meta: `${baseURL}/learn`,
       },
     ],
     [
@@ -153,6 +170,18 @@ export async function ogCards(
         title: release.title ?? `v${release.version}`,
         description: release.description,
         meta: `v${release.version} · ${formatReleaseDate(release.date)}`,
+      }),
+    }),
+    ...cardsOf("learn", content.learn, {
+      schema: lessonCard,
+      toCard: (lesson) => ({
+        kind: m.docs_learn_lesson_number({ number: lesson.lesson }),
+        title: lesson.title,
+        description: lesson.description,
+        meta: m.docs_learn_course_meta({
+          minutes: lesson.minutes,
+          steps: lesson.steps.length,
+        }),
       }),
     }),
   ]);

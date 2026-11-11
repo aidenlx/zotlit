@@ -1,4 +1,4 @@
-// fumadocs loaders over the three collections, one per content directory.
+// fumadocs loaders over the four collections, one per content directory.
 //
 // Routes reach these loaders through `createServerFn` handlers. The shared
 // macro collections also provide lazy MDX bodies in the browser.
@@ -7,7 +7,7 @@ import { loader } from "fumadocs-core/source";
 import { lucideIconsPlugin } from "fumadocs-core/source/lucide-icons";
 import { rcompare } from "semver";
 
-import { blogs, changelogs, docs } from "./collections";
+import { blogs, changelogs, docs, lessons } from "./collections";
 import { i18n } from "./i18n";
 import type { SiteLocale } from "./i18n";
 
@@ -57,4 +57,19 @@ export function getBlogPages({ locale = "en" }: { locale?: SiteLocale } = {}) {
     if (dayCompare !== 0) return dayCompare;
     return a.data.title.localeCompare(b.data.title);
   });
+}
+
+export const learn = loader({
+  i18n,
+  baseUrl: "/learn",
+  source: lessons.toFumadocsSource(),
+});
+
+/** The course's lessons in course order. */
+export function getLessonPages({
+  locale = "en",
+}: { locale?: SiteLocale } = {}) {
+  return learn
+    .getPages(locale)
+    .toSorted((a, b) => a.data.lesson - b.data.lesson);
 }
