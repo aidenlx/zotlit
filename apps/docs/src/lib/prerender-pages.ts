@@ -31,7 +31,9 @@ interface PrerenderPage {
 /**
  * Sections whose bare path is a Markdown edition of its own. The docs index
  * page already carries the `/docs.md` edition; `changelog` and `blog` answer
- * their bare section path with a generated listing.
+ * their bare section path with a generated listing. The `/learn` course
+ * listing has no Chinese edition, so `prerenderPages` adds it for English
+ * alone.
  */
 const landingSections: MarkdownSection[] = ["changelog", "blog"];
 
@@ -64,7 +66,8 @@ function machineRoutePages(
 
 /**
  * The HTML pages: the landing, community, and Workbench pages, the whole docs
- * tree, the blog and its posts, and the changelog index with its versions.
+ * tree, the blog and its posts, the changelog index with its versions, and
+ * the lessons.
  */
 function htmlPages(
   content: Record<MarkdownSection, { slugs: string[] }[]>,
@@ -78,6 +81,9 @@ function htmlPages(
   const changelog = content.changelog.map((entry) => ({
     path: `/${["changelog", ...entry.slugs].join("/")}`,
   }));
+  const learn = content.learn.map((entry) => ({
+    path: `/${["learn", ...entry.slugs].join("/")}`,
+  }));
 
   return [
     { path: "/" },
@@ -86,6 +92,7 @@ function htmlPages(
     ...docs,
     ...blog,
     ...changelog,
+    ...learn,
     { path: "/blog" },
     { path: "/changelog" },
   ];
@@ -105,6 +112,9 @@ export function prerenderPages(packageRoot: string): PrerenderPage[] {
     { path: "/llms-full.txt" },
     ...machineRoutePages(content),
     ...htmlPages(content),
+    { path: "/learn" },
+    { path: suffixEditionUrl({ section: "learn", slugs: [] }) },
+    { path: contentRouteUrl({ section: "learn", slugs: [] }) },
     ...[...machineRoutePages(chinese), ...htmlPages(chinese)].map(
       ({ path }) => ({ path: localizedPath(path, "zh-CN") }),
     ),

@@ -12,7 +12,7 @@ import type { FileRouteTypes } from "@/routeTree.gen";
 import type { SiteLocale } from "./i18n";
 import { getPageLocaleState } from "./locale-state";
 import { baseURL } from "./shared";
-import { blog, changelog, source } from "./source";
+import { blog, changelog, getLessonPages, source } from "./source";
 
 /** Routes that answer machines rather than readers, so no crawler indexes them. */
 const machineRoutes = [
@@ -117,6 +117,14 @@ export async function renderSitemap(): Promise<string> {
     // The `/docs` index is a page of the collection too, and lists itself with
     // an empty slug set, so the route above carries no entry of its own.
     "/docs/$": await docsEntries(),
+    // The lessons have no Chinese edition; the alternates below list English alone.
+    "/learn": [{}],
+    "/learn/$lesson": await Promise.all(
+      getLessonPages().map(async (page) => ({
+        pathname: page.url,
+        lastModified: { en: await lastCommitDay(page) },
+      })),
+    ),
   };
 
   const urls = Object.entries(routes).flatMap(([route, entries]) =>

@@ -32,6 +32,17 @@ export const changelogs = defineCollections({
   },
 });
 
+export const lessons = defineCollections({
+  type: "doc",
+  dir: "content/learn",
+  async: true,
+  lastModified: true,
+  schema: (await import("#content-config")).learnSchema,
+  postprocess: {
+    includeProcessedMarkdown: (await import("#content-config")).markdownEdition,
+  },
+});
+
 export const blogs = defineCollections({
   type: "doc",
   dir: "content/blog",

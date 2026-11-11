@@ -51,7 +51,7 @@ const features = () => [
   },
   {
     term: m.docs_home_feature_notes(),
-    href: "/docs/tutorial/first-note",
+    href: "/learn/connect-zotero-to-obsidian",
     ref: m.docs_home_tutorial_link(),
     description: m.docs_home_feature_notes_description(),
   },
@@ -99,8 +99,8 @@ function Home() {
           <RepoDatum stats={stats} className="mb-5" />
           <div className="flex flex-wrap items-center gap-4">
             <Link
-              to="/docs/$"
-              params={{ _splat: "tutorial/first-note" }}
+              to="/learn/$lesson"
+              params={{ lesson: "connect-zotero-to-obsidian" }}
               className="bg-fd-foreground px-6 py-2.5 text-base text-fd-background transition-colors hover:bg-fd-primary hover:text-fd-primary-foreground"
             >
               {m.docs_home_get_started()}

@@ -34,9 +34,9 @@ describe("native locale infrastructure", () => {
     "http://localhost:4173",
     "http://127.0.0.1:4173",
   ])("round-trips URL context on %s", (origin) => {
-    const english = new URL("/docs/tutorial?keep=1#install", origin);
+    const english = new URL("/docs/how-to?keep=1#install", origin);
     const chinese = localizeUrl(english, { locale: "zh-CN" });
-    expect(chinese.pathname).toBe("/zh-CN/docs/tutorial");
+    expect(chinese.pathname).toBe("/zh-CN/docs/how-to");
     expect(chinese.search).toBe("?keep=1");
     expect(chinese.hash).toBe("#install");
     expect(deLocalizeUrl(chinese).href).toBe(english.href);
@@ -377,20 +377,20 @@ describe("English-only documentation", () => {
 // SEO consumer seam: native editions and missing-file fallback publish the same
 // canonical policy in head metadata and breadcrumbs under a real locale request.
 describe("locale page metadata", () => {
-  const hasChineseTutorial = Boolean(docs.getPage("tutorial/index.zh-CN.mdx"));
+  const hasChineseHowTo = Boolean(docs.getPage("how-to/index.zh-CN.mdx"));
   const hasChineseRoot = Boolean(docs.getPage("(intro)/index.zh-CN.mdx"));
   it.each([
     {
-      path: "/zh-CN/docs/tutorial",
-      canonical: hasChineseTutorial ? "/zh-CN/docs/tutorial" : "/docs/tutorial",
-      robots: hasChineseTutorial ? "index, follow" : "noindex, follow",
-      hasChinese: hasChineseTutorial,
+      path: "/zh-CN/docs/how-to",
+      canonical: hasChineseHowTo ? "/zh-CN/docs/how-to" : "/docs/how-to",
+      robots: hasChineseHowTo ? "index, follow" : "noindex, follow",
+      hasChinese: hasChineseHowTo,
     },
     {
-      path: "/docs/tutorial",
-      canonical: "/docs/tutorial",
+      path: "/docs/how-to",
+      canonical: "/docs/how-to",
       robots: "index, follow",
-      hasChinese: hasChineseTutorial,
+      hasChinese: hasChineseHowTo,
     },
     {
       path: "/zh-CN/docs/missing",

@@ -13,7 +13,7 @@
 import { changelogFeedRoute } from "./shared.js";
 
 /** The content sections that publish a Markdown edition. */
-export const markdownSections = ["docs", "changelog", "blog"] as const;
+export const markdownSections = ["docs", "changelog", "blog", "learn"] as const;
 
 export type MarkdownSection = (typeof markdownSections)[number];
 

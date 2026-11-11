@@ -11,7 +11,7 @@ export const PAGE_MAP: Record<string, string> = {
   "/getting-started/install": "/docs/install-zotlit",
   "/getting-started/install/obsidian": "/docs/install-zotlit",
   "/getting-started/install/zotero": "/docs/install-companion",
-  "/getting-started/basic-usage": "/docs/tutorial",
+  "/getting-started/basic-usage": "/learn",
   "/getting-started/basic-usage/annotation-import":
     "/docs/how-to/create-and-open-notes",
   "/getting-started/basic-usage/annotation-view":
@@ -19,7 +19,7 @@ export const PAGE_MAP: Record<string, string> = {
   "/getting-started/basic-usage/citation-insertion":
     "/docs/how-to/insert-citations",
   "/getting-started/basic-usage/template-basics":
-    "/docs/tutorial/customize-template",
+    "/docs/how-to/customize-template",
   "/getting-started/basic-usage/template-config":
     "/docs/how-to/customize-a-template",
   "/getting-started/basic-usage/update-notes":

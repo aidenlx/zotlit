@@ -17,6 +17,7 @@ import { ActionLink } from "@/components/action-link";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
 import { ContractTable } from "@/components/contract-table";
+import { lessonMarkdownComponents } from "@/components/learn/lesson-mdx";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import * as m from "@/paraglide/messages.js";
@@ -30,6 +31,8 @@ import {
   changelog,
   getBlogPages,
   getChangelogPages,
+  getLessonPages,
+  learn,
   source,
 } from "./source";
 
@@ -65,7 +68,11 @@ interface EditionPage {
 }
 
 /** The page's body as Markdown, rendered through its `_markdown` component. */
-async function renderBody(page: EditionPage, locale: SiteLocale) {
+async function renderBody(
+  page: EditionPage,
+  locale: SiteLocale,
+  components: Record<string, ElementType> = mdxComponents,
+) {
   const { _exports } = await page.data.load();
   const Body = _exports._markdown as MarkdownBody | undefined;
   if (!Body) {
@@ -73,9 +80,51 @@ async function renderBody(page: EditionPage, locale: SiteLocale) {
   }
 
   return localizeMarkdownLinks(
-    await renderToMarkdown(<Body components={mdxComponents} />),
+    await renderToMarkdown(<Body components={components} />),
     locale,
   );
+}
+
+/**
+ * A lesson's edition: the cover's facts, every step in order with its
+ * picture, and the end with the next lesson.
+ */
+async function renderLessonPage(
+  page: (typeof learn)["$inferPage"],
+  locale: SiteLocale,
+) {
+  const { data } = page;
+  const pages = getLessonPages({ locale });
+  const next = pages[pages.findIndex((entry) => entry.url === page.url) + 1];
+  const needs = data.needs
+    .map(({ item, detail }) => `- **${item}:** ${detail}`)
+    .join("\n");
+  const body = await renderBody(page, locale, {
+    ...mdxComponents,
+    ...lessonMarkdownComponents(data),
+  });
+  const nextLine = next
+    ? `[${m.docs_learn_next_lesson({ number: next.data.lesson, title: next.data.title }, { locale })}](${next.url}.md)`
+    : `[${m.docs_learn_how_to_guides({}, { locale })}](/docs/how-to.md)`;
+
+  return `# ${data.title} (${page.url})
+
+${[data.lede, data.note].filter(Boolean).join("\n\n")}
+
+${m.docs_learn_lesson_meta({ number: data.lesson, total: pages.length, minutes: data.minutes, steps: data.steps.length }, { locale })}
+
+## ${m.docs_learn_you_need({}, { locale })}
+
+${needs}
+
+${body}
+
+## ${m.docs_learn_md_end({}, { locale })}
+
+**${data.end.title}** ${data.end.caption}
+
+${nextLine}: ${data.end.next}
+`;
 }
 
 /** Title line, page URL, then the rendered Markdown body. */
@@ -161,15 +210,33 @@ export async function getMarkdownEdition(
       const page = blog.getPage(slugs, locale);
       return page && renderPage(page.data.title, page, locale);
     }
+    case "learn": {
+      if (slugs.length === 0) {
+        return renderIndex(
+          m.docs_learn_title({}, { locale }),
+          getLessonPages({ locale }),
+          (page) =>
+            `${m.docs_learn_lesson_number({ number: page.data.lesson }, { locale })}: ${page.data.title}`,
+        );
+      }
+      const page = learn.getPage(slugs, locale);
+      return page && renderLessonPage(page, locale);
+    }
   }
 }
 
 /**
- * `llms.txt`: the docs page tree as a Markdown index. A page entry carries the
- * page's own title, as its edition's heading does; folders keep their labels.
+ * `llms.txt`: the docs page tree as a Markdown index, then the lessons. A page
+ * entry carries the page's own title, as its edition's heading does; folders
+ * keep their labels.
  */
 export function getLlmsIndex() {
-  return llms(source, {
+  const lessons = renderIndex(
+    m.docs_learn_title({}, { locale: "en" }),
+    getLessonPages(),
+    (page) => page.data.title,
+  ).replace(/^# /, "## ");
+  const docsIndex = llms(source, {
     renderName(node, { lang }) {
       if ("type" in node && node.type === "page") {
         const page = source.getNodePage(node, lang);
@@ -181,13 +248,17 @@ export function getLlmsIndex() {
       return typeof node.name === "string" ? node.name : "";
     },
   }).index("en");
+  return `${docsIndex.trimEnd()}
+
+${lessons}`;
 }
 
-/** `llms-full.txt`: every docs page's edition, concatenated. */
+/** `llms-full.txt`: every docs page's edition, then every lesson's, concatenated. */
 export async function getLlmsFullText() {
-  const editions = await Promise.all(
-    source.getPages("en").map((page) => renderDocsPage(page, "en")),
-  );
+  const editions = await Promise.all([
+    ...source.getPages("en").map((page) => renderDocsPage(page, "en")),
+    ...getLessonPages().map((page) => renderLessonPage(page, "en")),
+  ]);
 
   return editions.join("\n\n");
 }

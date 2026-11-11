@@ -17,16 +17,19 @@ describe("docs page titles in the Markdown surface", () => {
     expect(retitled.length).toBeGreaterThan(0);
   });
 
-  it("lists a page in llms.txt under its own title, and nothing else changes", () => {
-    const expected = retitled.reduce(
-      (index, page) =>
-        index.replace(
-          `[${page.data.title}](${page.url})`,
-          `[${docsPageTitle(page.data)}](${page.url})`,
-        ),
-      llms(source).index("en"),
-    );
-    expect(getLlmsIndex()).toBe(expected);
+  it("lists a page in llms.txt under its own title, and nothing else in the docs tree changes", () => {
+    // The lessons follow the docs tree, so only the head of the index is pinned.
+    const expected = retitled
+      .reduce(
+        (index, page) =>
+          index.replace(
+            `[${page.data.title}](${page.url})`,
+            `[${docsPageTitle(page.data)}](${page.url})`,
+          ),
+        llms(source).index("en"),
+      )
+      .trimEnd();
+    expect(getLlmsIndex().slice(0, expected.length)).toBe(expected);
   });
 
   it("heads a page's edition with its own title", async () => {
