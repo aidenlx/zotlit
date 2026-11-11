@@ -42,7 +42,11 @@ import {
 } from "@/lib/shared";
 import { source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
-import { breadcrumbListSchema } from "@/lib/structured-data";
+import {
+  breadcrumbListSchema,
+  docsArticleSchema,
+  faqPageSchema,
+} from "@/lib/structured-data";
 import * as m from "@/paraglide/messages.js";
 import { getLocale, localizeHref } from "@/paraglide/runtime.js";
 
@@ -60,12 +64,17 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
         typeof crumb.name === "string" && typeof crumb.url === "string",
     );
 
+    // The git date rides with the compiled body, as the sitemap reads it.
+    const { lastModified } = await page.data.load();
+
     return {
       path: page.path,
       url: page.url,
       slugs: page.slugs,
       title: docsPageTitle(page.data),
       description: page.data.description,
+      modified: lastModified?.toISOString().slice(0, 10),
+      faq: page.data.faq ?? [],
       trail,
       markdownUrl: localizeHref(
         contentRouteUrl({ section: "docs", slugs: page.slugs }),
@@ -126,7 +135,12 @@ export async function loadDocsPage(splat: string) {
 
 type DocsPageData = Awaited<ReturnType<typeof loadDocsPage>>;
 
-/** Head shared by both docs routes. The docs index carries no trail of its own, so it publishes no breadcrumb. */
+/**
+ * Head shared by both docs routes. Every page publishes a TechArticle, and a
+ * page with a `faq` list publishes a FAQPage. The docs index carries no trail
+ * of its own, and neither does a folder outside the sidebar, so those publish
+ * no breadcrumb.
+ */
 export function docsPageHead(page: DocsPageData | undefined) {
   if (page === undefined) return {};
 
@@ -145,7 +159,18 @@ export function docsPageHead(page: DocsPageData | undefined) {
       slugs: page.slugs,
       alt: m.docs_documentation_card_alt({ title: page.title }),
     },
-    schemas: page.trail.length > 0 ? [breadcrumbListSchema(crumbs)] : [],
+    schemas: [
+      docsArticleSchema({
+        title: page.title,
+        description: page.description,
+        modified: page.modified,
+        url: page.url,
+      }),
+      ...(page.faq.length > 0
+        ? [faqPageSchema({ url: page.url, entries: page.faq })]
+        : []),
+      ...(page.trail.length > 0 ? [breadcrumbListSchema(crumbs)] : []),
+    ],
   });
 }
 
