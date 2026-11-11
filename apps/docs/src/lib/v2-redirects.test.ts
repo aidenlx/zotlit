@@ -9,12 +9,17 @@ import { buildV2Redirects, V2_MOVES } from "./v2-redirects";
 
 const packageRoot = resolve(import.meta.dirname, "../..");
 
+const content = scanContent(packageRoot);
 /** Every docs page URL the build publishes, as the prerender list spells it. */
 const docsPages = new Set(
-  scanContent(packageRoot).docs.map(
-    (entry) => `/${["docs", ...entry.slugs].join("/")}`,
-  ),
+  content.docs.map((entry) => `/${["docs", ...entry.slugs].join("/")}`),
 );
+/** Every page a move can land on: the docs, the lessons, and the course page. */
+const livePages = new Set([
+  ...docsPages,
+  "/learn",
+  ...content.learn.map((entry) => `/${["learn", ...entry.slugs].join("/")}`),
+]);
 const v1Sources = new Set(buildV1Redirects().map((rule) => rule.source));
 const v1Destinations = new Set(Object.values(PAGE_MAP));
 /** A live docs page, so a fixture fails only the rule under test. */
@@ -24,17 +29,18 @@ const LIVE = "/docs/how-to/insert-citations";
 function problems(moves: Record<string, string>): string[] {
   const found: string[] = [];
   for (const [from, to] of Object.entries(moves)) {
-    for (const path of [from, to]) {
-      if (!/^\/docs(\/[^/?#]+)*$/.test(path)) {
-        found.push(`${path} is not a bare /docs path`);
-      }
+    if (!/^\/docs(\/[^/?#]+)*$/.test(from)) {
+      found.push(`${from} is not a bare /docs path`);
+    }
+    if (!/^\/(docs|learn)(\/[^/?#]+)*$/.test(to)) {
+      found.push(`${to} is not a bare /docs or /learn path`);
     }
     if (v1Destinations.has(from)) {
       found.push(`${from} is a PAGE_MAP destination; point PAGE_MAP at ${to}`);
     }
     // The Markdown editions' destinations follow from the page's, by the same
     // scheme the prerender list publishes them under.
-    if (!docsPages.has(to)) found.push(`${from} → ${to} is no docs page`);
+    if (!livePages.has(to)) found.push(`${from} → ${to} is no live page`);
   }
 
   // Chains, over every emitted rule: the pages and their Markdown editions.
@@ -87,8 +93,28 @@ describe("the moves table's rules", () => {
 
   it("rejects a destination with no page in the content tree", () => {
     expect(problems({ "/docs/old": "/docs/no-such-page" })).toEqual([
-      "/docs/old → /docs/no-such-page is no docs page",
+      "/docs/old → /docs/no-such-page is no live page",
     ]);
+    expect(problems({ "/docs/old": "/learn/no-such-lesson" })).toEqual([
+      "/docs/old → /learn/no-such-lesson is no live page",
+    ]);
+  });
+
+  it("accepts a lesson or the course page as a destination", () => {
+    const [lesson] = content.learn;
+    expect(lesson).toBeDefined();
+    expect(
+      problems({
+        "/docs/old": `/learn/${lesson!.slugs.join("/")}`,
+        "/docs/older": "/learn",
+      }),
+    ).toEqual([]);
+  });
+
+  it("rejects a source outside /docs", () => {
+    expect(() => problems({ "/learn/old": LIVE })).toThrow(
+      "/learn/old is not a docs path",
+    );
   });
 
   it("rejects an anchor or a trailing slash", () => {
@@ -123,6 +149,50 @@ describe("buildV2Redirects", () => {
       {
         source: "/zh-CN/llms.mdx/docs/old/page/content.md",
         destination: "/zh-CN/llms.mdx/docs/how-to/insert-citations/content.md",
+        status: 308,
+      },
+    ]);
+  });
+});
+
+describe("buildV2Redirects to a lesson", () => {
+  it("moves a docs page and its editions into /learn", () => {
+    const rules = buildV2Redirects({
+      "/docs/tutorial/first-note": "/learn/connect-zotero-to-obsidian",
+    });
+    expect(rules.slice(0, 3)).toEqual([
+      {
+        source: "/docs/tutorial/first-note",
+        destination: "/learn/connect-zotero-to-obsidian",
+        status: 308,
+      },
+      {
+        source: "/docs/tutorial/first-note.md",
+        destination: "/learn/connect-zotero-to-obsidian.md",
+        status: 308,
+      },
+      {
+        source: "/llms.mdx/docs/tutorial/first-note/content.md",
+        destination: "/llms.mdx/learn/connect-zotero-to-obsidian/content.md",
+        status: 308,
+      },
+    ]);
+    expect(rules[3]).toEqual({
+      source: "/zh-CN/docs/tutorial/first-note",
+      destination: "/zh-CN/learn/connect-zotero-to-obsidian",
+      status: 308,
+    });
+  });
+
+  it("moves a section index onto the course page", () => {
+    expect(
+      buildV2Redirects({ "/docs/tutorial": "/learn" }).slice(0, 3),
+    ).toEqual([
+      { source: "/docs/tutorial", destination: "/learn", status: 308 },
+      { source: "/docs/tutorial.md", destination: "/learn.md", status: 308 },
+      {
+        source: "/llms.mdx/docs/tutorial/content.md",
+        destination: "/llms.mdx/learn/content.md",
         status: 308,
       },
     ]);

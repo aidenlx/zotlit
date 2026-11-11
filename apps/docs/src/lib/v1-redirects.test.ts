@@ -111,14 +111,17 @@ describe("buildV1Redirects", () => {
 });
 
 describe("PAGE_MAP", () => {
-  it("lands every v1 permalink on a docs page the content tree publishes", () => {
+  it("lands every v1 permalink on a page the content tree publishes", () => {
     const packageRoot = resolve(import.meta.dirname, "../..");
-    const docsPages = new Set(
-      scanContent(packageRoot).docs.map(
-        (entry) => `/${["docs", ...entry.slugs].join("/")}`,
+    const content = scanContent(packageRoot);
+    const livePages = new Set([
+      ...content.docs.map((entry) => `/${["docs", ...entry.slugs].join("/")}`),
+      "/learn",
+      ...content.learn.map(
+        (entry) => `/${["learn", ...entry.slugs].join("/")}`,
       ),
-    );
-    const missing = Object.values(PAGE_MAP).filter((to) => !docsPages.has(to));
+    ]);
+    const missing = Object.values(PAGE_MAP).filter((to) => !livePages.has(to));
 
     expect(missing).toEqual([]);
   });
