@@ -195,6 +195,23 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     authorizationFixture?.rdp[Symbol.dispose]();
   });
 
+  // The first case of the run: with the Companion installed in the profile,
+  // the run was ready before Better BibTeX registered its endpoint, and an
+  // export then fell back to the local API at Zotero's start-up.
+  it("starts with Better BibTeX answering, as a Zotero that has finished starting does", async () => {
+    const reply = await zoteroFetch(api, "/better-bibtex/json-rpc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "api.ready",
+        params: [],
+        id: 1,
+      }),
+    });
+    expect(reply.status).toBe(200);
+  });
+
   it("counts ZotLit Companion as installed, as Zotero's add-on list of the paired profile names it", async () => {
     // Zotero writes its add-on list a moment after start-up, and ZotLit reads
     // it from the profile it resolved.
