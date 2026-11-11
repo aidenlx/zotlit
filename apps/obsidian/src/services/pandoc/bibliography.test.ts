@@ -1,6 +1,7 @@
 import { it } from "@effect/vitest";
 import { regex } from "arkregex";
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
@@ -60,6 +61,11 @@ interface Fixture {
   localApiEnabled?: boolean;
   /** Zotero closed: every request rejects, as a refused connection does. */
   zoteroClosed?: boolean;
+  /**
+   * The local API takes the request and never answers, as Zotero's CSL JSON
+   * read does while Better BibTeX starts. An abort ends the wait.
+   */
+  apiStalls?: boolean;
 }
 
 /** One call as it would go on the wire. */
@@ -110,6 +116,13 @@ function ports(
       });
     }
     calls.push(call);
+    if (fixture.apiStalls) {
+      return new Promise<Response>((_, reject) =>
+        init?.signal?.addEventListener("abort", () =>
+          reject(new Error("aborted", { cause: init.signal!.reason })),
+        ),
+      );
+    }
     if (fixture.apiStatus !== undefined) {
       return new Response("Local API is not enabled", {
         status: fixture.apiStatus,
@@ -164,6 +177,29 @@ function failure(result: BibliographyResult) {
 }
 
 describe("fetchBibliography", () => {
+  // A docs walk exported right after Zotero started: Better BibTeX had not
+  // registered its endpoint yet, and Zotero never answered the local API's
+  // CSL JSON read, so the export notice stayed up for good.
+  it.effect(
+    "stops with zotero-timeout when Zotero takes the request and never answers",
+    () =>
+      Effect.gen(function* () {
+        const deps = ports({ apiStalls: true });
+
+        const fiber = yield* Effect.forkChild(fetchBibliography([DOE], deps));
+        yield* TestClock.adjust("30 seconds");
+        const result = yield* Fiber.join(fiber);
+
+        expect(failure(result)).toEqual({
+          code: "zotero-timeout",
+          seconds: 30,
+        });
+        expect(deps.calls.map((call) => call.rpcMethod ?? "local-api")).toEqual(
+          ["api.ready", "local-api"],
+        );
+      }),
+  );
+
   it.effect("prefers Better BibTeX when its endpoint answers", () =>
     Effect.gen(function* () {
       const deps = ports({
