@@ -5,7 +5,7 @@ faq:
   - question: 'Why does Obsidian say "No citation found"?'
     answer: "That message comes from the Pandoc Reference List plugin, which shows a reference for each citation key in a note. Its README asks for Pandoc 2.11 or later and a path to a bibliography file, so check both in its settings."
   - question: "Does Zotero Integration work with Zotero 9 or 10?"
-    answer: "Its README and documentation do not state which Zotero versions it supports, and no maintainer has replied in its issue tracker since 1 January 2025. Some users report it working with Zotero 9 after they updated Better BibTeX and restarted Zotero."
+    answer: "Its README and documentation do not state which Zotero versions it supports, and its last release is 3.2.1 from 11 August 2024. In its issue tracker, some users report it working with Zotero 9 after they updated Better BibTeX and restarted Zotero. Others report failures with no error message on Zotero 9.0.4 and on a Zotero 10 beta."
   - question: "Will switching to ZotLit change my existing notes?"
     answer: "No. Your Zotero Integration notes are Markdown files and stay in your vault as they are. Their %% begin notes %% markers stay as comments that ZotLit ignores."
   - question: "Do I need Better BibTeX for ZotLit?"
@@ -34,11 +34,11 @@ These steps come from user reports in Zotero Integration's issue tracker in 2026
 
 ## Zotero 8, 9 and 10
 
-Zotero Integration's README and documentation state no Zotero version. Its issue tracker holds no reply from a maintainer since 1 January 2025 (checked on 11 November 2026). Its last release is 3.2.1, 11 August 2024. Its repository is held by the Obsidian Community Archive, which describes itself as "a landing space for popular community plugins and themes which can no longer be taken care of by their creators".
+Zotero Integration's README and documentation state no Zotero version. Its last release is 3.2.1, 11 August 2024. Its repository is held by the Obsidian Community Archive, which describes itself as "a landing space for popular community plugins and themes which can no longer be taken care of by their creators".
 
 ## Doing the same job in ZotLit
 
-- Connecting to Zotero: ZotLit reads Zotero's database. Better BibTeX is not required, and Zotero can stay closed while you browse, read and make notes.
+- Connecting to Zotero: ZotLit reads Zotero's database. Better BibTeX is not required, and Zotero can stay closed while you browse, search and read.
 - Importing highlights: highlights and comments go into a marked part of the literature note, the managed region. An update rewrites only that part; your own writing outside it stays as it was.
 - Inserting a citation: type `[@` in a note and pick the paper.
 - Templates: ZotLit uses Liquid; Zotero Integration uses Nunjucks. The migration guide has a table that maps one to the other.
@@ -47,7 +47,7 @@ Zotero Integration's README and documentation state no Zotero version. Its issue
 ## Before you switch, check your Zotero version
 
 - ZotLit reads Zotero 9 and Zotero 10.
-- ZotLit Companion, the optional Zotero add-on, installs on Zotero 9 or later.
+- ZotLit Companion, the optional Zotero add-on, installs on Zotero 9 and 10.
 - Editing highlights from Obsidian needs Zotero 10.
 - ZotLit needs Obsidian 1.14.5 or later, with installer 1.13.4 or later.
 - On Zotero 8 or earlier, update Zotero before you install ZotLit.
@@ -60,7 +60,7 @@ That message comes from the Pandoc Reference List plugin, which shows a referenc
 
 ### Does Zotero Integration work with Zotero 9 or 10?
 
-Its README and documentation do not state which Zotero versions it supports, and no maintainer has replied in its issue tracker since 1 January 2025. Some users report it working with Zotero 9 after they updated Better BibTeX and restarted Zotero.
+Its README and documentation do not state which Zotero versions it supports, and its last release is 3.2.1 from 11 August 2024. In its issue tracker, some users report it working with Zotero 9 after they updated Better BibTeX and restarted Zotero. Others report failures with no error message on Zotero 9.0.4 and on a Zotero 10 beta.
 
 ### Will switching to ZotLit change my existing notes?
 
