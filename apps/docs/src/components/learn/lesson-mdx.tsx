@@ -64,7 +64,15 @@ export const buttonClass = {
  */
 async function leadIn(lead: ReactNode, children: ReactNode) {
   const [label, text] = await Promise.all([md`${lead}`, md`${children}`]);
-  return `\n**${label.trim()}:** ${text.trim().replaceAll(/\n{2,}/g, " ")}\n\n`;
+  // The edition slices prose from the authored source, so a formatter's
+  // `{" "}` between two inline elements arrives as text; it stands for a space.
+  const line = (value: string) =>
+    value
+      .replaceAll('{" "}', " ")
+      .replaceAll(/\s*\n\s*/g, " ")
+      .trim();
+  // A label inside the bold lead-in would close the bold early.
+  return `\n**${line(label).replaceAll("**", "")}:** ${line(text)}\n\n`;
 }
 
 /** What the reader sees when the step worked. */
