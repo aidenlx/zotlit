@@ -1,162 +1,77 @@
 ---
 name: docs-writing
 description: >
-  Author and structure end-user documentation for ZotLit and academic tools. Reach when writing new documentation pages, reorganizing the docs content tree, adapting technical features for academic researchers, or auditing page prose and user-interface labels.
+  Plan and produce ZotLit's reader-facing docs: lessons at /learn, recipes, answer pages and reference pages at /docs, landing copy. Use when adding, rewriting, moving or retitling a docs page, writing a fact sheet or writer brief, or checking a draft's labels, anchors and search title.
 ---
 
-# Documentation Writing
+# Docs writing
 
-Reference for authoring and restructuring end-user documentation for ZotLit. Focus on academic researchers as the primary audience: assume deep scholarly domain expertise and non-technical backgrounds. Present the product as an integrated visual research desk centered on the Library View, rather than a headless database tool or template engine.
+The reader is a non-technical academic who arrives tired, with a chapter due. [`references/brief/shared.md`](references/brief/shared.md) is the single source for who they are, the voice, and "Show first"; read it before you plan a page.
 
-## Authoring Sequence
+Gemini writes the reader-facing prose. Your work is the facts, the structure, and the check.
 
-Follow these steps in order when creating or updating documentation:
+## Page kinds
 
-### 1. Scope and Placement
-Determine where the topic fits within the research workflow lifecycle:
-- **Getting Started**: Installation, connection, opening the Library View, first literature note.
-- **Reading & Library**: Navigating collections, search, Reading Cards, reading PDFs, reading status.
-- **Literature Notes**: Creating notes, note updates via the managed region, annotations, importing.
-- **Citing & Writing**: Drag-and-drop citation, Better BibTeX keys, graph view, Pandoc exports.
-- **Organizing & Tables**: Query files, query blocks, dynamic literature review tables.
-- **Templates & Customization**: Visual Template Workbench, profile documents, frontmatter (power-user tier).
-- **Sync & Companion**: Companion setup, live sync, multi-device setups.
-- **Reference & Troubleshooting**: Settings, commands, error recovery, migration guides.
+Every page serves one of eight research jobs: bring your library, find a paper, read and annotate, take notes, cite, see connections, export, make it yours.
 
-Confirm the page archetype (Tutorial, How-to, Reference, Explanation) before writing. Keep each document bound to a single archetype.
+| Kind | Reader | Where | Shape |
+| --- | --- | --- | --- |
+| **Lesson** | first run, guided | `/learn`, outside the docs layout | 5–7 steps, each about 40 words of caption, one action, one check line, a recording of the real app |
+| **Recipe** | mid-task | `/docs` | the answer in the first screen, numbered steps, fixes by what the reader sees; near 300 words before the first fold-out |
+| **Answer page** | comparing or stuck | `/docs` | 600–900 words, one table, a short list of questions and answers |
+| **Reference** | looking something up | `/docs` | the complete list of settings, commands or template fields, compiled from its source |
 
-### 2. State the Research Outcome
-Begin every page with frontmatter and a one-sentence summary that states the tangible academic outcome:
-- Focus on the scholar's goal (e.g. "Extract quoted passages with accurate page numbers into your note") rather than the technical mechanism (e.g. "Execute annotation serialization pipeline").
+A lesson or recipe names the one control it needs and links to the reference page for the rest.
 
-### 3. Draft the Visual Happy Path
-Guide the reader through the primary interface path first:
-- Prioritize the visual interface: the Library View, Reading Card, PDF reader, and Obsidian ribbon/menus.
-- Present steps as numbered actions in the active voice and imperative mood ("Select...", "Open...").
-- Include visual cues describing what the user sees upon completing each step.
-- Reserve keyboard shortcuts, configuration flags, and edge cases for secondary headings or callouts.
+An explanation lives in one of three places: one or two sentences beside the action it affects; a trust page, which is an answer page whose question is a worry ("Does ZotLit change my Zotero library?"); or the opening of a reference page. When a task moves pages, map the existing `tutorial/`, `how-to/` and `concepts/` folders onto these kinds; use `fumadocs-page-tree` for the tree mechanics.
 
-### 4. Apply Progressive Disclosure
-Keep technical complexity segregated by user intent:
-- Core research workflows (reading, annotating, creating notes, citing) must remain code-free.
-- Place template variables, Eta/JavaScript syntax, SQLite mechanics, and CLI flags in the *Templates & Customization* or *Reference* sections.
-- When a workflow touches technical machinery (such as the literature note *managed region*), explain the human rule first: "Write your personal thoughts above or below the markers so ZotLit can refresh your highlights without touching your writing."
+## Search
 
-### 5. Verify UI Labels and Stable Anchors
-Treat interface text as verifiable software contracts:
-- Import and render product-owned labels using the project's typed message API (`<UiLabel name={m.label_name()} />`) in MDX files.
-- Verify host application labels (Obsidian, Zotero) against the running applications.
-- Provide stable explicit heading anchors using the `[#custom-slug]` syntax for every deep-link target.
+- One page owns one search intent, in the searcher's words. Before you plan a page, search the titles and descriptions under `apps/docs/content/` for a page that owns the intent already. That page is the one you write: rewrite it into its kind; its lookup material belongs on a reference page.
+- `searchTitle` (docs pages): one plain statement of the task, at most 60 characters, naming Zotero or Obsidian where the task involves them. It is the page's H1 and `<title>`. `title` is the sidebar label: two to four words. On a branch whose `apps/docs/content.config.ts` lacks `searchTitle`, the search title goes in `title`. A lesson's title follows the same rule through its brief.
+- `description`: at most 160 characters, with the answer in the first 120.
 
-### 6. Audit Tone and Completion
-Evaluate the drafted page against the completion criteria:
-- Sentence length: Under 20 words per sentence.
-- Paragraph length: 2 to 3 sentences maximum.
-- Voice: Active voice, present tense, second person ("you").
-- Audit with the `slop-check` skill and resolve any flagged issues.
+## Procedure
 
----
+Keep every working file under `apps/docs/.scratch/<page-slug>/`.
 
-## Page Archetypes (Diataxis at Page Level)
+1. **Place the page.** Name its job, its kind, and its search intent.
+2. **Collect the facts from the product.** Every fact comes from the product, an existing docs page on `next`, or a source you opened.
+   - A lesson's steps are its **docs walk**, `packages/e2e/src/docs-walks/<slug>.walk.ts` (on branch `docs/learn-walks` until it merges): one `it` per step, run through the real apps. The walk also takes the step stills and recordings; read "Docs walks" in `packages/e2e/AGENTS.md`. A step the walk does not assert is a step to add to the walk first.
+   - A recipe or answer page takes its facts from the running apps (`obsidian-debug`, `zotero-rdp-debug`), the source, and the existing page. Its screenshots come from `docs-screenshot`.
+   - A ZotLit label is the exact string in `messages/en.json`; note its message key beside it. A label of Obsidian or Zotero is the string you read in the running app.
+3. **Write the fact sheet** (`facts.md`). Model: [`references/fact-sheet-model.md`](references/fact-sheet-model.md), a lesson's; the same shape serves every kind. It holds, in order:
+   - where the facts were checked (app versions, branch, walk), with each fact you read only in source marked so;
+   - the page: its job and kind, what the reader ends with, the search words, what the reader needs, what is true and worth saying once, the next or related pages; for a recipe or answer page, also the answer in one or two sentences;
+   - each step or section: the action with the exact labels in bold, the result the reader sees, the picture file, and the fixes as "what the reader sees: what to do". An answer page lists its table rows and columns and its questions with their answers in place of steps.
+4. **Assemble the writer brief** (`brief.md`) for the page kind (`lesson`, `recipe` or `answer`) from [`references/brief/`](references/brief/), with `R` set to that folder:
 
-Maintain strict separation of page purposes across individual documents:
+   ```sh
+   awk 'FNR==1 && NR>1 {print ""} 1' "$R/<kind>.opening.md" "$R/shared.md" "$R/<kind>.shape.md" > brief.md
+   ```
 
-| Archetype | Primary Purpose | Tone & Orientation | Structure |
-| :--- | :--- | :--- | :--- |
-| **Tutorial / Quickstart** | Teach a newcomer through a guided exercise | Calm Guide: step-by-step reassurance, single concrete example, zero choices. | Summary $\to$ Prerequisites $\to$ Step-by-step sequence $\to$ Verifiable end result. |
-| **How-to Guide** | Solve a specific research task | Direct Manual: goal-oriented, practical, assumes basic familiarity. | Title "How to [action] [target]" $\to$ Context summary $\to$ Numbered steps $\to$ Expected outcome. |
-| **Reference** | Provide complete technical facts | Neutral Ledger: factual, complete, structured in tables. | Scope statement $\to$ Grouped tables of options, commands, or data fields. |
-| **Explanation** | Clarify concepts and relationships | Analytical: conceptual background, system mental models. | Conceptual overview $\to$ Why the system works this way $\to$ Links to relevant how-to guides. |
+5. **Run the writer** (the page's scratch folder serves), from a folder with no `AGENTS.md` above it that you want read (the flags below already turn context files off):
 
-### Blended Boundary Rules
-- When a how-to guide requires technical theory, summarize the practical effect in one sentence and link to an Explanation page.
-- When an explanation mentions actionable tasks, link to the corresponding How-to guide rather than inserting numbered action steps.
-- When a tutorial encounters options, select one sensible default and walk through it; link to How-to guides for alternative configurations.
+   ```sh
+   pi -p --provider google --model gemini-3.8-flash --no-tools --no-skills \
+     --no-prompt-templates --no-extensions --no-context-files --no-session \
+     --system-prompt "$(cat <brief>.md)" \
+     "Write this page from this fact sheet.
 
----
+   $(cat <facts>.md)" > <draft>.md 2> <draft>.err < /dev/null
+   ```
 
-## Tone Registers
+   Run one at a time; parallel runs have stalled. `< /dev/null` is required.
 
-Match the tone register to the page's position in the user journey:
+6. **Check the draft against the fact sheet:** every label exact, every step present once, nothing added that the fact sheet does not hold, lengths within the brief. Then run `slop-check` on it. Fix a wrong fact by correcting the fact sheet and running again, or by the smallest edit to the wrong words; fix a slop flag by the smallest edit. Leave Gemini's wording alone otherwise.
+7. **Build the page** from the checked draft (this step covers `/docs` pages; a lesson follows "Learn" in `apps/docs/DESIGN.md`):
+   - The draft's `Title` is the frontmatter `searchTitle`, its `Sidebar label` is `title`, and its `Description` is `description`.
+   - Render every ZotLit label through the typed label components, as [`apps/docs/policies/ui-labels.md`](../../../apps/docs/policies/ui-labels.md) says.
+   - Give every heading that is a deep-link target a stable `[#slug]` anchor, and place images, as "Content and writing docs" in `apps/docs/AGENTS.md` says.
+   - Turn each figure request into the view it asks for (see "Show first").
+   - Use the components the neighbouring pages import: `Steps`/`Step`, `Callout`, `Cards`/`Card`, `UiLabel`, `Command`, `SettingsPath`.
+8. **Report** the paths of the fact sheet, the brief and the draft.
 
-### Calm Guide (Onboarding & Tutorials)
-- **Role**: Getting Started, Quickstart, and initial setup walks.
-- **Cadence**: Patient, supportive pacing. Reassure the user by explicitly describing what appears on screen at each milestone.
-- **Punctuation**: Restrained periods and colons. Warmth stems from clarity, predictability, and respect for attention.
+## Show first
 
-### Direct Manual (Everyday Guides & How-tos)
-- **Role**: Core reading, note-taking, citing, and organizing workflows.
-- **Cadence**: Terse, direct, second person ("you"). Lead with the action verb.
-- **Punctuation**: Declarative statements. State what is on screen and what action to take next.
-
-### Neutral Ledger (Reference)
-- **Role**: Command listings, settings indexes, template field catalogs, and theme hooks.
-- **Cadence**: Objective statements and structured tables. Free of subjective recommendations.
-
----
-
-## Frontmatter and Layout Standards
-
-Every documentation page requires standard frontmatter:
-
-```yaml
----
-title: "Short sidebar label"
-searchTitle: "Sentence case task title for search, at most 60 characters"
-description: "Active summary stating user outcome, at most 160 characters."
----
-```
-
-`title` is the sidebar label. `searchTitle` is optional: when set, it is the page's H1, `<title>`, og:title, OG card, and `llms.txt` entry; without it, `title` is all of these.
-
-Use standard MDX components where appropriate:
-- `<Steps>` and `<Step>` for ordered procedures.
-- `<Callout type="info" | "warn" | "tip">` for progressive disclosure and important platform notes.
-- `<Cards>` and `<Card>` for navigational crossroads and next steps.
-- `<UiLabel name={m...} />` for all typed UI strings.
-- `<Command name={m...} />` for Obsidian command palette entries.
-
----
-
-## Search Intent & Organic SEO (Non-Branded Discovery)
-
-Users rarely search for "ZotLit" before adopting it. They search for workflows, problems, and host tools: "zotero obsidian integration", "how to read zotero pdfs in obsidian", "cite zotero in obsidian", "import zotero highlights to obsidian". Write titles, descriptions, and headings to capture external search intent:
-
-### 1. Title Formulation: Context Keywords + Exact Task
-The site renders page titles as `<title>{searchTitle ?? title} | ZotLit</title>`. A title without host tool names wastes the highest-weight SEO signal. Put the searcher's wording in `searchTitle` and keep `title` short for the sidebar. Give each target query to one page only.
-- **Prefer**: Task and context keywords together (`"Read Zotero PDFs and annotations in Obsidian"`, `"Browse your Zotero library in Obsidian: Library View"`).
-- **Avoid**: Pure internal or insular titles (`"Open an item's PDF in Obsidian"`, `"Browse your library in the Library View"`).
-
-### 2. Search-Targeted Quick How-To Guides
-Maintain dedicated, tight how-to guides matching high-volume academic search queries:
-- **Connection & Setup**: `"How to connect Zotero to Obsidian"` (matches *zotero obsidian integration*, *zotero sqlite obsidian*).
-- **PDF & Annotations**: `"How to read Zotero PDFs and highlights in Obsidian"` (matches *zotero pdf obsidian*, *read zotero annotations in obsidian*).
-- **Literature Notes**: `"How to create Zotero literature notes in Obsidian"` (matches *zotero literature note obsidian*, *import zotero notes*).
-- **Citing & Pandoc**: `"How to cite Zotero sources in Obsidian markdown"` (matches *cite zotero obsidian*, *pandoc zotero obsidian citations*).
-- **Alternative & Migration**: `"Migrate from Obsidian Zotero Integration plugin to ZotLit"` (matches *obsidian zotero integration plugin*, *zotero integration alternative*).
-
-### 3. Frontmatter Description Snippets
-Search engines truncate SERP descriptions around 155–160 characters.
-- Front-load the exact search intent in the first 120 characters: state the specific problem solved and the two tools involved ("Connect Zotero 7 to Obsidian to read annotated PDFs, write literature notes, and cite sources directly in your vault...").
-- Keep descriptions strictly active and descriptive without generic filler ("Learn how to use...").
-
----
-
-## Completion Criteria
-
-A page or documentation change is complete when all of the following hold:
-1. **Target Audience Aligned**: Prose uses academic vocabulary (papers, literature notes, citations) and explains features through research outcomes.
-2. **Archetype Pure**: Content strictly matches its designated quadrant (Tutorial, How-to, Reference, or Explanation).
-3. **Happy Path First**: The visual interface (Library View, Reading Card, PDF viewer) is described before keyboard shortcuts, advanced settings, or template syntax.
-4. **UI Contracts Valid**: All UI labels match their authoritative message catalogs; product strings use typed messages in MDX.
-5. **Stable Anchors Added**: Every heading that acts as a navigation target includes an explicit `[#anchor]` slug.
-6. **Readability Standards Met**: Sentences stay under 20 words, paragraphs stay under 3 sentences, active voice is maintained throughout.
-7. **Slop Audit Clean**: Text passes the `slop-check` review without unaddressed flags.
-
----
-
-## Disclosed Reference Materials
-
-Consult these reference documents for deeper theoretical background:
-- [`references/Exploring User-Friendly Documentation.md`](references/Exploring%20User-Friendly%20Documentation.md) — Analysis of user cognitive ergonomics, plain language standards, active voice psychology, and inverted pyramid structures.
-- [`references/what-nobody-tells-you-about-documentation.txt`](references/what-nobody-tells-you-about-documentation.txt) — Daniele Procida's foundational exposition on Diataxis and the four documentation modes.
+A view explains before a paragraph does: a recording, a replica, a map, a before/after pair or a small table. The rules for each surface are "Illustration" in [`apps/docs/DESIGN.md`](../../../apps/docs/DESIGN.md): a lesson step shows the walk's recording with the still as its poster; the landing shows web replicas built from the real app's assets. Captions, check lines and table text stay HTML beside the picture.
