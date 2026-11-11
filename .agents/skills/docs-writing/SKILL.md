@@ -27,8 +27,8 @@ An explanation lives in one of three places: one or two sentences beside the act
 
 ## Search
 
-- One page owns one search intent, in the searcher's words. Before you plan a page, search the titles and descriptions under `apps/docs/content/` for a page that owns the intent already. That page is the one you write: rewrite it into its kind, and move its lookup material to a reference page.
-- `searchTitle` (docs pages): one plain statement of the task, at most 60 characters, naming Zotero or Obsidian where the task involves them. It is the page's H1 and `<title>`. `title` is the sidebar label: two to four words. The field comes from branch `docs/search-titles`; on a branch without it, the search title goes in `title`. A lesson's title follows the same rule through its brief.
+- One page owns one search intent, in the searcher's words. Before you plan a page, search the titles and descriptions under `apps/docs/content/` for a page that owns the intent already. That page is the one you write: rewrite it into its kind; its lookup material belongs on a reference page.
+- `searchTitle` (docs pages): one plain statement of the task, at most 60 characters, naming Zotero or Obsidian where the task involves them. It is the page's H1 and `<title>`. `title` is the sidebar label: two to four words. On a branch whose `apps/docs/content.config.ts` lacks `searchTitle`, the search title goes in `title`. A lesson's title follows the same rule through its brief.
 - `description`: at most 160 characters, with the answer in the first 120.
 
 ## Procedure
@@ -64,7 +64,8 @@ Keep every working file under `apps/docs/.scratch/<page-slug>/`.
    Run one at a time; parallel runs have stalled. `< /dev/null` is required.
 
 6. **Check the draft against the fact sheet:** every label exact, every step present once, nothing added that the fact sheet does not hold, lengths within the brief. Then run `slop-check` on it. Fix a wrong fact by correcting the fact sheet and running again, or by the smallest edit to the wrong words; fix a slop flag by the smallest edit. Leave Gemini's wording alone otherwise.
-7. **Build the page** from the checked draft:
+7. **Build the page** from the checked draft (this step covers `/docs` pages; a lesson follows "Learn" in `apps/docs/DESIGN.md`):
+   - The draft's `Title` is the frontmatter `searchTitle`, its `Sidebar label` is `title`, and its `Description` is `description`.
    - Render every ZotLit label through the typed label components, as [`apps/docs/policies/ui-labels.md`](../../../apps/docs/policies/ui-labels.md) says.
    - Give every heading that is a deep-link target a stable `[#slug]` anchor, and place images, as "Content and writing docs" in `apps/docs/AGENTS.md` says.
    - Turn each figure request into the view it asks for (see "Show first").
