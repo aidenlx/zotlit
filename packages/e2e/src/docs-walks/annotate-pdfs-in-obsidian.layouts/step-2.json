@@ -1,9 +1,9 @@
 {
   "margin": 0.1,
   "layers": [
-    { "src": "allow-editing.png", "lights": false },
+    { "src": "step-2.png", "lights": false },
     {
-      "src": "zotero-dialog.png",
+      "src": "step-2-zotero.png",
       "x": 1100,
       "y": 560,
       "width": 1220,

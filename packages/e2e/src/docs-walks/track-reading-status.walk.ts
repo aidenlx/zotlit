@@ -1,15 +1,15 @@
-// The walk of the lesson apps/docs/content/docs/organize-your-research/
-// track-reading-status.mdx: a researcher planning next week's reading sees
-// which papers they have not started, saves their library as a reading plan,
-// marks each paper to-read, reading, or done in a Table, filters the plan to
-// the papers still to read, and finds the status in each literature note.
-// Each `it` is one step of the page, in the page's order, and asserts what
-// the page says the reader sees. Run it with `pnpm --filter @zotlit/e2e
-// docs-walk`; see AGENTS.md.
+// The walk of /learn Lesson 5, "Track what you have read": a researcher with
+// the Lesson 1 literature note on Sandve et al. 2013 saves the library as the
+// query file Reading plan, shows it as a Table, adds a reading-status column
+// of their own, marks each paper to-read, reading, or done, and filters the
+// plan to the papers still to read. Each `it` is one step of the lesson, in
+// the lesson's order, named after it, and asserts what the lesson says the
+// reader sees. Run it with `pnpm --filter @zotlit/e2e docs-walk`; see
+// AGENTS.md.
 
 import { obRun, obRunUntil } from "@e2e/obsidian-cli.ts";
 import { isObsidianReachable } from "@e2e/vault-script.ts";
-import type { MarkdownView, WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
@@ -24,6 +24,7 @@ const root = await getWorkspaceRoot(import.meta.dirname);
 const reachable = await isObsidianReachable(root);
 const m = await import("@obsidian-messages");
 
+const SLUG = "track-reading-status";
 /** The five papers of the docs Vault Case, by Zotero key. */
 const PAPERS = {
   munafo: { key: "DCMNFART", citekey: "munafo2017" },
@@ -32,15 +33,6 @@ const PAPERS = {
   rougier: { key: "DMRGRART", citekey: "rougier2014" },
   ioannidis: { key: "DMIANART", citekey: "ioannidis2005" },
 };
-/** The papers with no annotation, no read in Zotero, and no note: Unread. */
-const UNREAD = [PAPERS.munafo.key, PAPERS.wilson.key];
-/** The reader's marks, in the order the page makes them. Rougier stays unmarked. */
-const MARKS: [keyof typeof PAPERS, string][] = [
-  ["wilson", "to-read"],
-  ["munafo", "to-read"],
-  ["sandve", "reading"],
-  ["ioannidis", "done"],
-];
 const PLAN = "Reading plan";
 const PLAN_FILE = `${PLAN}.zotquery`;
 const PROPERTY = "reading-status";
@@ -49,7 +41,6 @@ const notePath = (paper: keyof typeof PAPERS) =>
 
 type LibraryLeaf = WorkspaceLeaf & { view: LibraryView };
 type PlanLeaf = WorkspaceLeaf & { view: QueryFileView };
-type NoteLeaf = WorkspaceLeaf & { view: MarkdownView };
 /** The text input of the window, as a reader types. */
 type Remote = {
   getCurrentWebContents(): { insertText(text: string): void };
@@ -61,742 +52,528 @@ interface Table {
   header: string[];
 }
 
-describe.skipIf(!reachable)(
-  "Track which papers you have read, from Zotero in Obsidian",
-  () => {
-    let walk: DocsWalk;
-    /** When Zotero last changed each paper, before the reader marks any. */
-    let modified: Record<string, string>;
+const STEP = { timeoutMs: 60000 };
 
-    /** The plan's Table once `ready` holds. */
-    const tableWhen = (what: string, ready: (table: Table) => boolean) =>
-      obRunUntil(
-        walk.vaultId,
-        async ({ app }, { planFile, property }): Promise<Table | null> => {
-          const view = (
-            app.workspace
-              .getLeavesOfType("zotlit-query-file")
-              .find(
-                (l) => (l.view as QueryFileView).file?.path === planFile,
-              ) as PlanLeaf | undefined
-          )?.view;
-          if (!view) return null;
-          const el = view.contentEl;
-          await view.query.settled;
-          return {
-            rows: [...el.querySelectorAll('[data-query-table-row="item"]')].map(
-              (n) => n.getAttribute("data-query-key")!,
-            ),
-            cells: Object.fromEntries(
-              [
-                ...el.querySelectorAll(
-                  `[data-query-vault-cell][data-query-vault-name="${property}"]`,
-                ),
-              ].map((n) => [
-                n.closest("tr")!.getAttribute("data-query-key")!,
-                n.textContent,
-              ]),
-            ),
-            header: [...el.querySelectorAll("th")].map((n) => n.textContent),
-          };
-        },
-        { planFile: PLAN_FILE, property: PROPERTY },
-        { what, ready: (table) => table !== null && ready(table) },
-      ) as Promise<Table>;
+describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
+  let walk: DocsWalk;
 
-    beforeAll(async () => {
-      walk = await openDocsWalk({
-        slug: "track-reading-status",
-        collection: "organize-your-research/track-reading-status",
-        vaultCase: "docs",
-      });
-      await watchNotices(walk.vaultId);
-      modified = await walk.zotero.json<Record<string, string>>(
-        `Object.fromEntries(${JSON.stringify(Object.values(PAPERS).map((p) => p.key))}.map(k=>[k,Zotero.Items.getByLibraryAndKey(1,k).dateModified]))`,
-      );
-    });
+  /** The plan's Table once `ready` holds. */
+  const tableWhen = (what: string, ready: (table: Table) => boolean) =>
+    obRunUntil(
+      walk.vaultId,
+      async ({ app }, { planFile, property }): Promise<Table | null> => {
+        const view = (
+          app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find((l) => (l.view as QueryFileView).file?.path === planFile) as
+            | PlanLeaf
+            | undefined
+        )?.view;
+        if (!view) return null;
+        const el = view.contentEl;
+        await view.query.settled;
+        return {
+          rows: [...el.querySelectorAll('[data-query-table-row="item"]')].map(
+            (n) => n.getAttribute("data-query-key")!,
+          ),
+          cells: Object.fromEntries(
+            [
+              ...el.querySelectorAll(
+                `[data-query-vault-cell][data-query-vault-name="${property}"]`,
+              ),
+            ].map((n) => [
+              n.closest("tr")!.getAttribute("data-query-key")!,
+              n.textContent,
+            ]),
+          ),
+          header: [...el.querySelectorAll("th")].map((n) => n.textContent),
+        };
+      },
+      { planFile: PLAN_FILE, property: PROPERTY },
+      { what, ready: (table) => table !== null && ready(table) },
+    ) as Promise<Table>;
 
-    afterAll(async () => {
-      await walk?.[Symbol.asyncDispose]();
-    });
-
-    it("shows the papers not yet started under Unread in the Library View", async () => {
-      const shown = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { unread }) => {
-          app.commands.executeCommandById("zotlit:open-library-view");
-          const leaf = app.workspace.getLeavesOfType(
-            "zotlit-library",
-          )[0] as LibraryLeaf;
-          const el = leaf.view.contentEl;
-          await app.workspace.revealLeaf(leaf);
-          await leaf.view.query.settled;
-          // The lesson's reader has finished setup and put the welcome banner away.
-          const dismiss = el.querySelector<HTMLElement>(
-            "[data-welcome-dismiss]",
-          );
-          if (dismiss) {
-            page.press(dismiss, "Dismiss");
-            await page.until(
-              "banner gone",
-              () => !el.querySelector("[data-welcome-banner]"),
-            );
-          }
-          page.press(
-            await page.until(
-              "My Library",
-              () =>
-                [
-                  ...el.querySelectorAll<HTMLElement>("[data-library-label]"),
-                ].find((n) => n.textContent === "My Library"),
-              20000,
-            ),
-            "My Library",
-          );
-          await page.until(
-            "five papers",
-            () => el.querySelectorAll("[data-query-item-row]").length === 5,
-            10000,
-          );
-          page.press(
-            el.querySelector<HTMLElement>('[data-library-facet="unread"]'),
-            "Unread",
-          );
-          await page.until(
-            "Unread on",
-            () =>
-              el
-                .querySelector('[data-library-facet="unread"]')!
-                .getAttribute("aria-pressed") === "true",
-          );
-          await page.until(
-            "unread papers",
-            () =>
-              el.querySelectorAll("[data-query-item-row]").length === unread,
-            10000,
-          );
-          await leaf.view.query.settled;
-          return {
-            heading:
-              el.querySelector("[data-library-heading]")?.textContent ?? "",
-            rows: [...el.querySelectorAll("[data-query-item-row]")].map((n) =>
-              n.getAttribute("data-query-item-row")!,
-            ),
-          };
-        },
-        { unread: UNREAD.length },
-      );
-      expect(shown.rows.toSorted()).toEqual(UNREAD.toSorted());
-      expect(shown.heading).toContain("My Library");
-      await walk.capture("unread");
-      await walk.compose("unread");
-      // The reader turns Unread off again before saving the plan.
-      await obRun(walk.vaultId, async ({ app, page }) => {
-        const leaf = app.workspace.getLeavesOfType(
-          "zotlit-library",
-        )[0] as LibraryLeaf;
-        const el = leaf.view.contentEl;
-        page.press(
-          el.querySelector<HTMLElement>('[data-library-facet="unread"]'),
-          "Unread",
+  /**
+   * Mark `paper` with `value` in the plan's status cell, as a reader types
+   * it, and answer what the cell suggested before the typing.
+   */
+  async function mark(
+    paper: keyof typeof PAPERS,
+    value: string,
+  ): Promise<string[]> {
+    const key = PAPERS[paper].key;
+    const suggested = await obRun(
+      walk.vaultId,
+      async ({ app, page }, { planFile, key, property, value }) => {
+        const view = (
+          app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find(
+              (l) => (l.view as QueryFileView).file?.path === planFile,
+            ) as PlanLeaf
+        ).view;
+        const el = view.contentEl;
+        await view.query.settled;
+        const cell = el
+          .querySelector(
+            `[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${property}"]`,
+          )!
+          .closest("td")!;
+        cell.scrollIntoView({
+          block: "center",
+          inline: "nearest",
+          behavior: "instant",
+        });
+        await page.trusted(window).click(cell);
+        await page.until("status field", () =>
+          activeDocument.activeElement?.matches("[data-query-vault-input]"),
         );
+        await new Promise((r) => setTimeout(r, 400));
+        const suggested = [
+          ...activeDocument.querySelectorAll(
+            ".suggestion-container .suggestion-item",
+          ),
+        ].map((i) => i.textContent);
+        (require("@electron/remote") as Remote)
+          .getCurrentWebContents()
+          .insertText(value);
+        await new Promise((r) => setTimeout(r, 300));
+        await page.trusted(window).key("Enter");
+        return suggested;
+      },
+      { planFile: PLAN_FILE, key, property: PROPERTY, value },
+      STEP,
+    );
+    await tableWhen(`${paper} marked ${value}`, (t) => t.cells[key] === value);
+    return suggested;
+  }
+
+  beforeAll(async () => {
+    walk = await openDocsWalk({
+      slug: SLUG,
+      collection: `learn/${SLUG}`,
+      vaultCase: "docs",
+    });
+    // The reader wrote the literature note on Sandve et al. 2013 in Lesson 1.
+    await obRun(
+      walk.vaultId,
+      async ({ zotlit }, { key }) => {
+        const hits = await zotlit.services.itemLookup.search("", {
+          limit: 100,
+        });
+        const hit = hits.find((h) => h.item.key === key)!;
+        const result = await zotlit.services.noteFeature.createNote(
+          hit.item,
+          {},
+        );
+        if (result.outcome !== "created") throw new Error("note refused");
+      },
+      { key: PAPERS.sandve.key },
+      STEP,
+    );
+    await watchNotices(walk.vaultId);
+  });
+
+  afterAll(async () => {
+    await walk?.[Symbol.asyncDispose]();
+  });
+
+  it("step 1: in the Zotero library tab, select Save as query file and name it Reading plan; Reading plan.zotquery opens and lists your papers", async () => {
+    const saved = await obRun(
+      walk.vaultId,
+      async ({ app, page }, { plan, planFile }) => {
+        app.commands.executeCommandById("zotlit:open-library-view");
+        const leaf = await page.until(
+          "Library View",
+          () =>
+            app.workspace.getLeavesOfType("zotlit-library")[0] as
+              | LibraryLeaf
+              | undefined,
+          20000,
+        );
+        await app.workspace.revealLeaf(leaf);
+        const el = leaf.view.contentEl;
+        await leaf.view.query.settled;
         await page.until(
-          "five papers",
-          () => el.querySelectorAll("[data-query-item-row]").length === 5,
+          "papers",
+          () => el.querySelectorAll("[data-query-item-row]").length > 0,
+          20000,
+        );
+        const heading =
+          el.querySelector("[data-library-heading]")?.textContent ?? "";
+        const banner = !!el.querySelector("[data-welcome-banner]");
+        page.press(
+          el.querySelector<HTMLElement>("[data-query-save-as]"),
+          "Save as query file",
+        );
+        const modal = await page.until(
+          "save dialog",
+          () => document.querySelector(".zt-save-query-file-modal"),
+          5000,
+        );
+        const name = modal.querySelector<HTMLInputElement>(
+          '[data-save-field="name"]',
+        )!;
+        const offered = name.value;
+        const folder =
+          modal.querySelector<HTMLInputElement>('[data-save-field="folder"]')
+            ?.value ?? null;
+        name.focus();
+        name.select();
+        document.execCommand("insertText", false, plan);
+        const created = await page.until("file name", () => {
+          const t = modal.querySelector("[role=status]")!.textContent;
+          return t.includes(planFile) && t;
+        });
+        const dialog = modal.querySelector(".modal-title")!.textContent;
+        page.press(modal.querySelector<HTMLElement>(".mod-cta"), "Save");
+        await page.until(
+          "plan open",
+          () => app.workspace.getActiveFile()?.path === planFile,
           10000,
         );
-      });
+        const view = (
+          app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find(
+              (l) => (l.view as QueryFileView).file?.path === planFile,
+            ) as PlanLeaf
+        ).view;
+        await view.query.settled;
+        const rows = await page.until(
+          "plan rows",
+          () => {
+            const r = [
+              ...view.contentEl.querySelectorAll("[data-query-papers-row]"),
+            ].map((n) => n.getAttribute("data-query-papers-row"));
+            return r.length >= 5 && r;
+          },
+          10000,
+        );
+        return {
+          heading,
+          banner,
+          offered,
+          folder,
+          dialog,
+          created,
+          active: app.workspace.getActiveFile()?.path ?? null,
+          rows: [...new Set(rows)],
+        };
+      },
+      { plan: PLAN, planFile: PLAN_FILE },
+      STEP,
+    );
+    console.log("[walk] saved", JSON.stringify(saved));
+    expect(saved).toMatchObject({
+      dialog: m.annot_view_save_title(),
+      created: m.annot_view_save_file({ file: PLAN_FILE }),
+      active: PLAN_FILE,
     });
+    expect(saved.rows.toSorted()).toEqual(
+      Object.values(PAPERS)
+        .map((p) => p.key)
+        .toSorted(),
+    );
+    await walk.capture("step-1");
+    await walk.compose("step-1");
+  });
 
-    it("saves the library as the query file Reading plan", async () => {
-      const saved = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { plan, planFile }) => {
-          {
-            const leaf = app.workspace.getLeavesOfType(
-              "zotlit-library",
-            )[0] as LibraryLeaf;
-            page.press(
-              leaf.view.contentEl.querySelector<HTMLElement>(
-                "[data-query-save-as]",
-              ),
-              "Save as query file",
-            );
-          }
-          const modal = await page.until(
-            "save dialog",
-            () => document.querySelector(".zt-save-query-file-modal"),
-            5000,
-          );
-          const name = modal.querySelector<HTMLInputElement>(
-            '[data-save-field="name"]',
-          )!;
-          name.focus();
-          name.select();
-          document.execCommand("insertText", false, plan);
-          const created = await page.until("file name", () => {
-            const t = modal.querySelector("[role=status]")!.textContent;
-            return t.includes(planFile) && t;
-          });
-          const dialog = modal.querySelector(".modal-title")!.textContent;
-          page.press(modal.querySelector<HTMLElement>(".mod-cta"), "Save");
-          await page.until(
-            "plan open",
-            () => app.workspace.getActiveFile()?.path === planFile,
-            10000,
-          );
-          const view = (
-            app.workspace
-              .getLeavesOfType("zotlit-query-file")
-              .find(
-                (l) => (l.view as QueryFileView).file?.path === planFile,
-              ) as PlanLeaf
-          ).view;
-          const el = view.contentEl;
-          await view.query.settled;
-          await page.until(
-            "plan rows",
-            () => el.querySelectorAll("[data-query-papers-row]").length === 5,
-            10000,
-          );
-          return {
-            dialog,
-            created,
-            active: app.workspace.getActiveFile()?.path ?? null,
-            rows: el.querySelectorAll("[data-query-papers-row]").length,
-          };
-        },
-        { plan: PLAN, planFile: PLAN_FILE },
-      );
-      expect(saved).toMatchObject({
-        dialog: m.annot_view_save_title(),
-        active: PLAN_FILE,
-        rows: 5,
-      });
-    });
-
-    it("switches the plan to the Table layout", async () => {
-      const layout = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { planFile, views }) => {
-          const view = (
-            app.workspace
-              .getLeavesOfType("zotlit-query-file")
-              .find(
-                (l) => (l.view as QueryFileView).file?.path === planFile,
-              ) as PlanLeaf
-          ).view;
-          const el = view.contentEl;
-          page.press(
-            [...el.querySelectorAll("button")].find(
-              (b) => b.getAttribute("aria-label") === views,
-            ),
-            "Views",
-          );
-          page.press(
-            await page.until("Configure view", () =>
-              document.querySelector<HTMLElement>(
-                "[popover]:popover-open [data-query-view-configure]",
-              ),
-            ),
-            "Configure view",
-          );
-          const select = await page.until("Layout", () =>
-            document.querySelector<HTMLSelectElement>(
-              "[popover]:popover-open select[data-query-view-layout]",
-            ),
-          );
-          const options = [...select.options].map((o) => o.text);
-          await page.pick(select, "table", "Layout");
-          await page.until(
-            "Table",
-            () => el.querySelector('[data-query-table-row="item"]'),
-            10000,
-          );
-          for (const p of document.querySelectorAll<HTMLElement>(
-            "[popover]:popover-open",
-          ))
-            p.hidePopover();
-          // The reader closes both sidebars to give the Table room.
-          app.workspace.leftSplit.collapse();
-          app.workspace.rightSplit.collapse();
-          await page.until(
-            "sidebars closed",
-            () =>
-              [app.workspace.leftSplit, app.workspace.rightSplit].every(
-                (split) => {
-                  const s = split as typeof split & {
-                    containerEl: HTMLElement;
-                  };
-                  return (
-                    s.containerEl.getBoundingClientRect().width < 1 &&
-                    s.containerEl.getAnimations({ subtree: true }).length === 0
-                  );
-                },
-              ),
-            5000,
-          );
-          await new Promise((r) => setTimeout(r, 300));
-          await view.query.settled;
-          return {
-            options,
-            header: [...el.querySelectorAll("th")].map((n) => n.textContent),
-          };
-        },
-        { planFile: PLAN_FILE, views: m.query_view_views() },
-      );
-      expect(layout.options).toContain(m.query_view_layout_table());
-      expect(layout.header).toContain(m.query_view_table_literature_note());
-    });
-
-    it("adds reading-status as a vault property, with No note in every row", async () => {
-      const entries = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { planFile, properties, property }) => {
-          const view = (
-            app.workspace
-              .getLeavesOfType("zotlit-query-file")
-              .find(
-                (l) => (l.view as QueryFileView).file?.path === planFile,
-              ) as PlanLeaf
-          ).view;
-          const el = view.contentEl;
-          page.press(
-            [...el.querySelectorAll("button")].find(
-              (b) => b.getAttribute("aria-label") === properties,
-            ),
-            "Properties",
-          );
-          const popup = await page.until("Properties menu", () => {
-            const p = [
-              ...document.querySelectorAll("[popover]:popover-open"),
-            ].pop();
-            return p?.querySelector("input") && p;
-          });
-          const input = popup.querySelector("input")!;
-          input.focus();
-          document.execCommand("insertText", false, property);
-          await page.until("add entries", () =>
-            popup.querySelector(
-              '[data-query-properties-action="add-vault-property"]',
-            ),
-          );
-          return [...popup.querySelectorAll("[role=option]")].map(
-            (o) => o.textContent,
-          );
-        },
-        {
-          planFile: PLAN_FILE,
-          properties: m.query_view_properties(),
-          property: PROPERTY,
-        },
-      );
-      // The first entry adds a Zotero field; the second, the reader's own property.
-      expect(entries.slice(0, 2)).toEqual([
-        m.query_view_properties_add({ name: PROPERTY }),
-        m.query_view_properties_add_vault({ name: PROPERTY }),
-      ]);
-      await walk.capture("add-column");
-      await walk.compose("add-column");
-      await obRun(walk.vaultId, async ({ page }) => {
+  it("step 2: select Views, Configure view, and set Layout to Table; your papers as rows", async () => {
+    const layout = await obRun(
+      walk.vaultId,
+      async ({ app, page }, { planFile }) => {
+        const view = (
+          app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find(
+              (l) => (l.view as QueryFileView).file?.path === planFile,
+            ) as PlanLeaf
+        ).view;
+        const el = view.contentEl;
+        const trigger = el.querySelector<HTMLElement>(
+          "[data-query-view-menu]",
+        )!;
+        const name = trigger.getAttribute("aria-label");
+        page.press(trigger, "Views");
         page.press(
-          [...document.querySelectorAll("[popover]:popover-open")]
-            .pop()!
-            .querySelector<HTMLElement>(
-              '[data-query-properties-action="add-vault-property"]',
+          await page.until("Configure view", () =>
+            document.querySelector<HTMLElement>(
+              "[data-query-view-list] [data-query-view-configure]",
             ),
-          "Add vault property",
+          ),
+          "Configure view",
+        );
+        const select = await page.until("Layout", () =>
+          document.querySelector<HTMLSelectElement>(
+            "[data-query-view-list] [data-chooser-page] [data-query-view-layout]",
+          ),
+        );
+        const options = [...select.options].map((o) => o.text);
+        await page.pick(select, "table", "Layout");
+        await page.until(
+          "Table",
+          () => el.querySelector('[data-query-table-row="item"]'),
+          10000,
+        );
+        page.closePopovers(document);
+        await page.until(
+          "Views closed",
+          () => !document.querySelector("[data-query-view-list]"),
+        );
+        await view.query.settled;
+        return { options, name };
+      },
+      { planFile: PLAN_FILE },
+      STEP,
+    );
+    expect(layout.name).toBe(m.query_view_views());
+    expect(layout.options).toContain(m.query_view_layout_table());
+    const table = await tableWhen("five rows", (t) => t.rows.length === 5);
+    expect(table.header).toContain(m.query_view_property_title());
+    await walk.capture("step-2");
+    await walk.compose("step-2");
+  });
+
+  it('step 3: select Properties, type reading-status, and select the second entry, Add "reading-status" vault property; a column reading-status (note), each cell reads No note', async () => {
+    const entries = await obRun(
+      walk.vaultId,
+      async ({ app, page }, { planFile, properties, property }) => {
+        const view = (
+          app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find(
+              (l) => (l.view as QueryFileView).file?.path === planFile,
+            ) as PlanLeaf
+        ).view;
+        const el = view.contentEl;
+        page.press(
+          el.querySelector<HTMLElement>(
+            `[data-query-properties][aria-label="${properties}"]`,
+          ),
+          "Properties",
+        );
+        const popup = await page.until("Properties menu", () =>
+          document.querySelector<HTMLElement>("[data-query-properties-popup]"),
+        );
+        const input = popup.querySelector("input")!;
+        input.focus();
+        document.execCommand("insertText", false, property);
+        await page.until("add entries", () =>
+          popup.querySelector(
+            '[data-query-properties-action="add-vault-property"]',
+          ),
+        );
+        const options = [...popup.querySelectorAll("[role=option]")].map(
+          (o) => o.textContent,
+        );
+        page.press(
+          [...popup.querySelectorAll<HTMLElement>("[role=option]")][1],
+          "second entry",
         );
         await new Promise((r) => setTimeout(r, 300));
-        for (const p of document.querySelectorAll<HTMLElement>(
-          "[popover]:popover-open",
-        ))
-          p.hidePopover();
-      });
-      const table = await tableWhen(
-        "the status column",
-        (t) => Object.keys(t.cells).length === 5,
-      );
-      expect(table.header).toContain(
-        m.query_view_vault_property_label({ name: PROPERTY }),
-      );
-      expect(new Set(Object.values(table.cells))).toEqual(
-        new Set([m.query_view_vault_no_note()]),
-      );
-    });
+        page.closePopovers(document);
+        return options;
+      },
+      {
+        planFile: PLAN_FILE,
+        properties: m.query_view_properties(),
+        property: PROPERTY,
+      },
+      STEP,
+    );
+    // The first entry adds a Zotero field; the second, the reader's own property.
+    expect(entries.slice(0, 2)).toEqual([
+      m.query_view_properties_add({ name: PROPERTY }),
+      m.query_view_properties_add_vault({ name: PROPERTY }),
+    ]);
+    const table = await tableWhen(
+      "the status column",
+      (t) => Object.keys(t.cells).length === 5,
+    );
+    console.log("[walk] status cells", JSON.stringify(table));
+    expect(table.header).toContain(
+      m.query_view_vault_property_label({ name: PROPERTY }),
+    );
+    // OUTLINE-MISMATCH: "Each cell reads No note" holds for the papers with
+    // no literature note. Sandve et al. 2013 has the note from Lesson 1, so
+    // its cell is empty, ready for a value.
+    for (const paper of ["munafo", "wilson", "rougier", "ioannidis"] as const)
+      expect(table.cells[PAPERS[paper].key]).toBe(m.query_view_vault_no_note());
+    expect(table.cells[PAPERS.sandve.key]).toBe("");
+    await walk.capture("step-3");
+    await walk.compose("step-3");
+  });
 
-    it("marks a paper to-read, which creates its literature note", async () => {
-      const [paper, value] = MARKS[0]!;
-      await mark(paper, value);
-      const note = await obRunUntil(
+  it("step 4: select a cell, type to-read, and press Enter; the notice Literature note created. and the cell shows to-read", async () => {
+    const suggested = await mark("wilson", "to-read");
+    expect(suggested).toEqual([]);
+    const note = await obRunUntil(
+      walk.vaultId,
+      ({ app }, { path }) =>
+        app.metadataCache.getCache(path)?.frontmatter ?? null,
+      { path: notePath("wilson") },
+      {
+        what: "the new note's status",
+        ready: (fm) => fm?.[PROPERTY] === "to-read",
+      },
+    );
+    expect(note).toMatchObject({
+      "zotero-key": PAPERS.wilson.key,
+      [PROPERTY]: "to-read",
+    });
+    expect(await readNotices(walk.vaultId)).toContain(m.notice_created_note());
+    // The note is made in the background: the plan stays the active tab.
+    expect(
+      await obRun(
         walk.vaultId,
-        ({ app }, { path }) =>
-          app.metadataCache.getCache(path)?.frontmatter ?? null,
-        { path: notePath(paper) },
-        {
-          what: "the new note's status",
-          ready: (fm) => fm?.[PROPERTY] === value,
-        },
-      );
-      expect(note).toMatchObject({
-        "zotero-key": PAPERS[paper].key,
-        [PROPERTY]: value,
-      });
-      expect(await readNotices(walk.vaultId)).toContain(
-        m.notice_created_note(),
-      );
-      // The note is made in the background: the plan stays the active tab.
-      expect(
-        await obRun(
-          walk.vaultId,
-          ({ app }) => app.workspace.getActiveFile()?.path ?? null,
-        ),
-      ).toBe(PLAN_FILE);
-    });
+        ({ app }) => app.workspace.getActiveFile()?.path ?? null,
+      ),
+    ).toBe(PLAN_FILE);
+    await walk.capture("step-4", { notices: true });
+    await walk.compose("step-4");
+  });
 
-    it("marks the other papers, and leaves Zotero unchanged", async () => {
-      for (const [paper, value] of MARKS.slice(1)) await mark(paper, value);
-      const table = await tableWhen("every mark", (t) =>
-        MARKS.every(([paper, value]) => t.cells[PAPERS[paper].key] === value),
-      );
-      expect(table.cells[PAPERS.rougier.key]).toBe(
-        m.query_view_vault_no_note(),
-      );
-      await obRun(walk.vaultId, () => {
-        (activeDocument.activeElement as HTMLElement | null)?.blur();
-      });
-      await walk.capture("statuses");
-      await walk.compose("statuses");
-      // Marking writes to the notes alone: Zotero changed none of the papers.
-      const after = await walk.zotero.json<Record<string, string>>(
-        `Object.fromEntries(${JSON.stringify(Object.keys(modified))}.map(k=>[k,Zotero.Items.getByLibraryAndKey(1,k).dateModified]))`,
-      );
-      expect(after).toEqual(modified);
+  it("step 5: mark a paper you started reading and a finished one done; the cell suggests the statuses you used", async () => {
+    const started = await mark("sandve", "reading");
+    const finished = await mark("ioannidis", "done");
+    console.log("[walk] suggestions", JSON.stringify({ started, finished }));
+    expect(started).toEqual(["to-read"]);
+    expect(new Set(finished)).toEqual(new Set(["to-read", "reading"]));
+    // The image shows the suggestions in a fourth cell, as the reader sees them.
+    await obRun(
+      walk.vaultId,
+      async ({ app, page }, { planFile, key, property }) => {
+        const view = (
+          app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find(
+              (l) => (l.view as QueryFileView).file?.path === planFile,
+            ) as PlanLeaf
+        ).view;
+        const cell = view.contentEl
+          .querySelector(
+            `[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${property}"]`,
+          )!
+          .closest("td")!;
+        await page.trusted(window).click(cell);
+        await page.until("suggestions", () =>
+          activeDocument.querySelector(
+            ".suggestion-container .suggestion-item",
+          ),
+        );
+      },
+      { planFile: PLAN_FILE, key: PAPERS.munafo.key, property: PROPERTY },
+      STEP,
+    );
+    await walk.capture("step-5");
+    await walk.compose("step-5");
+    await obRun(walk.vaultId, async ({ page }) => {
+      await page.trusted(window).key("Escape");
+      (activeDocument.activeElement as HTMLElement | null)?.blur();
     });
+    const table = await tableWhen(
+      "the marks",
+      (t) => t.cells[PAPERS.ioannidis.key] === "done",
+    );
+    expect(table.cells).toMatchObject({
+      [PAPERS.wilson.key]: "to-read",
+      [PAPERS.sandve.key]: "reading",
+      [PAPERS.ioannidis.key]: "done",
+      [PAPERS.munafo.key]: m.query_view_vault_no_note(),
+    });
+  });
 
-    it("filters the plan to the papers still to read", async () => {
-      const filtered = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { planFile, filter, label }) => {
-          const view = (
-            app.workspace
-              .getLeavesOfType("zotlit-query-file")
-              .find(
-                (l) => (l.view as QueryFileView).file?.path === planFile,
-              ) as PlanLeaf
-          ).view;
-          const el = view.contentEl;
-          page.press(
-            [...el.querySelectorAll("button")].find(
-              (b) => b.getAttribute("aria-label") === filter,
-            ),
-            "Filter",
+  it("step 6: select Filter and choose reading-status (note), is, to-read; only the papers still to read", async () => {
+    const filtered = await obRun(
+      walk.vaultId,
+      async ({ app, page }, { planFile, label, kind, operator, value }) => {
+        const view = (
+          app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find(
+              (l) => (l.view as QueryFileView).file?.path === planFile,
+            ) as PlanLeaf
+        ).view;
+        const el = view.contentEl;
+        const trigger = el.querySelector<HTMLElement>(
+          '[data-query-toolbar="filter"]',
+        )!;
+        const name = trigger.getAttribute("aria-label");
+        const popup = await page.openToolbarPopover(el, "filter");
+        // This view holds one empty condition; the reader sets it, after the All views group.
+        const row = await page.until("condition row", () =>
+          [
+            ...popup.querySelectorAll<HTMLElement>("[data-condition-row]"),
+          ].pop(),
+        );
+        const control = (label: string) =>
+          row.querySelector<HTMLButtonElement | HTMLSelectElement>(
+            `:is(select,button)[aria-label="${CSS.escape(label)}"]`,
           );
-          const popup = await page.until("Filter", () => {
-            const p = [
-              ...document.querySelectorAll("[popover]:popover-open"),
-            ].pop();
-            return p?.querySelector('button[aria-label="Condition type"]') && p;
-          });
-          // This view holds one empty condition; the reader sets it, after the All views group.
-          const type = [
-            ...popup.querySelectorAll<HTMLButtonElement>(
-              'button[aria-label="Condition type"]',
-            ),
-          ].pop();
-          page.press(type, "Condition type");
-          const list = await page.until(
-            "condition types",
-            () =>
-              type!.popoverTargetElement?.matches(":popover-open") &&
-              type!.popoverTargetElement,
-          );
-          const option = await page.until("reading-status option", () =>
-            [...list.querySelectorAll<HTMLElement>("[role=option]")].find((o) =>
-              o.textContent.startsWith(label),
-            ),
-          );
-          page.press(option, "reading-status");
-          await page.until(
-            "condition type set",
-            () => !list.matches(":popover-open"),
-          );
-          const op = await page.until("operator", () => {
-            const s = [
-              ...popup.querySelectorAll<HTMLSelectElement>(
-                'select[aria-label="Operator"]',
-              ),
-            ].pop();
-            return s && [...s.options].some((o) => o.value === "is") && s;
-          });
+        page.press(control(kind), "Condition type");
+        const list = await page.until("condition types", () =>
+          document.querySelector<HTMLElement>("[data-select-popup]"),
+        );
+        const option = await page.until("reading-status option", () =>
+          [...list.querySelectorAll<HTMLElement>("[role=option]")].find((o) =>
+            o.textContent.startsWith(label),
+          ),
+        );
+        page.press(option, "reading-status");
+        await page.until("condition type set", () => !list.isConnected);
+        const op = await page.until("operator", () => control(operator));
+        let operators: string[] = [];
+        if (op instanceof HTMLSelectElement) {
+          operators = [...op.options].map((o) => o.text);
           await page.pick(op, "is", "Operator");
-          const input = [
-            ...popup.querySelectorAll<HTMLInputElement>(
-              'input[aria-label="Value"]',
-            ),
-          ].pop()!;
-          input.focus();
-          (require("@electron/remote") as Remote)
-            .getCurrentWebContents()
-            .insertText("to-read");
-          await page.until(
-            "two rows",
-            () =>
-              el.querySelectorAll('[data-query-table-row="item"]').length === 2,
-            10000,
+        } else {
+          page.press(op, "Operator");
+          const ops = await page.until("operators", () =>
+            document.querySelector<HTMLElement>("[data-select-popup]"),
           );
-          return { text: await app.vault.read(view.file!) };
-        },
-        {
-          planFile: PLAN_FILE,
-          filter: m.query_view_filter(),
-          label: m.query_view_vault_property_label({ name: PROPERTY }),
-        },
-      );
-      expect(filtered.text).toContain(`vault["${PROPERTY}"] == "to-read"`);
-      const table = await tableWhen(
-        "the to-read papers",
-        (t) => t.rows.length === 2,
-      );
-      expect(table.rows.toSorted()).toEqual(
-        [PAPERS.wilson.key, PAPERS.munafo.key].toSorted(),
-      );
-      await walk.capture("filter");
-      await walk.compose("filter");
-      await obRun(walk.vaultId, () => {
-        for (const p of document.querySelectorAll<HTMLElement>(
-          "[popover]:popover-open",
-        ))
-          p.hidePopover();
-        (activeDocument.activeElement as HTMLElement | null)?.blur();
-      });
-    });
-
-    it("shows the status in the note's properties, keeps it on Update, and follows a change there", async () => {
-      const path = notePath("wilson");
-      // The reader opens the note from its link in the Literature note column.
-      const opened = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { planFile, key, path }) => {
-          const view = (
-            app.workspace
-              .getLeavesOfType("zotlit-query-file")
-              .find(
-                (l) => (l.view as QueryFileView).file?.path === planFile,
-              ) as PlanLeaf
-          ).view;
-          const el = view.contentEl;
-          const link = page.press(
-            el.querySelector<HTMLElement>(
-              `[data-query-key="${key}"] [data-query-note] a, [data-query-key="${key}"] a`,
-            ),
-            "note link",
+          operators = [...ops.querySelectorAll("[role=option]")].map(
+            (o) => o.textContent,
           );
-          await page.until(
-            "note open",
-            () =>
-              app.workspace
-                .getLeavesOfType("markdown")
-                .some((l) => (l.view as MarkdownView).file?.path === path),
-            10000,
-          );
-          return {
-            link: link.textContent,
-            tabs: app.workspace.getLeavesOfType("zotlit-query-file").length,
-          };
-        },
-        { planFile: PLAN_FILE, key: PAPERS.wilson.key, path },
-      );
-      expect(opened.link).toBe(PAPERS.wilson.citekey);
-      // The note opens in the plan's tab, in place of the plan.
-      expect(opened.tabs).toBe(0);
-      const shown = await obRunUntil(
-        walk.vaultId,
-        async ({ app }, { path, property }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find((l) => (l.view as MarkdownView).file?.path === path) as
-            | NoteLeaf
-            | undefined;
-          if (!leaf) return null;
-          await app.workspace.revealLeaf(leaf);
-          return (
-            leaf.view.contentEl.querySelector(
-              `.metadata-property[data-property-key="${property}"] .metadata-property-value`,
-            )?.textContent ?? null
-          );
-        },
-        { path, property: PROPERTY },
-        { what: "the note's status", ready: (value) => value === "to-read" },
-      );
-      expect(shown).toBe("to-read");
-      await obRun(
-        walk.vaultId,
-        ({ app }, { path }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find(
-              (l) => (l.view as MarkdownView).file?.path === path,
-            ) as NoteLeaf;
-          const cm = leaf.view.editor.cm;
-          cm.dispatch({ selection: { anchor: cm.state.doc.length } });
-          leaf.view.contentEl.querySelector(".cm-scroller")!.scrollTop = 0;
-        },
-        { path },
-      );
-      await walk.capture("in-note");
-      await walk.compose("in-note");
-      // Update note refreshes the properties from Zotero and keeps the status.
-      const updated = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { path, notice }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find(
-              (l) => (l.view as MarkdownView).file?.path === path,
-            ) as NoteLeaf;
-          app.workspace.setActiveLeaf(leaf, { focus: true });
-          app.commands.executeCommandById("zotlit:update-note");
-          await page.until(
-            "update notice",
-            () => page.scratch.docsWalkNotices!.includes(notice),
-            20000,
-          );
-          return app.metadataCache.getCache(path)!.frontmatter as Record<
-            string,
-            string
-          >;
-        },
-        { path, notice: m.notice_updated_note_no_region() },
-      );
-      expect(updated[PROPERTY]).toBe("to-read");
-      // The reader starts the paper and changes its status in the Properties panel.
-      await obRun(
-        walk.vaultId,
-        async ({ app, page }, { path, property }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find(
-              (l) => (l.view as MarkdownView).file?.path === path,
-            ) as NoteLeaf;
-          const field = leaf.view.contentEl.querySelector<HTMLElement>(
-            `.metadata-property[data-property-key="${property}"] .metadata-input-longtext`,
-          )!;
-          const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-          await wait(1000);
-          await page.trusted(window).click(field);
-          await page.until(
-            "field focused",
-            () => activeDocument.activeElement === field,
-          );
-          await wait(300);
-          document.execCommand("selectAll");
-          (require("@electron/remote") as Remote)
-            .getCurrentWebContents()
-            .insertText("reading");
-          await wait(300);
-          await page.trusted(window).key("Enter");
-          return field.textContent;
-        },
-        { path, property: PROPERTY },
-      );
-      await obRunUntil(
-        walk.vaultId,
-        ({ app }, { path, property }) =>
-          (app.metadataCache.getCache(path)?.frontmatter?.[property] ??
-            null) as string | null,
-        { path, property: PROPERTY },
-        {
-          what: "the status in the note",
-          ready: (value) => value === "reading",
-        },
-      );
-      // The back arrow returns to the plan, which follows: the paper leaves the to-read list.
-      await obRun(
-        walk.vaultId,
-        async ({ app, page }, { path }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find(
-              (l) => (l.view as MarkdownView).file?.path === path,
-            ) as NoteLeaf;
-          await new Promise((r) => setTimeout(r, 1000));
           page.press(
-            leaf.view.containerEl.querySelector<HTMLElement>(
-              ".view-header-nav-buttons button",
-            ),
-            "back arrow",
+            ops.querySelector<HTMLElement>('[role=option][data-value="is"]'),
+            "is",
           );
-          await page.until(
-            "back to the plan",
-            () =>
-              app.workspace.getLeavesOfType("zotlit-query-file").length === 1,
-            10000,
-          );
-        },
-        { path },
-      );
-      const table = await tableWhen(
-        "the plan after the change",
-        (t) => t.rows.length === 1,
-      );
-      expect(table.rows).toEqual([PAPERS.munafo.key]);
-    });
-
-    /** The statuses marked so far. */
-    const used = new Set<string>();
-
-    /** Mark `paper` with `value` in the plan's status cell, as a reader types it. */
-    async function mark(paper: keyof typeof PAPERS, value: string) {
-      const key = PAPERS[paper].key;
-      const suggested = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { planFile, key, property, value }) => {
-          const view = (
-            app.workspace
-              .getLeavesOfType("zotlit-query-file")
-              .find(
-                (l) => (l.view as QueryFileView).file?.path === planFile,
-              ) as PlanLeaf
-          ).view;
-          const el = view.contentEl;
-          await view.query.settled;
-          const cell = el
-            .querySelector(
-              `[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${property}"]`,
-            )!
-            .closest("td")!;
-          cell.scrollIntoView({
-            block: "center",
-            inline: "nearest",
-            behavior: "instant",
-          });
-          await page.trusted(window).click(cell);
-          await page.until("status field", () =>
-            activeDocument.activeElement?.matches("[data-query-vault-input]"),
-          );
-          await new Promise((r) => setTimeout(r, 300));
-          const suggested = [
-            ...activeDocument.querySelectorAll(
-              ".suggestion-container .suggestion-item",
-            ),
-          ].map((i) => i.textContent);
-          (require("@electron/remote") as Remote)
-            .getCurrentWebContents()
-            .insertText(value);
-          await new Promise((r) => setTimeout(r, 300));
-          await page.trusted(window).key("Enter");
-          return suggested;
-        },
-        { planFile: PLAN_FILE, key, property: PROPERTY, value },
-      );
-      // The cell suggests the statuses the notes already hold.
-      expect(new Set(suggested)).toEqual(new Set(used));
-      used.add(value);
-      await tableWhen(
-        `${paper} marked ${value}`,
-        (t) => t.cells[key] === value,
-      );
-    }
-  },
-);
+          await page.until("operator set", () => !ops.isConnected);
+        }
+        const input = await page.until("value", () =>
+          page.labelledInput(row, value),
+        );
+        input.focus();
+        (require("@electron/remote") as Remote)
+          .getCurrentWebContents()
+          .insertText("to-read");
+        await page.until(
+          "one row",
+          () =>
+            el.querySelectorAll('[data-query-table-row="item"]').length === 1,
+          10000,
+        );
+        return { name, operators, text: await app.vault.read(view.file!) };
+      },
+      {
+        planFile: PLAN_FILE,
+        label: m.query_view_vault_property_label({ name: PROPERTY }),
+        kind: m.workbench_match_condition_kind(),
+        operator: m.workbench_filter_operator(),
+        value: m.workbench_filter_value(),
+      },
+      STEP,
+    );
+    console.log("[walk] filter", JSON.stringify(filtered));
+    expect(filtered.name).toBe(m.query_view_filter());
+    expect(filtered.text).toContain(`vault["${PROPERTY}"] == "to-read"`);
+    const table = await tableWhen(
+      "the to-read papers",
+      (t) => t.rows.length === 1,
+    );
+    expect(table.rows).toEqual([PAPERS.wilson.key]);
+    await walk.capture("step-6");
+    await walk.compose("step-6");
+  });
+});

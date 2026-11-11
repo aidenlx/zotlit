@@ -1,16 +1,16 @@
-// The walk of the lesson apps/docs/content/docs/cite-and-export/
-// export-to-word-with-a-bibliography.mdx: a researcher has a thesis chapter
-// with citations and sends it to a supervisor as a Word document, in the
-// supervisor's citation style, with a bibliography. Each `it` is one step of
-// the page, in the page's order, and asserts what the page says the reader
+// The walk of /learn Lesson 4, "Export your draft to Word with a reference
+// list": a researcher sends `Chapter 3 - Presenting the results`, which cites
+// three papers after Lesson 3, to a supervisor as a Word document in APA
+// style, with a References list. Each `it` is one step of the lesson, in the
+// lesson's order, named after it, and asserts what the lesson says the reader
 // sees. Run it with `pnpm --filter @zotlit/e2e docs-walk`; see AGENTS.md.
 
-import { clearNotices, cli, obRun } from "@e2e/obsidian-cli.ts";
+import { obRun } from "@e2e/obsidian-cli.ts";
 import type { PageApp } from "@e2e/page-host.ts";
 import { isObsidianReachable } from "@e2e/vault-script.ts";
 import { execFile } from "node:child_process";
-import { mkdir, rename, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, rename, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type {
   FileSystemAdapter,
@@ -22,7 +22,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { captureRequested, openDocsWalk, watchNotices } from "./docs-walk.ts";
+import {
+  captureRequested,
+  openDocsWalk,
+  readNotices,
+  watchNotices,
+} from "./docs-walk.ts";
 import type { DocsWalk } from "./docs-walk.ts";
 
 const execFileAsync = promisify(execFile);
@@ -34,21 +39,12 @@ const SLUG = "export-to-word-with-a-bibliography";
 /** The thesis chapter of the docs Vault Case; it already cites two papers. */
 const DRAFT = "Thesis/Chapter 3 - Presenting the results.md";
 const EXPORTED = DRAFT.replace(/\.md$/, ".docx");
-/** The papers the reader cites through a literature note link. */
-const LINKED = [
-  { citekey: "sandve2013", key: "DCSNDART" },
-  { citekey: "wilson2014", key: "DCWLSART" },
-];
-/**
- * The section the reader adds: a literature note link with a page, and a
- * literature note link written inside another citation.
- */
-const SECTION =
-  "## 3.3 Keeping the analysis reproducible\n\nEvery figure in this chapter comes from a script kept under version control [[sandve2013#cite:locator=2]]. The analysis plan was registered before the data came in [@munafo2017, building on [[wilson2014|Wilson and colleagues]]].\n";
+const EXPORTED_NAME = "Chapter 3 - Presenting the results.docx";
+/** The section Lesson 3 added, with its citation and page. */
+const LESSON_3 =
+  "## 3.3 Keeping each figure reproducible\n\nEvery figure in this chapter comes from a script that records how it ran [@sandve2013, p. 2].\n\n";
 /** The chapter's private notes, which the reader takes out before sending it. */
 const NOTES_TO_SELF = "## Notes to self";
-/** A citation key with a typo: the likely failure. */
-const TYPO = "ioannidis2015";
 const APA = "http://www.zotero.org/styles/apa";
 const APA_TITLE = "APA Style 7th edition";
 const VAULT_STYLE = "Default (Chicago author-date)";
@@ -57,15 +53,12 @@ const IN_TEXT = [
   "(Rougier et al., 2014, p. 1)",
   "(Ioannidis, 2005)",
   "(Sandve et al., 2013, p. 2)",
-  "(Munafò et al., 2017, building on Wilson and colleagues)",
 ];
-/** The first words of each bibliography entry, in the order APA sorts them. */
+/** The first words of each reference, in the order APA sorts them. */
 const ENTRIES = [
   "Ioannidis, J. P. A. (2005). Why Most Published Research Findings Are False.",
-  "Munafò, M. R.",
   "Rougier, N. P., Droettboom, M., & Bourne, P. E. (2014). Ten Simple Rules for Better Figures.",
   "Sandve, G. K., Nekrutenko, A., Taylor, J., & Hovig, E. (2013). Ten Simple Rules for Reproducible Computational Research.",
-  "Wilson, G., Aruliah, D. A.",
 ];
 
 type DraftLeaf = WorkspaceLeaf & { view: MarkdownView };
@@ -84,8 +77,10 @@ type ExplorerLeaf = WorkspaceLeaf & {
 };
 /** Obsidian's "Show all file types" setting, by its config key. */
 type ConfigVault = PageApp["vault"] & {
-  setConfig(key: "showUnsupportedFiles", value: boolean): void;
+  getConfig(key: "showUnsupportedFiles"): boolean;
 };
+
+const STEP = { timeoutMs: 60000 };
 
 /** The exported document as plain text, read back with the Pandoc CLI. */
 async function plainText(file: string): Promise<string> {
@@ -98,25 +93,133 @@ async function plainText(file: string): Promise<string> {
   return stdout;
 }
 
+/** The export dialog's rows: each name, description and chosen option. */
+function dialogRows(
+  vaultId: string,
+): Promise<{ name: string; desc: string; value: string | null }[]> {
+  return obRun(
+    vaultId,
+    (_, { title }) => {
+      const el = [...document.querySelectorAll(".modal")].find(
+        (d) => d.querySelector(".modal-title")?.textContent === title,
+      )!;
+      return [...el.querySelectorAll(".setting-item")].map((s) => ({
+        name: s.querySelector(".setting-item-name")?.textContent ?? "",
+        desc: s.querySelector(".setting-item-description")?.textContent ?? "",
+        value:
+          s.querySelector<HTMLSelectElement>("select:not(.is-measuring)")
+            ?.selectedOptions[0]?.textContent ?? null,
+      }));
+    },
+    { title: m.pandoc_export_title() },
+  );
+}
+
 describe.skipIf(!reachable)(
-  "Export a cited note to Word with a bibliography",
+  "Lesson 4: Export your draft to Word with a reference list",
   () => {
     let walk: DocsWalk;
     let vaultPath: string;
 
-    /** Opens the export dialog on the draft and answers its rows. */
-    function openDialog(): Promise<{ name: string; desc: string }[]> {
-      return obRun(
+    beforeAll(async () => {
+      walk = await openDocsWalk({
+        slug: SLUG,
+        collection: `learn/${SLUG}`,
+        vaultCase: "docs",
+      });
+      vaultPath = await obRun(walk.vaultId, ({ app }) =>
+        (app.vault.adapter as FileSystemAdapter).getBasePath(),
+      );
+      // The draft as Lesson 3 left it: a third section that cites Sandve et
+      // al. 2013 with its page.
+      await obRun(
         walk.vaultId,
-        async ({ app, page }, { draft, title }) => {
+        async ({ app }, { draft, section, notes }) => {
+          const file = app.vault.getFileByPath(draft)!;
+          await app.vault.process(file, (text) =>
+            text.replace(notes, `${section}${notes}`),
+          );
+          app.workspace.leftSplit.collapse();
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(file);
+          app.workspace.iterateRootLeaves((l) => {
+            if (l !== leaf) l.detach();
+          });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        { draft: DRAFT, section: LESSON_3, notes: NOTES_TO_SELF },
+        STEP,
+      );
+      await watchNotices(walk.vaultId);
+    });
+
+    afterAll(async () => {
+      await walk?.[Symbol.asyncDispose]();
+    });
+
+    it("step 1: remove lines meant only for you, such as a to-do list; a draft you can send", async () => {
+      const body = await obRun(
+        walk.vaultId,
+        async ({ app }, { draft, notes }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("markdown")
+            .find(
+              (l) => (l.view as MarkdownView).file?.path === draft,
+            ) as DraftLeaf;
+          const cm = leaf.view.editor.cm;
+          const doc = cm.state.doc.toString();
+          const at = doc.indexOf(notes);
+          cm.dispatch({
+            changes: { from: at, to: doc.length, insert: "" },
+            userEvent: "delete",
+          });
+          await leaf.view.save();
+          leaf.view.editor.setCursor({ line: 0, ch: 0 });
+          return app.vault.read(leaf.view.file!);
+        },
+        { draft: DRAFT, notes: `\n${NOTES_TO_SELF}` },
+      );
+      expect(body).not.toContain(NOTES_TO_SELF);
+      expect(body).not.toContain("- Redraw Figure 3.2");
+      expect(body).toContain("[@rougier2014, p. 1]");
+      expect(body).toContain("[@ioannidis2005]");
+      expect(body).toContain("[@sandve2013, p. 2]");
+      await walk.capture("step-1");
+      await walk.compose("step-1");
+    });
+
+    it("step 2: open the command palette and run Export note with citations; a dialog, and Format is Word document", async () => {
+      const ran = await obRun(
+        walk.vaultId,
+        async ({ app, page }, { draft, command, title }) => {
           const leaf = app.workspace
             .getLeavesOfType("markdown")
             .find(
               (l) => (l.view as MarkdownView).file?.path === draft,
             ) as DraftLeaf;
           app.workspace.setActiveLeaf(leaf, { focus: true });
-          app.commands.executeCommandById("zotlit:pandoc-export");
-          const el = await page.until(
+          app.commands.executeCommandById("command-palette:open");
+          const input = await page.until(
+            "command palette",
+            () =>
+              activeDocument.querySelector<HTMLInputElement>(".prompt-input"),
+            5000,
+          );
+          input.focus();
+          document.execCommand("insertText", false, command);
+          const item = await page.until(
+            "the command",
+            () =>
+              [
+                ...activeDocument.querySelectorAll<HTMLElement>(
+                  ".prompt .suggestion-item",
+                ),
+              ].find((i) => i.innerText.includes(command)),
+            5000,
+          );
+          const shown = item.innerText.replaceAll(/\s+/g, " ").trim();
+          await page.trusted(window).key("Enter");
+          await page.until(
             "export dialog",
             () =>
               [...document.querySelectorAll(".modal")].find(
@@ -124,22 +227,67 @@ describe.skipIf(!reachable)(
               ),
             10000,
           );
-          return [...el.querySelectorAll(".setting-item")].map((s) => ({
-            name: s.querySelector(".setting-item-name")?.textContent ?? "",
-            desc:
-              s.querySelector(".setting-item-description")?.textContent ?? "",
-          }));
+          return shown;
         },
-        { draft: DRAFT, title: m.pandoc_export_title() },
+        {
+          draft: DRAFT,
+          command: m.command_pandoc_export_name(),
+          title: m.pandoc_export_title(),
+        },
+        STEP,
       );
-    }
+      expect(ran).toContain(m.command_pandoc_export_name());
+      const rows = await dialogRows(walk.vaultId);
+      console.log("[walk] dialog", JSON.stringify({ ran, rows }));
+      expect(rows[0]).toEqual({
+        name: m.pandoc_export_format_name(),
+        desc: m.pandoc_export_format_desc(),
+        value: m.pandoc_export_format_docx(),
+      });
+      expect(rows[1]).toMatchObject({
+        name: m.pandoc_export_style_name(),
+        desc: m.pandoc_export_style_from_vault(),
+        value: VAULT_STYLE,
+      });
+      await walk.capture("step-2");
+      await walk.compose("step-2");
+    });
 
-    /** Presses Export and answers the notices once the export has ended. */
-    async function pressExport(): Promise<string[]> {
-      // A notice still on screen from an earlier export would answer first.
-      await clearNotices(walk.vaultId);
-      await watchNotices(walk.vaultId);
-      return obRun(
+    it("step 3: choose the citation style you need, such as APA 7th edition; Only this export uses this style.", async () => {
+      await obRun(
+        walk.vaultId,
+        async ({ page }, { title, apa }) => {
+          const el = [...document.querySelectorAll(".modal")].find(
+            (d) => d.querySelector(".modal-title")?.textContent === title,
+          )!;
+          const style = el
+            .querySelectorAll(".setting-item")[1]!
+            .querySelector<HTMLSelectElement>("select:not(.is-measuring)")!;
+          await page.until(
+            "installed styles",
+            () => style.querySelector(`option[value="${apa}"]`),
+            10000,
+          );
+          await page.pick(style, apa, "Citation style");
+        },
+        { title: m.pandoc_export_title(), apa: APA },
+        STEP,
+      );
+      const rows = await dialogRows(walk.vaultId);
+      expect(rows[1]).toEqual({
+        name: m.pandoc_export_style_name(),
+        desc: m.pandoc_export_style_changed({ style: VAULT_STYLE }),
+        value: APA_TITLE,
+      });
+      expect(
+        rows[1]!.desc.startsWith("Only this export uses this style."),
+      ).toBe(true);
+      await walk.capture("step-3");
+      await walk.compose("step-3");
+    });
+
+    it("step 4: select Export; a notice with the file name and the style", async () => {
+      const notices = await obRun(
         walk.vaultId,
         async ({ page }, { title, done, failed }) => {
           const dialog = [...document.querySelectorAll(".modal")].find(
@@ -168,340 +316,66 @@ describe.skipIf(!reachable)(
         },
         { timeoutMs: 90000 },
       );
-    }
-
-    /** The draft's text on disk. */
-    function readDraft(): Promise<string> {
-      return obRun(
-        walk.vaultId,
-        ({ app }, { draft }) => app.vault.read(app.vault.getFileByPath(draft)!),
-        { draft: DRAFT },
-      );
-    }
-
-    /** Replaces the draft's text, as the reader's typing would. */
-    function editDraft(from: string, to: string): Promise<string> {
-      return obRun(
-        walk.vaultId,
-        async ({ app }, { draft, from, to }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find(
-              (l) => (l.view as MarkdownView).file?.path === draft,
-            ) as DraftLeaf;
-          const cm = leaf.view.editor.cm;
-          const doc = cm.state.doc.toString();
-          const at = doc.indexOf(from);
-          if (at < 0) throw new Error(`not in the draft: ${from}`);
-          cm.dispatch({
-            changes: { from: at, to: at + from.length, insert: to },
-            userEvent: "input.type",
-          });
-          await leaf.view.save();
-          return app.vault.read(leaf.view.file!);
-        },
-        { draft: DRAFT, from, to },
-      );
-    }
-
-    beforeAll(async () => {
-      walk = await openDocsWalk({
-        slug: SLUG,
-        collection: `cite-and-export/${SLUG}`,
-        vaultCase: "docs",
-      });
-      vaultPath = await obRun(walk.vaultId, ({ app }) =>
-        (app.vault.adapter as FileSystemAdapter).getBasePath(),
-      );
-      await watchNotices(walk.vaultId);
-      // The reader made literature notes for the papers they link to, as the
-      // lesson "Create a literature note" teaches.
-      for (const { citekey, key } of LINKED) {
-        const created = await obRun(
-          walk.vaultId,
-          async ({ zotlit }, { key }) => {
-            const services = zotlit.services;
-            const hits = await services.itemLookup.search("", { limit: 100 });
-            const hit = hits.find((h) => h.item.key === key);
-            if (!hit) throw new Error(`no item ${key}`);
-            const result = await services.noteFeature.createNote(hit.item, {});
-            return result.outcome === "created" ? result.file.path : "refused";
-          },
-          { key },
-        );
-        expect(created).toBe(`literatures/${citekey}.md`);
-      }
-      await obRun(
-        walk.vaultId,
-        async ({ app }, { draft }) => {
-          const leaf = app.workspace.getLeaf("tab");
-          await leaf.openFile(app.vault.getFileByPath(draft)!);
-          app.workspace.setActiveLeaf(leaf, { focus: true });
-        },
-        { draft: DRAFT },
-      );
-    });
-
-    afterAll(async () => {
-      await walk?.[Symbol.asyncDispose]();
-    });
-
-    it("finds the Pandoc engine installed on the Citations settings page", async () => {
-      // The engine is installed once per computer, so a reader who has seen
-      // formatted citations in Obsidian already has it. Never uninstalled
-      // here: it would leave this computer's other vaults without it.
-      const version = await obRun(walk.vaultId, ({ zotlit }) => {
-        const h = zotlit.services.pandocEngine;
-        const s = h.runSync(h.binary.getStatus);
-        return s.kind === "installed" ? s.version : "not installed";
-      });
-      const row = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { citationsName, engineName, expected }) => {
-          app.vault.setConfig("settingsPopoutWindow", false);
-          app.setting.open();
-          app.setting.openTabById("zotlit");
-          const named = (name: string) =>
-            [
-              ...app.setting.modalEl.querySelectorAll<HTMLElement>(
-                ".setting-item",
-              ),
-            ].find(
-              (s) =>
-                s.querySelector(".setting-item-name")?.textContent === name,
-            );
-          const citations = await page.until(
-            "Citations row",
-            () => named(citationsName),
-            5000,
-          ); // The page list sits below the window's fold; the reader scrolls to it.
-          citations.scrollIntoView({ block: "center", behavior: "instant" });
-          await new Promise((r) => requestAnimationFrame(r));
-          page.press(citations, "Citations");
-          const row = await page.until(
-            "engine row",
-            () => named(engineName),
-            5000,
-          );
-          row.scrollIntoView({ block: "center", behavior: "instant" });
-          await page.stands(row, "engine row");
-          // The row's description paints after the row itself.
-          const desc = () =>
-            row.querySelector(".setting-item-description")?.textContent ?? "";
-          await page
-            .until("engine status", () => desc().includes(expected), 5000)
-            .catch(() => undefined);
-          return desc();
-        },
-        {
-          citationsName: m.settings_page_citations(),
-          engineName: m.settings_citation_engine_name(),
-          expected: m.settings_citation_engine_status_installed({ version }),
-        },
-      );
-      expect(row).toContain(
-        m.settings_citation_engine_status_installed({ version }),
-      );
-      await walk.capture("engine");
-      await walk.compose("engine");
-      await obRun(walk.vaultId, ({ app }) => {
-        app.setting.close();
-      });
-    });
-
-    it("finishes the draft: one more cited section, and no notes to self", async () => {
-      await editDraft(NOTES_TO_SELF, `${SECTION}\n${NOTES_TO_SELF}`);
-      // Everything in the note goes into the document, so the reader takes
-      // out the notes meant for themselves before sending it.
-      const body = await obRun(
-        walk.vaultId,
-        async ({ app }, { draft, notes }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find(
-              (l) => (l.view as MarkdownView).file?.path === draft,
-            ) as DraftLeaf;
-          const cm = leaf.view.editor.cm;
-          const doc = cm.state.doc.toString();
-          const at = doc.indexOf(notes);
-          cm.dispatch({
-            changes: { from: at, to: doc.length, insert: "" },
-            userEvent: "delete",
-          });
-          await leaf.view.save();
-          return app.vault.read(leaf.view.file!);
-        },
-        { draft: DRAFT, notes: `\n${NOTES_TO_SELF}` },
-      );
-      expect(body).toContain(SECTION.trimEnd());
-      expect(body).not.toContain(NOTES_TO_SELF);
-      expect(body).toContain("[@rougier2014, p. 1]");
-      expect(body).toContain("[@ioannidis2005]");
-    });
-
-    it("opens the export dialog on the vault style and picks the supervisor's style", async () => {
-      const rows = await openDialog();
-      expect(rows.slice(0, 3)).toEqual([
-        {
-          name: m.pandoc_export_format_name(),
-          desc: m.pandoc_export_format_desc(),
-        },
-        {
-          name: m.pandoc_export_style_name(),
-          desc: m.pandoc_export_style_from_vault(),
-        },
-        {
-          name: m.pandoc_export_destination_name(),
-          desc: m.pandoc_export_destination_in_vault({
-            path: EXPORTED,
-            vault: await obRun(walk.vaultId, ({ app }) => app.vault.getName()),
-          }),
-        },
-      ]);
-      const picked = await obRun(
-        walk.vaultId,
-        async ({ page }, { title, apa }) => {
-          const el = [...document.querySelectorAll(".modal")].find(
-            (d) => d.querySelector(".modal-title")?.textContent === title,
-          )!;
-          const [format, style] = [...el.querySelectorAll(".setting-item")].map(
-            (s) =>
-              s.querySelector<HTMLSelectElement>("select:not(.is-measuring)"),
-          );
-          const starts = style!.selectedOptions[0]!.textContent;
-          await page.until(
-            "installed styles",
-            () => style!.querySelector(`option[value="${apa}"]`),
-            10000,
-          );
-          await page.pick(style, apa, "Citation style");
-          return {
-            format: format!.selectedOptions[0]!.textContent,
-            style: style!.selectedOptions[0]!.textContent,
-            starts,
-            desc: el
-              .querySelectorAll(".setting-item")[1]!
-              .querySelector(".setting-item-description")!.textContent,
-          };
-        },
-        { title: m.pandoc_export_title(), apa: APA },
-      );
-      expect(picked).toEqual({
-        format: m.pandoc_export_format_docx(),
-        starts: VAULT_STYLE,
-        style: APA_TITLE,
-        desc: m.pandoc_export_style_changed({ style: VAULT_STYLE }),
-      });
-      await walk.capture("export-dialog");
-      await walk.compose("export-dialog");
-    });
-
-    it("saves a Word document beside the note, with formatted citations and a bibliography", async () => {
-      const before = await readDraft();
-      const notices = await pressExport();
       expect(notices).toContain(
-        m.notice_pandoc_export_done({
-          file: "Chapter 3 - Presenting the results.docx",
-          style: APA_TITLE,
-        }),
+        m.notice_pandoc_export_done({ file: EXPORTED_NAME, style: APA_TITLE }),
       );
+      expect((await stat(join(vaultPath, EXPORTED))).size).toBeGreaterThan(0);
+      expect(await readNotices(walk.vaultId)).toContain(
+        m.notice_pandoc_export_done({ file: EXPORTED_NAME, style: APA_TITLE }),
+      );
+      await walk.capture("step-4", { notices: true });
+      await walk.compose("step-4");
+    });
+
+    it("step 5: open the Word file beside your note; formatted citations and a References list at the end", async () => {
       const docx = join(vaultPath, EXPORTED);
-      expect((await stat(docx)).size).toBeGreaterThan(0);
       const text = await plainText(docx);
       for (const citation of IN_TEXT) expect(text).toContain(citation);
-      // The bibliography closes the document under its own heading, one entry
-      // per work, the nested Wilson et al. 2014 among them.
-      const references = text.slice(text.indexOf("\nReferences\n"));
-      expect(text.indexOf("\nReferences\n")).toBeGreaterThan(
-        text.indexOf(IN_TEXT.at(-1)!),
-      );
-      const entries = references
+      // The References list closes the document under its own heading.
+      const at = text.indexOf("\nReferences\n");
+      expect(at).toBeGreaterThan(text.indexOf(IN_TEXT.at(-1)!));
+      const entries = text
+        .slice(at)
         .split("\n")
         .slice(2)
         .filter((line) => line.trim());
       expect(entries).toHaveLength(ENTRIES.length);
       ENTRIES.forEach((entry, i) => expect(entries[i]).toContain(entry));
-      // The Word document sits beside the note. Obsidian's file explorer
-      // lists it once "Show all file types" is on.
+      // Fact f: what Obsidian's file explorer shows for the Word file, as
+      // installed: Show all file types is off by default.
       const explorer = await obRun(
         walk.vaultId,
-        async ({ app, page }, { exported }) => {
+        async ({ app }, { exported }) => {
+          app.workspace.leftSplit.expand();
           const ex = app.workspace.getLeavesOfType(
             "file-explorer",
           )[0] as ExplorerLeaf;
           const folder = ex.view.fileItems["Thesis"]!;
           if (folder.collapsed) folder.setCollapsed!(false);
-          const row = () => ex.view.fileItems[exported]!.selfEl;
-          const tall = () => row().getBoundingClientRect().height > 0;
           await new Promise((r) => setTimeout(r, 300));
-          const hidden = !tall();
-          (app.vault as ConfigVault).setConfig("showUnsupportedFiles", true);
-          await page.until("docx row", tall, 5000);
-          row().dispatchEvent(
-            new MouseEvent("contextmenu", {
-              bubbles: true,
-              clientX: 200,
-              clientY: 280,
-            }),
-          );
-          const menu = await page.until(
-            "file menu",
-            () => document.querySelector(".menu"),
-            3000,
-          );
-          const items = [...menu.querySelectorAll(".menu-item-title")].map(
-            (n) => n.textContent,
-          );
-          document.body.dispatchEvent(
-            new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-          );
-          menu.remove();
+          const row = ex.view.fileItems[exported]?.selfEl;
           return {
-            hidden,
-            shown: tall(),
-            ext: row().querySelector(".nav-file-tag")?.textContent ?? null,
-            menu: items,
+            showAll: (app.vault as ConfigVault).getConfig(
+              "showUnsupportedFiles",
+            ),
+            listed: !!row,
+            shown: (row?.getBoundingClientRect().height ?? 0) > 0,
+            inVault: !!app.vault.getFileByPath(exported),
           };
         },
         { exported: EXPORTED },
       );
-      expect(explorer).toMatchObject({
-        hidden: true,
-        shown: true,
-        ext: "docx",
+      console.log("[walk] explorer", JSON.stringify(explorer));
+      expect(explorer).toEqual({
+        showAll: false,
+        listed: explorer.listed,
+        shown: false,
+        inVault: true,
       });
-      expect(explorer.menu).toEqual(
-        expect.arrayContaining(["Open in default app", "Reveal in Finder"]),
-      );
-      // The setting's name, as Obsidian's Files and links page shows it.
-      const detect = await obRun(walk.vaultId, async ({ app, page }) => {
-        app.setting.open();
-        app.setting.openTabById("file");
-        const names = await page.until(
-          "Files and links rows",
-          () => {
-            const n = [
-              ...app.setting.modalEl.querySelectorAll(".setting-item-name"),
-            ].map((n) => n.textContent);
-            return n.length ? n : null;
-          },
-          5000,
-        );
-        app.setting.close();
-        return (
-          names.find((n) => n === "Show all file types") ??
-          JSON.stringify(names)
-        );
-      });
-      expect(detect).toBe("Show all file types");
-      await walk.capture("explorer");
-      await walk.compose("explorer");
-      // The note keeps its citations as written.
-      expect(await readDraft()).toBe(before);
-
+      // OUTLINE-MISMATCH: Obsidian opens no Word file; the reader opens it
+      // in Word from Finder or Explorer. The image is the document's first
+      // page as macOS Quick Look draws it.
       if (captureRequested()) {
-        // The document as the supervisor sees it: macOS Quick Look draws its
-        // first page.
         const captures = join(root, ".scratch", "docs-walks", SLUG);
         await mkdir(captures, { recursive: true });
         await execFileAsync("qlmanage", [
@@ -513,129 +387,11 @@ describe.skipIf(!reachable)(
           docx,
         ]);
         await rename(
-          join(captures, "Chapter 3 - Presenting the results.docx.png"),
-          join(captures, "document.png"),
+          join(captures, `${EXPORTED_NAME}.png`),
+          join(captures, "step-5-document.png"),
         );
-        await walk.compose("exported-document");
+        await walk.compose("step-5");
       }
-    });
-
-    it("cites through a plain literature note link", async () => {
-      // A plain link to a literature note exports as a citation, though
-      // Wikilink citations is off.
-      const extra =
-        " A checklist such as [[sandve2013]] keeps the habit honest.";
-      const end = "building on [[wilson2014|Wilson and colleagues]]].";
-      await editDraft(end, end + extra);
-      await openDialog();
-      expect(await pressExport()).toContain(
-        m.notice_pandoc_export_done({
-          file: "Chapter 3 - Presenting the results.docx",
-          style: VAULT_STYLE,
-        }),
-      );
-      const text = await plainText(join(vaultPath, EXPORTED));
-      expect(text).toContain("A checklist such as (Sandve et al. 2013) keeps");
-      await editDraft(end + extra, end);
-    });
-
-    it("stops with the misspelled key named, and exports once the key is fixed", async () => {
-      await editDraft("[@ioannidis2005]", `[@${TYPO}]`);
-      await openDialog();
-      const notices = await pressExport();
-      const failed = notices.find((t) =>
-        t.startsWith(m.notice_pandoc_export_failed()),
-      );
-      expect(failed).toBe(
-        m.notice_pandoc_export_failed() +
-          m.pandoc_export_error_citekeys_unknown() +
-          TYPO,
-      );
-      await editDraft(`[@${TYPO}]`, "[@ioannidis2005]");
-      await openDialog();
-      expect(await pressExport()).toContain(
-        m.notice_pandoc_export_done({
-          file: "Chapter 3 - Presenting the results.docx",
-          style: VAULT_STYLE,
-        }),
-      );
-    });
-
-    it("exports the same chapter with native Pandoc", async () => {
-      // The reader saves the integration pair to a folder of their own; the
-      // Save button's folder dialog is the operating system's, so the walk
-      // takes the same pair from the CLI command the button reads.
-      const workflow = join(root, ".scratch", "docs-walks", SLUG, "workflow");
-      await mkdir(workflow, { recursive: true });
-      const pair = JSON.parse(
-        await cli([`vault=${walk.vaultId}`, "zotlit:pandoc-files"]),
-      ) as { files: Record<string, string> };
-      for (const [name, content] of Object.entries(pair.files))
-        await writeFile(join(workflow, name), content);
-      expect(Object.keys(pair.files).toSorted()).toEqual([
-        "zotlit-cite.lua",
-        "zotlit.yaml",
-      ]);
-      // The reader exports the library from Zotero as Better CSL JSON; the
-      // walk asks Better BibTeX for the same export over its JSON-RPC.
-      const port = await obRun(walk.vaultId, ({ zotlit }) =>
-        String(
-          zotlit.services.bridge.runSync(zotlit.services.zoteroPref.current)
-            .httpPort,
-        ),
-      );
-      const rpc = (await (
-        await fetch(`http://127.0.0.1:${port}/better-bibtex/json-rpc`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "item.export",
-            params: [
-              [
-                "rougier2014",
-                "ioannidis2005",
-                "sandve2013",
-                "wilson2014",
-                "munafo2017",
-              ],
-              "Better CSL JSON",
-            ],
-            id: 1,
-          }),
-        })
-      ).json()) as { result?: unknown; error?: unknown };
-      expect(typeof rpc.result).toBe("string");
-      const bibliography = join(workflow, "references.json");
-      await writeFile(bibliography, rpc.result as string);
-      const output = join(workflow, "Chapter 3 - native.docx");
-      const run = await execFileAsync(
-        "pandoc",
-        [
-          join(vaultPath, DRAFT),
-          "--defaults",
-          join(workflow, "zotlit.yaml"),
-          "--bibliography",
-          bibliography,
-          "--fail-if-warnings",
-          "--output",
-          output,
-        ],
-        { cwd: dirname(output) },
-      );
-      // The one line ZotLit prints names the style and where it comes from;
-      // the note sets none, so the vault's Default applies.
-      expect(run.stderr.trim()).toBe(
-        "ZotLit: citations use the Pandoc default style, Chicago author-date (from your vault settings).",
-      );
-      const text = await plainText(output);
-      expect(text).toContain("(Sandve et al. 2013, 2)");
-      expect(text).toContain(
-        "(Munafò et al. 2017, building on Wilson and colleagues)",
-      );
-      expect(text).toContain(
-        "Wilson, Greg, D. A. Aruliah, C. Titus Brown, et al. 2014.",
-      );
     });
   },
 );

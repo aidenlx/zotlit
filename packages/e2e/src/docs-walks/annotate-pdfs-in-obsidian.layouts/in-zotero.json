@@ -1,9 +1,0 @@
-{
-  "margin": 0.1,
-  "layers": [
-    {
-      "src": "in-zotero.png",
-      "crop": { "left": 0, "top": 0, "width": 2880, "height": 1748 }
-    }
-  ]
-}

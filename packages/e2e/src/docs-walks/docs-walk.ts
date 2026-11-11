@@ -80,20 +80,23 @@ export interface DocsWalk extends AsyncDisposable {
   zotero: ZoteroRdp;
   /**
    * Save the Obsidian window as the layer `layer`, without the notices on
-   * screen. Does nothing unless the run captures.
+   * screen unless `notices` keeps them, for a step whose check is a notice.
+   * Does nothing unless the run captures.
    */
-  capture(layer: string): Promise<void>;
+  capture(layer: string, options?: { notices?: boolean }): Promise<void>;
   /**
    * Compose the image `name` into the docs. The layout
    * `<slug>.layouts/<name>.json` beside the walk places the layers by name
    * (`"src": "<layer>.png"`); without one, the layer `name` becomes one
-   * centred window. Does nothing unless the run captures.
+   * window without traffic lights, centred with a margin. Does nothing unless
+   * the run captures.
    */
   compose(name: string): Promise<void>;
 }
 
 interface Layout {
-  layers: { src: string }[];
+  margin?: number;
+  layers: { src: string; lights?: boolean }[];
 }
 
 /**
@@ -147,11 +150,12 @@ export async function openDocsWalk(
   return {
     vaultId,
     zotero,
-    async capture(layer) {
+    async capture(layer, { notices = false } = {}) {
       if (!captureRequested()) return;
       await mkdir(captures, { recursive: true });
-      // A notice is transient: the walk asserts it, the image leaves it out.
-      await clearNotices(vaultId);
+      // A notice is transient: the walk asserts it, and the image leaves it
+      // out unless the notice is what the step shows.
+      if (!notices) await clearNotices(vaultId);
       // A capture taken in the frame after a change can show the old DOM.
       await obRun(
         vaultId,
@@ -171,7 +175,10 @@ export async function openDocsWalk(
       const layoutFile = join(layouts, `${name}.json`);
       const layout: Layout = await access(layoutFile).then(
         async () => JSON.parse(await readFile(layoutFile, "utf8")) as Layout,
-        () => ({ layers: [{ src: `${name}.png` }] }),
+        () => ({
+          margin: 0.1,
+          layers: [{ src: `${name}.png`, lights: false }],
+        }),
       );
       // compose.mjs resolves each layer from the layout file, so the resolved
       // copy sits beside the captures.
