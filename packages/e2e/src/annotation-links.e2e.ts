@@ -1165,6 +1165,7 @@ async function hover({
         expectAbsent,
         controlUrl,
         expectImage,
+        unavailableText,
         crossUrl,
         crossMeta,
         crossCtrl,
@@ -1306,10 +1307,15 @@ async function hover({
             popover.hoverEl.isConnected
               ? popover.hoverEl.querySelector(".zt-citation-popover-content")
               : null;
+          // The Annotation draws above the reference from its own read, so
+          // the popover can show the reference first; the wait asks for the
+          // Annotation, or for its unavailable state.
           await until(
-            () => content()?.textContent,
             () =>
-              `The popover never filled: ${popover.hoverEl.outerHTML.slice(0, 300)}`,
+              content()?.querySelector("[data-annotation-key]") ||
+              content()?.textContent?.includes(unavailableText),
+            () =>
+              `The popover never drew the Annotation: ${popover.hoverEl.outerHTML.slice(0, 300)}`,
           );
           const painted = () =>
             [...content()!.querySelectorAll("img")].find(
@@ -1384,6 +1390,7 @@ async function hover({
       expectAbsent: absent,
       controlUrl: CONTROL_URL,
       expectImage: image,
+      unavailableText: run.m.annotation_popover_unavailable(),
       crossUrl: crossToUrl,
       crossMeta: mod,
       crossCtrl: mod,
