@@ -8,8 +8,9 @@ Template Data Explorer. It records visual judgment: the reader's task,
 composition, hierarchy, density, disclosure, and wording. Shared brand rules
 live in [DESIGN.md](DESIGN.md).
 
-The Workbench is an editing tool. Its utility chrome uses Inter in sentence
-case, including labels and pane headings.
+The Workbench is an editing tool. Its utility chrome uses the host's sans face
+(Source Sans 3 on the web, the interface font in Obsidian) in sentence case,
+including labels and pane headings.
 
 Put reusable control mechanics in the [shared UI kit](src/components/ui/) and
 host themes. Put deterministic rules in the
@@ -168,7 +169,7 @@ failed results distinguishable; the visible cue names the actual condition.
 
 ## Type, density, and wording
 
-Use Inter sentence case for Workbench chrome. Pane headings, card summaries,
+Use the host's sans face in sentence case for Workbench chrome. Pane headings, card summaries,
 and notice headings are compact and semibold; labels are compact and medium;
 hints and status are compact and muted. Chrome stays at 12 px or larger.
 Template source uses IBM Plex Mono at 14 px with a unitless 1.5 line height.
