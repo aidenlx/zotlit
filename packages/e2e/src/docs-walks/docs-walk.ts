@@ -7,7 +7,7 @@ import { clearNotices, cli, obRun } from "@e2e/obsidian-cli.ts";
 import { openPairedEnvironment } from "@e2e/paired-environment.ts";
 import { openZoteroRdp } from "@e2e/paired-zotero.ts";
 import type { ZoteroRdp } from "@e2e/paired-zotero.ts";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -34,10 +34,26 @@ declare module "../page-helpers.ts" {
 
 /** The pointer a recording draws, since the walk's clicks move no mouse. */
 export interface DocsWalkPointer {
-  /** Glide to `el` and show a click mark there. */
-  point(el: Element): Promise<void>;
+  /**
+   * Glide to `el` and show a click mark there: at its centre, or `inset` px
+   * from its left edge for a wide element whose text the pointer would hide.
+   */
+  point(el: Element, options?: { inset?: number }): Promise<void>;
+  /** Glide to the point `x`, `y` in CSS px and show a click mark there. */
+  pointAt(x: number, y: number): Promise<void>;
+  /** Glide to the point `x`, `y` without a click, to clear what it hides. */
+  park(x: number, y: number): Promise<void>;
   /** Type `text` into `input` one key at a time, as a person types. */
   type(input: HTMLInputElement, text: string): Promise<void>;
+  /**
+   * Hand `text` to `put` one key at a time, at a person's typing pace, or
+   * `speed` times that pace for a long sentence that must fit a short clip.
+   */
+  keys(
+    text: string,
+    put: (key: string) => void,
+    options?: { speed?: number },
+  ): Promise<void>;
 }
 
 /** One screencast frame on disk, at its capture time in epoch seconds. */
@@ -76,6 +92,24 @@ export async function watchNotices(vaultId: string): Promise<void> {
 /** Every notice text {@link watchNotices} recorded, in the order shown. */
 export function readNotices(vaultId: string): Promise<string[]> {
   return obRun(vaultId, ({ page }) => page.scratch.docsWalkNotices ?? []);
+}
+
+/**
+ * Close the Zotero library tab's setup section, as the reader did with its ×
+ * in Lesson 1: the walk writes the setting that × writes.
+ */
+export async function closeWelcome(vaultId: string): Promise<void> {
+  await obRun(vaultId, async ({ zotlit }) => {
+    const s = zotlit.services;
+    s.bridge.runSync(
+      s.settings.update({
+        "welcome.dismissed": true,
+        "welcome.requested": false,
+        "welcome.steps-shown": false,
+      }),
+    );
+    await s.bridge.runPromise(s.settings.flush);
+  });
 }
 
 /** `DOCS_WALK_CAPTURE=1` turns a walk's planned shots into docs images. */
@@ -129,6 +163,22 @@ export interface DocsWalk extends AsyncDisposable {
    * result for 1.5 s. Without `DOCS_WALK_RECORD=1`, it only runs `actions`.
    */
   record<T>(name: string, actions: () => Promise<T>): Promise<T>;
+  /**
+   * Run `actions` in Zotero and record the Paired Zotero window whose title
+   * matches `title` with macOS window capture, as {@link record} does for
+   * Obsidian. Zotero comes to the front for the clip. `pointAt` draws a
+   * pointer in that window before a click. `stop` rests and ends the clip
+   * early, before an action that closes the window. Without
+   * `DOCS_WALK_RECORD=1`, it only runs `actions`.
+   */
+  recordZotero<T>(
+    name: string,
+    title: RegExp,
+    actions: (
+      pointAt: (window: string, element: string) => Promise<void>,
+      stop: () => Promise<void>,
+    ) => Promise<T>,
+  ): Promise<T>;
 }
 
 interface Layout {
@@ -261,6 +311,60 @@ export async function openDocsWalk(
       await encodeClip(frames, join(images, name));
       return result;
     },
+    async recordZotero(name, title, actions) {
+      const pointAt = (window: string, element: string) =>
+        zoteroPointer(zotero, window, element);
+      if (!recordRequested())
+        return actions(
+          async () => {},
+          async () => {},
+        );
+      await mkdir(captures, { recursive: true });
+      const pid = await zotero.json<number>("Services.appinfo.processID");
+      const movie = join(captures, `${name}.mov`);
+      await rm(movie, { force: true });
+      // Zotero comes to the front and raises the window itself.
+      await activate(pid);
+      await zotero.json<boolean>(
+        `(()=>{const t=new RegExp(${JSON.stringify(title.source)});for(const w of Services.wm.getEnumerator(null))if(t.test(w.document.title)){w.focus();return true;}return false;})()`,
+      );
+      await new Promise((r) => setTimeout(r, 800));
+      const target = await zoteroWindow(pid, title);
+      // A capture of a dialog window records black, so a dialog records as
+      // its screen area, with its rounded corners cut away.
+      const dialog = target.layer > 0;
+      const capture = spawn(
+        "screencapture",
+        dialog
+          ? ["-x", "-v", "-R", target.bounds, movie]
+          : ["-x", "-v", "-o", "-l", String(target.id), movie],
+        { stdio: "ignore" },
+      );
+      const ended = new Promise((r) => capture.once("exit", r));
+      await new Promise((r) => setTimeout(r, 800));
+      let stopped = false;
+      const stop = async () => {
+        if (stopped) return;
+        stopped = true;
+        await new Promise((r) => setTimeout(r, RECORD_REST * 1000));
+        capture.kill("SIGINT");
+        await ended;
+      };
+      let result: Awaited<ReturnType<typeof actions>>;
+      try {
+        result = await actions(pointAt, stop);
+      } finally {
+        await stop();
+        await zotero
+          .json<boolean>(
+            `(()=>{for(const w of Services.wm.getEnumerator(null))for(const e of [...w.document.querySelectorAll('[data-docs-walk-pointer]')])e.remove();return true;})()`,
+          )
+          .catch(() => false);
+      }
+      await mkdir(images, { recursive: true });
+      await encodeMovie(movie, join(images, name), dialog ? 24 : 0);
+      return result;
+    },
     [Symbol.asyncDispose]: () => owned.disposeAsync(),
   };
 }
@@ -326,37 +430,59 @@ async function startRecording(vaultId: string, dir: string): Promise<void> {
         y: Math.round(window.innerHeight * 0.6),
       };
       pointer.style.transform = `translate(${start.x}px,${start.y}px)`;
+      const glide = async (x: number, y: number) => {
+        pointer.style.transform = `translate(${x}px,${y}px)`;
+        await wait(600);
+      };
+      const mark = async (x: number, y: number) => {
+        ring.style.left = `${x}px`;
+        ring.style.top = `${y}px`;
+        ring.animate(
+          [
+            { opacity: 1, transform: "scale(.5)" },
+            { opacity: 0, transform: "scale(1.4)" },
+          ],
+          { duration: 450, easing: "ease-out" },
+        );
+        await wait(150);
+      };
+      const keys = async (
+        text: string,
+        put: (key: string) => void,
+        { speed = 1 }: { speed?: number } = {},
+      ) => {
+        let n = 0;
+        for (const ch of text) {
+          put(ch);
+          // A typist's rhythm: about eight keys a second, a little uneven.
+          await wait((ch === " " ? 150 : 85 + (n++ % 3) * 20) / speed);
+        }
+      };
       page.scratch.docsWalkPointer = {
-        async point(el) {
+        async point(el, { inset } = {}) {
           el.scrollIntoView({ block: "nearest", behavior: "instant" });
           const b = el.getBoundingClientRect();
-          const x = Math.round(b.left + Math.min(b.width / 2, 120));
+          const x = Math.round(b.left + (inset ?? Math.min(b.width / 2, 120)));
           const y = Math.round(b.top + b.height / 2);
-          pointer.style.transform = `translate(${x}px,${y}px)`;
-          await wait(600);
-          ring.style.left = `${x}px`;
-          ring.style.top = `${y}px`;
-          ring.animate(
-            [
-              { opacity: 1, transform: "scale(.5)" },
-              { opacity: 0, transform: "scale(1.4)" },
-            ],
-            { duration: 450, easing: "ease-out" },
-          );
-          await wait(150);
+          await glide(x, y);
+          await mark(x, y);
         },
+        async pointAt(x, y) {
+          await glide(Math.round(x), Math.round(y));
+          await mark(Math.round(x), Math.round(y));
+        },
+        park: (x, y) => glide(Math.round(x), Math.round(y)),
         async type(input, text) {
           // The typist moves the pointer off the field, so it hides no letter.
           const b = input.getBoundingClientRect();
-          pointer.style.transform = `translate(${Math.round(b.left + Math.min(b.width / 2, 120) + 24)}px,${Math.round(b.bottom + 14)}px)`;
+          pointer.style.transform = `translate(${Math.round(b.right - 40)}px,${Math.round(b.bottom + 16)}px)`;
           input.focus();
-          for (const ch of text) {
+          await keys(text, (ch) => {
             input.value += ch;
             input.dispatchEvent(new Event("input", { bubbles: true }));
-            // A typist's rhythm: about eight keys a second, a little uneven.
-            await wait(ch === " " ? 160 : 95 + (input.value.length % 3) * 20);
-          }
+          });
         },
+        keys,
       };
       page.scratch.docsWalkStopRecording = async () => {
         await cdp.sendCommand("Page.stopScreencast");
@@ -399,11 +525,135 @@ async function encodeClip(dir: string, out: string): Promise<void> {
   lines.push(`file '${shown.at(-1)!.file}'`);
   const list = join(dir, "frames.txt");
   await writeFile(list, `${lines.join("\n")}\n`);
-  const input = ["-y", "-f", "concat", "-safe", "0", "-i", list];
-  // A Lanczos downscale to 1440 px keeps UI text crisp at 1x.
-  const filter = [
-    "-vf",
+  await encodeBoth(
+    ["-y", "-f", "concat", "-safe", "0", "-i", list],
     "scale='min(1440,iw)':-2:flags=lanczos,format=yuv420p",
+    out,
+  );
+}
+
+/**
+ * The window of process `pid` whose title matches `title`: its CGWindowID,
+ * its layer, and its screen area `x,y,w,h`. Throws unless that window is in
+ * front of every other app's window over that area, so a capture holds
+ * Zotero alone. macOS only.
+ */
+async function zoteroWindow(
+  pid: number,
+  title: RegExp,
+): Promise<{ id: number; layer: number; bounds: string }> {
+  const { stdout } = await execFileAsync("osascript", [
+    "-l",
+    "JavaScript",
+    "-e",
+    // The on-screen windows, front to back, of the layers apps draw in.
+    `ObjC.import("CoreGraphics"); const a = ObjC.castRefToObject($.CGWindowListCopyWindowInfo(1, 0)); const out = []; for (let i = 0; i < Number(a.count); i++) { const w = ObjC.deepUnwrap(a.objectAtIndex(i)); if (w.kCGWindowLayer >= 0 && w.kCGWindowLayer < 20) out.push({ id: w.kCGWindowNumber, layer: w.kCGWindowLayer, pid: w.kCGWindowOwnerPID, owner: w.kCGWindowOwnerName, name: w.kCGWindowName || "", b: w.kCGWindowBounds }); } JSON.stringify(out)`,
+  ]);
+  type Box = { X: number; Y: number; Width: number; Height: number };
+  const windows = JSON.parse(stdout) as {
+    id: number;
+    layer: number;
+    pid: number;
+    owner: string;
+    name: string;
+    b: Box;
+  }[];
+  const at = windows.findIndex((w) => w.pid === pid && title.test(w.name));
+  const found = windows[at];
+  if (!found)
+    throw new Error(
+      `no Zotero window on screen titled ${String(title)}: ${JSON.stringify(windows.filter((w) => w.pid === pid))}`,
+    );
+  const meets = (a: Box, b: Box) =>
+    a.X < b.X + b.Width &&
+    b.X < a.X + a.Width &&
+    a.Y < b.Y + b.Height &&
+    b.Y < a.Y + a.Height;
+  const over = windows
+    .slice(0, at)
+    .filter((w) => w.pid !== pid && w.b.Width > 0 && meets(w.b, found.b));
+  if (over.length > 0)
+    throw new Error(
+      `the Zotero window ${String(title)} is behind ${over.map((w) => w.owner).join(", ")}; the clip would record them`,
+    );
+  const { X, Y, Width, Height } = found.b;
+  return {
+    id: found.id,
+    layer: found.layer,
+    bounds: [X, Y, Width, Height].map(Math.round).join(","),
+  };
+}
+
+/**
+ * Bring the app of process `pid` to the front. macOS window capture records
+ * a window as black while its app is behind.
+ */
+async function activate(pid: number): Promise<void> {
+  await execFileAsync("osascript", [
+    "-l",
+    "JavaScript",
+    "-e",
+    `ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${pid}).activateWithOptions(1); ""`,
+  ]);
+}
+
+/**
+ * Draw a pointer in the Zotero window `window` (an expression) and glide it
+ * to the element `element` (an expression over that window, `w`), with a
+ * click mark there.
+ */
+async function zoteroPointer(
+  zotero: ZoteroRdp,
+  window: string,
+  element: string,
+): Promise<void> {
+  if (!recordRequested()) return;
+  await zotero.json<boolean>(`(async()=>{const w=${window};const d=w.document;
+    const ns='http://www.w3.org/1999/xhtml';const wait=(ms)=>new Promise(r=>w.setTimeout(r,ms));
+    let p=d.querySelector('[data-docs-walk-pointer="arrow"]');
+    if(!p){p=d.createElementNS(ns,'div');p.setAttribute('data-docs-walk-pointer','arrow');
+      p.style.cssText='position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform 550ms cubic-bezier(.4,0,.2,1);transform:translate('+Math.round(w.innerWidth*0.5)+'px,'+Math.round(w.innerHeight*0.25)+'px)';
+      p.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="22" height="26" viewBox="0 0 22 26" style="display:block"><path d="M2 1.5v20.2l5.3-5.1 3.4 7.8 3.4-1.5-3.3-7.6 7.4-.2z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+      d.documentElement.appendChild(p);await wait(300);}
+    const e=${element};const b=e.getBoundingClientRect();
+    const x=Math.round(b.left+b.width/2),y=Math.round(b.top+b.height/2);
+    p.style.transform='translate('+x+'px,'+y+'px)';await wait(650);
+    const r=d.createElementNS(ns,'div');r.setAttribute('data-docs-walk-pointer','ring');
+    r.style.cssText='position:fixed;left:'+x+'px;top:'+y+'px;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid #7c5cff;background:rgba(124,92,255,.18);z-index:2147483646;pointer-events:none;';
+    d.documentElement.appendChild(r);r.animate([{opacity:1,transform:'scale(.5)'},{opacity:0,transform:'scale(1.4)'}],{duration:450,easing:'ease-out',fill:'forwards'});
+    await wait(200);return true;})()`);
+}
+
+/**
+ * Encode a screen capture as {@link encodeClip} encodes a screencast, with
+ * `inset` px cut from each edge.
+ */
+async function encodeMovie(
+  movie: string,
+  out: string,
+  inset: number,
+): Promise<void> {
+  const crop = inset > 0 ? `crop=iw-${2 * inset}:ih-${2 * inset},` : "";
+  await encodeBoth(
+    ["-y", "-i", movie],
+    `${crop}scale='min(1440,iw)':-2:flags=lanczos,format=yuv420p`,
+    out,
+  );
+}
+
+/**
+ * Encode `input` through `filter` as `<out>.webm` (VP9) and `<out>.mp4`
+ * (H.264), 30 frames a second, no audio, tuned for sharp UI text.
+ */
+async function encodeBoth(
+  input: string[],
+  filter: string,
+  out: string,
+): Promise<void> {
+  const shared = [
+    ...input,
+    "-vf",
+    filter,
     "-fps_mode",
     "cfr",
     "-r",
@@ -411,8 +661,7 @@ async function encodeClip(dir: string, out: string): Promise<void> {
     "-an",
   ];
   await execFileAsync("ffmpeg", [
-    ...input,
-    ...filter,
+    ...shared,
     "-c:v",
     "libvpx-vp9",
     "-crf",
@@ -430,8 +679,7 @@ async function encodeClip(dir: string, out: string): Promise<void> {
     `${out}.webm`,
   ]);
   await execFileAsync("ffmpeg", [
-    ...input,
-    ...filter,
+    ...shared,
     "-c:v",
     "libx264",
     "-preset",

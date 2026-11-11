@@ -28,6 +28,7 @@ import type { LibraryView } from "@/views/library/view";
 
 import {
   captureRequested,
+  closeWelcome,
   openDocsWalk,
   readNotices,
   watchNotices,
@@ -161,6 +162,8 @@ describe.skipIf(!reachable)(
         undefined,
         STEP,
       );
+      // The reader closed the setup section in Lesson 1.
+      await closeWelcome(walk.vaultId);
       // The reader wrote the literature note on this paper in Lesson 1.
       noteBefore = await obRun(
         walk.vaultId,
@@ -196,94 +199,97 @@ describe.skipIf(!reachable)(
 
     it("step 1: open the paper's PDF from its card; annotation tools at the top right are dimmed", async () => {
       await raiseWindow(walk.vaultId);
-      const opened = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { paperKey, file, readingOnly }) => {
-          app.commands.executeCommandById("zotlit:open-library-view");
-          const el = await page.until(
-            "Library View",
-            () =>
-              (
-                app.workspace.getLeavesOfType("zotlit-library")[0] as
-                  | LibraryLeaf
-                  | undefined
-              )?.view.contentEl,
-            20000,
-          );
-          page.press(
-            await page.until(
+      const opened = await walk.record("step-1", () =>
+        obRun(
+          walk.vaultId,
+          async ({ app, page }, { paperKey, file, readingOnly }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            app.commands.executeCommandById("zotlit:open-library-view");
+            const el = await page.until(
+              "Library View",
+              () =>
+                (
+                  app.workspace.getLeavesOfType("zotlit-library")[0] as
+                    | LibraryLeaf
+                    | undefined
+                )?.view.contentEl,
+              20000,
+            );
+            const row = await page.until(
               "paper row",
               () =>
                 el.querySelector<HTMLElement>(
                   `[data-query-item-row="${paperKey}"]`,
                 ),
               20000,
-            ),
-            "paper row",
-          );
-          page.press(
-            await page.until(
+            );
+            await pointer?.point(row, { inset: 40 });
+            page.press(row, "paper row");
+            const button = await page.until(
               "Open PDF",
               () =>
                 el.querySelector<HTMLElement>(
                   '[data-library-card] [data-library-card-action="pdf"]',
                 ),
               10000,
-            ),
-            "Open PDF",
-          );
-          const pdf = await page.until(
-            "PDF tab",
-            () =>
-              (app.workspace.getLeavesOfType("pdf") as PdfLeaf[]).find((l) =>
-                decodeURI(l.view.file?.path ?? "").endsWith(file),
-              ),
-            20000,
-          );
-          const tools = await page.until(
-            "PDF tools",
-            () => {
-              const t = [
-                ...pdf.view.containerEl.querySelectorAll<HTMLElement>(
-                  "[data-zt-tool]",
+            );
+            await pointer?.point(button);
+            page.press(button, "Open PDF");
+            const pdf = await page.until(
+              "PDF tab",
+              () =>
+                (app.workspace.getLeavesOfType("pdf") as PdfLeaf[]).find((l) =>
+                  decodeURI(l.view.file?.path ?? "").endsWith(file),
                 ),
-              ];
-              return t.length > 0 && t;
-            },
-            20000,
-          );
-          const header = await page.until(
-            "Reading only",
-            () => {
-              const side = (
-                app.workspace.getLeavesOfType("zotero-annotation-view")[0] as
-                  | AnnotationLeaf
-                  | undefined
-              )?.view.contentEl;
-              const h = side?.querySelector<HTMLElement>(".zt-annot-header");
-              return h?.innerText.includes(readingOnly) && h;
-            },
-            20000,
-          );
-          const view = pdf.view.containerEl.getBoundingClientRect();
-          const box = tools[0]!.getBoundingClientRect();
-          return {
-            tools: tools.map((t) => t.dataset.ztTool),
-            disabled: tools.map((t) => t.getAttribute("aria-disabled")),
-            tooltip: tools[0]!.getAttribute("aria-label"),
-            header: header.innerText,
-            // How far the first tool sits from the tab's top-right corner.
-            fromRight: Math.round(view.right - box.right),
-            fromTop: Math.round(box.top - view.top),
-            tabWidth: Math.round(view.width),
-          };
-        },
-        {
-          paperKey: PAPER.key,
-          file: PAPER.file,
-          readingOnly: m.annot_view_header_reading_only(),
-        },
-        STEP,
+              20000,
+            );
+            const tools = await page.until(
+              "PDF tools",
+              () => {
+                const t = [
+                  ...pdf.view.containerEl.querySelectorAll<HTMLElement>(
+                    "[data-zt-tool]",
+                  ),
+                ];
+                return t.length > 0 && t;
+              },
+              20000,
+            );
+            const header = await page.until(
+              "Reading only",
+              () => {
+                const side = (
+                  app.workspace.getLeavesOfType("zotero-annotation-view")[0] as
+                    | AnnotationLeaf
+                    | undefined
+                )?.view.contentEl;
+                const h = side?.querySelector<HTMLElement>(".zt-annot-header");
+                return h?.innerText.includes(readingOnly) && h;
+              },
+              20000,
+            );
+            const view = pdf.view.containerEl.getBoundingClientRect();
+            const box = tools[0]!.getBoundingClientRect();
+            // The pointer rests in the tab's right margin, off the page text.
+            await pointer?.park(view.right - 8, view.top + view.height * 0.6);
+            return {
+              tools: tools.map((t) => t.dataset.ztTool),
+              disabled: tools.map((t) => t.getAttribute("aria-disabled")),
+              tooltip: tools[0]!.getAttribute("aria-label"),
+              header: header.innerText,
+              // How far the first tool sits from the tab's top-right corner.
+              fromRight: Math.round(view.right - box.right),
+              fromTop: Math.round(box.top - view.top),
+              tabWidth: Math.round(view.width),
+            };
+          },
+          {
+            paperKey: PAPER.key,
+            file: PAPER.file,
+            readingOnly: m.annot_view_header_reading_only(),
+          },
+          STEP,
+        ),
       );
       console.log("[walk] tools", JSON.stringify(opened));
       // Every drawing tool is dimmed; the show-annotations toggle stays on.
@@ -306,48 +312,56 @@ describe.skipIf(!reachable)(
 
     it("step 2: select the heading of the Zotero annotations sidebar and choose Allow editing; the toolbar shows Waiting for approval in Zotero", async () => {
       await raiseWindow(walk.vaultId);
-      const asked = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { file, enable }) => {
-          const side = (
-            app.workspace.getLeavesOfType("zotero-annotation-view")[0] as
-              | AnnotationLeaf
-              | undefined
-          )?.view.contentEl;
-          page.press(
-            await page.stands(
+      const asked = await walk.record("step-2", () =>
+        obRun(
+          walk.vaultId,
+          async ({ app, page }, { file, enable }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const side = (
+              app.workspace.getLeavesOfType("zotero-annotation-view")[0] as
+                | AnnotationLeaf
+                | undefined
+            )?.view.contentEl;
+            const header = await page.stands(
               side?.querySelector<HTMLElement>(".zt-annot-header"),
               "sidebar header",
-            ),
-            "sidebar header",
-          );
-          const item = await page.until(
-            "Allow editing",
-            () =>
-              [
-                ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
-              ].find((i) => i.innerText === enable),
-            5000,
-          );
-          const menu = [
-            ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
-          ].map((i) => i.innerText);
-          page.press(item, "Allow editing");
-          const pdf = (app.workspace.getLeavesOfType("pdf") as PdfLeaf[]).find(
-            (l) => decodeURI(l.view.file?.path ?? "").endsWith(file),
-          )!;
-          const status = await page.until(
-            "waiting status",
-            () =>
-              pdf.view.containerEl.querySelector<HTMLElement>(
-                ".zt-pdf-capability",
-              )?.innerText,
-            10000,
-          );
-          return { menu, status };
-        },
-        { file: PAPER.file, enable: m.capability_enable_editing() },
-        STEP,
+            );
+            await pointer?.point(header);
+            page.press(header, "sidebar header");
+            const item = await page.until(
+              "Allow editing",
+              () =>
+                [
+                  ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+                ].find((i) => i.innerText === enable),
+              5000,
+            );
+            const menu = [
+              ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+            ].map((i) => i.innerText);
+            await pointer?.point(item);
+            page.press(item, "Allow editing");
+            const pdf = (
+              app.workspace.getLeavesOfType("pdf") as PdfLeaf[]
+            ).find((l) => decodeURI(l.view.file?.path ?? "").endsWith(file))!;
+            const status = await page.until(
+              "waiting status",
+              () =>
+                pdf.view.containerEl.querySelector<HTMLElement>(
+                  ".zt-pdf-capability",
+                )?.innerText,
+              10000,
+            );
+            if (pointer) {
+              // The pointer leaves the sidebar's cards for the tab's margin.
+              const view = pdf.view.containerEl.getBoundingClientRect();
+              await pointer.park(view.right - 8, view.top + view.height * 0.6);
+            }
+            return { menu, status };
+          },
+          { file: PAPER.file, enable: m.capability_enable_editing() },
+          STEP,
+        ),
       );
       expect(asked.menu).toContain(m.capability_enable_editing());
       expect(asked.status).toBe(m.capability_authorizing());
@@ -366,8 +380,24 @@ describe.skipIf(!reachable)(
       );
       expect(dialog.text).toContain("wants to modify your Zotero library");
       expect(dialog.buttons).toEqual(["Allow", "Always Allow", "Deny"]);
-      // The reader chooses Always Allow, Zotero's second button.
-      await clickAuthorizationDialog(walk.zotero, "cancel");
+      // The reader chooses Always Allow, Zotero's second button. The clip
+      // records Zotero's dialog with macOS screen capture and ends on the
+      // press, before the dialog closes.
+      const title = await walk.zotero.json<string>(
+        `${FIND_DIALOG}.document.title`,
+      );
+      await walk.recordZotero(
+        "step-3",
+        exactly(title),
+        async (pointAt, stop) => {
+          await pointAt(
+            FIND_DIALOG,
+            "w.document.getElementById('commonDialog').getButton('cancel')",
+          );
+          await stop();
+          await clickAuthorizationDialog(walk.zotero, "cancel");
+        },
+      );
       const granted = await obRunUntil(
         walk.vaultId,
         ({ app }, { file }) => {
@@ -395,83 +425,101 @@ describe.skipIf(!reachable)(
 
     it("step 4: drag across a passage in the PDF; a small toolbar under the passage", async () => {
       await raiseWindow(walk.vaultId);
-      const popup = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { file, from, to, pageNumber }) => {
-          const pdf = (app.workspace.getLeavesOfType("pdf") as PdfLeaf[]).find(
-            (l) => decodeURI(l.view.file?.path ?? "").endsWith(file),
-          )!;
-          app.workspace.setActiveLeaf(pdf, { focus: true });
-          const pageEl = pdf.view.containerEl.querySelector<HTMLElement>(
-            `.page[data-page-number="${pageNumber}"]`,
-          )!;
-          pageEl.scrollIntoView({ block: "start" });
-          const layerOf = () => pageEl.querySelector<HTMLElement>(".textLayer");
-          const layer = await page.until(
-            "text layer",
-            () => (layerOf()?.textContent.length ?? 0) > 0 && layerOf(),
-            20000,
-          );
-          const nodes: Text[] = [];
-          const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
-          let n: Node | null;
-          while ((n = walker.nextNode())) nodes.push(n as Text);
-          let all = "";
-          const starts = nodes.map((t) => {
-            const s = all.length;
-            all += t.data;
-            return s;
-          });
-          const at = (k: number): [Text, number] => {
-            const x = nodes.findIndex(
-              (t, i) => starts[i]! <= k && k <= starts[i]! + t.data.length,
+      const popup = await walk.record("step-4", () =>
+        obRun(
+          walk.vaultId,
+          async ({ app, page }, { file, from, to, pageNumber }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const pdf = (
+              app.workspace.getLeavesOfType("pdf") as PdfLeaf[]
+            ).find((l) => decodeURI(l.view.file?.path ?? "").endsWith(file))!;
+            app.workspace.setActiveLeaf(pdf, { focus: true });
+            const pageEl = pdf.view.containerEl.querySelector<HTMLElement>(
+              `.page[data-page-number="${pageNumber}"]`,
+            )!;
+            pageEl.scrollIntoView({ block: "start" });
+            const layerOf = () =>
+              pageEl.querySelector<HTMLElement>(".textLayer");
+            const layer = await page.until(
+              "text layer",
+              () => (layerOf()?.textContent.length ?? 0) > 0 && layerOf(),
+              20000,
             );
-            return [nodes[x]!, k - starts[x]!];
-          };
-          const i = all.indexOf(from);
-          const j = all.indexOf(to, i) + to.length;
-          const range = document.createRange();
-          range.setStart(...at(i));
-          range.setEnd(...at(j));
-          range.startContainer.parentElement!.scrollIntoView({
-            block: "center",
-          });
-          await new Promise((r) => setTimeout(r, 500));
-          const rects = [...range.getClientRects()];
-          const first = rects[0]!;
-          const x = first.left + 2;
-          const y = first.top + first.height / 2;
-          const pressed = page.fire("pointerdown", x, y);
-          getSelection()!.removeAllRanges();
-          getSelection()!.addRange(range);
-          page.fire("pointerup", x, y, pressed);
-          const row = await page.until(
-            "create popup",
-            () =>
-              document.querySelector(
-                '.zt-pdf-mark-popup [data-zt-verb="highlight"]',
-              ) && document.querySelector<HTMLElement>(".zt-pdf-mark-popup"),
-            5000,
-          );
-          const box = row.getBoundingClientRect();
-          return {
-            verbs: [...row.querySelectorAll("[data-zt-verb]")].map((b) =>
-              b.getAttribute("aria-label"),
-            ),
-            selected: range.toString().replaceAll(/\s+/g, " "),
-            popupTop: Math.round(box.top),
-            selectionBottom: Math.round(
-              Math.max(...rects.map((r) => r.bottom)),
-            ),
-          };
-        },
-        {
-          file: PAPER.file,
-          from: PASSAGE.from,
-          to: PASSAGE.to,
-          pageNumber: PASSAGE.page,
-        },
-        STEP,
+            const nodes: Text[] = [];
+            const walker = document.createTreeWalker(
+              layer,
+              NodeFilter.SHOW_TEXT,
+            );
+            let n: Node | null;
+            while ((n = walker.nextNode())) nodes.push(n as Text);
+            let all = "";
+            const starts = nodes.map((t) => {
+              const s = all.length;
+              all += t.data;
+              return s;
+            });
+            const at = (k: number): [Text, number] => {
+              const x = nodes.findIndex(
+                (t, i) => starts[i]! <= k && k <= starts[i]! + t.data.length,
+              );
+              return [nodes[x]!, k - starts[x]!];
+            };
+            const i = all.indexOf(from);
+            const j = all.indexOf(to, i) + to.length;
+            const range = document.createRange();
+            range.setStart(...at(i));
+            range.setEnd(...at(j));
+            range.startContainer.parentElement!.scrollIntoView({
+              block: "center",
+            });
+            await new Promise((r) => setTimeout(r, 500));
+            const rects = [...range.getClientRects()];
+            const first = rects[0]!;
+            const x = first.left + 2;
+            const y = first.top + first.height / 2;
+            const last = rects.at(-1)!;
+            if (pointer) {
+              // The reader presses at the passage's start and drags to its end.
+              await pointer.pointAt(x, y);
+              await pointer.park(last.right, last.top + last.height / 2);
+            }
+            const pressed = page.fire("pointerdown", x, y);
+            getSelection()!.removeAllRanges();
+            getSelection()!.addRange(range);
+            page.fire("pointerup", x, y, pressed);
+            const row = await page.until(
+              "create popup",
+              () =>
+                document.querySelector(
+                  '.zt-pdf-mark-popup [data-zt-verb="highlight"]',
+                ) && document.querySelector<HTMLElement>(".zt-pdf-mark-popup"),
+              5000,
+            );
+            const box = row.getBoundingClientRect();
+            if (pointer) {
+              // Then it moves off the passage, so the clip shows all of it.
+              const view = pdf.view.containerEl.getBoundingClientRect();
+              await pointer.park(view.right - 8, box.bottom + 40);
+            }
+            return {
+              verbs: [...row.querySelectorAll("[data-zt-verb]")].map((b) =>
+                b.getAttribute("aria-label"),
+              ),
+              selected: range.toString().replaceAll(/\s+/g, " "),
+              popupTop: Math.round(box.top),
+              selectionBottom: Math.round(
+                Math.max(...rects.map((r) => r.bottom)),
+              ),
+            };
+          },
+          {
+            file: PAPER.file,
+            from: PASSAGE.from,
+            to: PASSAGE.to,
+            pageNumber: PASSAGE.page,
+          },
+          STEP,
+        ),
       );
       console.log("[walk] popup", JSON.stringify(popup));
       expect(popup.selected).toContain(PASSAGE.from);
@@ -487,106 +535,128 @@ describe.skipIf(!reachable)(
     });
 
     it("step 5: select Add comment, type a comment, and select Highlight; the passage turns yellow and a card appears in the sidebar", async () => {
-      const typed = await obRun(
-        walk.vaultId,
-        async ({ page }, { comment, highlight }) => {
-          page.press(
-            document.querySelector<HTMLElement>(
-              '.zt-pdf-mark-popup [data-zt-verb="comment"]',
-            ),
-            "Add comment",
-          );
-          const editor = await page.until(
-            "comment editor",
-            () =>
+      const { typed, created } = await walk.record("step-5", async () => {
+        const typed = await obRun(
+          walk.vaultId,
+          async ({ page }, { comment, highlight }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const add = await page.stands(
               document.querySelector<HTMLElement>(
-                ".zt-pdf-mark-popup .cm-content",
+                '.zt-pdf-mark-popup [data-zt-verb="comment"]',
               ),
-            5000,
-          );
-          editor.focus();
-          document.execCommand("insertText", false, comment);
-          await page.until(
-            "comment typed",
-            () => editor.innerText === comment,
-            5000,
-          );
-          const commit = [
-            ...document.querySelectorAll(".zt-pdf-mark-popup button"),
-          ].find((b) => b.textContent === highlight);
-          return { commit: commit?.textContent ?? null };
-        },
-        { comment: COMMENT, highlight: m.pdf_toolbar_highlight() },
-        STEP,
-      );
-      expect(typed.commit).toBe(m.pdf_toolbar_highlight());
-      const created = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { comment, highlight, before, file }) => {
-          page.press(
-            [
-              ...document.querySelectorAll<HTMLElement>(
-                ".zt-pdf-mark-popup button",
-              ),
-            ].find((b) => b.textContent === highlight),
-            "Highlight",
-          );
-          const sideOf = () =>
-            (
-              app.workspace.getLeavesOfType("zotero-annotation-view")[0] as
-                | AnnotationLeaf
-                | undefined
-            )?.view.contentEl;
-          const card = await page.until(
-            "new card",
-            () =>
+              "Add comment",
+            );
+            await pointer?.point(add);
+            page.press(add, "Add comment");
+            const editor = await page.until(
+              "comment editor",
+              () =>
+                document.querySelector<HTMLElement>(
+                  ".zt-pdf-mark-popup .cm-content",
+                ),
+              5000,
+            );
+            editor.focus();
+            if (pointer) {
+              const b = editor.getBoundingClientRect();
+              await pointer.park(b.right - 20, b.bottom + 30);
+              await pointer.keys(
+                comment,
+                (ch) => document.execCommand("insertText", false, ch),
+                { speed: 2 },
+              );
+            } else document.execCommand("insertText", false, comment);
+            await page.until(
+              "comment typed",
+              () => editor.innerText === comment,
+              5000,
+            );
+            const commit = [
+              ...document.querySelectorAll(".zt-pdf-mark-popup button"),
+            ].find((b) => b.textContent === highlight);
+            return { commit: commit?.textContent ?? null };
+          },
+          { comment: COMMENT, highlight: m.pdf_toolbar_highlight() },
+          STEP,
+        );
+        const created = await obRun(
+          walk.vaultId,
+          async ({ app, page }, { comment, highlight, before, file }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const commit = await page.stands(
               [
-                ...(sideOf()?.querySelectorAll<HTMLElement>(
-                  ".zt-annot-card[data-zotero-annotation-key]",
-                ) ?? []),
-              ].find((c) => !before.includes(c.dataset.zoteroAnnotationKey!)),
-            20000,
-          );
-          await page.until(
-            "card comment",
-            () => card.innerText.includes(comment),
-            10000,
-          );
-          const key = card.dataset.zoteroAnnotationKey!;
-          getSelection()!.removeAllRanges();
-          const pdf = (app.workspace.getLeavesOfType("pdf") as PdfLeaf[]).find(
-            (l) => decodeURI(l.view.file?.path ?? "").endsWith(file),
-          )!;
-          const mark = await page.until(
-            "mark on the page",
-            () =>
-              pdf.view.containerEl.querySelector<HTMLElement>(
-                `.zt-pdf-annotation-mark[data-zotero-annotation-key="${key}"]`,
-              ),
-            10000,
-          );
-          const painted = mark.matches("[fill],[stroke]")
-            ? mark
-            : mark.querySelector("[fill],[stroke]");
-          card.scrollIntoView({ block: "center" });
-          await new Promise((r) => setTimeout(r, 500));
-          return {
-            key,
-            text: card.innerText,
-            colour:
-              painted?.getAttribute("fill") ??
-              painted?.getAttribute("stroke") ??
-              null,
-          };
-        },
-        {
-          comment: COMMENT,
-          highlight: m.pdf_toolbar_highlight(),
-          before: keysBefore,
-          file: PAPER.file,
-        },
-        STEP,
-      );
+                ...document.querySelectorAll<HTMLElement>(
+                  ".zt-pdf-mark-popup button",
+                ),
+              ].find((b) => b.textContent === highlight),
+              "Highlight",
+            );
+            await pointer?.point(commit);
+            page.press(commit, "Highlight");
+            const sideOf = () =>
+              (
+                app.workspace.getLeavesOfType("zotero-annotation-view")[0] as
+                  | AnnotationLeaf
+                  | undefined
+              )?.view.contentEl;
+            const card = await page.until(
+              "new card",
+              () =>
+                [
+                  ...(sideOf()?.querySelectorAll<HTMLElement>(
+                    ".zt-annot-card[data-zotero-annotation-key]",
+                  ) ?? []),
+                ].find((c) => !before.includes(c.dataset.zoteroAnnotationKey!)),
+              20000,
+            );
+            await page.until(
+              "card comment",
+              () => card.innerText.includes(comment),
+              10000,
+            );
+            const key = card.dataset.zoteroAnnotationKey!;
+            getSelection()!.removeAllRanges();
+            const pdf = (
+              app.workspace.getLeavesOfType("pdf") as PdfLeaf[]
+            ).find((l) => decodeURI(l.view.file?.path ?? "").endsWith(file))!;
+            const mark = await page.until(
+              "mark on the page",
+              () =>
+                pdf.view.containerEl.querySelector<HTMLElement>(
+                  `.zt-pdf-annotation-mark[data-zotero-annotation-key="${key}"]`,
+                ),
+              10000,
+            );
+            const painted = mark.matches("[fill],[stroke]")
+              ? mark
+              : mark.querySelector("[fill],[stroke]");
+            card.scrollIntoView({ block: "center" });
+            await new Promise((r) => setTimeout(r, 500));
+            if (pointer) {
+              // The pointer leaves the new highlight and its card in view.
+              const view = pdf.view.containerEl.getBoundingClientRect();
+              await pointer.park(view.right - 8, view.top + view.height * 0.6);
+            }
+            return {
+              key,
+              text: card.innerText,
+              colour:
+                painted?.getAttribute("fill") ??
+                painted?.getAttribute("stroke") ??
+                null,
+            };
+          },
+          {
+            comment: COMMENT,
+            highlight: m.pdf_toolbar_highlight(),
+            before: keysBefore,
+            file: PAPER.file,
+          },
+          STEP,
+        );
+        return { typed, created };
+      });
+      expect(typed.commit).toBe(m.pdf_toolbar_highlight());
       annotationKey = created.key;
       expect(created.colour?.toLowerCase()).toBe(YELLOW);
       expect(created.text.replaceAll(/\s+/g, " ")).toContain(PASSAGE.words);
@@ -611,16 +681,20 @@ describe.skipIf(!reachable)(
     });
 
     it("step 6: open the same PDF in Zotero; the same highlight is there", async () => {
-      const shown = await walk.zotero.json<{
-        listed: boolean;
-        comment: string | null;
-      }>(
-        `(async()=>{const att=Zotero.Items.getByLibraryAndKey(1,${JSON.stringify(PAPER.attachmentKey)});
-      const w=Zotero.getMainWindow();w.resizeTo(1440,900);
+      const title = await walk.zotero.json<string>(
+        `(async()=>{const w=Zotero.getMainWindow();w.resizeTo(1440,900);w.focus();await new Promise(r=>setTimeout(r,800));return w.document.title;})()`,
+      );
+      const shown = await walk.recordZotero("step-6", exactly(title), () =>
+        walk.zotero.json<{
+          listed: boolean;
+          comment: string | null;
+        }>(
+          `(async()=>{const att=Zotero.Items.getByLibraryAndKey(1,${JSON.stringify(PAPER.attachmentKey)});
       const reader=await Zotero.Reader.open(att.id);await reader._initPromise;await new Promise(r=>setTimeout(r,2000));
       reader.toggleSidebar(true);for(let i=0;i<2;i++){await reader.navigate({annotationID:${JSON.stringify(annotationKey)}});await new Promise(r=>setTimeout(r,2000));}
       const a=reader._internalReader._state.annotations.find(x=>x.id===${JSON.stringify(annotationKey)});
       return {listed:!!a,comment:a?.comment??null};})()`,
+        ),
       );
       expect(shown).toEqual({ listed: true, comment: COMMENT });
       await captureZotero("step-6", "main");
@@ -629,37 +703,114 @@ describe.skipIf(!reachable)(
 
     it("step 7: open your literature note from Lesson 1; the new highlight is in the Annotations section, with no update", async () => {
       await raiseWindow(walk.vaultId);
-      const note = await obRunUntil(
-        walk.vaultId,
-        async ({ app, page }, { note, key }) => {
-          let leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find((l) => (l.view as MarkdownView).file?.path === note) as
-            | NoteLeaf
-            | undefined;
-          if (!leaf) {
-            // The reader opens the note from the file explorer, as any note.
-            leaf = app.workspace.getLeaf("tab") as NoteLeaf;
-            await leaf.openFile(app.vault.getFileByPath(note)!);
-          }
-          app.workspace.setActiveLeaf(leaf, { focus: true });
-          const card = leaf.view.contentEl.querySelector<HTMLElement>(
-            `.zt-annot-card[data-zotero-annotation-key="${key}"]`,
-          );
-          if (!card) return null;
-          card.scrollIntoView({ block: "center" });
-          await page.until("settled", () => true);
-          return {
-            cards: leaf.view.contentEl.querySelectorAll(
-              ".zt-annot-card[data-zotero-annotation-key]",
-            ).length,
-            text: card.innerText,
-            body: await app.vault.read(leaf.view.file!),
-          };
-        },
-        { note: NOTE, key: annotationKey },
-        { what: "the new highlight in the note", ready: (v) => v !== null },
-      );
+      const note = await walk.record("step-7", async () => {
+        await obRun(
+          walk.vaultId,
+          async ({ app, page }, { note, name }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            // The new highlight stays selected, and its popup stays open over
+            // any tab the reader turns to, so the reader first presses Escape
+            // in the PDF.
+            app.workspace.setActiveLeaf(
+              app.workspace.getLeavesOfType("pdf")[0]!,
+              {
+                focus: true,
+              },
+            );
+            document.body.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key: "Escape",
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+            await page.until(
+              "popup closed",
+              () => !document.querySelector(".zt-pdf-mark-popup"),
+              5000,
+            );
+            // The reader opens a new tab (⌘T) and finds the note with the
+            // quick switcher (⌘O).
+            app.commands.executeCommandById("workspace:new-tab");
+            await page.until(
+              "empty tab",
+              () => app.workspace.getLeavesOfType("empty").length > 0,
+              5000,
+            );
+            app.commands.executeCommandById("switcher:open");
+            const input = await page.until(
+              "quick switcher",
+              () => document.querySelector<HTMLInputElement>(".prompt-input"),
+              5000,
+            );
+            if (pointer) await pointer.type(input, name);
+            else {
+              input.value = name;
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            const item = await page.until(
+              "the note in the quick switcher",
+              () =>
+                [
+                  ...document.querySelectorAll<HTMLElement>(
+                    ".prompt .suggestion-item",
+                  ),
+                ].find((i) => i.innerText.includes(name)),
+              5000,
+            );
+            await pointer?.point(item, { inset: 40 });
+            page.press(item, "the note");
+            await page.until(
+              "the note",
+              () => app.workspace.getActiveFile()?.path === note,
+              10000,
+            );
+            if (pointer) {
+              const b = app.workspace
+                .getMostRecentLeaf()!
+                .view.containerEl.getBoundingClientRect();
+              await pointer.park(b.right - 14, b.top + b.height * 0.6);
+            }
+          },
+          { note: NOTE, name: PAPER.citekey },
+          STEP,
+        );
+        return obRunUntil(
+          walk.vaultId,
+          async ({ app, page }, { note, key }) => {
+            let leaf = app.workspace
+              .getLeavesOfType("markdown")
+              .find((l) => (l.view as MarkdownView).file?.path === note) as
+              | NoteLeaf
+              | undefined;
+            if (!leaf) {
+              // The reader opens the note from the file explorer, as any note.
+              leaf = app.workspace.getLeaf("tab") as NoteLeaf;
+              await leaf.openFile(app.vault.getFileByPath(note)!);
+            }
+            app.workspace.setActiveLeaf(leaf, { focus: true });
+            const card = leaf.view.contentEl.querySelector<HTMLElement>(
+              `.zt-annot-card[data-zotero-annotation-key="${key}"]`,
+            );
+            if (!card) return null;
+            card.scrollIntoView({
+              block: "center",
+              behavior: page.scratch.docsWalkPointer ? "smooth" : "instant",
+            });
+            await new Promise((r) => setTimeout(r, 900));
+            await page.until("settled", () => true);
+            return {
+              cards: leaf.view.contentEl.querySelectorAll(
+                ".zt-annot-card[data-zotero-annotation-key]",
+              ).length,
+              text: card.innerText,
+              body: await app.vault.read(leaf.view.file!),
+            };
+          },
+          { note: NOTE, key: annotationKey },
+          { what: "the new highlight in the note", ready: (v) => v !== null },
+        );
+      });
       // No update: the note on disk is as Lesson 1 left it.
       expect(note!.body).toBe(noteBefore);
       expect(note!.cards).toBe(PAPER.annotations + 1);
@@ -676,3 +827,8 @@ describe.skipIf(!reachable)(
     });
   },
 );
+
+/** A RegExp that matches the window title `title` and nothing longer. */
+function exactly(title: string): RegExp {
+  return new RegExp(`^${title.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+}

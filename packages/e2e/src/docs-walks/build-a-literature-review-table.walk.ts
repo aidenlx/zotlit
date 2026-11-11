@@ -17,7 +17,12 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import type { LibraryView } from "@/views/library/view";
 import type { QueryFileView } from "@/views/query-view/file-view";
 
-import { openDocsWalk, readNotices, watchNotices } from "./docs-walk.ts";
+import {
+  closeWelcome,
+  openDocsWalk,
+  readNotices,
+  watchNotices,
+} from "./docs-walk.ts";
 import type { DocsWalk } from "./docs-walk.ts";
 
 const root = await getWorkspaceRoot(import.meta.dirname);
@@ -130,12 +135,14 @@ async function openProperties(vaultId: string): Promise<void> {
           (l) => (l.view as QueryFileView).file?.path === file,
         ) as TableLeaf;
       if (document.querySelector("[data-query-properties-popup]")) return;
-      page.press(
+      const button = await page.stands(
         leaf.view.contentEl.querySelector<HTMLElement>(
           "[data-query-properties]",
         ),
         "Properties",
       );
+      await page.scratch.docsWalkPointer?.point(button);
+      page.press(button, "Properties");
       await page.until("Properties menu", () =>
         document.querySelector("[data-query-properties-popup] input"),
       );
@@ -157,13 +164,23 @@ function searchProperties(
   return obRun(
     vaultId,
     async ({ page }, { search, path, action }) => {
+      const pointer = page.scratch.docsWalkPointer;
       const popup = document.querySelector<HTMLElement>(
         "[data-query-properties-popup]",
       )!;
       const input = popup.querySelector("input")!;
       input.focus();
       input.select();
-      document.execCommand("insertText", false, search);
+      if (pointer) {
+        // The pointer waits beside the menu, off its list.
+        const b = popup.getBoundingClientRect();
+        await pointer.park(b.right + 30, b.top + 20);
+        await pointer.keys(
+          search,
+          (ch) => document.execCommand("insertText", false, ch),
+          { speed: 3 },
+        );
+      } else document.execCommand("insertText", false, search);
       const selector = path
         ? `[data-query-property="${path}"]`
         : action
@@ -175,7 +192,10 @@ function searchProperties(
       const entries = [...popup.querySelectorAll("[role=option]")].map(
         (o) => o.textContent,
       );
-      if (path || action) page.press(target, search);
+      if (path || action) {
+        await pointer?.point(target, { inset: 40 });
+        page.press(target, search);
+      }
       await new Promise((r) => setTimeout(r, 300));
       return entries;
     },
@@ -210,6 +230,8 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
       STEP,
     );
     await watchNotices(walk.vaultId);
+    // The reader closed the setup section in Lesson 1.
+    await closeWelcome(walk.vaultId);
   });
 
   afterAll(async () => {
@@ -217,124 +239,146 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
   });
 
   it("step 1: select the collection, select Save as query file, type Thesis as the folder, and save; Thesis/Reproducibility.zotquery opens", async () => {
-    const shown = await obRun(
-      walk.vaultId,
-      async ({ app, page }, { name, showTree }) => {
-        app.commands.executeCommandById("zotlit:open-library-view");
-        const leaf = await page.until(
-          "Library View",
-          () =>
-            app.workspace.getLeavesOfType("zotlit-library")[0] as
-              | LibraryLeaf
-              | undefined,
-          20000,
-        );
-        const el = leaf.view.contentEl;
-        await app.workspace.revealLeaf(leaf);
-        await leaf.view.query.settled;
-        const label = () =>
-          [...el.querySelectorAll<HTMLElement>("[data-library-label]")].find(
-            (n) => n.textContent === name,
+    const { shown, saved } = await walk.record("step-1", async () => {
+      const shown = await obRun(
+        walk.vaultId,
+        async ({ app, page }, { name, showTree }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          app.commands.executeCommandById("zotlit:open-library-view");
+          const leaf = await page.until(
+            "Library View",
+            () =>
+              app.workspace.getLeavesOfType("zotlit-library")[0] as
+                | LibraryLeaf
+                | undefined,
+            20000,
           );
-        // Fact d: whether the collection tree shows by default, once the
-        // tab has its width.
-        await page.until(
-          "the tree",
-          () =>
-            el.getBoundingClientRect().width > 0 &&
-            el.querySelector("[data-library-label]"),
-          20000,
-        );
-        await new Promise((r) => setTimeout(r, 1000));
-        const treeShown = !!label()?.checkVisibility();
-        if (!treeShown)
-          page.press(
-            [...el.querySelectorAll("button")].find(
-              (b) => b.getAttribute("aria-label") === showTree,
-            ),
-            "Show libraries and collections",
-          );
-        page.press(
+          const el = leaf.view.contentEl;
+          await app.workspace.revealLeaf(leaf);
+          await leaf.view.query.settled;
+          const label = () =>
+            [...el.querySelectorAll<HTMLElement>("[data-library-label]")].find(
+              (n) => n.textContent === name,
+            );
+          // Fact d: whether the collection tree shows by default, once the
+          // tab has its width.
           await page.until(
+            "the tree",
+            () =>
+              el.getBoundingClientRect().width > 0 &&
+              el.querySelector("[data-library-label]"),
+            20000,
+          );
+          await new Promise((r) => setTimeout(r, 1000));
+          const treeShown = !!label()?.checkVisibility();
+          if (!treeShown)
+            page.press(
+              [...el.querySelectorAll("button")].find(
+                (b) => b.getAttribute("aria-label") === showTree,
+              ),
+              "Show libraries and collections",
+            );
+          const collection = await page.until(
             "the collection",
             () => label()?.checkVisibility() && label(),
             20000,
-          ),
-          "collection",
-        );
-        await page.until(
-          "four papers",
-          () => el.querySelectorAll("[data-query-item-row]").length === 4,
-          10000,
-        );
-        await leaf.view.query.settled;
-        return {
-          treeShown,
-          heading:
-            el.querySelector("[data-library-heading]")?.textContent ?? "",
-          rows: el.querySelectorAll("[data-query-item-row]").length,
-        };
-      },
-      { name: COLLECTION.name, showTree: m.library_view_show_tree() },
-      STEP,
-    );
+          );
+          await pointer?.point(collection);
+          page.press(collection, "collection");
+          await page.until(
+            "four papers",
+            () => el.querySelectorAll("[data-query-item-row]").length === 4,
+            10000,
+          );
+          await leaf.view.query.settled;
+          return {
+            treeShown,
+            heading:
+              el.querySelector("[data-library-heading]")?.textContent ?? "",
+            rows: el.querySelectorAll("[data-query-item-row]").length,
+          };
+        },
+        { name: COLLECTION.name, showTree: m.library_view_show_tree() },
+        STEP,
+      );
+      const saved = await obRun(
+        walk.vaultId,
+        async ({ app, page }, { folder: folderName, file }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          const leaf = app.workspace.getLeavesOfType(
+            "zotlit-library",
+          )[0] as LibraryLeaf;
+          const saveAs = await page.stands(
+            leaf.view.contentEl.querySelector<HTMLElement>(
+              "[data-query-save-as]",
+            ),
+            "Save as query file",
+          );
+          await pointer?.point(saveAs);
+          page.press(saveAs, "Save as query file");
+          const modal = await page.until(
+            "save dialog",
+            () =>
+              document.querySelector<HTMLElement>(".zt-save-query-file-modal"),
+            5000,
+          );
+          const name = modal.querySelector<HTMLInputElement>(
+            '[data-save-field="name"]',
+          )!.value;
+          const folder = modal.querySelector<HTMLInputElement>(
+            '[data-save-field="folder"]',
+          )!;
+          folder.focus();
+          folder.select();
+          if (pointer) {
+            await pointer.point(folder, { inset: 30 });
+            const b = folder.getBoundingClientRect();
+            await pointer.park(b.right - 20, b.top - 16);
+            await pointer.keys(folderName, (ch) =>
+              document.execCommand("insertText", false, ch),
+            );
+          } else document.execCommand("insertText", false, folderName);
+          const created = await page.until("file path", () => {
+            const t = modal.querySelector("[role=status]")!.textContent;
+            return t.includes(file) && t;
+          });
+          const title = modal.querySelector(".modal-title")!.textContent;
+          // The folder field suggests folders as the reader types.
+          const suggestions = document.querySelectorAll(
+            ".suggestion-container",
+          ).length;
+          const save = modal.querySelector<HTMLElement>(".mod-cta")!;
+          await pointer?.point(save);
+          page.press(save, "Save");
+          await page.until(
+            "file open",
+            () => app.workspace.getActiveFile()?.path === file,
+            10000,
+          );
+          if (pointer) {
+            await new Promise((r) => setTimeout(r, 500));
+            const b = app.workspace
+              .getMostRecentLeaf()!
+              .view.containerEl.getBoundingClientRect();
+            await pointer.park(b.right - 14, b.bottom - 24);
+          }
+          return {
+            title,
+            name,
+            created,
+            suggestions,
+            active: app.workspace.getActiveFile()?.path ?? null,
+          };
+        },
+        { folder: FOLDER, file: FILE },
+        STEP,
+      );
+      return { shown, saved };
+    });
     console.log("[walk] collection", JSON.stringify(shown));
     expect(shown.treeShown).toBe(true);
     expect(shown.heading).toContain(COLLECTION.name);
     expect(shown.rows).toBe(4);
-    const saved = await obRun(
-      walk.vaultId,
-      async ({ app, page }, { folder: folderName, file }) => {
-        const leaf = app.workspace.getLeavesOfType(
-          "zotlit-library",
-        )[0] as LibraryLeaf;
-        page.press(
-          leaf.view.contentEl.querySelector<HTMLElement>(
-            "[data-query-save-as]",
-          ),
-          "Save as query file",
-        );
-        const modal = await page.until(
-          "save dialog",
-          () =>
-            document.querySelector<HTMLElement>(".zt-save-query-file-modal"),
-          5000,
-        );
-        const name = modal.querySelector<HTMLInputElement>(
-          '[data-save-field="name"]',
-        )!.value;
-        const folder = modal.querySelector<HTMLInputElement>(
-          '[data-save-field="folder"]',
-        )!;
-        folder.focus();
-        folder.select();
-        document.execCommand("insertText", false, folderName);
-        const created = await page.until("file path", () => {
-          const t = modal.querySelector("[role=status]")!.textContent;
-          return t.includes(file) && t;
-        });
-        const title = modal.querySelector(".modal-title")!.textContent;
-        // The folder field suggests folders as the reader types.
-        const suggestions = document.querySelectorAll(
-          ".suggestion-container",
-        ).length;
-        page.press(modal.querySelector<HTMLElement>(".mod-cta"), "Save");
-        await page.until(
-          "file open",
-          () => app.workspace.getActiveFile()?.path === file,
-          10000,
-        );
-        return {
-          title,
-          name,
-          created,
-          suggestions,
-          active: app.workspace.getActiveFile()?.path ?? null,
-        };
-      },
-      { folder: FOLDER, file: FILE },
-      STEP,
-    );
     console.log("[walk] saved", JSON.stringify(saved));
     // The dialog offers the collection's name, so only the folder changes.
     expect(saved).toMatchObject({
@@ -348,49 +392,59 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
   });
 
   it("step 2: select Views, Configure view, and set Layout to Table; the papers as rows", async () => {
-    await obRun(
-      walk.vaultId,
-      async ({ app, page }, { file }) => {
-        const leaf = app.workspace
-          .getLeavesOfType("zotlit-query-file")
-          .find(
-            (l) => (l.view as QueryFileView).file?.path === file,
-          ) as TableLeaf;
-        const view = leaf.view;
-        const el = view.contentEl;
-        await view.query.settled;
-        page.press(
-          el.querySelector<HTMLElement>("[data-query-view-menu]"),
-          "Views",
-        );
-        page.press(
-          await page.until("Configure view", () =>
+    await walk.record("step-2", () =>
+      obRun(
+        walk.vaultId,
+        async ({ app, page }, { file }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          const leaf = app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find(
+              (l) => (l.view as QueryFileView).file?.path === file,
+            ) as TableLeaf;
+          const view = leaf.view;
+          const el = view.contentEl;
+          await view.query.settled;
+          const menu = await page.stands(
+            el.querySelector<HTMLElement>("[data-query-view-menu]"),
+            "Views",
+          );
+          await pointer?.point(menu);
+          page.press(menu, "Views");
+          const configure = await page.until("Configure view", () =>
             document.querySelector<HTMLElement>(
               "[data-query-view-list] [data-query-view-configure]",
             ),
-          ),
-          "Configure view",
-        );
-        const select = await page.until("Layout", () =>
-          document.querySelector<HTMLSelectElement>(
-            "[data-query-view-list] [data-chooser-page] [data-query-view-layout]",
-          ),
-        );
-        await page.pick(select, "table", "Layout");
-        await page.until(
-          "Table",
-          () => el.querySelector('[data-query-table-row="item"]'),
-          10000,
-        );
-        page.closePopovers(document);
-        await page.until(
-          "Views closed",
-          () => !document.querySelector("[data-query-view-list]"),
-        );
-        await view.query.settled;
-      },
-      { file: FILE },
-      STEP,
+          );
+          await pointer?.point(configure);
+          page.press(configure, "Configure view");
+          const select = await page.until("Layout", () =>
+            document.querySelector<HTMLSelectElement>(
+              "[data-query-view-list] [data-chooser-page] [data-query-view-layout]",
+            ),
+          );
+          await pointer?.point(select);
+          await page.pick(select, "table", "Layout");
+          await page.until(
+            "Table",
+            () => el.querySelector('[data-query-table-row="item"]'),
+            10000,
+          );
+          if (pointer) await new Promise((r) => setTimeout(r, 700));
+          page.closePopovers(document);
+          await page.until(
+            "Views closed",
+            () => !document.querySelector("[data-query-view-list]"),
+          );
+          await view.query.settled;
+          if (pointer) {
+            const b = el.getBoundingClientRect();
+            await pointer.park(b.right - 14, b.bottom - 24);
+          }
+        },
+        { file: FILE },
+        STEP,
+      ),
     );
     const table = await tableWhen(
       walk.vaultId,
@@ -409,23 +463,24 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
   });
 
   it("step 3: select Properties, add Year, Publication, and creators, and clear Item Type and Modified; authors, year, and journal beside each title", async () => {
-    await openProperties(walk.vaultId);
-    await searchProperties(walk.vaultId, "year", { path: "date.year" });
-    await searchProperties(walk.vaultId, "publication", {
-      path: "publicationTitle",
-    });
-    // The menu does not list Creators: typing its name offers to add it.
-    const offered = await searchProperties(walk.vaultId, "creators", {
-      action: "add-property",
+    const offered = await walk.record("step-3", async () => {
+      await openProperties(walk.vaultId);
+      await searchProperties(walk.vaultId, "year", { path: "date.year" });
+      await searchProperties(walk.vaultId, "publication", {
+        path: "publicationTitle",
+      });
+      // The menu does not list Creators: typing its name offers to add it.
+      const offered = await searchProperties(walk.vaultId, "creators", {
+        action: "add-property",
+      });
+      await searchProperties(walk.vaultId, "item type", { path: "itemType" });
+      await searchProperties(walk.vaultId, "modified", {
+        path: "dateModified",
+      });
+      await closeMenus(walk.vaultId);
+      return offered;
     });
     expect(offered[0]).toBe(m.query_view_properties_add({ name: "creators" }));
-    await searchProperties(walk.vaultId, "item type", { path: "itemType" });
-    await searchProperties(walk.vaultId, "modified", {
-      path: "dateModified",
-    });
-    await obRun(walk.vaultId, ({ page }) => {
-      page.closePopovers(document);
-    });
     const table = await tableWhen(
       walk.vaultId,
       "the chosen columns",
@@ -450,70 +505,78 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
   });
 
   it('step 4: type rating, select Add "rating" vault property, and type a rating in each cell; your ratings in a column of your own', async () => {
-    await openProperties(walk.vaultId);
-    const entries = await searchProperties(walk.vaultId, PROPERTY, {
-      action: "add-vault-property",
-    });
-    expect(entries).toContain(
-      m.query_view_properties_add_vault({ name: PROPERTY }),
-    );
-    await obRun(walk.vaultId, ({ page }) => {
-      page.closePopovers(document);
-    });
-    const added = await tableWhen(
-      walk.vaultId,
-      "the rating column",
-      (t) => Object.keys(t.ratings).length === 4,
-    );
-    expect(added.header).toContain(
-      m.query_view_vault_property_label({ name: PROPERTY }),
-    );
     const modified = () =>
       walk.zotero.json<Record<string, string>>(
         `Object.fromEntries(${JSON.stringify(Object.values(PAPERS).map((p) => p.key))}.map(k=>[k,Zotero.Items.getByLibraryAndKey(1,k).dateModified]))`,
       );
     const before = await modified();
-    for (const [paper, value] of RATINGS) {
-      const key = PAPERS[paper].key;
-      await obRun(
+    const { entries, added } = await walk.record("step-4", async () => {
+      await openProperties(walk.vaultId);
+      const entries = await searchProperties(walk.vaultId, PROPERTY, {
+        action: "add-vault-property",
+      });
+      await closeMenus(walk.vaultId);
+      const added = await tableWhen(
         walk.vaultId,
-        async ({ app, page }, { file, key, property, value }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("zotlit-query-file")
-            .find(
-              (l) => (l.view as QueryFileView).file?.path === file,
-            ) as TableLeaf;
-          await leaf.view.query.settled;
-          const cell = leaf.view.contentEl
-            .querySelector(
-              `[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${property}"]`,
-            )!
-            .closest("td")!;
-          cell.scrollIntoView({
-            block: "center",
-            inline: "nearest",
-            behavior: "instant",
-          });
-          await page.trusted(window).click(cell);
-          await page.until("rating field", () =>
-            activeDocument.activeElement?.matches("[data-query-vault-input]"),
-          );
-          await new Promise((r) => setTimeout(r, 300));
-          (require("@electron/remote") as Remote)
-            .getCurrentWebContents()
-            .insertText(value);
-          await new Promise((r) => setTimeout(r, 300));
-          await page.trusted(window).key("Enter");
-        },
-        { file: FILE, key, property: PROPERTY, value },
-        STEP,
+        "the rating column",
+        (t) => Object.keys(t.ratings).length === 4,
       );
-      await tableWhen(
-        walk.vaultId,
-        `${paper} rated ${value}`,
-        (t) => t.ratings[key] === value,
-      );
-    }
+      for (const [paper, value] of RATINGS) {
+        const key = PAPERS[paper].key;
+        await obRun(
+          walk.vaultId,
+          async ({ app, page }, { file, key, property, value }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const leaf = app.workspace
+              .getLeavesOfType("zotlit-query-file")
+              .find(
+                (l) => (l.view as QueryFileView).file?.path === file,
+              ) as TableLeaf;
+            await leaf.view.query.settled;
+            const cell = leaf.view.contentEl
+              .querySelector(
+                `[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${property}"]`,
+              )!
+              .closest("td")!;
+            cell.scrollIntoView({
+              block: "center",
+              inline: "nearest",
+              behavior: "instant",
+            });
+            await pointer?.point(cell, { inset: 20 });
+            await page.trusted(window).click(cell);
+            await page.until("rating field", () =>
+              activeDocument.activeElement?.matches("[data-query-vault-input]"),
+            );
+            await new Promise((r) => setTimeout(r, pointer ? 100 : 300));
+            if (pointer) {
+              // The pointer moves off the cell, so the rating shows.
+              const b = cell.getBoundingClientRect();
+              await pointer.park(b.right + 30, b.bottom + 20);
+            }
+            (require("@electron/remote") as Remote)
+              .getCurrentWebContents()
+              .insertText(value);
+            await new Promise((r) => setTimeout(r, 300));
+            await page.trusted(window).key("Enter");
+          },
+          { file: FILE, key, property: PROPERTY, value },
+          STEP,
+        );
+        await tableWhen(
+          walk.vaultId,
+          `${paper} rated ${value}`,
+          (t) => t.ratings[key] === value,
+        );
+      }
+      return { entries, added };
+    });
+    expect(entries).toContain(
+      m.query_view_properties_add_vault({ name: PROPERTY }),
+    );
+    expect(added.header).toContain(
+      m.query_view_vault_property_label({ name: PROPERTY }),
+    );
     // A rating is written to the notes alone: Zotero changed none of the papers.
     expect(await modified()).toEqual(before);
     const table = await tableWhen(walk.vaultId, "every rating", () => true);
@@ -532,48 +595,61 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
   });
 
   it("step 5: select Sort, Add sort, and choose Date, old to new; the papers in order of year", async () => {
-    const sorted = await obRun(
-      walk.vaultId,
-      async ({ app, page }, { file }) => {
-        const leaf = app.workspace
-          .getLeavesOfType("zotlit-query-file")
-          .find(
-            (l) => (l.view as QueryFileView).file?.path === file,
-          ) as TableLeaf;
-        const el = leaf.view.contentEl;
-        const name =
-          el
-            .querySelector('[data-query-toolbar="sort"]')
-            ?.getAttribute("aria-label") ?? null;
-        const popup = await page.openToolbarPopover(el, "sort");
-        page.press(
-          await page.until("Add sort", () =>
+    const sorted = await walk.record("step-5", () =>
+      obRun(
+        walk.vaultId,
+        async ({ app, page }, { file }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          const leaf = app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find(
+              (l) => (l.view as QueryFileView).file?.path === file,
+            ) as TableLeaf;
+          const el = leaf.view.contentEl;
+          const name =
+            el
+              .querySelector('[data-query-toolbar="sort"]')
+              ?.getAttribute("aria-label") ?? null;
+          await pointer?.point(
+            el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!,
+          );
+          const popup = await page.openToolbarPopover(el, "sort");
+          const add = await page.until("Add sort", () =>
             popup.querySelector<HTMLElement>("[data-sort-add]"),
-          ),
-          "Add sort",
-        );
-        const property = await page.until("Sort by", () =>
-          popup.querySelector<HTMLButtonElement | HTMLSelectElement>(
+          );
+          await pointer?.point(add);
+          page.press(add, "Add sort");
+          const property = await page.until("Sort by", () =>
+            popup.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              "[data-sort-property]",
+            ),
+          );
+          await pointer?.point(property);
+          await page.pick(property, "date", "Sort by");
+          const direction = await page.until("direction", () =>
+            popup.querySelector<HTMLSelectElement>("[data-sort-direction]"),
+          );
+          const names = [...direction.options].map((o) => o.text);
+          await pointer?.point(direction);
+          await page.pick(direction, "ASC", "direction");
+          await new Promise((r) => setTimeout(r, pointer ? 900 : 300));
+          const shown = popup.querySelector<HTMLElement>(
             "[data-sort-property]",
-          ),
-        );
-        await page.pick(property, "date", "Sort by");
-        const direction = await page.until("direction", () =>
-          popup.querySelector<HTMLSelectElement>("[data-sort-direction]"),
-        );
-        const names = [...direction.options].map((o) => o.text);
-        await page.pick(direction, "ASC", "direction");
-        await new Promise((r) => setTimeout(r, 300));
-        const shown = popup.querySelector<HTMLElement>("[data-sort-property]");
-        const by =
-          shown instanceof HTMLSelectElement
-            ? (shown.selectedOptions[0]?.text ?? "")
-            : (shown?.innerText.trim() ?? "");
-        await page.closeToolbarPopover(el, "sort");
-        return { name, names, by };
-      },
-      { file: FILE },
-      STEP,
+          );
+          const by =
+            shown instanceof HTMLSelectElement
+              ? (shown.selectedOptions[0]?.text ?? "")
+              : (shown?.innerText.trim() ?? "");
+          await page.closeToolbarPopover(el, "sort");
+          if (pointer) {
+            const b = el.getBoundingClientRect();
+            await pointer.park(b.right - 14, b.bottom - 24);
+          }
+          return { name, names, by };
+        },
+        { file: FILE },
+        STEP,
+      ),
     );
     console.log("[walk] sort", JSON.stringify(sorted));
     expect(sorted.name).toBe(m.query_view_sort());
@@ -598,101 +674,114 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
   });
 
   it("step 6: select the result count, choose Copy to clipboard, and paste into your draft; the table in your chapter", async () => {
-    const copied = await obRun(
-      walk.vaultId,
-      async ({ app, page }, { file, copy, copiedNotice }) => {
-        const leaf = app.workspace
-          .getLeavesOfType("zotlit-query-file")
-          .find(
-            (l) => (l.view as QueryFileView).file?.path === file,
-          ) as TableLeaf;
-        const el = leaf.view.contentEl;
-        const count = el.querySelector<HTMLElement>("[data-query-results]")!;
-        const label = count.innerText.trim();
-        page.press(count, "result count");
-        const popup = await page.until("Results menu", () =>
-          document.querySelector<HTMLElement>("[data-query-results-popup]"),
-        );
-        const item = await page.until("Copy to clipboard", () =>
-          [
+    const { copied, pasted } = await walk.record("step-6", async () => {
+      const copied = await obRun(
+        walk.vaultId,
+        async ({ app, page }, { file, copy, copiedNotice }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          const leaf = app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .find(
+              (l) => (l.view as QueryFileView).file?.path === file,
+            ) as TableLeaf;
+          const el = leaf.view.contentEl;
+          const count = el.querySelector<HTMLElement>("[data-query-results]")!;
+          const label = count.innerText.trim();
+          await pointer?.point(count);
+          page.press(count, "result count");
+          const popup = await page.until("Results menu", () =>
+            document.querySelector<HTMLElement>("[data-query-results-popup]"),
+          );
+          const item = await page.until("Copy to clipboard", () =>
+            [
+              ...popup.querySelectorAll<HTMLElement>("button,[role=menuitem]"),
+            ].find((b) => b.textContent.includes(copy)),
+          );
+          const menu = [
             ...popup.querySelectorAll<HTMLElement>("button,[role=menuitem]"),
-          ].find((b) => b.textContent.includes(copy)),
-        );
-        const menu = [
-          ...popup.querySelectorAll<HTMLElement>("button,[role=menuitem]"),
-        ]
-          .map((b) => b.textContent.trim())
-          .filter(Boolean);
-        page.press(item, "Copy to clipboard");
-        await page.until(
-          "copied",
-          () => page.scratch.docsWalkNotices!.includes(copiedNotice),
-          5000,
-        );
-        const { clipboard } = require("electron") as {
-          clipboard: Clipboard;
-        };
-        return {
-          label,
-          menu,
-          text: clipboard.readText(),
-          html: clipboard.readHTML(),
-        };
-      },
-      {
-        file: FILE,
-        copy: m.query_view_copy(),
-        copiedNotice: m.query_view_copied(),
-      },
-      STEP,
-    );
+          ]
+            .map((b) => b.textContent.trim())
+            .filter(Boolean);
+          await pointer?.point(item, { inset: 40 });
+          page.press(item, "Copy to clipboard");
+          await page.until(
+            "copied",
+            () => page.scratch.docsWalkNotices!.includes(copiedNotice),
+            5000,
+          );
+          const { clipboard } = require("electron") as {
+            clipboard: Clipboard;
+          };
+          return {
+            label,
+            menu,
+            text: clipboard.readText(),
+            html: clipboard.readHTML(),
+          };
+        },
+        {
+          file: FILE,
+          copy: m.query_view_copy(),
+          copiedNotice: m.query_view_copied(),
+        },
+        STEP,
+      );
+      // Pasted into the draft, the copy becomes a Markdown table.
+      const pasted = await obRun(
+        walk.vaultId,
+        async ({ app, page }, { draftPath }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          const leaf = app.workspace.getLeaf("tab") as DraftLeaf;
+          await leaf.openFile(app.vault.getFileByPath(draftPath)!);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          const editor = leaf.view.editor;
+          editor.focus();
+          const at = editor.getValue().indexOf("## Notes to self");
+          editor.setCursor(editor.offsetToPos(at));
+          editor.replaceSelection(
+            "## 3.3 The papers behind the method\n\n\n\n",
+          );
+          editor.setCursor(
+            editor.offsetToPos(
+              at + "## 3.3 The papers behind the method\n\n".length,
+            ),
+          );
+          await new Promise((r) => setTimeout(r, pointer ? 900 : 300));
+          const { clipboard } = require("electron") as {
+            clipboard: Clipboard;
+          };
+          const data = new DataTransfer();
+          data.setData("text/html", clipboard.readHTML());
+          data.setData("text/plain", clipboard.readText());
+          leaf.view.contentEl.querySelector(".cm-content")!.dispatchEvent(
+            new ClipboardEvent("paste", {
+              clipboardData: data,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await new Promise((r) => setTimeout(r, 1000));
+          await leaf.view.save();
+          const heading = [
+            ...leaf.view.contentEl.querySelectorAll<HTMLElement>(".cm-line"),
+          ].find((n) => n.textContent.startsWith("3.3"));
+          heading?.scrollIntoView({ block: "start", behavior: "instant" });
+          editor.setCursor({ line: 0, ch: 0 });
+          await new Promise((r) => setTimeout(r, 500));
+          if (pointer) {
+            const b = leaf.view.contentEl.getBoundingClientRect();
+            await pointer.park(b.right - 14, b.bottom - 24);
+          }
+          return app.vault.read(leaf.view.file!);
+        },
+        { draftPath: DRAFT },
+        STEP,
+      );
+      return { copied, pasted };
+    });
     console.log("[walk] copied", JSON.stringify(copied));
     expect(copied.label).toContain("4");
     expect(copied.menu).toContain(m.query_view_copy());
-    // Pasted into the draft, the copy becomes a Markdown table.
-    const pasted = await obRun(
-      walk.vaultId,
-      async ({ app }, { draftPath }) => {
-        const leaf = app.workspace.getLeaf("tab") as DraftLeaf;
-        await leaf.openFile(app.vault.getFileByPath(draftPath)!);
-        app.workspace.setActiveLeaf(leaf, { focus: true });
-        const editor = leaf.view.editor;
-        editor.focus();
-        const at = editor.getValue().indexOf("## Notes to self");
-        editor.setCursor(editor.offsetToPos(at));
-        editor.replaceSelection("## 3.3 The papers behind the method\n\n\n\n");
-        editor.setCursor(
-          editor.offsetToPos(
-            at + "## 3.3 The papers behind the method\n\n".length,
-          ),
-        );
-        await new Promise((r) => setTimeout(r, 300));
-        const { clipboard } = require("electron") as {
-          clipboard: Clipboard;
-        };
-        const data = new DataTransfer();
-        data.setData("text/html", clipboard.readHTML());
-        data.setData("text/plain", clipboard.readText());
-        leaf.view.contentEl.querySelector(".cm-content")!.dispatchEvent(
-          new ClipboardEvent("paste", {
-            clipboardData: data,
-            bubbles: true,
-            cancelable: true,
-          }),
-        );
-        await new Promise((r) => setTimeout(r, 1000));
-        await leaf.view.save();
-        const heading = [
-          ...leaf.view.contentEl.querySelectorAll<HTMLElement>(".cm-line"),
-        ].find((n) => n.textContent.startsWith("3.3"));
-        heading?.scrollIntoView({ block: "start", behavior: "instant" });
-        editor.setCursor({ line: 0, ch: 0 });
-        await new Promise((r) => setTimeout(r, 500));
-        return app.vault.read(leaf.view.file!);
-      },
-      { draftPath: DRAFT },
-      STEP,
-    );
     // Obsidian may pad the cells; the walk reads the table without the padding.
     const rows = pasted
       .split("\n")
@@ -717,3 +806,12 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
     await walk.compose("step-6");
   });
 });
+
+/** Closes the open toolbar menus, as a press outside them does. */
+async function closeMenus(vaultId: string): Promise<void> {
+  await obRun(vaultId, async ({ page }) => {
+    page.closePopovers(document);
+    if (page.scratch.docsWalkPointer)
+      await new Promise((r) => setTimeout(r, 600));
+  });
+}

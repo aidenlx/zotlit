@@ -19,7 +19,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { openDocsWalk, readNotices, watchNotices } from "./docs-walk.ts";
+import {
+  closeWelcome,
+  openDocsWalk,
+  readNotices,
+  watchNotices,
+} from "./docs-walk.ts";
 import type { DocsWalk } from "./docs-walk.ts";
 
 const root = await getWorkspaceRoot(import.meta.dirname);
@@ -71,6 +76,8 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
       vaultCase: "docs",
     });
     await watchNotices(walk.vaultId);
+    // The reader closed the setup section in Lesson 1.
+    await closeWelcome(walk.vaultId);
     await obRun(
       walk.vaultId,
       async ({ app }, { draftPath }) => {
@@ -103,53 +110,67 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
       const s = await h.runPromise(h.binary.getStatus);
       return s.kind;
     });
-    const row = await obRun(
-      walk.vaultId,
-      async ({ app, page }, { citationsName, engineName, install }) => {
-        app.vault.setConfig("settingsPopoutWindow", false);
-        app.setting.open();
-        app.setting.openTabById("zotlit");
-        const named = (name: string) =>
-          [
-            ...app.setting.modalEl.querySelectorAll<HTMLElement>(
-              ".setting-item",
-            ),
-          ].find(
-            (s) => s.querySelector(".setting-item-name")?.textContent === name,
+    const row = await walk.record("step-1", () =>
+      obRun(
+        walk.vaultId,
+        async ({ app, page }, { citationsName, engineName, install }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          app.vault.setConfig("settingsPopoutWindow", false);
+          app.setting.open();
+          app.setting.openTabById("zotlit");
+          const named = (name: string) =>
+            [
+              ...app.setting.modalEl.querySelectorAll<HTMLElement>(
+                ".setting-item",
+              ),
+            ].find(
+              (s) =>
+                s.querySelector(".setting-item-name")?.textContent === name,
+            );
+          const citations = await page.until(
+            "Citations row",
+            () => named(citationsName),
+            5000,
           );
-        const citations = await page.until(
-          "Citations row",
-          () => named(citationsName),
-          5000,
-        );
-        // The page list sits below the window's fold; the reader scrolls to it.
-        citations.scrollIntoView({ block: "center", behavior: "instant" });
-        await new Promise((r) => requestAnimationFrame(r));
-        page.press(citations, "Citations");
-        const row = await page.until(
-          "engine row",
-          () => named(engineName),
-          5000,
-        );
-        row.scrollIntoView({ block: "center", behavior: "instant" });
-        await page.stands(row, "engine row");
-        const buttons = [...row.querySelectorAll("button")].map(
-          (b) => b.textContent,
-        );
-        // The engine is installed once per computer: an earlier run on this
-        // computer leaves it installed, and the row offers Uninstall instead.
-        const press = [...row.querySelectorAll<HTMLElement>("button")].find(
-          (b) => b.textContent === install,
-        );
-        if (press) page.press(press, "Install");
-        return { buttons, pressed: !!press };
-      },
-      {
-        citationsName: m.settings_page_citations(),
-        engineName: m.settings_citation_engine_name(),
-        install: m.settings_citation_engine_install(),
-      },
-      STEP,
+          // The page list sits below the window's fold; the reader scrolls to it.
+          citations.scrollIntoView({
+            block: "center",
+            behavior: pointer ? "smooth" : "instant",
+          });
+          await new Promise((r) => setTimeout(r, pointer ? 700 : 0));
+          await new Promise((r) => requestAnimationFrame(r));
+          await pointer?.point(citations, { inset: 60 });
+          page.press(citations, "Citations");
+          const row = await page.until(
+            "engine row",
+            () => named(engineName),
+            5000,
+          );
+          row.scrollIntoView({ block: "center", behavior: "instant" });
+          await page.stands(row, "engine row");
+          if (pointer) {
+            // The pointer rests under the row's button, off its text.
+            const b = row.getBoundingClientRect();
+            await pointer.park(b.right - 40, b.bottom + 30);
+          }
+          const buttons = [...row.querySelectorAll("button")].map(
+            (b) => b.textContent,
+          );
+          // The engine is installed once per computer: an earlier run on this
+          // computer leaves it installed, and the row offers Uninstall instead.
+          const press = [...row.querySelectorAll<HTMLElement>("button")].find(
+            (b) => b.textContent === install,
+          );
+          if (press) page.press(press, "Install");
+          return { buttons, pressed: !!press };
+        },
+        {
+          citationsName: m.settings_page_citations(),
+          engineName: m.settings_citation_engine_name(),
+          install: m.settings_citation_engine_install(),
+        },
+        STEP,
+      ),
     );
     const version = await obRunUntil(
       walk.vaultId,
@@ -203,12 +224,10 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
   }, 600000);
 
   it("step 2: in your draft, type [@sandve; a list of matching papers under the cursor", async () => {
-    const shown = await obRun(
+    // The reader has written a new section, up to where the citation goes.
+    await obRun(
       walk.vaultId,
-      async (
-        { app, page },
-        { draftPath, before, typed, sentence, search, title },
-      ) => {
+      ({ app }, { draftPath, before, typed, sentence }) => {
         const draft = app.workspace
           .getLeavesOfType("markdown")
           .find(
@@ -224,49 +243,76 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
         editor.replaceSelection(typed);
         editor.setCursor({ line: line + 2, ch: sentence.length });
         editor.focus();
-        const cm = editor.cm;
-        for (const ch of `[@${search}`) {
-          cm.dispatch(cm.state.replaceSelection(ch), {
-            userEvent: "input.type",
-          });
-          await new Promise((r) => setTimeout(r, 70));
-        }
-        const popup = await page.until(
-          "Citation Suggester",
-          () =>
-            [...activeDocument.querySelectorAll(".suggestion-container")].at(
-              -1,
-            ),
-          5000,
-        );
-        await page.until(
-          "suggestions",
-          () =>
-            [...popup.querySelectorAll(".suggestion-item")].some(
-              (n) => !n.closest("[aria-busy]") && n.textContent.includes(title),
-            ),
-          10000,
-        );
-        await new Promise((r) => setTimeout(r, 500));
-        const caret = cm.coordsAtPos(cm.state.selection.main.head)!;
-        const box = popup.getBoundingClientRect();
-        return {
-          rows: [
-            ...popup.querySelectorAll<HTMLElement>(".suggestion-item"),
-          ].map((n) => n.innerText),
-          below: box.top >= caret.bottom - 2,
-          near: Math.abs(box.left - caret.left) < 200,
-        };
       },
       {
         draftPath: DRAFT,
         before: BEFORE,
         typed: `${SECTION}\n\n${SENTENCE}\n\n`,
         sentence: SENTENCE,
-        search: SEARCH,
-        title: PAPER.title,
       },
       STEP,
+    );
+    const shown = await walk.record("step-2", () =>
+      obRun(
+        walk.vaultId,
+        async ({ app, page }, { draftPath, search, title }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          const draft = app.workspace
+            .getLeavesOfType("markdown")
+            .find(
+              (l) => (l.view as MarkdownView).file?.path === draftPath,
+            ) as DraftLeaf;
+          const cm = draft.view.editor.cm;
+          if (pointer) {
+            // The pointer rests above the line, off the text and the list.
+            const at = cm.coordsAtPos(cm.state.selection.main.head)!;
+            await pointer.park(at.right + 160, at.top - 40);
+          }
+          const put = (ch: string) =>
+            cm.dispatch(cm.state.replaceSelection(ch), {
+              userEvent: "input.type",
+            });
+          if (pointer) await pointer.keys(`[@${search}`, put);
+          else
+            for (const ch of `[@${search}`) {
+              put(ch);
+              await new Promise((r) => setTimeout(r, 70));
+            }
+          const popup = await page.until(
+            "Citation Suggester",
+            () =>
+              [...activeDocument.querySelectorAll(".suggestion-container")].at(
+                -1,
+              ),
+            5000,
+          );
+          await page.until(
+            "suggestions",
+            () =>
+              [...popup.querySelectorAll(".suggestion-item")].some(
+                (n) =>
+                  !n.closest("[aria-busy]") && n.textContent.includes(title),
+              ),
+            10000,
+          );
+          await new Promise((r) => setTimeout(r, 500));
+          const caret = cm.coordsAtPos(cm.state.selection.main.head)!;
+          const box = popup.getBoundingClientRect();
+          return {
+            rows: [
+              ...popup.querySelectorAll<HTMLElement>(".suggestion-item"),
+            ].map((n) => n.innerText),
+            below: box.top >= caret.bottom - 2,
+            near: Math.abs(box.left - caret.left) < 200,
+          };
+        },
+        {
+          draftPath: DRAFT,
+          search: SEARCH,
+          title: PAPER.title,
+        },
+        STEP,
+      ),
     );
     console.log("[walk] suggest", JSON.stringify(shown));
     const [first = ""] = shown.rows;
@@ -279,28 +325,33 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
   });
 
   it("step 3: press Enter; [@sandve2013] in your draft", async () => {
-    const inserted = await obRun(
-      walk.vaultId,
-      async ({ app, page }, { draftPath, citekey, sentence }) => {
-        const draft = app.workspace
-          .getLeavesOfType("markdown")
-          .find(
-            (l) => (l.view as MarkdownView).file?.path === draftPath,
-          ) as DraftLeaf;
-        const editor = draft.view.editor;
-        await page.trusted(window).key("Enter");
-        await page.until(
-          "citation inserted",
-          () => editor.getValue().includes(`[@${citekey}]`),
-          5000,
-        );
-        return editor
-          .getValue()
-          .split("\n")
-          .find((l) => l.startsWith(sentence.trim()));
-      },
-      { draftPath: DRAFT, citekey: PAPER.citekey, sentence: SENTENCE },
-      STEP,
+    const inserted = await walk.record("step-3", () =>
+      obRun(
+        walk.vaultId,
+        async ({ app, page }, { draftPath, citekey, sentence }) => {
+          const draft = app.workspace
+            .getLeavesOfType("markdown")
+            .find(
+              (l) => (l.view as MarkdownView).file?.path === draftPath,
+            ) as DraftLeaf;
+          const editor = draft.view.editor;
+          // The clip opens on the list, then the reader presses Enter.
+          if (page.scratch.docsWalkPointer)
+            await new Promise((r) => setTimeout(r, 1000));
+          await page.trusted(window).key("Enter");
+          await page.until(
+            "citation inserted",
+            () => editor.getValue().includes(`[@${citekey}]`),
+            5000,
+          );
+          return editor
+            .getValue()
+            .split("\n")
+            .find((l) => l.startsWith(sentence.trim()));
+        },
+        { draftPath: DRAFT, citekey: PAPER.citekey, sentence: SENTENCE },
+        STEP,
+      ),
     );
     expect(inserted?.trimEnd()).toBe(`${SENTENCE}[@${PAPER.citekey}]`);
     await walk.capture("step-3");
@@ -308,51 +359,77 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
   });
 
   it("step 4: before the bracket, type , p. 2 and move the cursor away; (Sandve et al. 2013, 2)", async () => {
-    const shown = await obRun(
-      walk.vaultId,
-      async ({ app, page }, { draftPath, citekey, sentence }) => {
-        const draft = app.workspace
-          .getLeavesOfType("markdown")
-          .find(
-            (l) => (l.view as MarkdownView).file?.path === draftPath,
-          ) as DraftLeaf;
-        const editor = draft.view.editor;
-        // The reader puts the cursor before the closing bracket and types the page.
-        const at =
-          editor.getValue().indexOf(`[@${citekey}]`) + `[@${citekey}`.length;
-        editor.setCursor(editor.offsetToPos(at));
-        const cm = editor.cm;
-        for (const ch of ", p. 2") {
-          cm.dispatch(cm.state.replaceSelection(ch), {
-            userEvent: "input.type",
+    const shown = await walk.record("step-4", () =>
+      obRun(
+        walk.vaultId,
+        async ({ app, page }, { draftPath, citekey, sentence }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          const draft = app.workspace
+            .getLeavesOfType("markdown")
+            .find(
+              (l) => (l.view as MarkdownView).file?.path === draftPath,
+            ) as DraftLeaf;
+          const editor = draft.view.editor;
+          // The reader puts the cursor before the closing bracket and types the page.
+          const at =
+            editor.getValue().indexOf(`[@${citekey}]`) + `[@${citekey}`.length;
+          const cm = editor.cm;
+          const box = cm.coordsAtPos(at);
+          if (pointer && box) {
+            await pointer.pointAt(box.left, (box.top + box.bottom) / 2);
+            await pointer.park(box.left + 40, box.bottom + 40);
+          }
+          editor.setCursor(editor.offsetToPos(at));
+          const put = (ch: string) =>
+            cm.dispatch(cm.state.replaceSelection(ch), {
+              userEvent: "input.type",
+            });
+          if (pointer) await pointer.keys(", p. 2", put);
+          else
+            for (const ch of ", p. 2") {
+              put(ch);
+              await new Promise((r) => setTimeout(r, 40));
+            }
+          // Then moves the cursor away, to the top of the draft.
+          const top = cm.coordsAtPos(0);
+          if (pointer && top) {
+            await pointer.pointAt(top.left + 4, (top.top + top.bottom) / 2);
+          }
+          editor.setCursor({ line: 0, ch: 0 });
+          await draft.view.save();
+          const cites = await page.until(
+            "formatted",
+            () => {
+              const c = [
+                ...draft.view.contentEl.querySelectorAll(".zt-citation"),
+              ].map((e) => e.textContent);
+              return c.some((t) => t.includes("Sandve")) && c;
+            },
+            20000,
+          );
+          const line = editor
+            .getValue()
+            .split("\n")
+            .find((l) => l.startsWith(sentence.trim()));
+          const cite = [
+            ...draft.view.contentEl.querySelectorAll<HTMLElement>(
+              ".zt-citation",
+            ),
+          ].find((e) => e.textContent.includes("Sandve"))!;
+          cite.scrollIntoView({
+            block: "center",
+            behavior: pointer ? "smooth" : "instant",
           });
-          await new Promise((r) => setTimeout(r, 40));
-        }
-        // Then moves the cursor away, to the top of the draft.
-        editor.setCursor({ line: 0, ch: 0 });
-        await draft.view.save();
-        const cites = await page.until(
-          "formatted",
-          () => {
-            const c = [
-              ...draft.view.contentEl.querySelectorAll(".zt-citation"),
-            ].map((e) => e.textContent);
-            return c.some((t) => t.includes("Sandve")) && c;
-          },
-          20000,
-        );
-        const line = editor
-          .getValue()
-          .split("\n")
-          .find((l) => l.startsWith(sentence.trim()));
-        const cite = [
-          ...draft.view.contentEl.querySelectorAll<HTMLElement>(".zt-citation"),
-        ].find((e) => e.textContent.includes("Sandve"))!;
-        cite.scrollIntoView({ block: "center" });
-        return { line, cites };
-      },
-      { draftPath: DRAFT, citekey: PAPER.citekey, sentence: SENTENCE },
-      STEP,
+          if (pointer) {
+            await new Promise((r) => setTimeout(r, 700));
+            const b = draft.view.contentEl.getBoundingClientRect();
+            await pointer.park(b.right - 14, b.top + b.height * 0.7);
+          }
+          return { line, cites };
+        },
+        { draftPath: DRAFT, citekey: PAPER.citekey, sentence: SENTENCE },
+        STEP,
+      ),
     );
     expect(shown.line?.trimEnd()).toBe(`${SENTENCE}[@${PAPER.citekey}, p. 2]`);
     expect(shown.cites).toContain("(Sandve et al. 2013, 2)");
@@ -361,50 +438,57 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
   });
 
   it("step 5: point at the citation; the paper's full reference", async () => {
-    const popover = await obRun(
-      walk.vaultId,
-      async ({ app, page }, { draftPath }) => {
-        const draft = app.workspace
-          .getLeavesOfType("markdown")
-          .find(
-            (l) => (l.view as MarkdownView).file?.path === draftPath,
-          ) as DraftLeaf;
-        app.workspace.setActiveLeaf(draft, { focus: true });
-        const cite = await page.until(
-          "citation",
-          () =>
-            [...draft.view.contentEl.querySelectorAll(".zt-citation")].find(
-              (e) => e.textContent.includes("Sandve"),
-            ),
-          10000,
-        );
-        cite.scrollIntoView({ block: "center" });
-        const b = cite.getClientRects()[0]!;
-        cite.dispatchEvent(
-          new MouseEvent("mouseover", {
-            clientX: b.left + b.width / 2,
-            clientY: b.top + b.height / 2,
-            bubbles: true,
-            view: window,
-          }),
-        );
-        const pop = await page.until(
-          "popover",
-          () => {
-            const p = draft.view.hoverPopover;
-            return (
-              p?.hoverEl.isConnected &&
-              p.hoverEl.innerText.includes("Sandve") &&
-              p
-            );
-          },
-          10000,
-        );
-        await new Promise((r) => setTimeout(r, 800));
-        return pop.hoverEl.innerText;
-      },
-      { draftPath: DRAFT },
-      STEP,
+    const popover = await walk.record("step-5", () =>
+      obRun(
+        walk.vaultId,
+        async ({ app, page }, { draftPath }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          const draft = app.workspace
+            .getLeavesOfType("markdown")
+            .find(
+              (l) => (l.view as MarkdownView).file?.path === draftPath,
+            ) as DraftLeaf;
+          app.workspace.setActiveLeaf(draft, { focus: true });
+          const cite = await page.until(
+            "citation",
+            () =>
+              [...draft.view.contentEl.querySelectorAll(".zt-citation")].find(
+                (e) => e.textContent.includes("Sandve"),
+              ),
+            10000,
+          );
+          cite.scrollIntoView({ block: "center" });
+          const b = cite.getClientRects()[0]!;
+          // The pointer comes to rest at the citation's lower right corner,
+          // off its words.
+          const end = [...cite.getClientRects()].at(-1)!;
+          await pointer?.park(end.right - 3, end.bottom - 3);
+          cite.dispatchEvent(
+            new MouseEvent("mouseover", {
+              clientX: b.left + b.width / 2,
+              clientY: b.top + b.height / 2,
+              bubbles: true,
+              view: window,
+            }),
+          );
+          const pop = await page.until(
+            "popover",
+            () => {
+              const p = draft.view.hoverPopover;
+              return (
+                p?.hoverEl.isConnected &&
+                p.hoverEl.innerText.includes("Sandve") &&
+                p
+              );
+            },
+            10000,
+          );
+          await new Promise((r) => setTimeout(r, 800));
+          return pop.hoverEl.innerText;
+        },
+        { draftPath: DRAFT },
+        STEP,
+      ),
     );
     console.log("[walk] reference", JSON.stringify(popover));
     expect(flat(popover)).toContain(PAPER.title);
@@ -415,140 +499,152 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
   });
 
   it("step 6: open the PDF beside the draft and drag a highlight's page label, such as p. 2, into the draft; a quote block with the passage, its citation and page, and your comment", async () => {
-    const text = await obRun(
-      walk.vaultId,
-      async (
-        { app, page },
-        { draftPath, paperKey, attachmentKey, passage, before, comment },
-      ) => {
-        const draft = app.workspace
-          .getLeavesOfType("markdown")
-          .find(
-            (l) => (l.view as MarkdownView).file?.path === draftPath,
-          ) as DraftLeaf;
-        draft.view.hoverPopover?.hide();
-        app.workspace.rightSplit.expand();
-        app.commands.executeCommandById("zotlit:open-library-view");
-        const el = await page.until(
-          "Library View",
-          () =>
-            (
-              app.workspace.getLeavesOfType("zotlit-library")[0] as
-                | ItemLeaf
-                | undefined
-            )?.view.contentEl,
-          20000,
-        );
-        page.press(
-          await page.until(
+    const text = await walk.record("step-6", () =>
+      obRun(
+        walk.vaultId,
+        async (
+          { app, page },
+          { draftPath, paperKey, attachmentKey, passage, before, comment },
+        ) => {
+          const pointer = page.scratch.docsWalkPointer;
+          const draft = app.workspace
+            .getLeavesOfType("markdown")
+            .find(
+              (l) => (l.view as MarkdownView).file?.path === draftPath,
+            ) as DraftLeaf;
+          draft.view.hoverPopover?.hide();
+          app.workspace.rightSplit.expand();
+          app.commands.executeCommandById("zotlit:open-library-view");
+          const el = await page.until(
+            "Library View",
+            () =>
+              (
+                app.workspace.getLeavesOfType("zotlit-library")[0] as
+                  | ItemLeaf
+                  | undefined
+              )?.view.contentEl,
+            20000,
+          );
+          const row = await page.until(
             "paper row",
             () =>
               el.querySelector<HTMLElement>(
                 `[data-query-item-row="${paperKey}"]`,
               ),
             20000,
-          ),
-          "paper row",
-        );
-        page.press(
-          await page.until(
+          );
+          await pointer?.point(row, { inset: 40 });
+          page.press(row, "paper row");
+          const open = await page.until(
             "Open PDF",
             () =>
               el.querySelector<HTMLElement>(
                 '[data-library-card] [data-library-card-action="pdf"]',
               ),
             10000,
-          ),
-          "Open PDF",
-        );
-        const pdf = await page.until(
-          "PDF",
-          () =>
-            (app.workspace.getLeavesOfType("pdf") as PdfLeaf[]).find((l) =>
-              decodeURI(l.view.file?.path ?? "").includes(attachmentKey),
-            ),
-          20000,
-        );
-        // The reader puts the draft beside the PDF.
-        for (const l of app.workspace.getLeavesOfType("zotlit-library"))
-          l.detach();
-        draft.detach();
-        const beside = app.workspace.createLeafBySplit(
-          pdf,
-          "vertical",
-          true,
-        ) as DraftLeaf;
-        await beside.openFile(app.vault.getFileByPath(draftPath)!);
-        app.workspace.setActiveLeaf(pdf, { focus: true });
-        await new Promise((r) => setTimeout(r, 800));
-        const side = (
-          app.workspace.getLeavesOfType("zotero-annotation-view")[0] as
-            | ItemLeaf
-            | undefined
-        )?.view.contentEl;
-        const card = `.zt-annot-card[data-zotero-annotation-key="${passage}"]`;
-        const chip = await page.until(
-          "page label",
-          () =>
-            side?.querySelector<HTMLElement>(
-              `${card} a.zt-annot-page-chip[draggable="true"]`,
-            ),
-          15000,
-        );
-        const label = chip.innerText.trim();
-        const editor = beside.view.editor;
-        const transfer = new DataTransfer();
-        chip.dispatchEvent(
-          new DragEvent("dragstart", {
+          );
+          await pointer?.point(open);
+          page.press(open, "Open PDF");
+          const pdf = await page.until(
+            "PDF",
+            () =>
+              (app.workspace.getLeavesOfType("pdf") as PdfLeaf[]).find((l) =>
+                decodeURI(l.view.file?.path ?? "").includes(attachmentKey),
+              ),
+            20000,
+          );
+          // The reader puts the draft beside the PDF.
+          for (const l of app.workspace.getLeavesOfType("zotlit-library"))
+            l.detach();
+          draft.detach();
+          const beside = app.workspace.createLeafBySplit(
+            pdf,
+            "vertical",
+            true,
+          ) as DraftLeaf;
+          await beside.openFile(app.vault.getFileByPath(draftPath)!);
+          app.workspace.setActiveLeaf(pdf, { focus: true });
+          await new Promise((r) => setTimeout(r, 800));
+          const side = (
+            app.workspace.getLeavesOfType("zotero-annotation-view")[0] as
+              | ItemLeaf
+              | undefined
+          )?.view.contentEl;
+          const card = `.zt-annot-card[data-zotero-annotation-key="${passage}"]`;
+          const chip = await page.until(
+            "page label",
+            () =>
+              side?.querySelector<HTMLElement>(
+                `${card} a.zt-annot-page-chip[draggable="true"]`,
+              ),
+            15000,
+          );
+          const label = chip.innerText.trim();
+          const editor = beside.view.editor;
+          const transfer = new DataTransfer();
+          chip.dispatchEvent(
+            new DragEvent("dragstart", {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer: transfer,
+            }),
+          );
+          const line = editor
+            .getValue()
+            .split("\n")
+            .findIndex((l) => l === before);
+          const rect = editor.cm.coordsAtPos(
+            editor.posToOffset({ line: line - 1, ch: 0 }),
+          )!;
+          if (pointer) {
+            // The reader drags the page label across to the draft.
+            const c = chip.getBoundingClientRect();
+            await pointer.pointAt(c.left + c.width / 2, c.top + c.height / 2);
+            await pointer.park(rect.left + 1, (rect.top + rect.bottom) / 2);
+          }
+          const drop = new DragEvent("drop", {
             bubbles: true,
             cancelable: true,
             dataTransfer: transfer,
-          }),
-        );
-        const line = editor
-          .getValue()
-          .split("\n")
-          .findIndex((l) => l === before);
-        const rect = editor.cm.coordsAtPos(
-          editor.posToOffset({ line: line - 1, ch: 0 }),
-        )!;
-        const drop = new DragEvent("drop", {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: transfer,
-          clientX: Math.floor(rect.left + 1),
-          clientY: Math.floor((rect.top + rect.bottom) / 2),
-        });
-        app.workspace.trigger("editor-drop", drop, editor, beside.view);
-        await page.until(
-          "quote inserted",
-          () => editor.getValue().includes(passage),
-          15000,
-        );
-        await beside.view.save();
-        app.workspace.setActiveLeaf(beside, { focus: true });
-        editor.setCursor({ line: 0, ch: 0 });
-        await new Promise((r) => setTimeout(r, 800));
-        const box = [
-          ...beside.view.contentEl.querySelectorAll<HTMLElement>(".callout"),
-        ].find((c) => c.innerText.includes(comment));
-        box?.scrollIntoView({ block: "center" });
-        // The reader selects the PDF again, and its highlights fill the sidebar.
-        app.workspace.setActiveLeaf(pdf, { focus: true });
-        await page.until("cards", () => side?.querySelector(card), 10000);
-        side!.querySelector(card)!.scrollIntoView({ block: "center" });
-        await new Promise((r) => setTimeout(r, 1200));
-        return { label, doc: editor.getValue(), rendered: !!box };
-      },
-      {
-        draftPath: DRAFT,
-        paperKey: PAPER.key,
-        attachmentKey: PAPER.attachmentKey,
-        passage: PAPER.passage,
-        before: BEFORE,
-        comment: PAPER.comment,
-      },
-      STEP,
+            clientX: Math.floor(rect.left + 1),
+            clientY: Math.floor((rect.top + rect.bottom) / 2),
+          });
+          app.workspace.trigger("editor-drop", drop, editor, beside.view);
+          await page.until(
+            "quote inserted",
+            () => editor.getValue().includes(passage),
+            15000,
+          );
+          await beside.view.save();
+          app.workspace.setActiveLeaf(beside, { focus: true });
+          editor.setCursor({ line: 0, ch: 0 });
+          await new Promise((r) => setTimeout(r, 800));
+          const box = [
+            ...beside.view.contentEl.querySelectorAll<HTMLElement>(".callout"),
+          ].find((c) => c.innerText.includes(comment));
+          box?.scrollIntoView({ block: "center" });
+          // The reader selects the PDF again, and its highlights fill the sidebar.
+          app.workspace.setActiveLeaf(pdf, { focus: true });
+          await page.until("cards", () => side?.querySelector(card), 10000);
+          side!.querySelector(card)!.scrollIntoView({ block: "center" });
+          await new Promise((r) => setTimeout(r, 1200));
+          if (pointer) {
+            // The pointer leaves the quote for the empty foot of the draft.
+            const b = beside.view.contentEl.getBoundingClientRect();
+            await pointer.park(b.right - 14, b.bottom - 24);
+          }
+          return { label, doc: editor.getValue(), rendered: !!box };
+        },
+        {
+          draftPath: DRAFT,
+          paperKey: PAPER.key,
+          attachmentKey: PAPER.attachmentKey,
+          passage: PAPER.passage,
+          before: BEFORE,
+          comment: PAPER.comment,
+        },
+        STEP,
+      ),
     );
     const quote = text.doc
       .split("\n")

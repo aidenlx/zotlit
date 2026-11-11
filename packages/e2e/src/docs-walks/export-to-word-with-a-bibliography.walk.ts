@@ -24,6 +24,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import {
   captureRequested,
+  closeWelcome,
   openDocsWalk,
   readNotices,
   watchNotices,
@@ -151,6 +152,8 @@ describe.skipIf(!reachable)(
         STEP,
       );
       await watchNotices(walk.vaultId);
+      // The reader closed the setup section in Lesson 1.
+      await closeWelcome(walk.vaultId);
     });
 
     afterAll(async () => {
@@ -158,26 +161,44 @@ describe.skipIf(!reachable)(
     });
 
     it("step 1: remove lines meant only for you, such as a to-do list; a draft you can send", async () => {
-      const body = await obRun(
-        walk.vaultId,
-        async ({ app }, { draft, notes }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find(
-              (l) => (l.view as MarkdownView).file?.path === draft,
-            ) as DraftLeaf;
-          const cm = leaf.view.editor.cm;
-          const doc = cm.state.doc.toString();
-          const at = doc.indexOf(notes);
-          cm.dispatch({
-            changes: { from: at, to: doc.length, insert: "" },
-            userEvent: "delete",
-          });
-          await leaf.view.save();
-          leaf.view.editor.setCursor({ line: 0, ch: 0 });
-          return app.vault.read(leaf.view.file!);
-        },
-        { draft: DRAFT, notes: `\n${NOTES_TO_SELF}` },
+      const body = await walk.record("step-1", () =>
+        obRun(
+          walk.vaultId,
+          async ({ app, page }, { draft, notes }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const leaf = app.workspace
+              .getLeavesOfType("markdown")
+              .find(
+                (l) => (l.view as MarkdownView).file?.path === draft,
+              ) as DraftLeaf;
+            const cm = leaf.view.editor.cm;
+            const doc = cm.state.doc.toString();
+            const at = doc.indexOf(notes);
+            if (pointer) {
+              // The reader drags from the notes' heading to the end, and
+              // deletes the selection.
+              const from = cm.coordsAtPos(at + 1)!;
+              const to = cm.coordsAtPos(doc.length)!;
+              await pointer.pointAt(from.left, (from.top + from.bottom) / 2);
+              await pointer.park(to.right, (to.top + to.bottom) / 2);
+              cm.dispatch({ selection: { anchor: at + 1, head: doc.length } });
+              cm.focus();
+              await new Promise((r) => setTimeout(r, 700));
+            }
+            cm.dispatch({
+              changes: { from: at, to: doc.length, insert: "" },
+              userEvent: "delete",
+            });
+            await leaf.view.save();
+            leaf.view.editor.setCursor({ line: 0, ch: 0 });
+            if (pointer) {
+              const b = leaf.view.contentEl.getBoundingClientRect();
+              await pointer.park(b.right - 14, b.bottom - 24);
+            }
+            return app.vault.read(leaf.view.file!);
+          },
+          { draft: DRAFT, notes: `\n${NOTES_TO_SELF}` },
+        ),
       );
       expect(body).not.toContain(NOTES_TO_SELF);
       expect(body).not.toContain("- Redraw Figure 3.2");
@@ -189,52 +210,65 @@ describe.skipIf(!reachable)(
     });
 
     it("step 2: open the command palette and run Export note with citations; a dialog, and Format is Word document", async () => {
-      const ran = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { draft, command, title }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find(
-              (l) => (l.view as MarkdownView).file?.path === draft,
-            ) as DraftLeaf;
-          app.workspace.setActiveLeaf(leaf, { focus: true });
-          app.commands.executeCommandById("command-palette:open");
-          const input = await page.until(
-            "command palette",
-            () =>
-              activeDocument.querySelector<HTMLInputElement>(".prompt-input"),
-            5000,
-          );
-          input.focus();
-          document.execCommand("insertText", false, command);
-          const item = await page.until(
-            "the command",
-            () =>
-              [
-                ...activeDocument.querySelectorAll<HTMLElement>(
-                  ".prompt .suggestion-item",
+      const ran = await walk.record("step-2", () =>
+        obRun(
+          walk.vaultId,
+          async ({ app, page }, { draft, command, title }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const leaf = app.workspace
+              .getLeavesOfType("markdown")
+              .find(
+                (l) => (l.view as MarkdownView).file?.path === draft,
+              ) as DraftLeaf;
+            app.workspace.setActiveLeaf(leaf, { focus: true });
+            app.commands.executeCommandById("command-palette:open");
+            const input = await page.until(
+              "command palette",
+              () =>
+                activeDocument.querySelector<HTMLInputElement>(".prompt-input"),
+              5000,
+            );
+            input.focus();
+            if (pointer) {
+              // The pointer rests below the palette, off its list.
+              const b = input.getBoundingClientRect();
+              await pointer.park(b.right + 40, b.top);
+              await pointer.keys(
+                command,
+                (ch) => document.execCommand("insertText", false, ch),
+                { speed: 2 },
+              );
+              await new Promise((r) => setTimeout(r, 500));
+            } else document.execCommand("insertText", false, command);
+            const item = await page.until(
+              "the command",
+              () =>
+                [
+                  ...activeDocument.querySelectorAll<HTMLElement>(
+                    ".prompt .suggestion-item",
+                  ),
+                ].find((i) => i.innerText.includes(command)),
+              5000,
+            );
+            const shown = item.innerText.replaceAll(/\s+/g, " ").trim();
+            await page.trusted(window).key("Enter");
+            await page.until(
+              "export dialog",
+              () =>
+                [...document.querySelectorAll(".modal")].find(
+                  (d) => d.querySelector(".modal-title")?.textContent === title,
                 ),
-              ].find((i) => i.innerText.includes(command)),
-            5000,
-          );
-          const shown = item.innerText.replaceAll(/\s+/g, " ").trim();
-          await page.trusted(window).key("Enter");
-          await page.until(
-            "export dialog",
-            () =>
-              [...document.querySelectorAll(".modal")].find(
-                (d) => d.querySelector(".modal-title")?.textContent === title,
-              ),
-            10000,
-          );
-          return shown;
-        },
-        {
-          draft: DRAFT,
-          command: m.command_pandoc_export_name(),
-          title: m.pandoc_export_title(),
-        },
-        STEP,
+              10000,
+            );
+            return shown;
+          },
+          {
+            draft: DRAFT,
+            command: m.command_pandoc_export_name(),
+            title: m.pandoc_export_title(),
+          },
+          STEP,
+        ),
       );
       expect(ran).toContain(m.command_pandoc_export_name());
       const rows = await dialogRows(walk.vaultId);
@@ -254,24 +288,33 @@ describe.skipIf(!reachable)(
     });
 
     it("step 3: choose the citation style you need, such as APA 7th edition; Only this export uses this style.", async () => {
-      await obRun(
-        walk.vaultId,
-        async ({ page }, { title, apa }) => {
-          const el = [...document.querySelectorAll(".modal")].find(
-            (d) => d.querySelector(".modal-title")?.textContent === title,
-          )!;
-          const style = el
-            .querySelectorAll(".setting-item")[1]!
-            .querySelector<HTMLSelectElement>("select:not(.is-measuring)")!;
-          await page.until(
-            "installed styles",
-            () => style.querySelector(`option[value="${apa}"]`),
-            10000,
-          );
-          await page.pick(style, apa, "Citation style");
-        },
-        { title: m.pandoc_export_title(), apa: APA },
-        STEP,
+      await walk.record("step-3", () =>
+        obRun(
+          walk.vaultId,
+          async ({ page }, { title, apa }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const el = [...document.querySelectorAll(".modal")].find(
+              (d) => d.querySelector(".modal-title")?.textContent === title,
+            )!;
+            const style = el
+              .querySelectorAll(".setting-item")[1]!
+              .querySelector<HTMLSelectElement>("select:not(.is-measuring)")!;
+            await page.until(
+              "installed styles",
+              () => style.querySelector(`option[value="${apa}"]`),
+              10000,
+            );
+            await pointer?.point(style);
+            await page.pick(style, apa, "Citation style");
+            if (pointer) {
+              // The pointer leaves the row's new description in view.
+              const b = style.getBoundingClientRect();
+              await pointer.park(b.right - 20, b.bottom + 40);
+            }
+          },
+          { title: m.pandoc_export_title(), apa: APA },
+          STEP,
+        ),
       );
       const rows = await dialogRows(walk.vaultId);
       expect(rows[1]).toEqual({
@@ -287,34 +330,42 @@ describe.skipIf(!reachable)(
     });
 
     it("step 4: select Export; a notice with the file name and the style", async () => {
-      const notices = await obRun(
-        walk.vaultId,
-        async ({ page }, { title, done, failed }) => {
-          const dialog = [...document.querySelectorAll(".modal")].find(
-            (d) => d.querySelector(".modal-title")?.textContent === title,
-          );
-          page.press(
-            dialog?.querySelector<HTMLElement>("button.mod-cta"),
-            "Export",
-          );
-          await page.until(
-            "export ends",
-            () =>
-              page.scratch.docsWalkNotices!.some(
-                (t) => t.startsWith(done) || t.startsWith(failed),
-              ),
-            60000,
-          );
-          return page.scratch.docsWalkNotices!;
-        },
-        {
-          title: m.pandoc_export_title(),
-          done: m
-            .notice_pandoc_export_done({ file: "", style: "" })
-            .split(" ")[0]!,
-          failed: m.notice_pandoc_export_failed(),
-        },
-        { timeoutMs: 90000 },
+      const notices = await walk.record("step-4", () =>
+        obRun(
+          walk.vaultId,
+          async ({ page }, { title, done, failed }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const dialog = [...document.querySelectorAll(".modal")].find(
+              (d) => d.querySelector(".modal-title")?.textContent === title,
+            );
+            const button = await page.stands(
+              dialog?.querySelector<HTMLElement>("button.mod-cta"),
+              "Export",
+            );
+            await pointer?.point(button);
+            const at = button.getBoundingClientRect();
+            page.press(button, "Export");
+            await page.until(
+              "export ends",
+              () =>
+                page.scratch.docsWalkNotices!.some(
+                  (t) => t.startsWith(done) || t.startsWith(failed),
+                ),
+              60000,
+            );
+            // The pointer leaves the notice in the top right corner clear.
+            await pointer?.park(at.left, at.bottom);
+            return page.scratch.docsWalkNotices!;
+          },
+          {
+            title: m.pandoc_export_title(),
+            done: m
+              .notice_pandoc_export_done({ file: "", style: "" })
+              .split(" ")[0]!,
+            failed: m.notice_pandoc_export_failed(),
+          },
+          { timeoutMs: 90000 },
+        ),
       );
       expect(notices).toContain(
         m.notice_pandoc_export_done({ file: EXPORTED_NAME, style: APA_TITLE }),
