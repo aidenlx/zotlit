@@ -195,6 +195,36 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     authorizationFixture?.rdp[Symbol.dispose]();
   });
 
+  it("counts ZotLit Companion as installed, as Zotero's add-on list of the paired profile names it", async () => {
+    // Zotero writes its add-on list a moment after start-up, and ZotLit reads
+    // it from the profile it resolved.
+    expect(
+      await obRunUntil(
+        vaultId!,
+        async ({ zotlit }) => {
+          const { bridge, zoteroPref } = zotlit.services;
+          const profile = bridge.runSync(zoteroPref.current).resolvedProfileDir;
+          const listed = profile
+            ? (require("node:fs") as typeof import("node:fs")).readFileSync(
+                `${profile}/extensions.json`,
+                "utf8",
+              )
+            : "";
+          return {
+            profile: profile !== null,
+            listed: listed.includes('"zotlit@aidenlx.site"'),
+            installed: await bridge.runPromise(zoteroPref.companionInstalled),
+          };
+        },
+        undefined,
+        {
+          what: "ZotLit Companion in the paired profile's add-on list",
+          ready: (value) => value.installed,
+        },
+      ),
+    ).toEqual({ profile: true, listed: true, installed: true });
+  });
+
   it("writes a PDF read back to Zotero without modifying its parent", async () => {
     const readItem = async (key: string) => {
       const reply = await zoteroFetch(api, `users/0/items/${key}`);
