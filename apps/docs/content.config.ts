@@ -40,8 +40,19 @@ const semverSchema = v.pipe(
  */
 export const markdownEdition: LLMsOptions = { output: "function" };
 
+/**
+ * One question of a page's `## Questions` section, published as FAQPage
+ * JSON-LD. `answer` is the plain text of the paragraph under the question's
+ * heading; `src/lib/content.test.ts` fails when the two drift apart.
+ */
+const faqEntrySchema = v.object({
+  question: v.string(),
+  answer: v.string(),
+});
+
 export const docsSchema = v.object({
   ...pageSchema.entries,
+  faq: v.optional(v.array(faqEntrySchema)),
 });
 
 export const changelogSchema = v.object({
