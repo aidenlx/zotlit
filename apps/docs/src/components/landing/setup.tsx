@@ -84,7 +84,7 @@ export function Setup({ repo }: { repo: ReactNode }) {
     {
       name: m.docs_home_addon_bbt(),
       line: m.docs_home_addon_bbt_line(),
-      href: "/docs/how-to/insert-citations",
+      href: "/docs/how-to/insert-citations#citation-keys",
     },
   ];
   return (
