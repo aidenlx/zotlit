@@ -211,25 +211,32 @@ describe.skipIf(!reachable)(
     });
 
     it("step 3: type a few words of a title into Search papers and select the paper; a card with the authors, the journal, and two buttons", async () => {
-      const found = await obRun(
-        walk.vaultId,
-        async ({ app, page }, { search, key }) => {
-          const leaf = app.workspace.getLeavesOfType(
-            "zotlit-library",
-          )[0] as LibraryLeaf;
-          const el = leaf.view.contentEl;
-          await leaf.view.query.settled;
-          const input = el.querySelector<HTMLInputElement>(
-            "[data-library-search] input",
-          )!;
-          const placeholder = input.placeholder;
-          input.focus();
-          input.value = search;
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          await leaf.view.searched;
-          await leaf.view.query.settled;
-          page.press(
-            await page.until(
+      // The step's clip, when the run records: the reader types and selects.
+      const { found, below } = await walk.record("step-3", async () => {
+        const found = await obRun(
+          walk.vaultId,
+          async ({ app, page }, { search, key }) => {
+            const pointer = page.scratch.docsWalkPointer;
+            const leaf = app.workspace.getLeavesOfType(
+              "zotlit-library",
+            )[0] as LibraryLeaf;
+            const el = leaf.view.contentEl;
+            await leaf.view.query.settled;
+            const input = el.querySelector<HTMLInputElement>(
+              "[data-library-search] input",
+            )!;
+            const placeholder = input.placeholder;
+            if (pointer) {
+              await pointer.point(input);
+              await pointer.type(input, search);
+            } else {
+              input.focus();
+              input.value = search;
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            await leaf.view.searched;
+            await leaf.view.query.settled;
+            const row = await page.until(
               "paper row",
               () => {
                 const r = el.querySelector<HTMLElement>(
@@ -238,64 +245,89 @@ describe.skipIf(!reachable)(
                 return r?.checkVisibility() && r;
               },
               10000,
-            ),
-            "paper row",
-          );
-          const card = await page.until(
-            "Reading Card",
-            () => {
-              const c = el.querySelector<HTMLElement>("[data-library-card]");
-              return c?.checkVisibility() && c;
-            },
-            10000,
-          );
-          await leaf.view.card.settled;
-          const rect = (n: Element | null | undefined) => {
-            const r = n?.getBoundingClientRect();
-            return r
-              ? {
-                  x: Math.round(r.x),
-                  y: Math.round(r.y),
-                  w: Math.round(r.width),
-                  h: Math.round(r.height),
-                }
-              : null;
-          };
-          const visible = [
-            ...card.querySelectorAll<HTMLElement>("[data-library-card-action]"),
-          ].filter((b) => b.checkVisibility());
-          const tree = el.querySelector<HTMLElement>("[data-library-tree]");
-          return {
-            placeholder,
-            rows: [...el.querySelectorAll("[data-query-item-row]")].map((n) =>
-              n.getAttribute("data-query-item-row"),
-            ),
-            title: card.querySelector("[data-library-card-title]")!.textContent,
-            creators:
-              card.querySelector("[data-library-card-creators]")?.textContent ??
-              "",
-            venue:
-              card.querySelector("[data-library-card-venue]")?.textContent ??
-              "",
-            buttons: visible.map((b) => ({
-              action: b.dataset.libraryCardAction!,
-              text: b.innerText.trim(),
-              label: b.getAttribute("aria-label"),
-            })),
-            // Fact d: where the card sits beside the list, at the walk's window size.
-            layout: {
-              window: { w: window.innerWidth, h: window.innerHeight },
-              pane: rect(el),
-              row: rect(el.querySelector("[data-query-item-row]")),
-              card: rect(card),
-              treeShown: tree?.checkVisibility() ?? false,
-              tree: rect(tree),
-            },
-          };
-        },
-        { search: SEARCH, key: PAPER.key },
-        STEP,
-      );
+            );
+            await pointer?.point(row);
+            page.press(row, "paper row");
+            const card = await page.until(
+              "Reading Card",
+              () => {
+                const c = el.querySelector<HTMLElement>("[data-library-card]");
+                return c?.checkVisibility() && c;
+              },
+              10000,
+            );
+            await leaf.view.card.settled;
+            const rect = (n: Element | null | undefined) => {
+              const r = n?.getBoundingClientRect();
+              return r
+                ? {
+                    x: Math.round(r.x),
+                    y: Math.round(r.y),
+                    w: Math.round(r.width),
+                    h: Math.round(r.height),
+                  }
+                : null;
+            };
+            const visible = [
+              ...card.querySelectorAll<HTMLElement>(
+                "[data-library-card-action]",
+              ),
+            ].filter((b) => b.checkVisibility());
+            const tree = el.querySelector<HTMLElement>("[data-library-tree]");
+            return {
+              placeholder,
+              rows: [...el.querySelectorAll("[data-query-item-row]")].map((n) =>
+                n.getAttribute("data-query-item-row"),
+              ),
+              title: card.querySelector("[data-library-card-title]")!
+                .textContent,
+              creators:
+                card.querySelector("[data-library-card-creators]")
+                  ?.textContent ?? "",
+              venue:
+                card.querySelector("[data-library-card-venue]")?.textContent ??
+                "",
+              buttons: visible.map((b) => ({
+                action: b.dataset.libraryCardAction!,
+                text: b.innerText.trim(),
+                label: b.getAttribute("aria-label"),
+              })),
+              // Fact d: where the card sits beside the list, at the walk's window size.
+              layout: {
+                window: { w: window.innerWidth, h: window.innerHeight },
+                pane: rect(el),
+                row: rect(el.querySelector("[data-query-item-row]")),
+                card: rect(card),
+                treeShown: tree?.checkVisibility() ?? false,
+                tree: rect(tree),
+              },
+            };
+          },
+          { search: SEARCH, key: PAPER.key },
+          STEP,
+        );
+        // At this window size the card sits under the list, below the banner,
+        // and its buttons start under the tab's lower edge: the reader scrolls
+        // the tab down to reach them.
+        const below = await obRun(walk.vaultId, async ({ app, page }) => {
+          const el = (
+            app.workspace.getLeavesOfType("zotlit-library")[0] as LibraryLeaf
+          ).view.contentEl;
+          const pdf = el.querySelector<HTMLElement>(
+            '[data-library-card] [data-library-card-action="pdf"]',
+          )!;
+          const hidden =
+            pdf.getBoundingClientRect().top > el.getBoundingClientRect().bottom;
+          const recording = !!page.scratch.docsWalkPointer;
+          pdf.scrollIntoView({
+            block: "center",
+            behavior: recording ? "smooth" : "instant",
+          });
+          await new Promise((r) => setTimeout(r, recording ? 900 : 300));
+          return hidden;
+        });
+        return { found, below };
+      });
       console.log("[walk] card", JSON.stringify(found));
       expect(found.placeholder).toBe(m.library_view_search_placeholder());
       expect(found.rows).toContain(PAPER.key);
@@ -306,22 +338,6 @@ describe.skipIf(!reachable)(
         m.library_view_menu_open_pdf(),
         m.library_view_menu_write_note(),
       ]);
-      // At this window size the card sits under the list, below the banner,
-      // and its buttons start under the tab's lower edge: the reader scrolls
-      // the tab down to reach them.
-      const below = await obRun(walk.vaultId, async ({ app }) => {
-        const el = (
-          app.workspace.getLeavesOfType("zotlit-library")[0] as LibraryLeaf
-        ).view.contentEl;
-        const pdf = el.querySelector<HTMLElement>(
-          '[data-library-card] [data-library-card-action="pdf"]',
-        )!;
-        const hidden =
-          pdf.getBoundingClientRect().top > el.getBoundingClientRect().bottom;
-        pdf.scrollIntoView({ block: "center", behavior: "instant" });
-        await new Promise((r) => setTimeout(r, 300));
-        return hidden;
-      });
       console.log("[walk] card buttons below the fold", below);
       await walk.capture("step-3");
       await walk.compose("step-3");
