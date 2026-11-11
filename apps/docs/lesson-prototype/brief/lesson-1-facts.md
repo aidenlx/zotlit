@@ -39,10 +39,12 @@ Pictures are at `apps/docs/public/img/learn/connect-zotero-to-obsidian/`.
 
 ### Step 2 — Check that ZotLit found Zotero
 
-- **Action:** none; the reader looks at the first setup step.
+- **Action:** the reader looks at the first setup step. When the check is
+  there, they close the setup section with the × button at its top right.
 - **Result:** **Connect to Zotero** has a green check, with the Zotero data
   folder (for example `~/Zotero`) and the number of items (for example
-  `5 items`). ZotLit found Zotero by itself.
+  `5 items`). ZotLit found Zotero by itself. After the section closes, the
+  list of papers fills the tab.
 - **Also on screen, to leave alone:** **Choose where literature notes live**
   (the folder `literatures` is already set); **Open your library**;
   **Install ZotLit Companion**, marked **Recommended**, which this lesson
@@ -59,8 +61,7 @@ Pictures are at `apps/docs/public/img/learn/connect-zotero-to-obsidian/`.
 - **Result:** a card opens under the list. It shows the title, the authors,
   the journal and year (for example *PLOS Computational Biology, 9(10),
   e1003285 · 2013*), and the buttons **Open PDF** and **Write literature
-  note**. On a small window the buttons are below the visible part; scroll
-  down.
+  note**.
 - **Picture:** `step-3.webp`. A recording of this step is being made.
 - **Fix:** the list is empty: go back to step 2 and look for the green check.
 

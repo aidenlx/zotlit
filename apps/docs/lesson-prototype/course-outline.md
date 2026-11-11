@@ -29,12 +29,16 @@ Search intent: "connect zotero to obsidian", "how to use zotero with obsidian".
 | # | Do | You should see |
 |---|---|---|
 | 1 | In Obsidian: Settings, Community plugins, Browse. Search ZotLit. Install, then Enable. | A tab named Zotero library opens. |
-| 2 | Look at the first line of the tab. | Connect to Zotero has a green check and your item count. |
+| 2 | Look at the first line of the tab. When you see the check, close the setup section with its × button. | Connect to Zotero has a green check and your item count. After you close the section, your papers fill the tab. |
 | 3 | Type a few words of a title into Search papers. Select the paper. | A card under the list with the authors, the journal, and the buttons Open PDF and Write literature note. Scroll down if the buttons are out of view. |
 | 4 | Select Open PDF. | The PDF in a new tab, at the page where you last read it in Zotero, with your highlights in colour. |
 | 5 | Go back to the Zotero library tab. Select Write literature note. | The notice "Literature note created." and the note in a new tab. |
 | 6 | Under the line with the Zotero and PDF links, type a heading and your own thoughts. | Your text above the Annotations section. |
 
+- **Owner decision:** the setup section closes at the end of step 2, so the
+  library view has most of the room. Every recording from step 3 on shows the
+  tab without that section. To check in the walk: the × button's exact label,
+  and that the section stays closed.
 - **Walk notes:** the first screen shows four setup steps; the fourth,
   "Install ZotLit Companion · Recommended", is optional and this lesson leaves
   it. Step 1 (Browse, Install) cannot be walked in the Fixture.

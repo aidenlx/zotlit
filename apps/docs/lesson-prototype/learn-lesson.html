@@ -965,6 +965,24 @@ VERDICT: pending — the owner has not judged this yet.
         );
       }
 
+      // `?fonts=site` shows the page in the faces the site ships today
+      // (Gelasio and Inter), to compare with the prototype's faces.
+      if (new URLSearchParams(location.search).get("fonts") === "site") {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href =
+          "https://fonts.googleapis.com/css2?family=Gelasio:wght@400;500&family=Inter:wght@400;500;600&display=swap";
+        document.head.append(link);
+        document.documentElement.style.setProperty(
+          "--display",
+          '"Gelasio", ui-serif, Georgia, serif',
+        );
+        document.documentElement.style.setProperty(
+          "--body",
+          '"Inter", ui-sans-serif, system-ui, sans-serif',
+        );
+      }
+
       ReactDOM.createRoot(document.getElementById("root")).render(<App />);
     </script>
   </body>
