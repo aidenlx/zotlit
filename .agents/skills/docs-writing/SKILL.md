@@ -101,10 +101,13 @@ Every documentation page requires standard frontmatter:
 
 ```yaml
 ---
-title: "Sentence case title under 60 characters"
-description: "Active summary stating user outcome under 160 characters."
+title: "Short sidebar label"
+searchTitle: "Sentence case task title for search, at most 60 characters"
+description: "Active summary stating user outcome, at most 160 characters."
 ---
 ```
+
+`title` is the sidebar label. `searchTitle` is optional: when set, it is the page's H1, `<title>`, og:title, OG card, and `llms.txt` entry; without it, `title` is all of these.
 
 Use standard MDX components where appropriate:
 - `<Steps>` and `<Step>` for ordered procedures.
@@ -120,7 +123,7 @@ Use standard MDX components where appropriate:
 Users rarely search for "ZotLit" before adopting it. They search for workflows, problems, and host tools: "zotero obsidian integration", "how to read zotero pdfs in obsidian", "cite zotero in obsidian", "import zotero highlights to obsidian". Write titles, descriptions, and headings to capture external search intent:
 
 ### 1. Title Formulation: Context Keywords + Exact Task
-The site renders page titles as `<title>{title} | ZotLit</title>`. A title without host tool names wastes the highest-weight SEO signal.
+The site renders page titles as `<title>{searchTitle ?? title} | ZotLit</title>`. A title without host tool names wastes the highest-weight SEO signal. Put the searcher's wording in `searchTitle` and keep `title` short for the sidebar. Give each target query to one page only.
 - **Prefer**: Task and context keywords together (`"Read Zotero PDFs and annotations in Obsidian"`, `"Browse your Zotero library in Obsidian: Library View"`).
 - **Avoid**: Pure internal or insular titles (`"Open an item's PDF in Obsidian"`, `"Browse your library in the Library View"`).
 

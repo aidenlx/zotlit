@@ -89,6 +89,16 @@ function ZotLitMark() {
   );
 }
 
+/**
+ * The title's type size. A title past about 44 characters wraps to three lines
+ * at the standard size, which pushes a four-line description off the card, so
+ * it steps down to keep two.
+ */
+function titleSize(title: string, hero?: boolean) {
+  if (hero) return "text-[150px]";
+  return title.length > 44 ? "text-[72px]" : "text-[84px]";
+}
+
 function OGCard({ kind, title, description, meta, hero }: CardProps) {
   return (
     <div tw="flex flex-col w-full h-full bg-[#faf7ef] px-[84px] py-[72px] font-['Inter']">
@@ -101,9 +111,7 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
 
       <div tw="flex flex-col flex-1 justify-center py-[10px]">
         <div
-          tw={`font-['Gelasio'] font-medium ${
-            hero ? "text-[150px]" : "text-[84px]"
-          } leading-[1.05] tracking-[-1px] text-[#1E3A5F] max-w-[1000px] text-balance`}
+          tw={`font-['Gelasio'] font-medium ${titleSize(title, hero)} leading-[1.05] tracking-[-1px] text-[#1E3A5F] max-w-[1000px] text-balance`}
         >
           {title}
         </div>

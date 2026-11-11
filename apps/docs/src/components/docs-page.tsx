@@ -33,7 +33,13 @@ import { ztProse } from "@/lib/prose";
 import { getReleaseSnapshot } from "@/lib/release-data";
 import type { ReleaseSnapshot } from "@/lib/release-data";
 import { pageHead } from "@/lib/seo";
-import { appName, docsRoute, docsSourceBranch, gitConfig } from "@/lib/shared";
+import {
+  appName,
+  docsPageTitle,
+  docsRoute,
+  docsSourceBranch,
+  gitConfig,
+} from "@/lib/shared";
 import { source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
 import { breadcrumbListSchema } from "@/lib/structured-data";
@@ -58,7 +64,7 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       path: page.path,
       url: page.url,
       slugs: page.slugs,
-      title: page.data.title,
+      title: docsPageTitle(page.data),
       description: page.data.description,
       trail,
       markdownUrl: localizeHref(
@@ -93,7 +99,7 @@ function DocsPageContent({
   return (
     <DocsPage toc={toc} full={page.full} slots={{ footer: DocsPageFooter }}>
       <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance">
-        {page.title}
+        {docsPageTitle(page)}
       </DocsTitle>
       <DocsDescription className="mb-0 font-serif text-lg italic">
         {page.description}

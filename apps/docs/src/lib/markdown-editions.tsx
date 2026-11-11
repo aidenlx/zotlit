@@ -24,6 +24,7 @@ import * as m from "@/paraglide/messages.js";
 import type { SiteLocale } from "./i18n";
 import { localizeMarkdownLinks } from "./markdown-locale-links";
 import type { MarkdownPage } from "./markdown-routes";
+import { docsPageTitle } from "./shared";
 import {
   blog,
   changelog,
@@ -93,7 +94,7 @@ function renderDocsPage(
   page: (typeof source)["$inferPage"],
   locale: SiteLocale,
 ) {
-  return renderPage(page.data.title, page, locale);
+  return renderPage(docsPageTitle(page.data), page, locale);
 }
 
 /** Markdown listing under `heading`, each page linked to its `.md` edition. */
@@ -163,9 +164,23 @@ export async function getMarkdownEdition(
   }
 }
 
-/** `llms.txt`: the docs page tree as a Markdown index. */
+/**
+ * `llms.txt`: the docs page tree as a Markdown index. A page entry carries the
+ * page's own title, as its edition's heading does; folders keep their labels.
+ */
 export function getLlmsIndex() {
-  return llms(source).index("en");
+  return llms(source, {
+    renderName(node, { lang }) {
+      if ("type" in node && node.type === "page") {
+        const page = source.getNodePage(node, lang);
+        if (page) return docsPageTitle(page.data);
+      } else if (!("type" in node) || node.type !== "separator") {
+        const meta = source.getNodeMeta(node, lang);
+        if (meta?.data.title) return meta.data.title;
+      }
+      return typeof node.name === "string" ? node.name : "";
+    },
+  }).index("en");
 }
 
 /** `llms-full.txt`: every docs page's edition, concatenated. */

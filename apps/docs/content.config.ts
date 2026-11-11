@@ -42,6 +42,12 @@ export const markdownEdition: LLMsOptions = { output: "function" };
 
 export const docsSchema = v.object({
   ...pageSchema.entries,
+  /**
+   * The page's own title, in the words a searcher types: its H1, `<title>`,
+   * og:title, OG card, Markdown edition, and `llms.txt` entry. `title` stays
+   * the short sidebar label, and stands in when this is absent.
+   */
+  searchTitle: v.optional(v.string()),
 });
 
 export const changelogSchema = v.object({
