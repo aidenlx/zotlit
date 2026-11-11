@@ -7,6 +7,7 @@
 // `pnpm --filter @zotlit/e2e docs-walk`; see AGENTS.md.
 
 import { obRun, obRunUntil } from "@e2e/obsidian-cli.ts";
+import type { PagePdfView } from "@e2e/page-notes-types.ts";
 import { isObsidianReachable } from "@e2e/vault-script.ts";
 import type { FileView, MarkdownView, WorkspaceLeaf } from "obsidian";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -67,6 +68,13 @@ describe.skipIf(!reachable)(
         slug: SLUG,
         collection: `learn/${SLUG}`,
         vaultCase: "docs",
+      });
+      // The PDF tab's path runs through the Fixture's folders; the images
+      // show the file name alone.
+      await obRun(walk.vaultId, () => {
+        const style = document.head.createEl("style");
+        style.textContent =
+          '.workspace-leaf-content[data-type="pdf"] .view-header-title-parent{display:none}';
       });
     });
 
@@ -298,6 +306,23 @@ describe.skipIf(!reachable)(
         m.library_view_menu_open_pdf(),
         m.library_view_menu_write_note(),
       ]);
+      // At this window size the card sits under the list, below the banner,
+      // and its buttons start under the tab's lower edge: the reader scrolls
+      // the tab down to reach them.
+      const below = await obRun(walk.vaultId, async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library")[0] as LibraryLeaf
+        ).view.contentEl;
+        const pdf = el.querySelector<HTMLElement>(
+          '[data-library-card] [data-library-card-action="pdf"]',
+        )!;
+        const hidden =
+          pdf.getBoundingClientRect().top > el.getBoundingClientRect().bottom;
+        pdf.scrollIntoView({ block: "center", behavior: "instant" });
+        await new Promise((r) => setTimeout(r, 300));
+        return hidden;
+      });
+      console.log("[walk] card buttons below the fold", below);
       await walk.capture("step-3");
       await walk.compose("step-3");
     });
@@ -331,18 +356,18 @@ describe.skipIf(!reachable)(
             marks: new Set(marks.map((n) => n.dataset.zoteroAnnotationKey))
               .size,
             colours: new Set(
-                // Each mark draws in its Zotero colour, as an SVG fill or stroke.
-                marks.map((n) => {
-                  const painted = n.matches("[fill],[stroke]")
-                    ? n
-                    : n.querySelector("[fill],[stroke]");
-                  return (
-                    painted?.getAttribute("fill") ??
-                    painted?.getAttribute("stroke") ??
-                    null
-                  );
-                }),
-              ).size,
+              // Each mark draws in its Zotero colour, as an SVG fill or stroke.
+              marks.map((n) => {
+                const painted = n.matches("[fill],[stroke]")
+                  ? n
+                  : n.querySelector("[fill],[stroke]");
+                return (
+                  painted?.getAttribute("fill") ??
+                  painted?.getAttribute("stroke") ??
+                  null
+                );
+              }),
+            ).size,
           };
         },
         undefined,
@@ -357,6 +382,20 @@ describe.skipIf(!reachable)(
       // Page 1 is in view with its three marks, each in its own colour.
       expect(opened!.marks).toBeGreaterThanOrEqual(3);
       expect(opened!.colours).toBeGreaterThanOrEqual(3);
+      // The PDF opens on the page Zotero last showed; the reader scrolls to
+      // page 1, where three highlights sit.
+      const page = await obRun(walk.vaultId, async ({ app }) => {
+        const pdf = app.workspace.getLeavesOfType("pdf")[0]!;
+        const opened =
+          (pdf.view as PagePdfView).viewer?.child?.pdfViewer?.pdfViewer
+            ?.currentPageNumber ?? null;
+        pdf.view.containerEl
+          .querySelector('.page[data-page-number="1"]')
+          ?.scrollIntoView({ block: "start" });
+        await new Promise((r) => setTimeout(r, 800));
+        return opened;
+      });
+      console.log("[walk] pdf opened on page", page);
       await walk.capture("step-4");
       await walk.compose("step-4");
     });

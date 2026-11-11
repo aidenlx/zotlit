@@ -236,12 +236,16 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
           [...el.querySelectorAll<HTMLElement>("[data-library-label]")].find(
             (n) => n.textContent === name,
           );
+        // Fact d: whether the collection tree shows by default, once the
+        // tab has its width.
         await page.until(
           "the tree",
-          () => el.querySelector("[data-library-label]"),
+          () =>
+            el.getBoundingClientRect().width > 0 &&
+            el.querySelector("[data-library-label]"),
           20000,
         );
-        // Fact d: whether the collection tree shows by default.
+        await new Promise((r) => setTimeout(r, 1000));
         const treeShown = !!label()?.checkVisibility();
         if (!treeShown)
           page.press(
