@@ -244,13 +244,14 @@ export default function TryCite() {
                 />
               </p>
               <div
-                id={listbox}
-                role="listbox"
-                aria-label={m.docs_home_try_label()}
                 hidden={!open}
                 className="absolute inset-x-0 top-full z-10 mt-2 overflow-hidden rounded-lg bg-fd-popover text-fd-popover-foreground shadow-[0_8px_24px_-8px_rgb(0_0_0/0.25)] ring-1 ring-fd-border @lg:end-auto @lg:w-[30rem]"
               >
-                <ul>
+                <ul
+                  id={listbox}
+                  role="listbox"
+                  aria-label={m.docs_home_try_label()}
+                >
                   {results.map((p, i) => (
                     <li
                       key={p.citekey}

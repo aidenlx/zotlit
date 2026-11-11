@@ -98,5 +98,5 @@ export function jumpTo(event: React.MouseEvent<HTMLAnchorElement>) {
   const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   el.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
   el.focus({ preventScroll: true });
-  history.replaceState(null, "", `#${id}`);
+  history.replaceState(history.state, "", `#${id}`);
 }
