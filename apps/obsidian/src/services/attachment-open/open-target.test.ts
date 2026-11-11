@@ -304,6 +304,54 @@ describe("open", () => {
       expect(handed).toEqual([]);
     }),
   );
+
+  // The page chip and the Query View's annotation rows open an Annotation
+  // through `open`, so they follow the Reader settings as a link in a note
+  // does (#1980).
+  it.effect.each([
+    "reader.open-annotation-links",
+    "reader.open-file-links",
+  ] as const)("hands an Annotation to Zotero while %s is off", (key) =>
+    Effect.gen(function* () {
+      const { opener, opened, handed } = yield* openerFixture({
+        settings: { ...defaults, [key]: false },
+      });
+
+      expect(yield* opener.open(ANNOTATION, false)).toEqual({
+        kind: "zotero",
+        url: "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2",
+      });
+
+      expect(opened).toEqual([]);
+      expect(handed).toEqual([
+        "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2",
+      ]);
+    }),
+  );
+
+  it.effect(
+    "opens an Attachment in Obsidian's reader while the Reader settings are off",
+    () =>
+      Effect.gen(function* () {
+        const { opener, opened, handed } = yield* openerFixture({
+          settings: {
+            ...defaults,
+            "reader.open-file-links": false,
+            "reader.open-annotation-links": false,
+          },
+        });
+
+        expect(
+          yield* opener.open(
+            { kind: "attachment", attachmentKey: "PDFSTR22" },
+            false,
+          ),
+        ).toEqual({ kind: "reader" });
+
+        expect(opened).toHaveLength(1);
+        expect(handed).toEqual([]);
+      }),
+  );
 });
 
 const STORED_LINK =

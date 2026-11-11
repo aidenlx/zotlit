@@ -361,7 +361,7 @@ Zotero's own open link to one Annotation, `zotero://open/library/items/<attachme
 _Avoid_: annotation backlink (in prose), zotero link, deep link
 
 **Open Target**:
-What one ZotLit gesture or followed link opens: an Attachment, or one Annotation in it, named by its Indexed Key. It opens in Obsidian's PDF view when it names an Obsidian-Openable Attachment whose file is on this device, and in Zotero otherwise; every ZotLit surface that opens an Attachment decides by this one rule, and an explicit "Open in Zotero" bypasses it.
+What one ZotLit gesture or followed link opens: an Attachment, or one Annotation in it, named by its Indexed Key. It opens in Obsidian's PDF view when it names an Obsidian-Openable Attachment whose file is on this device, and in Zotero otherwise; every ZotLit surface that opens an Attachment decides by this one rule, and an explicit "Open in Zotero" bypasses it. An Annotation opens in Zotero while the user turns File Link Capture or annotation link opening off, as a Durable Annotation Link does.
 _Avoid_: reader target (see Reader Session), table reader, PDF target
 
 **File Link Capture**:

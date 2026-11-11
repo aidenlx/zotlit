@@ -388,10 +388,12 @@ interface Scenario {
   url: string;
   /**
    * Where the link is clicked, `external` for Obsidian's open-in-default-app
-   * target, or `chip` for the page chip of the Annotation's card in the
-   * Annotation View, which carries the link as its backlink.
+   * target, `chip` for the page chip of the Annotation's card in the
+   * Annotation View, which carries the link as its backlink, or `block-chip`
+   * for that chip on the card of a ` ```zotquery ` annotations block the note
+   * holds, read in Reading view.
    */
-  gesture: LinkGesture | "external" | "chip";
+  gesture: LinkGesture | "external" | "chip" | "block-chip";
   /** Turn `reader.open-file-links` off for this scenario. */
   captureOff?: boolean;
   /** The annotation link settings to change for this scenario. */
@@ -519,7 +521,12 @@ async function follow({
             : await links.showNote(cleanup, {
                 notePath: notePath,
                 content: noteContent.replaceAll(notePlaceholder, fileUrl),
-                gesture: gesture === "external" ? "live-preview" : gesture,
+                gesture:
+                  gesture === "external"
+                    ? "live-preview"
+                    : gesture === "block-chip"
+                      ? "reading"
+                      : gesture,
               });
         const view = shown?.view;
         // The ledger records a read as the reader names its Attachment, so
@@ -553,23 +560,29 @@ async function follow({
         );
         if (gesture === "external") {
           window.open(url, "_external");
-        } else if (gesture === "chip") {
-          const sidebar = cleanup.adopt(
-            app.workspace.getRightLeaf(false)!,
-            (leaf) => leaf.detach(),
-          );
-          await sidebar.setViewState({
-            type: "zotero-annotation-view",
-            state: { followMode: "pinned", pinnedItemKey: itemKey },
-          });
-          await app.workspace.revealLeaf(sidebar);
+        } else if (gesture === "chip" || gesture === "block-chip") {
+          let root: HTMLElement;
+          if (gesture === "chip") {
+            const sidebar = cleanup.adopt(
+              app.workspace.getRightLeaf(false)!,
+              (leaf) => leaf.detach(),
+            );
+            await sidebar.setViewState({
+              type: "zotero-annotation-view",
+              state: { followMode: "pinned", pinnedItemKey: itemKey },
+            });
+            await app.workspace.revealLeaf(sidebar);
+            root = (sidebar.view as AnnotationView).contentEl;
+          } else {
+            root = view!.containerEl;
+          }
           const card = `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(new URL(url).searchParams.get("annotation"))}]`;
+          const scope =
+            gesture === "block-chip" ? ".block-language-zotquery " : "";
           const link = await until(
             () =>
-              (
-                sidebar.view as AnnotationView
-              ).contentEl.querySelector<HTMLElement>(
-                `${card} a.zt-annot-page-chip`,
+              root.querySelector<HTMLElement>(
+                `${scope}${card} a.zt-annot-page-chip`,
               ),
             () => "The card drew no page chip",
           );
@@ -1686,21 +1699,65 @@ describe.skipIf(!reachable)("Annotation links", () => {
     expect(outcome).toMatchObject({ reader: lands, passed: [] });
   }, 120000);
 
-  // The chip is ZotLit's own gesture, not a note's file link, so the setting
-  // that keeps a note's links for the system handler leaves it alone.
-  it("opens the reader from a card's page chip while the reader's open-file-links setting is off", async () => {
+  // The chip shows its Durable Annotation Link, so the Reader settings that
+  // send a note's annotation links to Zotero send the chip's there too (#1980).
+  it("hands a card's page chip to Zotero while the reader's open-file-links setting is off", async () => {
     const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
-    const lands = { page: 1, selected: [FIRST_PAGE.key] };
 
     const outcome = await follow({
       note: "",
       url,
       gesture: "chip",
       captureOff: true,
-      lands,
     });
 
-    expect(outcome).toMatchObject({ reader: lands, passed: [] });
+    expect(outcome).toMatchObject({
+      reader: null,
+      passed: [expect.objectContaining({ url })],
+    });
+  }, 120000);
+
+  it("hands a card's page chip to Zotero while annotation links are set to open in Zotero", async () => {
+    const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
+
+    const outcome = await follow({
+      note: "",
+      url,
+      gesture: "chip",
+      linkSettings: { "reader.open-annotation-links": false },
+    });
+
+    expect(outcome).toMatchObject({
+      reader: null,
+      passed: [expect.objectContaining({ url })],
+    });
+  }, 120000);
+
+  // A literature note's ` ```zotquery ` annotations block draws the same
+  // cards, so its page chip follows the same settings (#1980).
+  it("hands a query block card's page chip to Zotero while annotation links are set to open in Zotero", async () => {
+    const url = durableLink(FIRST_PAGE.key, FIRST_PAGE.pageLabel);
+
+    const outcome = await follow({
+      note: [
+        "```zotquery",
+        "views:",
+        "  - type: annotations",
+        "    name: Annotations",
+        "    from: annotations",
+        `    filters: attachment.indexedKey == ${JSON.stringify(annotationAttachment.key)}`,
+        "```",
+        "",
+      ].join("\n"),
+      url,
+      gesture: "block-chip",
+      linkSettings: { "reader.open-annotation-links": false },
+    });
+
+    expect(outcome).toMatchObject({
+      reader: null,
+      passed: [expect.objectContaining({ url })],
+    });
   }, 120000);
 
   // Two Attachments can keep one file, and its path names only one of them.
