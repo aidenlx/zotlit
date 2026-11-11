@@ -108,7 +108,7 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
           {title}
         </div>
         {description ? (
-          <div tw="font-['Inter'] text-[35px] leading-[1.4] text-[#5f6672] max-w-[820px] mt-[26px]">
+          <div tw="font-['Inter'] text-[35px] leading-[1.4] text-[#1b2029] max-w-[820px] mt-[26px]">
             {description}
           </div>
         ) : null}
@@ -122,7 +122,7 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
             <span tw="text-[#E8622C]">Lit</span>
           </div>
         </div>
-        <div tw="font-['IBM_Plex_Mono'] font-medium text-[24px] text-[#5f6672]">
+        <div tw="font-['IBM_Plex_Mono'] font-medium text-[24px] text-[#1b2029]">
           {meta}
         </div>
       </div>

@@ -62,7 +62,7 @@ Owned layout slots:
 | --- | --- | --- | --- |
 | Ground (page) | `#f7f5f0` | `#121418` | `--color-fd-background` |
 | Surface (cards, windows, popovers) | `#ffffff` | `#1b1e24` | `--color-fd-card`, `--color-fd-popover` |
-| Ink (text) | `#1b2029` | `#e9e6df` | `--color-fd-foreground`, every `*-foreground` except primary's |
+| Ink (text) | `#1b2029` | `#e9e6df` | `--color-fd-foreground`, `--color-fd-card-foreground`, `--color-fd-popover-foreground`, `--color-fd-secondary-foreground`, `--color-fd-accent-foreground` |
 | Muted (secondary text) | `#5f6672` | `#9b978f` | `--color-fd-muted-foreground` |
 | Line (hairlines) | `#e3dfd6` | `#2d3037` | `--color-fd-border` |
 | Accent text tone (accent text, accent fills that carry text) | `#b9461a` | `#f0793f` | `--color-fd-primary` |
@@ -452,8 +452,8 @@ screen and does each step there.
   reduced motion).
 - **Picture.** One recording of the step in the real app (see Illustration),
   10px radius, with the shadow ring. Numbered marks sit on the controls the
-  caption names: 26px circles in the accent text tone with white numerals
-  (sans 600) and a 3px white halo. Where a step changes one screen into
+  caption names: 26px circles in the accent text tone with numerals in the
+  text-on-accent tone (sans 600) and a 3px surface-coloured halo. Where a step changes one screen into
   another, a before/after pair with a muted arrow between (stacked below
   560px).
 - **Caption.** The action, sans 19px / 1.5, naming each control as a UI chip
@@ -541,8 +541,9 @@ type carries:
   0.08em tracking) — set apart from folders by color and from page links by
   case. The home nav shares this mono-uppercase voice at 0.8125rem.
 - **Page links** lead in near-ink (0.84rem, foreground mixed 82% toward muted).
-- Active states are stock (tinted pill with `fd-primary` text, guide-line bar
-  on nested items).
+- Active states keep the stock shapes: a pill on the warm tint
+  (`fd-accent`) with `fd-primary` text (4.8:1 light, 5.6:1 dark), and the
+  guide-line bar on nested items.
 
 The mobile header carries the same double-hairline signature as the home nav.
 
@@ -558,9 +559,9 @@ restate the Journal tokens over Giscus' Primer variables; change them with
 ### Social cards (OG)
 
 `src/lib/og-card.tsx` draws every card on the light Journal ground: a mono
-label in the accent text tone over an accent rule, the serif title in ink,
-the sans description in muted, and an ink-ruled footer with the brand mark,
-the wordmark in its brand inks, and the mono meta line in muted.
+label in the accent text tone over an accent rule, the serif title, sans
+description and mono meta line in ink, and an ink-ruled footer with the
+brand mark and the wordmark in its brand inks.
 
 ## CSS architecture
 
