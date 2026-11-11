@@ -87,9 +87,9 @@ The page's Markdown edition renders each `<ContractTable>` as a GFM table: the c
 
 ## Content and writing docs
 
-Content lives in `content/`; collections are defined in [`src/lib/collections.ts`](src/lib/collections.ts), with schemas in [`content.config.ts`](content.config.ts). `content/docs/` follows Diataxis.
+Content lives in `content/`; collections are defined in [`src/lib/collections.ts`](src/lib/collections.ts), with schemas in [`content.config.ts`](content.config.ts). `/docs-writing` holds the page model (lessons, recipes, answer pages, reference) and the procedure for a page: a fact sheet from the product, prose from the Gemini writer, a check against the facts. The `content/docs/` folders (`tutorial/`, `how-to/`, `concepts/`) predate that model.
 
-Read `/docs-writing` to scope content decisions, then delegate prose to the `docs-writer` agent.
+Plan a docs change with `/docs-writing`, then delegate each page to the `docs-writer` agent.
 
 Custom MDX components (`src/components/`) are imported per-page in the `.mdx`, not registered in [`src/components/mdx.tsx`](src/components/mdx.tsx); wrap them in `not-prose` and style over `--color-fd-*` tokens (see [`src/components/action-link.tsx`](src/components/action-link.tsx)).
 
