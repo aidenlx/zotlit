@@ -25,7 +25,7 @@ The update and overwrite commands only appear in the command palette and context
 
 ## The managed region
 
-Every literature note is governed by one [profile](/docs/concepts/profiles). The profile supplies the note source, the text ZotLit renders into the note, and the note source can mark part of it with a managed block, `{% managed %}` and `{% endmanaged %}`. The Default profile has no managed block: its body renders once, when ZotLit creates the note, and is yours afterwards. See [Profile document](/docs/reference/templates/profile-document) for the document that carries the source, and [How templates work](/docs/concepts/how-templates-work) for how ZotLit finds it.
+Every literature note is governed by one [profile](/docs/reference/templates/how-templates-work#profiles). The profile supplies the note source, the text ZotLit renders into the note, and the note source can mark part of it with a managed block, `{% managed %}` and `{% endmanaged %}`. The Default profile has no managed block: its body renders once, when ZotLit creates the note, and is yours afterwards. See [Profile document](/docs/reference/templates/profile-document) for the document that carries the source, and [How templates work](/docs/reference/templates/how-templates-work) for how ZotLit finds it.
 
 When ZotLit creates or overwrites a literature note, it renders the note source. Where the note source has a managed block, its output goes into the note body inside comment markers:
 
@@ -39,7 +39,7 @@ ZotLit owns everything between these two markers. Your own writing goes above or
 
 ### What the region contains
 
-The managed region holds the output of the managed block in the profile that governs the note. The Default profile has no managed block, so a new default note has no managed region. Its **Annotations** section holds a live [query block](/docs/concepts/query-files-and-query-blocks) that shows your annotations as interactive cards, and stays current without an update. A note made with an earlier default can still carry the markers; there the region holds that section.
+The managed region holds the output of the managed block in the profile that governs the note. The Default profile has no managed block, so a new default note has no managed region. Its **Annotations** section holds a live [query block](/docs/reference/how-queries-work) that shows your annotations as interactive cards, and stays current without an update. A note made with an earlier default can still carry the markers; there the region holds that section.
 
 If you customize your profile to render annotations as text rather than a query block, each annotation renders through the profile's Annotation Section. See [Default templates](/docs/reference/templates/defaults#content-template).
 
@@ -90,12 +90,12 @@ you added are kept. A confirmation dialog gates the action.
   <Card
     title="How templates work"
     description="The three kinds of template document and the two template languages."
-    href="/docs/concepts/how-templates-work"
+    href="/docs/reference/templates/how-templates-work"
   />
   <Card
     title="Profiles"
     description="How a profile decides the name, folder, properties, and body of a note."
-    href="/docs/concepts/profiles"
+    href="/docs/reference/templates/how-templates-work#profiles"
   />
   <Card
     title="Keep notes up to date"
@@ -110,6 +110,6 @@ you added are kept. A confirmation dialog gates the action.
   <Card
     title="How ZotLit connects to Zotero"
     description="The database connection, protocol links, and live updates."
-    href="/docs/concepts/how-zotlit-connects-to-zotero"
+    href="/docs/reference/zotero-connection"
   />
 </Cards>

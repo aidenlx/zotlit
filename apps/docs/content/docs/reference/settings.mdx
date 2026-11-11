@@ -91,7 +91,7 @@ See [Configure frontmatter properties](/docs/how-to/configure-frontmatter-proper
 
 ## Literature note profiles [#profiles]
 
-Open this page from <SettingsPath page={m.settings_page_profiles()} />. A Profile's template document defines its note folder, citation style, and appearance. It can also carry a Profile Match: conditions that select the Profile automatically for new literature notes. See [Profiles](/docs/concepts/profiles) for how ZotLit selects one.
+Open this page from <SettingsPath page={m.settings_page_profiles()} />. A Profile's template document defines its note folder, citation style, and appearance. It can also carry a Profile Match: conditions that select the Profile automatically for new literature notes. See [Profiles](/docs/reference/templates/how-templates-work#profiles) for how ZotLit selects one.
 
 The first row is <UiLabel name={m.settings_profile_default_name()} />, the default Profile: <UiLabel name={m.settings_profile_default_desc()} /> Its buttons are <UiLabel name={m.settings_profile_edit()} /> and <UiLabel name={m.workbench_more_actions()} />, whose menu holds <UiLabel name={m.settings_profile_share()} />.
 
@@ -432,7 +432,7 @@ Open this sub-page from <SettingsPath page={m.settings_page_zotero()} setting={m
 
 | Option                                                 | Behavior                                                                                                                                                                               |
 | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_db_read_mode_auto()} />      | Picks the best available mode for your platform. See [How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero) for details.                                        |
+| <UiLabel name={m.settings_db_read_mode_auto()} />      | Picks the best available mode for your platform. See [How ZotLit connects to Zotero](/docs/reference/zotero-connection) for details.                                                   |
 | <UiLabel name={m.settings_db_read_mode_reflink()} />   | Fast, lightweight snapshot. What <UiLabel name={m.settings_db_read_mode_auto()} /> uses on macOS and Linux filesystems that support cloning.                                           |
 | <UiLabel name={m.settings_db_read_mode_copy()} />      | Byte-for-byte copy of the database file. Works on any filesystem but slower and uses more disk space. <UiLabel name={m.settings_db_read_mode_auto()} /> does not select this mode.     |
 | <UiLabel name={m.settings_db_read_mode_immutable()} /> | Reads the database file directly. What <UiLabel name={m.settings_db_read_mode_auto()} /> falls back to when cloning is unavailable. Recent edits in Zotero may not appear immediately. |
@@ -567,7 +567,7 @@ Open this page from <SettingsPath page={m.settings_page_attachments()} />.
   <UiLabel name={m.settings_attachment_import_name()} /> is on.
 </Callout>
 
-Generated [excerpt images](/docs/concepts/excerpt-images) require <UiLabel name={m.settings_attachment_import_name()} />. When it is off, ZotLit creates no new excerpt files for notes. It keeps a verified existing image when possible; otherwise it writes an unavailable-image explanation and source link. The annotation view and its device cache work independently of this setting.
+Generated [excerpt images](/docs/reference/excerpt-images) require <UiLabel name={m.settings_attachment_import_name()} />. When it is off, ZotLit creates no new excerpt files for notes. It keeps a verified existing image when possible; otherwise it writes an unavailable-image explanation and source link. The annotation view and its device cache work independently of this setting.
 
 ### Approved folders
 
@@ -724,7 +724,7 @@ excerpt images for this vault on this device. Select
 <UiLabel name={m.settings_excerpt_cache_clear_action()} /> in the confirmation
 to clear it. Saved note images and Zotero's image cache remain unchanged.
 
-The cache survives restarts and has a 256 MiB limit. ZotLit removes the least recently used entries when it needs space. Cleared images are generated again when requested. See [Cache and freshness](/docs/concepts/excerpt-images#freshness) for the PDF file checks and their limits.
+The cache survives restarts and has a 256 MiB limit. ZotLit removes the least recently used entries when it needs space. Cleared images are generated again when requested. See [Cache and freshness](/docs/reference/excerpt-images#freshness) for the PDF file checks and their limits.
 
 ## Where settings moved [#moved]
 

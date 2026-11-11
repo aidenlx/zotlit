@@ -1,0 +1,240 @@
+---
+title: "How templates work"
+description: "The three kinds of template document, how ZotLit finds them in the template folder, and the Liquid and Eta languages."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+Templates are Markdown files with embedded expressions that control what your literature notes and citations look like. ZotLit keeps them in one folder in your vault as **template documents**, and reads the filename to decide what each one does.
+
+<Callout type="info" title="Agent-assisted templates">
+  The [Template Workbench CLI](/docs/reference/template-workbench-cli) lets an
+  agent edit and test templates against your Zotero library. You can describe
+  the result without writing Liquid or Eta yourself.
+</Callout>
+
+## Three kinds of template document [#kinds]
+
+Every template document is one of three kinds. The filename prefix says which.
+
+| Kind                    | Filename                   | What it holds                                                                                                         |
+| ----------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Literature note profile | `zotlit-profile.<slug>.md` | One profile: the note name, folder, properties, body, and annotation format. `zotlit-profile.books.md` is an example. |
+| Citation text           | `zotlit-citation.md`       | The text of every in-text citation ZotLit renders. One per vault, under exactly this name.                            |
+| Partial                 | `zotlit-partial.<name>.md` | A piece of template text that any other template renders by name. `zotlit-partial.authors.md` is an example.          |
+
+A profile document is the single authoring object for a literature note: its name, its properties, its body, and the format of one annotation all live in that one file. See [Literature notes and the managed region](/docs/reference/literature-notes) for how ZotLit updates a note it has already written.
+
+The citation text is the one source for every in-text citation: what you insert from the citation suggester or the command palette, the citation an annotation carries, and each citation inside an imported Zotero note. It receives [`zt.variant`](/docs/reference/templates/data#citation-variant), the string `main` or `alt`, naming the gesture that asked for the citation, and the template decides what each one renders. `alt` comes from `Shift+Enter`, or from a trailing `/` in the suggester query; annotations and imported notes are always `main`. See [What each gesture inserts](/docs/how-to/insert-citations#citation-text).
+
+Partials are how a piece of template text is shared. Several profiles, and the citation text, can render the same partial by name. See [Customize a template](/docs/how-to/customize-a-template#share-a-partial) for the steps.
+
+## How ZotLit finds them [#discovery]
+
+ZotLit scans the template folder for files whose name starts with `zotlit-`. The scan is flat: it reads the files directly inside the folder and does not descend into subfolders.
+
+A file without the `zotlit-` prefix is ignored, so your own Obsidian templates can sit in the same folder.
+
+A `zotlit-` file that is neither one of the three kinds nor a [2.1 template file](#convert-legacy) renders nothing. It gets an <UiLabel name={m.settings_template_unrecognized_name()} /> row at <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} />, naming the file and the three valid names. `zotlit-citation.liquid.md` is one such file: the citation text carries no language in its name.
+
+### Template folder [#template-folder]
+
+Template documents live under the folder set at <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />, `templates` by default. Loading and file watching both use that folder. ZotLit recompiles a changed document immediately, so edits take effect without reloading the plugin.
+
+## The manifest and the language [#manifest]
+
+A citation text or partial document is an optional YAML manifest, then the template source:
+
+```text
+---
+language: eta
+---
+<template source>
+```
+
+`language` is the only key the manifest accepts, and its only values are `liquid` and `eta`. Any other key is an error.
+
+A document with no frontmatter is Liquid. A Liquid partial or citation text needs no manifest, and the file ZotLit creates for you when you first open the citation text carries none.
+
+To change the language for a citation text or a partial, use the switch in the [Template Workbench View](/docs/reference/template-workbench-view). It rewrites the manifest key alone: your source is never translated between the two syntaxes.
+
+A profile document always carries a manifest, because its manifest also holds the profile's name, folder, and citation style.
+
+## Two template languages [#languages]
+
+ZotLit supports two template languages: **Liquid** and **Eta**.
+
+**Liquid** is the default. It is always active and requires no opt-in. Liquid templates can only combine data into text: they cannot read files, make network requests, or run system commands. That makes them safe to share, sync, and install from community sources.
+
+**Eta** is a JavaScript-based engine. Eta templates can run arbitrary JavaScript with the same access as ZotLit itself. Because of the wider security surface, Eta is disabled by default and requires a per-device opt-in called the <UiLabel name={m.settings_template_js_enable_name()} /> gate. See [JavaScript templates](#javascript-templates) for the full explanation.
+
+An Eta document is inert while the gate is off. It is not compiled, and it does not fall back to the built-in default. ZotLit names the file it skipped and says why.
+
+## Built-in defaults [#defaults]
+
+The citation text works with no file in your vault: ZotLit renders a built-in Liquid default instead. Its settings row reads <UiLabel name={m.settings_template_using_default()} /> until a document exists. Opening the row creates the document from that built-in text, and resetting it moves your document to Obsidian's configured trash so the built-in text takes over again.
+
+Literature notes work the same way through the built-in Default profile, which you customize into a document of your own.
+
+## Converting 2.1 template files [#convert-legacy]
+
+Template files from ZotLit 2.1 still load and still render, so you do not have to convert them to keep working. That covers `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, `zotlit-annotation.liquid.md`, `zotlit-filename.liquid.md`, the two citation files, and any other `zotlit-<name>.(liquid|eta).md` that served as a partial.
+
+ZotLit offers the conversion in the setup banner above the Library View, as <UiLabel name={m.welcome_template_conversion_title()} />, and repeats it as a reminder row at the top of settings with a <UiLabel name={m.settings_template_conversion_reminder_action()} /> action. One pass folds the note, content, filename, and annotation files into one profile document, folds the two citation files into one citation text, and gives every remaining file its own partial document.
+
+Before it writes anything, ZotLit renders both citation variants and the note, update, filename, and annotation output, and compares them byte for byte against what your old files produced. A mismatch converts nothing. The old files then go to Obsidian's configured trash, so you can recover them.
+
+See [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the steps and the field mappings a v1 template also needs.
+
+### When two 2.1 files share a name [#liquid-wins-shadowing]
+
+A 2.1 name could carry both a `.liquid.md` and an `.eta.md` file. While both exist, the Liquid file wins and the Eta file is ignored, whether or not JavaScript templates are enabled. The conversion trashes both.
+
+## Profiles [#profiles]
+
+A profile is the document that decides everything about the literature notes ZotLit writes from it: their name, folder, properties, body, and annotation format.
+
+### What a profile is [#document]
+
+A profile is one Markdown file, named `zotlit-profile.<slug>.md` and kept in the folder named by <UiLabel name={m.settings_template_folder_name()} />. ZotLit reads every direct child of that folder whose name starts with `zotlit-profile.`, and each one becomes a profile. Nothing registers, installs, or points at a profile, so dropping the file into the folder is enough to add one.
+
+The filename is not the profile's identity, and renaming the file changes nothing. Each document carries an `id` in its manifest, and that ID is what a note remembers. The look, the properties, and the annotation format all live inside that one file. What it holds is in the [Profile document](/docs/reference/templates/profile-document) reference, and how it relates to the other two kinds of template document is in [How templates work](#kinds).
+
+### The Default profile [#default]
+
+Every vault has a Default profile, and it needs no document. Until you customize it, ZotLit uses its built-in template and holds the vault-wide defaults as settings. Customizing writes `zotlit-profile.default.md` into the template folder, after which the Default is a document like any other.
+
+The Default is also the fallback. A note that carries no profile of its own belongs to the Default, and an added profile that leaves something unset inherits that value from the Default. A profile therefore states only what makes it different: a folder for books, a citation style for one journal, a different annotation callout, and nothing else.
+
+### How ZotLit chooses a profile [#selection]
+
+A note is written by exactly one profile. ZotLit resolves which one as it writes, in this order:
+
+1. The profile you chose for that operation.
+2. The profile a command or a Companion link named.
+3. The profile whose Match conditions accept the item.
+4. The Default profile.
+
+Steps 1 and 2 come from a choice you made, and each one covers a single operation. Step 3 is the automatic one: Match conditions are part of the profile document, and a profile without them is never selected on its own. When exactly one profile matches, ZotLit uses it without asking. When several match, ZotLit stops and asks which one you meant. Step 4 is the fallback for a note that nothing above it names.
+
+The condition language is in [Profile Match](/docs/reference/templates/profile-match), and [Use a different template for different notes](/docs/how-to/use-different-templates) adds a profile and checks which items it takes.
+
+### One note, one profile [#stamp]
+
+A literature note records the profile that made it in its `zotlit-profile` property. The value names the profile and carries its ID, as in `Books (V1StGXR8Z5jd)`. The ID is the only part ZotLit compares. The name beside it is a hint for you, refreshed the next time ZotLit writes the note, so renaming a profile's label or its file breaks nothing.
+
+A note written by the Default carries no such property. Absence means the Default, and it never means "ask some other note". Imported notes carry a stamp too, taken from the operation or the literature note that created them.
+
+Because identity lives in the ID, two profile documents that claim the same ID are both left out of the registry rather than repaired. Such a profile stops being offered anywhere until one of the two documents gets a unique ID.
+
+### When a note changes profile [#update]
+
+An update does not re-run the conditions. ZotLit reads the note's stamp, renders the note with the profile that stamp names, and leaves every other note alone. Editing a profile's conditions or adding a profile therefore changes what future notes look like, not what existing ones look like. A command that names a profile the note does not carry is refused rather than obeyed: <UiLabel name={m.notice_literature_note_profile_conflict()} />.
+
+Moving one note to a different profile is a deliberate action of its own, never a side effect of editing the conditions. It asks for confirmation first, and it leaves the text outside the managed region as it was; the next update renders the note from the profile it now names. [Use a different template for different notes](/docs/how-to/use-different-templates) gives that action.
+
+### A note has no template of its own [#customize]
+
+Every note a profile writes renders from that profile's document. There is no per-note copy, so editing the document changes all of them, and each note shows the change the next time it is updated. A note that belongs to the Default follows the Default's document, which exists only once the Default has been customized; until then the note renders from the built-in template.
+
+Editing a note's template therefore means editing the profile that the note names. [Customize a template](/docs/how-to/customize-a-template) covers that edit, together with the citation text and the partials.
+
+## JavaScript templates [#javascript-templates]
+
+<UiLabel name={m.settings_template_js_enable_name()} /> is a per-device gate
+that controls whether Eta templates compile and execute. It is disabled by
+default.
+
+### What the gate enables [#what-the-gate-enables]
+
+A template document declares its language in its own text, not in its filename. A citation text or partial carries a manifest with the single key `language: eta`; a profile document sets its language on the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab. See [Profile document](/docs/reference/templates/profile-document) for the manifest and the frontmatter entry members.
+
+When <UiLabel name={m.settings_template_js_enable_name()} /> is on:
+
+- Eta template documents compile and execute using the Eta engine (full JavaScript).
+- Managed frontmatter entries written with the `js` member evaluate their expressions.
+
+When disabled (the default):
+
+- Eta documents are inert: never compiled, never executed.
+- Only Liquid documents and `expr` or `value` frontmatter entries are active. An `expr` entry holds a Liquid expression and a `value` entry holds a JSON-e template.
+
+See [Behavior when disabled](#behavior-when-disabled) for the exact failure mode.
+
+### Why it exists [#why-it-exists]
+
+Liquid templates render text. A Liquid template has no way to open a file it was not given, make a network call, or run a system command. It can only combine the data it receives into output.
+
+Eta templates are full JavaScript. Code in an Eta document runs with the same access as ZotLit itself: it can read and modify your vault, connect to the internet, and on desktop, access your system. A template document copied from a forum post, a shared vault, or another device executes with that full access the moment it runs.
+
+The gate keeps this boundary explicit. Liquid stays safe by default; JavaScript execution requires a deliberate opt-in.
+
+### Risks of opting in [#risks-of-opting-in]
+
+<Callout type="warn" title="Security implications">
+  Only enable this if you trust every Eta template document in your vault. Eta
+  templates are not audited or sandboxed by ZotLit.
+</Callout>
+
+Once enabled:
+
+- Every Eta template document in your template folder executes without further prompts.
+- A template from an untrusted source could read files, make network requests, or modify your vault.
+- The consent is one-time per device. It covers all current and future Eta templates.
+
+### Per-device scope [#per-device-scope]
+
+The consent is stored on the device itself, outside the synced plugin settings. Enabling it on one device does not enable it on another. Each device where you want Eta templates to run requires its own opt-in.
+
+If you sync your vault across devices, only devices where the owner has explicitly enabled the setting will run JavaScript templates.
+
+<Callout type="info" title="No plugin reload required">
+  Toggling the gate takes effect immediately. ZotLit rebuilds the template
+  folder in place, no reload needed.
+</Callout>
+
+### Behavior when disabled [#behavior-when-disabled]
+
+When the gate is off and an Eta template document would otherwise render, ZotLit treats it as **inert**:
+
+- The operation that needs the template (create note, update note, insert citation) fails with an error naming the cause. There is no silent fallback to the built-in default.
+- <SettingsPath /> shows a warning:
+  <UiLabel name={m.settings_template_inert_eta({ path: "…" })} />
+- The document remains in your vault untouched, never compiled.
+
+The same applies to a managed frontmatter entry declared with the `js` member. A note write that consumes such an entry fails, and the error names the inactive fields. ZotLit never writes a partial field set, so existing notes stay unchanged.
+
+### Coexistence with Liquid [#coexistence-with-liquid]
+
+A template document declares one language, so a Liquid document and an Eta document never compete for the same name.
+
+A ZotLit 2.1 name could carry both a `.liquid.md` and an `.eta.md` file. While both exist, the Liquid file wins and the Eta file is ignored, whether or not the gate is on. See [When two 2.1 files share a name](#liquid-wins-shadowing).
+
+## See also
+
+<Cards>
+  <Card
+    title="Template Workbench View"
+    description="Edit and preview any template document in Obsidian."
+    href="/docs/reference/template-workbench-view"
+  />
+  <Card
+    title="Customize a template"
+    description="Edit a profile, the citation text, or a partial step by step."
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="Explore template data"
+    description="Use the Template Data Explorer to discover available fields."
+    href="/docs/how-to/explore-template-data"
+  />
+  <Card
+    title="Customize your annotations"
+    description="Tutorial lesson 2: change how annotations render in your notes."
+    href="/docs/tutorial/customize-template"
+  />
+</Cards>

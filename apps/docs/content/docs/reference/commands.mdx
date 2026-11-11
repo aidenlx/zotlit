@@ -381,7 +381,7 @@ These commands open template documents in the Template Workbench and import a pr
 
 <Command name={m.template_workbench_open_layout()} />
 
-Opens the Template Workbench View for the active document, in the Workbench's own window, with the Preview panel shown. A profile document, a partial, or the citation text opens directly. A literature note opens the profile document it resolves against, with the note's item selected, and the Workbench can then update that note. A note with no profile stamp resolves against the Default profile. A profile the vault cannot resolve shows a notice instead. See [Profiles](/docs/concepts/profiles) for what a profile decides.
+Opens the Template Workbench View for the active document, in the Workbench's own window, with the Preview panel shown. A profile document, a partial, or the citation text opens directly. A literature note opens the profile document it resolves against, with the note's item selected, and the Workbench can then update that note. A note with no profile stamp resolves against the Default profile. A profile the vault cannot resolve shows a notice instead. See [Profiles](/docs/reference/templates/how-templates-work#profiles) for what a profile decides.
 
 When a Workbench window already shows the document, the command brings that window to the front. From inside the view, it brings the view's own window to the front. To move a view to another window, use Obsidian's **Move to new window**.
 
@@ -412,10 +412,10 @@ The Workbench view's pane menu is where most template work starts. These entries
 | <UiLabel name={m.command_customize_citation_text_name()} /> | Opens the citation text, `zotlit-citation.md`, in a new tab of the Workbench window.                                                                                                                                                                    |
 
 <UiLabel name={m.workbench_show_fields()} /> opens or closes the view's [Fields
-panel](/docs/concepts/template-workbench-view#fields-panel): the Fields popover,
-or the pinned panel beside the editor.
+panel](/docs/reference/template-workbench-view#fields-panel): the Fields
+popover, or the pinned panel beside the editor.
 <UiLabel name={m.workbench_show_preview()} /> shows or hides the [Preview
-panel](/docs/concepts/template-workbench-view#panels). Each has a check mark
+panel](/docs/reference/template-workbench-view#panels). Each has a check mark
 while it is on. Both are also view actions in the view header, where the Fields
 panel's action is named <UiLabel name={m.workbench_view_fields()} />. While the
 Fields panel is pinned beside the editor, the menu also holds
@@ -425,7 +425,7 @@ syntax and data references, and the community.
 <UiLabel name={m.workbench_choose_item()} />
 is also the button in the row above the panels, which names the chosen item.
 While the Preview panel is shown, the menu also holds the [preview
-choices](/docs/concepts/template-workbench-view#preview-panel).
+choices](/docs/reference/template-workbench-view#preview-panel).
 
 Four entries join the pane menu outside the **zotlit** section. <UiLabel name={m.template_workbench_change_language()} /> switches the document between <UiLabel name={m.workbench_name_language_liquid()} /> and <UiLabel name={m.workbench_name_language_eta()} />, and is not offered for a profile document. <UiLabel name={m.template_data_explorer_menu_export_json()} /> saves the current template data as a JSON file, for the root the Fields panel shows while it is open, and for the editor's root otherwise; with the annotation root selected, the same entry reads <UiLabel name={m.template_data_explorer_export_selected_paper()} /> when it can export the whole paper instead. <UiLabel name={m.template_workbench_open_markdown()} /> opens the document as Markdown. <UiLabel name={m.settings_profile_document_restore()} /> moves the Default profile's custom document to the trash, so the built-in profile applies again, and is offered on that document only.
 
@@ -496,7 +496,7 @@ Opens the release notes for the installed ZotLit version.
 
 ## Query CLI [#query-cli]
 
-The Query CLI reads works, files, and reading marks for agents and scripts. One `zotlit:query` command selects a Query Dataset with `from`. [How ZotLit Query works](/docs/concepts/how-zotlit-query-works) explains the datasets, filters, and groups.
+The Query CLI reads works, files, and reading marks for agents and scripts. One `zotlit:query` command selects a Query Dataset with `from`. [How ZotLit Query works](/docs/reference/how-queries-work#zotlit-query) explains the datasets, filters, and groups.
 
 | Command                   | Parameters                                                                                                                  | Result                                                                    |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
@@ -560,7 +560,7 @@ Select a record by Indexed Key in the filter. Use `indexedKey` for a row, `item.
 
 ### Query Context [#query-context]
 
-`this-item` and `this-attachment` set the Query Context of a query: the Item and the Attachment that a filter reads as `this.item` and `this.attachment`. Query files and query blocks set the same context from the note that shows them. See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+`this-item` and `this-attachment` set the Query Context of a query: the Item and the Attachment that a filter reads as `this.item` and `this.attachment`. Query files and query blocks set the same context from the note that shows them. See [`this`: the paper of the note](/docs/reference/how-queries-work#this).
 
 | Dataset       | Records of the bound Item            | Records of the bound Attachment            |
 | ------------- | ------------------------------------ | ------------------------------------------ |
@@ -654,7 +654,7 @@ The Template Workbench registers its own commands with the Obsidian CLI, for age
 
 The earlier schema, rendering, source, and managed-frontmatter commands are retired. Each stays registered and answers a `COMMAND_RETIRED` diagnostic.
 
-See [Template Workbench CLI](/docs/reference/template-workbench-cli) for every command, live and retired, with its flags and diagnostics, and [Template Workbench](/docs/concepts/template-workbench) for the concept.
+See [Template Workbench CLI](/docs/reference/template-workbench-cli) for every command, live and retired, with its flags and diagnostics, and [Template Workbench](/docs/reference/template-workbench-cli) for the concept.
 
 ## See also
 
@@ -667,7 +667,7 @@ See [Template Workbench CLI](/docs/reference/template-workbench-cli) for every c
   <Card
     title="How ZotLit Query works"
     description="Query Datasets, Relation Lists, grouping, and exact Collection and Tag names."
-    href="/docs/concepts/how-zotlit-query-works"
+    href="/docs/reference/how-queries-work#zotlit-query"
   />
   <Card
     title="Install the ZotLit skills"

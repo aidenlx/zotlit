@@ -47,7 +47,7 @@ It searches every library in your [library scope](/docs/reference/settings#libra
 
 ### Choose the profile that creates the note [#choose-profile]
 
-A [profile](/docs/concepts/profiles) supplies a note's name, folder, properties, and body. While your vault holds only the Default profile, the Default creates the note and ZotLit asks nothing.
+A [profile](/docs/reference/templates/how-templates-work#profiles) supplies a note's name, folder, properties, and body. While your vault holds only the Default profile, the Default creates the note and ZotLit asks nothing.
 
 Once you add a profile, ZotLit selects one by [Profile Match](/docs/reference/templates/profile-match):
 
@@ -84,14 +84,14 @@ A click resolves the citation key against Zotero's native citation key field, ac
 
 If the item is not found in your Zotero library, a notice appears: <UiLabel name={m.notice_citekey_not_found({ citekey: "…" })} /> If the database is unavailable, ZotLit shows <UiLabel name={m.notice_citekey_db_unavailable({ citekey: "…" })} />
 
-If several Zotero items carry that key, ZotLit asks which one you mean. A picker lists each item with its library and item key, and opens the one you choose. See [A key that matches several items](/docs/concepts/how-citekey-links-work#ambiguous-key).
+If several Zotero items carry that key, ZotLit asks which one you mean. A picker lists each item with its library and item key, and opens the one you choose. See [A key that matches several items](/docs/reference/citation-links#ambiguous-key).
 
 The four open-under-cursor commands use <UiLabel name={m.settings_citation_open_as_links_name()} />; what hovering shows follows <UiLabel name={m.settings_citation_hover_action_name()} /> instead. <UiLabel name={m.settings_citation_show_formatted_name()} /> does not control navigation.
 
 <UiLabel name={m.settings_citation_open_as_links_name()} /> covers Literature
 Note wikilinks shown as citations as well. For recognized syntax and the
 complete interaction model, see [How in-text citation rendering and navigation
-work](/docs/concepts/how-citekey-links-work).
+work](/docs/reference/citation-links).
 
 ## Find notes that cite a Literature Note
 
@@ -120,7 +120,7 @@ You can create or update literature notes for many Zotero items at once from the
 
 ### Choose the profile for new notes [#bulk-profiles]
 
-Every new note is created from a [profile](/docs/concepts/profiles), which decides its name, folder, properties, and body. When your vault holds added profiles, the confirmation carries a profile control for the new notes, above the item groups. Each control governs the rows it names:
+Every new note is created from a [profile](/docs/reference/templates/how-templates-work#profiles), which decides its name, folder, properties, and body. When your vault holds added profiles, the confirmation carries a profile control for the new notes, above the item groups. Each control governs the rows it names:
 
 - <UiLabel name={m.batch_profile_unresolved_label({ count: "…" })} /> covers
   items that no profile matched, or that several profiles matched. Its help
@@ -203,7 +203,7 @@ To choose where the note appears in Obsidian, open the <UiLabel name={m["zotero.
 
 ## How ZotLit identifies literature notes
 
-ZotLit identifies literature notes by their `zotero-key` frontmatter field. For details on note identity and the managed region, see [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+ZotLit identifies literature notes by their `zotero-key` frontmatter field. For details on note identity and the managed region, see [Literature notes and the managed region](/docs/reference/literature-notes).
 
 ## See also
 
@@ -231,6 +231,6 @@ ZotLit identifies literature notes by their `zotero-key` frontmatter field. For 
   <Card
     title="Literature notes and the managed region"
     description="How ZotLit separates your writing from generated content."
-    href="/docs/concepts/literature-notes-and-the-managed-region"
+    href="/docs/reference/literature-notes"
   />
 </Cards>

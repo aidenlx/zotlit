@@ -1,0 +1,63 @@
+---
+title: "Fix common problems"
+description: "ZotLit not working as expected? Find what you see on screen and go straight to the fix."
+---
+
+Find what you see on your screen, and the link takes you to the fix.
+
+## Installing and connecting
+
+- [ZotLit asks me to update Obsidian, but Obsidian says it is up to date](/docs/how-to/update-obsidian-installer#update-the-installer) — "Update Obsidian to use ZotLit"
+- [ZotLit does not load at all after I install it](/docs/how-to/update-obsidian-installer) — "Failed to load plugin \"zotlit\""
+- [ZotLit cannot find my Zotero library; the Library View is empty](/docs/how-to/use-library-view#not-found) — "Zotero not found"
+- [A notice says Zotero is not on this computer](/docs/how-to/use-library-view#not-found) — "Zotero wasn't found on this device."
+- [Live updates do not work; the annotation view does not follow the Zotero reader](/docs/how-to/set-up-live-updates#verify-the-connection)
+- [Zotero says to enable the server or select fewer items when I update many papers](/docs/how-to/create-and-open-notes#update-multiple-items-at-once)
+- [Zotero asks for confirmation every time it opens Obsidian](/docs/how-to/suppress-zotero-security-prompt#add-the-protocol-handler-preference)
+- [I need to send logs with a bug report](/docs/how-to/collect-debug-logs)
+
+## Zotero changes and sync
+
+- [A change in Zotero does not show in Obsidian](/docs/how-to/fix-stale-data#restore-current-zotero-data)
+- [On Windows (or Linux with ext4), notes and the Library View show old Zotero data](/docs/how-to/keep-zotero-and-obsidian-in-sync#when)
+- [Zotero changes still do not appear after I install the Companion and update the note](/docs/how-to/fix-stale-data#read-mode)
+- [On a second computer, ZotLit cannot find Zotero after the vault syncs](/docs/how-to/sync-across-devices#when-a-new-device-cannot-find-zotero) — "Zotero wasn't found on this device."
+- [My JavaScript (Eta) templates work on one computer but not on another](/docs/how-to/enable-javascript-templates#per-device-scope)
+- [After an upgrade, papers from my group libraries do not show in search](/docs/reference/settings#library-scope)
+
+## Papers, PDFs, and annotations
+
+- [A link opens Zotero instead of the PDF](/docs/how-to/open-pdf-in-obsidian#file-links)
+- [The PDF does not open, or ZotLit says the file is missing](/docs/how-to/open-pdf-in-obsidian#what-you-get) — "This item has no PDF attachment."; "The PDF file is missing."
+- [I cannot change annotations from Obsidian](/docs/how-to/edit-pdf-annotations#before-you-edit) — "Zotero version is not supported"; "Enable communication with Zotero"; "Waiting for approval in Zotero"
+- [A comment I wrote disappeared after I edited the same annotation in Zotero](/docs/how-to/edit-pdf-annotations#before-you-edit)
+- [An annotation shows a lock and I cannot change it](/docs/how-to/edit-pdf-annotations#locked) — "Locked. Zotero imported this annotation from the PDF file, so it cannot be changed."
+
+## Literature notes
+
+- [I updated the note, but its body did not change](/docs/how-to/keep-notes-updated#update-the-full-note) — "Properties updated. This note has no managed region, so its body stayed unchanged."
+- [Notes from ZotLit v1 do not update](/docs/how-to/migrate-from-v1#refresh-v1-notes) — "Properties updated. This note has no managed region, so its body stayed unchanged."
+- [Updating all notes does nothing and says no library is available](/docs/how-to/keep-notes-updated#batch) — "No library in the library scope is available."
+- [A picker asks which profile to use when I create a note](/docs/how-to/use-different-templates#overlap)
+- [My edits in an imported Zotero note were replaced on refresh](/docs/how-to/import-zotero-notes#render-annotations-from-template)
+
+## Citations and export
+
+- [A citation shows as an error in the References sidebar](/docs/how-to/review-copy-troubleshoot-references#fix-reference-errors) — "`@key` matches no item in your Zotero library."; "`@key` matches multiple items in your Zotero library."; "This link has an invalid citation fragment."; "`{linkpath}` points to an item that is no longer in your Zotero library."
+- [ZotLit will not insert a citation](/docs/how-to/insert-citations#ambiguous-key) — "Citation key `@{key}` matches multiple Zotero items. Change it in Zotero before inserting a citation."
+- [Nothing is inserted when I pick a paper to cite](/docs/how-to/insert-citations#citation-keys) — "Selected item has no citation key: `{key}`."
+- [Copy bibliography is greyed out](/docs/how-to/review-copy-troubleshoot-references#fix-a-disabled-copy-bibliography-action) — "Fix the reference errors to copy the bibliography", "Bibliography formatting is unavailable"
+- [The References sidebar says the style is unavailable or the references cannot be formatted](/docs/how-to/review-copy-troubleshoot-references#fix-presentation-errors) — "This note's citation and references style is unavailable", "This note's document language is invalid", "ZotLit could not format these references", "The Pandoc engine is unavailable"
+- [The References sidebar does not match what my note cites](/docs/reference/settings#recovery)
+- [Export fails or asks me to start Zotero or install the Pandoc engine](/docs/how-to/export-note-with-citations#fix-an-export-error)
+- [Native Pandoc export stops with an error code](/docs/how-to/export-with-native-pandoc#fix-a-failed-run)
+- [The citation graph command opens nothing](/docs/how-to/explore-citations-in-graph#when-a-command-opens-nothing) — "The Graph view core plugin is disabled. Turn it on in Settings → Core plugins."; "“Show citations in graph view” is turned off. Turn it on in Settings → ZotLit → Citations."
+
+## Templates and queries
+
+- [The template preview fails with an error](/docs/how-to/collect-debug-logs#template-error-report) — "Show problem", "Problems", "Copy error report"
+- [The Problems area lists faults in my profile document](/docs/how-to/edit-a-profile-as-markdown#problems) — "This file is not a profile document."; "The manifest is not valid."
+- [Converting my 2.1 templates is refused](/docs/how-to/migrate-from-2.1-templates#what-is-refused-and-what-you-see) — "ZotLit kept the legacy templates unchanged because the converted \{difference\} did not match. ..."
+- [ZotLit will not use my added profile until I convert templates](/docs/how-to/migrate-from-2.1-templates#while-the-conversion-is-pending) — "Convert the legacy literature note templates before you use an added profile."
+- [Creating or updating notes fails with a list of inert frontmatter keys](/docs/reference/templates/frontmatter#javascript-templates-gate)
+- [A query formula shows a warning icon, or the view shows no rows](/docs/how-to/use-query-files#formula-errors)

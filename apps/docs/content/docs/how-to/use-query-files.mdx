@@ -9,7 +9,7 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-A query file shows live annotations, files, or papers from your Zotero library in a tab or in a note. This page shows how to create one, change its views, and embed it. [Query files and query blocks](/docs/concepts/query-files-and-query-blocks) explains the ideas behind them.
+A query file shows live annotations, files, or papers from your Zotero library in a tab or in a note. This page shows how to create one, change its views, and embed it. [Query files and query blocks](/docs/reference/how-queries-work) explains the ideas behind them.
 
 ## Create a query file [#create]
 
@@ -122,7 +122,7 @@ Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts
 
 The properties depend on the records of the view. An annotations view offers the color, Tags, comment, text, page, and dates of each annotation. Every view offers the paper's title, creators, first author, year, item type, Collection, and library. Annotations and attachments views also offer the file's title and file type. An items view also offers the properties of your Literature Notes, as [Track reading status](/docs/how-to/track-reading-status#filter) shows.
 
-To write a condition as a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. The filter expression editor colors field names, functions, numbers, and strings. As you type, autocompletion suggests available fields and functions (press `Tab` or `Enter` to insert), parameter hints show expected arguments, and wavy underlines flag syntax errors immediately. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual condition row.
+To write a condition as a [Filter Expression](/docs/reference/how-queries-work#steps), select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. The filter expression editor colors field names, functions, numbers, and strings. As you type, autocompletion suggests available fields and functions (press `Tab` or `Enter` to insert), parameter hints show expected arguments, and wavy underlines flag syntax errors immediately. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual condition row.
 
 ![A Query View filter written as an expression, with field names, functions, numbers, and text in different colors, a wavy underline and an error message under "year", and the completion list open with "tags" at the top](/img/how-to/filter-expression-editor.webp)
 
@@ -172,7 +172,7 @@ The Table, List, and Cards layouts show these properties in this order. Copy and
 
 ## Add a formula [#formulas]
 
-A formula is a property that ZotLit computes for each row from other properties. It uses the same [Filter Expression](/docs/concepts/how-zotlit-query-works#steps) language as a filter condition. For example, a formula can show the year of each paper, or the number of its authors.
+A formula is a property that ZotLit computes for each row from other properties. It uses the same [Filter Expression](/docs/reference/how-queries-work#steps) language as a filter condition. For example, a formula can show the year of each paper, or the number of its authors.
 
 To show the year of each paper in an items view:
 
@@ -213,7 +213,7 @@ To remove a formula, open its page, select <UiLabel name={m.query_view_more_opti
 
 A formula that ZotLit Query cannot run, such as `title * 2`, shows a warning icon on its row in <UiLabel name={m.query_view_properties()} /> and on its column header in the Table layout. Hover over the icon to read the reason. The other properties of the view stay on screen. A formula that uses the wrong one shows the name of the formula with the mistake. When a filter condition of the view uses the wrong formula, the view shows the error and no rows until you correct it.
 
-A formula can work for most rows and fail on one row. For example, `number(volume)` fails on a paper whose volume is text, such as "Spring". That row shows a warning icon in its cell, with the reason in a tooltip. Copy and CSV export write `Error: ` and the reason in that cell. A paper with no volume shows an empty cell. [Error Values](/docs/concepts/how-zotlit-query-works#error-values) explains the difference.
+A formula can work for most rows and fail on one row. For example, `number(volume)` fails on a paper whose volume is text, such as "Spring". That row shows a warning icon in its cell, with the reason in a tooltip. Copy and CSV export write `Error: ` and the reason in that cell. A paper with no volume shows an empty cell. [Error Values](/docs/reference/how-queries-work#error-values) explains the difference.
 
 ## Rename a property [#display-names]
 
@@ -318,7 +318,7 @@ To show the annotations of the note's own paper, use `this.item` in the filter o
 filters: item == this.item
 ```
 
-In a Literature Note, `this.item` is the paper that the note's `zotero-key` property names. When that paper's library is outside your <UiLabel name={m.settings_library_scope_name()} /> setting, the embed shows <UiLabel name={m.query_view_warning_outside_library_scope()} /> See [`this`: the paper of the note](/docs/concepts/query-files-and-query-blocks#this).
+In a Literature Note, `this.item` is the paper that the note's `zotero-key` property names. When that paper's library is outside your <UiLabel name={m.settings_library_scope_name()} /> setting, the embed shows <UiLabel name={m.query_view_warning_outside_library_scope()} /> See [`this`: the paper of the note](/docs/reference/how-queries-work#this).
 
 When a view uses `this.item` or `this.attachment` without an active context (for example, in a standalone query file tab or an unlinked note), the view displays a suggestion explaining where to open it.
 
@@ -393,7 +393,7 @@ To keep a sidebar filter as a file:
   <Card
     title="Query files and query blocks"
     description="Views, layouts, where changes save, and what this.item means."
-    href="/docs/concepts/query-files-and-query-blocks"
+    href="/docs/reference/how-queries-work"
   />
   <Card
     title="Query file format"

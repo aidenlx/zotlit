@@ -26,7 +26,7 @@ A profile decides a literature note's name, folder, properties, and body. Add on
 
     Enter the <UiLabel name={m.settings_profile_name_name()} />. A name is enough to create the profile. To keep its notes in a folder of their own, also enter the <UiLabel name={m.settings_profile_folder_name()} />. Leave the folder empty to use the Default profile's folder. The dialog reads <UiLabel name={m.settings_profile_destination_desc()} /> Select <UiLabel name={m.settings_profile_add()} /> to create the profile.
 
-    ZotLit writes `zotlit-profile.<slug>.md` into the folder named by <UiLabel name={m.settings_template_folder_name()} /> and opens the document in the Template Workbench View. The name you typed is the label you see in lists. The profile's actual identity is a separate ID inside the document, so renaming the file changes nothing. See [Profiles](/docs/concepts/profiles) for what the document carries.
+    ZotLit writes `zotlit-profile.<slug>.md` into the folder named by <UiLabel name={m.settings_template_folder_name()} /> and opens the document in the Template Workbench View. The name you typed is the label you see in lists. The profile's actual identity is a separate ID inside the document, so renaming the file changes nothing. See [Profiles](/docs/reference/templates/how-templates-work#profiles) for what the document carries.
 
   </Step>
   <Step>
@@ -75,7 +75,7 @@ Pick the profile you meant to use, or dismiss the picker to cancel the note. Nar
 
 ## When you pick a profile by hand [#manual]
 
-A profile you choose for the current operation wins over Profile Match, whatever the conditions say. [Profiles](/docs/concepts/profiles) holds the order ZotLit tries when it selects one.
+A profile you choose for the current operation wins over Profile Match, whatever the conditions say. [Profiles](/docs/reference/templates/how-templates-work#profiles) holds the order ZotLit tries when it selects one.
 
 Your choice covers that one operation. The note records the profile that made it, and later updates read that record instead of the conditions.
 
@@ -122,7 +122,7 @@ A profile is a single document, so you can move it to another vault as one file,
   <Card
     title="Profiles"
     description="What a profile is, how one is chosen, and how a note keeps it."
-    href="/docs/concepts/profiles"
+    href="/docs/reference/templates/how-templates-work#profiles"
   />
   <Card
     title="Profile Match"

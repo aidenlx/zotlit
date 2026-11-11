@@ -1,6 +1,8 @@
 {
   "title": "Setup and troubleshooting",
   "pages": [
+    "what-zotlit-reads-and-writes",
+    "fix-common-problems",
     "../how-to/keep-zotero-and-obsidian-in-sync",
     "../how-to/set-up-live-updates",
     "../how-to/sync-across-devices",

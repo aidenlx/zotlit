@@ -58,7 +58,7 @@ These commands are available from the command palette and from the right-click c
 
     Image and ink excerpts are prepared before the note is written. Both PDF readers can stay closed. A changed image gets a new filename; other notes and old image files keep their saved versions.
 
-    If refresh fails, ZotLit keeps a verified image already referenced by the note. If none is available, it writes an explanation and source link. See [Import outcomes](/docs/concepts/excerpt-images#import-outcomes) for the summary counts.
+    If refresh fails, ZotLit keeps a verified image already referenced by the note. If none is available, it writes an explanation and source link. See [Import outcomes](/docs/reference/excerpt-images#import-outcomes) for the summary counts.
 
   </Step>
 </Steps>
@@ -144,7 +144,7 @@ added are kept.
 
 A confirmation dialog appears before the overwrite proceeds.
 
-Overwrite uses the same [excerpt snapshot rules](/docs/concepts/excerpt-images#saved-snapshots) as a full update. A metadata-only update leaves the note body's image links unchanged.
+Overwrite uses the same [excerpt snapshot rules](/docs/reference/excerpt-images#saved-snapshots) as a full update. A metadata-only update leaves the note body's image links unchanged.
 
 <Callout type="warn" title="Notes created with ZotLit v1">
   Literature notes created with ZotLit v1 do not have a managed region. Running <UiLabel name={m.command_update_note_name()} /> on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice <UiLabel name={m.notice_updated_note_no_region()} />
@@ -159,7 +159,7 @@ To fully refresh a v1 note's body, use <Command inline name={m.command_overwrite
   <Card
     title="Literature notes and the managed region"
     description="How ZotLit separates your writing from generated content."
-    href="/docs/concepts/literature-notes-and-the-managed-region"
+    href="/docs/reference/literature-notes"
   />
   <Card
     title="Create and open literature notes"
