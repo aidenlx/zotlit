@@ -452,6 +452,39 @@ VERDICT: pending — the owner has not judged this yet.
         );
       }
 
+      // A recording of one step, cropped like a Shot. It loops and rests on the
+      // result. With reduced motion it stays on its poster until played.
+      function Clip({ src, ar, crop, alt }) {
+        const [x, y, w, h] = crop;
+        const still = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
+        return (
+          <div
+            className="shot"
+            style={{ aspectRatio: String((w * ar) / h), overflow: "hidden" }}
+          >
+            <video
+              aria-label={alt}
+              autoPlay={!still}
+              controls={still}
+              loop
+              muted
+              playsInline
+              style={{
+                position: "absolute",
+                width: `${100 / w}%`,
+                left: `${(-x / w) * 100}%`,
+                top: `${(-y / h) * 100}%`,
+              }}
+            >
+              <source src={`img/${src}.webm`} type="video/webm" />
+              <source src={`img/${src}.mp4`} type="video/mp4" />
+            </video>
+          </div>
+        );
+      }
+
       const WIN = [0.083, 0.1, 0.835, 0.8];
       const CARD = {
         img: "find-paper",
@@ -544,24 +577,25 @@ VERDICT: pending — the owner has not judged this yet.
           title: "Find a paper",
           cap: (
             <>
-              Type a few words of a title into <U>Search papers</U> <N>1</N>.
-              Select the paper <N>2</N>.
+              Type a few words of a title into <U>Search papers</U>. Select the
+              paper.
             </>
           ),
+          // A recording of the real app (walk on docs/learn-walks, Obsidian
+          // 1.14.5), cropped to the Zotero library tab of a 1440x860 window.
           view: (
-            <Shot
-              img="find-paper"
-              ar={WIDE}
-              crop={[0.083, 0.18, 0.59, 0.64]}
-              marks={[
-                [0.268, 0.225],
-                [0.268, 0.478],
-              ]}
-              alt="The search box holds the word reproducible. A card for the selected paper is open beside the list."
+            <Clip
+              src="step-3"
+              ar={1440 / 860}
+              crop={[0.239, 0, 0.525, 1]}
+              alt="A recording: the words reproducible computational are typed into Search papers, the paper is selected, and its card opens under the list."
             />
           ),
           see: (
-            <>A card opens with the authors, the journal, and two buttons.</>
+            <>
+              A card opens under the list, with the buttons <b>Open PDF</b> and{" "}
+              <b>Write literature note</b>.
+            </>
           ),
           fix: [
             [
