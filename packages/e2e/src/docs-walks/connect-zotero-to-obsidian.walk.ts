@@ -152,18 +152,16 @@ describe.skipIf(!reachable)(
       expect(first.steps[1]!.text).toContain(m.welcome_step_folder_title());
       expect(first.steps[2]!.text).toContain(m.welcome_step_library_title());
       expect(first.steps[3]!.text).toContain(m.welcome_step_companion_title());
-      // Connect and Open your library are done; the notes folder waits. The
-      // Paired Zotero loads ZotLit Companion from a proxy file that its
-      // extensions.json does not list, and ZotLit reads that list, so the
-      // Companion step stays at Recommended here.
+      // Connect, Open your library and the Companion are done; the notes
+      // folder waits.
       expect(first.steps.map((s) => s.state)).toEqual([
         "done",
         "todo",
         "done",
-        "todo",
+        "done",
       ]);
       expect(first.steps[3]!.text).toContain(
-        m.welcome_step_companion_recommended(),
+        m.welcome_step_companion_installed(),
       );
       await obRun(
         walk.vaultId,
@@ -458,16 +456,69 @@ describe.skipIf(!reachable)(
         m.library_view_menu_open_pdf(),
         m.library_view_menu_write_note(),
       ]);
-      // With the setup section closed, they show without a scroll.
+      // They show without a scroll.
       expect(found.buttons.every((b) => b.inView)).toBe(true);
       await walk.capture("step-3");
       await walk.compose("step-3");
     });
 
-    it("step 4: select Open PDF; the PDF in a new tab, at the page where you last read it in Zotero, with your highlights in colour", async () => {
-      const last = await walk.zotero.json<number>(
-        `Zotero.Items.getByLibraryAndKey(1,"DCSNDPDF").getAttachmentLastPageIndex() ?? 0`,
+    it("step 4: select Open PDF; the PDF in a new tab, with your highlights in their original colours", async () => {
+      // Obsidian's PDF view opens a PDF at the page in its own view history
+      // (`pdfjs.history` in localStorage, keyed by the PDF's fingerprint and
+      // shared by every vault). The walk removes this PDF's entry, so the PDF
+      // opens at page 1, as on a reader's first open.
+      const pdfPath = await walk.zotero.json<string>(
+        `Zotero.Items.getByLibraryAndKey(1,"DCSNDPDF").getFilePath()`,
       );
+      const forgotten = await obRun(
+        walk.vaultId,
+        async (_, { path, lib: libUrl }) => {
+          type PdfJs = {
+            GlobalWorkerOptions: { workerSrc: string };
+            getDocument(src: { data: Uint8Array }): {
+              promise: Promise<{
+                fingerprints: string[];
+                destroy(): Promise<void>;
+              }>;
+            };
+          };
+          const host = window as unknown as { pdfjsLib?: PdfJs };
+          // Obsidian's own pdf.js, loaded as its PDF view loads it: a module
+          // script that sets `window.pdfjsLib`.
+          if (!host.pdfjsLib) {
+            const script = document.head.createEl("script", {
+              attr: { type: "module", src: libUrl },
+            });
+            await new Promise((resolve, reject) => {
+              script.onload = resolve;
+              script.onerror = reject;
+            });
+          }
+          const lib = host.pdfjsLib!;
+          if (!lib.GlobalWorkerOptions.workerSrc)
+            lib.GlobalWorkerOptions.workerSrc = "/lib/pdfjs/pdf.worker.min.mjs";
+          const fs = require("node:fs") as typeof import("node:fs");
+          const doc = await lib.getDocument({
+            data: new Uint8Array(fs.readFileSync(path)),
+          }).promise;
+          const fingerprint = doc.fingerprints[0]!;
+          await doc.destroy();
+          const raw = localStorage.getItem("pdfjs.history");
+          if (!raw) return { fingerprint, removed: 0 };
+          const history = JSON.parse(raw) as {
+            files: { fingerprint: string }[];
+          };
+          const before = history.files.length;
+          history.files = history.files.filter(
+            (f) => f.fingerprint !== fingerprint,
+          );
+          localStorage.setItem("pdfjs.history", JSON.stringify(history));
+          return { fingerprint, removed: before - history.files.length };
+        },
+        { path: pdfPath, lib: "/lib/pdfjs/pdf.min.mjs" },
+        STEP,
+      );
+      console.log("[walk] pdf history", JSON.stringify(forgotten));
       const opened = await walk.record("step-4", async () => {
         await obRun(
           walk.vaultId,
@@ -529,36 +580,22 @@ describe.skipIf(!reachable)(
               value !== null && value.active && value.marks >= 2,
           },
         );
-        // The page opens part-way down; the reader scrolls up to its top,
-        // where its two highlights are.
-        await obRun(
-          walk.vaultId,
-          async ({ app, page }, { at }) => {
-            const pdf = app.workspace.getLeavesOfType("pdf")[0]!;
-            const pointer = page.scratch.docsWalkPointer;
-            const body = pdf.view.containerEl.getBoundingClientRect();
-            await pointer?.park(body.right - 60, body.top + 160);
-            pdf.view.containerEl
-              .querySelector(`.page[data-page-number="${at}"]`)
-              ?.scrollIntoView({
-                block: "start",
-                behavior: pointer ? "smooth" : "instant",
-              });
-            await new Promise((r) => setTimeout(r, 900));
-          },
-          { at: opened!.page ?? 1 },
-          STEP,
-        );
+        // The pointer rests at the tab's edge, clear of the highlights.
+        await obRun(walk.vaultId, async ({ app, page }) => {
+          const body = app.workspace
+            .getLeavesOfType("pdf")[0]!
+            .view.containerEl.getBoundingClientRect();
+          await page.scratch.docsWalkPointer?.park(
+            body.right - 14,
+            body.bottom - 24,
+          );
+        });
         return opened!;
       });
-      console.log("[walk] pdf", JSON.stringify({ opened, last }));
+      console.log("[walk] pdf", JSON.stringify(opened));
       expect(opened.file).toContain("Sandve");
       expect(opened.ownTab).toBe(true);
-      // OUTLINE-MISMATCH: "at the page where you last read it in Zotero" does
-      // not hold steadily. Zotero reports last page index 0 (page 1); the PDF
-      // opened on page 2 in runs without recording and on page 1 in recorded
-      // runs. The walk asserts a page of the PDF.
-      expect(opened.page).toBeGreaterThanOrEqual(1);
+      expect(opened.page).toBe(1);
       expect(opened.marks).toBeGreaterThanOrEqual(2);
       expect(opened.colours).toBe(opened.marks);
       await walk.capture("step-4");
@@ -624,6 +661,20 @@ describe.skipIf(!reachable)(
       });
       expect(await readNotices(walk.vaultId)).toContain(
         m.notice_created_note(),
+      );
+      // The annotation sidebar lists the note's highlights.
+      await obRunUntil(
+        walk.vaultId,
+        ({ app }) =>
+          app.workspace
+            .getLeavesOfType("zotero-annotation-view")
+            .some(
+              (l) =>
+                l.view.containerEl.querySelectorAll(".zt-annot-card").length >
+                0,
+            ),
+        undefined,
+        { what: "the highlights in the annotation sidebar" },
       );
       await walk.capture("step-5", { notices: true });
       await walk.compose("step-5");

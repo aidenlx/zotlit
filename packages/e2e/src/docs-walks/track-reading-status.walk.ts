@@ -125,7 +125,23 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
             `[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${property}"]`,
           )!
           .closest("td")!;
-        cell.scrollIntoView({
+        // The table keeps its sideways scroll from step 3, so the Title
+        // column stays whole: the status field's focus would scroll the table
+        // a few pixels further, and the walk holds it where the reader left it.
+        let scroller = cell.closest("table")!.parentElement;
+        while (
+          scroller &&
+          !(
+            scroller.scrollWidth > scroller.clientWidth &&
+            /auto|scroll/.test(getComputedStyle(scroller).overflowX)
+          )
+        )
+          scroller = scroller.parentElement;
+        const left = scroller?.scrollLeft ?? 0;
+        const hold = () => {
+          if (scroller) scroller.scrollLeft = left;
+        };
+        cell.closest("tr")!.scrollIntoView({
           block: "center",
           inline: "nearest",
           behavior: "instant",
@@ -135,6 +151,7 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
         await page.until("status field", () =>
           activeDocument.activeElement?.matches("[data-query-vault-input]"),
         );
+        hold();
         await new Promise((r) => setTimeout(r, 400));
         const suggested = [
           ...activeDocument.querySelectorAll(
@@ -155,6 +172,8 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
         } else contents.insertText(value);
         await new Promise((r) => setTimeout(r, 300));
         await page.trusted(window).key("Enter");
+        await new Promise((r) => setTimeout(r, 300));
+        hold();
         return suggested;
       },
       { planFile: PLAN_FILE, key, property: PROPERTY, value },
@@ -237,6 +256,8 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
             '[data-save-field="name"]',
           )!;
           const offered = name.value;
+          // The reader sees the offered name before typing over it.
+          await new Promise((r) => setTimeout(r, pointer ? 700 : 0));
           const folder =
             modal.querySelector<HTMLInputElement>('[data-save-field="folder"]')
               ?.value ?? null;
@@ -301,6 +322,7 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
     );
     console.log("[walk] saved", JSON.stringify(saved));
     expect(saved).toMatchObject({
+      offered: m.query_file_untitled(),
       dialog: m.annot_view_save_title(),
       created: m.annot_view_save_file({ file: PLAN_FILE }),
       active: PLAN_FILE,
@@ -383,7 +405,10 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
     const entries = await walk.record("step-3", () =>
       obRun(
         walk.vaultId,
-        async ({ app, page }, { planFile, properties, property }) => {
+        async (
+          { app, page },
+          { planFile, properties, property, titleLabel },
+        ) => {
           const pointer = page.scratch.docsWalkPointer;
           const view = (
             app.workspace
@@ -431,8 +456,6 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
           page.press(second, "second entry");
           await new Promise((r) => setTimeout(r, 300));
           page.closePopovers(document);
-          // The new column joins the table's right end; the reader scrolls
-          // the table to it.
           const column = await page.until(
             "the status column",
             () =>
@@ -441,29 +464,80 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
               ),
             10000,
           );
+          const title = [
+            ...el.querySelectorAll<HTMLTableCellElement>("th"),
+          ].find((th) => th.textContent.trim() === titleLabel)!;
+          /** The box of the text in `cell`, without its padding and icon. */
+          const text = (cell: Element) => {
+            const range = document.createRange();
+            const walker = document.createTreeWalker(
+              cell,
+              NodeFilter.SHOW_TEXT,
+            );
+            const nodes: Node[] = [];
+            for (let n = walker.nextNode(); n; n = walker.nextNode())
+              if (n.textContent?.trim()) nodes.push(n);
+            range.setStart(nodes[0]!, 0);
+            const last = nodes.at(-1)!;
+            range.setEnd(last, last.textContent!.length);
+            return range.getBoundingClientRect();
+          };
+          // The text of the Title column: its name and each paper's title.
+          const titles = [title, ...el.querySelectorAll("tbody tr")].map(
+            (row) =>
+              row === title
+                ? title
+                : (row as HTMLTableRowElement).cells[title.cellIndex]!,
+          );
+          // The new column joins just past the tab's right edge; the reader
+          // scrolls the table until its name shows, and the Title column
+          // stays in view: the scroll splits the room between the two.
           await new Promise((r) => setTimeout(r, pointer ? 500 : 0));
-          column.scrollIntoView({
-            block: "nearest",
-            inline: "end",
+          const pane = el.getBoundingClientRect();
+          let scroller = column.closest("table")!.parentElement;
+          while (
+            scroller &&
+            !(
+              scroller.scrollWidth > scroller.clientWidth &&
+              /auto|scroll/.test(getComputedStyle(scroller).overflowX)
+            )
+          )
+            scroller = scroller.parentElement;
+          const need = text(column).right - pane.right;
+          const room = Math.min(...titles.map((c) => text(c).left)) - pane.left;
+          scroller?.scrollBy({
+            left: Math.max(0, Math.round((need + room) / 2)),
             behavior: pointer ? "smooth" : "instant",
           });
           await new Promise((r) => setTimeout(r, pointer ? 800 : 100));
           if (pointer) {
-            const b = el.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.bottom - 24);
+            await pointer.park(pane.right - 14, pane.bottom - 24);
           }
-          return options;
+          // The Title column's text and the new column's name show whole.
+          const within = (r: DOMRect) =>
+            r.left >= pane.left - 1 && r.right <= pane.right + 1;
+          return {
+            options,
+            titleText: title.textContent,
+            titleShown: titles.every((cell) => within(text(cell))),
+            columnNameShown: within(text(column)),
+          };
         },
         {
           planFile: PLAN_FILE,
           properties: m.query_view_properties(),
           property: PROPERTY,
+          titleLabel: m.query_view_property_title(),
         },
         STEP,
       ),
     );
+    console.log("[walk] columns", JSON.stringify(entries));
+    expect(entries.titleText).toContain(m.query_view_property_title());
+    expect(entries.titleShown).toBe(true);
+    expect(entries.columnNameShown).toBe(true);
     // The first entry adds a Zotero field; the second, the reader's own property.
-    expect(entries.slice(0, 2)).toEqual([
+    expect(entries.options.slice(0, 2)).toEqual([
       m.query_view_properties_add({ name: PROPERTY }),
       m.query_view_properties_add_vault({ name: PROPERTY }),
     ]);
@@ -544,8 +618,23 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
             )!
             .closest("td")!;
           const pointer = page.scratch.docsWalkPointer;
+          // As in `mark`, the table keeps its sideways scroll.
+          let scroller = cell.closest("table")!.parentElement;
+          while (
+            scroller &&
+            !(
+              scroller.scrollWidth > scroller.clientWidth &&
+              /auto|scroll/.test(getComputedStyle(scroller).overflowX)
+            )
+          )
+            scroller = scroller.parentElement;
+          const left = scroller?.scrollLeft ?? 0;
           await pointer?.point(cell, { inset: 20 });
           await page.trusted(window).click(cell);
+          await page.until("status field", () =>
+            activeDocument.activeElement?.matches("[data-query-vault-input]"),
+          );
+          if (scroller) scroller.scrollLeft = left;
           await page.until("suggestions", () =>
             activeDocument.querySelector(
               ".suggestion-container .suggestion-item",

@@ -704,31 +704,20 @@ describe.skipIf(!reachable)(
     it("step 7: open your literature note from Lesson 1; the new highlight is in the Annotations section, with no update", async () => {
       await raiseWindow(walk.vaultId);
       const note = await walk.record("step-7", async () => {
-        await obRun(
+        const popupState = await obRun(
           walk.vaultId,
           async ({ app, page }, { note, name }) => {
             const pointer = page.scratch.docsWalkPointer;
-            // The new highlight stays selected, and its popup stays open over
-            // any tab the reader turns to, so the reader first presses Escape
-            // in the PDF.
             app.workspace.setActiveLeaf(
               app.workspace.getLeavesOfType("pdf")[0]!,
               {
                 focus: true,
               },
             );
-            document.body.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: "Escape",
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-            await page.until(
-              "popup closed",
-              () => !document.querySelector(".zt-pdf-mark-popup"),
-              5000,
-            );
+            const popup = () =>
+              document.querySelector<HTMLElement>(".zt-pdf-mark-popup");
+            // The new highlight's popup is open over the PDF.
+            const before = popup()?.checkVisibility() ?? false;
             // The reader opens a new tab (⌘T) and finds the note with the
             // quick switcher (⌘O).
             app.commands.executeCommandById("workspace:new-tab");
@@ -771,10 +760,23 @@ describe.skipIf(!reachable)(
                 .view.containerEl.getBoundingClientRect();
               await pointer.park(b.right - 14, b.top + b.height * 0.6);
             }
+            // The popup hides while the note's tab covers the PDF.
+            return {
+              before,
+              after: {
+                mounted: !!popup(),
+                covered: popup()?.hasAttribute("data-zt-covered") ?? false,
+                shown: popup()?.checkVisibility() ?? false,
+              },
+            };
           },
           { note: NOTE, name: PAPER.citekey },
           STEP,
         );
+        expect(popupState).toEqual({
+          before: true,
+          after: { mounted: true, covered: true, shown: false },
+        });
         return obRunUntil(
           walk.vaultId,
           async ({ app, page }, { note, key }) => {
