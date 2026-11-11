@@ -1292,6 +1292,8 @@ export type FixtureAsset =
   | "pdf-parity/pdf-parity-layout.pdf"
   | "pdf-parity/pdf-parity-scanned.pdf"
   | "rougier-2014/rougier-2014.pdf"
+  | "sandve-2013/sandve-2013.pdf"
+  | "wilson-2014/wilson-2014.pdf"
   | "sakimas-song/sakimas-song.html"
   | "sakimas-song/sakimas-song.pdf";
 
@@ -3721,8 +3723,435 @@ export const GRAPH_VIEW_OPTIONS = {
   "zotlit-author-title-labels": true,
 } as const;
 
+/**
+ * The Docs Vault Case's two collections, in My Library. The demo papers and
+ * the docs papers are filed by topic, as a researcher sorts a reading list.
+ */
+export const DOCS_COLLECTIONS: readonly FixtureCollection[] = [
+  { collectionID: 900, libraryID: 1, key: "DCRPRDCB", name: "Reproducibility" },
+  {
+    collectionID: 901,
+    libraryID: 1,
+    key: "DCVSLZTN",
+    name: "Data visualization",
+  },
+];
+
+/** The collections the Docs Vault Case files each demo paper in. */
+export const DOCS_DEMO_COLLECTIONS: Readonly<
+  Record<string, readonly number[]>
+> = {
+  DMRGRART: [901],
+  DMIANART: [900],
+};
+
+/**
+ * The papers the Docs Vault Case adds to the demo papers: real articles on
+ * reproducible research with their real metadata. Sandve et al. carries a PDF
+ * with highlights, Wilson et al. a PDF not yet read, and Munafò et al. no PDF.
+ */
+export const DOCS_ITEMS: readonly FixtureItem[] = [
+  {
+    itemID: 930,
+    libraryID: 1,
+    key: "DCSNDART",
+    itemType: "journalArticle",
+    citationKey: "sandve2013",
+    literatureNoteName: "sandve2013",
+    title: "Ten Simple Rules for Reproducible Computational Research",
+    venue: "PLOS Computational Biology",
+    fields: { volume: "9", issue: "10", pages: "e1003285" },
+    date: "2013",
+    creators: [
+      author("Geir Kjetil", "Sandve"),
+      author("Anton", "Nekrutenko"),
+      author("James", "Taylor"),
+      author("Eivind", "Hovig"),
+    ],
+    tags: [
+      { name: "reproducibility", type: 0 },
+      { name: "research-practice", type: 0 },
+    ],
+    dateModified: "2024-11-21 09:00:00",
+    collectionIDs: [900],
+  },
+  {
+    itemID: 933,
+    libraryID: 1,
+    key: "DCWLSART",
+    itemType: "journalArticle",
+    citationKey: "wilson2014",
+    literatureNoteName: "wilson2014",
+    title: "Best Practices for Scientific Computing",
+    venue: "PLOS Biology",
+    fields: { volume: "12", issue: "1", pages: "e1001745" },
+    date: "2014",
+    creators: [
+      author("Greg", "Wilson"),
+      author("D. A.", "Aruliah"),
+      author("C. Titus", "Brown"),
+      author("Neil P.", "Chue Hong"),
+      author("Matt", "Davis"),
+      author("Richard T.", "Guy"),
+      author("Steven H. D.", "Haddock"),
+      author("Kathryn D.", "Huff"),
+      author("Ian M.", "Mitchell"),
+      author("Mark D.", "Plumbley"),
+      author("Ben", "Waugh"),
+      author("Ethan P.", "White"),
+      author("Paul", "Wilson"),
+    ],
+    tags: [{ name: "reproducibility", type: 0 }],
+    dateModified: "2024-11-22 09:00:00",
+    collectionIDs: [900],
+  },
+  {
+    itemID: 935,
+    libraryID: 1,
+    key: "DCMNFART",
+    itemType: "journalArticle",
+    citationKey: "munafo2017",
+    literatureNoteName: "munafo2017",
+    title: "A manifesto for reproducible science",
+    venue: "Nature Human Behaviour",
+    fields: { volume: "1", pages: "0021" },
+    date: "2017",
+    creators: [
+      author("Marcus R.", "Munafò"),
+      author("Brian A.", "Nosek"),
+      author("Dorothy V. M.", "Bishop"),
+      author("Katherine S.", "Button"),
+      author("Christopher D.", "Chambers"),
+      author("Nathalie", "Percie du Sert"),
+      author("Uri", "Simonsohn"),
+      author("Eric-Jan", "Wagenmakers"),
+      author("Jennifer J.", "Ware"),
+      author("John P. A.", "Ioannidis"),
+    ],
+    tags: [
+      { name: "reproducibility", type: 0 },
+      { name: "methodology", type: 0 },
+    ],
+    dateModified: "2024-11-23 09:00:00",
+    collectionIDs: [900],
+  },
+];
+
+/**
+ * The docs papers' PDFs, stored in Zotero's `storage` folder as a PDF added
+ * to Zotero is, under the names Zotero's default file renaming gives them.
+ */
+export const DOCS_ATTACHMENTS: readonly FixtureAttachment[] = [
+  {
+    itemID: 931,
+    libraryID: 1,
+    key: "DCSNDPDF",
+    parentItemID: 930,
+    linkMode: "imported_file",
+    contentType: "application/pdf",
+    title: "Full Text PDF",
+    path: "Sandve et al. - 2013 - Ten Simple Rules for Reproducible Computational Research.pdf",
+    url: null,
+    sourceAsset: "sandve-2013/sandve-2013.pdf",
+    dateModified: "2024-11-21 09:00:00",
+  },
+  {
+    itemID: 934,
+    libraryID: 1,
+    key: "DCWLSPDF",
+    parentItemID: 933,
+    linkMode: "imported_file",
+    contentType: "application/pdf",
+    title: "Full Text PDF",
+    path: "Wilson et al. - 2014 - Best Practices for Scientific Computing.pdf",
+    url: null,
+    sourceAsset: "wilson-2014/wilson-2014.pdf",
+    dateModified: "2024-11-22 09:00:00",
+  },
+];
+
+/**
+ * A reader's highlights on Sandve et al., in five colours. Each rectangle is
+ * the line box of the quoted text on its page, in PDF points, so the marks
+ * sit on the words in Zotero's reader and in Obsidian's.
+ */
+export const DOCS_ANNOTATIONS: readonly FixtureAnnotation[] = [
+  {
+    itemID: 936,
+    libraryID: 1,
+    key: "SV4QMR7A",
+    parentItemID: 931,
+    type: 1,
+    text: "good habits of reproducibility may actually turn out to be a time-saver in the longer run.",
+    comment: "The argument to use when the extra bookkeeping feels slow.",
+    color: "#5fb236",
+    tags: [{ name: "argument", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|002810|00704",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [156.528, 78.373, 211.507, 86.595],
+        [58.054, 67.885, 211.481, 76.107],
+        [58.054, 57.397, 170.491, 65.619],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-10-12 14:02:11",
+    dateModified: "2026-10-12 14:03:40",
+  },
+  {
+    itemID: 937,
+    libraryID: 1,
+    key: "SV8KTW3C",
+    parentItemID: 931,
+    type: 1,
+    text: "As a minimal requirement, you should at least be able to reproduce the results yourself.",
+    comment: "The bar for every analysis in my methods chapter.",
+    color: "#ffd400",
+    tags: [{ name: "reproducibility", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|004562|00275",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [409.777, 507.307, 554.17, 515.529],
+        [400.764, 496.819, 554.176, 505.041],
+        [400.764, 486.274, 430.989, 494.496],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-10-12 14:04:52",
+    dateModified: "2026-10-12 14:05:30",
+  },
+  {
+    itemID: 938,
+    libraryID: 1,
+    key: "SV2HXN6E",
+    parentItemID: 931,
+    type: 5,
+    text: "a failure to take notes may make exact reproduction essentially impossible.",
+    comment: null,
+    color: "#ff6666",
+    tags: [{ name: "pitfall", type: 0 }],
+    pageLabel: "1",
+    sortIndex: "00000|005138|00422",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [400.764, 360.018, 554.198, 368.24],
+        [400.764, 349.472, 529.469, 357.695],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-10-12 14:06:15",
+    dateModified: "2026-10-12 14:06:15",
+  },
+  {
+    itemID: 939,
+    libraryID: 1,
+    key: "SV9PLD5G",
+    parentItemID: 931,
+    type: 1,
+    text: "Rule 1: For Every Result, Keep Track of How It Was Produced",
+    comment: null,
+    color: "#a28ae5",
+    pageLabel: "2",
+    sortIndex: "00001|000217|00135",
+    position: {
+      pageIndex: 1,
+      rects: [
+        [58.054, 645.671, 203.86, 654.906],
+        [58.054, 633.652, 205.573, 642.887],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-10-12 14:08:02",
+    dateModified: "2026-10-12 14:08:02",
+  },
+  {
+    itemID: 940,
+    libraryID: 1,
+    key: "SV6RZB2J",
+    parentItemID: 931,
+    type: 1,
+    text: "you should ensure that every detail that may influence the execution of the step is recorded.",
+    comment: "Keep a run log beside each figure script.",
+    color: "#2ea8e5",
+    tags: [{ name: "workflow", type: 0 }],
+    pageLabel: "2",
+    sortIndex: "00001|000856|00313",
+    position: {
+      pageIndex: 1,
+      rects: [
+        [58.054, 468.803, 211.463, 477.025],
+        [58.054, 458.258, 211.472, 466.48],
+        [58.054, 447.713, 92.296, 455.935],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-10-12 14:09:44",
+    dateModified: "2026-10-12 14:10:21",
+  },
+];
+
+/** A My Library item's URI, as Zotero's note editor writes it into a note. */
+const docsItemUri = (key: string) =>
+  `http://zotero.org/users/local/LOCAL/items/${key}`;
+const encodeNoteData = (data: unknown) =>
+  encodeURIComponent(JSON.stringify(data));
+
+/** A citation mark as Zotero's note editor inserts it. */
+function docsCitation(
+  items: readonly { key: string; locator?: string }[],
+  text: string,
+): string {
+  const citationItems = items.map(({ key, locator }) => ({
+    uris: [docsItemUri(key)],
+    ...(locator ? { locator } : {}),
+  }));
+  return `<span class="citation" data-citation="${encodeNoteData({ citationItems, properties: {} })}">(<span class="citation-item">${text}</span>)</span>`;
+}
+
+/**
+ * Zotero's note container: the editor stores a CSL snapshot of every item the
+ * note cites on it.
+ */
+function docsNoteHtml(
+  cited: readonly { key: string; itemData: Record<string, unknown> }[],
+  body: string,
+): string {
+  const items = cited.map(({ key, itemData }) => ({
+    uris: [docsItemUri(key)],
+    itemData: { id: docsItemUri(key), ...itemData },
+  }));
+  return `<div class="zotero-note znv1"><div data-citation-items="${encodeNoteData(items)}" data-schema-version="9">${body}</div></div>`;
+}
+
+const SANDVE_CSL = {
+  key: "DCSNDART",
+  itemData: {
+    type: "article-journal",
+    title: "Ten Simple Rules for Reproducible Computational Research",
+    author: [
+      { family: "Sandve", given: "Geir Kjetil" },
+      { family: "Nekrutenko", given: "Anton" },
+      { family: "Taylor", given: "James" },
+      { family: "Hovig", given: "Eivind" },
+    ],
+    issued: { "date-parts": [["2013"]] },
+  },
+};
+const IOANNIDIS_CSL = {
+  key: "DMIANART",
+  itemData: {
+    type: "article-journal",
+    title: "Why Most Published Research Findings Are False",
+    author: [{ family: "Ioannidis", given: "John P. A." }],
+    issued: { "date-parts": [["2005"]] },
+  },
+};
+const MUNAFO_CSL = {
+  key: "DCMNFART",
+  itemData: {
+    type: "article-journal",
+    title: "A manifesto for reproducible science",
+    author: [
+      { family: "Munafò", given: "Marcus R." },
+      { family: "Nosek", given: "Brian A." },
+    ],
+    issued: { "date-parts": [["2017"]] },
+  },
+};
+
+/**
+ * Sandve's yellow highlight on page 1, dragged from the PDF into a note as
+ * Zotero's note editor inserts it: the quote, then its citation.
+ */
+const SANDVE_HIGHLIGHT = `<span class="highlight" data-annotation="${encodeNoteData(
+  {
+    attachmentURI: docsItemUri("DCSNDPDF"),
+    annotationKey: "SV8KTW3C",
+    color: "#ffd400",
+    pageLabel: "1",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [409.777, 507.307, 554.17, 515.529],
+        [400.764, 496.819, 554.176, 505.041],
+        [400.764, 486.274, 430.989, 494.496],
+      ],
+    },
+    citationItem: { uris: [docsItemUri("DCSNDART")], locator: "1" },
+  },
+)}">“As a minimal requirement, you should at least be able to reproduce the results yourself.”</span> ${docsCitation([{ key: "DCSNDART", locator: "1" }], "Sandve et al., 2013, p. 1")}`;
+
+/**
+ * The notes a researcher wrote in Zotero before ZotLit: a summary of
+ * Ioannidis 2005, structured notes on Sandve et al. with a highlight dragged
+ * in from the PDF, a short note on Wilson et al. that cites Sandve, and a
+ * standalone chapter plan filed in "Reproducibility" that cites two papers.
+ * No vault copy exists: a lesson imports them.
+ */
+export const DOCS_NOTES: readonly FixtureNote[] = [
+  {
+    itemID: 941,
+    libraryID: 1,
+    key: "DCIANNTE",
+    parentItemID: 902,
+    title: "Reading summary",
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading summary</h1>\n<p>A research finding is less likely to be true when studies are small, effects are small, and analyses are flexible.</p>\n<p>For my chapter: report effect sizes and confidence intervals, and say which analyses were planned.</p>\n</div></div>',
+    importedNoteBody:
+      "# Reading summary\n\nA research finding is less likely to be true when studies are small, effects are small, and analyses are flexible.\n\nFor my chapter: report effect sizes and confidence intervals, and say which analyses were planned.\n",
+    dateModified: "2026-10-14 10:20:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 942,
+    libraryID: 1,
+    key: "DCSNDNTE",
+    parentItemID: 930,
+    title: "Ten rules: what to change in my lab",
+    note: docsNoteHtml(
+      [SANDVE_CSL],
+      `<h1>Ten rules: what to change in my lab</h1>\n<h2>Main argument</h2>\n<p>Sandve et al. treat reproducibility as <strong>daily habits</strong>, not a check at the end of a project.</p>\n<p>${SANDVE_HIGHLIGHT}</p>\n<h2>To do</h2>\n<ul>\n<li>Keep a run log beside each figure script (rule 1).</li>\n<li>Put the analysis scripts under version control (rule 4).</li>\n<li>Record the random seeds of the bootstrap (rule 6).</li>\n</ul>\n`,
+    ),
+    importedNoteBody: null,
+    dateModified: "2025-03-04 16:12:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 943,
+    libraryID: 1,
+    key: "DCWLSNTE",
+    parentItemID: 933,
+    title: "Practices for our group",
+    note: docsNoteHtml(
+      [SANDVE_CSL],
+      `<h1>Practices for our group</h1>\n<p>Most of the advice is for people who write software full time. Two practices fit a small research group:</p>\n<ol>\n<li>Write code for people, not for the computer.</li>\n<li>Plan for mistakes: test the analysis on a small data set first.</li>\n</ol>\n<p>The record keeping overlaps with ${docsCitation([{ key: "DCSNDART" }], "Sandve et al., 2013")}.</p>\n`,
+    ),
+    importedNoteBody: null,
+    dateModified: "2025-05-19 11:40:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 944,
+    libraryID: 1,
+    key: "DCCH3NTE",
+    parentItemID: null,
+    title: "Chapter 3 plan: reproducible analysis",
+    note: docsNoteHtml(
+      [IOANNIDIS_CSL, MUNAFO_CSL],
+      `<h1>Chapter 3 plan: reproducible analysis</h1>\n<p>Open with the problem: small studies and flexible analyses make false findings likely ${docsCitation([{ key: "DMIANART" }], "Ioannidis, 2005")}.</p>\n<p>Then the response: preregistration and open data ${docsCitation([{ key: "DCMNFART" }], "Munafò et al., 2017")}.</p>\n<h2>Sections</h2>\n<ul>\n<li>3.1 Why replication fails</li>\n<li>3.2 What I preregistered</li>\n<li>3.3 Where the data and scripts are</li>\n</ul>\n`,
+    ),
+    importedNoteBody: null,
+    dateModified: "2025-09-08 09:30:00",
+    collectionIDs: [900],
+  },
+];
+
 export interface FixtureVaultCase {
-  id: "configured" | "fresh" | "upgrader" | "demo" | "graph";
+  id: "configured" | "fresh" | "upgrader" | "demo" | "graph" | "docs";
   /** One line for the maintainer choosing a case. */
   summary: string;
   /** Core features for a capture scenario. */
@@ -3769,9 +4198,25 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
     summary:
       "A researcher's vault for graph view screenshots: research notes and Literature Notes on hypertext, citation analysis, and memory that cite one another, three cited works with no Literature Note, only those works in Zotero, a saved Citation Graph, and Sync disabled.",
   },
+  {
+    id: "docs",
+    corePlugins: { sync: false },
+    ownItems: DEMO_ITEMS,
+    summary:
+      "The docs lessons' vault: a new reader's first launch of ZotLit (no settings file, Default Profile only, no Literature Note) over a small library on reproducible research, with PDFs, highlights, collections, and a child note, English Zotero UI, and Sync disabled.",
+  },
 ];
 
 export const DEFAULT_VAULT_CASE = "configured";
+
+/**
+ * Whether a Vault Case holds the demo papers: `demo`, and `docs`, which adds
+ * the docs papers beside them.
+ */
+export function holdsDemoPapers(vaultCaseId: string): boolean {
+  const { id } = findVaultCase(vaultCaseId);
+  return id === "demo" || id === "docs";
+}
 
 export function findVaultCase(id: string): FixtureVaultCase {
   const found = VAULT_CASES.find((vaultCase) => vaultCase.id === id);
@@ -3831,6 +4276,26 @@ export function vaultCaseZoteroData(
     if (parent != null) collectionIDs.add(parent);
   }
   const libraryIDs = new Set(ownItems.map((item) => item.libraryID));
+  const libraries = LIBRARIES.filter((library) =>
+    libraryIDs.has(library.libraryID),
+  );
+  if (findVaultCase(vaultCaseId).id === "docs") {
+    // The docs papers join the demo papers, and both are filed by topic.
+    return {
+      items: [
+        ...ownItems.map((item) => ({
+          ...item,
+          collectionIDs: DOCS_DEMO_COLLECTIONS[item.key] ?? item.collectionIDs,
+        })),
+        ...DOCS_ITEMS,
+      ],
+      attachments: [...attachments, ...DOCS_ATTACHMENTS],
+      notes: [...notes, ...DOCS_NOTES],
+      annotations: [...annotations, ...DOCS_ANNOTATIONS],
+      collections: DOCS_COLLECTIONS,
+      libraries,
+    };
+  }
   return {
     items: ownItems,
     attachments,
@@ -3839,7 +4304,7 @@ export function vaultCaseZoteroData(
     collections: COLLECTIONS.filter((collection) =>
       collectionIDs.has(collection.collectionID),
     ),
-    libraries: LIBRARIES.filter((library) => libraryIDs.has(library.libraryID)),
+    libraries,
   };
 }
 

@@ -24,6 +24,18 @@ export interface PairedEnvironment extends AsyncDisposable {
   debuggerPort: number;
 }
 
+/** Where one Paired Run lives, and which Vault Case it seeds. */
+export interface PairedEnvironmentOptions {
+  /**
+   * Names the run's Fixture folder (`.scratch/e2e-<name>-fixture`) and vault
+   * (`e2eVaultDir(<name>-vault)`), so two kinds of run never share them.
+   * @default "paired"
+   */
+  name?: string;
+  /** The Vault Case the vault is seeded from. @default the Fixture's default */
+  vaultCase?: string;
+}
+
 /**
  * Build a fresh Fixture, open a new vault on it, and start a Paired Zotero with
  * its Local API open and one remembered Write Authorization seeded on both
@@ -36,11 +48,12 @@ export interface PairedEnvironment extends AsyncDisposable {
  */
 export async function openPairedEnvironment(
   workspaceRoot: string,
+  { name = "paired", vaultCase }: PairedEnvironmentOptions = {},
 ): Promise<PairedEnvironment> {
   const layout = getFixtureLayout(
-    join(workspaceRoot, ".scratch", "e2e-paired-fixture"),
+    join(workspaceRoot, ".scratch", `e2e-${name}-fixture`),
   );
-  const vaultPath = e2eVaultDir(workspaceRoot, "paired-vault");
+  const vaultPath = e2eVaultDir(workspaceRoot, `${name}-vault`);
   const run = vaultScript(workspaceRoot, layout.root);
   const ports = createNodePairedRunPorts({ workspaceRoot, layout });
   const removeVault = () => clearVault(run, vaultPath);
@@ -59,6 +72,7 @@ export async function openPairedEnvironment(
     "open",
     vaultPath,
     "--local-api",
+    ...(vaultCase ? ["--vault-case", vaultCase] : []),
     `--live-update-port=${liveUpdatePort}`,
     `--zotero-http-port=${zoteroHttpPort}`,
   ]);
