@@ -27,11 +27,9 @@ An explanation lives in one of three places: one or two sentences beside the act
 
 ## Search
 
-- One page owns one search intent, in the searcher's words. Before you plan a page, search the titles and descriptions under `apps/docs/content/` for a page that owns the intent already, and extend that page.
-- `searchTitle` (docs pages): one plain statement of the task, at most 60 characters, naming Zotero or Obsidian where the task involves them. It is the page's H1 and `<title>`. `title` is the sidebar label: two to four words. A lesson's title follows the same rule through its brief.
+- One page owns one search intent, in the searcher's words. Before you plan a page, search the titles and descriptions under `apps/docs/content/` for a page that owns the intent already. That page is the one you write: rewrite it into its kind, and move its lookup material to a reference page.
+- `searchTitle` (docs pages): one plain statement of the task, at most 60 characters, naming Zotero or Obsidian where the task involves them. It is the page's H1 and `<title>`. `title` is the sidebar label: two to four words. The field comes from branch `docs/search-titles`; on a branch without it, the search title goes in `title`. A lesson's title follows the same rule through its brief.
 - `description`: at most 160 characters, with the answer in the first 120.
-
-`apps/docs/src/lib/source.test.ts` checks the lengths and uniqueness.
 
 ## Procedure
 
@@ -42,17 +40,17 @@ Keep every working file under `apps/docs/.scratch/<page-slug>/`.
    - A lesson's steps are its **docs walk**, `packages/e2e/src/docs-walks/<slug>.walk.ts` (on branch `docs/learn-walks` until it merges): one `it` per step, run through the real apps. The walk also takes the step stills and recordings; read "Docs walks" in `packages/e2e/AGENTS.md`. A step the walk does not assert is a step to add to the walk first.
    - A recipe or answer page takes its facts from the running apps (`obsidian-debug`, `zotero-rdp-debug`), the source, and the existing page. Its screenshots come from `docs-screenshot`.
    - A ZotLit label is the exact string in `messages/en.json`; note its message key beside it. A label of Obsidian or Zotero is the string you read in the running app.
-3. **Write the fact sheet** (`facts.md`). Model: [`references/fact-sheet-model.md`](references/fact-sheet-model.md). It holds, in order:
-   - where the facts were checked (app versions, branch, walk);
-   - the page: what the reader ends with, the search words, what the reader needs, what is true and worth saying once, the next or related pages;
+3. **Write the fact sheet** (`facts.md`). Model: [`references/fact-sheet-model.md`](references/fact-sheet-model.md), a lesson's; the same shape serves every kind. It holds, in order:
+   - where the facts were checked (app versions, branch, walk), with each fact you read only in source marked so;
+   - the page: its job and kind, what the reader ends with, the search words, what the reader needs, what is true and worth saying once, the next or related pages; for a recipe or answer page, also the answer in one or two sentences;
    - each step or section: the action with the exact labels in bold, the result the reader sees, the picture file, and the fixes as "what the reader sees: what to do". An answer page lists its table rows and columns and its questions with their answers in place of steps.
 4. **Assemble the writer brief** (`brief.md`) for the page kind (`lesson`, `recipe` or `answer`) from [`references/brief/`](references/brief/), with `R` set to that folder:
 
    ```sh
-   { cat "$R/<kind>.opening.md"; echo; cat "$R/shared.md"; echo; cat "$R/<kind>.shape.md"; } > brief.md
+   awk 'FNR==1 && NR>1 {print ""} 1' "$R/<kind>.opening.md" "$R/shared.md" "$R/<kind>.shape.md" > brief.md
    ```
 
-5. **Run the writer**, from a folder with no `AGENTS.md` above it that you want read (the flags below already turn context files off):
+5. **Run the writer** (the page's scratch folder serves), from a folder with no `AGENTS.md` above it that you want read (the flags below already turn context files off):
 
    ```sh
    pi -p --provider google --model gemini-3.8-flash --no-tools --no-skills \
