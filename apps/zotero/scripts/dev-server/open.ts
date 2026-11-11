@@ -2,15 +2,11 @@
 
 // Opens one detached Paired Zotero and verifies the companion is installed.
 
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { getInstalledAddon, installTemporaryAddon } from "./remote-firefox.ts";
-import {
-  resetCompanionReady,
-  spawnZotero,
-  waitForCompanionReady,
-} from "./runner.ts";
+import { getInstalledAddon } from "./remote-firefox.ts";
+import { spawnZotero, waitForCompanionReady } from "./runner.ts";
 
 const packageRoot = join(import.meta.dirname, "../..");
 const binaryPath = requiredEnv("ZOTERO_PLUGIN_ZOTERO_BIN_PATH");
@@ -21,6 +17,13 @@ const addonId = await readAddonId();
 const controller = new AbortController();
 
 try {
+  // The companion is installed in the profile, as a researcher's install is,
+  // through a proxy file that names the build: Zotero then lists it in the
+  // profile's `extensions.json`, which ZotLit reads to say the Companion is
+  // installed. A temporary add-on runs the same code but is not listed.
+  const extensionsDir = join(profilePath, "extensions");
+  await mkdir(extensionsDir, { recursive: true });
+  await writeFile(join(extensionsDir, addonId), addonPath);
   const session = await spawnZotero({
     root: packageRoot,
     binaryPath,
@@ -33,10 +36,8 @@ try {
   });
   using cleanup = new DisposableStack();
   cleanup.defer(() => session.client.disconnect());
-  await resetCompanionReady(session);
-  await installTemporaryAddon(session.client, addonPath);
-  await getInstalledAddon(session.client, addonId);
   await waitForCompanionReady(session, controller.signal);
+  await getInstalledAddon(session.client, addonId);
   session.child.unref();
 
   const { pid } = session.child;

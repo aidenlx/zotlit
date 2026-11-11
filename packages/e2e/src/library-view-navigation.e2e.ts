@@ -5320,4 +5320,99 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       Object.keys(results).map((label) => [label, label.endsWith("narrow")]),
     );
   });
+
+  it("offers Untitled, not Recent, as the name of a query file saved from a new Library View", async () => {
+    const snapshot = await obRun(
+      run.vaultId,
+      ({ app, zotlit }) =>
+        JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        }),
+      undefined,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        async ({ app, zotlit }, { snapshot }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({ "library.document": saved.document }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        { snapshot },
+      );
+    });
+    const offered = await obRun(
+      run.vaultId,
+      async ({ app, zotlit, page }) => {
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(settings.update({ "library.document": null }));
+        await bridge.runPromise(settings.flush);
+        for (const leaf of app.workspace.getLeavesOfType("zotlit-library"))
+          leaf.detach();
+        app.commands.executeCommandById("zotlit:open-library-view");
+        const leaf = await page.until(
+          "the Library View",
+          () =>
+            (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0],
+          30000,
+        );
+        await leaf.view.query.settled;
+        const node = leaf.view.tree.state.node.kind;
+        page.press(
+          await page.until(
+            "Save as query file",
+            () =>
+              leaf.view.contentEl.querySelector<HTMLElement>(
+                "[data-query-save-as]",
+              ),
+            10000,
+          ),
+          "Save as query file",
+        );
+        const input = await page.until(
+          "the name field",
+          () =>
+            document.querySelector<HTMLInputElement>(
+              '.modal.zt-save-query-file-modal [data-save-field="name"]',
+            ),
+          10000,
+        );
+        const name = input.value;
+        page.press(
+          document.querySelector<HTMLElement>(
+            ".modal.zt-save-query-file-modal .modal-button-container button:not(.mod-cta)",
+          ),
+          "Cancel",
+        );
+        await page.until(
+          "the dialog closed",
+          () => !document.querySelector(".modal.zt-save-query-file-modal"),
+          5000,
+        );
+        return { node, name };
+      },
+      undefined,
+      { timeoutMs: 90000 },
+    );
+    // A new tab opens on Recent (aidenlx/zotlit#1986), whose file holds every
+    // paper of the Library Scope; the dialog asks for a name of the
+    // researcher's own.
+    expect(offered).toEqual({
+      node: "recent",
+      name: run.m.query_file_untitled(),
+    });
+  });
 });
