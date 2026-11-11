@@ -90,9 +90,14 @@ export class LibraryTree extends Component {
     return this.registry.subscribe(this.model.state, listener);
   }
 
-  /** The name of the selected node, as a file saved from it is first called. */
-  get name(): string {
+  /**
+   * The name of the selected node, as a file saved from it is first called.
+   * Recent names none: its file holds every paper of the Library Scope, and
+   * "Recent" would not say so.
+   */
+  get name(): string | undefined {
     const { libraries, node } = this.state;
+    if (node.kind === "recent") return undefined;
     return node.kind === "collection"
       ? node.path.at(-1)!
       : nodeLabel(libraries, node);
