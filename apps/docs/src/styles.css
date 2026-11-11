@@ -6,41 +6,37 @@
 /* The four faces of the site's type system, self-hosted from
    Fontsource so the site serves its own font files. Each family ships one
    @font-face per unicode subset, so a reader only downloads the subset the
-   page actually uses. Newsreader and Source Sans 3 both load upright and
-   italic; Newsreader loads its optical-size axis with its weight axis, so
-   display sizes draw the display cut. IBM Plex Mono is not a variable font,
-   so its three weights load explicitly.
+   page actually uses. Gelasio and Inter both load upright and italic; IBM Plex
+   Mono is not a variable font, so its three weights load explicitly.
    @see apps/docs/DESIGN.md → Type system */
-@import "@fontsource-variable/newsreader/opsz.css";
-@import "@fontsource-variable/newsreader/opsz-italic.css";
-@import "@fontsource-variable/source-sans-3/index.css";
-@import "@fontsource-variable/source-sans-3/wght-italic.css";
+@import "@fontsource-variable/gelasio/index.css";
+@import "@fontsource-variable/gelasio/wght-italic.css";
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource-variable/inter/wght-italic.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
 
-/* Metric-adjusted local fallbacks keep the font swaps shift-free. The values
-   follow next/font's method: size-adjust matches the letter-frequency-weighted
-   average advance of a–z and space against the local face, and the vertical
-   overrides are the face's hhea metrics divided by that adjustment. They were
-   read from the Fontsource latin files with fontTools.
+/* Metric-adjusted local fallbacks preserve the shift-free swaps that
+   next/font generated before the TanStack Start migration. The values come
+   from Next.js 16.3.0's font metrics for the same Google Font families.
    @see apps/docs/DESIGN.md → Font loading */
 @font-face {
-  font-family: "Source Sans 3 Fallback";
+  font-family: "Inter Fallback";
   src: local("Arial");
-  ascent-override: 113.99%;
-  descent-override: 44.53%;
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
   line-gap-override: 0%;
-  size-adjust: 89.83%;
+  size-adjust: 107.12%;
 }
 
 @font-face {
-  font-family: "Newsreader Fallback";
+  font-family: "Gelasio Fallback";
   src: local("Times New Roman");
-  ascent-override: 73.17%;
-  descent-override: 26.38%;
+  ascent-override: 84.54%;
+  descent-override: 31.15%;
   line-gap-override: 0%;
-  size-adjust: 100.46%;
+  size-adjust: 109.74%;
 }
 
 /* The mono fallback stands in for a fixed-pitch face, so it names monospace
@@ -285,12 +281,11 @@
   --color-destructive: var(--color-fd-primary);
 
   /* Sans is the app-wide default: preflight's html font-family rule reads
-     --default-font-family, which resolves to --font-sans, so Source Sans 3
-     reaches everywhere — portaled dialogs and the not-found page included. */
+     --default-font-family, which resolves to --font-sans, so Inter reaches
+     everywhere — portaled dialogs and the not-found page included. */
   --font-sans:
-    "Source Sans 3 Variable", "Source Sans 3 Fallback", ui-sans-serif,
-    system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
-    "Segoe UI Symbol", "Noto Color Emoji";
+    "Inter Variable", "Inter Fallback", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-brand: "Archivo ZotLit", ui-sans-serif, system-ui, sans-serif;
   /* IBM Plex Mono is the "Machine" voice — overriding --font-mono here reroutes
      both the `font-mono` utility and every var(--font-mono) reference (code,
@@ -299,11 +294,11 @@
     "IBM Plex Mono", "IBM Plex Mono Fallback", ui-monospace, SFMono-Regular,
     Menlo, Consolas, "Liberation Mono", monospace;
   /* Serif is opt-in per surface, so --font-serif names the stack rather than
-     riding on <html>; the system-serif tail carries a surface until Newsreader
+     riding on <html>; the system-serif tail carries a surface until Gelasio
      swaps in. */
   --font-serif:
-    "Newsreader Variable", "Newsreader Fallback", "Iowan Old Style", Charter,
-    Georgia, serif;
+    "Gelasio Variable", "Gelasio Fallback", "Iowan Old Style", Charter, Georgia,
+    serif;
 }
 
 @theme {

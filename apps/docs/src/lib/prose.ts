@@ -2,10 +2,8 @@
  * The "quiet manuscript" prose restyle — sans body, serif display headings
  * (h1–h3), a mono-uppercase h4 label, serif-italic quotes/captions, and a
  * tighter list rhythm. Applied on the docs page and blog post bodies. Serif
- * headings sit above the stock em-based scale (1.875 / 1.5 / 1.25em) to
- * compensate Newsreader's smaller x-height against Source Sans 3; each size
- * is set so the heading-to-body x-height proportion matches the measured one
- * at that size (see DESIGN.md → Type system).
+ * headings sit one notch above the stock em-based scale to compensate Gelasio's
+ * smaller x-height.
  *
  * Expressed as Fumadocs/tailwindcss-typography element modifiers — the plugin's
  * customization surface — not hand-written `.prose`-descendant CSS: the
@@ -18,8 +16,8 @@
  */
 export const ztProse = [
   "font-sans",
-  "prose-h1:font-serif prose-h1:font-medium prose-h1:text-balance prose-h1:text-[2em] prose-h1:leading-[1.2]",
-  "prose-h2:font-serif prose-h2:font-medium prose-h2:text-balance prose-h2:text-[1.6em] prose-h2:leading-[1.3]",
+  "prose-h1:font-serif prose-h1:font-medium prose-h1:text-balance prose-h1:text-[2.125em] prose-h1:leading-[1.2]",
+  "prose-h2:font-serif prose-h2:font-medium prose-h2:text-balance prose-h2:text-[1.625em] prose-h2:leading-[1.3]",
   "prose-h3:font-serif prose-h3:font-medium prose-h3:text-balance prose-h3:text-[1.375em] prose-h3:leading-[1.45]",
   "prose-h4:font-mono prose-h4:font-semibold prose-h4:uppercase prose-h4:tracking-[0.08em] prose-h4:text-[0.9em]",
   "prose-blockquote:font-serif prose-blockquote:font-normal prose-blockquote:text-[1.125em] prose-blockquote:leading-[1.6]",

@@ -113,42 +113,29 @@ Four faces, four roles:
 
 | Face | Role |
 | --- | --- |
-| **Newsreader** (serif, variable: weight, optical size, italic) | Content & display: headings, titles, descriptions/ledes/standfirsts, feature descriptions, editorial annotations |
-| **Source Sans 3** (sans, variable: weight, italic; unpreloaded) | Prose body & chrome: markdown running text, sidebar, TOC, buttons, search |
+| **Gelasio** (serif) | Content & display: headings, titles, descriptions/ledes/standfirsts, feature descriptions, editorial annotations |
+| **Inter** (sans, unpreloaded) | Prose body & chrome: markdown running text, sidebar, TOC, buttons, search |
 | **IBM Plex Mono** (weights 400/500/600, unpreloaded) | The **"Machine" voice**: code, version chips, numerals that count or order, meta lines, and every UPPERCASE apparatus label (home nav, landing labels, blog & changelog dates). Drives `--font-mono`. |
 | **Archivo** (subset woff2) | Wordmark only — subset to exactly the "ZotLit" glyphs |
 
+The Journal prototypes set Newsreader and Source Sans 3 in the serif and sans
+roles; whether the site moves to those faces is an open owner decision.
+
 Serif carries the editorial voice at **weight 500** for display headings and
-**italic** for ledes/standfirsts. Newsreader's optical-size axis follows the
-font size (the browser's `font-optical-sizing: auto`), so a 36px title draws
-the display cut and an 18px lede the text cut. Sans carries the **markdown
-prose body** — running paragraphs in docs, blog, and the changelog — whose
-display headings sit in serif. Source Sans 3 loads both upright and italic for
-true `<em>`s beside Newsreader's. Numerals in tables, counters and step
-numbers use `tabular-nums`.
+**italic** for ledes/standfirsts. Sans carries the **markdown prose body** —
+running paragraphs in docs, blog, and the changelog — whose display headings sit
+in serif. Inter loads both upright and italic for true `<em>`s beside Gelasio's.
+Numerals in tables, counters and step numbers use `tabular-nums`.
 
 Serif is **opt-in**, not blanket-inherited: the app-wide default is sans, and
 each editorial surface opts its display type into serif. Shared `_home` chrome
 — nav, banner, search — stays sans/mono. A sans prose body inside a serif
 surface stays sans; only its display headings take the serif.
 
-The `ztProse` heading scale (`src/lib/prose.ts`) sits above Fumadocs' stock
-sizes (1.875 / 1.5 / 1.25em) to compensate for Newsreader's smaller x-height
-against the 16px Source Sans 3 body (0.486em): h1 at 2em, h2 at 1.6em, h3 at
-1.375em. Newsreader's x-height changes with its optical size, so each heading
-is sized from the x-height at the size it renders, measured with fontTools at
-weight 500:
-
-| Heading | Size | Newsreader x-height | Ratio to the body's |
-| --- | --- | --- | --- |
-| h1 | 32px | ~0.450em | ~0.93 |
-| h2 | 25.6px | ~0.440em | ~0.91 |
-| h3 | 22px | ~0.434em | ~0.89 |
-
-Size × ratio gives each heading's x-height in body x-heights: h1 1.85, h2
-1.45, h3 1.23. These hold the proportions of the reviewed earlier scale
-(1.89, 1.44, 1.22). Blockquotes at 1.125em (18px, ratio ~0.90) put
-Newsreader at optical parity with the surrounding sans body.
+The `ztProse` heading scale (`src/lib/prose.ts`) sits one notch above Fumadocs'
+stock sizes to compensate for Gelasio's smaller x-height (~0.48em vs Inter's
+~0.55em). Blockquotes at 1.125em put Gelasio at optical parity with the
+surrounding sans body.
 
 Apparatus marks come from Lucide or from text-presentation glyphs. Emoji-set
 codepoints stay out: Apple platforms serve them from Apple Color Emoji through
@@ -186,9 +173,8 @@ captions and check lines, and any sentence-shaped copy keep their upright case
 and sans body voice. The Archivo wordmark likewise stays outside label
 treatment.
 
-The [Template Workbench](WORKBENCH-DESIGN.md) uses the sans face (Source
-Sans 3) in sentence case for its utility chrome, including labels and pane
-headings.
+The [Template Workbench](WORKBENCH-DESIGN.md) uses Inter sentence case
+for its utility chrome, including labels and pane headings.
 
 ## Surfaces and elevation
 
@@ -268,38 +254,21 @@ The reader's path: search → landing (try one moment in the web) → Install �
 
 Fontsource serves all four faces from the package's own assets: the `@import`s
 at the top of `src/styles.css` register them, and the `@theme inline` block in
-the same file assigns the roles. Newsreader loads Fontsource's `opsz` files,
-which carry the weight and optical-size axes together.
-
-Metric-adjusted local fallback faces in that stylesheet keep each font swap
-shift-free:
-
-| Fallback face | Local face | `size-adjust` | `ascent-override` | `descent-override` | `line-gap-override` |
-| --- | --- | --- | --- | --- | --- |
-| Source Sans 3 Fallback | Arial | 89.83% | 113.99% | 44.53% | 0% |
-| Newsreader Fallback | Times New Roman | 100.46% | 73.17% | 26.38% | 0% |
-
-The values follow `next/font`'s method. `size-adjust` is the face's average
-advance over a–z and space, weighted by English letter frequency (capsize's
-weightings), divided by the same average for the local face. Each vertical
-override is the face's `hhea` ascent, descent or line gap over units-per-em,
-divided by `size-adjust`. A fontTools script read the metrics from the
-Fontsource latin files (Source Sans 3: 1000 upm, ascent 1024, descent −400;
-Newsreader: 2000 upm, ascent 1470, descent −530) and from macOS's Arial and
-Times New Roman. Run against Gelasio and Inter, the same script reproduces the
-Next.js 16.3.0 values the site shipped before, within 0.2%.
-
-The mono fallback stands in for a fixed-pitch face, so it names monospace
-locals instead of a proportional face — a proportional stand-in matches Plex
-Mono across mixed-case prose and then runs ~38% wide on the short uppercase
-apparatus labels, which is where the swap moves the layout. Those locals
-carry no `size-adjust`: every monospace face shares Plex Mono's 0.6em
+the same file assigns the roles. Metric-adjusted local fallback faces in that
+stylesheet preserve the shift-free swaps that `next/font` generated before the
+TanStack Start migration. The Inter and Gelasio overrides come from Next.js
+16.3.0's metrics for these Google Font families. The mono fallback stands in
+for a fixed-pitch face, so it names monospace locals instead of the
+proportional Arial `next/font` emits for every family — a proportional stand-in
+matches Plex Mono across mixed-case prose and then runs ~38% wide on the short
+uppercase apparatus labels, which is where the swap moves the layout. Those
+locals carry no `size-adjust`: every monospace face shares Plex Mono's 0.6em
 advance, so the overrides pin the vertical metrics alone.
 
-Newsreader's upright and italic latin `opsz` faces preload in
-`src/routes/__root.tsx` because serif display paints on essentially every
-route. Source Sans 3 stays unpreloaded because its adjusted fallback
-stabilizes the app-wide body and chrome until the real face loads.
+Gelasio's upright and italic latin faces preload in `src/routes/__root.tsx`
+because serif display paints on essentially every route. Inter stays
+unpreloaded because its adjusted fallback stabilizes the app-wide body and
+chrome until the real face loads.
 
 IBM Plex Mono loads three explicit weights (400/500/600 — Plex Mono isn't a
 variable font), unpreloaded, swapping from its monospace local fallback.

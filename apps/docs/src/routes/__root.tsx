@@ -1,5 +1,5 @@
-import newsreaderLatinItalic from "@fontsource-variable/newsreader/files/newsreader-latin-opsz-italic.woff2?url";
-import newsreaderLatin from "@fontsource-variable/newsreader/files/newsreader-latin-opsz-normal.woff2?url";
+import gelasioLatinItalic from "@fontsource-variable/gelasio/files/gelasio-latin-wght-italic.woff2?url";
+import gelasioLatin from "@fontsource-variable/gelasio/files/gelasio-latin-wght-normal.woff2?url";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import {
   HeadContent,
@@ -64,11 +64,11 @@ export const Route = createRootRoute({
       { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
       // Serif display paints on essentially every route, so both its latin
       // faces are eager — upright for headlines, italic for the lede and
-      // standfirst lines that ride beside them. Source Sans 3 and IBM Plex Mono use
+      // standfirst lines that ride beside them. Inter and IBM Plex Mono use
       // metric-adjusted local fallbacks instead. The Archivo wordmark needs no
       // entry — Vite inlines its small subset into the stylesheet.
       // @see apps/docs/DESIGN.md → Font loading
-      ...[newsreaderLatin, newsreaderLatinItalic].map((href) => ({
+      ...[gelasioLatin, gelasioLatinItalic].map((href) => ({
         rel: "preload",
         as: "font",
         type: "font/woff2",

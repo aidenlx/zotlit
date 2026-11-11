@@ -38,9 +38,8 @@ async function createRenderer(packageRoot: string): Promise<Renderer> {
   const [subsets, archivo] = await Promise.all([
     googleFonts({
       families: [
-        // Newsreader at its display optical size: the card title sets 84–150px.
-        { name: "Newsreader", weight: 500, axes: { opsz: 72 } },
-        { name: "Source Sans 3", weight: [400, 800] },
+        { name: "Gelasio", weight: 500 },
+        { name: "Inter", weight: [400, 800] },
         { name: "IBM Plex Mono", weight: [500, 600] },
       ],
       fetch: fetchFont,
@@ -102,7 +101,7 @@ function titleSize(title: string, hero?: boolean) {
 
 function OGCard({ kind, title, description, meta, hero }: CardProps) {
   return (
-    <div tw="flex flex-col w-full h-full bg-[#f7f5f0] px-[84px] py-[72px] font-['Source_Sans_3']">
+    <div tw="flex flex-col w-full h-full bg-[#f7f5f0] px-[84px] py-[72px] font-['Inter']">
       <div tw="flex flex-col self-start">
         <div tw="font-['IBM_Plex_Mono'] font-semibold text-[30px] tracking-[5px] text-[#b9461a]">
           {kind.toUpperCase()}
@@ -112,12 +111,12 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
 
       <div tw="flex flex-col flex-1 justify-center py-[10px]">
         <div
-          tw={`font-['Newsreader'] font-medium ${titleSize(title, hero)} leading-[1.05] tracking-[-1px] text-[#1b2029] max-w-[1000px] text-balance`}
+          tw={`font-['Gelasio'] font-medium ${titleSize(title, hero)} leading-[1.05] tracking-[-1px] text-[#1b2029] max-w-[1000px] text-balance`}
         >
           {title}
         </div>
         {description ? (
-          <div tw="font-['Source_Sans_3'] text-[35px] leading-[1.4] text-[#1b2029] max-w-[820px] mt-[26px]">
+          <div tw="font-['Inter'] text-[35px] leading-[1.4] text-[#1b2029] max-w-[820px] mt-[26px]">
             {description}
           </div>
         ) : null}
