@@ -146,6 +146,8 @@ The `pandoc_cite` filter behaves the same in both branches:
 
 ZotLit normalizes the rendered citation to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders: the inline suggester, the command-palette picker, the `zt.citation` annotation field, <UiLabel name={m.annot_view_menu_copy_citation()} />, and citation resolution during note import.
 
+Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
+
 Only the Liquid edition is built in. The same template in Eta reads:
 
 ```eta

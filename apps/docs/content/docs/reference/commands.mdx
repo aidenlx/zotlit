@@ -127,6 +127,30 @@ Insertion remains available independently of <UiLabel name={m.settings_citation_
 | Command palette  | Active when an editor is open                                                                                                                                              |
 | Editor suggester | Triggered by typing `[@` in the editor, or `@` at a word boundary when **`@` trigger** is on. Both settings are under <SettingsPath page={m.settings_page_citations()} />. |
 
+### How the citation search orders papers [#citation-search-order]
+
+Both entry points search every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each suggestion names the library its item comes from. With one library in scope, that label is left off.
+
+Before you enter a search, both lists place papers already cited in the current
+note first. Each group is ordered by Last Activity, newest first. This is the same order as
+[<UiLabel name={m.library_view_recent()} /> in the Library View](/docs/how-to/use-library-view#recent).
+
+When you type a search, both lists rank all results by relevance.
+
+A paper the current note already cites shows the <UiLabel name={m.citation_suggester_cited_in_note()} /> label, with or without a search.
+
+### Suggester triggers and queries [#suggester-queries]
+
+The citation suggester opens when you type `[@` (or `【@`) in the editor. A dropdown appears with items from your Zotero library.
+
+With <UiLabel name={m.settings_citation_at_trigger_name()} /> enabled, typing `@` at a word boundary does the same thing. A mid-word `@` (e.g. in an email address) is ignored.
+
+An `@` query ends at the first space. Type `_` where the search needs a space: `@machine_learning` finds "machine learning". Bracket trigger queries (`[@`) accept real spaces.
+
+The modal has no trailing-`/` shortcut; `Shift+Enter` is the only way to ask for the alternate citation here.
+
+- `alt` comes from `Shift+Enter` in either, or from a trailing `/` in the suggester query. The trailing `/` wins without `Shift`, and the `/` is stripped from the search.
+
 ### Citation navigation
 
 The following commands open the recognized Pandoc citation under the cursor. They have no default hotkeys.
@@ -188,6 +212,23 @@ The export uses its own citation membership. Citation source, presentation, and 
 | Entry point     | Details                   |
 | --------------- | ------------------------- |
 | Command palette | Active on a Markdown note |
+
+#### Cited by sidebar [#cited-by]
+
+The <UiLabel name={m.cited_by_view_name()} /> Sidebar follows the active Literature Note. It groups citation occurrences by source note and shows the citation in its surrounding text.
+
+Use the sidebar toolbar to narrow and arrange the results:
+
+- <UiLabel name={m.cited_by_show_search_filter()} /> filters by source-note path
+  or the shown citation context.
+- <UiLabel name={m.cited_by_show_more_context()} /> expands every result from a
+  compact excerpt to its enclosing Markdown block.
+- <UiLabel name={m.cited_by_change_sort_order()} /> sorts source notes by file
+  name, modified time, or created time, in either direction.
+- <UiLabel name={m.cited_by_collapse_results()} /> collapses or expands the
+  visible source-note groups.
+
+Select a citation excerpt to open its source note at that occurrence. Select <UiLabel name={m.cited_by_open_source()} /> on a group to open the note without targeting one occurrence. Hold Ctrl on Windows or Linux, or Command on macOS, to open either action in another pane.
 
 ### Citation text
 
@@ -347,6 +388,78 @@ Undo takes back the last annotation change ZotLit saved to Zotero for the PDF yo
 | More options    | The PDF view's **More options** menu (⋮). Both entries appear, dimmed when there is no step to take. |
 | Hotkey          | None by default; assign one under **Settings > Hotkeys**                                             |
 
+### Follow modes [#follow-modes]
+
+| Mode                                                        | Behavior                                                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| <UiLabel name={m.annot_view_mode_active_tab()} /> (default) | Follows your active tab: the item of a literature note, or the attachment of a Zotero PDF. |
+| <UiLabel name={m.annot_view_mode_zotero_reader()} />        | Follows the attachment open in Zotero's reader. Needs live updates.                        |
+| <UiLabel name={m.annot_view_mode_pinned()} />               | Stays on one item you chose, with its attachment remembered.                               |
+
+To switch, open the menu at the top of the view (the item's title with a down arrow); its first group is headed <UiLabel name={m.annot_view_header_menu_label()} />. The same
+three switches are in the view's pane menu, and each has a command of its own.
+
+The view keeps the mode you chose until you choose another one. When its source
+cannot answer, the view says so in place instead of switching for you.
+
+<UiLabel name={m.annot_view_mode_zotero_reader()} /> needs live updates, which
+carry the reader's position from Zotero to Obsidian. While live updates is off,
+the view offers <UiLabel name={m.annot_view_enable_live_updates()} /> in place
+of the list. See [Set up live updates](/docs/how-to/set-up-live-updates).
+
+Closing the reader in Zotero leaves the last attachment on screen under <UiLabel name={m.annot_view_reader_closed()} />
+
+Pinning from a Zotero PDF tab releases that tab's hold on the attachment, so you can switch between the item's attachments while the pin stands.
+
+Select <UiLabel name={m.annot_view_mode_unpin()} /> to return to the mode you were in before the pin.
+
+A PDF that Zotero stores with no parent item cannot be pinned; the menu offers no pin entry for it.
+
+### Attachment picker [#attachments]
+
+When the item has more than one attachment, a picker under the toolbar names the one on screen with its annotation count, and remembers your choice per item.
+
+A Zotero PDF tab and the Zotero reader each choose the attachment themselves, so the picker stands down while one of them does.
+
+To read the attachment on screen in Obsidian, open the menu at the top of the view, then select <UiLabel name={m.command_open_pdf_name()} />. The same item is in the view's pane menu. It is not shown when an Obsidian PDF tab already shows that attachment.
+
+### Sort, group, and save the view [#more-options]
+
+The view's <UiLabel name={m.annot_view_more_tooltip()} /> menu (⋮) has <UiLabel name={m.annot_view_sort()} />, <UiLabel name={m.annot_view_group_by()} />, and <UiLabel name={m.annot_view_filter()} /> for the cards. <UiLabel name={m.annot_view_save_as_query_file()} /> keeps what the view shows as a query file that you can open in a tab or embed in notes. See [Save the annotation sidebar as a query file](/docs/how-to/use-query-files#save-sidebar).
+
+### Locked annotations [#locked]
+
+A lock icon beside a card's page number marks an annotation that ZotLit cannot change. Point to the icon to see the reason. For example, Zotero imported the annotation from the PDF file, or another member of a group library created it. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations) for what you can still do with a locked annotation.
+
+### Inserting into a note [#insert]
+
+ZotLit uses the [profile](/docs/reference/templates/how-templates-work#profiles) of the annotation item's literature note, or the Default profile when that item has no note. Edits made while you wait move the insertion position with the text. Press Escape to cancel a pending insertion. After insertion, one Undo removes the inserted content.
+
+### Card menu [#card-menu]
+
+Right-click an annotation row, or open its <UiLabel name={m.annot_view_more_tooltip()} /> menu, for additional options:
+
+- <UiLabel name={m.annot_view_menu_edit_text()} />: opens an editor for the
+  quoted text of a highlight or underline. See [Edit the quoted
+  text](/docs/how-to/edit-pdf-annotations#edit-the-quoted-text).
+- <UiLabel name={m.annot_view_menu_copy_backlink()} />: copies a link back to
+  the annotation's location in the PDF.
+- <UiLabel name={m.annot_view_menu_copy_text()} />: copies the quoted text, or
+  the comment when the annotation has no quoted text.
+- <UiLabel name={m.annot_view_menu_copy_citation()} />: copies a formatted
+  citation for the annotation's parent item.
+- <UiLabel name={m.indexed_key_menu_copy_annotation()} />: copies the
+  annotation's Zotero key.
+- <UiLabel name={m.annot_view_menu_insert()} />: inserts the annotation at the
+  cursor in the active note, as a drag does.
+- <UiLabel name={m.template_data_explorer_menu_explore()} />: opens the Template
+  Data Explorer with the annotation's data.
+- <UiLabel name={m.annot_view_menu_delete()} />: deletes the annotation from
+  Zotero after you confirm. See [Delete an
+  annotation](/docs/how-to/edit-pdf-annotations#delete-an-annotation).
+
+When several cards are selected, the menu has only the items that act on all of them. See [Select several cards](/docs/how-to/use-annotation-view#select-several).
+
 ## Query files [#query-files]
 
 <Command name={m.command_new_query_file_name()} />
@@ -449,6 +562,25 @@ Opens the release notes for the installed ZotLit version.
 | Command palette | Always available                                                                                                                                                              |
 | Settings        | The <UiLabel name={m.settings_resources_whats_new_button()} /> button in the <UiLabel name={m.settings_resources_whats_new_name({ version: "…" })} /> row of the settings tab |
 | Welcome banner  | The <UiLabel name={m.welcome_update_action()} /> button on the banner shown above the Library View after ZotLit updates                                                       |
+
+## ZotLit menu in Zotero [#zotero-menu]
+
+When exactly one regular item is selected in the Zotero library, the top-level context menu shows <UiLabel name={m["zotero.menu_item_open.label"]()} />. This creates the note if none exists, or opens the existing one. The behavior matches the quick switcher.
+
+The <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu on selected items holds the update actions:
+
+- <UiLabel name={m["zotero.menu_item_update.label"]({ count: 2 })} /> creates a
+  note for each item that does not have one yet, and refreshes existing notes
+  with current Zotero data.
+- <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} /> refreshes
+  only the frontmatter of existing notes, leaving the note body unchanged. Items
+  without an existing literature note are skipped.
+
+<UiLabel name={m["zotero.menu_item_import_notes.label"]({ count: 2 })} />
+appears when the selection contains note items. If you select regular items
+instead, the menu shows
+<UiLabel name={m["zotero.menu_item_import_child_notes.label"]()} />, which
+triggers a different import path.
 
 ## Entry-point summary
 

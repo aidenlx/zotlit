@@ -3,182 +3,94 @@ title: "How to migrate from Pandoc Reference List"
 description: "Move a Pandoc Reference List workflow to ZotLit while preserving citation syntax, metadata, and native Pandoc export."
 ---
 
-import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Card, Cards } from "fumadocs-ui/components/card";
-import { Callout } from "@/components/callout";
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Use this guide to move your citation workflow to ZotLit without assuming feature parity.
-
-After migration, [Build a Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow) to compare built-in and native export with one note.
-
-The [Pandoc Reference List repository](https://github.com/community-archive/obsidian-pandoc-reference-list) is hosted by the [Obsidian Community Archive](https://github.com/community-archive/.github).
-
-## Decide where each part moves
-
-| Classification              | Existing behavior                                                                                                           | ZotLit destination                                                                               |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Works unchanged             | Literal citations such as `@doe2024`, `[@doe2024]`, and `[@doe2024, p. 33]`                                                 | Keep the Markdown source. Enable <UiLabel name={m.settings_citation_pandoc_citations_name()} />. |
-| Change settings or syntax   | Zotero library selection, live rendering, suggestions, tooltips, CSL selection, citation language, and `[[@citekey]]` links | Configure ZotLit and audit the affected metadata and links.                                      |
-| Continue with native Pandoc | `bibliography`, bibliography files, multiple bibliography inputs, and standard `csl` or `citation-style` paths and URLs     | Keep these inputs in a [native Pandoc workflow](/docs/how-to/export-with-native-pandoc).         |
-| No ZotLit equivalent        | In-app bibliography-file source, tooltip delay, hidden links in references, and click-one-entry-to-copy                     | Use ZotLit's Zotero-backed controls described below.                                             |
-
-ZotLit reads Zotero Items for its in-app citation features. A bibliography file remains useful for native Pandoc, but it does not supply the <UiLabel name={m.references_view_name()} /> Sidebar.
+1. Citations such as `@doe2024`, `[@doe2024]`, and `[@doe2024, p. 33]` keep working as written. Leave them as they are.
+2. Point ZotLit at the same Zotero libraries, and pick the same citation style.
+3. Change each `[[@citekey]]` link by hand, one at a time.
+4. Turn off Pandoc Reference List and check one note.
 
 ## Migrate the workflow
 
-<Steps>
-  <Step>
-    ### Record the current setup
+Your existing citations stay as written: nothing in your notes has to change except `[[@citekey]]` links and some note properties. Keep your original notes or a backup copy until you check a note at the end.
 
-    Record the current bibliography source, selected libraries, CSL style, language, and rendering settings.
+1. In Zotero, check that every paper you cite has a citation key in its **Citation Key** field. Each cited paper shows a key. Choose your key format before migrating notes, and keep existing keys after the move.
+2. Open <SettingsPath page={m.settings_page_zotero()} />. Check that <UiLabel name={m.settings_db_file_name()} /> points to the Zotero profile that holds your cited papers. The database path is the one with your library.
+3. On the same page, under <UiLabel name={m.settings_zotero_libraries_heading()} />, set <UiLabel name={m.settings_library_scope_name()} /> to <UiLabel name={m.settings_library_scope_all()} />, or choose <UiLabel name={m.settings_library_scope_selected()} /> and add the personal and group libraries you used before. ZotLit searches all of those libraries at once.
+4. Open <SettingsPath page={m.settings_page_citations()} />. Keep <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} /> on. Under <UiLabel name={m.settings_citation_references_heading()} />, install the <UiLabel name={m.settings_citation_engine_name()} />. The engine is installed.
+5. Install your former CSL style in Zotero. Then open <SettingsPath /> and select that style under <UiLabel name={m.settings_citation_references_style_name()} />. Citations in Live Preview use that style.
+6. Back in <SettingsPath page={m.settings_page_citations()} />, under <UiLabel name={m.settings_citation_references_heading()} />, set <UiLabel name={m.settings_citation_locale_name()} /> to your language, or leave it empty to keep <UiLabel name={m.settings_citation_locale_default()} />. Citation terms and dates follow that language.
+7. If you used citation-key tooltips, set <UiLabel name={m.settings_citation_hover_action_name()} /> to <UiLabel name={m.settings_citation_hover_action_popover()} />. Hovering a citation shows its reference entry.
+8. Search the vault for `[[@`. Change each one by hand. No `[[@` link is left that you did not mean.
+9. In **Settings > Community plugins**, turn off Pandoc Reference List. Keep a record of its settings first. Only ZotLit changes how citations look.
+10. Open a note that uses your citations and note properties. Check that its citations show formatted in Live Preview. Run <Command inline name={m.command_open_references_view_name()} />, then select <UiLabel name={m.references_copy_bibliography()} /> in the <UiLabel name={m.references_view_name()} /> sidebar. The sidebar lists each cited paper, and the reference list is on your clipboard.
 
-    Search the vault for these note properties and citation forms:
+<Accordions multiple>
+<Accordion title="What moves where" id="what-moves-where">
 
-    - `bibliography`
-    - `csl` or `citation-style`
-    - `lang` or `citation-language`
-    - `[[@`
+| What you have now                                                                                            | In ZotLit                                                                                             |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Citations `@doe2024`, `[@doe2024]`, `[@doe2024, p. 33]`                                                      | Work unchanged. Keep <UiLabel name={m.settings_citation_pandoc_citations_name()} /> on.               |
+| Library selection, live rendering, suggestions, tooltips, CSL style, citation language, `[[@citekey]]` links | Set them up again in ZotLit using the steps above.                                                    |
+| `bibliography` files, several bibliography inputs, `csl` or `citation-style` paths and URLs                  | Keep them for native Pandoc; see [Export with native Pandoc](/docs/how-to/export-with-native-pandoc). |
+| Bibliography file as the in-app source, tooltip delay, hidden links in references, click one entry to copy   | No ZotLit equivalent (see the next fold-out).                                                         |
 
-    Keep the original notes until you finish the verification steps.
+ZotLit reads Zotero directly for its citations in Obsidian. A bibliography file still serves native Pandoc, but it does not fill the <UiLabel name={m.references_view_name()} /> sidebar.
 
-  </Step>
-  <Step>
-    ### Confirm citation keys in Zotero
+</Accordion>
+<Accordion title="Features with no direct equivalent" id="no-direct-equivalent">
 
-    Confirm that every cited Zotero item has a citation key. ZotLit resolves literal keys against Zotero's native **Citation Key** field.
+| Pandoc Reference List                   | ZotLit                                                                                                                                                                                                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Bibliography file for in-app references | Connect ZotLit to the matching Zotero database.                                                                                                                                                                                                                                            |
+| CSL path or URL in Obsidian             | Install the style in Zotero. Keep the path or URL for native Pandoc if needed.                                                                                                                                                                                                             |
+| Tooltip delay                           | Choose <UiLabel name={m.settings_citation_hover_action_popover()} />, <UiLabel name={m.settings_citation_hover_action_page_preview()} />, or <UiLabel name={m.settings_citation_hover_action_off()} />; set <UiLabel name={m.settings_citation_hover_mod_page_name()} /> per editing mode. |
+| Hide links in references                | No matching setting.                                                                                                                                                                                                                                                                       |
+| Click one reference to copy it          | Select the entry text and copy it with your usual shortcut.                                                                                                                                                                                                                                |
 
-    [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/) is recommended for generating and maintaining stable keys. ZotLit does not require Better BibTeX when the native field already contains suitable keys.
+For all citation settings and their defaults, see [Citation settings](/docs/reference/settings#citations).
 
-    Choose your key format before you migrate many notes. Avoid changing existing keys after the migration.
+</Accordion>
+<Accordion title="Citation-key links ([[@citekey]])" id="citation-key-links">
 
-  </Step>
-  <Step>
-    ### Connect the Zotero database
+Pandoc Reference List can treat `[[@doe2024]]` as a citation. ZotLit counts a `[[...]]` link as a citation only when it points to the paper's literature note.
 
-    Open <SettingsPath page={m.settings_page_zotero()} />. Confirm that <UiLabel name={m.settings_db_file_name()} /> points to the profile that contains your cited items.
+For each link, choose:
 
-    On the same page, under <UiLabel name={m.settings_zotero_libraries_heading()} />, set <UiLabel name={m.settings_library_scope_name()} /> to <UiLabel name={m.settings_library_scope_all()} />, or choose <UiLabel name={m.settings_library_scope_selected()} /> and add the same personal and group libraries you used before.
+- If it is only a citation: replace it with `[@doe2024]`.
+- If it is a citation that should also open the paper's literature note: replace it with a link to that note without an alias, such as `[[Doe 2020]]` (only when `Doe 2020.md` is that paper's literature note). For a page locator, use `[[Doe 2020#cite:locator=33]]`.
 
-    ZotLit searches the complete scope at once. When one citation key matches several items, ZotLit reports an Ambiguous Citation Key. It does not choose an item by library order.
+After the links are updated, turn on <UiLabel name={m.settings_citation_wikilink_citations_name()} /> in <SettingsPath page={m.settings_page_citations()} />. Do this one by one: the intent and the note names differ for each link, so a vault-wide find-and-replace gets some of them wrong.
 
-  </Step>
-  <Step>
-    ### Configure in-app formatting
+</Accordion>
+<Accordion title="Note properties (bibliography, csl, lang)" id="note-properties">
 
-    Open <SettingsPath page={m.settings_page_citations()} />.
+| Property                  | What to do                                                                                                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bibliography`            | Keep it only for native Pandoc. ZotLit gets reference data directly from Zotero.                                                                                                       |
+| `csl` or `citation-style` | Keep one for a style that Pandoc owns. Do not add `zotlit-csl` to the same note.                                                                                                       |
+| `zotlit-csl`              | Use it when ZotLit should use a style installed in Zotero. Remove `csl` and `citation-style` first.                                                                                    |
+| `lang`                    | Keep it when it is a valid document language such as `en-US`, `de`, or `zh-CN`. ZotLit uses it for that note's citations too.                                                          |
+| `citation-language`       | Change it to `lang` only when the value is the language of the whole document. Otherwise set <UiLabel name={m.settings_citation_locale_name()} /> in settings and remove the property. |
 
-    1. Keep <UiLabel name={m.settings_citation_pandoc_citations_name()} /> on.
-    2. Keep <UiLabel name={m.settings_citation_show_formatted_name()} /> on.
-    3. Under <UiLabel name={m.settings_citation_references_heading()} />, install the <UiLabel name={m.settings_citation_engine_name()} />.
-    4. Install your former CSL style in Zotero.
-    5. Select that style under <UiLabel name={m.settings_citation_references_style_name()} />.
-    6. Set <UiLabel name={m.settings_citation_locale_name()} />, or leave it at <UiLabel name={m.settings_citation_locale_default()} />.
+To set a Zotero style and the document language together, run <Command inline name={m.command_set_citation_presentation_name()} />; it is also in the note's **More options** menu. Its <UiLabel name={m.citation_presentation_language_name()} /> becomes Pandoc `lang` for the exported document. Keep one style family per note: the ZotLit filter reports `csl-ambiguous` when a note has both `csl` and `zotlit-csl`. For details, see [Per-note citation presentation](/docs/reference/settings#citation-style).
 
-    Set <UiLabel name={m.settings_citation_hover_action_name()} /> to <UiLabel name={m.settings_citation_hover_action_popover()} /> when you previously used citekey tooltips. ZotLit has modifier-key controls for each editing mode, but no tooltip-delay setting.
+</Accordion>
+</Accordions>
 
-  </Step>
-  <Step>
-    ### Migrate note metadata
+## If you see something else
 
-    Apply these rules to each affected note:
+- **The References sidebar shows a Reference Error** → fix every Reference Error before you go on; see [Review, copy, and troubleshoot references](/docs/how-to/review-copy-troubleshoot-references).
+- **The sidebar says "@\{citekey\} matches multiple items in your Zotero library."** → two papers share that key, in one library or in two libraries in your scope. ZotLit does not pick one by library order. Give one paper a different key in Zotero, or narrow <UiLabel name={m.settings_library_scope_name()} />; see [Ambiguous citation keys](/docs/reference/citation-links#ambiguous-key).
+- **Both plugins change how the citations look** → Pandoc Reference List is still on. Turn it off in **Settings > Community plugins** and test with only ZotLit.
+- **The ZotLit filter reports `csl-ambiguous`** → the note has both `csl` and `zotlit-csl`. Keep only one of them.
 
-    | Property                  | Migration rule                                                                                                                                                                    |
-    | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-    | `bibliography`            | Keep it only for native Pandoc. ZotLit's in-app features and built-in export get bibliography data from Zotero.                                                                   |
-    | `csl` or `citation-style` | Keep one of these for a Pandoc-owned style. Do not add `zotlit-csl` to the same note.                                                                                             |
-    | `zotlit-csl`              | Use this instead when ZotLit should resolve a style installed in Zotero. Remove `csl` and `citation-style` first.                                                                 |
-    | `lang`                    | Keep it when it is a valid document language, such as `en-US`, `de`, or `zh-CN`. ZotLit also uses it for that note's citations.                                                   |
-    | `citation-language`       | Convert it to `lang` only when the value describes the complete document. Otherwise, set the vault <UiLabel name={m.settings_citation_locale_name()} /> and remove this property. |
+## Next
 
-    To set a Zotero-installed style and document language together, run:
-
-    <Command name={m.command_set_citation_presentation_name()} />
-
-    The same action appears in the active note's **More options** menu. Its <UiLabel name={m.citation_presentation_language_name()} /> value becomes Pandoc `lang` for the complete exported document.
-
-    <Callout type="warn" title="Choose one style owner">
-      A native Pandoc document can use standard `csl` or `citation-style`, or
-      ZotLit can resolve `zotlit-csl`. Keep only one family. The ZotLit filter
-      reports `csl-ambiguous` when a document contains both `csl` and
-      `zotlit-csl`.
-    </Callout>
-
-  </Step>
-  <Step>
-    ### Audit citekey links one at a time
-
-    Pandoc Reference List can treat `[[@doe2024]]` as a citation. ZotLit's <UiLabel name={m.settings_citation_wikilink_citations_name()} /> setting has a different contract.
-
-    Review every `[[@citekey]]` occurrence and choose its intended result:
-
-    - Replace it with `[@citekey]` when it is only a citation.
-    - Replace it with an unaliased link to the correct ZotLit Literature Note when it must cite and open that note.
-
-    For example, use `[[Doe 2020]]` only when `Doe 2020.md` is the Literature Note for that item. Add `#cite:locator=33` when the link cites a locator: `[[Doe 2020#cite:locator=33]]`.
-
-    Enable <UiLabel name={m.settings_citation_wikilink_citations_name()} /> after the Literature Note links are valid. Do not use a bulk replacement because link intent and note names differ by occurrence.
-
-  </Step>
-  <Step>
-    ### Disable Pandoc Reference List for the test
-
-    Keep your recorded settings, then disable Pandoc Reference List in **Settings > Community plugins**.
-
-    Test rendered citations with only ZotLit active. This keeps both plugins from changing the same citation display.
-
-  </Step>
-  <Step>
-    ### Verify one representative note
-
-    Open a note that contains the syntax and metadata you migrated.
-
-    1. Confirm that its literal citations format in Live Preview.
-    2. Run <Command inline name={m.command_open_references_view_name()} />.
-    3. Hover a citation and inspect the <UiLabel name={m.settings_citation_hover_action_popover()} />.
-    4. Open its Literature Note, Zotero item, and attachment where available.
-    5. Select <UiLabel name={m.references_copy_bibliography()} /> in the <UiLabel name={m.references_view_name()} /> Sidebar.
-
-    Resolve every Reference Error before you continue. In particular, change duplicate citation keys or narrow <UiLabel name={m.settings_library_scope_name()} /> when a key is ambiguous.
-
-  </Step>
-  <Step>
-    ### Choose an export workflow
-
-    Use <Command inline name={m.command_pandoc_export_name()} /> for ZotLit's built-in DOCX or HTML export.
-
-    Continue with [native Pandoc](/docs/how-to/export-with-native-pandoc) when you need bibliography files, multiple inputs, standard CSL paths or URLs, or other Pandoc options.
-
-  </Step>
-</Steps>
-
-## Behaviors without a direct equivalent
-
-- **Bibliography file for in-app references:** connect ZotLit to the matching Zotero database instead.
-- **Arbitrary CSL path or URL in Obsidian:** install the style in Zotero. Keep the path or URL for native Pandoc when required.
-- **Tooltip delay:** choose <UiLabel name={m.settings_citation_hover_action_popover()} />, <UiLabel name={m.settings_citation_hover_action_page_preview()} />, or <UiLabel name={m.settings_citation_hover_action_off()} />. Configure modifier-key requirements by editing mode.
-- **Hide links in references:** ZotLit has no matching citation setting.
-- **Click one reference to copy it:** select the entry text and use your normal copy shortcut. The row click targets citation navigation and item actions.
-
-## See also
-
-<Cards>
-  <Card
-    title="Review, copy, and troubleshoot references"
-    description={`Use the ${m.references_view_name()} Sidebar and resolve its exact error states.`}
-    href="/docs/how-to/review-copy-troubleshoot-references"
-  />
-  <Card
-    title="Export with native Pandoc"
-    description="Keep bibliography files and Pandoc-owned options in a native workflow."
-    href="/docs/how-to/export-with-native-pandoc"
-  />
-  <Card
-    title="Settings"
-    description={`Check ${m.settings_library_scope_name()}, citation sources, formatting, and hover controls.`}
-    href="/docs/reference/settings"
-  />
-</Cards>
+- [Export note with citations](/docs/how-to/export-note-with-citations) — export a note to Word with ZotLit's <Command inline name={m.command_pandoc_export_name()} />.
+- [Export with native Pandoc](/docs/how-to/export-with-native-pandoc) — keep bibliography files, several inputs, CSL paths or URLs, and other Pandoc options.
+- [Pandoc citation workflow tutorial](/docs/tutorial/pandoc-citation-workflow) — compare built-in and native export with one note.

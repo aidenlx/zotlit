@@ -137,6 +137,66 @@ The pinned panel stays open while you type and insert fields. Inserting puts the
 
 The pinned panel needs a view that keeps the editor at least 360 pixels wide beside a panel of 240 pixels, after the Preview panel takes its column. In a narrower view, the pin is disabled with the tooltip <UiLabel name={m.workbench_fields_pin_unavailable()} />, and <UiLabel name={m.workbench_view_fields()} /> opens the Fields popover. A pinned panel shows the note <UiLabel name={m.workbench_fields_pinned_narrow()} /> there. When the view is wide again, the panel docks again. A view that gets narrow never opens the popover over your editor by itself.
 
+### The Template Data Explorer [#data-explorer]
+
+#### Pane title and layout [#explorer-title]
+
+The pane title starts with the selected data and ends with
+
+<UiLabel name={m.workbench_view_fields()} />. Annotation titles show the type,
+page, and a short excerpt. Built-in examples are identified in the title; with
+no selection, the pane uses its generic name.
+
+Full panels have selection actions in the header. Sidebars have a small
+selection control near the data. Right-click the
+pane header to access its menu in either layout.
+
+#### The root the pane lists [#explorer-roots]
+
+The pane header names the root it reads: <UiLabel name={m.workbench_fields_root_note()} />, <UiLabel name={m.workbench_fields_root_annotation()} />, <UiLabel name={m.workbench_fields_root_filename()} />, or <UiLabel name={m.workbench_fields_root_citation()} />.
+
+The root follows the part of the profile you are editing: the note body and its properties list the note root, the Annotation Section lists the annotation root, the manifest's `filename` value lists the note name root, and the Citation text lists the citation root.
+
+The standalone explorer takes its root from the Template Workbench View beside it. When it is anchored at an annotation, a breadcrumb above the list reads <UiLabel name={m.template_data_explorer_note_root()} />, and its back button, tooltipped <UiLabel name={m.template_data_explorer_back_to_note_root()} />, returns the list to the note root.
+
+To read one annotation's own fields from the note root, open the more-options menu on its row under `zt.annotations` and select <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />.
+
+#### Sections [#explorer-sections]
+
+<UiLabel name={m.workbench_explorer_section_common()} /> leads every root and
+holds the fields most templates use. A note root and a note name root group the
+remaining fields under
+<UiLabel name={m.workbench_explorer_section_reference()} />,
+<UiLabel name={m.workbench_explorer_section_identifiers()} />,
+<UiLabel name={m.workbench_explorer_section_content()} />,
+<UiLabel name={m.workbench_explorer_section_organization()} />,
+<UiLabel name={m.workbench_explorer_section_links()} />, and
+<UiLabel name={m.workbench_explorer_section_record()} />. An annotation root
+groups them under <UiLabel name={m.workbench_explorer_section_annotation()} />,
+<UiLabel name={m.workbench_explorer_section_source()} />,
+<UiLabel name={m.workbench_explorer_section_organization()} />,
+<UiLabel name={m.workbench_explorer_section_links()} />, and
+<UiLabel name={m.workbench_explorer_section_record()} />. A citation root has no
+other section yet.
+
+Select a section heading to open or close that section. The button beside the pane's selection control opens every section or closes every one, tooltipped <UiLabel name={m.workbench_explorer_expand_all()} /> or <UiLabel name={m.workbench_explorer_collapse_all()} />. The pane menu carries the same action.
+
+Each top-level row shows a name a reader knows, and its raw path stays in the tooltip and in <UiLabel name={m.workbench_explorer_menu_copy_path()} />. Expand a row that holds an object or an array to read its members. A long value collapses to its first line until you select <UiLabel name={m.workbench_explorer_show_more()} />; <UiLabel name={m.workbench_explorer_show_less()} /> folds it back.
+
+#### Filter [#explorer-filter]
+
+Type in the search box to narrow the list. The box names the root it searches: <UiLabel name={m.workbench_fields_search_note()} />, <UiLabel name={m.workbench_fields_search_annotation()} />, <UiLabel name={m.workbench_fields_search_filename()} />, or <UiLabel name={m.workbench_fields_search_citation()} />.
+
+A query matches field names, keys, and values by case-insensitive substring. Matching rows and their ancestor chains open automatically. When nothing matches, the list reads <UiLabel name={m.workbench_fields_no_matches()} />.
+
+#### Which copy actions a row offers [#explorer-copy]
+
+Every row carries a menu. Open it from the row's action cluster, labelled <UiLabel name={m.workbench_explorer_row_actions()} />, or right-click the row.
+
+An array node offers <UiLabel name={m.workbench_explorer_menu_copy_loop()} />, and <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> where its elements join into text. Every other node offers <UiLabel name={m.workbench_explorer_menu_copy_output()} /> and <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />.
+
+With <UiLabel name={m.settings_template_js_enable_name()} /> on, the snippet items sit in two submenus, captioned "Liquid" and "Eta", so you can pick the syntax your template uses. With the gate off, the Liquid items appear directly in the menu.
+
 ### The Preview panel [#preview-panel]
 
 The Preview panel's header row names the preview, such as <UiLabel name={m.workbench_result_heading()} />, and the note's <UiLabel name={m.workbench_result_filename()} />. The row stays at the top while you scroll through a long preview, so you always see which note you are reading.
@@ -183,11 +243,19 @@ it to show the whole profile document as Markdown source in place of the tabs,
 and select it again to return to the tabs. A citation text or a partial shows
 its source in its one tab, so the toggle is offered for a profile document only.
 
+### The Name and folder and Match tabs [#name-and-folder]
+
+On the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab, the <UiLabel name={m.workbench_name_path_heading()} /> group holds the <UiLabel name={m.workbench_name_binding_folder()} />, the <UiLabel name={m.workbench_name_filename_label()} />, and a <UiLabel name={m.workbench_name_filename_result()} /> of the full path the note gets, with `.md`. A slash (`/`) in the note name makes a subfolder in the folder. For the Default profile, change the folder in <SettingsPath />. The <UiLabel name={m.workbench_tab_match()} /> tab reports <UiLabel name={m.workbench_match_result_yes()} /> or <UiLabel name={m.workbench_match_result_no()} /> for the selected item.
+
 ### Preview data [#preview-data]
 
 The preview uses a Zotero item or built-in example. Opening the view from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data.
 
 The preview changes as you edit. A database or citation-style warning can limit the preview, but you can continue editing the profile.
+
+For annotation formatting, select <UiLabel name={m.workbench_choose_annotation()} />. Search annotations from the selected item or try a highlight, underline, note, text, image, or ink example. Annotation examples keep their own parent item data; the note preview keeps its selected item.
+
+One view holds one chosen item and one chosen annotation, whichever surface you choose them from. A second Template Workbench View keeps its own choice.
 
 ### Saving changes [#saving]
 
@@ -209,6 +277,12 @@ The citation text opens on one <UiLabel name={m.workbench_tab_citation()} /> tab
 
 The preview, headed <UiLabel name={m.workbench_citation_result_heading()} />, renders one citation. Its caption names the variant being previewed, <UiLabel name={m.workbench_citation_variant_main()} /> or <UiLabel name={m.workbench_citation_variant_alt()} />. While the Preview panel is shown, the view's pane menu picks that variant. It also offers <UiLabel name={m.template_workbench_use_example()} /> for a set of built-in citation shapes or <UiLabel name={m.workbench_choose_item()} /> for one of your own Zotero items.
 
+Show the Preview panel to see it. While the panel is shown, the view's pane menu offers <UiLabel name={m.template_workbench_use_example()} /> with six built-in citation shapes: <UiLabel name={m.workbench_citation_example_one_item()} />, <UiLabel name={m.workbench_citation_example_two_items()} />, <UiLabel name={m.workbench_citation_example_item_with_page()} />, <UiLabel name={m.workbench_citation_example_suppressed_author()} />, <UiLabel name={m.workbench_citation_example_prefix_and_suffix()} />, and <UiLabel name={m.workbench_citation_example_annotation_citation()} />. It opens on <UiLabel name={m.workbench_citation_example_one_item()} />.
+
+Select <UiLabel name={m.workbench_choose_item()} /> instead to preview one of your own Zotero items, by citation key alone. That clears the example.
+
+Switch between <UiLabel name={m.template_workbench_preview_main_citation()} /> and <UiLabel name={m.template_workbench_preview_alt_citation()} /> from the same menu to check both branches of your template. The preview caption names the variant on show.
+
 The Preview panel uses the variant and example you pick. See [Customize the citation text](/docs/how-to/customize-a-template#citation-text) for the steps.
 
 ## A partial [#partial]
@@ -218,6 +292,20 @@ A partial opens on one <UiLabel name={m.workbench_tab_partial()} /> tab. Its tab
 A partial has no data of its own: it renders with the data of whichever template calls it. So its preview, headed <UiLabel name={m.workbench_partial_result_heading()} />, asks you which caller to render as. While the Preview panel is shown, the view's pane menu offers <UiLabel name={m.template_workbench_preview_as_note()} />, <UiLabel name={m.template_workbench_preview_as_annotation()} />, and <UiLabel name={m.template_workbench_preview_as_citation()} />. It opens on Note, and remembers your choice per file. ZotLit never guesses the caller from the templates that call the partial.
 
 While your vault holds a profile besides Default, the same part of the pane menu offers <UiLabel name={m.template_workbench_use_profile()} /> to preview against that profile's data. Saving a partial re-renders every open preview that uses it.
+
+### Create a partial from the editor [#create-partial]
+
+Select some template text, right-click it, and choose <UiLabel name={m.template_workbench_extract_partial()} />. ZotLit moves the selection into the new document, leaves the matching call behind, and opens the new document in a split. In the template you extracted from, that is one undo step.
+
+### Partial Placeholder [#partial-placeholder]
+
+In a profile's tabs, with <UiLabel name={m.workbench_advanced()} /> off, a call with a plain quoted name (Liquid `render` or `include`, Eta `include(...)`) is drawn as a **Partial Placeholder**: a compact control carrying the partial's name, the rest of the arguments as written, <UiLabel name={m.workbench_partial_preview()} />, and <UiLabel name={m.workbench_partial_edit()} />. The preview arrow opens a read-only render of that partial below the line, using the data of the slice the call sits in. Put your cursor in the call and the placeholder turns back into plain source, so you can edit the arguments.
+
+The five reserved names are never partial names, so none of them draws one: `{% render "annotation" %}` draws the annotation placeholder for the profile's annotation section, and a call on `filename`, `note`, `content`, or `citation` draws nothing. A call inside a fenced code block is prose about a call, and draws nothing either.
+
+Renaming is an ordinary Obsidian file rename. ZotLit has no rename action and rewrites no calls, so every template that called the old name then marks its placeholder <UiLabel name={m.workbench_partial_missing()} />. Select that marker to read the problem in the editor's <UiLabel name={m.workbench_problems_heading()} /> area, then edit the call or create the partial yourself.
+
+A note that ZotLit writes through a template calling a partial your vault no longer holds is not written at all. ZotLit says which partial is missing and offers <UiLabel name={m.template_workbench_open_layout()} /> to open the document holding the failing call.
 
 ## The document's language [#language]
 
