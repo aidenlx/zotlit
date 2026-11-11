@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "check-quote.png",
+      "crop": { "left": 90, "top": 160, "width": 2110, "height": 1400 },
+      "lights": false
+    }
+  ]
+}

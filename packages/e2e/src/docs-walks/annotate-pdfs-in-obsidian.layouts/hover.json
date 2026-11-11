@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "hover.png",
+      "crop": { "left": 1480, "top": 0, "width": 1400, "height": 1720 },
+      "lights": false
+    }
+  ]
+}

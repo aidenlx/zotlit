@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "explorer.png",
+      "crop": { "left": 0, "top": 0, "width": 1720, "height": 1000 },
+      "lights": false
+    }
+  ]
+}

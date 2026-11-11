@@ -15,6 +15,15 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 
 The End-to-end Run and the measurement drive a real Electron app. The `test` script runs the unit tests alone. `pnpm verify --release` requires the full End-to-end Run, including the Paired Run, followed by worker responsiveness on the desktop. GitHub Actions skips the desktop checks; `pnpm release` runs them before the version commit.
 
+## Docs walks
+
+A docs walk is one docs lesson, run as its reader would through the real apps: `src/docs-walks/<slug>.walk.ts`, named after the page `apps/docs/content/docs/**/<slug>.mdx`. Each `it` is one step of the page, in the page's order, and asserts what the page says the reader sees, so a passing walk also proves the page is still true. Walks run under their own config, `vitest.docs-walk.config.ts`, and stay out of `pnpm e2e` and the release gate.
+
+- Run all walks: `pnpm --filter @zotlit/e2e docs-walk`. One walk: add its file, `pnpm --filter @zotlit/e2e docs-walk src/docs-walks/<slug>.walk.ts`. Build the dev bundle first (`pnpm exec turbo run build:dev --filter=@zotlit/obsidian`); a stale bundle fails the setup.
+- Without capture, a run holds one Desktop Slot. With `DOCS_WALK_CAPTURE=1`, it takes an Exclusive Hold of every slot and writes each planned shot to `apps/docs/public/img/<collection>/<name>.webp`. Exit 75 means another run holds a slot; retry later.
+- `openDocsWalk` (`src/docs-walks/docs-walk.ts`) opens a Paired Run of the walk's own on the `demo` Vault Case: a new Fixture, a new vault, and a Paired Zotero with its Local API open, disposed after the file. `walk.zotero` evaluates in Zotero for the reader's steps there.
+- `walk.capture(layer)` saves the Obsidian window to `.scratch/docs-walks/<slug>/<layer>.png`, without notices. `walk.compose(name)` composes the image with `.agents/skills/docs-screenshot/compose.mjs` from the committed layout `src/docs-walks/<slug>.layouts/<name>.json`, whose layers name captures by file (`"src": "<layer>.png"`); without a layout, the capture `name` becomes one centred window. The window is 1440 × 860 points, so a crop in a layout holds on any screen at least that tall.
+- Data a walk needs and the Vault Case lacks belongs in the Fixture Spec, so the next build reproduces the scene (`docs/fixture.md`).
 ## Page callbacks
 
 Use `obRun` from `src/obsidian-cli.ts` to run page code. It serializes a
@@ -80,6 +89,7 @@ Add a new case to the area file that matches its feature (create a new area file
 | `window-reload.e2e.ts` | Window reload startup order; a plugin start-up that a disable interrupts; an off and on again that overlaps the old instance's start-up; old plugin instances released after a restart |
 | `walkthrough.e2e.ts` | Walkthrough regressions on the demo vault: the demo starts with Sync disabled; citations (Cited by counts, CSL style, HTML export, render recovery, caret, the Citation Popover on hover, suggester and pickers, citation settings refresh and close); Welcome and Library View tabs; literature note updates; Explorer template actions; Choose item preview; Profile editing; and Annotation fields kept when Customize reopens the Template Workbench |
 | `citation-index.e2e.ts` | Citation Index on an isolated Stress Build of 100,000 Items: answers and worker reads stay responsive during a refresh and a rebuild, and a failed snapshot integrity check keeps the held search index |
+| `docs-walks/*.walk.ts` | Docs walks, one per /learn lesson, under their own config (see "Docs walks") |
 
 The default reporter prints suite progress, the run's evidence folder, and the final counts. Each run writes its evidence to its own folder, `.scratch/e2e-results/<start time>-<pid>/`, and `.scratch/e2e-results/latest` points to the run that started last. Read `results.json` there for individual results and `console.log` for console evidence. A Paired Run setup failure writes `paired-startup.log` in that folder with the launch error chain. The ten newest run folders stay; copy evidence you need to retain longer. A tool that reads the results of a run it starts sets `ZOTLIT_E2E_RESULTS` to the folder (see `src/verify-worker.ts`).
 

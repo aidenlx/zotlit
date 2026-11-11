@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "table.png",
+      "crop": { "left": 88, "top": 0, "width": 2792, "height": 560 },
+      "lights": false
+    }
+  ]
+}

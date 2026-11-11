@@ -1,0 +1,13 @@
+{
+  "margin": 0.1,
+  "layers": [
+    { "src": "allow-editing.png", "lights": false },
+    {
+      "src": "zotero-dialog.png",
+      "x": 1100,
+      "y": 560,
+      "width": 1220,
+      "lights": false
+    }
+  ]
+}

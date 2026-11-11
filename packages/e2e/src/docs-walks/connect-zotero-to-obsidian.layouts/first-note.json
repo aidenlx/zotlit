@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "first-note.png",
+      "crop": { "left": 688, "top": 0, "width": 2192, "height": 1720 },
+      "lights": false
+    }
+  ]
+}

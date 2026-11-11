@@ -1,0 +1,15 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "embed.png",
+      "crop": {
+        "left": 600,
+        "top": 150,
+        "width": 1800,
+        "height": 900
+      },
+      "lights": false
+    }
+  ]
+}

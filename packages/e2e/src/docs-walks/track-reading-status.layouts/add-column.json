@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "add-column.png",
+      "crop": { "left": 1000, "top": 140, "width": 1880, "height": 500 },
+      "lights": false
+    }
+  ]
+}

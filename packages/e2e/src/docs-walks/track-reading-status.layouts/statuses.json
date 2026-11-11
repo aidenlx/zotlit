@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "statuses.png",
+      "crop": { "left": 88, "top": 150, "width": 2792, "height": 470 },
+      "lights": false
+    }
+  ]
+}

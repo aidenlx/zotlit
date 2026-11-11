@@ -1,0 +1,11 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "document.png",
+      "crop": { "left": 0, "top": 0, "width": 1851, "height": 1950 },
+      "radius": 0,
+      "lights": false
+    }
+  ]
+}

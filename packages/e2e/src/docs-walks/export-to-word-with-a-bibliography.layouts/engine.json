@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "engine.png",
+      "crop": { "left": 330, "top": 125, "width": 2220, "height": 1475 },
+      "lights": false
+    }
+  ]
+}

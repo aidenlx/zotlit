@@ -1,0 +1,10 @@
+{
+  "margin": 0.1,
+  "layers": [
+    {
+      "src": "export-dialog.png",
+      "crop": { "left": 600, "top": 300, "width": 1720, "height": 1000 },
+      "lights": false
+    }
+  ]
+}
