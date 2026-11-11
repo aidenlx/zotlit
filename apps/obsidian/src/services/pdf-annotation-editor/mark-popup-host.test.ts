@@ -175,6 +175,28 @@ it("hides while another tab covers the PDF, keeps its content mounted, and shows
   expect(opened.hoverEl.querySelector("span")).toBe(row);
 });
 
+it("shows what floats now once the PDF is back, after a change made while another tab covered it", () => {
+  using h = host();
+  update(
+    h.surface,
+    captureSelection({
+      captured: CAPTURED,
+      anchorAt: { pageIndex: 0, fx: 0.5, fy: 0.5 },
+    }),
+  );
+
+  h.cover(true);
+  h.host.sync();
+  // A write that ends behind the cover selects the new mark.
+  update(h.surface, selectMark("WORD2222"));
+
+  h.cover(false);
+  h.host.sync();
+  expect(h.popup()?.hoverEl.hasAttribute("data-zt-covered")).toBe(false);
+  expect(h.popup()?.staticPos).toEqual({ x: 220, y: 182 });
+  expect(h.popup()?.hoverEl.textContent).toBe("selected row");
+});
+
 it("opens nothing for a quiet selection, and opens for the next one", () => {
   using h = host();
 

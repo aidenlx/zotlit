@@ -79,6 +79,7 @@ export class MarkPopupHost implements Disposable {
   readonly #deps;
   readonly #unsubscribe;
   #popup: MarkPopup | null = null;
+  #changedWhileCovered = false;
 
   constructor(deps: MarkPopupHostDeps) {
     this.#deps = deps;
@@ -111,11 +112,18 @@ export class MarkPopupHost implements Disposable {
     this.#hide();
   }
 
-  #place({ refresh }: { refresh: boolean }): void {
+  #place(options: { refresh: boolean }): void {
     // A covered view keeps its popup, hidden, so an editor in it lives on.
+    // A change that floats while it is covered draws the row again on the
+    // first place after the cover lifts.
     const covered = !this.#deps.shown();
     this.#popup?.hoverEl.toggleAttribute("data-zt-covered", covered);
-    if (covered) return;
+    if (covered) {
+      this.#changedWhileCovered ||= options.refresh;
+      return;
+    }
+    const refresh = options.refresh || this.#changedWhileCovered;
+    this.#changedWhileCovered = false;
     const state = current(this.#deps.surface);
     const { floating } = state;
     // A press on a grip hides the popup, so it never covers the edge being
