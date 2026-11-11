@@ -1,4 +1,4 @@
-// Broadsheet OG card: the "Manuscript & Machine" social image shared by every
+// Broadsheet OG card: the "Journal" social image shared by every
 // page type. A takumi renderer (built once, its Google Fonts registered lazily)
 // draws a 1200×630 card — mono-uppercase category, serif headline, sans deck,
 // mark + wordmark footer. Styling is Tailwind via takumi's `tw` prop.
@@ -91,9 +91,9 @@ function ZotLitMark() {
 
 function OGCard({ kind, title, description, meta, hero }: CardProps) {
   return (
-    <div tw="flex flex-col w-full h-full bg-[#faf7ef] px-[84px] py-[72px] font-['Inter']">
+    <div tw="flex flex-col w-full h-full bg-[#f7f5f0] px-[84px] py-[72px] font-['Inter']">
       <div tw="flex flex-col self-start">
-        <div tw="font-['IBM_Plex_Mono'] font-semibold text-[30px] tracking-[5px] text-[#E8622C]">
+        <div tw="font-['IBM_Plex_Mono'] font-semibold text-[30px] tracking-[5px] text-[#b9461a]">
           {kind.toUpperCase()}
         </div>
         <div tw="flex w-full h-[6px] mt-[18px] bg-[#E8622C]" />
@@ -103,18 +103,18 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
         <div
           tw={`font-['Gelasio'] font-medium ${
             hero ? "text-[150px]" : "text-[84px]"
-          } leading-[1.05] tracking-[-1px] text-[#1E3A5F] max-w-[1000px] text-balance`}
+          } leading-[1.05] tracking-[-1px] text-[#1b2029] max-w-[1000px] text-balance`}
         >
           {title}
         </div>
         {description ? (
-          <div tw="font-['Inter'] text-[35px] leading-[1.4] text-[#22354d] max-w-[820px] mt-[26px]">
+          <div tw="font-['Inter'] text-[35px] leading-[1.4] text-[#5f6672] max-w-[820px] mt-[26px]">
             {description}
           </div>
         ) : null}
       </div>
 
-      <div tw="flex flex-row items-center justify-between border-t-[4px] border-[#1E3A5F] pt-[24px]">
+      <div tw="flex flex-row items-center justify-between border-t-[4px] border-[#1b2029] pt-[24px]">
         <div tw="flex flex-row items-center leading-none">
           <ZotLitMark />
           <div tw="flex flex-row font-['Archivo'] font-semibold text-[32px] tracking-[-0.32px] ml-[8px]">
@@ -122,7 +122,7 @@ function OGCard({ kind, title, description, meta, hero }: CardProps) {
             <span tw="text-[#E8622C]">Lit</span>
           </div>
         </div>
-        <div tw="font-['IBM_Plex_Mono'] font-medium text-[24px] text-[#22354d]">
+        <div tw="font-['IBM_Plex_Mono'] font-medium text-[24px] text-[#5f6672]">
           {meta}
         </div>
       </div>

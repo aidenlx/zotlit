@@ -3,7 +3,7 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
-/* The four faces of the "Manuscript & Machine" type system, self-hosted from
+/* The four faces of the site's type system, self-hosted from
    Fontsource so the site serves its own font files. Each family ships one
    @font-face per unicode subset, so a reader only downloads the subset the
    page actually uses. Gelasio and Inter both load upright and italic; IBM Plex
@@ -87,58 +87,68 @@
 
 /* ZotLit brand palette — see docs/brand.md. Orange carries the interactive
    accent; navy/light ink carries structure and drives the mark. */
-/* "Manuscript & Machine" site theme — cream ground, navy ink, deep-orange
+/* "Journal" site theme — warm paper ground, near-black ink, deep-orange
    accent. Applies site-wide (including /docs) since one token system drives
-   the whole site. */
+   the whole site. --color-fd-primary is the accent text tone, which carries
+   text and the fills that carry text; --color-fd-ring is the brighter accent
+   for marks (focus rings, dots, rules). Contrast is measured in DESIGN.md.
+   @see apps/docs/DESIGN.md → Tokens */
 :root {
-  --color-fd-background: oklch(97.33% 0.0111 89.72); /* #f9f6ee */
-  --color-fd-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-card: oklch(99.39% 0.0082 91.48); /* #fffdf7 */
-  --color-fd-card-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-popover: oklch(99.39% 0.0082 91.48); /* #fffdf7 */
-  --color-fd-popover-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-border: oklch(86.42% 0.0226 89.81); /* #d8d2c2 */
-  --color-fd-muted: oklch(94.87% 0.0137 92.98); /* #f1eee4 */
-  --color-fd-muted-foreground: oklch(52.94% 0.0384 255.32); /* #5d6d82 */
-  --color-fd-secondary: oklch(94.87% 0.0137 92.98); /* #f1eee4 */
-  --color-fd-secondary-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-accent: oklch(95.04% 0.0204 62.86); /* #f9ece1 */
-  --color-fd-accent-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
-  --color-fd-primary: oklch(
-    0.54 0.17 40.45
-  ); /* orange text and filled controls meet 4.5:1 on the light surfaces */
-  --color-fd-primary-foreground: oklch(96.13% 0.0111 89.72);
-  --color-fd-ring: oklch(0.58 0.17 40.45);
+  --color-fd-background: #f7f5f0;
+  --color-fd-foreground: #1b2029;
+  --color-fd-card: #ffffff;
+  --color-fd-card-foreground: #1b2029;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #1b2029;
+  --color-fd-border: #e3dfd6;
+  --color-fd-muted: #f0ede6;
+  --color-fd-muted-foreground: #5f6672;
+  --color-fd-secondary: #f0ede6;
+  --color-fd-secondary-foreground: #1b2029;
+  --color-fd-accent: #fbf1e6;
+  --color-fd-accent-foreground: #1b2029;
+  --color-fd-primary: #b9461a;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-ring: #e8622c;
+  /* The shadow ring: elevation for raised surfaces. */
+  --zt-shadow-ring:
+    0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 2px -1px oklch(0 0 0 / 0.06),
+    0 2px 4px 0 oklch(0 0 0 / 0.04);
+  --zt-shadow-ring-hover:
+    0 0 0 1px oklch(0 0 0 / 0.08), 0 1px 2px -1px oklch(0 0 0 / 0.08),
+    0 2px 4px 0 oklch(0 0 0 / 0.06);
   --zotlit-ink: oklch(34.62% 0.0736 256.04); /* #1e3a5f */
   --zotlit-accent: oklch(65.74% 0.1789 40.45); /* #e8622c */
 }
 
 .dark {
-  --color-fd-background: oklch(23% 0.0232 262.36); /* #171d28 */
-  --color-fd-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-card: oklch(26.29% 0.0271 259.99); /* #1d2532 */
-  --color-fd-card-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-popover: oklch(26.29% 0.0271 259.99); /* #1d2532 */
-  --color-fd-popover-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-border: oklch(35.31% 0.0316 257.68); /* #313c4c */
-  --color-fd-muted: oklch(31.01% 0.0288 256.84); /* #27313f */
-  --color-fd-muted-foreground: oklch(70.71% 0.0339 255.63); /* #93a2b6 */
-  --color-fd-secondary: oklch(31.01% 0.0288 256.84); /* #27313f */
-  --color-fd-secondary-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-accent: oklch(32.99% 0.0116 9.17); /* #3b3334 */
-  --color-fd-accent-foreground: oklch(91.65% 0.0156 257.2); /* #dde4ee */
-  --color-fd-primary: oklch(
-    0.75 0.155 45
-  ); /* lifted orange, ~7:1 vs the dark ground */
-  --color-fd-primary-foreground: oklch(
-    0.22 0.04 256
-  ); /* near-black with navy tint, ~7:1 */
-  --color-fd-ring: oklch(0.75 0.155 45);
+  --color-fd-background: #121418;
+  --color-fd-foreground: #e9e6df;
+  --color-fd-card: #1b1e24;
+  --color-fd-card-foreground: #e9e6df;
+  --color-fd-popover: #1b1e24;
+  --color-fd-popover-foreground: #e9e6df;
+  --color-fd-border: #2d3037;
+  --color-fd-muted: #23262d;
+  --color-fd-muted-foreground: #9b978f;
+  --color-fd-secondary: #23262d;
+  --color-fd-secondary-foreground: #e9e6df;
+  --color-fd-accent: #2a221d;
+  --color-fd-accent-foreground: #e9e6df;
+  --color-fd-primary: #f0793f;
+  --color-fd-primary-foreground: #121418;
+  --color-fd-ring: #f0793f;
+  --zt-shadow-ring: 0 0 0 1px oklch(1 0 0 / 0.08);
+  --zt-shadow-ring-hover: 0 0 0 1px oklch(1 0 0 / 0.13);
   --zotlit-ink: oklch(90.94% 0.022 256.73); /* #d8e2f0 */
   --zotlit-accent: oklch(70.36% 0.163 44.66); /* #f0793f */
 }
 
 @theme inline {
+  /* Elevation: `shadow-ring` raises a surface; `shadow-ring-hover` lifts it. */
+  --shadow-ring: var(--zt-shadow-ring);
+  --shadow-ring-hover: var(--zt-shadow-ring-hover);
+
   /* shadcn controls share the site's semantic palette. */
   --color-background: var(--color-fd-background);
   --color-foreground: var(--color-fd-foreground);
