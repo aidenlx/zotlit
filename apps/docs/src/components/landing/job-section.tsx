@@ -108,7 +108,9 @@ export const JobSection = memo(function JobSection({
       id={jobAnchor(job.id)}
       tabIndex={-1}
       aria-labelledby={`${jobAnchor(job.id)}-title`}
-      className="scroll-mt-32 border-t border-fd-border pt-14 pb-20 outline-none lg:scroll-mt-14 lg:pt-16 lg:pb-24"
+      // Off-screen sections skip style and layout until they come near; the
+      // browser remembers each one's size once drawn, so nothing shifts.
+      className="scroll-mt-32 border-t border-fd-border pt-14 pb-20 outline-none [contain-intrinsic-size:auto_1800px] [content-visibility:auto] lg:scroll-mt-14 lg:pt-16 lg:pb-24"
     >
       <header className="max-w-[44rem]">
         <div className="flex items-center gap-3">

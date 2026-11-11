@@ -237,9 +237,18 @@
   --shadow-ring-hover: var(--zt-shadow-ring-hover);
 
   /* The landing hero's entrance, once: `animate-landing-rise` lifts and
-     unblurs, `animate-landing-fade` fades alone (reduced motion). */
+     unblurs, `animate-landing-fade` fades alone (reduced motion). The title,
+     the page's largest paint, takes `animate-landing-lift`: the rise and the
+     blur without the fade, so it counts as painted from the first frame. */
   --animate-landing-rise: landing-rise 300ms ease-out both;
   --animate-landing-fade: landing-fade 300ms ease-out both;
+  --animate-landing-lift: landing-lift 300ms ease-out both;
+  @keyframes landing-lift {
+    from {
+      transform: translateY(12px);
+      filter: blur(4px);
+    }
+  }
   @keyframes landing-rise {
     from {
       opacity: 0;

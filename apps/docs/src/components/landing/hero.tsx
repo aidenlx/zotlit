@@ -42,7 +42,8 @@ export function Hero({
           id="landing-title"
           className={cn(
             "font-serif text-[2.6rem] leading-[1.02] font-medium tracking-[-0.015em] text-balance sm:text-[3.6rem] lg:text-[4.4rem]",
-            ENTER,
+            // The largest paint: it rises without the fade, so it counts as painted at once.
+            "motion-safe:animate-landing-lift",
           )}
         >
           <Message

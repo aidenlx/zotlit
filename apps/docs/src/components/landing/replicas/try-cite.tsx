@@ -10,7 +10,7 @@
 // render-hit.ts, views/citation-suggest/) and the `zt-citation` widget
 // (services/citekey-editor/).
 
-import { NotebookPen } from "lucide-react";
+import { ArrowRight, NotebookPen } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
@@ -32,11 +32,9 @@ const CITATION = /\[@([^\]\s,;]+)(?:,\s*p(?:p)?\.\s*([^\]]+?))?\s*\]/g;
 /** An open `[@query` at the end of the text: the suggester's trigger. */
 const TRIGGER = /\[@([^\]\s,;]*)$/;
 
-/** The papers the draft already cites, which the suggester lists first. */
+/** The papers the draft's first paragraph cites, which the suggester lists first. */
 const CITED = new Set(
-  DRAFT_TEXT.flat().flatMap((run) =>
-    typeof run === "string" ? [] : [run.key],
-  ),
+  DRAFT_TEXT[0]!.flatMap((run) => (typeof run === "string" ? [] : [run.key])),
 );
 
 /** Splits text into plain runs and citations. */
@@ -142,10 +140,11 @@ export default function TryCite() {
       }
     }
     const el = e.currentTarget;
-    const atEnd = el.selectionStart === el.value.length;
+    // The cursor leaves the citation: past its closing bracket, or already beyond it.
+    const leaving = (el.selectionStart ?? 0) >= el.value.length - 1;
     if (
       e.key === "Enter" ||
-      (e.key === "ArrowRight" && atEnd && text.endsWith("]"))
+      (e.key === "ArrowRight" && leaving && text.endsWith("]"))
     ) {
       e.preventDefault();
       commit();
@@ -175,15 +174,13 @@ export default function TryCite() {
   let message;
   if (cited && !text)
     message = (
-      <>
-        {m.docs_home_try_done()}{" "}
-        <a
-          href={localizeHref(INSTALL_HREF)}
-          className="font-semibold text-fd-primary underline underline-offset-4"
-        >
-          {m.docs_home_install()}
-        </a>
-      </>
+      <a
+        href={localizeHref(INSTALL_HREF)}
+        className="inline-flex items-center gap-1.5 font-semibold text-fd-primary underline underline-offset-4"
+      >
+        {m.docs_home_try_done()}
+        <ArrowRight aria-hidden className="size-4" strokeWidth={2.25} />
+      </a>
     );
   else if (pending && !pending[2])
     message = (
@@ -243,7 +240,7 @@ export default function TryCite() {
                   }}
                   onKeyDown={onKeyDown}
                   onBlur={commit}
-                  className="ms-0.5 inline-block max-w-full rounded-sm border-b border-dashed border-fd-muted-foreground/60 bg-transparent px-0.5 font-mono text-[14px] text-fd-foreground outline-none focus-visible:border-solid focus-visible:border-fd-ring focus-visible:bg-fd-accent"
+                  className="ms-0.5 inline-block max-w-full rounded-sm border-b border-dashed border-fd-muted-foreground/60 bg-transparent px-0.5 text-[15px] text-fd-foreground outline-none focus-visible:border-solid focus-visible:border-fd-ring focus-visible:bg-fd-accent"
                 />
               </p>
               <div

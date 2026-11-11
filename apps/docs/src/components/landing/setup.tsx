@@ -23,10 +23,13 @@ import { ActionLink, INSTALL_HREF, TUTORIAL_HREF } from "./parts";
 const LABEL =
   "font-mono text-[11px] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase";
 
+/** Opens ZotLit's page in Obsidian's community plugin browser, as the install docs do. */
+const SHOW_IN_OBSIDIAN = "obsidian://show-plugin?id=zotlit";
+
 function MoreLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a
-      href={localizeHref(href)}
+      href={href.startsWith("/") ? localizeHref(href) : href}
       className="inline-flex items-center gap-1 text-[14.5px] font-semibold text-fd-foreground transition-colors duration-150 ease-out hover:text-fd-primary"
     >
       {children}
@@ -40,7 +43,7 @@ export function Setup({ repo }: { repo: ReactNode }) {
     {
       name: m.docs_home_step_install(),
       line: m.docs_home_step_install_line(),
-      href: INSTALL_HREF,
+      href: SHOW_IN_OBSIDIAN,
       link: m.docs_home_step_open_obsidian(),
     },
     {

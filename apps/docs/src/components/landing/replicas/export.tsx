@@ -43,7 +43,7 @@ function Field({
 
 function Dialog() {
   return (
-    <div className="grid place-items-center bg-fd-foreground/5 p-4 @md:p-8">
+    <div className="grid h-full place-items-center bg-fd-foreground/5 p-4 @md:p-8">
       <div className="w-full max-w-[28rem] rounded-xl bg-fd-card p-4 shadow-ring">
         <p className="pb-3 text-[15px] font-semibold">
           {m.pandoc_export_title()}
@@ -111,7 +111,7 @@ export default function ExportReplica() {
         title={done ? `${DRAFT}.docx` : `${DRAFT}.md`}
         label={`${m.pandoc_export_title()}: ${DRAFT}.docx, ${STYLE}`}
       >
-        <div className="grid *:[grid-area:1/1]">
+        <div className="grid grid-cols-[minmax(0,1fr)] *:[grid-area:1/1]">
           <div className={cn(!done && "invisible")}>
             <WordPage />
           </div>

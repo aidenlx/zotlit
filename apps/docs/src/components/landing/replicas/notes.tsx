@@ -1,7 +1,7 @@
 // Job 4, "Take literature notes": the note ZotLit writes for Sandve et al.
 // 2013 under the Default profile, drawn from the renderer's real output
-// (rendered-note.ts) as Live Preview shows it: the properties (the Workbench's
-// real PropertyList), the title, the Zotero link, and the Annotations query
+// (rendered-note.ts) as Live Preview shows it: the properties (as the
+// Workbench draws them), the title, the Zotero link, and the Annotations query
 // block as live annotation cards. The loop picks the paper in the quick
 // switcher first.
 
@@ -139,11 +139,11 @@ export default function NotesReplica() {
         label={`${RENDERED_NOTE.filename}.md: ${paper("sandve2013").title}`}
       >
         {/* Both frames share one cell, so the window keeps its height through the loop. */}
-        <div className="grid *:[grid-area:1/1]">
+        <div className="grid grid-cols-[minmax(0,1fr)] *:[grid-area:1/1]">
           <div className={cn(!written && "invisible")}>
             <NoteBody />
           </div>
-          <div className={cn(written && "invisible")}>
+          <div className={cn("self-center", written && "invisible")}>
             <Switcher />
           </div>
         </div>

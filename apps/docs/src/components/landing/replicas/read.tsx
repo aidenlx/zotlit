@@ -17,6 +17,7 @@ import { ReplicaWindow } from "./window";
 
 const NEW = SANDVE_HIGHLIGHTS[4]!;
 
+/** Filler text lines on the page, in the light line tone: the PDF page stays white in both schemes. */
 function Lines({ widths }: { widths: readonly number[] }) {
   return (
     <>
@@ -24,7 +25,7 @@ function Lines({ widths }: { widths: readonly number[] }) {
         // oxlint-disable-next-line react/no-array-index-key -- fixed filler lines
         <span
           key={i}
-          className="block h-[5px] rounded-full bg-fd-border"
+          className="block h-[5px] rounded-full bg-[#e3dfd6]"
           style={{ width: `${w}%` }}
         />
       ))}

@@ -1,7 +1,7 @@
 // Job 8, "Make it yours": the Template Workbench with the Default profile's
 // real note template on the left and, on the right, the note preview ZotLit's
 // renderer produced from it for Sandve et al. 2013 (rendered-note.ts), its
-// properties drawn by the Workbench's own PropertyList. A still: the template
+// properties drawn as the Workbench draws them. A still: the template
 // and the note it makes, side by side.
 
 import { Braces, SlidersHorizontal } from "lucide-react";

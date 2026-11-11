@@ -131,7 +131,7 @@ export function LandingPage({
     >
       <DeskSprite />
       <PhoneBar />
-      <main className="mx-auto w-full max-w-[1304px] px-4 sm:px-8">
+      <div className="mx-auto w-full max-w-[1304px] px-4 sm:px-8">
         <Hero slotRef={heroSlot} figureRef={heroFigure} />
         <div
           ref={grid}
@@ -158,7 +158,7 @@ export function LandingPage({
         </div>
         <Setup repo={repo} />
         {footer}
-      </main>
+      </div>
       {morph && (
         <div
           ref={layer}
