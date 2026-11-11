@@ -3,7 +3,6 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { RepoDatum, loadRepoStats } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
 import { appDescription, HOME_OG_ALT, pageHead } from "@/lib/seo";
-import { appName } from "@/lib/shared";
 import {
   organizationSchema,
   softwareApplicationSchema,
@@ -17,7 +16,7 @@ export const Route = createFileRoute("/_home/")({
   loader: () => loadRepoStats(),
   head: () =>
     pageHead({
-      ogTitle: appName,
+      fullTitle: m.docs_home_document_title(),
       description: appDescription(),
       path: "/",
       card: { type: "home", alt: HOME_OG_ALT() },
