@@ -6513,7 +6513,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             undefined,
             {
               what: "the create popup to hide behind the new tab",
-              ready: (value) => value.tab === "empty",
+              // The new tab can be the most recent leaf a moment before its
+              // active-leaf-change places the popup.
+              ready: (value) => value.tab === "empty" && !value.shown,
             },
           ),
         ).toEqual({ shown: false, tab: "empty" });
