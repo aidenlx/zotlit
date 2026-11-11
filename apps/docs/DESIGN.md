@@ -318,24 +318,27 @@ control vocabulary, typography, responsive folds, and the enforcement table.
 
 ### Landing (`src/routes/_home/index.tsx`)
 
-Target. Prototype: `apps/docs/landing-prototype/landing-prototype.html` on
+Built in `src/components/landing/`. Prototype:
+`apps/docs/landing-prototype/landing-prototype.html` on
 `prototype/landing-research-desk`.
 
-The landing tells one story: **"An integrated research desk for Obsidian."**
+The landing tells one story: **"A research desk for Zotero in Obsidian."**
 Eight research jobs in the order a researcher meets them, each with its
 replica and its complete feature list. Content width 1240px with 32px side
 gutters (16px on phones).
 
-- **Header.** The shared home nav (see Owned layout slots). The GitHub link
-  carries the live star count (`<RepoDatum>`).
-- **Hero.** Two columns from 1024px. Left: the H1 "An integrated research desk
-  for Obsidian." (display, 4.4rem / 1.02; 3.6rem from 640px; 2.6rem on phones)
+- **Header.** The shared home nav (see Owned layout slots). It sticks at the
+  viewport top, 56px tall; the landing's sticky parts sit below it. The live
+  repository counters (`<RepoDatum>`) sit under the licence line in Setup.
+- **Hero.** Two columns from 1024px. Left: the H1 "A research desk for Zotero
+  in Obsidian." (display, 4.4rem / 1.02; 3.6rem from 640px; 2.6rem on phones)
   with the highlighter on "research desk". Right, aligned to the H1's last
-  line: the supporting line "Find, read, annotate, cite and export the papers
-  in your Zotero library, right beside the notes you write." (sans 18px,
-  muted, 46ch); **Install ZotLit** (primary) and **Read the docs**
-  (secondary); the requirement line in muted 13.5px — Obsidian version ·
-  Zotero version · desktop platforms. One column below 1024px.
+  line: the supporting line "Find, read, annotate, cite and export your
+  papers, right beside the notes you write." (sans 18px, muted, 46ch);
+  **Install ZotLit** (primary, to the install page) and **Start the
+  tutorial** (secondary, to `/learn`); the requirement line in muted 13.5px —
+  Obsidian version · Zotero versions · desktop platforms. One column below
+  1024px.
 - **Hero entrance, once.** Title, supporting line (+100 ms), actions and
   requirements (+200 ms), the figure (+300 ms): opacity, 4px blur and a 12px
   rise over 300 ms ease-out. Under reduced motion: opacity only.
@@ -350,7 +353,7 @@ gutters (16px on phones).
   (`max-width: calc(100% - 364px)`).
 - **Contents column (from 1024px).** The job sections run in a
   `minmax(0, 1fr)` column beside a 300px column, 64px apart. The 300px column
-  sticks 32px below the viewport top and holds the docked desk (no markers;
+  sticks 32px below the home nav and holds the docked desk (no markers;
   the job in view ringed, the others faded), the "Contents" label, the eight
   jobs as rows (mono number + name; the current row raised on the surface with
   the shadow ring, its number in the accent text tone), and an "Install
@@ -358,7 +361,7 @@ gutters (16px on phones).
   viewport height. Selecting a docked object or a contents row jumps to the
   job; smooth scrolling only when motion is on.
 - **The desk shrinks into the column.** Scroll progress `p` runs from 0, when
-  the hero desk's top reaches 72px from the viewport top, to 1, when the job
+  the hero desk's top reaches 16px below the home nav, to 1, when the job
   column's top reaches the sticky line. Between the two, a fixed copy of the
   desk, anchored at its right edge, narrows from the hero width to the column
   width over the first 55% of `p` and moves to the column's top over all of
@@ -372,31 +375,49 @@ gutters (16px on phones).
   copy: the hero desk stays in place, and the docked desk and contents list
   cross-fade in over 150 ms at `p = 1`.
 - **Below 1024px.** The hero desk and key, then the sections in one column,
-  each heading led by its object icon. Once the figure has scrolled out, a top
-  bar appears (ground at 90% with a backdrop blur and a hairline below): the
+  each heading led by its object icon. Once the figure has scrolled out, a bar
+  appears under the home nav (ground at 90% with a backdrop blur and a
+  hairline below): the
   eight object icons with their numbers, the current one on a raised tile, and
   the current job's name under the row. It enters with opacity and a 12px drop
   over 300 ms (opacity only under reduced motion) and is `inert` while hidden;
   sections carry a scroll margin that clears it.
 - **Job sections.** A hairline rule, then "03 / 08" (mono 12px, the job number
   in the accent text tone), the job name as H2 (display, 2.6rem / 1.08), and
-  one outcome line (sans 17.5px, muted, 52ch). Then each replica as a figure:
-  the working window, a caption "Shown: *feature*" with its badges, and an
-  optional one-line hint. Then **"In this job"**: every feature of the job,
-  name linked to its docs page, badges (New in 2.2, Since 2.1, For power
-  users, Experimental, Needs ZotLit Companion), and the one-line description;
-  a filled accent dot marks the features the replica shows working. Two
-  columns from 1280px.
+  one outcome line (sans 17.5px, muted, 52ch). Then the job's lead replica as
+  a figure: the working window and a caption "Shown: *feature*" with its
+  badges. Then **"In this job"**: every feature of the job, name linked to its
+  docs page, badges (New in 2.2, Since 2.1, For power users, Needs ZotLit
+  Companion), and the one-line description; a filled accent dot marks the
+  features the replica shows working. Two columns from 1280px, and from 768px
+  below 1024px.
 - **Replicas.** Small app windows that show one feature working (see
-  Illustration). Each window carries only the chrome the feature needs: a
-  title bar and the pane that matters. The loop rule in Motion applies.
+  Illustration), in `src/components/landing/replicas/`. Each window carries
+  only the chrome the feature needs: a title bar and the pane that matters.
+  Inside, the plugin's own labels (its `m.*` messages), Lucide icons and
+  class vocabulary on the site tokens (the Workbench's property grid among them); and
+  the Default profile's real output for Sandve et al. 2013
+  (`rendered-note.ts`, kept in step by its test). The papers, the collection
+  and the draft are the docs Fixture's. A loop rests on its finished frame,
+  which is also the prerendered HTML, and keeps the window's height through
+  every frame. The loop rule in Motion applies.
+- **Try it: "Cite while you write".** The job's replica is a draft the visitor
+  types in: `[@` opens the citation suggester over the five papers (those the
+  draft already cites first), Enter or a click inserts `[@key]` with the
+  cursor before the bracket, and moving past the bracket renders it, as
+  `[@sandve2013, p. 2]` → "(Sandve et al. 2013, 2)". Backspace in the empty
+  field takes the last citation back into Markdown. Under the window: the
+  hint, then the page hint, then a link to install; and **Reset draft**. The
+  page prints the finished frame and loads the working draft when the job
+  comes within a viewport, in the same box.
 - **Setup: "Set up your desk".** Left: the H2, "Three steps, all inside
   Obsidian.", **Install ZotLit** and **Start the tutorial**. Right: the three
   install steps in one raised card (14px radius; three columns divided by
   hairlines from 768px), each with "Step N", its name, one line and a link;
-  then "What you need" and "Optional add-ons for Zotero" as label-headed
-  lists; then the privacy and licence lines with Lucide icons, under a
-  hairline.
+  then "What you need" (Obsidian, Zotero, desktop, the Pandoc engine) and
+  "Optional add-ons for Zotero" (ZotLit Companion, Better BibTeX) as
+  label-headed lists; then the privacy and licence lines with Lucide icons,
+  under a hairline.
 - **Footer.** The shared copyright footer (`src/components/site-footer.tsx`):
   hairline-topped "© year AidenLx · AGPL-3.0 Licensed" line, shared across all
   `_home` index surfaces (landing, blog index, changelog index).
@@ -443,8 +464,9 @@ stands for one research job:
   | Books | `#44587a`, `#8a7660`, `#8e3f35` | `#34445e`, `#6b5c4b`, `#6e342d` |
   | Cork | `#ece5d6` | `#8f887c` |
 
-  The full set is the `[data-v="A"][data-kit]` block in the prototype's
-  `R4_CSS`.
+  The full set is the `--desk-*` tokens in `src/styles.css`, both schemes.
+  Each object is drawn once, in a zero-size sprite, and every desk and
+  pictogram on the page `<use>`s it.
 - **States.** The object in focus (pointed at, or the job in view) gets a 2px
   accent ring, a rounded rectangle 14 units outside it; the other objects fade
   to 35% opacity. In the hero, numbered markers sit at each object's corner:

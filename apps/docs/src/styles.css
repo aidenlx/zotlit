@@ -127,6 +127,55 @@
   --zt-check: #1f5c39;
   --zt-check-bg: #e9f3ec;
   --zt-check-label: #2f7d4f;
+  /* Zotero's annotation colours: domain data, the same in both schemes. They
+     appear only where they mean Zotero highlights — the desk's open paper and
+     the landing's replicas. */
+  --z-yellow: #ffd400;
+  --z-red: #ff6666;
+  --z-green: #5fb236;
+  --z-blue: #2ea8e5;
+  --z-purple: #a28ae5;
+  --z-magenta: #e56eee;
+  --z-orange: #f19837;
+  --z-gray: #aaaaaa;
+  /* Rendered citations inside the landing's replicas. */
+  --zt-cite: #2756b0;
+  /* The highlighter: the one marked phrase on a page. */
+  --zt-highlighter: color-mix(in oklab, var(--z-yellow) 48%, transparent);
+  /* The research desk: warm, desaturated cloth and wood tones.
+     @see apps/docs/DESIGN.md → The research desk */
+  --desk-surface: #ebe7de;
+  --desk-paper: #ffffff;
+  --desk-edge: #a7a297;
+  --desk-text: #e3dfd7;
+  --desk-head: #3b4250;
+  --desk-ink-soft: rgb(59 66 80 / 0.28);
+  --desk-shadow: rgb(60 45 20 / 0.16);
+  --desk-shadow-deep: rgb(20 24 32 / 0.3);
+  --desk-steel: #dcd7cd;
+  --desk-steel-deep: #cbc5b9;
+  --desk-tray: #3b4555;
+  --desk-tray-deep: #2e3744;
+  --desk-cork: #ece5d6;
+  --desk-laptop: #d9dbdf;
+  --desk-key: #c6c9cf;
+  --desk-screen: #222a36;
+  --desk-screen-side: #1a212c;
+  --desk-notebook: #56685b;
+  --desk-book1: #44587a;
+  --desk-book2: #8a7660;
+  --desk-book3: #8e3f35;
+  --desk-glass: #e9eef3;
+  --desk-coffee: #6e4d36;
+  --desk-pen: #3a4d6e;
+  --desk-rule: rgb(39 86 176 / 0.16);
+  --desk-sticky: #dde6f0;
+  --desk-tool-seam: rgb(0 0 0 / 0.22);
+  --desk-blotter: #2d3746;
+  --desk-blot-corner: #252e3b;
+  --desk-stitch: rgb(255 255 255 / 0.16);
+  --desk-hl-y: rgb(255 212 0 / 0.42);
+  --desk-hl-p: rgb(162 138 229 / 0.32);
 }
 
 .dark {
@@ -153,6 +202,40 @@
   --zt-check: #7cc79a;
   --zt-check-bg: #17261d;
   --zt-check-label: #7cc79a;
+  --zt-cite: #8aaaf0;
+  --zt-highlighter: color-mix(in oklab, var(--z-yellow) 30%, transparent);
+  --desk-surface: #1b1e23;
+  --desk-paper: #c9c5bd;
+  --desk-edge: #3a3e46;
+  --desk-text: #aba79f;
+  --desk-head: #333843;
+  --desk-ink-soft: rgb(30 34 40 / 0.35);
+  --desk-shadow: rgb(0 0 0 / 0.4);
+  --desk-shadow-deep: rgb(0 0 0 / 0.45);
+  --desk-steel: #4a4f58;
+  --desk-steel-deep: #3c4048;
+  --desk-tray: #2b3442;
+  --desk-tray-deep: #222935;
+  --desk-cork: #8f887c;
+  --desk-laptop: #5a5e66;
+  --desk-key: #474b53;
+  --desk-screen: #10151d;
+  --desk-screen-side: #0c1017;
+  --desk-notebook: #3d4c42;
+  --desk-book1: #34445e;
+  --desk-book2: #6b5c4b;
+  --desk-book3: #6e342d;
+  --desk-glass: #9aa3ae;
+  --desk-coffee: #3e2c20;
+  --desk-pen: #2f3d57;
+  --desk-rule: rgb(138 170 240 / 0.2);
+  --desk-sticky: #9fb0c4;
+  --desk-tool-seam: rgb(0 0 0 / 0.3);
+  --desk-blotter: #283241;
+  --desk-blot-corner: #1d2532;
+  --desk-stitch: rgb(255 255 255 / 0.1);
+  --desk-hl-y: rgb(255 212 0 / 0.38);
+  --desk-hl-p: rgb(162 138 229 / 0.36);
 }
 
 @theme inline {
@@ -162,6 +245,32 @@
   --color-check: var(--zt-check);
   --color-check-bg: var(--zt-check-bg);
   --color-check-label: var(--zt-check-label);
+
+  /* The landing hero's entrance, once: `animate-landing-rise` lifts and
+     unblurs, `animate-landing-fade` fades alone (reduced motion). The title,
+     the page's largest paint, takes `animate-landing-lift`: the rise and the
+     blur without the fade, so it counts as painted from the first frame. */
+  --animate-landing-rise: landing-rise 300ms ease-out both;
+  --animate-landing-fade: landing-fade 300ms ease-out both;
+  --animate-landing-lift: landing-lift 300ms ease-out both;
+  @keyframes landing-lift {
+    from {
+      transform: translateY(12px);
+      filter: blur(4px);
+    }
+  }
+  @keyframes landing-rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+      filter: blur(4px);
+    }
+  }
+  @keyframes landing-fade {
+    from {
+      opacity: 0;
+    }
+  }
 
   /* shadcn controls share the site's semantic palette. */
   --color-background: var(--color-fd-background);
