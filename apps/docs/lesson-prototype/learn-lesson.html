@@ -1,0 +1,937 @@
+<!doctype html>
+<!--
+PROTOTYPE — throwaway. Not production code.
+
+Question: does a picture-led step read well for a tired, non-technical academic
+who keeps Obsidian open beside this page?
+
+One shape (the owner chose one shape over five variants): a lesson at /learn,
+outside the Fumadocs docs layout. Each step is one view plus a caption:
+  - a screenshot with numbered marks on the controls,
+  - the action as a caption that names the marks,
+  - one "you should see" line,
+  - "I see something else" for the likely failure.
+Other views used where they fit: a map (where things live), a before/after
+pair, a two-column table (what is yours, what ZotLit keeps current), a strip
+of the steps.
+
+Content: Lesson 1 of course-outline.md. Screenshots: the docs walks on
+trial/lessons-on-next (26 Oct build), so some screens are older than `next`.
+Style: the approved "Journal" tokens from prototype/landing-research-desk.
+The column is narrow on purpose: the reader's other half-screen is Obsidian.
+
+VERDICT: pending — the owner has not judged this yet.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Learn ZotLit — lesson prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@600&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Source+Sans+3:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+    <style>
+      :root {
+        --ground: #f7f5f0;
+        --surface: #ffffff;
+        --ink: #1b2029;
+        --muted: #5f6672;
+        --line: #e3dfd6;
+        --accent: #e8622c;
+        --accent-text: #b9461a;
+        --ok: #2f7d4f;
+        --ok-bg: #e9f3ec;
+        --warn-bg: #fbf1e6;
+        --display: "Newsreader", ui-serif, Georgia, serif;
+        --body: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+        --ring:
+          0 0 0 1px rgba(27, 32, 41, 0.08), 0 1px 2px rgba(27, 32, 41, 0.06);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 400 18px/1.5 var(--body);
+        -webkit-font-smoothing: antialiased;
+      }
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      a {
+        color: var(--accent-text);
+      }
+      .label {
+        font: 500 11px/1.2 var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .serif {
+        font-family: var(--display);
+        font-weight: 500;
+        letter-spacing: -0.01em;
+      }
+      .ui {
+        font-weight: 600;
+        background: #efece5;
+        border-radius: 5px;
+        padding: 1px 6px;
+        white-space: nowrap;
+        font-size: 0.94em;
+      }
+      .n {
+        display: inline-grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: var(--accent-text);
+        color: #fff;
+        font: 600 13px/1 var(--body);
+        vertical-align: 2px;
+      }
+
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--line);
+      }
+      .wordmark {
+        font:
+          600 18px/1 "Archivo",
+          sans-serif;
+        color: #1e3a5f;
+      }
+      .wordmark b {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .top .sp {
+        flex: 1;
+      }
+      .top a {
+        font-size: 14px;
+        color: var(--muted);
+        text-decoration: none;
+      }
+
+      .col {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 20px 20px 96px;
+        display: grid;
+        gap: 18px;
+      }
+
+      /* the strip of steps */
+      .strip {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: 1fr;
+        gap: 6px;
+      }
+      .strip button {
+        border: 0;
+        background: none;
+        padding: 6px 0 0;
+        text-align: left;
+        display: grid;
+        gap: 6px;
+        min-height: 44px;
+        align-content: start;
+      }
+      .strip i {
+        display: block;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--line);
+      }
+      .strip .done i {
+        background: var(--accent);
+      }
+      .strip .now i {
+        background: var(--ink);
+      }
+      .strip span {
+        font-size: 12px;
+        line-height: 1.2;
+        color: var(--muted);
+      }
+      .strip .now span {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      @media (max-width: 560px) {
+        .strip span {
+          display: none;
+        }
+      }
+
+      h1 {
+        font-size: 30px;
+        line-height: 1.15;
+      }
+      .cap {
+        font-size: 19px;
+        line-height: 1.5;
+      }
+
+      /* a screenshot crop with numbered marks */
+      .shot {
+        position: relative;
+        width: 100%;
+        border-radius: 10px;
+        box-shadow: var(--ring);
+        background-color: #dfe6ee;
+        background-repeat: no-repeat;
+      }
+      .shot .n {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        width: 26px;
+        height: 26px;
+        font-size: 15px;
+        box-shadow:
+          0 0 0 3px #fff,
+          0 2px 8px rgba(0, 0, 0, 0.35);
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: 1fr auto 1.6fr;
+        gap: 10px;
+        align-items: center;
+      }
+      .pair .arrow {
+        font-size: 22px;
+        color: var(--muted);
+      }
+      .pair figure {
+        margin: 0;
+        display: grid;
+        gap: 6px;
+      }
+      @media (max-width: 560px) {
+        .pair {
+          grid-template-columns: 1fr;
+        }
+        .pair .arrow {
+          transform: rotate(90deg);
+          justify-self: center;
+        }
+      }
+
+      .see {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        color: #1f5c39;
+        background: var(--ok-bg);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+      .see b {
+        font-weight: 600;
+      }
+      .acts {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 20px;
+        font-weight: 600;
+        background: var(--ink);
+        color: #fff;
+        min-height: 46px;
+        transition:
+          background 0.15s,
+          transform 0.15s;
+      }
+      .btn:hover {
+        background: #000;
+      }
+      .btn:active {
+        transform: scale(0.98);
+      }
+      .btn.ghost {
+        background: transparent;
+        color: var(--muted);
+        box-shadow: inset 0 0 0 1px var(--line);
+      }
+      .btn.ghost:hover {
+        background: #fff;
+        color: var(--ink);
+      }
+      .btn.accent {
+        background: var(--accent-text);
+      }
+      .btn:focus-visible,
+      .strip button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .fix {
+        background: var(--warn-bg);
+        border-radius: 10px;
+        padding: 14px;
+        display: grid;
+        gap: 12px;
+        font-size: 17px;
+      }
+      .fix h2 {
+        font: 600 17px/1.3 var(--body);
+      }
+
+      /* the map: where things live */
+      .map {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 10px;
+        align-items: stretch;
+      }
+      .box {
+        background: var(--surface);
+        box-shadow: var(--ring);
+        border-radius: 12px;
+        padding: 14px;
+        display: grid;
+        gap: 6px;
+        align-content: start;
+      }
+      .box h2 {
+        font: 600 17px/1.2 var(--body);
+      }
+      .box ul {
+        margin: 0;
+        padding-left: 18px;
+        color: #3a404b;
+        font-size: 16px;
+      }
+      .flow {
+        display: grid;
+        align-content: center;
+        justify-items: center;
+        gap: 4px;
+        color: var(--muted);
+        font-size: 13px;
+        text-align: center;
+        max-width: 96px;
+      }
+      .flow b {
+        font-size: 24px;
+        font-weight: 400;
+        color: var(--accent-text);
+        line-height: 1;
+      }
+      @media (max-width: 560px) {
+        .map {
+          grid-template-columns: 1fr;
+        }
+        .flow {
+          max-width: none;
+        }
+        .flow b {
+          transform: rotate(90deg);
+        }
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 16.5px;
+      }
+      th {
+        text-align: left;
+        font: 500 11px var(--mono);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        padding: 0 10px 8px 0;
+      }
+      td {
+        border-top: 1px solid var(--line);
+        padding: 10px 10px 10px 0;
+        vertical-align: top;
+      }
+
+      .next {
+        display: block;
+        background: #fff;
+        box-shadow: var(--ring);
+        border-radius: 12px;
+        padding: 14px 16px;
+        text-decoration: none;
+        color: var(--ink);
+      }
+      .next small {
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .fade {
+        animation: fade 0.22s ease both;
+      }
+      @keyframes fade {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .fade {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel" data-presets="react">
+      const { useState } = React;
+
+      const U = ({ children }) => <span className="ui">{children}</span>;
+      const N = ({ children }) => <span className="n">{children}</span>;
+
+      // Captures are 2630 px wide. TALL ones are 2158 px high, WIDE ones 1198.
+      const TALL = 2630 / 2158;
+      const WIDE = 2630 / 1198;
+
+      // A crop [x, y, w, h] of a capture, in fractions of the image, with
+      // numbered marks placed at image fractions [x, y].
+      function Shot({ img, ar, crop, marks = [], alt }) {
+        const [x, y, w, h] = crop;
+        return (
+          <div
+            className="shot"
+            role="img"
+            aria-label={alt}
+            style={{
+              aspectRatio: String((w * ar) / h),
+              backgroundImage: `url(img/${img}.webp)`,
+              backgroundSize: `${100 / w}% ${100 / h}%`,
+              backgroundPosition: `${(x / (1 - w)) * 100}% ${(y / (1 - h)) * 100}%`,
+            }}
+          >
+            {marks.map(([mx, my], i) => (
+              <span
+                key={i}
+                className="n"
+                style={{
+                  left: `${((mx - x) / w) * 100}%`,
+                  top: `${((my - y) / h) * 100}%`,
+                }}
+              >
+                {i + 1}
+              </span>
+            ))}
+          </div>
+        );
+      }
+
+      const WIN = [0.083, 0.1, 0.835, 0.8];
+      const CARD = {
+        img: "find-paper",
+        ar: WIDE,
+        crop: [0.36, 0.18, 0.305, 0.64],
+      };
+
+      const STEPS = [
+        {
+          name: "Install",
+          title: "Install ZotLit",
+          cap: (
+            <>
+              In Obsidian, open <U>Settings</U>, then <U>Community plugins</U>,
+              then <U>Browse</U>. Search for ZotLit. Select <U>Install</U>, then{" "}
+              <U>Enable</U>.
+            </>
+          ),
+          view: (
+            <Shot
+              img="first-screen"
+              ar={TALL}
+              crop={[0.083, 0.1, 0.585, 0.37]}
+              marks={[[0.143, 0.121]]}
+              alt="Obsidian with a new tab named Zotero library."
+            />
+          ),
+          see: (
+            <>
+              A tab named <b>Zotero library</b> opens <N>1</N>.
+            </>
+          ),
+          fix: [
+            [
+              "Obsidian says its installer is too old",
+              "Download Obsidian again from obsidian.md/download and install it over the old one. Then enable ZotLit.",
+            ],
+            [
+              "No tab opened",
+              "Select the ZotLit icon in the ribbon on the left edge of Obsidian.",
+            ],
+          ],
+        },
+        {
+          name: "Connect",
+          title: "Check that ZotLit found Zotero",
+          cap: (
+            <>
+              Look at the first line of the tab. ZotLit finds your Zotero
+              library by itself.
+            </>
+          ),
+          view: (
+            <Shot
+              img="first-screen"
+              ar={TALL}
+              crop={[0.083, 0.165, 0.585, 0.21]}
+              marks={[
+                [0.109, 0.2425],
+                [0.288, 0.2425],
+              ]}
+              alt="The setup steps. Connect to Zotero has a green check and reads 5 items."
+            />
+          ),
+          see: (
+            <>
+              A green check <N>1</N> and the number of items in your library{" "}
+              <N>2</N>.
+            </>
+          ),
+          fix: [
+            [
+              "It says “Zotero not found”",
+              <>
+                In Zotero, open <U>Settings</U>, then <U>Advanced</U>, and read{" "}
+                <U>Data Directory Location</U>. In Obsidian, select{" "}
+                <U>Locate data folder</U> and choose that folder.
+              </>,
+              <Shot
+                img="not-found"
+                ar={TALL}
+                crop={WIN}
+                alt="The Zotero library tab reads Zotero not found, with a Locate data folder button."
+              />,
+            ],
+          ],
+        },
+        {
+          name: "Find",
+          title: "Find a paper",
+          cap: (
+            <>
+              Type a few words of a title into <U>Search papers</U> <N>1</N>.
+              Select the paper <N>2</N>.
+            </>
+          ),
+          view: (
+            <Shot
+              img="find-paper"
+              ar={WIDE}
+              crop={[0.083, 0.18, 0.59, 0.64]}
+              marks={[
+                [0.268, 0.225],
+                [0.268, 0.478],
+              ]}
+              alt="The search box holds the word reproducible. A card for the selected paper is open beside the list."
+            />
+          ),
+          see: (
+            <>A card opens with the authors, the journal, and two buttons.</>
+          ),
+          fix: [
+            [
+              "The list is empty",
+              "Go back one step and look for the green check.",
+            ],
+          ],
+        },
+        {
+          name: "Read",
+          title: "Open the PDF",
+          cap: (
+            <>
+              On the card, select <U>Open PDF</U> <N>1</N>.
+            </>
+          ),
+          view: (
+            <div className="pair">
+              <figure>
+                <Shot
+                  {...CARD}
+                  marks={[[0.42, 0.602]]}
+                  alt="The paper's card with the Open PDF button marked."
+                />
+              </figure>
+              <span className="arrow" aria-hidden="true">
+                →
+              </span>
+              <figure>
+                <Shot
+                  img="pdf"
+                  ar={TALL}
+                  crop={WIN}
+                  alt="The PDF open in Obsidian with coloured highlights and a list of them on the right."
+                />
+              </figure>
+            </div>
+          ),
+          see: (
+            <>
+              The PDF opens in a new tab. Your Zotero highlights keep their
+              colours, and the right side lists each one.
+            </>
+          ),
+          fix: [
+            [
+              "The PDF has no highlights",
+              "This paper has none in Zotero yet. Choose a paper you have highlighted, or carry on: Lesson 2 adds one.",
+            ],
+          ],
+        },
+        {
+          name: "Note",
+          title: "Write the literature note",
+          cap: (
+            <>
+              Go back to the <U>Zotero library</U> tab. On the card, select{" "}
+              <U>Write literature note</U> <N>1</N>.
+            </>
+          ),
+          view: (
+            <div className="pair">
+              <figure>
+                <Shot
+                  {...CARD}
+                  marks={[[0.5275, 0.602]]}
+                  alt="The paper's card with the Write literature note button marked."
+                />
+              </figure>
+              <span className="arrow" aria-hidden="true">
+                →
+              </span>
+              <figure>
+                <Shot
+                  img="first-note"
+                  ar={TALL}
+                  crop={[0.083, 0.1, 0.585, 0.36]}
+                  alt="A new note named sandve2013 with the paper's title and links to Zotero and the PDF."
+                />
+              </figure>
+            </div>
+          ),
+          see: (
+            <>
+              The notice <b>Literature note created.</b> The note opens with the
+              paper’s details.
+            </>
+          ),
+          fix: [
+            [
+              "The button reads “Open literature note”",
+              "This paper already has a note. Select the button to open it.",
+            ],
+          ],
+        },
+        {
+          name: "Yours",
+          title: "Add your own thoughts",
+          cap: (
+            <>
+              Under the two links, type a heading such as “My thoughts” <N>1</N>
+              . Write what the paper means for your chapter.
+            </>
+          ),
+          view: (
+            <>
+              <Shot
+                img="first-note"
+                ar={TALL}
+                crop={[0.083, 0.33, 0.585, 0.56]}
+                marks={[[0.24, 0.499]]}
+                alt="The note with a My thoughts heading and a paragraph above the Annotations section."
+              />
+            </>
+          ),
+          extra: (
+            <>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Part of the note</th>
+                    <th>Who keeps it</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>What you write</td>
+                    <td>
+                      You. ZotLit never changes it, and it never goes to Zotero.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      The <U>Annotations</U> section
+                    </td>
+                    <td>
+                      ZotLit. It shows your Zotero highlights and stays current
+                      by itself.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </>
+          ),
+          see: <>Your text sits above the highlight cards.</>,
+          fix: [
+            [
+              "There are no highlight cards",
+              "The paper has no highlights in Zotero yet. They appear here when you add one.",
+            ],
+          ],
+        },
+      ];
+      const COUNT = STEPS.length;
+
+      function Strip({ at, go }) {
+        return (
+          <nav className="strip" aria-label="Steps of this lesson">
+            {STEPS.map((s, n) => (
+              <button
+                key={n}
+                className={n < at ? "done" : n === at ? "now" : ""}
+                onClick={() => go(n)}
+                aria-current={n === at ? "step" : undefined}
+              >
+                <i />
+                <span>{s.name}</span>
+              </button>
+            ))}
+          </nav>
+        );
+      }
+
+      function Cover({ start }) {
+        return (
+          <div className="col fade">
+            <span className="label">
+              Lesson 1 of 6 · about 10 minutes · 6 steps
+            </span>
+            <h1 className="serif" style={{ fontSize: 36 }}>
+              Connect Zotero to Obsidian and write your first literature note
+            </h1>
+            <div
+              className="map"
+              role="img"
+              aria-label="ZotLit reads your papers, PDFs and highlights from Zotero and shows them in Obsidian, where your notes live."
+            >
+              <div className="box">
+                <span className="label">Zotero</span>
+                <h2>Your library</h2>
+                <ul>
+                  <li>Papers</li>
+                  <li>PDFs</li>
+                  <li>Highlights</li>
+                </ul>
+              </div>
+              <div className="flow">
+                <b>→</b>
+                ZotLit reads. It changes nothing here.
+              </div>
+              <div className="box">
+                <span className="label">Obsidian</span>
+                <h2>Your writing</h2>
+                <ul>
+                  <li>Literature notes</li>
+                  <li>Drafts</li>
+                </ul>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>You need</th>
+                  <th>&nbsp;</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Obsidian</td>
+                  <td>On a desktop computer</td>
+                </tr>
+                <tr>
+                  <td>Zotero 10</td>
+                  <td>On the same computer. It can stay closed.</td>
+                </tr>
+                <tr>
+                  <td>One paper</td>
+                  <td>With a PDF you have highlighted</td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="acts">
+              <button className="btn accent" onClick={start}>
+                Start
+              </button>
+            </div>
+            <p className="label">Keep Obsidian open beside this page.</p>
+          </div>
+        );
+      }
+
+      function Done({ again }) {
+        return (
+          <div className="col fade">
+            <span className="label" style={{ color: "var(--ok)" }}>
+              Lesson 1 complete
+            </span>
+            <h1 className="serif" style={{ fontSize: 34 }}>
+              You have your first literature note.
+            </h1>
+            <Shot
+              img="first-note"
+              ar={TALL}
+              crop={WIN}
+              alt="The finished literature note with your thoughts and the highlight cards."
+            />
+            <p className="cap">
+              It is a plain file in your vault, in the folder <U>literatures</U>
+              .
+            </p>
+            <a className="next" href="#">
+              <b style={{ fontWeight: 600 }}>
+                Lesson 2 · Read and annotate a paper →
+              </b>
+              <br />
+              <small>
+                Highlight in Obsidian. The highlight shows in Zotero and in this
+                note.
+              </small>
+            </a>
+            <div className="acts">
+              <button className="btn ghost" onClick={again}>
+                Start again
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function Step({ at, go }) {
+        const [help, setHelp] = useState(false);
+        const s = STEPS[at];
+        return (
+          <div className="col">
+            <Strip at={at} go={go} />
+            <div className="fade" key={at} style={{ display: "grid", gap: 16 }}>
+              <div>
+                <span className="label">
+                  Step {at + 1} of {COUNT}
+                </span>
+                <h1 className="serif" style={{ marginTop: 6 }}>
+                  {s.title}
+                </h1>
+              </div>
+              {s.view}
+              <p className="cap">{s.cap}</p>
+              <p className="see">
+                <span aria-hidden="true">✓</span>
+                <span>{s.see}</span>
+              </p>
+              {s.extra}
+              <div className="acts">
+                <button className="btn" onClick={() => go(at + 1)}>
+                  {at === COUNT - 1 ? "I see it. Finish" : "I see it. Next"}
+                </button>
+                <button
+                  className="btn ghost"
+                  aria-expanded={help}
+                  onClick={() => setHelp(!help)}
+                >
+                  I see something else
+                </button>
+              </div>
+              {help && (
+                <div className="fix fade">
+                  {s.fix.map(([what, how, pic], i) => (
+                    <div key={i} style={{ display: "grid", gap: 8 }}>
+                      <h2>{what}</h2>
+                      {pic}
+                      <p>{how}</p>
+                    </div>
+                  ))}
+                  <p>
+                    <a href="#">None of these. Ask in the community →</a>
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        // -1 cover, COUNT done. `#3` opens step 3, `#done` the end.
+        const [at, setAt] = useState(() => {
+          const h = location.hash.slice(1);
+          return h === "done"
+            ? COUNT
+            : Number(h) >= 1 && Number(h) <= COUNT
+              ? Number(h) - 1
+              : -1;
+        });
+        const go = (n) => {
+          setAt(n);
+          history.replaceState(
+            null,
+            "",
+            n === -1 ? "#" : n === COUNT ? "#done" : `#${n + 1}`,
+          );
+          window.scrollTo(0, 0);
+        };
+        return (
+          <>
+            <header className="top">
+              <span className="wordmark">
+                Zot<b>Lit</b>
+              </span>
+              <span className="label">Learn</span>
+              <span className="sp" />
+              <a href="#">All lessons</a>
+              <a href="#">Docs</a>
+            </header>
+            {at === -1 && <Cover start={() => go(0)} />}
+            {at >= 0 && at < COUNT && <Step key={at} at={at} go={go} />}
+            {at === COUNT && <Done again={() => go(-1)} />}
+          </>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
