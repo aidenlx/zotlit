@@ -50,6 +50,10 @@ import {
   COLLECTIONS,
   DEMO_ITEMS,
   DEMO_PROFILE_DOCUMENT,
+  DOCS_ANNOTATIONS,
+  DOCS_COLLECTIONS,
+  DOCS_ITEMS,
+  DOCS_NOTES,
   EXCERPT_RENDERING_PDFS,
   EXCERPT_RENDERING_VAULT_DIR,
   FIXTURE_LOCAL_API_SERVER_ID,
@@ -2809,6 +2813,77 @@ describe("a Vault Case", () => {
         ),
       ),
     ).toHaveProperty("sync", false);
+  });
+
+  it("gives the docs vault a new reader's first launch: own pages, no Profile, no settings", async () => {
+    const docs = await buildVaultCase("docs");
+
+    expect(await readdir(docs.vaultDir)).toEqual([
+      ".obsidian",
+      "Papers",
+      "Thesis",
+    ]);
+    // No settings file, so ZotLit opens its first screen on the Default Profile.
+    await expect(stat(docs.pluginDataPath)).rejects.toThrow("ENOENT");
+    expect(
+      JSON.parse(
+        await readFile(
+          join(docs.vaultDir, ".obsidian/core-plugins.json"),
+          "utf8",
+        ),
+      ),
+    ).toHaveProperty("sync", false);
+    await expect(
+      stat(join(docs.vaultDir, ".obsidian/types.json")),
+    ).rejects.toThrow("ENOENT");
+  });
+
+  it("builds the docs library from the demo and docs papers, filed in two collections", async () => {
+    const docs = await buildVaultCase("docs");
+    using sqlite = new DatabaseSync(docs.databasePath, { readOnly: true });
+    const keysOf = (sql: string) =>
+      sqlite
+        .prepare(sql)
+        .all()
+        .map(({ key }) => key);
+
+    expect(
+      keysOf(`select key from items where itemTypeID not in
+      (select itemTypeID from itemTypes where typeName in ('note','attachment','annotation')) order by key`),
+    ).toEqual([...DEMO_ITEMS, ...DOCS_ITEMS].map(({ key }) => key).sort());
+    expect(sqlite.prepare("pragma foreign_key_check").all()).toEqual([]);
+    expect(
+      sqlite
+        .prepare(
+          `select collections.collectionName as name, items.key as key from collectionItems
+           join collections using (collectionID) join items using (itemID)
+           order by name, key`,
+        )
+        .all()
+        .map(({ name, key }) => `${String(name)}: ${String(key)}`),
+    ).toEqual([
+      `${DOCS_COLLECTIONS[1]!.name}: DMRGRART`,
+      `${DOCS_COLLECTIONS[0]!.name}: DCCH3NTE`,
+      `${DOCS_COLLECTIONS[0]!.name}: DCMNFART`,
+      `${DOCS_COLLECTIONS[0]!.name}: DCSNDART`,
+      `${DOCS_COLLECTIONS[0]!.name}: DCWLSART`,
+      `${DOCS_COLLECTIONS[0]!.name}: DMIANART`,
+    ]);
+    expect(
+      keysOf(
+        "select key from items where itemTypeID = (select itemTypeID from itemTypes where typeName = 'note')",
+      ),
+    ).toEqual(DOCS_NOTES.map(({ key }) => key));
+    expect(
+      keysOf(
+        "select items.key as key from itemAnnotations join items using (itemID) where parentItemID = (select itemID from items where key = 'DCSNDPDF') order by key",
+      ),
+    ).toEqual(DOCS_ANNOTATIONS.map(({ key }) => key).sort());
+    // The docs papers' PDFs sit in Zotero storage, as a PDF added to Zotero does.
+    expect(await readdir(join(docs.dataDir, "storage", "DCSNDPDF"))).toEqual([
+      "Sandve et al. - 2013 - Ten Simple Rules for Reproducible Computational Research.pdf",
+    ]);
+    expect(sqlite.prepare("select libraryID from groups").all()).toEqual([]);
   });
 
   it("gives the graph vault its research notes and Literature Notes, and no test page", async () => {
