@@ -1,3 +1,13 @@
 {
-  "pages": ["(intro)", "how-to", "concepts", "reference"]
+  "pages": [
+    "(intro)",
+    "find-and-read",
+    "notes",
+    "cite-and-export",
+    "organize",
+    "make-it-yours",
+    "setup",
+    "answers",
+    "reference"
+  ]
 }

@@ -1,0 +1,46 @@
+---
+title: "What ZotLit reads, writes, and never touches"
+description: "Does ZotLit change your Zotero library, need Zotero open, or send your data anywhere? What it reads and what it writes."
+---
+
+import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
+
+ZotLit cannot break your Zotero library, leaves your own writing in a note alone, and never sends your papers to an outside server. It reads your local database directly and writes only when you deliberately edit an annotation or update a note.
+
+| What                                                                 | ZotLit reads it                                                  | ZotLit writes it                                                                                                                                                                           |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Your Zotero library (the database)                                   | Yes, to show papers, highlights and notes. Zotero can be closed. | Never. The database connection only reads.                                                                                                                                                 |
+| Your PDFs and other attachment files                                 | Yes, to open them in Obsidian.                                   | Never. It opens the file where Zotero keeps it and does not copy it into the vault.                                                                                                        |
+| Zotero annotations (highlights, comments)                            | Yes.                                                             | Only when you edit or create one in Obsidian. Zotero saves the change like one made in its own reader, and it syncs with your Zotero library. Needs Zotero 10 and Zotero running.          |
+| Your own writing in a literature note                                | Yes, to find the citations in it.                                | Only when you run <Command inline name={m.command_overwrite_note_name()} />, which asks you first. In a note with `%%zt-managed%%` markers, an update replaces only the part between them. |
+| A literature note's properties (frontmatter)                         | Yes.                                                             | When you update the note: ZotLit refreshes the properties that come from Zotero; properties you added stay.                                                                                |
+| The **Annotations** section of a note made with the default template | —                                                                | Nothing to write: it is a live view of your Zotero highlights and stays current by itself.                                                                                                 |
+
+## Questions
+
+### Does Zotero need to be open?
+
+No, not for browsing, searching, or reading. The Library View, search, and opening a PDF in Obsidian work with Zotero closed. Zotero must be running only when you want to save annotation edits back to your library.
+
+### Is my data sent anywhere?
+
+No. ZotLit reads your library on your computer and communicates with Zotero only through a local connection on the same machine. The only files it fetches from the internet are optional parts you choose to install, such as the Pandoc export engine, language packs, or the Chinese word search component.
+
+### Do I need ZotLit Companion?
+
+No. Browsing and reading your literature notes require nothing installed in Zotero. The Companion add-on simply helps recent changes in Zotero reach Obsidian faster and adds right-click shortcuts inside Zotero to open notes in Obsidian. See [Keep Zotero and Obsidian in sync](/docs/how-to/keep-zotero-and-obsidian-in-sync).
+
+### What does editing an annotation in Obsidian change?
+
+It updates the annotation directly in your Zotero library, exactly like editing it inside Zotero's own PDF reader. Before your first edit, make sure **Allow other applications on this computer to communicate with Zotero** is on under **Settings** → **Advanced** in Zotero, and choose **Always Allow** when prompted. See [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
+
+### Can an update wipe what I wrote in a note?
+
+Not for notes made with the default template. Running <Command inline name={m.command_update_note_name()} /> refreshes the paper's properties at the top and leaves the rest of your note completely untouched. The only command that replaces a whole file is <Command inline name={m.command_overwrite_note_name()} />, and it asks you to confirm first. See [Keep notes up to date](/docs/how-to/keep-notes-updated).
+
+## Next
+
+- [Keep Zotero and Obsidian in sync](/docs/how-to/keep-zotero-and-obsidian-in-sync): ensure updates appear quickly across both apps.
+- [How ZotLit connects to Zotero](/docs/reference/zotero-connection): technical details on read modes and local protocols.
+- [Fix common problems](/docs/setup/fix-common-problems): troubleshoot local connection and database issues.

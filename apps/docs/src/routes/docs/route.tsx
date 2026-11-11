@@ -36,7 +36,7 @@ function DocsShell() {
     <DocsLayout
       tree={tree}
       {...baseOptions({ includeDocsLink: false })}
-      sidebar={{ defaultOpenLevel: 1 }}
+      sidebar={{ defaultOpenLevel: 0 }}
       slots={{
         header: DocsSubnav,
         sidebar: {

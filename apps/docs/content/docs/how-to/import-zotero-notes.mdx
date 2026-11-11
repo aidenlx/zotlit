@@ -4,258 +4,101 @@ searchTitle: "Import Zotero notes into Obsidian as Markdown"
 description: "Import Zotero child and standalone notes into your Obsidian vault as Markdown files, for one paper, a collection, or a whole library, and re-import them."
 ---
 
-import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Card, Cards } from "fumadocs-ui/components/card";
-import { Callout } from "@/components/callout";
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit can import Zotero child notes as standalone Markdown files in your vault. A literature note whose template uses `noteLink` links to them.
+1. Open the paper's literature note.
+2. Press `Ctrl+P` (`Cmd+P` on macOS) and run <Command inline name={m.command_import_child_notes_name()} />.
+3. Select <UiLabel name={m.batch_import_confirm_button()} />.
 
-## How import is triggered
+## Import a paper's notes
 
-Import is explicit. A child note becomes a Markdown file only when you run an import command, or start an import from Zotero. Creating, updating, or overwriting a literature note never imports its child notes.
+In Zotero, notes attached to an item are called child notes, while notes placed directly in a collection are standalone notes.
 
-A template can still link to child notes through the `noteLink` property:
+1. Open the literature note of the paper whose Zotero notes you want. The literature note is now the active tab.
+2. Open the command palette and run <Command inline name={m.command_import_child_notes_name()} />. You can also right-click the literature note's file in the file explorer and select the same command. The <UiLabel name={m.batch_import_child_title()} /> dialog opens, showing how many notes will be imported and listing any notes you have already imported.
+3. Select <UiLabel name={m.batch_import_confirm_button()} />. Each Zotero note becomes a Markdown file in the folder set by <UiLabel name={m.settings_note_import_folder_name()} /> (by default, `zotero_notes`), which ZotLit creates if it does not yet exist. Each file name ends in a short random suffix so every note keeps its own file. The literature note links to these files whenever its template uses `noteLink`; until a note is imported, that link opens the note in Zotero. Creating, updating, or overwriting a literature note never imports or changes these files; only an import or re-import writes them.
 
-```liquid
-{{ note.noteLink }}
-```
+<Accordions multiple>
+<Accordion title="Every note in a library or a collection" id="import-all">
 
-When an imported file exists for the child note, `noteLink` links to that file. Otherwise it renders a `zotero://` link that opens the note in Zotero. The Template Workbench preview shows the same link.
+You can import both child notes and standalone notes across an entire collection or library.
 
-## Import all child notes at once
+| Which notes                              | What to do                                                                                                                                                                                                                                                      |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every library in your library scope      | In Obsidian, run <Command inline name={m.command_import_all_notes_name()} />.                                                                                                                                                                                   |
+| One collection (subcollections included) | In Zotero, right-click the collection → <UiLabel name={m["zotero.menu_submenu.label"]()} /> → <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} />. Requires ZotLit Companion.                                                               |
+| One whole Zotero library                 | Right-click **My Library** or a group library → <UiLabel name={m["zotero.menu_submenu.label"]()} /> → <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} />. Covers that library regardless of your library scope. Requires ZotLit Companion. |
 
-<Steps>
-  <Step>
-    ### Open the parent literature note
+The <UiLabel name={m.batch_import_title()} /> dialog opens and lists every note found. Review the list, then select <UiLabel name={m.batch_import_confirm_button()} />.
 
-    Open the literature note whose child notes you want to import.
+A standalone note has no parent literature note, so the dialog lists it under <UiLabel name={m.batch_import_group_orphan({ count: "…" })} /> rather than under <UiLabel name={m.batch_import_group_import({ count: "…" })} />. That group shows the profile used to import those notes; you can choose a different profile before confirming.
 
-  </Step>
-  <Step>
-    ### Run the import command
+</Accordion>
+<Accordion title="Bring imported notes up to date (re-import)" id="re-import">
 
-    Open the command palette and run:
+Imported note files are created once. Editing a note in Zotero later does not update the file in Obsidian. Re-importing replaces the file with the Zotero version, so any edits you made directly in the vault file are lost.
 
-    <Command name={m.command_import_child_notes_name()} />
+| For                        | Do this                                                                                                                                                                                                                                                                                 | What you see                                                                                                                                                                                                                                                                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One imported note          | Open the file (it has a `zotero-note-key` property) and run <Command inline name={m.command_reimport_note_name()} />.                                                                                                                                                                   | A confirmation dialog titled <UiLabel name={m.modal_reimport_note_title()} /> reads <UiLabel name={m.modal_reimport_note_desc()} /> Select <UiLabel name={m.modal_reimport_note_confirm()} />.                                                                                                                                            |
+| Notes you select in Zotero | Select the notes, right-click → <UiLabel name={m["zotero.menu_submenu.label"]()} /> → <UiLabel name={m["zotero.menu_item_import_notes.label"]({ count: 2 })} /> (or <UiLabel name={m["zotero.menu_item_import_notes.label"]({ count: 1 })} /> for one note). Requires ZotLit Companion. | Selecting two or more notes opens the <UiLabel name={m.batch_import_title()} /> dialog with grouped categories (see below). Selecting a single note that is not yet imported imports it immediately; if already imported, a confirmation dialog asks to overwrite the note. Select <UiLabel name={m.modal_import_overwrite_confirm()} />. |
 
-    A modal titled <UiLabel name={m.batch_import_child_title()} /> appears. It shows how many child notes will be imported and lists any that are already imported.
+Groups in the <UiLabel name={m.batch_import_title()} /> dialog:
 
-    Select <UiLabel name={m.batch_import_confirm_button()} /> to proceed.
+| Group                                                              | Meaning                                             |
+| ------------------------------------------------------------------ | --------------------------------------------------- |
+| <UiLabel name={m.batch_import_group_import({ count: "…" })} />     | New notes not yet in the vault                      |
+| <UiLabel name={m.batch_import_group_orphan({ count: "…" })} />     | New standalone notes with no parent literature note |
+| <UiLabel name={m.batch_import_group_overwrite({ count: "…" })} />  | Notes modified in Zotero since their last import    |
+| <UiLabel name={m.batch_import_group_up_to_date({ count: "…" })} /> | Notes unchanged in Zotero; these are skipped        |
 
-  </Step>
-</Steps>
+Review the groups and select <UiLabel name={m.batch_import_confirm_button()} />. If you select papers instead of notes in Zotero, the context menu displays <UiLabel name={m["zotero.menu_item_import_child_notes.label"]()} />, which runs the per-paper import instead.
 
-This command also appears in the right-click context menu on a literature note file.
+</Accordion>
+<Accordion title={<>Show highlight colours with <code>==</code> marks</>} id="colored-highlights" value="colored-highlights">
 
-## Create-once behavior
+1. Turn on <UiLabel name={m.settings_note_import_colored_highlights_name()} /> under <SettingsPath page={m.settings_page_note_import()} />. This setting is off by default.
+2. Optional: open <UiLabel name={m.settings_note_import_highlight_mappings_name()} /> to choose how each Zotero colour renders: <UiLabel name={m.settings_note_import_highlight_mark()} />, a circle emoji, or <UiLabel name={m.settings_note_import_highlight_custom()} /> with an emoji of your own.
+3. Import or re-import the note.
 
-Imported notes are created once and not automatically updated. If an imported file already exists for a child note, `noteLink` links to the existing file. Editing the Zotero note afterward does not change the imported file.
+A highlight in the imported note now renders as `==🔵Highlighted text==`. If the highlight comes from an annotation, it retains its Zotero link: `[==🔵Highlighted text==](zotero://...)`.
 
-To bring an imported note up to date, use the re-import commands described below.
+By default, red, orange, yellow, green, blue, and purple map to matching circle emoji; magenta, gray, and plum use HTML marks. Your theme or another plugin must support the emoji to display the colour. Files imported before enabling this setting change only when re-imported. For complete rules, see [Colored highlight syntax](/docs/reference/settings#colored-highlights).
 
-If an attachment was skipped because its folder was not approved, a notice lists the blocked source folder. This can happen with a Zotero linked file, which Zotero stores in an external folder instead of its data directory. See [Zotero's guide to linked files](https://www.zotero.org/support/attaching_files#adding_linked_files).
+</Accordion>
+<Accordion title="Highlights as the same callouts as literature notes" id="annotations-template">
 
-Select <UiLabel name={m.notice_attachment_sources_skipped_action()} />, open <SettingsPath page={m.settings_page_attachments()} setting={m.settings_attachment_approved_name()} />, and approve the folder if you trust it. Then re-import the note to copy the attachment. Approval applies to future imports and does not update earlier imports automatically.
+Turn on <UiLabel name={m.settings_note_import_annotations_template_name()} /> under <SettingsPath page={m.settings_page_note_import()} /> (off by default). Highlight paragraphs in the note then render through your profile's annotation template as the same callouts used in literature notes.
 
-## Re-import a single note
+| Replaced on each import or re-import                                                                                   | Left as it is                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The highlight paragraph: text, comment, colour, and page from Zotero, as well as text you type after the citation mark | A paragraph with your text before the excerpt, or other elements added; a paragraph inside a list, quote, or table cell; note and text annotations |
 
-Re-importing replaces the file with the latest content from Zotero, so any local edits are lost.
+To prevent your own writing from being overwritten on re-import, keep your remarks in a separate paragraph. For complete details, see [Render annotations from template](/docs/reference/settings#imported-annotations-template).
 
-<Steps>
-  <Step>
-    ### Open an imported note
+</Accordion>
+</Accordions>
 
-    Open a note that was previously imported from Zotero (one with a `zotero-note-key` frontmatter field).
+## If you see something else
 
-  </Step>
-  <Step>
-    ### Run the overwrite command
+- **I edited the note in Zotero, but the file in Obsidian did not change** — Imported files are created once and do not sync automatically. Open the file in Obsidian and run <Command inline name={m.command_reimport_note_name()} />, or select the note in Zotero and click <UiLabel name={m["zotero.menu_submenu.label"]()} /> → <UiLabel name={m["zotero.menu_item_import_notes.label"]({ count: 2 })} />.
+- **A notice <UiLabel name={m.notice_attachment_sources_skipped({ count: 1 })} /> or <UiLabel name={m.notice_attachment_sources_skipped({ count: 2 })} /> with <UiLabel name={m.notice_attachment_sources_skipped_folders({ count: 1 })} /> or <UiLabel name={m.notice_attachment_sources_skipped_folders({ count: 2 })} />** — The attachment is a Zotero [linked file](https://www.zotero.org/support/attaching_files#adding_linked_files) in a folder outside ZotLit's allowed locations. Select <UiLabel name={m.notice_attachment_sources_skipped_action()} />, navigate to <SettingsPath page={m.settings_page_attachments()} setting={m.settings_attachment_approved_name()} />, add the folder if you trust it, and re-import the note. Approving a folder does not alter earlier imports.
+- **The batch lists a note under <UiLabel name={m.batch_import_group_up_to_date({ count: "…" })} />, but an annotation in it changed** — Batch imports check only the modification timestamp of the Zotero note itself, not individual annotations. Open that note file in Obsidian and run <Command inline name={m.command_reimport_note_name()} />.
+- **A citation in the imported note reads like `-@ABC123?`** — ZotLit found no citation key for that paper in your Zotero library or in the note. The trailing `?` lets you search your vault for unresolved citations. When no cited paper in a citation resolves, ZotLit preserves the original text so nothing is lost.
+- **A notice: <UiLabel name={m.notice_imported_note_profile_unknown({ stamp: "…", target: "…" })} />** — The profile originally used to import this note has been removed. Select <UiLabel name={m.profile_switch_recovery()} /> and choose an existing profile.
+- **An image in the imported note reads <UiLabel name={m.excerpt_image_unavailable()} /> with a source link** — The image could not be generated and the note had no previous image to retain. Other annotations and text in the note still imported. See [Import outcomes](/docs/reference/excerpt-images#import-outcomes).
+- **A notice starting "Excerpt images: …"** — This notice appears once per batch or import to report images that were not freshly generated. "Kept from the note and not refreshed" means an existing image in the note was preserved. See [Import outcomes](/docs/reference/excerpt-images#import-outcomes).
+- **An image reads <UiLabel name={m.excerpt_image_import_disabled()} />** — <UiLabel name={m.settings_attachment_import_name()} /> is turned off under <SettingsPath page={m.settings_page_attachments()} />, which prevents ZotLit from writing image files. Turn the setting on, then re-import the note.
+- **A notice: <UiLabel name={m.batch_all_no_library_in_scope()} />** — None of the libraries in your library scope are in the Zotero database, so the import dialog cannot open. See [Library scope](/docs/reference/settings#library-scope).
+- **Zotero says the selection is too large, or asks to enable a server** — Enable ZotLit's local HTTP server in Obsidian settings, or select fewer notes at a time. See [Set up live updates](/docs/how-to/set-up-live-updates).
+- **Zotero asks for confirmation each time it opens Obsidian** — Follow [Suppress the Zotero security prompt](/docs/how-to/suppress-zotero-security-prompt) to disable the confirmation dialog.
 
-    Open the command palette and run:
+## Next
 
-    <Command name={m.command_reimport_note_name()} />
-
-    A confirmation dialog appears: <UiLabel name={m.modal_reimport_note_title()} /> with the body <UiLabel name={m.modal_reimport_note_desc()} />
-
-    Select <UiLabel name={m.modal_reimport_note_confirm()} /> to proceed.
-
-  </Step>
-</Steps>
-
-## Import every note in a library or collection [#import-all]
-
-This path imports both kinds of note in one action: the child notes attached to your regular items and the standalone notes filed alongside them.
-
-For the whole library, open the command palette and run:
-
-<Command name={m.command_import_all_notes_name()} />
-
-For one collection, right-click it in the Zotero sidebar and choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} />. Nested subcollections are included. The same entry on **My Library** or a group library covers that whole library.
-
-Obsidian opens the <UiLabel name={m.batch_import_title()} /> modal described below, listing every note it found. Review the list, then confirm to start the batch.
-
-A note with no parent literature note is listed under <UiLabel name={m.batch_import_group_orphan({ count: "…" })} /> rather than under <UiLabel name={m.batch_import_group_import({ count: "…" })} />. That group states the profile its notes import through and lets you pick another one: the choice governs the new notes in the group.
-
-The Obsidian command covers every library in your [library scope](/docs/reference/settings#library-scope) (set in <SettingsPath />). The Zotero entries cover the library or collection you right-clicked, whatever your library scope is.
-
-If the collection no longer exists in your Zotero database, Obsidian reports <UiLabel name={m.notice_collection_not_found()} />. If the library no longer exists, it reports <UiLabel name={m.batch_all_library_unavailable()} />.
-
-While more than one library contributes notes, the <UiLabel name={m.batch_import_title()} /> modal names the library beside each heading. If a selected library is missing from your Zotero database, the import continues over the rest and states how many libraries it skipped. If none of your selected libraries is available, no modal opens and a notice reports <UiLabel name={m.batch_all_no_library_in_scope()} />.
-
-## Re-import notes in batch
-
-ZotLit Companion, the Zotero add-on, starts batch re-import from Zotero.
-
-<Steps>
-  <Step>
-    ### Select notes in Zotero
-
-    In Zotero, select the notes you want to re-import, child notes under an item, or standalone notes. Right-click to open the context menu, then choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_item_import_notes.label"]({ count: 2 })} />.
-
-    (This menu entry appears when the selection contains note items. If you select regular items instead, the menu shows <UiLabel name={m["zotero.menu_item_import_child_notes.label"]()} />, which triggers a different import path.)
-
-  </Step>
-  <Step>
-    ### Confirm import in Obsidian
-
-    What happens next depends on how many notes you selected:
-
-    **Single note:** If the note has not been imported before, it imports directly and a toast confirms success. If it already exists in the vault, Obsidian shows a confirmation: <UiLabel name={m.modal_import_overwrite_title()} /> with the body <UiLabel name={m.modal_import_overwrite_desc({ title: "…" })} /> Select <UiLabel name={m.modal_import_overwrite_confirm()} /> to proceed, or dismiss to cancel.
-
-    **Two or more notes:** Obsidian opens a modal titled <UiLabel name={m.batch_import_title()} />. It groups notes by status:
-
-    - <UiLabel name={m.batch_import_group_import({ count: "…" })} />: new notes that do not yet exist in the vault.
-    - <UiLabel name={m.batch_import_group_orphan({ count: "…" })} />: new notes with no parent literature note. The group names the profile they import through, and you can change it. See [Import every note in a library or collection](#import-all).
-    - <UiLabel name={m.batch_import_group_overwrite({ count: "…" })} />: notes whose Zotero content has changed since the last import.
-    - <UiLabel name={m.batch_import_group_up_to_date({ count: "…" })} />: notes that have not changed in Zotero and are skipped.
-
-    The up-to-date check compares the `zotero-lastmod` frontmatter value in the existing file against the live `dateModified` timestamp in Zotero, in whole seconds.
-
-    Select <UiLabel name={m.batch_import_confirm_button()} /> to proceed.
-
-  </Step>
-</Steps>
-
-<Callout type="info" title="Large selections">
-  A selection too large to fit in a protocol link falls back to an HTTP
-  connection to Obsidian. If the ZotLit server is not enabled in Obsidian,
-  Zotero shows a notice asking you to enable it or select fewer items. See [Set
-  up live updates](/docs/how-to/set-up-live-updates) for the server setting.
-</Callout>
-
-<include>./_security-prompt-callout.mdx</include>
-
-## Profile of an imported note
-
-An imported note records the profile that imported it in its `zotlit-profile` frontmatter field. ZotLit writes the field only when that profile is not the Default profile, so a note without it was imported under Default.
-
-A re-import reads the field back, so the note keeps rendering through the profile that created it. When that profile no longer exists, ZotLit reports <UiLabel name={m.notice_imported_note_profile_unknown({ stamp: "…", target: "…" })} /> and offers <UiLabel name={m.profile_switch_recovery()} />.
-
-## Import folder
-
-Imported notes use their profile's <UiLabel name={m.settings_note_import_folder_name()} /> (default: `zotero_notes`). The Default profile's binding sits at <SettingsPath />, and another profile sets `importFolder` in its own document. The folder is created automatically if it does not exist. Each filename includes a short random suffix to guarantee uniqueness.
-
-## Citations in imported notes
-
-The imported note's body is the Zotero note's HTML converted to Markdown. Citations within it render through [the citation text](/docs/how-to/customize-a-template#citation-text), always as the `main` variant.
-
-Each cited reference resolves its citation key in this order:
-
-1. The live Zotero item's own citation key.
-2. The citation snapshot embedded in the Zotero note.
-3. A visible sentinel: the Zotero item key with `?` appended (e.g. `-@ABC123?` in the built-in citation text). The trailing `?` makes unresolved citations greppable in your vault.
-
-If every cited reference within a single citation is unresolvable (no citation key from any source), ZotLit keeps that citation's original HTML verbatim. Nothing is lost.
-
-## Use colored highlight syntax
-
-1. Turn on <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_colored_highlights_name()} />. A profile other than Default sets it in its own profile document.
-2. Open <UiLabel name={m.settings_note_import_highlight_mappings_name()} /> to set the output for each Zotero color. These mappings apply to all profiles.
-3. Choose <UiLabel name={m.settings_note_import_highlight_mark()} />, a circle emoji (🔴 🟠 🟡 🟢 🔵 🟣), or <UiLabel name={m.settings_note_import_highlight_custom()} />.
-4. For <UiLabel name={m.settings_note_import_highlight_custom()} />, enter one emoji in the field below. Combined emoji such as 👩‍🔬 are supported.
-5. Import or re-import the note to apply your mappings.
-
-By default, red, orange, yellow, green, blue, and purple use matching circle emoji. Magenta, gray, and plum use colored HTML marks. You can change any of these nine mappings.
-
-An emoji mapping adds the selected emoji at the start of Colored Highlight Syntax:
-
-```markdown
-==🔵Highlighted text==
-```
-
-Your theme or another plugin must support the selected emoji to render its highlight color. Choosing a custom emoji does not add that rendering support.
-
-The setting applies to highlights created in Zotero's note editor and inline annotation excerpts. Annotation excerpts keep their Zotero backlinks:
-
-```markdown
-[==🔵Highlighted text==](zotero://...)
-```
-
-Highlights with unrecognized or missing source colors remain HTML. Empty or invalid custom emoji also use HTML marks. ZotLit keeps HTML when the text contains `==` because it conflicts with the Markdown delimiter.
-
-The setting is off by default. Turning it off uses HTML marks and keeps your saved mappings.
-
-Changes affect later imports and re-imports; existing files stay unchanged until re-imported. When <UiLabel name={m.settings_note_import_annotations_template_name()} /> is on, annotation-template output stays unchanged.
-
-## Render annotations from template
-
-By default, annotation paragraphs in imported notes keep the HTML that Zotero inserted: highlighted or underlined excerpts with a citation link.
-
-Turn on <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_annotations_template_name()} /> for the Default profile, or set `importAnnotationsAsTemplate` in a profile document. ZotLit renders those paragraphs through the Annotation Section of that profile, producing the same rich callouts used in literature notes.
-
-<Callout type="warn" title="Replace on refresh">
-  With this setting on, each annotation's text, comment, color, and page come
-  from its saved Zotero data. Image and ink excerpts are prepared during import.
-  Edits you made to that paragraph inside the imported note are replaced. This
-  is why the setting is off by default.
-</Callout>
-
-### What is rendered
-
-Only paragraphs that still match the original Zotero structure are rendered from the template. A paragraph is left untouched when:
-
-- You typed text before the excerpt.
-- You added other elements to the paragraph (a second annotation, extra formatting).
-- The paragraph is nested inside a list item, blockquote, or table cell.
-- The annotation was deleted in Zotero and can no longer be fetched.
-
-Highlight, underline, image, and ink annotations are eligible for template rendering. Note and text annotations (which carry no excerpt) are kept as Zotero inserted them.
-
-Image and ink paragraphs use [live excerpt images](/docs/concepts/excerpt-images) with both PDF readers closed. Ordinary embedded images keep the snapshots stored in the Child Note. A paragraph converted through the annotation template does not also copy its stored snapshot.
-
-Re-import selects a new image version only for that Imported Note. Other notes and older image files stay unchanged. A failed refresh keeps a verified previous image when available; otherwise it writes an explanation and source link. Other content and notes can still import if an image fails.
-
-With <UiLabel name={m.settings_attachment_import_name()} /> off, live excerpts create no new image files. The import summary counts only images requested by the template and combines the results for a batch.
-
-The existing re-import rules still apply. Batch import skips notes whose Zotero modification time has not changed, even if a live annotation changed. Use the single-note re-import command to refresh such a note. With a missing annotation or blank annotation template, ZotLit converts the stored paragraph as ordinary note content.
-
-<Callout type="warn" title="Text after the citation">
-  Text you add after the citation mark (the comment slot) is not protected.
-  Zotero places the annotation's own comment in that position, so on refresh it
-  is replaced along with the rest of the paragraph. Place notes you want to keep
-  in a separate paragraph.
-</Callout>
-
-## See also
-
-<Cards>
-  <Card
-    title="Keep notes up to date"
-    description="Update literature notes when your Zotero data changes."
-    href="/docs/how-to/keep-notes-updated"
-  />
-  <Card
-    title="Use the annotation view"
-    description="Browse and drag annotations from the sidebar into your notes."
-    href="/docs/how-to/use-annotation-view"
-  />
-  <Card
-    title="Set up live updates"
-    description="Enable automatic push from Zotero to Obsidian."
-    href="/docs/how-to/set-up-live-updates"
-  />
-</Cards>
+- [Keep notes up to date](/docs/how-to/keep-notes-updated) — Refresh literature notes when your Zotero library changes.
+- [Use the annotation view](/docs/how-to/use-annotation-view) — Drag highlights and annotations directly into your writing from the sidebar.
+- [Set up live updates](/docs/how-to/set-up-live-updates) — Configure Zotero to send updates to Obsidian automatically.

@@ -1,0 +1,12 @@
+{
+  "title": "Make it yours",
+  "pages": [
+    "../how-to/customize-a-template",
+    "../how-to/customize-template",
+    "../how-to/use-different-templates",
+    "../how-to/configure-frontmatter-properties",
+    "../how-to/explore-template-data",
+    "../how-to/edit-a-profile-as-markdown",
+    "../how-to/enable-javascript-templates"
+  ]
+}

@@ -4,197 +4,83 @@ searchTitle: "Find Zotero fields to use in Obsidian templates"
 description: "Browse the Zotero fields a template receives for a paper, annotation, note name, or citation, copy their paths, and copy ready-made template snippets."
 ---
 
-import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Card, Cards } from "fumadocs-ui/components/card";
-import { Callout } from "@/components/callout";
+import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The Template Data Explorer shows the fields that templates receive for a Zotero item, an annotation, a note name, or a citation. Use it to look up field paths, read values, and copy ready-to-use snippets into your templates.
+1. Open a literature note and run <Command inline name={m.command_open_template_data_explorer_name()} /> from the command palette.
+2. Type part of a field name, such as `title`, in the search box.
+3. Right-click the field's row and select <UiLabel name={m.workbench_explorer_menu_copy_output()} />.
+4. Paste the snippet, for example `{{ zt.title }}`, into your template.
 
-## Open the explorer
+A template reads everything about a paper from one name, `zt`: `zt.title` is the title, `zt.authors` the authors. You paste what you copy here into your **profile**, the document that writes your literature notes, which you edit in the Template Workbench View (see [How templates work](/docs/reference/templates/how-templates-work)).
 
-The explorer is a view of its own. It keeps its own item choice, so browsing here changes no template that you have open. You can reach it from several entry points.
+## Find a field and copy it
 
-To browse fields beside a template you are editing, use the Fields panel of the Template Workbench View instead. It shows the same fields for the view's chosen item, and it can insert a field at your cursor. See [The Fields panel](/docs/concepts/template-workbench-view#fields-panel).
+1. Open a literature note, open the command palette, and run <Command inline name={m.command_open_template_data_explorer_name()} />. A pane opens that lists that note's paper's fields under section headings, with a title ending in <UiLabel name={m.workbench_view_fields()} />. With no literature note active, it shows a list of papers to choose from instead.
+2. If asked, choose a paper under <UiLabel name={m.workbench_recently_updated()} /> or select <UiLabel name={m.workbench_search_zotero()} /> (or choose one of the built-in examples: journal article, conference paper, book, or thesis). The list is replaced by that paper's fields, starting with <UiLabel name={m.workbench_explorer_section_common()} />.
+3. Type in the <UiLabel name={m.workbench_fields_search_note()} /> box to match field names, keys, or values. Matching rows open along with the rows that hold them.
+4. Right-click the row, or open its <UiLabel name={m.workbench_explorer_row_actions()} /> menu, and select <UiLabel name={m.workbench_explorer_menu_copy_output()} />. The notice <UiLabel name={m.workbench_field_copy_done()} /> appears, and your clipboard holds the snippet (for example, `{{ zt.title }}`).
 
-### From the command palette
+Browsing here changes no template and touches nothing in your Zotero library; what you copy is plain text. To insert fields directly at your cursor while editing a template, use <UiLabel name={m.workbench_view_fields()} /> inside the Template Workbench View instead. For a complete list of every available field, see the [Data reference](/docs/reference/templates/data).
 
-<Steps>
-  <Step>
-    ### Run the command
+<Accordions multiple>
+<Accordion title="Which copy action to choose" id="copy-actions">
 
-    Open the command palette and run:
+| Menu item                                                      | What it copies                                                     |
+| -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| <UiLabel name={m.workbench_explorer_menu_copy_output()} />     | The value, e.g. `{{ zt.title }}`                                   |
+| <UiLabel name={m.workbench_explorer_menu_copy_if_present()} /> | The value inside a block that writes it only when the paper has it |
+| <UiLabel name={m.workbench_explorer_menu_copy_loop()} />       | Each item of a list on its own Markdown list line (lists only)     |
+| <UiLabel name={m.workbench_explorer_menu_copy_joined()} />     | Every item of a list on one line, separated by commas (lists only) |
+| <UiLabel name={m.workbench_explorer_menu_copy_path()} />       | The path alone, e.g. `zt.creators[0].family`                       |
+| <UiLabel name={m.workbench_explorer_menu_copy_value()} />      | This paper's value; lists and objects copy as JSON                 |
 
-    <Command name={m.command_open_template_data_explorer_name()} />
+With <UiLabel name={m.settings_template_js_enable_name()} /> enabled in settings, snippet actions appear inside two submenus, "Liquid" and "Eta"; pick the language your template uses. With it off, the Liquid items sit in the menu directly.
 
-    If a literature note is active in the editor, the explorer uses that note's Zotero item. With no selected item, it shows a list of choices.
+</Accordion>
+<Accordion title="Other ways to open it" id="other-ways-to-open">
 
-  </Step>
-</Steps>
+| Where                                                                                     | What to select                                                                          |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| A literature note's file menu (right-click in the file explorer or the tab)               | <UiLabel name={m.template_data_explorer_menu_explore()} />. Opens on that note's paper. |
+| An annotation's more-options menu in the annotation sidebar                               | <UiLabel name={m.template_data_explorer_menu_explore()} />. Opens on that annotation.   |
+| Zotero, right-click one item, submenu <UiLabel name={m["zotero.menu_submenu.label"]()} /> | <UiLabel name={m["zotero.menu_item_explore.label"]()} />. Needs ZotLit Companion.       |
+| Zotero's PDF reader, right-click an annotation                                            | <UiLabel name={m["zotero.menu_reader_annot_explore"]()} />. Needs ZotLit Companion.     |
 
-### From a literature note
+</Accordion>
+<Accordion title="Copy a Zotero key" id="indexed-key">
 
-Right-click (or click the three-dot menu) on a literature note in the file explorer or tab, then select <UiLabel name={m.template_data_explorer_menu_explore()} />. The explorer opens seeded with that note's item.
+A Zotero key identifies one item, attachment, annotation, or note. Copy one when a tool asks which item to work on:
 
-### From the annotation view
+- In Obsidian, on the active literature note: run <Command inline name={m.command_copy_item_key_name()} />, or select it from the file menu. A literature note also records this in its `zotero-key` property.
+- On an annotation row: open the more-options menu and select <UiLabel name={m.indexed_key_menu_copy_annotation()} />.
+- In the explorer's pane menu: select <UiLabel name={m.command_copy_item_key_name()} /> or <UiLabel name={m.indexed_key_menu_copy_annotation()} />.
+- In Zotero (with ZotLit Companion): right-click rows and select <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "item" })} /> or <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "attachment" })} /> (selecting several rows copies one key per line). In the PDF reader, right-click an annotation and select <UiLabel name={m["zotero.menu_reader_annot_copy_key"]()} />.
 
-In the annotation sidebar, open the more-options menu on any annotation row and select <UiLabel name={m.template_data_explorer_menu_explore()} />. The explorer opens anchored at that annotation.
+</Accordion>
+<Accordion title="Fields of one highlight" id="annotation-fields">
 
-### From Zotero (item)
+The fields an annotation template reads belong to an individual highlight rather than the paper. Select <UiLabel name={m.workbench_choose_annotation()} /> to choose from the paper's annotations or six built-in examples (highlight, underline, note, text, image, ink). Alternatively, under `zt.annotations`, open a row's more-options menu and select <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />. A breadcrumb labelled <UiLabel name={m.template_data_explorer_note_root()} /> appears; click its back button (<UiLabel name={m.template_data_explorer_back_to_note_root()} />) to return to the paper's fields.
 
-ZotLit Companion, the Zotero add-on, adds these entry points in Zotero. Right-click a single item, open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu, and select <UiLabel name={m.template_data_explorer_menu_explore()} />. Zotero opens the explorer in Obsidian via a protocol link. The explorer opens as its own view, even while a Template Workbench View is open on another item, and that view keeps its item.
+</Accordion>
+</Accordions>
 
-### From Zotero (annotation)
+## If you see something else
 
-In Zotero's PDF reader, right-click an annotation and select <UiLabel name={m["zotero.menu_reader_annot_explore"]()} />, added by the Companion. The explorer opens in Obsidian anchored at that annotation.
+- **A list of papers instead of fields** — no literature note was active when you ran the command. Pick a paper from the list, or open a literature note and run the command again.
+- <UiLabel name={m.workbench_fields_no_matches()} /> — shorten or clear the text
+  in the search box.
+- <UiLabel name={m.workbench_field_copy_failed()} /> — select the snippet text
+  displayed on screen and copy it manually.
+- **The snippet items are in two submenus, Liquid and Eta** — choose the language your template uses. If you are starting fresh, choose Liquid.
+- **Zotero asks for confirmation each time it opens Obsidian** — follow [Suppress the Zotero security prompt](/docs/how-to/suppress-zotero-security-prompt).
+- **The values look out of date** — data updates automatically, but you can select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu to refresh it immediately.
+- **A template rendered the wrong thing and you want to report it** — follow [Template data](/docs/how-to/collect-debug-logs#template-data) in Collect debug logs.
 
-<include>./_security-prompt-callout.mdx</include>
+## Next
 
-## Choose data
-
-Choose a built-in journal article, conference paper, book, or thesis example,
-or a library item under <UiLabel name={m.workbench_recently_updated()} />.
-This list contains items recently updated in Zotero. Select
-
-<UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library.
-Selecting an item replaces the list with its fields.
-
-Use <UiLabel name={m.workbench_choose_item()} /> to change the item. For
-annotation fields, use <UiLabel name={m.workbench_choose_annotation()} />.
-The annotation chooser searches annotations from the selected item and six
-built-in examples: highlight, underline, note, text, image, and ink.
-
-The explorer keeps its own choice. A choice here leaves every Template
-Workbench View on its item, and a choice in a Template Workbench View leaves
-the explorer where it is. Annotation fields use the chosen annotation and its
-own parent item data.
-
-The pane title starts with the selected data and ends with
-
-<UiLabel name={m.workbench_view_fields()} />. Annotation titles show the type,
-page, and a short excerpt. Built-in examples are identified in the title; with
-no selection, the pane uses its generic name.
-
-Full panels have selection actions in the header. Sidebars have a small
-selection control near the data. Right-click the
-pane header to access its menu in either layout.
-
-The explorer's data updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu.
-
-## Copy a Zotero key [#indexed-key]
-
-A Zotero key identifies one object: an item, an attachment, an annotation, or a note. Copy one when a tool asks you which object to work on.
-
-In Obsidian:
-
-- For the active literature note, run <Command inline name={m.command_copy_item_key_name()} />, or select <UiLabel name={m.command_copy_item_key_name()} /> from the file menu.
-- On an annotation row, open the more-options menu and select <UiLabel name={m.indexed_key_menu_copy_annotation()} />.
-- In the explorer, open the pane menu and select <UiLabel name={m.command_copy_item_key_name()} /> or <UiLabel name={m.indexed_key_menu_copy_annotation()} />. The label follows the root the pane lists.
-
-If a literature note is already open, you can also copy its `zotero-key` frontmatter value by hand.
-
-In Zotero, the Companion adds two more entry points:
-
-- Right-click one or more library rows and open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu. The entry names the kind you selected, such as <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "item" })} /> or <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "attachment" })} />. Multiple rows copy one key per line.
-- In the PDF reader, right-click an annotation and select <UiLabel name={m["zotero.menu_reader_annot_copy_key"]()} />.
-
-One key is always enough. The root the pane lists decides which object it names: the note root copies the item key, the annotation root the annotation key.
-
-## Browse the fields
-
-The pane lists the fields of one root, grouped under section headings.
-
-### The root the pane lists
-
-The pane header names the root it reads: <UiLabel name={m.workbench_fields_root_note()} />, <UiLabel name={m.workbench_fields_root_annotation()} />, <UiLabel name={m.workbench_fields_root_filename()} />, or <UiLabel name={m.workbench_fields_root_citation()} />.
-
-The root follows the part of the profile you are editing: the note body and its properties list the note root, the Annotation Section lists the annotation root, the manifest's `filename` value lists the note name root, and the Citation text lists the citation root.
-
-The standalone explorer takes its root from the Template Workbench View beside it. When it is anchored at an annotation, a breadcrumb above the list reads <UiLabel name={m.template_data_explorer_note_root()} />, and its back button, tooltipped <UiLabel name={m.template_data_explorer_back_to_note_root()} />, returns the list to the note root.
-
-To read one annotation's own fields from the note root, open the more-options menu on its row under `zt.annotations` and select <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />.
-
-### Sections
-
-<UiLabel name={m.workbench_explorer_section_common()} /> leads every root and
-holds the fields most templates use. A note root and a note name root group the
-remaining fields under
-<UiLabel name={m.workbench_explorer_section_reference()} />,
-<UiLabel name={m.workbench_explorer_section_identifiers()} />,
-<UiLabel name={m.workbench_explorer_section_content()} />,
-<UiLabel name={m.workbench_explorer_section_organization()} />,
-<UiLabel name={m.workbench_explorer_section_links()} />, and
-<UiLabel name={m.workbench_explorer_section_record()} />. An annotation root
-groups them under <UiLabel name={m.workbench_explorer_section_annotation()} />,
-<UiLabel name={m.workbench_explorer_section_source()} />,
-<UiLabel name={m.workbench_explorer_section_organization()} />,
-<UiLabel name={m.workbench_explorer_section_links()} />, and
-<UiLabel name={m.workbench_explorer_section_record()} />. A citation root has no
-other section yet.
-
-Select a section heading to open or close that section. The button beside the pane's selection control opens every section or closes every one, tooltipped <UiLabel name={m.workbench_explorer_expand_all()} /> or <UiLabel name={m.workbench_explorer_collapse_all()} />. The pane menu carries the same action.
-
-Each top-level row shows a name a reader knows, and its raw path stays in the tooltip and in <UiLabel name={m.workbench_explorer_menu_copy_path()} />. Expand a row that holds an object or an array to read its members. A long value collapses to its first line until you select <UiLabel name={m.workbench_explorer_show_more()} />; <UiLabel name={m.workbench_explorer_show_less()} /> folds it back.
-
-### Filter fields
-
-Type in the search box to narrow the list. The box names the root it searches: <UiLabel name={m.workbench_fields_search_note()} />, <UiLabel name={m.workbench_fields_search_annotation()} />, <UiLabel name={m.workbench_fields_search_filename()} />, or <UiLabel name={m.workbench_fields_search_citation()} />.
-
-A query matches field names, keys, and values by case-insensitive substring. Matching rows and their ancestor chains open automatically. When nothing matches, the list reads <UiLabel name={m.workbench_fields_no_matches()} />.
-
-## Copy paths and snippets
-
-Every row carries a menu. Open it from the row's action cluster, labelled <UiLabel name={m.workbench_explorer_row_actions()} />, or right-click the row.
-
-### Copy path
-
-Select <UiLabel name={m.workbench_explorer_menu_copy_path()} /> to copy the engine-neutral property path, such as `zt.creators[0].lastName`.
-
-### Copy value
-
-Select <UiLabel name={m.workbench_explorer_menu_copy_value()} /> to copy the row's current value. Primitives copy verbatim; objects and arrays copy as JSON. The item is unavailable while the row holds no value.
-
-### Copy template snippets
-
-The same menu offers ready-to-use snippets in the syntax of your template:
-
-- <UiLabel name={m.workbench_explorer_menu_copy_output()} /> renders the value, for example `{{ zt.title }}`.
-- <UiLabel name={m.workbench_explorer_menu_copy_if_present()} /> wraps the value
-  in a conditional block.
-- <UiLabel name={m.workbench_explorer_menu_copy_loop()} /> writes each item of a
-  list on its own Markdown list line.
-- <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> writes every item
-  of a list on one line, separated by commas.
-
-An array node offers <UiLabel name={m.workbench_explorer_menu_copy_loop()} />, and <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> where its elements join into text. Every other node offers <UiLabel name={m.workbench_explorer_menu_copy_output()} /> and <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />.
-
-With <UiLabel name={m.settings_template_js_enable_name()} /> on, the snippet items sit in two submenus, captioned "Liquid" and "Eta", so you can pick the syntax your template uses. With the gate off, the Liquid items appear directly in the menu.
-
-A successful copy shows the notice <UiLabel name={m.workbench_field_copy_done()} />. A failed copy shows <UiLabel name={m.workbench_field_copy_failed()} />.
-
-<Callout type="info" title="Reporting a template problem">
-  To send this data with a bug report, follow [Template
-  data](/docs/how-to/collect-debug-logs#template-data) in Collect debug logs.
-</Callout>
-
-## See also
-
-<Cards>
-  <Card
-    title="Customize a template"
-    description="Create an editable template document and apply your changes."
-    href="/docs/how-to/customize-a-template"
-  />
-  <Card
-    title="How templates work"
-    description="The three kinds of template document, languages, and filename matching."
-    href="/docs/concepts/how-templates-work"
-  />
-  <Card
-    title="Configure frontmatter properties"
-    description="Add custom YAML properties using template expressions."
-    href="/docs/how-to/configure-frontmatter-properties"
-  />
-</Cards>
+- [Customize a template](/docs/how-to/customize-a-template) — paste the snippet into a profile and preview it.
+- [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties) — use a field as a note property.
+- [Data reference](/docs/reference/templates/data) — every field, by template.

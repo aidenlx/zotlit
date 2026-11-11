@@ -14,7 +14,7 @@ You need Obsidian desktop with ZotLit loaded and the [Obsidian CLI](https://obsi
 
 Add `vault=<vault-name>` after `obsidian` when more than one vault is open, for example `obsidian vault=Research zotlit:query`.
 
-[How ZotLit Query works](/docs/concepts/how-zotlit-query-works) explains the records, filters, and groups behind these steps.
+[How ZotLit Query works](/docs/reference/how-queries-work#zotlit-query) explains the records, filters, and groups behind these steps.
 
 ## Run a query
 
@@ -286,7 +286,7 @@ A mistake in a formula fails the query. `diagnostic.location.path` names the for
 }
 ```
 
-A formula that works for most records can fail on one record, such as `number(volume)` on a volume that is text. That value is an error object with a `code` and a `message`. [Error Values](/docs/concepts/how-zotlit-query-works#error-values) describes it.
+A formula that works for most records can fail on one record, such as `number(volume)` on a volume that is text. That value is an error object with a `code` and a `message`. [Error Values](/docs/reference/how-queries-work#error-values) describes it.
 
 ## Export a large result [#export]
 
@@ -340,7 +340,7 @@ To read the full guide yourself, run `obsidian zotlit:query-guide`. Add a topic,
   <Card
     title="How ZotLit Query works"
     description="The three kinds of records, filters, groups, and exact names."
-    href="/docs/concepts/how-zotlit-query-works"
+    href="/docs/reference/how-queries-work#zotlit-query"
   />
   <Card
     title="Commands"

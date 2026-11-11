@@ -220,8 +220,12 @@ export function Sidebar({
   );
 }
 
+// Only the section that holds the current page stays open. The base folder
+// opens when it becomes active but never closes when it stops being active,
+// so a client-side move to another section would leave the old one open;
+// keying on `active` remounts the folder with its default state instead.
 function SidebarFolder(props: ComponentProps<typeof Base.SidebarFolder>) {
-  return <Base.SidebarFolder {...props} />;
+  return <Base.SidebarFolder key={String(props.active ?? false)} {...props} />;
 }
 
 function SidebarCollapseTrigger(

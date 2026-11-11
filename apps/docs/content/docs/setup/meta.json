@@ -1,0 +1,21 @@
+{
+  "title": "Setup and troubleshooting",
+  "pages": [
+    "what-zotlit-reads-and-writes",
+    "fix-common-problems",
+    "../how-to/keep-zotero-and-obsidian-in-sync",
+    "../how-to/set-up-live-updates",
+    "../how-to/sync-across-devices",
+    "---Fix a problem---",
+    "../how-to/fix-stale-data",
+    "../how-to/update-obsidian-installer",
+    "../how-to/suppress-zotero-security-prompt",
+    "../how-to/collect-debug-logs",
+    "---Upgrade or switch tools---",
+    "../how-to/migrate-from-v1",
+    "../how-to/migrate-v1-eta-templates",
+    "../how-to/migrate-from-2.1-templates",
+    "../how-to/migrate-from-zotero-integration",
+    "../how-to/migrate-from-pandoc-reference-list"
+  ]
+}

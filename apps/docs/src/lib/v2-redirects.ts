@@ -46,6 +46,25 @@ export const V2_MOVES: Record<string, string> = {
   "/docs/tutorial/pandoc-citation-workflow":
     "/docs/how-to/pandoc-citation-workflow",
   "/docs/tutorial/customize-template": "/docs/how-to/customize-template",
+  // The Concepts section dissolved into Setup and Reference.
+  "/docs/concepts": "/docs/reference",
+  "/docs/concepts/how-zotlit-connects-to-zotero":
+    "/docs/setup/what-zotlit-reads-and-writes",
+  "/docs/concepts/literature-notes-and-the-managed-region":
+    "/docs/reference/literature-notes",
+  "/docs/concepts/how-citekey-links-work": "/docs/reference/citation-links",
+  "/docs/concepts/excerpt-images": "/docs/reference/excerpt-images",
+  "/docs/concepts/how-templates-work":
+    "/docs/reference/templates/how-templates-work",
+  "/docs/concepts/profiles": "/docs/reference/templates/how-templates-work",
+  "/docs/concepts/javascript-templates":
+    "/docs/reference/templates/how-templates-work",
+  "/docs/concepts/how-zotlit-query-works": "/docs/reference/how-queries-work",
+  "/docs/concepts/query-files-and-query-blocks":
+    "/docs/reference/how-queries-work",
+  "/docs/concepts/template-workbench-view":
+    "/docs/reference/template-workbench-view",
+  "/docs/concepts/template-workbench": "/docs/reference/template-workbench-cli",
 };
 
 /** The sections a moved page can land in. */
