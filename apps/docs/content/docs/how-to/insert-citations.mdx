@@ -1,7 +1,7 @@
 ---
 title: "Insert citations"
 searchTitle: "Cite Zotero sources in Obsidian as you write"
-description: "Insert a Zotero citation such as [@smith2024] in Obsidian as you type, or from the command palette. Citation keys come from Zotero; Better BibTeX is optional."
+description: "Insert a Zotero citation such as [@smith2024] in Obsidian as you type, or from the command palette. Citation keys come from Better BibTeX in Zotero."
 ---
 
 import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
@@ -34,7 +34,7 @@ Open the command palette (`Ctrl+P` on Windows and Linux, `Cmd+P` on macOS) and r
 
 A citation names a paper by its citation key, such as `smith2024`. ZotLit reads this value from Zotero's own **Citation Key** field.
 
-[Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/), an optional Zotero add-on, automatically fills that field with stable keys generated from a pattern. In a group library where you lack edit permissions, Better BibTeX keeps generated keys local; ZotLit can only read keys that already exist in the item's field.
+Install [Better BibTeX](https://retorque.re/zotero-better-bibtex/installation/), a Zotero add-on, to cite as you write: it fills that field for every paper with stable keys generated from a pattern. A paper with an empty field cannot be cited. In a group library where you lack edit permissions, Better BibTeX keeps generated keys local; ZotLit can only read keys that already exist in the item's field.
 
 </Accordion>
 <Accordion title="What each form looks like" id="citation-text">

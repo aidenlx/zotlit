@@ -3,7 +3,7 @@ title: "ZotLit vs Zotero Integration vs Citations for Obsidian"
 description: "Compare ZotLit, Zotero Integration, and Citations for Obsidian. See features, requirements, and which fits your research workflow."
 faq:
   - question: "Do I need Better BibTeX for ZotLit?"
-    answer: "No. ZotLit reads citation keys from Zotero's own Citation Key field. Better BibTeX is optional; if you have it, the keys it makes are in that field, so ZotLit sees them."
+    answer: "Not to browse your library, read PDFs or write literature notes. To cite as you write, yes: ZotLit cites a paper by the key in Zotero's own Citation Key field, and Better BibTeX is the Zotero add-on that gives every paper that key."
   - question: "Can I keep my Zotero Integration notes if I switch?"
     answer: "Yes. They are ordinary Markdown files and stay in your vault. ZotLit leaves its %% begin notes %% markers in place as inert comments, and a note that carries a zotero-key property is recognised as a ZotLit literature note."
   - question: "Which plugin works on iPad or Android?"
@@ -12,13 +12,13 @@ faq:
     answer: "Citations. It reads a BibLaTeX or CSL-JSON file, and its README asks users of other reference managers to check whether theirs exports one. ZotLit and Zotero Integration work with Zotero only."
 ---
 
-Choose ZotLit to read and annotate PDFs, keep your highlights next to your own notes, cite, and export a Word file, all inside Obsidian, without Better BibTeX. It needs a recent Obsidian (1.14.5 or later) and Zotero 9 or 10. Choose Citations if you want only citations and simple literature notes from an exported bibliography file, including from a reference manager other than Zotero. Choose Zotero Integration if your notes already depend on its templates and it still works with your Zotero and Better BibTeX.
+Choose ZotLit to read and annotate PDFs, keep your highlights next to your own notes, cite, and export a Word file, all inside Obsidian. It needs a recent Obsidian (1.14.5 or later) and Zotero 9 or 10. Choose Citations if you want only citations and simple literature notes from an exported bibliography file, including from a reference manager other than Zotero. Choose Zotero Integration if your notes already depend on its templates and it still works with your Zotero and Better BibTeX.
 
 All facts about Zotero Integration and Citations below were checked on 11 November 2026 in their own repositories.
 
 |                                        | ZotLit                                                                                                                                            | Zotero Integration                                                                                                               | Citations                                                                                                                                                     |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Needs Better BibTeX                    | No. Citation keys come from Zotero's own Citation Key field. Better BibTeX is optional.                                                           | Yes. Its README says it requires Better BibTeX.                                                                                  | Its README's Zotero steps export the library with Better BibTeX.                                                                                              |
+| Needs Better BibTeX                    | To cite as you write, yes: it gives each paper its citation key. Not to read, annotate or take notes.                                             | Yes. Its README says it requires Better BibTeX.                                                                                  | Its README's Zotero steps export the library with Better BibTeX.                                                                                              |
 | Zotero must be running                 | No for browsing the library, searching it and reading PDFs. Yes for editing annotations and for export to Word.                                   | Yes. Without Zotero it shows "Cannot connect to Zotero. Please ensure it is running and the Better BibTeX plugin is installed".  | No. It reads an exported .bib or CSL-JSON file.                                                                                                               |
 | Reference managers                     | Zotero only.                                                                                                                                      | Zotero only, through Better BibTeX.                                                                                              | Any that exports BibLaTeX or CSL-JSON, says its README.                                                                                                       |
 | How highlights and notes arrive        | Highlights and comments go into a marked part of the note (the managed region). An update rewrites only that part; your writing outside it stays. | A template imports annotations into a note. Each import overwrites the note, except the parts the template marks with `persist`. | Not stated in its documentation. Its README lists four features: open a literature note, insert a link to it, insert its content, insert a Markdown citation. |
@@ -53,7 +53,7 @@ All facts about Zotero Integration and Citations below were checked on 11 Novemb
 
 ### Do I need Better BibTeX for ZotLit?
 
-No. ZotLit reads citation keys from Zotero's own Citation Key field. Better BibTeX is optional; if you have it, the keys it makes are in that field, so ZotLit sees them.
+Not to browse your library, read PDFs or write literature notes. To cite as you write, yes: ZotLit cites a paper by the key in Zotero's own Citation Key field, and Better BibTeX is the Zotero add-on that gives every paper that key.
 
 ### Can I keep my Zotero Integration notes if I switch?
 

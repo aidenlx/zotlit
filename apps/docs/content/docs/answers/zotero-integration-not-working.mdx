@@ -9,7 +9,7 @@ faq:
   - question: "Will switching to ZotLit change my existing notes?"
     answer: "No. Your Zotero Integration notes are Markdown files and stay in your vault as they are. Their %% begin notes %% markers stay as comments that ZotLit ignores."
   - question: "Do I need Better BibTeX for ZotLit?"
-    answer: "No. ZotLit reads citation keys from Zotero's own Citation Key field, and the keys Better BibTeX makes are stored there too. ZotLit's migration guide suggests keeping Better BibTeX for its citation key patterns."
+    answer: "Not to browse your library, read PDFs or write literature notes. To cite as you write, yes: ZotLit cites a paper by the key in Zotero's own Citation Key field, and Better BibTeX is the Zotero add-on that gives every paper that key."
 ---
 
 Zotero Integration needs Zotero running with the Better BibTeX add-on installed, so match the message you see to the table below. "No citation found" is a message from a different plugin, Pandoc Reference List, not from Zotero Integration.
@@ -38,7 +38,7 @@ Zotero Integration's README and documentation state no Zotero version. Its last 
 
 ## Doing the same job in ZotLit
 
-- Connecting to Zotero: ZotLit reads Zotero's database. Better BibTeX is not required, and Zotero can stay closed while you browse, search and read.
+- Connecting to Zotero: ZotLit reads Zotero's database. The connection does not go through Better BibTeX, and Zotero can stay closed while you browse, search and read.
 - Importing highlights: highlights and comments go into a marked part of the literature note, the managed region. An update rewrites only that part; your own writing outside it stays as it was.
 - Inserting a citation: type `[@` in a note and pick the paper.
 - Templates: ZotLit uses Liquid; Zotero Integration uses Nunjucks. The migration guide has a table that maps one to the other.
@@ -68,7 +68,7 @@ No. Your Zotero Integration notes are Markdown files and stay in your vault as t
 
 ### Do I need Better BibTeX for ZotLit?
 
-No. ZotLit reads citation keys from Zotero's own Citation Key field, and the keys Better BibTeX makes are stored there too. ZotLit's migration guide suggests keeping Better BibTeX for its citation key patterns.
+Not to browse your library, read PDFs or write literature notes. To cite as you write, yes: ZotLit cites a paper by the key in Zotero's own Citation Key field, and Better BibTeX is the Zotero add-on that gives every paper that key.
 
 ## Next step [#next-step]
 

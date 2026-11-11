@@ -46,6 +46,8 @@ export const V2_MOVES: Record<string, string> = {
   "/docs/tutorial/pandoc-citation-workflow":
     "/docs/how-to/pandoc-citation-workflow",
   "/docs/tutorial/customize-template": "/docs/how-to/customize-template",
+  // The how-to hub gave way to the job sections that `/docs` lists.
+  "/docs/how-to": "/docs",
   // The Concepts section dissolved into Setup and Reference.
   "/docs/concepts": "/docs/reference",
   "/docs/concepts/how-zotlit-connects-to-zotero":
