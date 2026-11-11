@@ -1343,4 +1343,159 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toEqual({ search: "figures", notice: true });
   }, 180000);
+
+  it("shows the Reading Card's Open PDF and Write literature note buttons without a scroll when a paper is selected under the setup steps in a 1440 × 860 window", async () => {
+    const snapshot = await obRun(
+      run.vaultId,
+      ({ app, zotlit }) => {
+        const settings = zotlit.services.bridge.runSync(
+          zotlit.services.settings.current,
+        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          size: (
+            require("@electron/remote") as {
+              getCurrentWindow(): { getSize(): [number, number] };
+            }
+          )
+            .getCurrentWindow()
+            .getSize(),
+          settings: {
+            "library.document": settings["library.document"] ?? null,
+            "welcome.dismissed": settings["welcome.dismissed"],
+            "welcome.requested": settings["welcome.requested"],
+          },
+        });
+      },
+      undefined,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        async ({ app, zotlit }, { snapshot }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(settings.update(saved.settings));
+          await bridge.runPromise(settings.flush);
+          (
+            require("@electron/remote") as {
+              getCurrentWindow(): { setSize(w: number, h: number): void };
+            }
+          )
+            .getCurrentWindow()
+            .setSize(saved.size[0], saved.size[1]);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        { snapshot },
+      );
+    });
+    // A first run (aidenlx/zotlit#1984): the setup steps show above a new
+    // Library View, in the window the /learn course is recorded in.
+    await obRun(
+      run.vaultId,
+      async ({ zotlit }) => {
+        (
+          require("@electron/remote") as {
+            getCurrentWindow(): { setSize(w: number, h: number): void };
+          }
+        )
+          .getCurrentWindow()
+          .setSize(1440, 860);
+        const { settings, bridge } = zotlit.services;
+        bridge.runSync(
+          settings.update({
+            "library.document": null,
+            "welcome.dismissed": false,
+            "welcome.requested": true,
+          }),
+        );
+        await bridge.runPromise(settings.flush);
+      },
+      undefined,
+    );
+    const shown = await obRun(
+      run.vaultId,
+      async ({ app, page }, { key, search }) => {
+        for (const leaf of app.workspace.getLeavesOfType("zotlit-library"))
+          leaf.detach();
+        app.commands.executeCommandById("zotlit:open-library-view");
+        const leaf = await page.until(
+          "the Library View",
+          () =>
+            (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & {
+                view: LibraryView;
+              })[]
+            )[0],
+          30000,
+        );
+        const el = leaf.view.contentEl;
+        await leaf.view.query.settled;
+        await page.until(
+          "the setup steps",
+          () => el.querySelector("[data-welcome-step]"),
+          10000,
+        );
+        const input = el.querySelector<HTMLInputElement>(
+          "[data-library-search] input",
+        )!;
+        input.focus();
+        input.value = search;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await leaf.view.searched;
+        await leaf.view.query.settled;
+        page.press(
+          await page.until(
+            "the paper's row",
+            () =>
+              el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`),
+            10000,
+          ),
+          "the paper's row",
+        );
+        const card = await page.until(
+          "the Reading Card",
+          () =>
+            el.querySelector<HTMLElement>(
+              '[data-library-card] [data-library-card-action="note"]',
+            ) && el.querySelector<HTMLElement>("[data-library-card]"),
+          10000,
+        );
+        await leaf.view.card.settled;
+        const tab = el.getBoundingClientRect();
+        return {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          stacked:
+            card.getBoundingClientRect().top >=
+            el.querySelector("[data-query-item-row]")!.getBoundingClientRect()
+              .bottom,
+          inView: Object.fromEntries(
+            ["pdf", "note"].map((action) => {
+              const button = card.querySelector<HTMLElement>(
+                `[data-library-card-action="${action}"]`,
+              )!;
+              const b = button.getBoundingClientRect();
+              return [action, b.top >= tab.top && b.bottom <= tab.bottom];
+            }),
+          ),
+        };
+      },
+      {
+        key: annotationItem.key,
+        search: annotationItem.title.split(" ").slice(0, 3).join(" "),
+      },
+      { timeoutMs: 90000 },
+    );
+    expect(shown).toEqual({
+      width: 1440,
+      height: 860,
+      // The tab is narrow, so the card sits under the list.
+      stacked: true,
+      inView: { pdf: true, note: true },
+    });
+  }, 180000);
 });
