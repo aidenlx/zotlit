@@ -81,10 +81,17 @@ export function Check({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-start gap-2.5 rounded-[10px] bg-check-bg px-3.5 py-3 text-[17px] leading-normal text-check [&_strong]:font-semibold">
       <span aria-hidden>✓</span>
-      <div className="[&>p+p]:mt-2">{children}</div>
+      <div className={oneLine}>{children}</div>
     </div>
   );
 }
+
+/**
+ * A check or fix is one sentence or two. When a formatter wraps it, MDX splits
+ * it into paragraphs at a label on a line of its own, so the paragraphs run on
+ * as one line of text.
+ */
+const oneLine = "[&>p]:inline [&>p+p]:before:content-['_']";
 
 /** One likely failure: what the reader sees, then what to do. */
 export function Fix({
@@ -98,7 +105,9 @@ export function Fix({
   return (
     <div className="grid gap-1.5">
       <h3 className="text-[17px] leading-snug font-semibold">{title}</h3>
-      <div className="text-[17px] leading-normal [&>p+p]:mt-2">{children}</div>
+      <div className={cn("text-[17px] leading-normal", oneLine)}>
+        {children}
+      </div>
     </div>
   );
 }

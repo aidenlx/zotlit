@@ -8,7 +8,7 @@
 // alone shows the part the hash targets — see `preHydration`.
 
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
@@ -76,16 +76,20 @@ export function LessonView({
   const arrived = useRef(false);
   const moved = useRef(false);
 
-  // A client-side visit never ran the inline script below.
-  useEffect(() => {
+  // Both run before paint, so a client-side visit — which never ran the
+  // inline script below — does not show every part for a frame.
+  useLayoutEffect(() => {
     document.documentElement.setAttribute("data-lesson-js", "");
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const part = partFromHash(hash, total);
     moved.current = arrived.current;
     arrived.current = true;
     setAt(part);
+    // The hash names the part's element, which the browser or the router
+    // scrolls to; each part starts at the top, with the strip in view.
+    window.scrollTo(0, 0);
     saveProgress(lesson.slug, part, total);
   }, [hash, total, lesson.slug]);
 

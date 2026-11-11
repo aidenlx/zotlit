@@ -84,6 +84,7 @@ function Course() {
               to="/learn/$lesson"
               params={{ lesson: next.lesson.slug }}
               hash={next.hash}
+              hashScrollIntoView={false}
               className={cn(buttonClass.accent, "inline-flex items-center")}
             >
               {started
