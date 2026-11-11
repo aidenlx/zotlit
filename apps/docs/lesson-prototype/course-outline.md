@@ -1,7 +1,10 @@
 # /learn course outline (draft cut)
 
 Status: draft for the owner's read. Cut from the 13 drafted lessons on
-`trial/lessons-on-next`. Not walked on `next` yet.
+`trial/lessons-on-next`. Walked on `next` (branch `docs/learn-walks`): all 36
+steps pass against Obsidian 1.14.5 and Zotero 10.0. Step screenshots:
+`apps/docs/public/img/learn/<lesson-slug>/step-<n>.webp` on that branch. The
+tables below carry the walk's corrections.
 
 ## Frame
 
@@ -27,10 +30,14 @@ Search intent: "connect zotero to obsidian", "how to use zotero with obsidian".
 |---|---|---|
 | 1 | In Obsidian: Settings, Community plugins, Browse. Search ZotLit. Install, then Enable. | A tab named Zotero library opens. |
 | 2 | Look at the first line of the tab. | Connect to Zotero has a green check and your item count. |
-| 3 | Type a few words of a title into Search papers. Select the paper. | A card with the authors, the journal, and two buttons. |
-| 4 | Select Open PDF. | The PDF in a new tab, with your Zotero highlights in colour. |
+| 3 | Type a few words of a title into Search papers. Select the paper. | A card under the list with the authors, the journal, and the buttons Open PDF and Write literature note. Scroll down if the buttons are out of view. |
+| 4 | Select Open PDF. | The PDF in a new tab, at the page where you last read it in Zotero, with your highlights in colour. |
 | 5 | Go back to the Zotero library tab. Select Write literature note. | The notice "Literature note created." and the note in a new tab. |
-| 6 | Under the two links, type a heading and your own thoughts. | Your text above the Annotations section. |
+| 6 | Under the line with the Zotero and PDF links, type a heading and your own thoughts. | Your text above the Annotations section. |
+
+- **Walk notes:** the first screen shows four setup steps; the fourth,
+  "Install ZotLit Companion · Recommended", is optional and this lesson leaves
+  it. Step 1 (Browse, Install) cannot be walked in the Fixture.
 
 - **Fixes behind "I see something else":** Zotero not found (Locate data
   folder); Obsidian installer too old; the button reads Open literature note.
@@ -86,9 +93,10 @@ Needs Zotero open and the engine from Lesson 3.
 | 2 | Open the command palette (Ctrl+P or Cmd+P). Run Export note with citations. | A dialog. Format is Word document. |
 | 3 | Choose the citation style you need, such as APA 7th edition. | "Only this export uses this style." |
 | 4 | Select Export. | A notice with the file name and the style. |
-| 5 | Open the Word file beside your note. | Formatted citations and a References list at the end. |
+| 5 | Open the folder of your note in Finder or File Explorer. Open the Word file. | Formatted citations and a References list at the end. |
 
-- **Fix to keep on the page:** Obsidian hides Word files; how to show them.
+- **Walk note:** Obsidian's file list hides Word files by default, so the
+  lesson sends the reader to the folder on the computer.
 - **Moved out:** PDF, your own Pandoc, what counts as a citation, default
   styles (recipes).
 
@@ -101,7 +109,7 @@ Search intent: "track which papers I have read zotero obsidian".
 |---|---|---|
 | 1 | In the Zotero library tab, select Save as query file. Name it Reading plan. | `Reading plan.zotquery` opens and lists your papers. |
 | 2 | Select Views, Configure view. Set Layout to Table. | Your papers as rows. |
-| 3 | Select Properties. Type `reading-status`. Select the second entry, Add "reading-status" vault property. | A column reading-status (note). Each cell reads No note. |
+| 3 | Select Properties. Type `reading-status`. Select the second entry, Add "reading-status" vault property. | A column reading-status (note). A paper with no literature note reads No note; the paper from Lesson 1 has an empty cell. |
 | 4 | Select a cell, type `to-read`, press Enter. | The notice "Literature note created." The cell shows to-read. |
 | 5 | Mark a paper you started `reading` and a finished one `done`. | The cell suggests the statuses you used. |
 | 6 | Select Filter. Choose reading-status (note), is, `to-read`. | Only the papers still to read. |
@@ -117,7 +125,7 @@ Search intent: "obsidian literature review table zotero".
 |---|---|---|
 | 1 | Select the collection. Select Save as query file. Type Thesis as the folder. Save. | `Thesis/Reproducibility.zotquery` opens. |
 | 2 | Select Views, Configure view. Set Layout to Table. | The papers as rows. |
-| 3 | Select Properties. Add Year, Publication, and `creators`. Clear Item Type and Modified. | Authors, year, and journal beside each title. |
+| 3 | Select Properties. Add Year, Publication, and `creators`. Clear Item Type and Modified. | The columns Year, Publication, and Creators (the authors) beside each title. |
 | 4 | Type `rating`. Select Add "rating" vault property. Type a rating in each cell. | Your ratings in a column of your own. |
 | 5 | Select Sort, Add sort. Choose Date, old to new. | The papers in order of year. |
 | 6 | Select the result count. Choose Copy to clipboard. Paste into your draft. | The table in your chapter. |
@@ -133,19 +141,33 @@ Search intent: "obsidian literature review table zotero".
 - **No lesson for two desk jobs:** "See how your sources connect" (graph) and
   "Make it yours" (templates). Both are recipes.
 
-## Open facts, to settle in the walk on `next`
+## Facts from the walk
 
-1. **Companion.** The Welcome checklist now has a fourth step, "Install ZotLit
-   Companion — Recommended". Code reading: on Zotero 10 the default read mode
-   clones the database with its write-ahead log, so recent changes are read
-   without the Companion. Not walked on Windows or Linux.
-2. **Citation keys.** Lesson 3 needs each paper to have a citation key. What a
-   new Zotero 10 library has without Better BibTeX is not checked.
-3. **First install.** Browse, Install, and automatic Zotero detection were never
-   walked, because the Fixture installs the plugin. They need one manual walk.
-4. **Product changes since the drafts:** Library View layout on a narrow pane,
-   the annotation hover, the fourth Welcome step, the 2.2.1 "Update notes"
-   route, drag from the PDF (2.2.2), page labels that follow the Reader
-   settings (#1981).
-5. **Lessons 5 and 6 share their first two steps.** Kept on purpose: each
+1. **Companion: not needed for this course.** On Zotero 10.0 in the default
+   read mode, a change in Zotero reached Obsidian in about 3 seconds with the
+   Companion turned off (about 2 seconds with it on). The message
+   `companion_zotero_10_guidance` shows only to people who upgrade from before
+   2.1.0 or from v1. Observed on macOS; Windows and Linux are not checked.
+2. **Citation keys come from Zotero's own Citation Key field.** Better BibTeX
+   is not needed to read them. Still open: what Lesson 3 shows for a paper with
+   no key, and whether a new Zotero 10 library fills that field by itself.
+3. **Not walkable in the Fixture:** Lesson 1 step 1 (Browse, Install, automatic
+   Zotero detection), the Install press in Lesson 3 step 1 (the engine was
+   already on the computer), and opening the file in Word in Lesson 4 step 5.
+   Each needs one manual walk on a clean computer.
+4. **Lessons 5 and 6 share their first two steps.** Kept on purpose: each
    lesson must work alone.
+
+## Product frictions a first-time reader meets (not filed)
+
+- At a 1440×860 window, the card's Open PDF and Write literature note buttons
+  sit below the visible part of the tab, under the setup steps and the list.
+- Open PDF opens at the last page read in Zotero, so the first page's
+  highlights are out of view.
+- Right after the new note opens, the annotation sidebar reads "Open a
+  literature note or a Zotero PDF to see annotations."
+- Save as query file suggests the name "Recent" from the default view.
+- The Companion step can read "Recommended" when the Companion is loaded
+  (seen in the Fixture; a real install is not checked).
+- In the Reading plan table, the Title column is clipped after a column is
+  added.
