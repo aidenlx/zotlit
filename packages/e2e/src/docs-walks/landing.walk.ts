@@ -11,6 +11,7 @@
 // `pnpm --filter @zotlit/e2e docs-walk src/docs-walks/landing.walk.ts`.
 
 import { obRun } from "@e2e/obsidian-cli.ts";
+import type { PagePdfView } from "@e2e/page-notes-types.ts";
 import { raiseWindow } from "@e2e/reader-gestures.ts";
 import { isObsidianReachable } from "@e2e/vault-script.ts";
 import { execFile } from "node:child_process";
@@ -58,9 +59,21 @@ const SANDVE = {
   attachmentKey: "DCSNDPDF",
   citekey: "sandve2013",
   title: "Ten Simple Rules for Reproducible Computational Research",
-  /** The blue highlight on page 2. */
-  passage: "SV6RZB2J",
   annotations: 5,
+  /** Its five highlights in Zotero, before the clip adds one. */
+  annotationKeys: ["SV4QMR7A", "SV8KTW3C", "SV2HXN6E", "SV9PLD5G", "SV6RZB2J"],
+};
+/**
+ * The sentence the reader highlights in Sandve et al. 2013: on page 1, with
+ * no highlight in the Fixture, as its text layer holds it, and how far past
+ * page width the PDF zooms so it reads at the clip's size.
+ */
+const SENTENCE_READ = {
+  page: 1,
+  from: "We further note",
+  to: "realistic.",
+  words: "just as much about the habits",
+  zoom: 1.8,
 };
 /** Wilson et al. 2014: a PDF not yet read, in Reproducibility. */
 const WILSON = {
@@ -81,6 +94,7 @@ const APA_TITLE = "APA Style 7th edition";
 
 type LibraryLeaf = WorkspaceLeaf & { view: LibraryView };
 type AnnotationLeaf = WorkspaceLeaf & { view: AnnotationView };
+type PdfLeaf = WorkspaceLeaf & { view: PagePdfView };
 type DraftLeaf = WorkspaceLeaf & {
   view: MarkdownView & {
     hoverPopover: (HoverPopover & { hide(): void }) | null;
@@ -411,7 +425,7 @@ describe.skipIf(!reachable)("Landing page clips", () => {
     await poster("find");
   });
 
-  it("read: open Sandve et al. 2013 and select a highlight in the sidebar; the PDF moves to it", async () => {
+  it("read: open Sandve et al. 2013, select a sentence and pick a colour; the sentence highlighted and its new card beside the PDF", async () => {
     await libraryAlone(COLLECTION);
     await raiseWindow(walk.vaultId);
     // The reader opens the PDF from its card: the PDF with its highlights,
@@ -489,74 +503,225 @@ describe.skipIf(!reachable)("Landing page clips", () => {
       },
       STEP,
     );
-    const landed = await walk.record("read", () =>
+    // The reader zooms in on the first page, so the sentence they are about
+    // to highlight reads at the clip's size.
+    await obRun(
+      walk.vaultId,
+      async ({ app, page }, { from, pageNumber, zoom }) => {
+        const pdf = app.workspace.getLeavesOfType("pdf")[0] as PdfLeaf;
+        const scroller = pdf.view.viewer.child.pdfViewer.pdfViewer;
+        const viewer = scroller as unknown as {
+          currentScale: number;
+          currentScaleValue: string;
+        };
+        viewer.currentScaleValue = "page-width";
+        await new Promise((r) => setTimeout(r, 300));
+        viewer.currentScale *= zoom;
+        const pageEl = await page.until(
+          "the page",
+          () =>
+            pdf.view.containerEl.querySelector<HTMLElement>(
+              `.page[data-page-number="${pageNumber}"]`,
+            ),
+          10000,
+        );
+        /** The text node where the sentence starts, in the page's current text layer. */
+        const startOf = () => {
+          const layer = pageEl.querySelector<HTMLElement>(".textLayer");
+          const at = layer?.textContent.indexOf(from) ?? -1;
+          if (!layer || at < 0) return null;
+          let seen = 0;
+          const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const length = (n as Text).data.length;
+            if (seen + length > at) return n.parentElement;
+            seen += length;
+          }
+          return null;
+        };
+        // The sentence's column comes whole into the tab, its first line a
+        // third of the way down. The PDF view redraws its pages after the
+        // zoom, so the walk scrolls until the sentence stays in place.
+        let placed = false;
+        for (let tries = 0; tries < 20 && !placed; tries++) {
+          await new Promise((r) => setTimeout(r, 400));
+          const start = startOf();
+          if (!start) continue;
+          const box = start.getBoundingClientRect();
+          const pane = scroller.container.getBoundingClientRect();
+          const dx = box.left - (pane.left + 48);
+          const dy = box.top - (pane.top + pane.height / 3);
+          placed = Math.abs(dx) < 6 && Math.abs(dy) < 6;
+          scroller.container.scrollLeft += dx;
+          scroller.container.scrollTop += dy;
+        }
+        if (!placed) throw new Error("the sentence did not come into view");
+        await new Promise((r) => setTimeout(r, 1500));
+      },
+      {
+        from: SENTENCE_READ.from,
+        pageNumber: SENTENCE_READ.page,
+        zoom: SENTENCE_READ.zoom,
+      },
+      STEP,
+    );
+    const made = await walk.record("read", () =>
       obRun(
         walk.vaultId,
-        async ({ app, page }, { passage, opening }) => {
+        async ({ app, page }, { from, to, pageNumber, before, opening }) => {
           const pointer = page.scratch.docsWalkPointer;
-          const pdf = app.workspace.getLeavesOfType("pdf")[0]!;
+          const pdf = app.workspace.getLeavesOfType("pdf")[0] as PdfLeaf;
           const view = pdf.view.containerEl.getBoundingClientRect();
           if (pointer) {
-            await pointer.park(view.right - 40, view.top + view.height * 0.6);
+            await pointer.park(view.right - 40, view.top + view.height * 0.7);
             await new Promise((r) => setTimeout(r, opening));
           }
+          // The reader drags across a sentence that has no highlight yet.
+          const layer = pdf.view.containerEl.querySelector<HTMLElement>(
+            `.page[data-page-number="${pageNumber}"] .textLayer`,
+          )!;
+          const nodes: Text[] = [];
+          const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode())
+            nodes.push(n as Text);
+          let all = "";
+          const starts = nodes.map((t) => {
+            const at = all.length;
+            all += t.data;
+            return at;
+          });
+          // The start lies in the node that holds its first character, the
+          // end in the node that holds its last.
+          const at = (k: number, end: boolean): [Text, number] => {
+            const x = nodes.findIndex((t, n) =>
+              end
+                ? starts[n]! < k && k <= starts[n]! + t.data.length
+                : starts[n]! <= k && k < starts[n]! + t.data.length,
+            );
+            return [nodes[x]!, k - starts[x]!];
+          };
+          const i = all.indexOf(from);
+          const j = all.indexOf(to, i) + to.length;
+          const range = document.createRange();
+          range.setStart(...at(i, false));
+          range.setEnd(...at(j, true));
+          const rects = [...range.getClientRects()];
+          const first = rects[0]!;
+          const last = rects.at(-1)!;
+          const x = first.left + 2;
+          const y = first.top + first.height / 2;
+          if (pointer) {
+            await pointer.pointAt(x, y);
+            await pointer.park(last.right, last.top + last.height / 2);
+          }
+          const pressed = page.fire("pointerdown", x, y);
+          getSelection()!.removeAllRanges();
+          getSelection()!.addRange(range);
+          page.fire("pointerup", x, y, pressed);
+          const popup = await page.until(
+            "the Mark popup",
+            () =>
+              document.querySelector(
+                '.zt-pdf-mark-popup [data-zt-verb="highlight"]',
+              ) && document.querySelector<HTMLElement>(".zt-pdf-mark-popup"),
+            5000,
+          );
+          await new Promise((r) => setTimeout(r, pointer ? 700 : 0));
+          // Then picks green, or yellow when the popup offers no green.
+          const swatch = await page.stands(
+            popup.querySelector<HTMLElement>('[data-zt-verb="color-3"]') ??
+              popup.querySelector<HTMLElement>('[data-zt-verb="color-1"]'),
+            "colour",
+          );
+          const colour = swatch.getAttribute("aria-label");
+          const disabled = swatch.getAttribute("aria-disabled");
+          await pointer?.point(swatch);
+          page.press(swatch, "colour");
           const side = (
             app.workspace.getLeavesOfType(
               "zotero-annotation-view",
             )[0] as AnnotationLeaf
           ).view.contentEl;
-          // The reader scrolls the sidebar to the blue highlight on page 2.
-          const target = await page.until(
-            "the blue highlight's card",
+          const card = await page.until(
+            "the new card",
             () =>
-              side.querySelector<HTMLElement>(
-                `.zt-annot-card[data-zotero-annotation-key="${passage}"]`,
+              [
+                ...side.querySelectorAll<HTMLElement>(
+                  ".zt-annot-card[data-zotero-annotation-key]",
+                ),
+              ].find((c) => !before.includes(c.dataset.zoteroAnnotationKey!)),
+            20000,
+          );
+          const key = card.dataset.zoteroAnnotationKey!;
+          const mark = await page.until(
+            "the highlight on the page",
+            () =>
+              pdf.view.containerEl.querySelector<HTMLElement>(
+                `.zt-pdf-annotation-mark[data-zotero-annotation-key="${key}"]`,
               ),
+            10000,
+          );
+          getSelection()!.removeAllRanges();
+          // The popup of the new highlight closes, so the highlight shows whole.
+          await new Promise((r) => setTimeout(r, pointer ? 500 : 0));
+          await page.trusted(window).key("Escape");
+          await page.until(
+            "the popup closed",
+            () =>
+              !document.querySelector(".zt-pdf-mark-popup")?.checkVisibility(),
             5000,
           );
-          target.scrollIntoView({
+          // The new card shows in the list beside the PDF.
+          card.scrollIntoView({
             block: "center",
             behavior: pointer ? "smooth" : "instant",
           });
-          await new Promise((r) => setTimeout(r, pointer ? 700 : 100));
-          const card = await page.stands(target, "the blue highlight's card");
-          await pointer?.point(card, { inset: 40 });
-          await page.trusted(window).click(card, { x: 40, y: 14 });
-          const mark = await page.until(
-            "the highlight in view",
-            () => {
-              const m = pdf.view.containerEl.querySelector<HTMLElement>(
-                `.zt-pdf-annotation-mark[data-zotero-annotation-key="${passage}"]`,
-              );
-              if (!m) return null;
-              const b = m.getBoundingClientRect();
-              return b.top >= view.top && b.bottom <= view.bottom && m;
-            },
-            10000,
-          );
-          await new Promise((r) => setTimeout(r, 900));
+          await new Promise((r) => setTimeout(r, pointer ? 900 : 100));
           if (pointer) {
-            // The pointer rests in the tab's margin, off the passage.
+            // The pointer rests in the tab's margin, off the sentence.
             await pointer.park(view.right - 14, view.bottom - 24);
           }
+          const painted = mark.matches("[fill],[stroke]")
+            ? mark
+            : mark.querySelector("[fill],[stroke]");
+          const cardBox = card.getBoundingClientRect();
+          const sideBox = side.getBoundingClientRect();
           return {
+            key,
+            colour,
+            disabled,
+            fill:
+              painted?.getAttribute("fill") ??
+              painted?.getAttribute("stroke") ??
+              null,
+            text: card.innerText.replaceAll(/\s+/g, " "),
+            cardShown:
+              cardBox.top >= sideBox.top && cardBox.bottom <= sideBox.bottom,
             cards: side.querySelectorAll(
               ".zt-annot-card[data-zotero-annotation-key]",
             ).length,
-            selected: card.matches("[aria-selected=true], .is-selected")
-              ? true
-              : card.getAttribute("aria-selected"),
-            mark: !!mark,
           };
         },
-        { passage: SANDVE.passage, opening: OPENING },
+        {
+          from: SENTENCE_READ.from,
+          to: SENTENCE_READ.to,
+          pageNumber: SENTENCE_READ.page,
+          before: SANDVE.annotationKeys,
+          opening: OPENING,
+        },
         STEP,
       ),
     );
-    console.log("[walk] read", JSON.stringify(landed));
-    expect(landed.cards).toBe(SANDVE.annotations);
-    expect(landed.mark).toBe(true);
+    console.log("[walk] read", JSON.stringify(made));
+    expect(made.disabled).not.toBe("true");
+    expect(made.cards).toBe(SANDVE.annotations + 1);
+    expect(made.text).toContain(SENTENCE_READ.words);
+    expect(made.cardShown).toBe(true);
     await poster("read");
+    // The library loses the new highlight again, as the Fixture had it.
+    await walk.zotero.json<boolean>(
+      `(async()=>{await Zotero.Items.getByLibraryAndKey(1,${JSON.stringify(made.key)}).eraseTx();return true;})()`,
+    );
   });
 
   it("note: select Write literature note on the paper's card; the note with its details and highlights", async () => {
