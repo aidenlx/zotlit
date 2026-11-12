@@ -180,13 +180,10 @@ function frame(
     }
     case "type":
     case "keys": {
-      // Typing frames its field at the zoom, or wider for a wide field.
-      const rect = event.rect ?? {
-        x: 0,
-        y: 0,
-        w: viewport.width,
-        h: viewport.height,
-      };
+      // Typing frames its field at the zoom, or wider for a wide field; only
+      // the part of the field inside the window counts.
+      const whole = { x: 0, y: 0, w: viewport.width, h: viewport.height };
+      const rect = (event.rect && meet(event.rect, whole)) ?? whole;
       const focus = pad(rect, o.padding);
       return { view: fit(focus, viewport, [1, o.zoom]), focus };
     }
@@ -235,6 +232,15 @@ function inside(a: Rect, b: Rect): boolean {
   return (
     a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h
   );
+}
+
+/** The part of `a` inside `b`, or undefined when they do not meet. */
+function meet(a: Rect, b: Rect): Rect | undefined {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const w = Math.min(a.x + a.w, b.x + b.w) - x;
+  const h = Math.min(a.y + a.h, b.y + b.h) - y;
+  return w > 0 && h > 0 ? { x, y, w, h } : undefined;
 }
 
 function union(a: Rect, b: Rect): Rect {

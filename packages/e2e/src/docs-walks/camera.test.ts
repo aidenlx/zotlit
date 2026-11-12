@@ -129,6 +129,15 @@ describe("planCamera", () => {
     expect(shot.x + shot.w).toBeGreaterThanOrEqual(1232);
   });
 
+  it("frames only the part of a typing field inside the window", () => {
+    const track = plan([
+      { kind: "keys", t: 2, end: 3, rect: { x: 400, y: 600, w: 300, h: 900 } },
+    ]);
+    const shot = viewAt(track, 6);
+    expect(shot.w).toBeCloseTo(720);
+    expect(shot.y + shot.h).toBeCloseTo(860);
+  });
+
   it("does not follow a park", () => {
     const track = plan([{ kind: "park", t: 2, x: 1400, y: 840 }]);
     expect(viewAt(track, 6)).toEqual(full);

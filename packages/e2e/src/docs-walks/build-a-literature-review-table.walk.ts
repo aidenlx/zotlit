@@ -207,7 +207,7 @@ async function lookAtTable(vaultId: string, label = ""): Promise<void> {
               (row) => row.cells[head.cellIndex]!,
             ),
           ]
-        : [...el.querySelectorAll("thead")];
+        : [...el.querySelectorAll("th")];
       if (parts.length > 0) await pointer.look(parts);
     },
     { file: FILE, label },

@@ -683,6 +683,17 @@ async function startRecording(
           const b =
             boxes.item(boxes.length - 1) ?? range.getBoundingClientRect();
           if (b.height > 0) return rectOf(b);
+          // A caret on an empty line has no box: its line has one.
+          const node = selection.focusNode;
+          // A caret between elements points at the element after it.
+          const at =
+            node instanceof Element
+              ? (node.childNodes[selection.focusOffset] ?? node)
+              : node;
+          const line = (
+            at instanceof Element ? at : at?.parentElement
+          )?.closest(".cm-line, p, li");
+          if (line) return rectOf(line.getBoundingClientRect());
         }
         return el && el !== document.body
           ? rectOf(el.getBoundingClientRect())

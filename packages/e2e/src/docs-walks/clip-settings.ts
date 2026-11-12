@@ -59,8 +59,10 @@ export const defaultClipSettings: ClipSettings = {
   width: 1440,
   fps: 30,
   posterQuality: 82,
-  vp9Crf: 30,
-  h264Crf: 20,
+  // Clips with camera moves passed 1.5 MB at 30 and 20; at 42 and 32 the UI
+  // text reads the same at the site's size.
+  vp9Crf: 42,
+  h264Crf: 32,
 };
 
 /**
