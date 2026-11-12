@@ -198,7 +198,10 @@ export function TableDemo() {
             {m.docs_home_table_lede()}
           </p>
           <div className="mt-4">
-            <LessonLink lesson="literature-review-table-from-zotero" />
+            <LessonLink
+              lesson="literature-review-table-from-zotero"
+              label={m.docs_home_table_link()}
+            />
           </div>
         </div>
         <div className="mt-10 sm:mt-12">

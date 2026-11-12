@@ -56,14 +56,23 @@ export function Actions({ className }: { className?: string }) {
   );
 }
 
-/** "Learn in the tutorial →", in the accent text tone, to one lesson. */
-export function LessonLink({ lesson }: { lesson: string }) {
+/**
+ * A link to one lesson, in the accent text tone. Each link names its lesson, so
+ * the page's lesson links read apart out of context.
+ */
+export function LessonLink({
+  lesson,
+  label,
+}: {
+  lesson: string;
+  label: string;
+}) {
   return (
     <a
       href={localizeHref(`${TUTORIAL_HREF}/${lesson}`)}
       className="inline-flex items-center gap-1 rounded-sm text-base font-medium text-fd-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary"
     >
-      {m.docs_home_learn_link()}
+      {label}
       <span aria-hidden>→</span>
     </a>
   );

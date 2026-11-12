@@ -154,7 +154,7 @@ stays legible at any size, including shrunk-down OG cards.
 On editorial and docs-chrome surfaces, apparatus labels are mono uppercase:
 
 - Home nav links
-- Landing labels ("The research sequence", "Before you write", "Step 1", the
+- Landing labels ("The research sequence", "Literature review", "Step 1", the
   desk's tape labels) and the `/learn` lesson labels ("Lesson 1 of 6", "Step
   2 of 6")
 - Changelog/blog dates and meta lines; version-ledger row labels
@@ -322,10 +322,10 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   1440 × 832 stage, built in HTML on the docs Fixture's data, each named by
   a strip of washi tape (mono uppercase 10.5px on `--desk-tape`, rotated
   2.5°): the Library View sheet ("Browse your library") and the
-  Reproducibility.zotquery table ("A live literature table") lead at the
-  top; the PDF page with the reader's marks ("Read and annotate"), the
+  Reproducibility.zotquery table ("Compare your papers") lead at the
+  top; the PDF page with the reader's marks ("Read and highlight"), the
   literature-note index card ("Take literature notes"), the draft with its
-  citation picker ("Cite while you write") and the Word reference page
+  citation picker ("Cite as you write") and the Word reference page
   ("Export and submit") lie below. Two blank sheets under the leads give
   depth; a soft clearing of the ground colour keeps the headline clear. The
   stage scales in steps with the window — 0.88 from 1280px, 0.94 from
@@ -347,17 +347,18 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
 - **Workflow: "From Zotero to finished chapter."** On the surface at 40%.
   A centred head: the mono label "The research sequence", the H2, and one
   line. Then five steps — Find a paper, Read and highlight, Write the
-  literature note, Cite as you draft, Send it to Word — in a zig-zag from
+  literature note, Cite as you draft, Export your chapter to Word — in a zig-zag from
   1024px around a vertical hairline, each numbered on the line by a 36px
   circle (mono, accent text tone). Each step: "Step N" (mono uppercase,
   accent text tone), the step title (display, 2.25rem from 640px), one
   outcome line (sans 18px, muted), two points on hairlines (a semibold lead
   and a muted sentence), an optional note on the quiet fill (the Better
-  BibTeX requirement), and "Learn in the tutorial →" to the step's lesson.
+  BibTeX requirement), and a link to the step's lesson that names it
+  ("Open the citation lesson →"); no two lesson links on the page share text.
   Beside it, the step's recording (see Recordings).
-- **Compare your papers.** The mono label "Before you write", the H2
-  "Compare your papers side by side.", one line and "Learn in the
-  tutorial →" to `/learn/literature-review-table-from-zotero`. Then the
+- **Compare your papers.** The mono label "Literature review", the H2
+  "Compare your papers side by side.", one line and "Open the literature
+  table lesson →" to `/learn/literature-review-table-from-zotero`. Then the
   demo, a figure: an Obsidian window (11px radius, `--desk-window-shadow`)
   enacts the collection becoming a table. In the Library View the reader
   saves the Reproducibility collection as a query file

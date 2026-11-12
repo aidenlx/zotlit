@@ -40,6 +40,8 @@ interface Step {
   alt: Text;
   /** The `/learn` lesson that walks through the step. */
   lesson: string;
+  /** The text of the link to that lesson. */
+  link: Text;
 }
 
 const STEPS: readonly Step[] = [
@@ -53,6 +55,7 @@ const STEPS: readonly Step[] = [
     ],
     alt: m.docs_home_flow_find_alt,
     lesson: "connect-zotero-to-obsidian",
+    link: m.docs_home_flow_find_link,
   },
   {
     id: "read",
@@ -64,6 +67,7 @@ const STEPS: readonly Step[] = [
     ],
     alt: m.docs_home_flow_read_alt,
     lesson: "annotate-zotero-pdfs-in-obsidian",
+    link: m.docs_home_flow_read_link,
   },
   {
     id: "note",
@@ -75,6 +79,7 @@ const STEPS: readonly Step[] = [
     ],
     alt: m.docs_home_flow_note_alt,
     lesson: "connect-zotero-to-obsidian",
+    link: m.docs_home_flow_note_link,
   },
   {
     id: "cite",
@@ -87,6 +92,7 @@ const STEPS: readonly Step[] = [
     note: m.docs_home_flow_cite_note,
     alt: m.docs_home_flow_cite_alt,
     lesson: "cite-in-obsidian-with-zotero",
+    link: m.docs_home_flow_cite_link,
   },
   {
     id: "word",
@@ -98,6 +104,7 @@ const STEPS: readonly Step[] = [
     ],
     alt: m.docs_home_flow_word_alt,
     lesson: "export-obsidian-to-word-with-citations",
+    link: m.docs_home_flow_word_link,
   },
 ];
 
@@ -245,7 +252,7 @@ function StepItem({ step, n, flip }: { step: Step; n: number; flip: boolean }) {
           </p>
         )}
         <div className="mt-6">
-          <LessonLink lesson={step.lesson} />
+          <LessonLink lesson={step.lesson} label={step.link()} />
         </div>
       </div>
     </li>
