@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZotLit tutorial prototype</title>
+    <!--
+      ROUND 1 VERDICT (2026-11-12): a merge. Owner: "nextjs doesn't suit our needs since it's
+      for a tech lib" (A out). Owner agreed with the merge proposed: D's chore hub ("Start
+      here" lesson 1, then pick a chore) and D's ticked checklist lesson, opened by B's
+      "today / instead" lists without the counts; C out. E's close-up switch replaced: "E
+      Manual close-up is wrong. You should plan the tutorial video, Full screen as default
+      and zoom in when you need it, similar to Screen Studio." And: "when you record it, you
+      should not put the cursor back to the edges when the video ends." Built for real on
+      docs/learn-checklist (site) and docs/learn-recordings (recorder + clips).
+      PROTOTYPE — throwaway. Round 1 (2026-11-12).
+      Question: what shape should the ZotLit tutorial (/learn hub + a lesson) take for a
+      reader who already uses Zotero and Obsidian and comes to see whether ZotLit removes
+      the friction between them? Owner: today's tutorial "is poorly designed and not
+      considered from our target users"; reference: how nextjs.org/learn is crafted.
+      Today: a hub of six feature-titled cards; a lesson cover with a Zotero → Obsidian box
+      map and a "You need" version table; then one step per screen with a full-window
+      screenshot too small to read, a green check box, and "I see it. Next".
+      Axes the five variants disagree on: where the payoff sits against the setup work;
+      linear course vs pick-your-job; long-scroll chapter vs one step per screen vs player;
+      how the reader checks their own screen.
+      Design plan (the live docs "Journal" system):
+        tokens  ground #f7f5f0 · card #ffffff · ink #1b2029 · muted #5f6672
+                line #e3dfd6 · accent #b9461a · ok #2f6b3a (dark values below)
+        type    Gelasio (display) · Inter (body, UI) · IBM Plex Mono (labels)
+        media   real lesson clips via ./media (public/img/learn) and their final frames
+                in ./frames (window-only, 1440x860), so a still can be zoomed to a region.
+      Copy: step text is the shipped MDX; any new line is a draft for Gemini to rewrite.
+      Run: python3 -m http.server -d apps/docs/.scratch/learn-proto 4841
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Gelasio:ital,wght@0,400..700;1,400..700&family=Inter:wght@400..700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-card: var(--card);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-line: var(--line);
+        --color-accent: var(--accent);
+        --color-accent-ink: var(--accent-ink);
+        --color-tint: var(--tint);
+        --color-ok: var(--ok);
+        --color-ok-tint: var(--ok-tint);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #f7f5f0;
+        --card: #ffffff;
+        --ink: #1b2029;
+        --muted: #5f6672;
+        --line: #e3dfd6;
+        --accent: #b9461a;
+        --accent-ink: #ffffff;
+        --tint: #efe9df;
+        --ok: #2f6b3a;
+        --ok-tint: #eaf2e8;
+        --font-display: "Gelasio", Georgia, serif;
+        --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+        color-scheme: light;
+      }
+      /* Round 1 is pinned to light: shape is the question. Dark returns for the winner. */
+      @media (prefers-color-scheme: dark) and (not all) {
+        :root {
+          --ground: #121418;
+          --card: #1b1e24;
+          --ink: #e9e6df;
+          --muted: #9b978f;
+          --line: #2d3037;
+          --accent: #f0793f;
+          --accent-ink: #121418;
+          --tint: #191c21;
+          --ok: #8cc79a;
+          --ok-tint: #18241b;
+        }
+      }
+      body {
+        background: var(--ground);
+        color: var(--ink);
+        font-family: var(--font-body);
+        -webkit-font-smoothing: antialiased;
+      }
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="application/json" id="lessons">
+      __LESSONS__
+    </script>
+
+    <script type="text/jsx" id="app">
+      import React, {
+        useState,
+        useEffect,
+        useRef,
+        useMemo,
+        useSyncExternalStore,
+      } from "react";
+      import { createRoot } from "react-dom/client";
+      import * as Icons from "lucide-react"; // <Icons.Check size={16} />
+
+      // --- Shared ---
+      // LESSONS: the six shipped lessons, extracted from content/learn/*.mdx.
+      // Each: { slug, lesson, title, description, minutes, media, lede, note,
+      //   needs: [{item, detail}], end: {title, caption, next},
+      //   steps: [{ n, name, title, alt, action, check, fixes: [{title, body}], figure }] }
+      // Step strings carry light Markdown (**bold** for UI labels, `code`, *italic*): render
+      // them with <Rich text={...} />.
+      const LESSONS = JSON.parse(
+        document.getElementById("lessons").textContent,
+      );
+
+      // Facts every variant must stay true to. Sourced from the docs comparison page
+      // (answers/zotlit-vs-zotero-integration-vs-citations) and messages/en.json docs_home_*.
+      const FACTS = {
+        requirements:
+          "Obsidian 1.14.5 or later · Zotero 9 or 10 · desktop (Windows, macOS, Linux)",
+        privacy:
+          "ZotLit reads your Zotero library on your own computer. No account and no cloud service.",
+        zoteroClosed:
+          "Browsing the library, searching it and reading PDFs work with Zotero closed.",
+        zoteroOpen:
+          "Editing annotations and exporting to Word need Zotero running.",
+        bbt: "Citing as you write needs the free Better BibTeX add-on for Zotero.",
+        managed:
+          "Highlights and comments go into one marked part of the note. An update rewrites only that part; your own writing outside it stays.",
+        pandoc:
+          "Word export needs the Pandoc engine, a one-time install from ZotLit's settings.",
+        license: "Free and open source.",
+        // The reader's own manual routine today, per lesson (their chores, not claims about
+        // other plugins). DRAFT copy: Gemini rewrites before anything ships.
+        today: {
+          1: [
+            "Switch to Zotero to look a paper up",
+            "Open the PDF in Zotero's reader",
+            "Copy the title, authors and year into a new note by hand",
+          ],
+          2: [
+            "Highlight in Zotero",
+            "Copy each highlight into your note",
+            "Add the page number by hand",
+            "Do it again when you add a highlight",
+          ],
+          3: [
+            "Look the paper up in Zotero",
+            "Copy its citation key",
+            "Paste it into your draft",
+            "Check the spelling of the key",
+          ],
+          4: [
+            "Copy the chapter into Word",
+            "Re-insert every citation with Zotero's Word plugin",
+            "Rebuild the reference list",
+          ],
+          5: [
+            "Keep a separate reading list",
+            "Update it by hand when you finish a paper",
+          ],
+          6: [
+            "Copy each paper's year, journal and method into a spreadsheet",
+            "Fix the sheet when Zotero changes",
+          ],
+        },
+      };
+
+      // Media. Every step has a still; most have a clip.
+      //   stillFor(lesson, n)  window-only final frame (1440x860) when a clip exists,
+      //                        else the desktop composite WebP (3456x2296, wallpaper around it)
+      //   clipFor(lesson, n)   { webm, mp4 } or null
+      const NO_CLIP = new Set([
+        "connect-zotero-to-obsidian/1",
+        "export-to-word-with-a-bibliography/5",
+      ]);
+      const hasClip = (l, n) => !NO_CLIP.has(`${l.media}/${n}`);
+      const stillFor = (l, n) =>
+        hasClip(l, n)
+          ? `frames/${l.media}-step-${n}.jpg`
+          : `media/${l.media}/step-${n}.webp`;
+      const clipFor = (l, n) =>
+        hasClip(l, n)
+          ? {
+              webm: `media/${l.media}/step-${n}.webm`,
+              mp4: `media/${l.media}/step-${n}.mp4`,
+            }
+          : null;
+      const lessonBy = (num) => LESSONS.find((l) => l.lesson === num);
+      // Stills whose size is not the 1440x860 window (measured from the files).
+      const SIZE = {
+        "annotate-pdfs-in-obsidian/3": [968, 190], // a Zotero dialog, not the Obsidian window
+        "annotate-pdfs-in-obsidian/6": [1440, 874],
+        "connect-zotero-to-obsidian/1": [3456, 2296], // desktop composite, no clip
+        "export-to-word-with-a-bibliography/5": [2221, 2320], // portrait Word page, no clip
+      };
+
+      const reducedMotion = () =>
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      // <Media lesson={l} n={3} play crop={[x, y, w]} className="" />
+      //   play  loop the clip (muted, inline). With reduced motion it rests on the still
+      //         until the reader presses Play. A visible pause/play button is always there.
+      //   crop  zoom into a region of the 1440x860 window: x, y = top-left as a fraction
+      //         (0–1), w = width fraction shown. Omit for the whole window.
+      //   The frame keeps the window's 1440:860 ratio (or the crop's ratio) — no layout shift.
+      function Media({
+        lesson,
+        n,
+        play = false,
+        crop,
+        className = "",
+        rounded = "rounded-xl",
+        alt,
+      }) {
+        const clip = play ? clipFor(lesson, n) : null;
+        const [on, setOn] = useState(() => !!clip && !reducedMotion());
+        const ref = useRef(null);
+        useEffect(
+          () => setOn(!!clip && !reducedMotion()),
+          [lesson.slug, n, play],
+        );
+        useEffect(() => {
+          const v = ref.current;
+          if (!v) return;
+          if (on) v.play().catch(() => {});
+          else v.pause();
+        }, [on, lesson.slug, n]);
+        const [x, y, w] = crop ?? [0, 0, 1];
+        const [fw, fh] = SIZE[`${lesson.media}/${n}`] ?? [1440, 860];
+        const ratio = fw / fh; // a crop scales uniformly, so the frame keeps the still's ratio
+        const scale = 1 / w;
+        const inner = {
+          width: "100%",
+          height: "100%",
+          transformOrigin: "0 0",
+          transform: crop
+            ? `scale(${scale}) translate(${-x * 100}%, ${-y * 100}%)`
+            : undefined,
+        };
+        const label = alt ?? lesson.steps[n - 1]?.alt;
+        return (
+          <figure
+            className={`relative overflow-hidden bg-tint shadow-[0_0_0_1px_var(--line)] ${rounded} ${className}`}
+            style={{ aspectRatio: ratio, margin: 0 }}
+          >
+            <div style={inner}>
+              {clip ? (
+                <video
+                  key={`${lesson.slug}-${n}`}
+                  ref={ref}
+                  muted
+                  loop
+                  playsInline
+                  poster={stillFor(lesson, n)}
+                  aria-label={label}
+                  className="block size-full object-cover"
+                >
+                  <source src={clip.webm} type="video/webm" />
+                  <source src={clip.mp4} type="video/mp4" />
+                </video>
+              ) : (
+                <img
+                  src={stillFor(lesson, n)}
+                  alt={label}
+                  className="block size-full object-cover"
+                />
+              )}
+            </div>
+            {clip && (
+              <button
+                type="button"
+                onClick={() => setOn((v) => !v)}
+                aria-label={on ? "Pause the recording" : "Play the recording"}
+                className="absolute right-2.5 bottom-2.5 grid size-9 place-items-center rounded-full bg-ink/75 text-ground backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                {on ? <Icons.Pause size={15} /> : <Icons.Play size={15} />}
+              </button>
+            )}
+          </figure>
+        );
+      }
+
+      // Light Markdown for step strings: **bold** → UI label chip, `code`, *italic*.
+      function Rich({ text, labelClass = "font-semibold" }) {
+        if (!text) return null;
+        const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
+        return parts.map((p, i) => {
+          if (p.startsWith("**"))
+            return (
+              <strong key={i} className={labelClass}>
+                {p.slice(2, -2)}
+              </strong>
+            );
+          if (p.startsWith("`"))
+            return (
+              <code
+                key={i}
+                className="rounded bg-tint px-1 py-0.5 font-mono text-[0.88em]"
+              >
+                {p.slice(1, -1)}
+              </code>
+            );
+          if (p.startsWith("*") && p.length > 2)
+            return <em key={i}>{p.slice(1, -1)}</em>;
+          return <React.Fragment key={i}>{p}</React.Fragment>;
+        });
+      }
+
+      // One shared store (provider-free), so flipping variants keeps the reader's place.
+      //   view: "hub" | "lesson"   lesson: 1–6   step: 0 = the lesson's opening, 1..N = steps,
+      //   N+1 = the lesson's end    done: lesson numbers finished
+      let proto = { view: "hub", lesson: 1, step: 0, done: [] };
+      const subs = new Set();
+      const setProto = (patch) => {
+        proto = {
+          ...proto,
+          ...(typeof patch === "function" ? patch(proto) : patch),
+        };
+        subs.forEach((f) => f());
+      };
+      const useProto = () =>
+        useSyncExternalStore(
+          (f) => (subs.add(f), () => subs.delete(f)),
+          () => proto,
+        );
+      // Navigation helpers every variant can use:
+      const openHub = () => setProto({ view: "hub", step: 0 });
+      const openLesson = (num, step = 0) =>
+        setProto({ view: "lesson", lesson: num, step });
+      const finishLesson = (num) =>
+        setProto((s) => ({
+          done: s.done.includes(num) ? s.done : [...s.done, num],
+        }));
+      // Scroll to top on every view/lesson change (variants that scroll within a lesson
+      // manage their own in-page scrolling).
+      subs.add(() => {
+        const key = `${proto.view}-${proto.lesson}`;
+        if (key !== subs.lastKey) {
+          subs.lastKey = key;
+          window.scrollTo({ top: 0 });
+        }
+      });
+      window.__proto = { setProto, openHub, openLesson, finishLesson }; // for check.sh
+      // --- Shared END ---
+
+      // --- App ---
+      function App() {
+        return <div className="p-8">App placeholder</div>;
+      }
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>

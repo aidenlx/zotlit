@@ -1,0 +1,590 @@
+[
+  {
+    "slug": "connect-zotero-to-obsidian",
+    "lesson": 1,
+    "title": "Connect Zotero to Obsidian and write a literature note",
+    "description": "Learn how to connect Zotero to Obsidian and create your first literature note from a paper's highlights.",
+    "minutes": 10,
+    "media": "connect-zotero-to-obsidian",
+    "lede": "In about 10 minutes, you will connect ZotLit to your Zotero library and create a literature note for a paper, ready for your Chapter 3 notes.",
+    "note": "Zotero can stay closed. ZotLit reads your library locally on this computer and sends nothing to a server. Nothing in this lesson changes your Zotero library, and no other add-on is needed.",
+    "needs": [
+      {
+        "item": "Obsidian",
+        "detail": "Version 1.14.5 or later on a desktop computer"
+      },
+      {
+        "item": "Zotero",
+        "detail": "Version 10 on the same computer"
+      },
+      {
+        "item": "Zotero paper",
+        "detail": "One item with a highlighted PDF"
+      }
+    ],
+    "end": {
+      "title": "Connected library and your first literature note",
+      "caption": "A literature note with your own thoughts kept cleanly above Zotero's highlights.",
+      "next": "Read and annotate papers directly in Obsidian."
+    },
+    "steps": [
+      {
+        "n": 1,
+        "name": "Install",
+        "title": "Install ZotLit",
+        "alt": "The Zotero library tab opens showing the Let's get started badge and four setup steps above the paper list.",
+        "action": "In Obsidian, open **Settings**, select **Community plugins**, and choose **Browse**. Search for `ZotLit`. Select **Install**, then select **Enable**. If Obsidian asks before browsing, select **Turn on community plugins**.",
+        "check": "A tab named **Zotero library** opens. At the top sits a badge reading **Let's get started** with four setup steps above your list of papers.",
+        "fixes": [
+          {
+            "title": "A notice says Obsidian's installer is too old",
+            "body": "Download Obsidian again from obsidian.md/download, install it over your existing version, and enable ZotLit."
+          },
+          {
+            "title": "No tab opened",
+            "body": "Select the ZotLit icon in the ribbon on the left edge of Obsidian."
+          }
+        ],
+        "figure": null
+      },
+      {
+        "n": 2,
+        "name": "Connect",
+        "title": "Check that ZotLit found Zotero",
+        "alt": "Connect to Zotero displays a green check with the data folder and item count above the full paper list.",
+        "action": "Look at the first setup step, **Connect to Zotero**. Once you see a green check, close the setup section by selecting the × button at its top right. Leave the other three setup items as they are.",
+        "check": "**Connect to Zotero** shows a green check alongside your Zotero data folder (such as `~/Zotero`) and item count. After closing the setup section, your Zotero papers fill the tab.",
+        "fixes": [
+          {
+            "title": "The tab reads **Zotero not found**",
+            "body": "Open Zotero, go to **Settings** > **Advanced**, and check the path under **Data Directory Location**. Return to Obsidian, select **Locate data folder**, and choose that folder."
+          }
+        ],
+        "figure": null
+      },
+      {
+        "n": 3,
+        "name": "Find",
+        "title": "Find a paper",
+        "alt": "A card below the paper list displays the selected item's details alongside Open PDF and Write literature note buttons.",
+        "action": "Click into **Search papers** and type a few words from the title, such as `reproducible`. Select the paper from the search results.",
+        "check": "A card opens below the list showing the title, authors, journal, and year (*PLOS Computational Biology, 9(10), e1003285 · 2013*), along with two buttons: **Open PDF** and **Write literature note**.",
+        "fixes": [
+          {
+            "title": "The list is empty",
+            "body": "Return to Step 2 and confirm that **Connect to Zotero** has a green check."
+          }
+        ],
+        "figure": null
+      },
+      {
+        "n": 4,
+        "name": "Read",
+        "title": "Open the PDF",
+        "alt": "The PDF opens in a tab showing coloured highlights alongside an annotations list of comments and tags.",
+        "action": "On the paper's card, select **Open PDF**. ZotLit opens the PDF directly from where Zotero stores it without making a duplicate copy.",
+        "check": "The PDF opens in a new tab. Your highlights appear in their original colours, with a sidebar on the right listing each highlight, comment, and tag.",
+        "fixes": [
+          {
+            "title": "No highlights show",
+            "body": "Scroll to a page containing highlights. If the paper has none in Zotero yet, proceed to Step 5; you will add them in Lesson 2."
+          }
+        ],
+        "figure": null
+      },
+      {
+        "n": 5,
+        "name": "Note",
+        "title": "Write the literature note",
+        "alt": "The literature note opens with the notice Literature note created, displaying links and an Annotations section.",
+        "action": "Switch back to the **Zotero library** tab. On the paper's card, select **Write literature note**.",
+        "check": "A notice reads **Literature note created.** A new note named after the citation key (`sandve2013`) opens in the `literatures` folder. It displays the title, links to Zotero and the PDF, and an **Annotations** section listing your highlights.",
+        "fixes": [
+          {
+            "title": "The button reads **Open literature note**",
+            "body": "A literature note already exists for this paper. Select the button to open it."
+          }
+        ],
+        "figure": null
+      },
+      {
+        "n": 6,
+        "name": "Write",
+        "title": "Add your own thoughts",
+        "alt": "The literature note displays a My thoughts heading and notes written directly above the Annotations section.",
+        "action": "Click directly beneath the line containing the two links. Type a heading, such as `My thoughts`, and write how this paper supports your thesis chapter.",
+        "check": "Your text appears above the **Annotations** section.",
+        "fixes": [
+          {
+            "title": "There are no highlight cards",
+            "body": "The paper has no highlights in Zotero yet. They will appear here automatically once you add one."
+          }
+        ],
+        "figure": "| Note area                          | What belongs here                                     | What ZotLit does                                           |\n| :--------------------------------- | :---------------------------------------------------- | :--------------------------------------------------------- |\n| **Your text** (e.g. `My thoughts`) | Your summary, synthesis, and ideas for your draft     | Never touches or overwrites it; never sends it to Zotero   |\n| **Annotations**                    | Highlights, tags, and comments shown live from Zotero | Manages this section automatically and keeps it up to date |"
+      }
+    ]
+  },
+  {
+    "slug": "annotate-zotero-pdfs-in-obsidian",
+    "lesson": 2,
+    "title": "Annotate Zotero PDFs in Obsidian",
+    "description": "Make Zotero highlights in Obsidian and see them appear in your Zotero library and literature notes.",
+    "minutes": 10,
+    "media": "annotate-pdfs-in-obsidian",
+    "lede": "You will end this lesson with a highlight and comment made in Obsidian that appears both in Zotero and in your literature note.",
+    "note": null,
+    "needs": [
+      {
+        "item": "Lesson 1",
+        "detail": "Completed literature note"
+      },
+      {
+        "item": "Zotero 10",
+        "detail": "Open on this computer"
+      }
+    ],
+    "end": {
+      "title": "Highlights synced across PDF, note, and Zotero",
+      "caption": "Your new highlight and comment appear in the literature note without running an update.",
+      "next": "Cite your papers and insert page numbers while drafting in Obsidian."
+    },
+    "steps": [
+      {
+        "n": 1,
+        "name": "Open",
+        "title": "Open the paper's PDF",
+        "alt": "The PDF opens in Obsidian with dimmed annotation tools and the sidebar heading Following the active tab · Reading only.",
+        "action": "In the **Zotero library** tab, select Sandve et al. 2013, then select **Open PDF** on its card.",
+        "check": "The PDF opens. The annotation tools at the top right of the PDF are dimmed, and the sidebar heading reads **Following the active tab** · **Reading only**.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 2,
+        "name": "Edit",
+        "title": "Ask to edit",
+        "alt": "The PDF toolbar reads Waiting for approval in Zotero while Zotero displays a dialog with Always Allow.",
+        "action": "Select the heading of the sidebar on the right. In the menu, select **Allow editing**. You give this permission once on each computer.",
+        "check": "The PDF toolbar reads **Waiting for approval in Zotero**. Zotero shows a dialog asking whether ZotLit for Obsidian may change the Zotero library, with the buttons **Deny**, **Always Allow**, and **Allow**.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 3,
+        "name": "Approve",
+        "title": "Choose Always Allow in Zotero",
+        "alt": "Obsidian displays Zotero editing is enabled. and the annotation tools at the top right appear in colour.",
+        "action": "In the Zotero dialog, select **Always Allow**.",
+        "check": "In Obsidian, the notice **Zotero editing is enabled.** appears. The annotation tools are in colour.",
+        "fixes": [
+          {
+            "title": "The tools stay dimmed",
+            "body": "You chose **Allow**. Do step 2 again and choose **Always Allow**."
+          }
+        ],
+        "figure": null
+      },
+      {
+        "n": 4,
+        "name": "Select",
+        "title": "Select a passage",
+        "alt": "A floating toolbar beneath the selected sentence shows Highlight, Underline, four colours, and Add comment.",
+        "action": "Drag across a sentence in the PDF.",
+        "check": "A small toolbar appears under the selection, with **Highlight**, **Underline**, four colours, and **Add comment**.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 5,
+        "name": "Highlight",
+        "title": "Add a comment and highlight",
+        "alt": "The highlighted text turns yellow, and a card showing the page number, excerpt, and comment appears in the sidebar.",
+        "action": "Select **Add comment**, type a comment for Chapter 3, then select **Highlight** under the comment.",
+        "check": "The passage turns yellow. A card for it appears in the sidebar on the right, with the page, the passage, and the comment.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 6,
+        "name": "Zotero",
+        "title": "See it in Zotero",
+        "alt": "The PDF opened in Zotero shows the same yellow highlight and comment.",
+        "action": "Switch to Zotero and open the same PDF.",
+        "check": "The highlight and its comment are there. Each highlight is saved in the Zotero library, so Zotero and Obsidian show the same one.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 7,
+        "name": "Note",
+        "title": "See it in your note",
+        "alt": "The literature note shows the new highlight card automatically added under the Annotations section.",
+        "action": "Switch back to Obsidian and open the literature note for Sandve et al. 2013 from Lesson 1.",
+        "check": "The **Annotations** section has a new card for the highlight. You ran no update.",
+        "fixes": [],
+        "figure": null
+      }
+    ]
+  },
+  {
+    "slug": "cite-in-obsidian-with-zotero",
+    "lesson": 3,
+    "title": "Cite Zotero sources as you write in Obsidian",
+    "description": "Insert a Zotero citation in Obsidian, add page numbers to your draft, and quote highlights directly from your paper.",
+    "minutes": 10,
+    "media": "cite-while-writing",
+    "lede": "At the end of this lesson, you will have a formatted citation with a page number in your draft, and a quoted highlight with its citation.",
+    "note": "ZotLit cites a paper by the citation key in its Zotero record, such as sandve2013. What you type stays plain text in the note; ZotLit shows it formatted.",
+    "needs": [
+      {
+        "item": "Earlier lessons",
+        "detail": "Lessons 1 and 2 completed"
+      },
+      {
+        "item": "Better BibTeX",
+        "detail": "Installed in Zotero, so that each paper has a citation key"
+      },
+      {
+        "item": "Draft note",
+        "detail": "Chapter 3 - Presenting the results, in Obsidian"
+      }
+    ],
+    "end": {
+      "title": "Formatted citations and quotes in your draft",
+      "caption": "Your draft now contains a formatted citation with a page number and a linked quote block from your reading.",
+      "next": "Export your draft to Word with a formatted reference list for your supervisor."
+    },
+    "steps": [
+      {
+        "n": 1,
+        "name": "Install",
+        "title": "Install the citation engine",
+        "alt": "Under Citations in ZotLit settings, the Pandoc engine row reads Pandoc 3.10 is installed.",
+        "action": "Open **Settings**, then **ZotLit**, then **Citations**. At **Pandoc engine**, select **Install**. This engine comes with ZotLit; you do not install Pandoc yourself. You do this once on each computer.",
+        "check": "The row reads **Pandoc 3.10 is installed.** (the number can be higher).",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 2,
+        "name": "Search",
+        "title": "Type [@ and a name",
+        "alt": "A citation menu opens in the draft, showing Sandve et al. (2013), PLOS Computational Biology, 9(10), e1003285.",
+        "action": "In `Chapter 3 - Presenting the results`, place your cursor where the citation goes and type `[@sandve`.",
+        "check": "A list opens under the cursor. The row shows the title, then **Sandve et al. (2013), PLOS Computational Biology, 9(10), e1003285**.",
+        "fixes": [
+          {
+            "title": "The paper is not in the list",
+            "body": "In Zotero, look at the paper's **Citation Key** field. A paper with no key cannot be cited. Better BibTeX, a Zotero add-on, fills this field for every paper."
+          }
+        ],
+        "figure": null
+      },
+      {
+        "n": 3,
+        "name": "Choose",
+        "title": "Choose the paper",
+        "alt": "The draft note displays the plain text citation key [@sandve2013] at the cursor.",
+        "action": "Press Enter to choose the highlighted paper from the list.",
+        "check": "The draft holds `[@sandve2013]`.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 4,
+        "name": "Page",
+        "title": "Add the page",
+        "alt": "The draft displays the citation formatted as (Sandve et al. 2013, 2).",
+        "action": "Before the closing bracket, type `, p. 2`, so it reads `[@sandve2013, p. 2]`. Move the cursor away.",
+        "check": "The citation shows as **(Sandve et al. 2013, 2)**.",
+        "fixes": [
+          {
+            "title": "It still reads [@sandve2013, p. 2]",
+            "body": "The engine is not installed. Do step 1."
+          }
+        ],
+        "figure": null
+      },
+      {
+        "n": 5,
+        "name": "Preview",
+        "title": "Check it is the right paper",
+        "alt": "Pointing at the citation opens a preview card with the full Sandve 2013 reference.",
+        "action": "Point your cursor at the formatted citation.",
+        "check": "A preview shows the full reference: Sandve, Geir Kjetil, and others, 2013, \"Ten Simple Rules for Reproducible Computational Research\", PLOS Computational Biology 9 (10): e1003285.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 6,
+        "name": "Quote",
+        "title": "Quote a highlight",
+        "alt": "The draft shows a quote block titled Page 2 containing the highlighted text, citation, and note.",
+        "action": "Open the paper's PDF beside the draft. In the sidebar on the right, drag the page label of a highlight, such as **p. 2**, into the draft.",
+        "check": "The draft holds a quote block titled **Page 2**. Under the title are the highlighted passage with its citation and page, and the comment from Lesson 2. The title links back to the passage.",
+        "fixes": [],
+        "figure": null
+      }
+    ]
+  },
+  {
+    "slug": "export-obsidian-to-word-with-citations",
+    "lesson": 4,
+    "title": "Export Obsidian to Word with citations",
+    "description": "Export your Obsidian draft to a Word document with formatted citations and a Zotero bibliography ready for your supervisor.",
+    "minutes": 5,
+    "media": "export-to-word-with-a-bibliography",
+    "lede": "At the end of this lesson, you will have a Word file of your draft with every citation formatted in the style you choose and a reference list at the end, ready to send to your supervisor.",
+    "note": null,
+    "needs": [
+      {
+        "item": "Lesson 3",
+        "detail": "A draft with citations and the citation engine"
+      },
+      {
+        "item": "Zotero",
+        "detail": "Open on this computer"
+      }
+    ],
+    "end": {
+      "title": "A Word draft with formatted citations and bibliography",
+      "caption": "Your draft is in Word with citations formatted in your chosen style and a complete reference list at the end.",
+      "next": "Lesson 5 shows how to track what you have read."
+    },
+    "steps": [
+      {
+        "n": 1,
+        "name": "Prepare",
+        "title": "Get the draft ready to send",
+        "alt": "The Chapter 3 draft open in Obsidian, ready for export without personal to-do lines.",
+        "action": "Review your draft. Remove any lines meant only for you, such as a to-do list, because everything in the note goes into the Word file.",
+        "check": "The draft contains only what you want to send to your supervisor.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 2,
+        "name": "Dialog",
+        "title": "Open the export dialog",
+        "alt": "The Export with citations dialog open in Obsidian, with Format set to Word document.",
+        "action": "With the draft open, press Ctrl+P (Cmd+P on a Mac) and run **Export note with citations**.",
+        "check": "The dialog **Export with citations** opens, and **Format** is set to **Word document**.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 3,
+        "name": "Style",
+        "title": "Choose the citation style",
+        "alt": "The dialog with Citation style set to APA Style 7th edition, confirming the note style stays unchanged.",
+        "action": "Open **Citation style** and choose the style your supervisor or journal asks for, such as **APA Style 7th edition**. The note does not change; this style applies to this export only.",
+        "check": "The line under the setting reads **Only this export uses this style. The note keeps Default (Chicago author-date).**",
+        "fixes": [
+          {
+            "title": "The style is not in the list",
+            "body": "The list shows the styles installed in Zotero. Install the style in Zotero, then open the dialog again."
+          }
+        ],
+        "figure": null
+      },
+      {
+        "n": 4,
+        "name": "Export",
+        "title": "Export",
+        "alt": "A notice confirms Chapter 3 - Presenting the results.docx was exported with APA Style 7th edition citations.",
+        "action": "Select **Export**. ZotLit creates the Word file and places the reference list after the last line under the heading **References** without you having to write one.",
+        "check": "After a few seconds, the notice appears: **Exported Chapter 3 - Presenting the results.docx with APA Style 7th edition citations.**",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 5,
+        "name": "Word",
+        "title": "Open the Word file",
+        "alt": "The exported Word file open, showing formatted citations like (Sandve et al., 2013, p. 2) and a References list.",
+        "action": "The Word file sits in the same folder as your draft, with the same name. Obsidian's file list does not show Word files, so open that folder in Finder (Mac) or File Explorer (Windows), and open the file.",
+        "check": "Each citation is formatted, for example **(Sandve et al., 2013, p. 2)**, and a **References** list at the end has one entry for each paper cited.",
+        "fixes": [],
+        "figure": null
+      }
+    ]
+  },
+  {
+    "slug": "track-papers-you-have-read",
+    "lesson": 5,
+    "title": "Track which papers you have read",
+    "description": "Build a Zotero reading list in Obsidian and show only the papers left to read.",
+    "minutes": 10,
+    "media": "track-reading-status",
+    "lede": "At the end of this ten-minute lesson, you will have a table of your papers with a reading status for each, filtered to show only what you still need to read for Chapter 3.",
+    "note": "Reading statuses are saved directly in your literature notes. Setting a status for a paper creates its note if it does not have one yet. Nothing changes in your Zotero library.",
+    "needs": [
+      {
+        "item": "Lesson 1",
+        "detail": "Completed"
+      },
+      {
+        "item": "Zotero",
+        "detail": "Can stay closed"
+      }
+    ],
+    "end": {
+      "title": "A filtered reading table for your papers",
+      "caption": "Your reading plan table shows only papers marked to-read, ready for your next session.",
+      "next": "Build a literature review table to compare findings across your papers."
+    },
+    "steps": [
+      {
+        "n": 1,
+        "name": "Save",
+        "title": "Save your library as a table file",
+        "alt": "The Reading plan file opens in a new tab, listing the papers from the library.",
+        "action": "In the **Zotero library** tab, select **Save as query file…** (the page icon with a plus at the top right of the list). Type `Reading plan` as the name, then select **Save**.",
+        "check": "The file `Reading plan` opens in a new tab, listing the same papers.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 2,
+        "name": "Table",
+        "title": "Switch to a table",
+        "alt": "The papers in the Reading plan file appear as rows in a table.",
+        "action": "Select **Views** at the top left of the tab, then select **Configure view** (the arrow at the end of the row). Set **Layout** to **Table**.",
+        "check": "Your papers appear as rows in a table.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 3,
+        "name": "Column",
+        "title": "Add a reading status column",
+        "alt": "A new reading-status (note) column appears in the table, displaying No note for unlinked papers.",
+        "action": "Select **Properties** and type `reading-status`. Two options appear starting with \"Add\". Select the second one: **Add \"reading-status\" vault property**.",
+        "check": "A new column titled **reading-status (note)** appears. Papers without a literature note show **No note**. The Sandve et al. 2013 paper from Lesson 1 shows an empty cell.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 4,
+        "name": "Mark",
+        "title": "Mark a paper",
+        "alt": "The notice Literature note created. appears, and the edited cell displays to-read.",
+        "action": "Click the reading status cell of a paper you need to read next for Chapter 3. Type `to-read` and press Enter.",
+        "check": "Obsidian displays the notice **Literature note created.** The cell now shows `to-read`.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 5,
+        "name": "Track",
+        "title": "Mark the others",
+        "alt": "The table shows status values across multiple rows, with suggested statuses shown while typing.",
+        "action": "Select the cell of a paper you have already started and type `reading`. Then mark a finished paper as `done`.",
+        "check": "As you type, the cell suggests previously used statuses so the spelling stays consistent across your notes.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 6,
+        "name": "Filter",
+        "title": "Show only what is left to read",
+        "alt": "The table is filtered by reading-status (note) is to-read, showing only papers marked to-read.",
+        "action": "Select **Filter**. In the first box choose **reading-status (note)**. Set the second box to **is**, and type `to-read` in the last box.",
+        "check": "The table shows only the papers marked `to-read`. The file saves this filter automatically, so your reading list is ready whenever you open `Reading plan`.",
+        "fixes": [],
+        "figure": null
+      }
+    ]
+  },
+  {
+    "slug": "literature-review-table-from-zotero",
+    "lesson": 6,
+    "title": "Build a literature review table from a Zotero collection",
+    "description": "Build a literature review table in Obsidian from a Zotero collection with authors, dates, journals, and your own ratings.",
+    "minutes": 10,
+    "media": "build-a-literature-review-table",
+    "lede": "You will finish this lesson with a comparison table of your papers—showing authors, year, journal, and your own rating—pasted directly into Chapter 3.",
+    "note": "This table reads directly from Zotero every time it opens, so it updates automatically as you add papers. Your ratings are saved in each paper's literature note in Obsidian; nothing in your Zotero library is altered. The version you paste into your draft is a snapshot, so copy it once more before you send the draft to your supervisor.",
+    "needs": [
+      {
+        "item": "Lesson 1",
+        "detail": "Completed with ZotLit connected"
+      },
+      {
+        "item": "Zotero collection",
+        "detail": "Reproducibility, with your papers"
+      },
+      {
+        "item": "Obsidian folder",
+        "detail": "Thesis, for your chapter"
+      }
+    ],
+    "end": {
+      "title": "A literature review table in your chapter",
+      "caption": "The review table pasted into Chapter 3, comparing authors, years, journals, and ratings.",
+      "next": "Browse the how-to guides to adapt ZotLit to your research workflow."
+    },
+    "steps": [
+      {
+        "n": 1,
+        "name": "Save",
+        "title": "Save the collection as a table file",
+        "alt": "The new tab Reproducibility.zotquery opens in Obsidian, listing papers from the collection.",
+        "action": "In the **Zotero library** tab, select the `Reproducibility` collection in the list on the left. Select **Save as query file…**, the page icon with a plus at the top right of the list. Type `Thesis` as the folder, then select **Save**.",
+        "check": "The dialog reads **Creates Thesis/Reproducibility.zotquery** . After selecting **Save**, the file opens in a new tab and lists the papers from your collection.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 2,
+        "name": "Table",
+        "title": "Switch to a table",
+        "alt": "A table view displays the papers with columns Item Type, Title, Modified, and Literature note.",
+        "action": "Select **Views** at the top left of the tab, then select **Configure view**, the arrow at the end of the row. Set **Layout** to **Table**.",
+        "check": "The papers appear as rows with four columns: **Item Type**, **Title**, **Modified**, and **Literature note**.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 3,
+        "name": "Columns",
+        "title": "Choose the columns to compare",
+        "alt": "The table displays columns for Title, Literature note, Year, Publication, and Creators.",
+        "action": "Select **Properties**. Clear the check boxes for **Item Type** and **Modified**. Type `year` and select **Year**. Type `publication` and select **Publication**, which holds the journal. Type `creators` and select **Add \"creators\" property**.",
+        "check": "The visible columns are **Title**, **Literature note**, **Year**, **Publication**, and **Creators** (the authors).",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 4,
+        "name": "Rate",
+        "title": "Add your own rating",
+        "alt": "The column rating (note) shows ratings for each paper alongside a Literature note created notice.",
+        "action": "Select **Properties** and type `rating`. Select the second \"Add\" entry, **Add \"rating\" vault property**. In each paper's cell under the new column, type a rating, such as `5`, and press Enter.",
+        "check": "A new column named **rating (note)** shows your ratings. Entering the first rating for a paper without a note displays the notice **Literature note created.**",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 5,
+        "name": "Sort",
+        "title": "Sort by year",
+        "alt": "The table displays the papers sorted by Date from Old to new.",
+        "action": "Select **Sort**, then select **Add sort**. Set the first box to **Date** and the second box to **Old to new**.",
+        "check": "The papers reorder from the oldest publication date to the newest.",
+        "fixes": [],
+        "figure": null
+      },
+      {
+        "n": 6,
+        "name": "Copy",
+        "title": "Copy the table into your chapter",
+        "alt": "The literature review table is pasted into the chapter note with all columns preserved.",
+        "action": "Select the result count in the toolbar, such as **4 results**. Select **Copy to clipboard**. Open your Chapter 3 draft and paste.",
+        "check": "The table appears in the draft with all columns in the exact order you arranged.",
+        "fixes": [],
+        "figure": null
+      }
+    ]
+  }
+]
