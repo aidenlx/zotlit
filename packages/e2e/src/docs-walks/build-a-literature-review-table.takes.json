@@ -1,0 +1,1506 @@
+{
+  "step-1": {
+    "recordedAt": "2026-11-12T16:57:21.083579102Z",
+    "step": "Lesson 6: Build a literature review table > step 1: select the collection, select Save as query file, type Thesis as the folder, and save; Thesis/Reproducibility.zotquery opens",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-1 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/build-a-literature-review-table.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/build-a-literature-review-table/step-1.frames apps/docs/public/img/learn/build-a-literature-review-table/step-1"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/build-a-literature-review-table/step-1.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 9.6,
+    "outputs": {
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-1.webm": 481217,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-1.mp4": 447212,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-1.poster.webp": 41402
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 2.602174997329712,
+          "x": 470,
+          "y": 199,
+          "rect": {
+            "x": 410,
+            "y": 190.4765625,
+            "w": 120.4375,
+            "h": 16.8984375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.3850748538970947,
+          "x": 1080,
+          "y": 140,
+          "rect": {
+            "x": 1068,
+            "y": 128.1875,
+            "w": 24,
+            "h": 24
+          }
+        },
+        {
+          "kind": "point",
+          "t": 4.163574934005737,
+          "x": 487,
+          "y": 444,
+          "rect": {
+            "x": 457,
+            "y": 428.9765625,
+            "w": 526,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 4.915475130081177,
+          "x": 963,
+          "y": 412.9765625
+        },
+        {
+          "kind": "keys",
+          "t": 4.91557502746582,
+          "end": 5.5631749629974365,
+          "rect": {
+            "x": 457,
+            "y": 428.9765625,
+            "w": 526,
+            "h": 30
+          }
+        },
+        {
+          "kind": "look",
+          "t": 5.563575029373169,
+          "rect": {
+            "x": 457,
+            "y": 474.9765625,
+            "w": 526,
+            "h": 15.59375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 6.769175052642822,
+          "x": 883,
+          "y": 539,
+          "rect": {
+            "x": 856.28125,
+            "y": 523.5703125,
+            "w": 53.1171875,
+            "h": 30
+          }
+        },
+        {
+          "kind": "look",
+          "t": 7.44837498664856,
+          "rect": {
+            "x": 348,
+            "y": 6,
+            "w": 740,
+            "h": 294.0859375
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.852174997329712,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 2.452174997329712,
+          "view": {
+            "x": 110.21875,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.6350748538970947,
+          "view": {
+            "x": 110.21875,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 3.235074853897095,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 3.413574934005737,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.013574934005737,
+          "view": {
+            "x": 360,
+            "y": 229,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.563575029373169,
+          "view": {
+            "x": 360,
+            "y": 229,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.163575029373169,
+          "view": {
+            "x": 360,
+            "y": 267.7734375,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.163575029373169,
+          "view": {
+            "x": 360,
+            "y": 267.7734375,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.619175052642822,
+          "view": {
+            "x": 522.83984375,
+            "y": 324,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 7.44837498664856,
+          "view": {
+            "x": 522.83984375,
+            "y": 324,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 8.04837498664856,
+          "view": {
+            "x": 316,
+            "y": 0,
+            "w": 804,
+            "h": 480.1666666666667
+          }
+        },
+        {
+          "t": 9.56237506866455,
+          "view": {
+            "x": 316,
+            "y": 0,
+            "w": 804,
+            "h": 480.1666666666667
+          }
+        }
+      ]
+    }
+  },
+  "step-2": {
+    "recordedAt": "2026-11-12T16:57:30.363236084Z",
+    "step": "Lesson 6: Build a literature review table > step 2: select Views, Configure view, and set Layout to Table; the papers as rows",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-2 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/build-a-literature-review-table.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/build-a-literature-review-table/step-2.frames apps/docs/public/img/learn/build-a-literature-review-table/step-2"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/build-a-literature-review-table/step-2.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 6.2,
+    "outputs": {
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-2.webm": 291866,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-2.mp4": 304069,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-2.poster.webp": 39908
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.5984899997711182,
+          "x": 397,
+          "y": 98,
+          "rect": {
+            "x": 352,
+            "y": 85.1640625,
+            "w": 89.7109375,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 2.3784899711608887,
+          "x": 531,
+          "y": 175,
+          "rect": {
+            "x": 517,
+            "y": 162.609375,
+            "w": 28,
+            "h": 24
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.1564900875091553,
+          "x": 481,
+          "y": 340,
+          "rect": {
+            "x": 361,
+            "y": 325.9453125,
+            "w": 302,
+            "h": 28
+          }
+        },
+        {
+          "kind": "look",
+          "t": 4.018089771270752,
+          "rect": {
+            "x": 344,
+            "y": 118.1171875,
+            "w": 826.1953125,
+            "h": 150
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8484899997711183,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4484899997711183,
+          "view": {
+            "x": 36.85546875,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.4064900875091553,
+          "view": {
+            "x": 36.85546875,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 3.0064900875091554,
+          "view": {
+            "x": 152,
+            "y": 125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.018089771270752,
+          "view": {
+            "x": 152,
+            "y": 125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.618089771270752,
+          "view": {
+            "x": 312,
+            "y": 0,
+            "w": 890.1953125,
+            "h": 531.6444227430555
+          }
+        },
+        {
+          "t": 6.179789781570435,
+          "view": {
+            "x": 312,
+            "y": 0,
+            "w": 890.1953125,
+            "h": 531.6444227430555
+          }
+        }
+      ]
+    }
+  },
+  "step-3": {
+    "recordedAt": "2026-11-12T17:04:27.438593018Z",
+    "step": "Lesson 6: Build a literature review table > step 3: select Properties, add Year, Publication, and creators, and clear Item Type and Modified; authors, year, and journal beside each title",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-3 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/build-a-literature-review-table.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/build-a-literature-review-table/step-3.frames apps/docs/public/img/learn/build-a-literature-review-table/step-3"
+    },
+    "env": {
+      "DOCS_WALK_ONLY": "step-3",
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/build-a-literature-review-table/step-3.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 14.267,
+    "outputs": {
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-3.webm": 541786,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-3.mp4": 561510,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-3.poster.webp": 32868
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.6019299030303955,
+          "x": 970,
+          "y": 98,
+          "rect": {
+            "x": 923.3359375,
+            "y": 85.1640625,
+            "w": 92.546875,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "park",
+          "t": 2.3927299976348877,
+          "x": 1267.0625,
+          "y": 140.1640625
+        },
+        {
+          "kind": "keys",
+          "t": 2.3927299976348877,
+          "end": 2.5346298217773438,
+          "rect": {
+            "x": 924.3359375,
+            "y": 125.1640625,
+            "w": 311.7265625,
+            "h": 28
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.1372299194335938,
+          "x": 970,
+          "y": 175,
+          "rect": {
+            "x": 930.3359375,
+            "y": 162.1640625,
+            "w": 226,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "park",
+          "t": 4.1978302001953125,
+          "x": 1193.3359375,
+          "y": 140.1640625
+        },
+        {
+          "kind": "keys",
+          "t": 4.197929859161377,
+          "end": 4.599529981613159,
+          "rect": {
+            "x": 924.3359375,
+            "y": 125.1640625,
+            "w": 238,
+            "h": 28
+          }
+        },
+        {
+          "kind": "point",
+          "t": 5.200929880142212,
+          "x": 970,
+          "y": 478,
+          "rect": {
+            "x": 930.3359375,
+            "y": 465.8359375,
+            "w": 226,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "park",
+          "t": 6.256629943847656,
+          "x": 1193.3359375,
+          "y": 140.1640625
+        },
+        {
+          "kind": "keys",
+          "t": 6.256629943847656,
+          "end": 6.549230098724365,
+          "rect": {
+            "x": 924.3359375,
+            "y": 125.1640625,
+            "w": 238,
+            "h": 28
+          }
+        },
+        {
+          "kind": "point",
+          "t": 7.1507298946380615,
+          "x": 968,
+          "y": 209,
+          "rect": {
+            "x": 928.3359375,
+            "y": 196.7578125,
+            "w": 230,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "park",
+          "t": 8.209330081939697,
+          "x": 1193.3359375,
+          "y": 140.1640625
+        },
+        {
+          "kind": "keys",
+          "t": 8.209330081939697,
+          "end": 8.550430059432983,
+          "rect": {
+            "x": 924.3359375,
+            "y": 125.1640625,
+            "w": 238,
+            "h": 28
+          }
+        },
+        {
+          "kind": "point",
+          "t": 9.15353012084961,
+          "x": 970,
+          "y": 175,
+          "rect": {
+            "x": 930.3359375,
+            "y": 162.1640625,
+            "w": 226,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "park",
+          "t": 10.211430072784424,
+          "x": 1193.3359375,
+          "y": 140.1640625
+        },
+        {
+          "kind": "keys",
+          "t": 10.211430072784424,
+          "end": 10.505630016326904,
+          "rect": {
+            "x": 924.3359375,
+            "y": 125.1640625,
+            "w": 238,
+            "h": 28
+          }
+        },
+        {
+          "kind": "point",
+          "t": 11.108330011367798,
+          "x": 970,
+          "y": 175,
+          "rect": {
+            "x": 930.3359375,
+            "y": 162.1640625,
+            "w": 226,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "look",
+          "t": 12.169029951095581,
+          "rect": {
+            "x": 344,
+            "y": 118.1171875,
+            "w": 1096,
+            "h": 30
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8519299030303956,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4519299030303956,
+          "view": {
+            "x": 609.609375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 1.6427299976348877,
+          "view": {
+            "x": 609.609375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.242729997634888,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.450929880142212,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.050929880142212,
+          "view": {
+            "x": 683.3359375,
+            "y": 263,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.506629943847656,
+          "view": {
+            "x": 683.3359375,
+            "y": 263,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.106629943847656,
+          "view": {
+            "x": 683.3359375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 12.169029951095581,
+          "view": {
+            "x": 683.3359375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 12.76902995109558,
+          "view": {
+            "x": 280,
+            "y": 0,
+            "w": 1160,
+            "h": 692.7777777777778
+          }
+        },
+        {
+          "t": 14.27983021736145,
+          "view": {
+            "x": 280,
+            "y": 0,
+            "w": 1160,
+            "h": 692.7777777777778
+          }
+        }
+      ]
+    }
+  },
+  "step-4": {
+    "recordedAt": "2026-11-12T16:58:16.197394043Z",
+    "step": "Lesson 6: Build a literature review table > step 4: type rating, select Add \"rating\" vault property, and type a rating in each cell; your ratings in a column of your own",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-4 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/build-a-literature-review-table.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/build-a-literature-review-table/step-4.frames apps/docs/public/img/learn/build-a-literature-review-table/step-4"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/build-a-literature-review-table/step-4.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 17.267,
+    "outputs": {
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-4.webm": 509056,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-4.mp4": 494756,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-4.poster.webp": 31236
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.5993077754974365,
+          "x": 1418,
+          "y": 20,
+          "rect": {
+            "x": 1404,
+            "y": 8,
+            "w": 28,
+            "h": 24
+          }
+        },
+        {
+          "kind": "point",
+          "t": 2.8921077251434326,
+          "x": 322,
+          "y": 20,
+          "rect": {
+            "x": 308,
+            "y": 8,
+            "w": 28,
+            "h": 24
+          }
+        },
+        {
+          "kind": "point",
+          "t": 4.174807786941528,
+          "x": 1310,
+          "y": 98,
+          "rect": {
+            "x": 1263.3359375,
+            "y": 85.1640625,
+            "w": 92.546875,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "park",
+          "t": 4.969307899475098,
+          "x": 1459.7265625,
+          "y": 140.1640625
+        },
+        {
+          "kind": "keys",
+          "t": 4.969407796859741,
+          "end": 5.192607879638672,
+          "rect": {
+            "x": 1117,
+            "y": 125.1640625,
+            "w": 312.2109375,
+            "h": 28
+          }
+        },
+        {
+          "kind": "point",
+          "t": 5.794307708740234,
+          "x": 1185,
+          "y": 285,
+          "rect": {
+            "x": 1145,
+            "y": 272.7578125,
+            "w": 280.2109375,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 7.458607912063599,
+          "x": 1331,
+          "y": 223,
+          "rect": {
+            "x": 1311.4453125,
+            "y": 208.1171875,
+            "w": 128.5546875,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 8.338107824325562,
+          "x": 1470,
+          "y": 258.1171875
+        },
+        {
+          "kind": "point",
+          "t": 9.506107807159424,
+          "x": 1331,
+          "y": 253,
+          "rect": {
+            "x": 1311.4453125,
+            "y": 238.1171875,
+            "w": 128.5546875,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 10.381707668304443,
+          "x": 1470,
+          "y": 288.1171875
+        },
+        {
+          "kind": "point",
+          "t": 11.577907800674438,
+          "x": 1331,
+          "y": 163,
+          "rect": {
+            "x": 1311.4453125,
+            "y": 148.1171875,
+            "w": 128.5546875,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 12.455507755279541,
+          "x": 1470,
+          "y": 198.1171875
+        },
+        {
+          "kind": "point",
+          "t": 13.649207592010498,
+          "x": 1331,
+          "y": 193,
+          "rect": {
+            "x": 1311.4453125,
+            "y": 178.1171875,
+            "w": 128.5546875,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 14.52590799331665,
+          "x": 1470,
+          "y": 228.1171875
+        },
+        {
+          "kind": "look",
+          "t": 15.113707780838013,
+          "rect": {
+            "x": 1311.4453125,
+            "y": 118.1171875,
+            "w": 128.5546875,
+            "h": 150
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8493077754974366,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4493077754974366,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.1421077251434326,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.7421077251434327,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 3.424807786941528,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.024807786941528,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.044307708740234,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.644307708740234,
+          "view": {
+            "x": 720,
+            "y": 70,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.708607912063599,
+          "view": {
+            "x": 720,
+            "y": 70,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 7.308607912063598,
+          "view": {
+            "x": 720,
+            "y": 8,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 8.756107807159424,
+          "view": {
+            "x": 720,
+            "y": 8,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 9.356107807159423,
+          "view": {
+            "x": 720,
+            "y": 38,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 10.827907800674438,
+          "view": {
+            "x": 720,
+            "y": 38,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 11.427907800674438,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 17.232207775115967,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        }
+      ]
+    }
+  },
+  "step-5": {
+    "recordedAt": "2026-11-12T16:58:26.594153076Z",
+    "step": "Lesson 6: Build a literature review table > step 5: select Sort, Add sort, and choose Date, old to new; the papers in order of year",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-5 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/build-a-literature-review-table.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/build-a-literature-review-table/step-5.frames apps/docs/public/img/learn/build-a-literature-review-table/step-5"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/build-a-literature-review-table/step-5.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 7.133,
+    "outputs": {
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-5.webm": 337236,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-5.mp4": 266573,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-5.poster.webp": 32760
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.5965967178344727,
+          "x": 1083,
+          "y": 98,
+          "rect": {
+            "x": 1054.8515625,
+            "y": 85.1640625,
+            "w": 55.4609375,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 2.3518967628479004,
+          "x": 1165,
+          "y": 176,
+          "rect": {
+            "x": 1059.8515625,
+            "y": 163.0625,
+            "w": 210,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.132396936416626,
+          "x": 1109,
+          "y": 175,
+          "rect": {
+            "x": 1070.28125,
+            "y": 160.0625,
+            "w": 78.3828125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.8944969177246094,
+          "x": 1205,
+          "y": 175,
+          "rect": {
+            "x": 1151.65625,
+            "y": 160.0625,
+            "w": 107.09375,
+            "h": 30
+          }
+        },
+        {
+          "kind": "look",
+          "t": 4.956396818161011,
+          "rect": {
+            "x": 44,
+            "y": 118.1171875,
+            "w": 1396,
+            "h": 150
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8465967178344728,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4465967178344727,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.956396818161011,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.55639681816101,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 7.075896739959717,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        }
+      ]
+    }
+  },
+  "step-6": {
+    "recordedAt": "2026-11-12T16:58:37.770737061Z",
+    "step": "Lesson 6: Build a literature review table > step 6: select the result count, choose Copy to clipboard, and paste into your draft; the table in your chapter",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-6 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/build-a-literature-review-table.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/build-a-literature-review-table/step-6.frames apps/docs/public/img/learn/build-a-literature-review-table/step-6"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/build-a-literature-review-table/step-6.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 7.2,
+    "outputs": {
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-6.webm": 457828,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-6.mp4": 465421,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-6.poster.webp": 64142
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.5977089405059814,
+          "x": 175,
+          "y": 98,
+          "rect": {
+            "x": 145.7109375,
+            "y": 85.8203125,
+            "w": 59.03125,
+            "h": 23.59375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 2.368208885192871,
+          "x": 191,
+          "y": 228,
+          "rect": {
+            "x": 150.7109375,
+            "y": 215.6171875,
+            "w": 230,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "look",
+          "t": 5.011908769607544,
+          "rect": {
+            "x": 392,
+            "y": 419.3125,
+            "w": 700,
+            "h": 440.6875
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8477089405059816,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4477089405059815,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 1.618208885192871,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.218208885192871,
+          "view": {
+            "x": 0,
+            "y": 13,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.011908769607544,
+          "view": {
+            "x": 0,
+            "y": 13,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.611908769607544,
+          "view": {
+            "x": 319.47093023255815,
+            "y": 355.3125,
+            "w": 845.0581395348837,
+            "h": 504.6875
+          }
+        },
+        {
+          "t": 7.127408742904663,
+          "view": {
+            "x": 319.47093023255815,
+            "y": 355.3125,
+            "w": 845.0581395348837,
+            "h": 504.6875
+          }
+        }
+      ]
+    }
+  }
+}

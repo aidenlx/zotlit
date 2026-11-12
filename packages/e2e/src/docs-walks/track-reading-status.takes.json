@@ -1,0 +1,1202 @@
+{
+  "step-1": {
+    "recordedAt": "2026-11-12T16:59:33.544205078Z",
+    "step": "Lesson 5: Track what you have read > step 1: in the Zotero library tab, select Save as query file and name it Reading plan; Reading plan.zotquery opens and lists your papers",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-1 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/track-reading-status.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/track-reading-status/step-1.frames apps/docs/public/img/learn/track-reading-status/step-1"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/track-reading-status/step-1.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 7.333,
+    "outputs": {
+      "apps/docs/public/img/learn/track-reading-status/step-1.webm": 410018,
+      "apps/docs/public/img/learn/track-reading-status/step-1.mp4": 423324,
+      "apps/docs/public/img/learn/track-reading-status/step-1.poster.webp": 47396
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.569216012954712,
+          "x": 1080,
+          "y": 140,
+          "rect": {
+            "x": 1068,
+            "y": 128.1875,
+            "w": 24,
+            "h": 24
+          }
+        },
+        {
+          "kind": "park",
+          "t": 3.049816131591797,
+          "x": 963,
+          "y": 414.078125
+        },
+        {
+          "kind": "keys",
+          "t": 3.0499160289764404,
+          "end": 4.3706159591674805,
+          "rect": {
+            "x": 457,
+            "y": 360.078125,
+            "w": 526,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 4.973315954208374,
+          "x": 883,
+          "y": 539,
+          "rect": {
+            "x": 856.28125,
+            "y": 523.5703125,
+            "w": 53.1171875,
+            "h": 30
+          }
+        },
+        {
+          "kind": "look",
+          "t": 5.151616096496582,
+          "rect": {
+            "x": 348,
+            "y": 6,
+            "w": 740,
+            "h": 339.578125
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.819216012954712,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.419216012954712,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.2999160289764404,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.8999160289764405,
+          "view": {
+            "x": 360,
+            "y": 160.078125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.223315954208374,
+          "view": {
+            "x": 360,
+            "y": 160.078125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.823315954208374,
+          "view": {
+            "x": 522.83984375,
+            "y": 324,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.151616096496582,
+          "view": {
+            "x": 522.83984375,
+            "y": 324,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.751616096496582,
+          "view": {
+            "x": 316,
+            "y": 0,
+            "w": 804,
+            "h": 480.1666666666667
+          }
+        },
+        {
+          "t": 7.27181601524353,
+          "view": {
+            "x": 316,
+            "y": 0,
+            "w": 804,
+            "h": 480.1666666666667
+          }
+        }
+      ]
+    }
+  },
+  "step-2": {
+    "recordedAt": "2026-11-12T16:59:44.28287793Z",
+    "step": "Lesson 5: Track what you have read > step 2: select Views, Configure view, and set Layout to Table; your papers as rows",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-2 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/track-reading-status.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/track-reading-status/step-2.frames apps/docs/public/img/learn/track-reading-status/step-2"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/track-reading-status/step-2.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 6.167,
+    "outputs": {
+      "apps/docs/public/img/learn/track-reading-status/step-2.webm": 336939,
+      "apps/docs/public/img/learn/track-reading-status/step-2.mp4": 334625,
+      "apps/docs/public/img/learn/track-reading-status/step-2.poster.webp": 44622
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.601166009902954,
+          "x": 397,
+          "y": 98,
+          "rect": {
+            "x": 352,
+            "y": 85.1640625,
+            "w": 89.7109375,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 2.378566026687622,
+          "x": 531,
+          "y": 175,
+          "rect": {
+            "x": 517,
+            "y": 162.609375,
+            "w": 28,
+            "h": 24
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.156266212463379,
+          "x": 481,
+          "y": 340,
+          "rect": {
+            "x": 361,
+            "y": 325.9453125,
+            "w": 302,
+            "h": 28
+          }
+        },
+        {
+          "kind": "look",
+          "t": 4.017865896224976,
+          "rect": {
+            "x": 344,
+            "y": 118.1171875,
+            "w": 826.1953125,
+            "h": 180
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8511660099029542,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4511660099029542,
+          "view": {
+            "x": 36.85546875,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.406266212463379,
+          "view": {
+            "x": 36.85546875,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 3.006266212463379,
+          "view": {
+            "x": 152,
+            "y": 125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.017865896224976,
+          "view": {
+            "x": 152,
+            "y": 125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.617865896224975,
+          "view": {
+            "x": 312,
+            "y": 0,
+            "w": 890.1953125,
+            "h": 531.6444227430555
+          }
+        },
+        {
+          "t": 6.132666110992432,
+          "view": {
+            "x": 312,
+            "y": 0,
+            "w": 890.1953125,
+            "h": 531.6444227430555
+          }
+        }
+      ]
+    }
+  },
+  "step-3": {
+    "recordedAt": "2026-11-12T16:59:56.532998047Z",
+    "step": "Lesson 5: Track what you have read > step 3: select Properties, type reading-status, and select the second entry, Add \"reading-status\" vault property; a column reading-status (note); papers without a literature note read No note, and Sandve et al. 2013 an empty cell",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-3 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/track-reading-status.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/track-reading-status/step-3.frames apps/docs/public/img/learn/track-reading-status/step-3"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/track-reading-status/step-3.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 8.367,
+    "outputs": {
+      "apps/docs/public/img/learn/track-reading-status/step-3.webm": 378670,
+      "apps/docs/public/img/learn/track-reading-status/step-3.mp4": 354160,
+      "apps/docs/public/img/learn/track-reading-status/step-3.poster.webp": 44538
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.596208095550537,
+          "x": 970,
+          "y": 98,
+          "rect": {
+            "x": 923.3359375,
+            "y": 85.1640625,
+            "w": 92.546875,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "park",
+          "t": 2.3643078804016113,
+          "x": 1267.0625,
+          "y": 140.1640625
+        },
+        {
+          "kind": "keys",
+          "t": 2.364408016204834,
+          "end": 3.8535077571868896,
+          "rect": {
+            "x": 924.3359375,
+            "y": 125.1640625,
+            "w": 311.7265625,
+            "h": 28
+          }
+        },
+        {
+          "kind": "point",
+          "t": 4.456507921218872,
+          "x": 968,
+          "y": 234,
+          "rect": {
+            "x": 928.3359375,
+            "y": 221.65625,
+            "w": 251.1796875,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "look",
+          "t": 6.216408014297485,
+          "rect": {
+            "x": 337,
+            "y": 118.1171875,
+            "w": 769.5234375,
+            "h": 180
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8462080955505372,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4462080955505372,
+          "view": {
+            "x": 609.609375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 1.614408016204834,
+          "view": {
+            "x": 609.609375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.214408016204834,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.216408014297485,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.816408014297485,
+          "view": {
+            "x": 305,
+            "y": 0,
+            "w": 833.5234375,
+            "h": 497.79871961805554
+          }
+        },
+        {
+          "t": 8.341507911682129,
+          "view": {
+            "x": 305,
+            "y": 0,
+            "w": 833.5234375,
+            "h": 497.79871961805554
+          }
+        }
+      ]
+    }
+  },
+  "step-4": {
+    "recordedAt": "2026-11-12T17:00:05.370881104Z",
+    "step": "Lesson 5: Track what you have read > step 4: select a cell, type to-read, and press Enter; the notice Literature note created. and the cell shows to-read",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-4 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/track-reading-status.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/track-reading-status/step-4.frames apps/docs/public/img/learn/track-reading-status/step-4"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/track-reading-status/step-4.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 6.367,
+    "outputs": {
+      "apps/docs/public/img/learn/track-reading-status/step-4.webm": 200683,
+      "apps/docs/public/img/learn/track-reading-status/step-4.mp4": 166004,
+      "apps/docs/public/img/learn/track-reading-status/step-4.poster.webp": 31652
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.606553077697754,
+          "x": 955,
+          "y": 253,
+          "rect": {
+            "x": 934.6953125,
+            "y": 238.1171875,
+            "w": 165.328125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 2.8025529384613037,
+          "x": 1136.5234375,
+          "y": 298.1171875
+        },
+        {
+          "kind": "keys",
+          "t": 2.8026530742645264,
+          "end": 3.2911529541015625,
+          "rect": {
+            "x": 942.1953125,
+            "y": 238.1171875,
+            "w": 164.328125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "look",
+          "t": 4.206053018569946,
+          "rect": {
+            "x": 941.1953125,
+            "y": 32,
+            "w": 488.8046875,
+            "h": 236.1171875
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.856553077697754,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.456553077697754,
+          "view": {
+            "x": 657.359375,
+            "y": 38,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.206053018569946,
+          "view": {
+            "x": 657.359375,
+            "y": 38,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.806053018569946,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.329552888870239,
+          "view": {
+            "x": 720,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        }
+      ]
+    }
+  },
+  "step-5": {
+    "recordedAt": "2026-11-12T17:00:22.671346924Z",
+    "step": "Lesson 5: Track what you have read > step 5: mark a paper you started reading and a finished one done; the cell suggests the statuses you used",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-5 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/track-reading-status.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/track-reading-status/step-5.frames apps/docs/public/img/learn/track-reading-status/step-5"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/track-reading-status/step-5.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 11.1,
+    "outputs": {
+      "apps/docs/public/img/learn/track-reading-status/step-5.webm": 263919,
+      "apps/docs/public/img/learn/track-reading-status/step-5.mp4": 266020,
+      "apps/docs/public/img/learn/track-reading-status/step-5.poster.webp": 32452
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.6017301082611084,
+          "x": 955,
+          "y": 193,
+          "rect": {
+            "x": 934.6953125,
+            "y": 178.1171875,
+            "w": 165.328125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 2.7795300483703613,
+          "x": 1136.5234375,
+          "y": 238.1171875
+        },
+        {
+          "kind": "keys",
+          "t": 2.779629945755005,
+          "end": 3.2698299884796143,
+          "rect": {
+            "x": 942.1953125,
+            "y": 178.1171875,
+            "w": 164.328125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 4.784430027008057,
+          "x": 955,
+          "y": 163,
+          "rect": {
+            "x": 934.6953125,
+            "y": 148.1171875,
+            "w": 165.328125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 5.96382999420166,
+          "x": 1136.5234375,
+          "y": 208.1171875
+        },
+        {
+          "kind": "keys",
+          "t": 5.96382999420166,
+          "end": 6.236429929733276,
+          "rect": {
+            "x": 942.1953125,
+            "y": 148.1171875,
+            "w": 164.328125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 7.751629829406738,
+          "x": 955,
+          "y": 283,
+          "rect": {
+            "x": 934.6953125,
+            "y": 268.1171875,
+            "w": 165.328125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 8.529929876327515,
+          "x": 911.1953125,
+          "y": 328.1171875
+        },
+        {
+          "kind": "look",
+          "t": 8.53012990951538,
+          "rect": {
+            "x": 941.1953125,
+            "y": 268.1171875,
+            "w": 165.328125,
+            "h": 138.6953125
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8517301082611085,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4517301082611085,
+          "view": {
+            "x": 657.359375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 8.53012990951538,
+          "view": {
+            "x": 657.359375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 9.13012990951538,
+          "view": {
+            "x": 663.859375,
+            "y": 122.46484375,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 10.644829988479614,
+          "view": {
+            "x": 663.859375,
+            "y": 122.46484375,
+            "w": 720,
+            "h": 430
+          }
+        }
+      ]
+    }
+  },
+  "step-6": {
+    "recordedAt": "2026-11-12T17:00:35.656305908Z",
+    "step": "Lesson 5: Track what you have read > step 6: select Filter and choose reading-status (note), is, to-read; only the papers still to read",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-6 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/track-reading-status.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/track-reading-status/step-6.frames apps/docs/public/img/learn/track-reading-status/step-6"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/track-reading-status/step-6.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 8.433,
+    "outputs": {
+      "apps/docs/public/img/learn/track-reading-status/step-6.webm": 378046,
+      "apps/docs/public/img/learn/track-reading-status/step-6.mp4": 392350,
+      "apps/docs/public/img/learn/track-reading-status/step-6.poster.webp": 25878
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.600785255432129,
+          "x": 889,
+          "y": 98,
+          "rect": {
+            "x": 858.84375,
+            "y": 85.1640625,
+            "w": 60.4921875,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 2.37068510055542,
+          "x": 1024,
+          "y": 255,
+          "rect": {
+            "x": 971.84375,
+            "y": 239.9609375,
+            "w": 105.1171875,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.1399850845336914,
+          "x": 1019,
+          "y": 566,
+          "rect": {
+            "x": 978.84375,
+            "y": 554.015625,
+            "w": 306,
+            "h": 24.8984375
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.898085117340088,
+          "x": 1201,
+          "y": 255,
+          "rect": {
+            "x": 1154.1015625,
+            "y": 239.9609375,
+            "w": 93.0234375,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 4.65228533744812,
+          "x": 1236,
+          "y": 255,
+          "rect": {
+            "x": 1205.5625,
+            "y": 239.9609375,
+            "w": 102.28125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "park",
+          "t": 5.405585050582886,
+          "x": 1287.84375,
+          "y": 293.9609375
+        },
+        {
+          "kind": "keys",
+          "t": 5.405585050582886,
+          "end": 5.89848518371582,
+          "rect": {
+            "x": 1205.5625,
+            "y": 239.9609375,
+            "w": 102.28125,
+            "h": 30
+          }
+        },
+        {
+          "kind": "look",
+          "t": 5.898585081100464,
+          "rect": {
+            "x": 344,
+            "y": 118.1171875,
+            "w": 1023.84375,
+            "h": 151.84375
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.850785255432129,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.450785255432129,
+          "view": {
+            "x": 529.08984375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 1.62068510055542,
+          "view": {
+            "x": 529.08984375,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.22068510055542,
+          "view": {
+            "x": 664.40234375,
+            "y": 40,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.3899850845336914,
+          "view": {
+            "x": 664.40234375,
+            "y": 40,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.9899850845336915,
+          "view": {
+            "x": 720,
+            "y": 351,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 3.148085117340088,
+          "view": {
+            "x": 720,
+            "y": 351,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 3.748085117340088,
+          "view": {
+            "x": 720,
+            "y": 40,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.898585081100464,
+          "view": {
+            "x": 720,
+            "y": 40,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.4985850811004635,
+          "view": {
+            "x": 312,
+            "y": 0,
+            "w": 1087.84375,
+            "h": 649.6844618055555
+          }
+        },
+        {
+          "t": 8.013885021209717,
+          "view": {
+            "x": 312,
+            "y": 0,
+            "w": 1087.84375,
+            "h": 649.6844618055555
+          }
+        }
+      ]
+    }
+  }
+}
