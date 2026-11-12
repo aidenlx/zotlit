@@ -10,10 +10,10 @@ a lesson gives space to the one step the reader is doing.
 Apply the shared brand rules together with the relevant per-surface section.
 Use [the brand specification](../../docs/brand.md) for logo and wordmark assets.
 
-Visual references, each on its own branch: the landing at
-`apps/docs/landing-prototype/landing-prototype.html` on
-`prototype/landing-research-desk`, and the lesson step at
-`apps/docs/lesson-prototype/learn-lesson.html` on `prototype/lesson-shell`.
+Visual references: the landing at
+`apps/docs/.scratch/landing-proto/prototype-landing.html` (see Landing), and
+the lesson step at `apps/docs/lesson-prototype/learn-lesson.html` on
+`prototype/lesson-shell`.
 Where this spec and a prototype differ, this spec wins.
 
 ## Key points
@@ -70,7 +70,6 @@ Owned layout slots:
 | Accent (rings, dots, rules, large numerals) | `#e8622c` | `#f0793f` | `--color-fd-ring` |
 | Quiet fill (hover rows, code, chips)¹ | `#f0ede6` | `#23262d` | `--color-fd-muted`, `--color-fd-secondary` |
 | Warm tint (accent hover, notices)¹ | `#fbf1e6` | `#2a221d` | `--color-fd-accent` |
-| Citation blue | `#2756b0` | `#8aaaf0` | rendered citations inside demos and replicas |
 | Highlighter | Zotero yellow `#ffd400` at 48% | at 30% | one marked phrase per page |
 
 ¹ Derived for the Fumadocs token set: the light values come from the lesson
@@ -101,7 +100,8 @@ Measured contrast (WCAG 2.x):
 | Accent (ring) on ground | 3.1:1 | 6.6:1 |
 
 The Zotero annotation colours (`--z-yellow`, `--z-red`, …) appear only where
-they mean Zotero highlights: in recordings, replicas and the desk's open paper.
+they mean Zotero highlights: in recordings and inside the app windows on the
+landing's desk.
 
 The brand mark and wordmark keep their own inks, `--zotlit-ink` (navy) and
 `--zotlit-accent`, from the brand specification; the theme tokens leave them
@@ -153,13 +153,14 @@ stays legible at any size, including shrunk-down OG cards.
 On editorial and docs-chrome surfaces, apparatus labels are mono uppercase:
 
 - Home nav links
-- Landing section labels ("Contents", "In this job", "What you need") and the
-  `/learn` lesson labels ("Lesson 1 of 6", "Step 2 of 6")
+- Landing labels ("The research sequence", "Before you write", "Step 1", the
+  desk's tape labels) and the `/learn` lesson labels ("Lesson 1 of 6", "Step
+  2 of 6")
 - Changelog/blog dates and meta lines; version-ledger row labels
 - Docs sidebar folder + `links`-prop rows, the TOC "On this page" title, docs
   prose h4, and the command `Copy →` affordance
 
-Numerals that count or order — "03 / 08", "Step 1", "01" in a contents list
+Numerals that count or order — "02 / 05", "Step 1", "01" in a caption trail
 — take the mono face in normal case, with the current or leading number in the
 accent text tone.
 
@@ -178,8 +179,8 @@ for its utility chrome, including labels and pane headings.
 
 ## Surfaces and elevation
 
-- **Shadow ring.** A raised surface (card, replica window, secondary button,
-  current contents row, numbered marker) takes `border: 1px solid transparent`
+- **Shadow ring.** A raised surface (card, recording frame, secondary
+  button) takes `border: 1px solid transparent`
   under the layered ring, so forced-colors mode still draws an edge. The ring
   is a token pair in `src/styles.css`, reached as the `shadow-ring` and
   `shadow-ring-hover` utilities:
@@ -188,14 +189,14 @@ for its utility chrome, including labels and pane headings.
   - dark: `0 0 0 1px oklch(1 0 0 / 0.08)`; hover at 0.13.
 - **Hairlines for structure.** Section rules, list dividers, table rows and
   card dividers use `border-fd-border`. A list head sits on a 1px ink rule.
-- **Radii.** Buttons 10px; list rows and small controls 8px; cards, replica
-  windows and lesson pictures 10–14px. Where surfaces nest with an even
+- **Radii.** Buttons 10px; list rows and small controls 8px; cards, app
+  windows, recordings and lesson pictures 10–14px. Where surfaces nest with an even
   inset, the outer radius is the inner radius plus the padding.
 - **Buttons.** The kit's primary button (`src/components/ui/button.tsx`) fills
   with the accent text tone and carries the text-on-accent tone. On the
-  landing and `/learn`, the leading action is 44px tall, sans semibold, ink
-  fill with ground text; the secondary action is the surface with the shadow
-  ring (Target).
+  landing and `/learn`, the leading action is 44px tall and sans semibold —
+  the accent fill on the landing, ink fill with ground text on `/learn` — and
+  the secondary action is the surface with the shadow ring (Target).
 - **Toasts.** Transient feedback from `toast.add()` sits on the popover
   surface (`src/components/ui/toast.tsx`): a hairline border, a floating
   shadow, an ink title and a muted description.
@@ -215,11 +216,13 @@ Values follow the `better-ui` skill.
   `hover:` does this).
 - **Colour-scheme switch.** Transitions are suspended for the swap and
   restored on the next frame.
-- **Loops.** At most one loop plays in view at a time — a lesson recording or
-  a landing demo: it runs while it crosses the middle band of the viewport and
-  rests elsewhere. With reduced motion, each shows its finished frame.
-- **Scroll.** The page scrolls as a document. Scroll-linked movement belongs
-  to the landing's desk alone (see Landing).
+- **Loops.** At most one loop plays in view at a time — a lesson recording, a
+  landing recording or the landing's table demo: a recording runs while it
+  crosses the middle band of the viewport, and the demo while half of it is
+  on screen; each rests elsewhere, and a loop that starts rests the one that
+  played. With reduced motion, each shows its finished frame.
+- **Scroll.** The page scrolls as a document, with no scroll-linked movement.
+  The landing's desk drifts with the pointer only (see Landing).
 
 ## Illustration
 
@@ -233,11 +236,12 @@ heading, one caption and one check line.
   result is the poster and the fallback. The reader then does the step once,
   in their own Obsidian, so a lesson ends with a working setup on their own
   library.
-- **The landing shows replicas.** Features appear in small app windows built
-  from the real app's own assets: ZotLit's components, styles, labels and the
-  open Lucide icons, on real-looking research data, inside a plain window
-  frame of our own. Obsidian's own stylesheet and window chrome stay out.
-- **The landing lets a visitor try one moment** (Target). Inside a replica, a
+- **The landing shows recordings and enacted windows.** Each workflow step
+  shows a recording of the real app. The hero's desk and the table demo show
+  small app windows built in HTML from the real app's labels and the open
+  Lucide icons, on real-looking research data, inside a plain window frame of
+  our own. Obsidian's own stylesheet and window chrome stay out.
+- **The landing lets a visitor try one moment** (Target). Inside a window, a
   visitor tries a signature moment in about 20 seconds before any install,
   and the moment hands them to Install and Lesson 1. The first: type `[@` in
   a draft, pick a paper, and the formatted citation appears. Further
@@ -288,165 +292,123 @@ control vocabulary, typography, responsive folds, and the enforcement table.
 ### Landing (`src/routes/_home/index.tsx`)
 
 Built in `src/components/landing/`. Prototype:
-`apps/docs/landing-prototype/landing-prototype.html` on
-`prototype/landing-research-desk`.
+`apps/docs/.scratch/landing-proto/prototype-landing.html` (local, not
+committed); its top comment records the owner's decisions round by round.
 
 The landing tells one story: **"A research desk for Zotero in Obsidian."**
-Eight research jobs in the order a researcher meets them, each with its
-replica and its complete feature list. Content width 1240px with 32px side
-gutters (16px on phones).
+First the desk, then the research sequence from finding a paper to sending
+the chapter to Word, then the reading table in detail. Five parts, top to
+bottom: the hero, the workflow, "Compare your papers", the trust row and the
+closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
+(16px on phones); each opens on a hairline.
 
-- **Header.** The shared home nav (see Owned layout slots). It sticks at the
-  viewport top, 56px tall; the landing's sticky parts sit below it. The live
-  repository counters (`<RepoDatum>`) sit under the licence line in Setup.
-- **Hero.** Two columns from 1024px. Left: the H1 "A research desk for Zotero
-  in Obsidian." (display, 4.4rem / 1.02; 3.6rem from 640px; 2.6rem on phones)
-  with the highlighter on "research desk". Right, aligned to the H1's last
-  line: the supporting line "Find, read, annotate, cite and export your
-  papers, right beside the notes you write." (sans 18px, muted, 46ch);
-  **Install ZotLit** (primary, to the install page) and **Start the
-  tutorial** (secondary, to `/learn`); the requirement line in muted 13.5px —
-  Obsidian version · Zotero versions · desktop platforms. One column below
-  1024px.
-- **Hero entrance, once.** Title, supporting line (+100 ms), actions and
-  requirements (+200 ms), the figure (+300 ms): opacity, 4px blur and a 12px
-  rise over 300 ms ease-out. Under reduced motion: opacity only.
-- **Figure 1: the desk.** The desk (below) at the full content width, with its
-  numbered markers. The figcaption reads "**Figure 1.** Your research desk,
-  seen from above. Each object is one job in a research project. Select one to
-  read about it." (sans 15px, muted, "Figure 1." in ink semibold), beside the
-  **key**: eight rows of object icon, number and job name, in two columns from
-  640px. Pointing at or focusing a key row rings its object on the desk;
-  selecting it scrolls to the job and moves focus there. From 1024px the
-  caption and key stay clear of the contents column's track
-  (`max-width: calc(100% - 364px)`).
-- **Contents column (from 1024px).** The job sections run in a
-  `minmax(0, 1fr)` column beside a 300px column, 64px apart. The 300px column
-  sticks 32px below the home nav and holds the docked desk (no markers;
-  the job in view ringed, the others faded), the "Contents" label, the eight
-  jobs as rows (mono number + name; the current row raised on the surface with
-  the shadow ring, its number in the accent text tone), and an "Install
-  ZotLit →" link. The current job is the section that crosses 40% of the
-  viewport height. Selecting a docked object or a contents row jumps to the
-  job; smooth scrolling only when motion is on.
-- **The desk shrinks into the column.** Scroll progress `p` runs from 0, when
-  the hero desk's top reaches 16px below the home nav, to 1, when the job
-  column's top reaches the sticky line. Between the two, a fixed copy of the
-  desk, anchored at its right edge, narrows from the hero width to the column
-  width over the first 55% of `p` and moves to the column's top over all of
-  `p` (smoothstep easing on both), so it never covers the text scrolling up
-  beside it. The markers fade out over the first half; the focus ring and the
-  fade on the other objects follow `p`; the contents list fades in with `p`.
-  The scroll handler writes `p` and the phase (hero, moving, docked) on the
-  page element in one animation frame, so the hand-off between the hero desk,
-  the moving copy and the docked desk lands in the same frame and React stays
-  idle while scrolling. With motion off or reduced motion there is no moving
-  copy: the hero desk stays in place, and the docked desk and contents list
-  cross-fade in over 150 ms at `p = 1`.
-- **Below 1024px.** The hero desk and key, then the sections in one column,
-  each heading led by its object icon. Once the figure has scrolled out, a bar
-  appears under the home nav (ground at 90% with a backdrop blur and a
-  hairline below): the
-  eight object icons with their numbers, the current one on a raised tile, and
-  the current job's name under the row. It enters with opacity and a 12px drop
-  over 300 ms (opacity only under reduced motion) and is `inert` while hidden;
-  sections carry a scroll margin that clears it.
-- **Job sections.** A hairline rule, then "03 / 08" (mono 12px, the job number
-  in the accent text tone), the job name as H2 (display, 2.6rem / 1.08), and
-  one outcome line (sans 17.5px, muted, 52ch). Then the job's lead replica as
-  a figure: the working window and a caption "Shown: *feature*" with its
-  badges. Then **"In this job"**: every feature of the job, name linked to its
-  docs page, badges (New in 2.2, Since 2.1, For power users, Needs ZotLit
-  Companion), and the one-line description; a filled accent dot marks the
-  features the replica shows working. Two columns from 1280px, and from 768px
-  below 1024px.
-- **Replicas.** Small app windows that show one feature working (see
-  Illustration), in `src/components/landing/replicas/`. Each window carries
-  only the chrome the feature needs: a title bar and the pane that matters.
-  Inside, the plugin's own labels (its `m.*` messages), Lucide icons and
-  class vocabulary on the site tokens (the Workbench's property grid among them); and
-  the Default profile's real output for Sandve et al. 2013
-  (`rendered-note.ts`, kept in step by its test). The papers, the collection
-  and the draft are the docs Fixture's. A loop rests on its finished frame,
-  which is also the prerendered HTML, and keeps the window's height through
-  every frame. The loop rule in Motion applies.
-- **Try it: "Cite while you write".** The job's replica is a draft the visitor
-  types in: `[@` opens the citation suggester over the five papers (those the
-  draft already cites first), Enter or a click inserts `[@key]` with the
-  cursor before the bracket, and moving past the bracket renders it, as
-  `[@sandve2013, p. 2]` → "(Sandve et al. 2013, 2)". Backspace in the empty
-  field takes the last citation back into Markdown. Under the window: the
-  hint, then the page hint, then a link to install; and **Reset draft**. The
-  page prints the finished frame and loads the working draft when the job
-  comes within a viewport, in the same box.
-- **Setup: "Set up your desk".** Left: the H2, "Three steps, all inside
-  Obsidian.", **Install ZotLit** and **Start the tutorial**. Right: the three
-  install steps in one raised card (14px radius; three columns divided by
-  hairlines from 768px), each with "Step N", its name, one line and a link;
-  then "What you need" (Obsidian, Zotero, desktop, the Pandoc engine) and
-  "Optional add-ons for Zotero" (ZotLit Companion, Better BibTeX) as
-  label-headed lists; then the privacy and licence lines with Lucide icons,
-  under a hairline.
-- **Footer.** The shared copyright footer (`src/components/site-footer.tsx`):
-  hairline-topped "© year AidenLx · AGPL-3.0 Licensed" line, shared across all
-  `_home` index surfaces (landing, blog index, changelog index).
+- **Header and footer.** The shared home nav (see Owned layout slots) and
+  the shared copyright footer.
+- **Hero.** Centred text on a research desk. A mono label ("An Obsidian
+  plugin · free and open source", 12px, 0.14em tracking, muted), the H1 "A
+  research desk for Zotero in Obsidian." (display, 2.6rem / 1.06 on phones,
+  3.75rem from 640px) with the highlighter on "research desk", the
+  supporting line (sans 20px, muted, 34rem), **Install ZotLit** and **Start
+  the tutorial**, and the requirements line in muted 14px. From 1280px the
+  hero fills the viewport below the nav (at least 720px) and the text sits a
+  little above centre.
+- **The desk (from 1280px).** Six objects lie around the headline on a
+  1440 × 832 stage, built in HTML on the docs Fixture's data, each named by
+  a strip of washi tape (mono uppercase 10.5px on `--desk-tape`, rotated
+  2.5°): the Library View sheet ("Browse your library") and the
+  Reproducibility.zotquery table ("A live literature table") lead at the
+  top; the PDF page with the reader's marks ("Read and annotate"), the
+  literature-note index card ("Take literature notes"), the draft with its
+  citation picker ("Cite while you write") and the Word reference page
+  ("Export and submit") lie below. Two blank sheets under the leads give
+  depth; a soft clearing of the ground colour keeps the headline clear. The
+  stage scales in steps with the window — 0.88 from 1280px, 0.94 from
+  1360px, 1 from 1440px, 1.08 from 1800px — and the text zooms with it.
+  Each object casts `--desk-shadow`. The desk is `aria-hidden`: the
+  headline and the sections below carry its meaning.
+- **Below 1280px.** The text, then the library sheet, the table and the PDF
+  in a short fanned stack (460px wide at most).
+- **Hero motion, once.** The objects drop onto the desk in order (library,
+  table, PDF, note card, draft, references; 100–1100 ms delays): a 38px
+  fall with a 5° turn and a 7% shrink over 780 ms. Then the ratings fill in,
+  the table's cell focus lands, the citation picker opens and the
+  highlighter sweeps across "research desk" (at 2.3 s). From 1280px the
+  objects drift with a fine pointer, each by its depth, up to 8px. All of it
+  is CSS under `motion-safe:`, except the drift, which writes `translate` on
+  each object in one animation frame. The prerendered page and reduced
+  motion show the final state.
+- **Workflow: "From Zotero to finished chapter."** On the surface at 40%.
+  A centred head: the mono label "The research sequence", the H2, and one
+  line. Then five steps — Find a paper, Read and highlight, Write the
+  literature note, Cite as you draft, Send it to Word — in a zig-zag from
+  1024px around a vertical hairline, each numbered on the line by a 36px
+  circle (mono, accent text tone). Each step: "Step N" (mono uppercase,
+  accent text tone), the step title (display, 2.25rem from 640px), one
+  outcome line (sans 18px, muted), two points on hairlines (a semibold lead
+  and a muted sentence), an optional note on the quiet fill (the Better
+  BibTeX requirement), and "Learn in the tutorial →" to the step's lesson.
+  Beside it, the step's recording (see Recordings).
+- **Compare your papers.** The mono label "Before you write", the H2
+  "Compare your papers side by side.", one line and "Learn in the
+  tutorial →" to `/learn/literature-review-table-from-zotero`. Then the
+  demo, a figure: an Obsidian window (11px radius, `--desk-window-shadow`)
+  enacts the collection becoming a table. In the Library View the reader
+  saves the Reproducibility collection as a query file
+  (Thesis/Reproducibility.zotquery); it opens as a table whose column
+  tracks are all reserved from the first frame, so the columns — Literature
+  note, Year, Publication, Creators — fill in place left to right; the rows
+  sort by year; and the rating column from the literature notes is typed
+  in for the two papers that have a note, while the two without one read
+  "No note" and offer Create. Phones keep Title, Year and rating. Under
+  the window, a five-beat caption trail (Pick a collection, Save as a
+  table, Choose columns, Sort by year, Add your rating): a hairline per beat
+  that fills with the accent over the beat, a mono "01" in the accent text
+  tone and the beat in serif italic; on phones, the current beat alone
+  ("02 / 05"). The figure's caption, for screen readers, says what the
+  table ends up showing. Then three points on hairlines: "What Zotero
+  knows.", "What you decided.", "What you have not read yet.".
+- **The demo's timing.** One cycle runs 19.8 s and fades out over its last
+  650 ms. The page prerenders the finished frame, which reduced motion
+  keeps. With motion on, the demo waits at the collection while it is off
+  screen, plays while at least half of it is on screen, and starts again
+  from the collection once it has left. Rows and cells move by FLIP
+  (transform and opacity); the tree collapses by width.
+- **Trust row.** Three items on the ground under the section's hairline, in
+  three columns from 640px: a serif lead (20px) and a muted line —
+  "Private, on your computer.", "Free and open source.", "Works with Zotero
+  9 and 10.".
+- **Closing call.** A band on the quiet fill: the H2 "Start your next
+  chapter with ZotLit.", one line, the two actions and the requirements
+  line, centred.
+- **Recordings.** Each workflow step shows a recording of the real app at
+  `public/img/landing/<case>` — `find`, `read`, `note`, `cite`, `word` — a
+  1600 × 1000 WebP still and, where the case has one, an MP4 and a WebM
+  clip; `CLIPS` in `workflow.tsx` names the cases with a clip. The frame is
+  16:10 (`object-fit: cover`), 12px radius, on the surface with the shadow
+  ring. The page prerenders the still. After mount, with motion on, a clip
+  mounts once its frame comes within 300px of the viewport (muted, looping,
+  inline, `preload="none"`, the still as its poster) and plays while it
+  crosses the middle band. Reduced motion keeps the still. The alt text
+  says what the recording shows.
+- **Inside the app windows.** The desk's sheets and the demo's window use
+  ZotLit's own labels (the plugin's `m.*` messages) and Lucide icons on the
+  site tokens; the Zotero annotation colours and Obsidian's purple
+  (`--desk-purple`, with `--desk-selected` and `--desk-own` for the
+  selected row and the note-property column) appear only there. Sample
+  research data — titles, authors, citation keys, the chapter text, the
+  references — stays as data in `papers.ts` and the components, not as
+  messages.
+- **Actions.** **Install ZotLit** (to the install page) fills with the
+  accent text tone and carries the text-on-accent tone; **Start the
+  tutorial** (to `/learn`) is the surface with the shadow ring. Both are
+  44px tall, 10px radius, sans semibold 15px; side by side from 640px,
+  stacked full-width below.
+- **Type.** Display headings take the serif at weight 500 (the type
+  system), not the prototype's semibold; section labels are mono uppercase
+  at 13px, muted, 0.12em tracking.
 - **Copy.** Sentence case, short sentences, active voice, research outcomes
-  over mechanisms. Feature names exactly as the docs name them. Numbering only
-  for the eight jobs and the install steps.
-
-#### The research desk
-
-One flat SVG drawing of an academic's desk seen from above (view box
-1600 × 860). It is the hero figure, then the table of contents. Each object
-stands for one research job:
-
-| # | Job | Object | Replica(s) on the landing |
-| --- | --- | --- | --- |
-| 1 | Bring your library | File box labelled "My library" | Reads Zotero directly (with Group libraries) |
-| 2 | Find a paper | Books and a magnifier | Library View (with Reading Card) |
-| 3 | Read and annotate | Open paper with highlighter | PDF reader (with Annotation view) |
-| 4 | Take literature notes | Notebook | Literature notes |
-| 5 | Cite while you write | Manuscript on a clipboard | Citations in Live Preview (with Citation Suggester, Any citation style); Citation Popover |
-| 6 | See how your sources connect | Pinboard with string | Citations in the graph view; References Sidebar |
-| 7 | Export and submit | Printer, a page with a reference list coming out | Export with citations |
-| 8 | Make it yours | Laptop and toolbox | Template Workbench |
-
-- **Drawing language.** Flat fills from the desk palette; 1px hairline edges
-  (non-scaling strokes) in the desk edge colour; small rounded corners. Each
-  object casts a soft shadow: its shadow shapes offset by (3, 12) and blurred
-  (Gaussian, σ 9). The blotter is deep slate (`#2d3746` light, `#283241`
-  dark) with darker corner pockets and a dashed stitch 16 units inside its
-  edge. A coffee cup is the one object without a job. The desk has no idle
-  loop.
-- **Palette.** Warm and desaturated:
-
-  | | Light | Dark |
-  | --- | --- | --- |
-  | Desk surface | `#ebe7de` | `#1b1e23` |
-  | Paper | `#ffffff` | `#c9c5bd` |
-  | Edge | `#a7a297` | `#3a3e46` |
-  | Shadow | `rgb(60 45 20 / 0.16)` | `rgb(0 0 0 / 0.40)` |
-  | Steel (file box) | `#dcd7cd` | `#4a4f58` |
-  | Device (laptop, printer) | `#d9dbdf` | `#5a5e66` |
-  | Screen / printer slot | `#222a36` / `#2e3744` | `#10151d` / `#222935` |
-  | Notebook | `#56685b` | `#3d4c42` |
-  | Books | `#44587a`, `#8a7660`, `#8e3f35` | `#34445e`, `#6b5c4b`, `#6e342d` |
-  | Cork | `#ece5d6` | `#8f887c` |
-
-  The full set is the `--desk-*` tokens in `src/styles.css`, both schemes.
-  Each object is drawn once, in a zero-size sprite, and every desk and
-  pictogram on the page `<use>`s it.
-- **States.** The object in focus (pointed at, or the job in view) gets a 2px
-  accent ring, a rounded rectangle 14 units outside it; the other objects fade
-  to 35% opacity. In the hero, numbered markers sit at each object's corner:
-  20px circles on phones, 28px from 640px up, mono numerals on the surface with
-  the shadow ring; the active marker fills with the accent text tone. Pointing
-  at an object shows its job name in an ink tag beside the marker.
-- **Object icons.** Each object also renders alone as a pictogram (24–48px): in
-  the figure key, the phone bar, and the phone section heads.
-- **Accessibility.** The drawing is `aria-hidden`. The figure key and the
-  contents list carry the names and the keyboard path; the object hit areas
-  respond to the pointer only.
+  over mechanisms. Every string is a `docs_home_*` message. Highlights are
+  never said to save or write back to Zotero.
 
 ### Learn (`/learn`)
 
@@ -595,9 +557,10 @@ Structural chrome overrides live in the owned layout slots. CSS in
 - **`#toc-title`** — the one accepted Fumadocs-shipped anchor (ships with this
   exact id, no className hook). Re-check on bumps.
 
-Surface component styles (the desk's states, the hero entrance, the lesson
+Surface component styles (the landing's desk and table demo, the lesson
 strip) live with their components as Tailwind utilities and arbitrary
-variants; `src/styles.css` holds only their tokens.
+variants; `src/styles.css` holds only their tokens and their `@theme`
+animations (`animate-desk-*`, `animate-demo-*`).
 
 The docs/blog prose restyle is **not** here. Customize Fumadocs prose through
 its **typography element modifiers** (`prose-h2:…`, `prose-blockquote:…`) — the
