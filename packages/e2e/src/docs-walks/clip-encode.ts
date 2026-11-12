@@ -13,7 +13,7 @@
 // `DOCS_WALK_CLIP` and `DOCS_WALK_CLIP_FILE` (see clip-settings.ts).
 
 import { execFile } from "node:child_process";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import sharp from "sharp";
@@ -134,7 +134,10 @@ export async function encodeClip(
   await rm(baked, { recursive: true, force: true });
   await mkdir(baked, { recursive: true });
   let source: { frame: number; image: Buffer } | undefined;
-  const lines: string[] = [];
+  // Each tick is one file, a hard link to its shot's image, so ffmpeg reads
+  // the clip at exactly `fps`: a concat list rounds its times to 1/25 s and
+  // makes a camera move judder.
+  let tick = 0;
   for (const [i, shot] of shots.entries()) {
     if (source?.frame !== shot.frame)
       source = {
@@ -157,16 +160,22 @@ export async function encodeClip(
       .resize(outW, outH, { kernel: "lanczos3", fit: "fill" })
       .png({ compressionLevel: 1 })
       .toFile(join(baked, file));
-    lines.push(`file '${file}'`, `duration ${(shot.ticks / s.fps).toFixed(4)}`);
+    for (let n = 0; n < shot.ticks; n++)
+      await link(
+        join(baked, file),
+        join(baked, `t${String(tick++).padStart(5, "0")}.png`),
+      );
   }
   const lastFile = `b${String(shots.length - 1).padStart(5, "0")}.png`;
-  // The concat demuxer drops the last duration unless the file repeats.
-  lines.push(`file '${lastFile}'`);
-  const list = join(baked, "frames.txt");
-  await writeFile(list, `${lines.join("\n")}\n`);
   await encodeBoth(
     {
-      input: ["-y", "-f", "concat", "-safe", "0", "-i", list],
+      input: [
+        "-y",
+        "-framerate",
+        String(s.fps),
+        "-i",
+        join(baked, "t%05d.png"),
+      ],
       filter: "format=yuv420p",
     },
     out,

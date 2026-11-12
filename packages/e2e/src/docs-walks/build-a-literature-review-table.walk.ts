@@ -732,7 +732,7 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
     const sorted = await walk.record("step-5", () =>
       obRun(
         walk.vaultId,
-        async ({ app, page }, { file }) => {
+        async ({ app, page }, { file, titleLabel, yearLabel }) => {
           const pointer = page.scratch.docsWalkPointer;
           const leaf = app.workspace
             .getLeavesOfType("zotlit-query-file")
@@ -775,12 +775,26 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
               ? (shown.selectedOptions[0]?.text ?? "")
               : (shown?.innerText.trim() ?? "");
           await page.closeToolbarPopover(el, "sort");
-          // The step ends on the table in its new order.
-          const table = el.querySelector("table");
-          if (table) await pointer?.look(table);
+          // The step ends on the titles and years in their new order.
+          const heads = [...el.querySelectorAll<HTMLTableCellElement>("th")];
+          const columns = heads.filter((th) =>
+            [titleLabel, yearLabel].includes(th.textContent.trim()),
+          );
+          await pointer?.look(
+            columns.flatMap((head) => [
+              head,
+              ...[...el.querySelectorAll<HTMLTableRowElement>("tbody tr")].map(
+                (row) => row.cells[head.cellIndex]!,
+              ),
+            ]),
+          );
           return { name, names, by };
         },
-        { file: FILE },
+        {
+          file: FILE,
+          titleLabel: m.query_view_property_title(),
+          yearLabel: m.query_view_property_year(),
+        },
         STEP,
       ),
     );

@@ -615,7 +615,10 @@ async function startRecording(
       };
       pointer.style.transform = `translate(${start.x}px,${start.y}px)`;
       const glide = async (x: number, y: number) => {
-        pointer.style.transform = `translate(${x}px,${y}px)`;
+        // The arrow stays whole inside the window.
+        const cx = Math.min(Math.max(x, 0), window.innerWidth - 22);
+        const cy = Math.min(Math.max(y, 0), window.innerHeight - 26);
+        pointer.style.transform = `translate(${cx}px,${cy}px)`;
         await wait(glideMs);
       };
       const mark = async (x: number, y: number) => {

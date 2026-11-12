@@ -245,7 +245,9 @@ describe.skipIf(!reachable)(
             );
             await new Promise((r) => setTimeout(r, 300));
             // The step ends on the papers that now fill the tab.
-            await pointer?.look(el);
+            await pointer?.look([
+              ...el.querySelectorAll("[data-query-item-row]"),
+            ]);
             const shell = el
               .querySelector("[data-library-shell]")!
               .getBoundingClientRect();
