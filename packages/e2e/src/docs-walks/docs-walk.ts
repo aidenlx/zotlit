@@ -10,14 +10,25 @@ import {
   readTrack,
 } from "@e2e/docs-walks/clip-encode.ts";
 import type { CameraLog, RecordedFrame } from "@e2e/docs-walks/clip-encode.ts";
+import { clipSettings } from "@e2e/docs-walks/clip-settings.ts";
+import type { ClipSettings } from "@e2e/docs-walks/clip-settings.ts";
+import {
+  outputSizes,
+  takeRecipe,
+  takeRun,
+  videoLength,
+  writeTake,
+} from "@e2e/docs-walks/takes.ts";
+import type { TakeRun } from "@e2e/docs-walks/takes.ts";
 import { clearNotices, cli, obRun } from "@e2e/obsidian-cli.ts";
 import { openPairedEnvironment } from "@e2e/paired-environment.ts";
 import { openZoteroRdp } from "@e2e/paired-zotero.ts";
 import type { ZoteroRdp } from "@e2e/paired-zotero.ts";
 import { execFile, spawn } from "node:child_process";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { promisify } from "node:util";
+import { expect } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
@@ -35,6 +46,8 @@ declare module "../page-helpers.ts" {
      */
     docsWalkPointer?: DocsWalkPointer;
     /** Ends the screencast that {@link DocsWalk.record} started. */
+    /** Hides the notices a recording held on screen, and stops holding. */
+    docsWalkReleaseNotices?: () => void;
     docsWalkStopRecording?: () => Promise<{
       frames: RecordedFrame[];
       camera: CameraLog;
@@ -82,9 +95,6 @@ export interface DocsWalkPointer {
 export type LookTarget =
   | Element
   | { left: number; top: number; right: number; bottom: number };
-
-/** How long a recording rests on the result after the last action, in seconds. */
-const RECORD_REST = 1.5;
 
 /**
  * Record the text of every notice the window shows from now on, for
@@ -138,9 +148,15 @@ export function captureRequested(): boolean {
   return process.env.DOCS_WALK_CAPTURE === "1";
 }
 
-/** `DOCS_WALK_RECORD=1` turns a walk's planned clips into docs videos. */
-export function recordRequested(): boolean {
-  return process.env.DOCS_WALK_RECORD === "1";
+/**
+ * `DOCS_WALK_RECORD=1` turns a walk's planned clips into docs videos; with
+ * `name`, `DOCS_WALK_ONLY` (clip names, comma-separated) narrows them to the
+ * clips it names, while the walk still runs every step.
+ */
+export function recordRequested(name?: string): boolean {
+  if (process.env.DOCS_WALK_RECORD !== "1") return false;
+  const only = process.env.DOCS_WALK_ONLY;
+  return !name || !only || only.split(",").includes(name);
 }
 
 export interface DocsWalkOptions {
@@ -157,11 +173,10 @@ export interface DocsWalkOptions {
    */
   window?: { width: number; height: number };
   /**
-   * Whether a recording's camera frames each action and the clip gets a
-   * poster; `false` keeps the whole window throughout, with no poster.
-   * @default true
+   * The walk's own clip settings, over the defaults and under the run's
+   * `DOCS_WALK_CLIP` overrides (`clip-settings.ts`).
    */
-  camera?: boolean;
+  clip?: Partial<ClipSettings>;
 }
 
 /** One open walk: a Paired Run on its Vault Case and its capture tools. */
@@ -187,10 +202,11 @@ export interface DocsWalk extends AsyncDisposable {
    * Run `actions`, the reader's actions of one step, and record them as the
    * clip `name`: `<name>.webm` and `<name>.mp4` beside the step's image. The
    * window shows a drawn pointer while it records, and the clip rests on the
-   * result for 1.5 s. A camera planned from the pointer's actions, or the
-   * track `<slug>.camera/<name>.json` beside the walk, frames each part of
-   * the clip; its last frame is `<name>.poster.webp`. Without
-   * `DOCS_WALK_RECORD=1`, it only runs `actions`.
+   * result. A camera planned from the pointer's actions, or the track
+   * `<slug>.camera/<name>.json` beside the walk, frames each part of the
+   * clip; its last frame is `<name>.poster.webp`, and its take goes into
+   * `<slug>.takes.json`. Without `DOCS_WALK_RECORD=1`, or with a
+   * `DOCS_WALK_ONLY` that leaves it out, it only runs `actions`.
    * With `notices`, for a step whose check is a notice, the layer `name` is
    * captured with its notices as soon as `actions` end, while the notice
    * still shows; the step's later `capture(name)` then keeps that layer.
@@ -262,7 +278,18 @@ export async function openDocsWalk(
   const captures = join(root, ".scratch", "docs-walks", options.slug);
   const layouts = join(import.meta.dirname, `${options.slug}.layouts`);
   const tracks = join(import.meta.dirname, `${options.slug}.camera`);
-  const camera = options.camera ?? true;
+  const settings = clipSettings(options.clip);
+  const takes = join(import.meta.dirname, `${options.slug}.takes.json`);
+  let run: TakeRun | undefined;
+  /** The facts every take of this walk repeats, read once. */
+  const runFacts = async () =>
+    (run ??= await takeRun(root, {
+      slug: options.slug,
+      running: (await cli(["version"])).trim(),
+      zotero: await zotero.json<string>("Zotero.version"),
+      vaultCase: options.vaultCase ?? "demo",
+      window: { width, height },
+    }));
   const images = join(
     root,
     "apps",
@@ -344,11 +371,43 @@ export async function openDocsWalk(
       );
     },
     async record(name, actions, { notices = false } = {}) {
-      if (!recordRequested()) return actions();
+      if (!recordRequested(name)) return actions();
       const frames = join(captures, `${name}.frames`);
       await rm(frames, { recursive: true, force: true });
-      // The camera's opening shot needs a longer still start.
-      await startRecording(vaultId, frames, camera ? 1000 : 300);
+      await startRecording(vaultId, frames, settings);
+      if (notices)
+        // The notice the step checks stays on screen to the clip's end, so
+        // the clip rests on it.
+        await obRun(vaultId, ({ page }) => {
+          // A notice that leaves the page is put back where it was.
+          const held = new Set<Element>();
+          const observer = new MutationObserver((records) => {
+            for (const record of records)
+              for (const node of record.removedNodes) {
+                if (
+                  !(node instanceof Element) ||
+                  !(node.matches(".notice") || node.querySelector(".notice"))
+                )
+                  continue;
+                // Undo the fade and the slide up that hide it.
+                for (const n of [node, ...node.querySelectorAll(".notice")])
+                  if (n instanceof HTMLElement) {
+                    n.style.transition = "none";
+                    n.style.opacity = "1";
+                    n.style.marginTop = "";
+                  }
+                // A container that leaves next holds the notice again, and is
+                // put back in turn.
+                record.target.appendChild(node);
+                held.add(node);
+              }
+          });
+          observer.observe(document.body, { childList: true, subtree: true });
+          page.scratch.docsWalkReleaseNotices = () => {
+            observer.disconnect();
+            for (const node of held) node.remove();
+          };
+        });
       let result: Awaited<ReturnType<typeof actions>>;
       try {
         result = await actions();
@@ -370,7 +429,7 @@ export async function openDocsWalk(
               el.style.visibility = "";
           });
         }
-        await new Promise((r) => setTimeout(r, RECORD_REST * 1000));
+        await new Promise((r) => setTimeout(r, settings.rest * 1000));
       } finally {
         const recorded = await obRun(vaultId, async ({ page }) => {
           const stop = page.scratch.docsWalkStopRecording;
@@ -380,7 +439,10 @@ export async function openDocsWalk(
             "[data-docs-walk-pointer]",
           ))
             el.remove();
-          return stop ? await stop() : undefined;
+          const done = stop ? await stop() : undefined;
+          page.scratch.docsWalkReleaseNotices?.();
+          delete page.scratch.docsWalkReleaseNotices;
+          return done;
         });
         await writeFile(
           join(frames, "frames.json"),
@@ -389,20 +451,38 @@ export async function openDocsWalk(
         if (recorded)
           await writeFile(
             join(frames, "camera.json"),
-            JSON.stringify(recorded.camera, null, 2),
+            JSON.stringify({ ...recorded.camera, settings }, null, 2),
           );
       }
       await mkdir(images, { recursive: true });
-      await encodeClip(frames, join(images, name), {
-        track: camera ? await readTrack(join(tracks, `${name}.json`)) : "whole",
-        poster: camera,
+      const out = join(images, name);
+      const override = settings.camera
+        ? await readTrack(join(tracks, `${name}.json`))
+        : undefined;
+      const cut = await encodeClip(frames, out, { track: override, settings });
+      await writeTake(takes, name, {
+        recordedAt: Temporal.Now.instant().toString(),
+        step: expect.getState().currentTestName ?? "",
+        recipe: takeRecipe(root, { slug: options.slug, name, out, frames }),
+        ...(await runFacts()),
+        source: "obsidian-screencast",
+        frames: relative(root, frames),
+        settings,
+        duration: await videoLength(`${out}.mp4`),
+        outputs: await outputSizes(root, out),
+        camera: {
+          track: !settings.camera ? "whole" : override ? "override" : "planned",
+          viewport: cut.log.viewport,
+          events: cut.log.events,
+          keyframes: cut.track.keyframes,
+        },
       });
       return result;
     },
     async recordZotero(name, title, actions) {
       const pointAt = (window: string, element: string) =>
         zoteroPointer(zotero, window, element);
-      if (!recordRequested())
+      if (!recordRequested(name))
         return actions(
           async () => {},
           async () => {},
@@ -434,7 +514,7 @@ export async function openDocsWalk(
       const stop = async () => {
         if (stopped) return;
         stopped = true;
-        await new Promise((r) => setTimeout(r, RECORD_REST * 1000));
+        await new Promise((r) => setTimeout(r, settings.rest * 1000));
         capture.kill("SIGINT");
         await ended;
       };
@@ -450,7 +530,19 @@ export async function openDocsWalk(
           .catch(() => false);
       }
       await mkdir(images, { recursive: true });
-      await encodeMovie(movie, join(images, name), dialog ? 24 : 0);
+      const out = join(images, name);
+      await encodeMovie(movie, out, { inset: dialog ? 24 : 0, settings });
+      await writeTake(takes, name, {
+        recordedAt: Temporal.Now.instant().toString(),
+        step: expect.getState().currentTestName ?? "",
+        recipe: takeRecipe(root, { slug: options.slug, name, out }),
+        ...(await runFacts()),
+        source: "zotero-window",
+        frames: relative(root, movie),
+        settings,
+        duration: await videoLength(`${out}.mp4`),
+        outputs: await outputSizes(root, out),
+      });
       return result;
     },
     [Symbol.asyncDispose]: () => owned.disposeAsync(),
@@ -465,11 +557,11 @@ export async function openDocsWalk(
 async function startRecording(
   vaultId: string,
   dir: string,
-  opening: number,
+  settings: ClipSettings,
 ): Promise<void> {
   await obRun(
     vaultId,
-    async ({ page }, { dir, opening }) => {
+    async ({ page }, { dir, opening, glideMs, typing, lookMs }) => {
       const fs = require("fs") as typeof import("node:fs");
       const path = require("path") as typeof import("node:path");
       fs.mkdirSync(dir, { recursive: true });
@@ -508,8 +600,7 @@ async function startRecording(
       const pointer = document.body.createDiv({
         attr: { "data-docs-walk-pointer": "" },
       });
-      pointer.style.cssText =
-        "position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform 550ms cubic-bezier(.4,0,.2,1);";
+      pointer.style.cssText = `position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform ${Math.max(0, glideMs - 50)}ms cubic-bezier(.4,0,.2,1);`;
       pointer.innerHTML =
         '<svg width="22" height="26" viewBox="0 0 22 26" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))"><path d="M2 1.5v20.2l5.3-5.1 3.4 7.8 3.4-1.5-3.3-7.6 7.4-.2z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
       const ring = document.body.createDiv({
@@ -525,7 +616,7 @@ async function startRecording(
       pointer.style.transform = `translate(${start.x}px,${start.y}px)`;
       const glide = async (x: number, y: number) => {
         pointer.style.transform = `translate(${x}px,${y}px)`;
-        await wait(600);
+        await wait(glideMs);
       };
       const mark = async (x: number, y: number) => {
         ring.style.left = `${x}px`;
@@ -548,7 +639,9 @@ async function startRecording(
         for (const ch of text) {
           put(ch);
           // A typist's rhythm: about eight keys a second, a little uneven.
-          await wait((ch === " " ? 150 : 85 + (n++ % 3) * 20) / speed);
+          await wait(
+            (ch === " " ? 150 : 85 + (n++ % 3) * 20) / (speed * typing),
+          );
         }
       };
 
@@ -663,7 +756,7 @@ async function startRecording(
             ...(padding !== undefined && { padding }),
           });
           // The camera's move to the look ends before the clip's rest.
-          await wait(600);
+          await wait(lookMs);
         },
       };
       page.scratch.docsWalkStopRecording = async () => {
@@ -691,7 +784,14 @@ async function startRecording(
       // The clip opens on the scene before the first action.
       await wait(opening);
     },
-    { dir, opening },
+    {
+      dir,
+      opening: settings.opening * 1000,
+      glideMs: settings.glide * 1000,
+      typing: settings.typing,
+      // With the camera off, a look moves nothing, so it does not wait.
+      lookMs: settings.camera ? settings.ease * 1000 : 0,
+    },
     { timeoutMs: 30000 },
   );
 }

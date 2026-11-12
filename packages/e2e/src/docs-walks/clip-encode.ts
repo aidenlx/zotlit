@@ -1,14 +1,16 @@
 // The encoder of the docs-walk clips. It bakes the camera into a recording:
 // each output frame is the screencast frame shown at that time, cropped to
 // the camera's view and scaled to the window's ratio, 1440 px wide for a
-// lesson's 1440 × 860 window. It runs alone too, so a
-// camera plan can be tuned on saved frames without a new recording:
+// lesson's 1440 × 860 window. It runs alone too, to cut a clip again from its
+// saved frames (`.scratch/docs-walks/<slug>/<name>.frames/`, out of git) with
+// another track or other settings, without a new recording:
 //
-//   node packages/e2e/src/docs-walks/clip-encode.ts <frames-dir> <out> [<track.json>]
+//   node packages/e2e/src/docs-walks/clip-encode.ts <frames-dir> <out> [<track.json>|whole]
 //
-// writes <out>.webm, <out>.mp4 and <out>.poster.webp from <frames-dir>, with
-// the planned track unless a track file, or `whole` for the whole window, is
-// named.
+// writes <out>.webm, <out>.mp4 and <out>.poster.webp, with the planned track
+// unless a track file, or `whole` for the whole window, is named. The
+// settings are those the clip was recorded with, under the overrides of
+// `DOCS_WALK_CLIP` and `DOCS_WALK_CLIP_FILE` (see clip-settings.ts).
 
 import { execFile } from "node:child_process";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -18,6 +20,8 @@ import sharp from "sharp";
 
 import { planCamera, viewAt } from "./camera.ts";
 import type { CameraEvent, CameraTrack } from "./camera.ts";
+import { clipSettings } from "./clip-settings.ts";
+import type { ClipSettings } from "./clip-settings.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -33,30 +37,27 @@ export interface CameraLog {
   viewport: { width: number; height: number };
   /** Event times are clip seconds, from the first frame. */
   events: CameraEvent[];
+  /** The settings the clip was recorded with. */
+  settings?: ClipSettings;
 }
-
-/** The output frame rate. */
-const FPS = 30;
-/** The widest clip, in px. */
-const MAX_WIDTH = 1440;
-/** The poster's WebP quality. */
-const POSTER_QUALITY = 82;
 
 /**
  * Encode the frames in `dir` as `<out>.webm` (VP9), `<out>.mp4` (H.264) and
- * the final frame `<out>.poster.webp`, 1440 px wide at most, at their real
- * timing, through the camera track: `track` when given, `"whole"` for the
- * whole window throughout, or the plan of the clip's `camera.json`. The track
- * used is written to `dir/track.json`. `poster: false` leaves the poster out.
+ * the final frame `<out>.poster.webp`, at their real timing, through the
+ * camera track: `track` when given, `"whole"` for the whole window
+ * throughout, or the plan of the clip's `camera.json`. `settings` default to
+ * those the clip was recorded with, under this run's overrides; with the
+ * camera off, the clip keeps the whole window and has no poster. The track
+ * used is written to `dir/track.json` and answered with the clip's log.
  */
 export async function encodeClip(
   dir: string,
   out: string,
   {
     track,
-    poster = true,
-  }: { track?: CameraTrack | "whole"; poster?: boolean } = {},
-): Promise<void> {
+    settings,
+  }: { track?: CameraTrack | "whole"; settings?: ClipSettings } = {},
+): Promise<{ track: CameraTrack; log: CameraLog; settings: ClipSettings }> {
   const frames = JSON.parse(
     await readFile(join(dir, "frames.json"), "utf8"),
   ) as RecordedFrame[];
@@ -68,11 +69,15 @@ export async function encodeClip(
   const start = shown[0]!.t;
   const duration = frames.at(-1)!.t - start;
   const { width: W, height: H } = log.viewport;
+  const s = settings ?? clipSettings(log.settings);
   const used =
-    track === "whole"
+    track === "whole" || !s.camera
       ? { keyframes: [{ t: 0, view: { x: 0, y: 0, w: W, h: H } }] }
       : (track ??
-        planCamera({ viewport: log.viewport, duration, events: log.events }));
+        planCamera(
+          { viewport: log.viewport, duration, events: log.events },
+          s,
+        ));
   await writeFile(
     join(dir, "track.json"),
     `${JSON.stringify(used, null, 2)}\n`,
@@ -82,8 +87,8 @@ export async function encodeClip(
   const scale = first.width / W;
   const sourceW = first.width;
   const sourceH = first.height;
-  // The clip is 1440 px wide at most, at the window's ratio, in even px.
-  const outW = Math.min(MAX_WIDTH, sourceW);
+  // The clip is `width` px wide at most, at the window's ratio, in even px.
+  const outW = Math.min(s.width, sourceW);
   const outH = 2 * Math.round((outW * H) / W / 2);
 
   // One output frame per tick; a run of ticks with the same source frame
@@ -98,9 +103,9 @@ export async function encodeClip(
   };
   const shots: Shot[] = [];
   let at = 0;
-  const ticks = Math.max(1, Math.round(duration * FPS));
+  const ticks = Math.max(1, Math.round(duration * s.fps));
   for (let i = 0; i < ticks; i++) {
-    const t = i / FPS;
+    const t = i / s.fps;
     while (at + 1 < shown.length && shown[at + 1]!.t - start <= t) at++;
     const v = viewAt(used, t);
     const width = Math.min(sourceW, Math.round(v.w * scale));
@@ -152,7 +157,7 @@ export async function encodeClip(
       .resize(outW, outH, { kernel: "lanczos3", fit: "fill" })
       .png({ compressionLevel: 1 })
       .toFile(join(baked, file));
-    lines.push(`file '${file}'`, `duration ${(shot.ticks / FPS).toFixed(4)}`);
+    lines.push(`file '${file}'`, `duration ${(shot.ticks / s.fps).toFixed(4)}`);
   }
   const lastFile = `b${String(shots.length - 1).padStart(5, "0")}.png`;
   // The concat demuxer drops the last duration unless the file repeats.
@@ -160,29 +165,37 @@ export async function encodeClip(
   const list = join(baked, "frames.txt");
   await writeFile(list, `${lines.join("\n")}\n`);
   await encodeBoth(
-    ["-y", "-f", "concat", "-safe", "0", "-i", list],
-    "format=yuv420p",
+    {
+      input: ["-y", "-f", "concat", "-safe", "0", "-i", list],
+      filter: "format=yuv420p",
+    },
     out,
+    s,
   );
-  if (poster)
+  if (s.camera)
     await sharp(join(baked, lastFile))
-      .webp({ quality: POSTER_QUALITY })
+      .webp({ quality: s.posterQuality })
       .toFile(`${out}.poster.webp`);
+  return { track: used, log, settings: s };
 }
 
 /**
  * Encode a screen capture as {@link encodeClip} encodes a screencast, with
- * `inset` px cut from each edge and no camera, 1440 px wide at most; its last
- * frame becomes `<out>.poster.webp`.
+ * `inset` px cut from each edge and no camera; its last frame becomes
+ * `<out>.poster.webp`.
  */
 export async function encodeMovie(
   movie: string,
   out: string,
-  inset: number,
+  { inset, settings: s }: { inset: number; settings: ClipSettings },
 ): Promise<void> {
   const crop = inset > 0 ? `crop=iw-${2 * inset}:ih-${2 * inset},` : "";
-  const filter = `${crop}scale='min(1440,iw)':-2:flags=lanczos`;
-  await encodeBoth(["-y", "-i", movie], `${filter},format=yuv420p`, out);
+  const filter = `${crop}scale='min(${s.width},iw)':-2:flags=lanczos`;
+  await encodeBoth(
+    { input: ["-y", "-i", movie], filter: `${filter},format=yuv420p` },
+    out,
+    s,
+  );
   const last = `${out}.poster.png`;
   await execFileAsync("ffmpeg", [
     "-y",
@@ -197,19 +210,20 @@ export async function encodeMovie(
     last,
   ]);
   await sharp(last)
-    .webp({ quality: POSTER_QUALITY })
+    .webp({ quality: s.posterQuality })
     .toFile(`${out}.poster.webp`);
   await rm(last, { force: true });
 }
 
 /**
  * Encode `input` through `filter` as `<out>.webm` (VP9) and `<out>.mp4`
- * (H.264), 30 frames a second, no audio, tuned for sharp UI text.
+ * (H.264) at the settings' frame rate and quality, no audio, tuned for sharp
+ * UI text.
  */
 async function encodeBoth(
-  input: string[],
-  filter: string,
+  { input, filter }: { input: string[]; filter: string },
   out: string,
+  s: ClipSettings,
 ): Promise<void> {
   const shared = [
     ...input,
@@ -218,7 +232,7 @@ async function encodeBoth(
     "-fps_mode",
     "cfr",
     "-r",
-    String(FPS),
+    String(s.fps),
     "-an",
   ];
   await execFileAsync("ffmpeg", [
@@ -226,7 +240,7 @@ async function encodeBoth(
     "-c:v",
     "libvpx-vp9",
     "-crf",
-    "30",
+    String(s.vp9Crf),
     "-b:v",
     "0",
     "-deadline",
@@ -246,7 +260,7 @@ async function encodeBoth(
     "-preset",
     "slow",
     "-crf",
-    "20",
+    String(s.h264Crf),
     "-tune",
     "stillimage",
     "-profile:v",
@@ -270,7 +284,9 @@ export async function readTrack(
 if (import.meta.main) {
   const [dir, out, trackFile] = process.argv.slice(2);
   if (!dir || !out)
-    throw new Error("usage: clip-encode.ts <frames-dir> <out> [<track.json>]");
+    throw new Error(
+      "usage: clip-encode.ts <frames-dir> <out> [<track.json>|whole]",
+    );
   await encodeClip(dir, out, {
     track:
       trackFile === "whole"

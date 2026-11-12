@@ -5,6 +5,9 @@
 // `<slug>.camera/<name>.json` beside the walk replaces the planned track of
 // one clip. See packages/e2e/AGENTS.md, "Docs walks".
 
+import { defaultClipSettings } from "./clip-settings.ts";
+import type { ClipSettings } from "./clip-settings.ts";
+
 /** A rectangle in the window's CSS px. */
 export interface Rect {
   x: number;
@@ -46,35 +49,23 @@ export interface CameraPlanInput {
   events: readonly CameraEvent[];
 }
 
-export interface CameraPlanOptions {
-  /** The zoom that frames a click or typing. @default 2 */
-  zoom?: number;
-  /** How long the opening shot of the whole window holds, at least. @default 0.7 */
-  openHold?: number;
-  /** How long before a click the camera arrives. @default 0.15 */
-  lead?: number;
-  /** How long one camera move takes. @default 0.6 */
-  ease?: number;
-  /** The shortest move, when an action leaves less time. @default 0.35 */
-  minEase?: number;
-  /**
-   * The part of the view, as a share of each side, that an action may fall
-   * in before the camera moves. @default 0.6
-   */
-  central?: number;
-  /** The margin kept around an element or a look region, in CSS px. @default 32 */
-  padding?: number;
-}
+/** The planner's settings; see {@link ClipSettings} for each one. */
+export type CameraPlanOptions = Partial<
+  Pick<
+    ClipSettings,
+    "zoom" | "openHold" | "lead" | "ease" | "minEase" | "central" | "padding"
+  >
+>;
 
-const defaults = {
-  zoom: 2,
-  openHold: 0.7,
-  lead: 0.15,
-  ease: 0.6,
-  minEase: 0.35,
-  central: 0.6,
-  padding: 32,
-} satisfies Required<CameraPlanOptions>;
+const defaults: Required<CameraPlanOptions> = {
+  zoom: defaultClipSettings.zoom,
+  openHold: defaultClipSettings.openHold,
+  lead: defaultClipSettings.lead,
+  ease: defaultClipSettings.ease,
+  minEase: defaultClipSettings.minEase,
+  central: defaultClipSettings.central,
+  padding: defaultClipSettings.padding,
+};
 
 /** Plan the camera track of a clip from its action log. */
 export function planCamera(
