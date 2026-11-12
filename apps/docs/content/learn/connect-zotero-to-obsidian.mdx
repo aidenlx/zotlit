@@ -6,15 +6,12 @@ minutes: 10
 media: connect-zotero-to-obsidian
 lede: In about 10 minutes, you will connect ZotLit to your Zotero library and create a literature note for a paper, ready for your Chapter 3 notes.
 note: Zotero can stay closed. ZotLit reads your library locally on this computer and sends nothing to a server. Nothing in this lesson changes your Zotero library, and no other add-on is needed.
-map:
-  zotero:
-    title: Local Zotero library
-    items: [Paper metadata, Highlighted PDFs, Data directory]
-  arrow: to-obsidian
-  label: Reads local library records and highlights into Obsidian
-  obsidian:
-    title: Obsidian vault
-    items: [Zotero library tab, PDF viewer, Literature note]
+chore: Connect Zotero once
+today:
+  - switch to Zotero to look a paper up
+  - open the PDF in Zotero's reader
+  - copy the title, authors and year into a new note by hand
+instead: Select Write literature note on the paper's card.
 needs:
   - item: Obsidian
     detail: Version 1.14.5 or later on a desktop computer
@@ -23,23 +20,17 @@ needs:
   - item: Zotero paper
     detail: One item with a highlighted PDF
 steps:
-  - name: Install
-    title: Install ZotLit
+  - title: Install ZotLit
     alt: The Zotero library tab opens showing the Let's get started badge and four setup steps above the paper list.
-  - name: Connect
-    title: Check that ZotLit found Zotero
+  - title: Check that ZotLit found Zotero
     alt: Connect to Zotero displays a green check with the data folder and item count above the full paper list.
-  - name: Find
-    title: Find a paper
+  - title: Find a paper
     alt: A card below the paper list displays the selected item's details alongside Open PDF and Write literature note buttons.
-  - name: Read
-    title: Open the PDF
+  - title: Open the PDF
     alt: The PDF opens in a tab showing coloured highlights alongside an annotations list of comments and tags.
-  - name: Note
-    title: Write the literature note
+  - title: Write the literature note
     alt: The literature note opens with the notice Literature note created, displaying links and an Annotations section.
-  - name: Write
-    title: Add your own thoughts
+  - title: Add your own thoughts
     alt: The literature note displays a My thoughts heading and notes written directly above the Annotations section.
 end:
   title: Connected library and your first literature note

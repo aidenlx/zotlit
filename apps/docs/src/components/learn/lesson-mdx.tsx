@@ -9,13 +9,14 @@
 //   <Fix title="No tab opened">Select the ZotLit icon in the ribbon …</Fix>
 //   </Step>
 //
-// A step's strip name, title and picture text come from the lesson's
-// frontmatter by `n`. The page renders every part in order, so the
-// prerendered HTML reads as one whole lesson; `LessonView` then shows one step
-// at a time. The Markdown edition binds the same parts to the lesson through
-// `lessonMarkdownComponents`.
+// A step's title and picture text come from the lesson's frontmatter by `n`.
+// The page renders every step as one row of the checklist, each with its
+// whole text, so the prerendered HTML reads as one whole lesson; once the page
+// runs, `LessonView` keeps one row open at a time. The Markdown edition binds
+// the same parts to the lesson through `lessonMarkdownComponents`.
 
 import { asMarkdown, md } from "fumadocs-core/server";
+import { Check as CheckIcon, ChevronDown, Eye } from "lucide-react";
 import { Children, isValidElement, use, useId, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -28,13 +29,16 @@ import type { LessonStepMeta } from "./lesson-state";
 import { stepMedia, StepPicture } from "./step-picture";
 
 /**
- * Before the page runs, CSS alone shows one part: the one the hash targets,
- * or the cover. A reader without JavaScript has no `data-lesson-js` on the
- * root element and reads every part in order.
+ * Before the page runs, CSS alone opens one row: the one the hash targets. A
+ * reader without JavaScript has no `data-lesson-js` on the root element and
+ * reads every row open, in order.
  */
 export const preHydration = {
-  /** A step or the end: hidden unless the hash targets it. */
-  part: "[html[data-lesson-js]_[data-lesson]:not([data-ready])_&]:hidden [html[data-lesson-js]_[data-lesson]:not([data-ready])_&:target]:grid",
+  /** A row's body: hidden unless the hash targets its row. */
+  body: "[html[data-lesson-js]_[data-lesson]:not([data-ready])_&]:hidden [html[data-lesson-js]_[data-lesson]:not([data-ready])_:target>&]:grid",
+  /** The row the hash targets, drawn as the open row. */
+  target:
+    "[html[data-lesson-js]_[data-lesson]:not([data-ready])_&:target]:my-3 [html[data-lesson-js]_[data-lesson]:not([data-ready])_&:target]:rounded-[14px] [html[data-lesson-js]_[data-lesson]:not([data-ready])_&:target]:border-transparent [html[data-lesson-js]_[data-lesson]:not([data-ready])_&:target]:bg-fd-card [html[data-lesson-js]_[data-lesson]:not([data-ready])_&:target]:p-4 [html[data-lesson-js]_[data-lesson]:not([data-ready])_&:target]:shadow-ring",
   /** Controls that only work with JavaScript. */
   scripted:
     "[html:not([data-lesson-js])_[data-lesson]:not([data-ready])_&]:hidden",
@@ -45,18 +49,15 @@ export const preHydration = {
 export const labelClass =
   "font-mono text-[11px] leading-tight font-medium tracking-[0.08em] text-fd-muted-foreground uppercase";
 
-/** Caption text: sans 19px, each ZotLit label as a UI chip. */
+/** Action text: sans 18px, each ZotLit label as a UI chip. */
 const captionClass =
-  "text-[19px] leading-normal [&_code]:rounded-sm [&_code]:bg-fd-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.84em] [&_p+p]:mt-3 [&_strong]:rounded-[5px] [&_strong]:bg-fd-muted [&_strong]:px-1.5 [&_strong]:py-px [&_strong]:text-[0.94em] [&_strong]:font-semibold [&_strong]:[box-decoration-break:clone]";
+  "text-lg leading-normal [&_code]:rounded-sm [&_code]:bg-fd-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.84em] [&_p+p]:mt-3 [&_strong]:rounded-[5px] [&_strong]:bg-fd-muted [&_strong]:px-1.5 [&_strong]:py-px [&_strong]:text-[0.94em] [&_strong]:font-semibold [&_strong]:[box-decoration-break:clone]";
 
-export const buttonClass = {
-  primary:
-    "min-h-[46px] cursor-pointer rounded-[10px] bg-fd-foreground px-5 py-3 font-semibold text-fd-background transition-[background-color,scale] duration-150 hover:bg-fd-foreground/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring active:scale-[0.98]",
-  accent:
-    "min-h-[46px] cursor-pointer rounded-[10px] bg-fd-primary px-5 py-3 font-semibold text-fd-primary-foreground transition-[background-color,scale] duration-150 hover:bg-fd-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring active:scale-[0.98]",
-  quiet:
-    "min-h-[46px] cursor-pointer rounded-[10px] px-5 py-3 font-semibold text-fd-muted-foreground shadow-[inset_0_0_0_1px_var(--color-fd-border)] transition-colors duration-150 hover:bg-fd-card hover:text-fd-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring",
-};
+export const buttonClass =
+  "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-fd-foreground px-5 py-2.5 font-semibold text-fd-background transition-[background-color,scale] duration-150 hover:bg-fd-foreground/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]";
+
+export const focusClass =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring";
 
 /**
  * A bold lead-in and its text as one Markdown paragraph. MDX wraps a part's
@@ -79,8 +80,11 @@ async function leadIn(lead: ReactNode, children: ReactNode) {
 export function Check({ children }: { children: ReactNode }) {
   if (asMarkdown()) return leadIn(m.docs_learn_md_check(), children);
   return (
-    <div className="flex items-start gap-2.5 rounded-[10px] bg-check-bg px-3.5 py-3 text-[17px] leading-normal text-check [&_strong]:font-semibold">
-      <span aria-hidden>✓</span>
+    <div className="grid gap-1.5 rounded-[10px] bg-check-bg px-3.5 py-3 text-[17px] leading-normal text-check [&_strong]:font-semibold">
+      <p className={cn(labelClass, "flex items-center gap-1.5 text-check")}>
+        <Eye aria-hidden strokeWidth={1.5} className="size-3.5" />
+        {m.docs_learn_check_label()}
+      </p>
       <div className={oneLine}>{children}</div>
     </div>
   );
@@ -143,64 +147,127 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
     (node) =>
       !check.includes(node) && !figure.includes(node) && !fixes.includes(node),
   );
-  const shown = lesson.at === null || lesson.at === n;
+  const { live } = lesson;
+  const open = live === null || live.open === n;
+  const ticked = live?.ticks.has(n) ?? false;
+  const labelId = `step-${n}-label`;
+  const titleId = `step-${n}-title`;
+  const bodyId = `step-${n}-body`;
+
+  const heading = (
+    <>
+      <span
+        id={labelId}
+        className={cn(
+          labelClass,
+          "block",
+          live?.open === n && !ticked && "text-fd-primary",
+        )}
+      >
+        {m.docs_learn_step_label({ number: n, total })}
+      </span>
+      <span
+        id={titleId}
+        className={cn(
+          "mt-0.5 block text-lg leading-snug text-balance",
+          ticked ? "text-fd-muted-foreground" : "font-semibold",
+        )}
+      >
+        {meta.title}
+      </span>
+    </>
+  );
 
   return (
-    <section
+    <li
       id={String(n)}
-      data-part="step"
-      aria-labelledby={`step-${n}-title`}
-      hidden={!shown}
       className={cn(
-        "grid gap-4.5 motion-safe:animate-lesson-in",
-        lesson.at === null &&
-          "not-first-of-type:border-t not-first-of-type:border-fd-border not-first-of-type:pt-8",
-        preHydration.part,
+        "scroll-mt-[calc(var(--fd-banner-height,0px)+5rem)]",
+        live?.open === n
+          ? "my-3 rounded-[14px] border border-transparent bg-fd-card p-4 shadow-ring"
+          : "border-b border-fd-border px-1 py-3",
+        live === null && preHydration.target,
       )}
     >
-      <div>
-        <p className={labelClass}>
-          {m.docs_learn_step_label({ number: n, total })}
-        </p>
-        <h2
-          id={`step-${n}-title`}
-          tabIndex={-1}
-          className="mt-1.5 font-serif text-[30px] leading-[1.15] font-medium tracking-[-0.01em] text-balance outline-none"
+      <div className="flex items-start gap-3">
+        <span
+          className={cn(
+            "relative mt-0.5 grid size-7 shrink-0 place-items-center",
+            preHydration.scripted,
+          )}
         >
-          {meta.title}
+          <input
+            type="checkbox"
+            checked={ticked}
+            disabled={live === null}
+            onChange={(event) => live?.tick(n, event.target.checked)}
+            aria-labelledby={`${labelId} ${titleId}`}
+            className={cn(
+              "peer size-7 cursor-pointer appearance-none rounded-lg bg-fd-card shadow-[inset_0_0_0_1.5px_var(--color-fd-muted-foreground)] transition-[background-color,box-shadow] duration-150 checked:bg-check-label checked:shadow-none hover:shadow-[inset_0_0_0_1.5px_var(--color-fd-foreground)] checked:hover:shadow-none",
+              focusClass,
+            )}
+          />
+          <CheckIcon
+            aria-hidden
+            strokeWidth={3}
+            className="pointer-events-none absolute size-4 text-fd-background opacity-0 peer-checked:opacity-100"
+          />
+        </span>
+        <h2 className="min-w-0 flex-1">
+          {live ? (
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={bodyId}
+              onClick={() => live.toggle(n)}
+              className={cn(
+                "flex w-full cursor-pointer items-start gap-3 rounded-sm text-start",
+                focusClass,
+              )}
+            >
+              <span className="min-w-0 flex-1">{heading}</span>
+              <ChevronDown
+                aria-hidden
+                strokeWidth={1.5}
+                className={cn(
+                  "mt-2 size-5 shrink-0 text-fd-muted-foreground motion-safe:transition-transform motion-safe:duration-150",
+                  open && "rotate-180",
+                )}
+              />
+            </button>
+          ) : (
+            heading
+          )}
         </h2>
       </div>
-      <StepPicture
-        media={lesson.media}
-        n={n}
-        alt={meta.alt}
-        active={lesson.at === n}
-      />
-      <div className={captionClass}>{caption}</div>
-      {check}
-      {figure}
-      <StepActions
-        n={n}
-        total={total}
-        go={lesson.go}
-        ready={lesson.at !== null}
+      <div
+        id={bodyId}
+        hidden={!open}
+        className={cn(
+          "mt-3 grid min-w-0 gap-4 [overflow-wrap:anywhere] motion-safe:animate-lesson-in min-[561px]:ps-10",
+          live === null && preHydration.body,
+        )}
       >
-        {fixes}
-      </StepActions>
-    </section>
+        <div className={captionClass}>{caption}</div>
+        <StepPicture
+          media={lesson.media}
+          n={n}
+          alt={meta.alt}
+          active={live?.open === n}
+        />
+        {check}
+        {figure}
+        <StepFixes ready={live !== null}>{fixes}</StepFixes>
+      </div>
+    </li>
   );
 }
 
-function StepActions({
-  n,
-  total,
-  go,
+/** "Not what you see?": a disclosure that holds the step's fixes. */
+function StepFixes({
   ready,
   children,
 }: {
-  n: number;
-  total: number;
-  go: (at: number) => void;
   ready: boolean;
   children: ReactNode[];
 }) {
@@ -208,23 +275,27 @@ function StepActions({
   const panel = useId();
 
   return (
-    <>
-      <div className={cn("flex flex-wrap gap-2.5", preHydration.scripted)}>
-        <button
-          type="button"
-          className={buttonClass.primary}
-          onClick={() => go(n + 1)}
-        >
-          {n === total ? m.docs_learn_finish() : m.docs_learn_next()}
-        </button>
+    <div className="grid gap-3">
+      <div className={preHydration.scripted}>
         <button
           type="button"
           aria-expanded={open}
           aria-controls={panel}
-          className={buttonClass.quiet}
           onClick={() => setOpen(!open)}
+          className={cn(
+            "inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-sm text-base text-fd-muted-foreground underline decoration-1 underline-offset-4 transition-colors duration-150 hover:text-fd-foreground",
+            focusClass,
+          )}
         >
-          {m.docs_learn_something_else()}
+          {m.docs_learn_not_what_you_see()}
+          <ChevronDown
+            aria-hidden
+            strokeWidth={1.5}
+            className={cn(
+              "size-4 motion-safe:transition-transform motion-safe:duration-150",
+              open && "rotate-180",
+            )}
+          />
         </button>
       </div>
       <div
@@ -252,7 +323,7 @@ function StepActions({
           </a>
         </p>
       </div>
-    </>
+    </div>
   );
 }
 

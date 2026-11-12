@@ -1,10 +1,18 @@
 import { frontmatter } from "fumadocs-core/content/md/frontmatter";
-import { globSync, readFileSync } from "node:fs";
+import {
+  globSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import * as v from "valibot";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { mp4Size, webpSize } from "./learn-media";
+import { mp4Size, scanLearnMedia, webpSize } from "./learn-media";
 
 import { learnSchema } from "#content-config";
 
@@ -45,6 +53,21 @@ describe("the lessons", () => {
       expect([...inner.matchAll(/<Check>/g)].length, `step ${n}`).toBe(1);
     }
   });
+
+  it("name a different chore each", () => {
+    const chores = lessons.map(({ data }) => data.chore);
+    expect(new Set(chores).size).toBe(chores.length);
+  });
+
+  it.each(lessons)(
+    "$file writes each chore of today to follow “Today you”",
+    ({ data }) => {
+      for (const chore of data.today) {
+        expect(chore, chore).toMatch(/^[a-z]/);
+        expect(chore, chore).not.toMatch(/[.!?]$/);
+      }
+    },
+  );
 });
 
 describe("the media scan", () => {
@@ -75,5 +98,54 @@ describe("the media scan", () => {
     view.setUint32(8 + 76, 1440 << 16);
     view.setUint32(8 + 80, 860 << 16);
     expect(mp4Size(box)).toEqual({ width: 1440, height: 860 });
+  });
+
+  describe("of a folder", () => {
+    let packageRoot: string;
+    const folder = () => join(packageRoot, "public/img/learn/lesson");
+    /** A lossy WebP header of the given size. */
+    const webp = (width: number, height: number) => {
+      const header = new Uint8Array(30);
+      header.set(ascii("RIFF"), 0);
+      header.set(ascii("WEBPVP8 "), 8);
+      const view = new DataView(header.buffer);
+      view.setUint16(26, width, true);
+      view.setUint16(28, height, true);
+      return header;
+    };
+
+    beforeEach(() => {
+      packageRoot = mkdtempSync(join(tmpdir(), "learn-media-"));
+      mkdirSync(folder(), { recursive: true });
+      writeFileSync(join(folder(), "step-1.webp"), webp(3456, 2296));
+    });
+    afterEach(() => rmSync(packageRoot, { recursive: true, force: true }));
+
+    it("reads a step with no poster as its still alone", () => {
+      expect(scanLearnMedia(packageRoot)).toEqual({
+        "lesson/step-1": { width: 3456, height: 2296 },
+      });
+    });
+
+    it("gives a step its poster's size, and no step to the poster itself", () => {
+      writeFileSync(join(folder(), "step-1.poster.webp"), webp(1440, 860));
+      expect(scanLearnMedia(packageRoot)).toEqual({
+        "lesson/step-1": {
+          width: 3456,
+          height: 2296,
+          poster: { width: 1440, height: 860 },
+        },
+      });
+    });
+
+    it("leaves out a poster that is still a Git LFS pointer", () => {
+      writeFileSync(
+        join(folder(), "step-1.poster.webp"),
+        "version https://git-lfs.github.com/spec/v1\noid sha256:00\nsize 1\n",
+      );
+      expect(scanLearnMedia(packageRoot)["lesson/step-1"]).not.toHaveProperty(
+        "poster",
+      );
+    });
   });
 });

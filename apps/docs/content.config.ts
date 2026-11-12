@@ -70,19 +70,13 @@ export const changelogSchema = v.object({
   date: publishedOn,
 });
 
-/** One box of a lesson cover's map: Zotero or Obsidian, and what the lesson touches there. */
-const lessonMapBox = v.object({
-  title: v.string(),
-  items: v.pipe(v.array(v.string()), v.minLength(1)),
-});
-
 /**
  * A `/learn` lesson. The frontmatter holds every part the page and the build
- * read without the body: the course order, the cover, each step's strip name,
- * title and picture text, and the end screen. The body holds one `<Step n>`
- * per entry of `steps`, in order, with the caption, the check line, any figure
- * and the fixes — the parts that name ZotLit labels through `UiLabel`.
- * `src/lib/lessons.test.ts` checks that the two agree.
+ * read without the body: the course order, the chore the lesson removes, the
+ * opener, each step's name, title and picture text, and the end. The body
+ * holds one `<Step n>` per entry of `steps`, in order, with the action, the
+ * check line, any figure and the fixes — the parts that name ZotLit labels
+ * through `UiLabel`. `src/lib/lessons.test.ts` checks that the two agree.
  */
 export const learnSchema = v.object({
   /** One plain statement of the task, in the searcher's words. */
@@ -93,17 +87,16 @@ export const learnSchema = v.object({
   minutes: v.pipe(v.number(), v.integer(), v.minValue(1)),
   /** Folder under `public/img/learn/` holding `step-<n>.webp` and any `step-<n>.webm`/`.mp4` clip. */
   media: v.pipe(v.string(), v.regex(/^[a-z0-9-]+$/)),
-  /** The cover's one sentence on what the reader will have at the end. */
+  /** The chore in the reader's own words: the course page's card title. */
+  chore: v.string(),
+  /** What the reader does by hand today, each a lowercase verb phrase that follows "Today you". */
+  today: v.pipe(v.array(v.string()), v.minLength(1)),
+  /** The one action that replaces `today` once the lesson is done. */
+  instead: v.string(),
+  /** One sentence on what the reader will have at the end, for the Markdown edition. */
   lede: v.string(),
-  /** The cover's answer to a worry about the reader's library, when the lesson raises one. */
+  /** The opener's answer to a worry about the reader's library, when the lesson raises one. */
   note: v.optional(v.string()),
-  map: v.object({
-    zotero: lessonMapBox,
-    obsidian: lessonMapBox,
-    /** Which way ZotLit carries things in this lesson. */
-    arrow: v.picklist(["to-obsidian", "to-zotero", "both"]),
-    label: v.string(),
-  }),
   needs: v.pipe(
     v.array(v.object({ item: v.string(), detail: v.string() })),
     v.minLength(1),
@@ -111,8 +104,6 @@ export const learnSchema = v.object({
   steps: v.pipe(
     v.array(
       v.object({
-        /** One word under the step's bar in the strip. */
-        name: v.string(),
         title: v.string(),
         /** Text alternative of the step's picture. */
         alt: v.string(),
@@ -121,10 +112,11 @@ export const learnSchema = v.object({
     v.minLength(1),
   ),
   end: v.object({
-    /** What the reader now has; the course page lists it as what the lesson ends with. */
+    /** What the reader now has: the caption of the opener's result picture. */
     title: v.string(),
+    /** What ZotLit now does for the reader: the line under "All N done". */
     caption: v.string(),
-    /** The line under the link card to the next lesson, or to the how-to guides after the last one. */
+    /** The Markdown edition's line beside the link to the next lesson, or to the how-to guides after the last one. */
     next: v.string(),
   }),
 });

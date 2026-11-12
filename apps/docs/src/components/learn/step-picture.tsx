@@ -1,15 +1,18 @@
 // A lesson step's picture: the still, or the recording of the step when one
-// exists and the step is on screen.
+// exists and the page asks for it.
 //
-// Every step prerenders its still, so a reader without JavaScript gets every
-// picture. Only the current step mounts its `<video>`, so only its clip loads.
-// The clip loops muted and pauses while it is out of view; with reduced
-// motion it rests on its poster, the still, until the reader plays it.
+// Every picture prerenders its still, so a reader without JavaScript gets
+// every picture. Only an active picture mounts its `<video>`, so only its clip
+// loads. The clip loops muted while it crosses the middle of the viewport, one
+// loop at a time; with reduced motion it rests on its poster until the reader
+// plays it. The still is the step's poster when the build found one, the
+// step's screenshot otherwise.
 
-import { Play } from "lucide-react";
+import { Pause, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { DocsImage } from "@/components/docs-image";
+import { endTurn, takeTurn } from "@/components/landing/loop";
 import { cn } from "@/lib/cn";
 import type { StepMedia } from "@/lib/learn-media";
 import * as m from "@/paraglide/messages.js";
@@ -18,7 +21,12 @@ import * as m from "@/paraglide/messages.js";
 export function stepMedia(media: string, n: number) {
   const key = `${media}/step-${n}`;
   const entry: StepMedia | undefined = __LEARN_MEDIA__[key];
-  return entry && { ...entry, base: `/img/learn/${key}` };
+  if (!entry) return undefined;
+  const base = `/img/learn/${key}`;
+  const still = entry.poster
+    ? { src: `${base}.poster.webp`, ...entry.poster }
+    : { src: `${base}.webp`, width: entry.width, height: entry.height };
+  return { ...entry, base, still };
 }
 
 export function StepPicture({
@@ -26,38 +34,47 @@ export function StepPicture({
   n,
   alt,
   active,
-  className,
+  thumb = false,
 }: {
   media: string;
   n: number;
   alt: string;
-  /** The step is on screen in a running page. */
+  /** The page runs and wants this step's recording. */
   active: boolean;
-  className?: string;
+  /** A card's picture: the still in a window-shaped frame, cropped from its top. */
+  thumb?: boolean;
 }) {
   const entry = stepMedia(media, n);
   if (!entry) return null;
   // A clip and its still can differ in shape; the frame takes the clip's, so
   // the picture does not jump when the clip replaces the still.
-  const frame = entry.clip?.size ?? entry;
+  const frame = thumb
+    ? { width: 1440, height: 860 }
+    : (entry.clip?.size ?? entry.still);
 
   return (
     <div
       className={cn(
-        "relative flex items-center justify-center overflow-hidden rounded-[10px] bg-fd-card shadow-ring",
-        className,
+        "relative flex justify-center overflow-hidden rounded-[10px] border border-transparent bg-fd-card shadow-ring",
+        thumb ? "items-start" : "max-h-[min(70vh,560px)] items-center",
       )}
       style={{ aspectRatio: `${frame.width} / ${frame.height}` }}
     >
-      {active && entry.clip ? (
-        <StepClip base={entry.base} clip={entry.clip} alt={alt} />
+      {active && entry.clip && !thumb ? (
+        <StepClip
+          base={entry.base}
+          poster={entry.still.src}
+          clip={entry.clip}
+          alt={alt}
+        />
       ) : (
         <DocsImage
-          src={`${entry.base}.webp`}
-          width={entry.width}
-          height={entry.height}
+          src={entry.still.src}
+          width={entry.still.width}
+          height={entry.still.height}
           alt={alt}
-          className="max-h-full object-contain"
+          loading={thumb ? "lazy" : undefined}
+          className={thumb ? "max-h-none!" : "max-h-full object-contain"}
         />
       )}
     </div>
@@ -70,59 +87,75 @@ function prefersReducedMotion() {
 
 function StepClip({
   base,
+  poster,
   clip,
   alt,
 }: {
   base: string;
+  poster: string;
   clip: NonNullable<StepMedia["clip"]>;
   alt: string;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   // This mounts after hydration only, so the preference is safe to read here.
   const [still] = useState(prefersReducedMotion);
-  const [playing, setPlaying] = useState(!still);
+  const [paused, setPaused] = useState(still);
 
-  // Play while the clip is in view and the reader wants it moving.
+  // Play while the clip crosses the middle of the viewport, unless the reader
+  // paused it; a clip that starts rests the one that played.
   useEffect(() => {
     const video = ref.current;
-    if (!video || !playing) return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry?.isIntersecting) void video.play().catch(() => {});
-      else video.pause();
-    });
+    if (!video) return;
+    if (paused) {
+      video.pause();
+      return;
+    }
+    const me = Symbol(base);
+    const rest = () => video.pause();
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          takeTurn(me, rest);
+          void video.play().catch(() => {});
+        } else {
+          rest();
+          endTurn(me);
+        }
+      },
+      { rootMargin: "-40% 0px -40% 0px" },
+    );
     observer.observe(video);
     return () => {
       observer.disconnect();
-      video.pause();
+      rest();
+      endTurn(me);
     };
-  }, [playing]);
+  }, [paused, base]);
 
+  const Icon = paused ? Play : Pause;
   return (
     <>
       <video
         ref={ref}
         aria-label={alt}
-        poster={`${base}.webp`}
+        poster={poster}
         muted
         loop
         playsInline
         preload={still ? "none" : "auto"}
-        controls={still && playing}
         className="size-full object-contain"
       >
         {clip.webm && <source src={`${base}.webm`} type="video/webm" />}
         {clip.mp4 && <source src={`${base}.mp4`} type="video/mp4" />}
       </video>
-      {!playing && (
-        <button
-          type="button"
-          onClick={() => setPlaying(true)}
-          className="absolute inset-0 m-auto flex size-16 items-center justify-center rounded-full bg-fd-foreground/85 text-fd-background transition-colors hover:bg-fd-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
-        >
-          <Play aria-hidden strokeWidth={2.25} className="ms-1 size-7" />
-          <span className="sr-only">{m.docs_learn_play()}</span>
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => setPaused(!paused)}
+        aria-label={paused ? m.docs_learn_play() : m.docs_learn_pause()}
+        className="absolute end-2.5 bottom-2.5 flex size-9 items-center justify-center rounded-full border border-transparent bg-fd-card text-fd-foreground shadow-ring transition-[box-shadow] duration-150 ease-out hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
+      >
+        <Icon aria-hidden strokeWidth={2.25} className="size-4" />
+      </button>
     </>
   );
 }

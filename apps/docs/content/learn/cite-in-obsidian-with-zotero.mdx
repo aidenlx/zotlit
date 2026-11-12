@@ -6,15 +6,13 @@ minutes: 10
 media: cite-while-writing
 lede: At the end of this lesson, you will have a formatted citation with a page number in your draft, and a quoted highlight with its citation.
 note: ZotLit cites a paper by the citation key in its Zotero record, such as sandve2013. What you type stays plain text in the note; ZotLit shows it formatted.
-map:
-  zotero:
-    title: Research library
-    items: [Citation keys, PDF highlights]
-  arrow: to-obsidian
-  label: Formats citations and pulls highlights into your draft
-  obsidian:
-    title: Chapter draft
-    items: [Formatted citations, Quote blocks]
+chore: I paste citation keys and fix them later
+today:
+  - look the paper up in Zotero
+  - copy its citation key
+  - paste it into your draft
+  - check the key for typos
+instead: Type [@ and a name, then choose the paper.
 needs:
   - item: Earlier lessons
     detail: Lessons 1 and 2 completed
@@ -23,23 +21,17 @@ needs:
   - item: Draft note
     detail: Chapter 3 - Presenting the results, in Obsidian
 steps:
-  - name: Install
-    title: Install the citation engine
+  - title: Install the citation engine
     alt: Under Citations in ZotLit settings, the Pandoc engine row reads Pandoc 3.10 is installed.
-  - name: Search
-    title: Type [@ and a name
+  - title: Type [@ and a name
     alt: A citation menu opens in the draft, showing Sandve et al. (2013), PLOS Computational Biology, 9(10), e1003285.
-  - name: Choose
-    title: Choose the paper
+  - title: Choose the paper
     alt: The draft note displays the plain text citation key [@sandve2013] at the cursor.
-  - name: Page
-    title: Add the page
+  - title: Add the page
     alt: The draft displays the citation formatted as (Sandve et al. 2013, 2).
-  - name: Preview
-    title: Check it is the right paper
+  - title: Check it is the right paper
     alt: Pointing at the citation opens a preview card with the full Sandve 2013 reference.
-  - name: Quote
-    title: Quote a highlight
+  - title: Quote a highlight
     alt: The draft shows a quote block titled Page 2 containing the highlighted text, citation, and note.
 end:
   title: Formatted citations and quotes in your draft

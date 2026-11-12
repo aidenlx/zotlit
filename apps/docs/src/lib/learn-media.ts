@@ -2,12 +2,14 @@
 //
 // A lesson names its media folder; each step's still is
 // `public/img/learn/<folder>/step-<n>.webp`, and a step with a recording also
-// has `step-<n>.webm` and/or `step-<n>.mp4` beside it. Recordings arrive step
-// by step, so the page reads which steps have one from this scan rather than
-// from the lesson file. The scan runs in Node — `learnMediaPlugin` hands the
-// result to the app as the `__LEARN_MEDIA__` define, and `vitest.config.ts`
-// does the same for the tests. A file that is missing, or still a Git LFS
-// pointer, leaves its step out instead of failing the build.
+// has `step-<n>.webm` and/or `step-<n>.mp4` beside it, and may have
+// `step-<n>.poster.webp`, the clip's last frame framed on the result.
+// Recordings arrive step by step, so the page reads which steps have one from
+// this scan rather than from the lesson file. The scan runs in Node —
+// `learnMediaPlugin` hands the result to the app as the `__LEARN_MEDIA__`
+// define, and `vitest.config.ts` does the same for the tests. A file that is
+// missing, or still a Git LFS pointer, leaves its step out instead of failing
+// the build.
 
 import { existsSync, globSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -22,6 +24,8 @@ export interface MediaSize {
 
 /** One step's media: the still, and the recording when one exists. */
 export interface StepMedia extends MediaSize {
+  /** The size of `step-<n>.poster.webp`, when the step has one. */
+  poster?: MediaSize;
   clip?: {
     /** The clip's own size, when its MP4 header gives one; the still's otherwise. */
     size: MediaSize;
@@ -96,8 +100,12 @@ export function scanLearnMedia(packageRoot: string): LearnMedia {
   if (!existsSync(root)) return {};
 
   const media: LearnMedia = {};
-  for (const file of globSync("*/step-*.webp", { cwd: root }).toSorted()) {
-    const key = normalizePath(file).replace(/\.webp$/, "");
+  const stills = globSync("*/step-*.webp", { cwd: root })
+    .map(normalizePath)
+    .filter((file) => /\/step-\d+\.webp$/.test(file))
+    .toSorted();
+  for (const file of stills) {
+    const key = file.replace(/\.webp$/, "");
     const size = webpSize(readFileSync(join(root, file)));
     if (!size) continue;
 
@@ -111,9 +119,14 @@ export function scanLearnMedia(packageRoot: string): LearnMedia {
       !String.fromCharCode(...bytes.subarray(0, 7)).startsWith("version");
     const mp4 = real("mp4", isVideo);
     const webm = real("webm", isVideo);
+    const posterPath = join(root, `${key}.poster.webp`);
+    const poster = existsSync(posterPath)
+      ? webpSize(readFileSync(posterPath))
+      : undefined;
 
     media[key] = {
       ...size,
+      ...(poster && { poster }),
       ...((mp4 || webm) && {
         clip: {
           size:
