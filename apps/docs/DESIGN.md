@@ -13,8 +13,9 @@ Use [the brand specification](../../docs/brand.md) for logo and wordmark assets.
 Visual references: the landing at
 `prototypes/landing-prototype/prototype-landing.html` on
 `prototype/landing-desk` (see Landing), and
-the `/learn` checklist from the lesson prototype's round 1 on
-`prototype/lesson-shell` (variant D, opened by variant B's today and
+the `/learn` checklist at
+`prototypes/learn-prototype/prototype-learn.html` on
+`prototype/learn-tutorial` (variant D, opened by variant B's today and
 instead lists).
 Where this spec and a prototype differ, this spec wins.
 
@@ -430,8 +431,8 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
 
 ### Learn (`/learn`)
 
-Target. Prototype: round 1 of the lesson prototype on
-`prototype/lesson-shell` — variant D's course page and checklist, opened by
+Target. Prototype: round 1 of `prototypes/learn-prototype/prototype-learn.html`
+on `prototype/learn-tutorial`: variant D's course page and checklist, opened by
 variant B's today and instead lists.
 
 The course page lets a non-technical researcher pick the chore they want
