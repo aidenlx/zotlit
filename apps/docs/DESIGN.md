@@ -11,7 +11,8 @@ Apply the shared brand rules together with the relevant per-surface section.
 Use [the brand specification](../../docs/brand.md) for logo and wordmark assets.
 
 Visual references: the landing at
-`apps/docs/.scratch/landing-proto/prototype-landing.html` (see Landing), and
+`prototypes/landing-prototype/prototype-landing.html` on
+`prototype/landing-desk` (see Landing), and
 the lesson step at `apps/docs/lesson-prototype/learn-lesson.html` on
 `prototype/lesson-shell`.
 Where this spec and a prototype differ, this spec wins.
@@ -294,8 +295,9 @@ control vocabulary, typography, responsive folds, and the enforcement table.
 ### Landing (`src/routes/_home/index.tsx`)
 
 Built in `src/components/landing/`. Prototype:
-`apps/docs/.scratch/landing-proto/prototype-landing.html` (local, not
-committed); its top comment records the owner's decisions round by round.
+`prototypes/landing-prototype/prototype-landing.html` on the
+`prototype/landing-desk` branch; its top comment records the owner's
+decisions round by round.
 
 The landing tells one story: **"A research desk for Zotero in Obsidian."**
 First the desk, then the research sequence from finding a paper to sending
