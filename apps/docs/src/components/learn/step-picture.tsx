@@ -99,30 +99,38 @@ function StepClip({
   const ref = useRef<HTMLVideoElement>(null);
   // This mounts after hydration only, so the preference is safe to read here.
   const [still] = useState(prefersReducedMotion);
-  const [paused, setPaused] = useState(still);
+  // "auto" plays in the middle of the viewport; "manual" plays from the
+  // reader's press until it leaves the viewport; "paused" stays still.
+  const [mode, setMode] = useState<"auto" | "manual" | "paused">(
+    still ? "paused" : "auto",
+  );
+  // The video's own state, which the button shows.
+  const [playing, setPlaying] = useState(false);
+  const [me] = useState(() => Symbol(base));
 
-  // Play while the clip crosses the middle of the viewport, unless the reader
-  // paused it; a clip that starts rests the one that played.
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
-    if (paused) {
+    if (mode === "paused") {
       video.pause();
       return;
     }
-    const me = Symbol(base);
     const rest = () => video.pause();
+    const play = () => {
+      takeTurn(me, rest);
+      void video.play().catch(() => {});
+    };
+    if (mode === "manual") play();
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry?.isIntersecting) {
-          takeTurn(me, rest);
-          void video.play().catch(() => {});
-        } else {
+        if (!entry?.isIntersecting) {
           rest();
           endTurn(me);
+        } else if (mode === "auto") {
+          play();
         }
       },
-      { rootMargin: "-40% 0px -40% 0px" },
+      mode === "auto" ? { rootMargin: "-40% 0px -40% 0px" } : undefined,
     );
     observer.observe(video);
     return () => {
@@ -130,9 +138,26 @@ function StepClip({
       rest();
       endTurn(me);
     };
-  }, [paused, base]);
+  }, [mode, me]);
 
-  const Icon = paused ? Play : Pause;
+  function press() {
+    const video = ref.current;
+    if (!video) return;
+    if (!video.paused) {
+      setMode("paused");
+      video.pause();
+      return;
+    }
+    // A change of mode plays through the effect; within "manual", play here.
+    if (mode !== "manual") {
+      setMode("manual");
+      return;
+    }
+    takeTurn(me, () => video.pause());
+    void video.play().catch(() => {});
+  }
+
+  const Icon = playing ? Pause : Play;
   return (
     <>
       <video
@@ -143,6 +168,8 @@ function StepClip({
         loop
         playsInline
         preload={still ? "none" : "auto"}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
         className="size-full object-contain"
       >
         {clip.webm && <source src={`${base}.webm`} type="video/webm" />}
@@ -150,8 +177,8 @@ function StepClip({
       </video>
       <button
         type="button"
-        onClick={() => setPaused(!paused)}
-        aria-label={paused ? m.docs_learn_play() : m.docs_learn_pause()}
+        onClick={press}
+        aria-label={playing ? m.docs_learn_pause() : m.docs_learn_play()}
         className="absolute end-2.5 bottom-2.5 flex size-9 items-center justify-center rounded-full border border-transparent bg-fd-card text-fd-foreground shadow-ring transition-[box-shadow] duration-150 ease-out hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
       >
         <Icon aria-hidden strokeWidth={2.25} className="size-4" />

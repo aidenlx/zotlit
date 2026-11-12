@@ -14,6 +14,7 @@ import { DoneBadge } from "@/components/learn/lesson-view";
 import { StepPicture } from "@/components/learn/step-picture";
 import { cn } from "@/lib/cn";
 import { localeInput } from "@/lib/i18n";
+import { getPageLocaleState } from "@/lib/locale-state";
 import { pageHead } from "@/lib/seo";
 import { appName, learnRoute } from "@/lib/shared";
 import { getLessonPages } from "@/lib/source";
@@ -29,6 +30,8 @@ const getCourse = createServerFn({ method: "GET" })
       lesson: page.data.lesson,
       chore: page.data.chore,
       today: page.data.today,
+      /** The language the lesson's text is in, which joins `today`. */
+      language: getPageLocaleState(page.url, locale).contentLocale,
       minutes: page.data.minutes,
       media: page.data.media,
       steps: page.data.steps.length,
@@ -267,7 +270,7 @@ function ChoreCard({
   lesson: CourseLesson;
   progress: LessonProgress | undefined;
 }) {
-  const today = new Intl.ListFormat(getLocale(), {
+  const today = new Intl.ListFormat(lesson.language, {
     type: "conjunction",
   }).format(lesson.today);
 

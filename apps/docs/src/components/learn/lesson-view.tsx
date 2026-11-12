@@ -128,9 +128,10 @@ export function LessonView({
     }
   }, [open, total]);
 
-  function show(n: number | null) {
+  /** Opens row `n`, or closes every row, and brings `into` view: a row, or the end. */
+  function show(n: number | null, into: number | null = n) {
     setOpen(n);
-    reveal.current = n ?? total + 1;
+    reveal.current = into;
     const next = n === null ? "" : String(n);
     written.current = next;
     void navigate({
@@ -158,7 +159,7 @@ export function LessonView({
       firstOpenStep(next, total);
     if (after === undefined) {
       setSay(m.docs_learn_say_all_done({ total }));
-      show(null);
+      show(null, total + 1);
       return;
     }
     setSay(
