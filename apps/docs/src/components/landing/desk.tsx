@@ -135,7 +135,8 @@ export interface DeskProps {
   /**
    * The moving copy between the hero and the contents column: the markers fade
    * out over the first half of the way, and the ring and the fade on the other
-   * objects follow the page's scroll progress `--desk-p`.
+   * objects follow the page's scroll progress `--desk-p`, which the scroll
+   * handler writes on each `[data-desk-p]` element.
    */
   morph?: boolean;
   /** The job named in an ink tag beside its marker (the object under the pointer). */
@@ -182,6 +183,7 @@ export function Desk({
               <Shade id={j.id} deep={p.deep} />
               <use
                 href={`#${artId(j.id)}`}
+                data-desk-p={morph ? "" : undefined}
                 className={cn(
                   "transition-opacity duration-150 ease-out",
                   focus &&
@@ -201,6 +203,7 @@ export function Desk({
                 stroke="var(--color-fd-ring)"
                 strokeWidth="2"
                 vectorEffect="non-scaling-stroke"
+                data-desk-p={morph ? "" : undefined}
                 className={cn(
                   "transition-opacity duration-150 ease-out",
                   !on
@@ -217,6 +220,7 @@ export function Desk({
       {markers && (
         <div
           aria-hidden="true"
+          data-desk-p={morph ? "" : undefined}
           className={cn(
             "pointer-events-none absolute inset-0",
             morph && "opacity-[calc(1-min(1,var(--desk-p,0)*2))]",

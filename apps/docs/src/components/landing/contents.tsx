@@ -23,7 +23,7 @@ let current: JobId | null = null;
 const listeners = new Set<() => void>();
 
 /** The job whose section crosses 40% of the viewport height. */
-function readCurrent(): JobId | null {
+export function readCurrentJob(): JobId | null {
   const line = window.innerHeight * 0.4;
   for (const id of JOB_IDS) {
     const r = document.getElementById(jobAnchor(id))?.getBoundingClientRect();
@@ -32,9 +32,12 @@ function readCurrent(): JobId | null {
   return null;
 }
 
-/** Re-reads the job in view; the page's scroll handler calls it once per frame. */
-export function updateCurrentJob() {
-  const next = readCurrent();
+/**
+ * Sets the job in view. The page's scroll handler reads it with
+ * {@link readCurrentJob} among its other reads, and sets it after its writes,
+ * since a change re-renders the desks.
+ */
+export function setCurrentJob(next: JobId | null) {
   if (next === current) return;
   current = next;
   for (const l of listeners) l();

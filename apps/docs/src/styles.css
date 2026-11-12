@@ -17,6 +17,16 @@
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
 
+/* The landing's scroll progress, written per frame on each element that reads
+   it ([data-desk-p]). Not inherited, so a write restyles that element alone,
+   not the desks' <use> copies or the page below it.
+   @see src/components/landing/landing-page.tsx */
+@property --desk-p {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
 /* Metric-adjusted local fallbacks preserve the shift-free swaps that
    next/font generated before the TanStack Start migration. The values come
    from Next.js 16.3.0's font metrics for the same Google Font families.

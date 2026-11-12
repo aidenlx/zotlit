@@ -3,10 +3,12 @@
 // the contents column (from 1024px, with motion on); below 1024px a bar of the
 // eight objects takes the column's place.
 //
-// The scroll handler writes the progress `--desk-p` and the phase (hero,
-// moving, docked) on the page element in one animation frame, so the hero
-// desk, the moving copy and the docked desk hand over in the same frame and
-// React stays idle while the page scrolls. Without JavaScript the page reads
+// The scroll handler writes the phase (hero, moving, docked) on the page
+// element and the progress `--desk-p` on each element that reads it, in one
+// animation frame, so the hero desk, the moving copy and the docked desk hand
+// over in the same frame and React stays idle while the page scrolls. It reads
+// every position before it writes, so the frame lays out once; `--desk-p` is
+// not inherited, so a write restyles only its readers. Without JavaScript the page reads
 // as a document: the contents column shows its list, and every jump is an
 // anchor link.
 // @see apps/docs/DESIGN.md → Landing
@@ -19,7 +21,8 @@ import {
   DockedDesk,
   MovingDesk,
   PhoneBar,
-  updateCurrentJob,
+  readCurrentJob,
+  setCurrentJob,
 } from "./contents";
 import { DeskSprite } from "./desk";
 import { Hero } from "./hero";
@@ -71,44 +74,62 @@ export function LandingPage({
     const bar = root.querySelector<HTMLElement>("[data-landing-bar]");
     const wide = window.matchMedia("(min-width: 1024px)");
     let raf = 0;
+    let lastP = "";
+    let lastWidth = "";
     const update = () => {
       raf = 0;
-      updateCurrentJob();
+      // Reads first: the job in view and every position this frame needs.
+      const job = readCurrentJob();
       const hs = heroSlot.current;
       const g = grid.current;
-      if (!hs || !g) return;
+      if (!hs || !g) return setCurrentJob(job);
       if (!wide.matches) {
         const fig = heroFigure.current;
         const show = !!fig && fig.getBoundingClientRect().bottom < 0;
         root.toggleAttribute("data-bar", show);
         if (bar) bar.inert = !show;
         root.dataset["phase"] = "hero";
-        return;
+        return setCurrentJob(job);
       }
-      root.removeAttribute("data-bar");
-      if (bar) bar.inert = true;
       const hr = hs.getBoundingClientRect();
       const gr = g.getBoundingClientRect();
+      const el = layer.current;
+      const dr =
+        morph && el ? dockSlot.current?.getBoundingClientRect() : undefined;
+      // Writes.
+      root.removeAttribute("data-bar");
+      if (bar) bar.inert = true;
       // p: 0 while the hero desk's top is above START, 1 once the job column reaches the sticky line.
       const start = START + hr.height + (gr.top - hr.bottom);
       const p = clamp((start - gr.top) / Math.max(1, start - STICKY));
-      root.style.setProperty("--desk-p", p.toFixed(4));
-      root.dataset["phase"] =
+      const pText = p.toFixed(4);
+      if (pText !== lastP) {
+        lastP = pText;
+        for (const n of root.querySelectorAll<HTMLElement | SVGElement>(
+          "[data-desk-p]",
+        ))
+          n.style.setProperty("--desk-p", pText);
+      }
+      const phase =
         p <= 0 ? "hero" : p >= 1 ? "docked" : morph ? "moving" : "hero";
-      const el = layer.current;
-      const ds = dockSlot.current;
-      if (morph && el && ds) {
+      if (root.dataset["phase"] !== phase) root.dataset["phase"] = phase;
+      if (el && dr) {
         // The desk narrows to the column width over the first 55% of the way,
         // so it never covers the text scrolling up beside it.
-        const dr = ds.getBoundingClientRect();
         const e = smoothstep(p);
         const es = smoothstep(clamp(p / 0.55));
         const s = lerp(1, dr.width / hr.width, es);
         const right = lerp(hr.right, dr.right, es);
         const top = lerp(hr.top, dr.top, e);
-        el.style.width = `${hr.width}px`;
+        const width = `${hr.width}px`;
+        if (width !== lastWidth) {
+          lastWidth = width;
+          el.style.width = width;
+        }
         el.style.transform = `translate3d(${right - hr.width * s}px, ${top}px, 0) scale(${s})`;
       }
+      // Last: a new job in view re-renders the desks.
+      setCurrentJob(job);
     };
     const schedule = () => {
       if (!raf) raf = requestAnimationFrame(update);
@@ -145,7 +166,10 @@ export function LandingPage({
               >
                 <DockedDesk />
               </div>
-              <div className="mt-6 transition-[opacity,visibility] duration-150 ease-out group-data-[morph]/landing:opacity-(--desk-p) group-data-[morph]/landing:transition-none group-data-[phase=hero]/landing:invisible group-data-[phase=hero]/landing:opacity-0">
+              <div
+                data-desk-p=""
+                className="mt-6 transition-[opacity,visibility] duration-150 ease-out group-data-[morph]/landing:opacity-(--desk-p) group-data-[morph]/landing:transition-none group-data-[phase=hero]/landing:invisible group-data-[phase=hero]/landing:opacity-0"
+              >
                 <Contents />
               </div>
             </div>
