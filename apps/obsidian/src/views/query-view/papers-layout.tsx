@@ -246,8 +246,12 @@ function PaperRow({
   const kind = mainAttachmentKind(values);
   const typeIcon = itemTypeIcon(text(values.itemType) || null);
   return (
+    // `content-visibility: auto` lets the browser skip layout of the rows
+    // out of view: a sidebar collapse or a resize lays out the visible rows
+    // instead of the whole list. The size until a row is first laid out is
+    // that of a row of two lines.
     <li
-      className="zt:border-b-(length:--border-width) zt:border-border"
+      className="zt:border-b-(length:--border-width) zt:border-border zt:[contain-intrinsic-size:auto_2.875rem] zt:[content-visibility:auto]"
       data-query-papers-row={item.key}
     >
       {/* A row the host lets take focus is a group named by its title: an
