@@ -48,7 +48,7 @@ function Closing() {
       <div className="mx-auto flex max-w-3xl flex-col items-center px-4 sm:px-8">
         <h2
           id="landing-close-title"
-          className="font-serif text-3xl font-medium text-balance sm:text-5xl"
+          className="font-serif text-3xl font-medium text-balance sm:text-5xl sm:leading-[1.06]"
         >
           {m.docs_home_close_title()}
         </h2>

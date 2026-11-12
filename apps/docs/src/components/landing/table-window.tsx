@@ -521,7 +521,7 @@ const COLUMNS: readonly Column[] = [
  * one grid, whatever the cells' text would ask for.
  */
 const TABLE_GRID =
-  "grid-cols-[minmax(0,1fr)_3.5rem_6rem] md:grid-cols-[minmax(0,3fr)_minmax(0,1.12fr)_minmax(0,0.6fr)_minmax(0,1.7fr)_minmax(0,1.75fr)_minmax(0,1.05fr)]";
+  "grid-cols-[minmax(0,1fr)_3.5rem_6rem] md:grid-cols-[minmax(0,3fr)_minmax(0,1.12fr)_minmax(3.5rem,0.6fr)_minmax(0,1.7fr)_minmax(0,1.75fr)_minmax(0,1.05fr)]";
 
 function Cell({
   col,
@@ -851,10 +851,12 @@ export function Trail({
   step,
   cycle,
   playing,
+  className,
 }: {
   step: number;
   cycle: number;
   playing: boolean;
+  className?: string;
 }) {
   const beat = beatOf(step);
   // A beat behind the current one is full; the current one fills over its
@@ -869,7 +871,7 @@ export function Trail({
     };
   };
   return (
-    <div aria-hidden className="mt-4">
+    <div aria-hidden className={className}>
       <ol className="grid grid-cols-5 gap-2 sm:gap-5">
         {BEATS.map((b, i) => {
           const { className, style } = bar(i);
@@ -892,17 +894,19 @@ export function Trail({
                 />
               </span>
               <span className="mt-2 hidden items-baseline gap-2 md:flex">
-                <span className="font-mono text-[11px] tracking-wider text-fd-primary tabular-nums">
+                <span className="font-mono text-[0.6875rem] tracking-wider text-fd-primary tabular-nums">
                   {two(i + 1)}
                 </span>
-                <span className="font-serif text-[15px] italic">{b()}</span>
+                <span className="font-serif text-[0.9375rem] italic">
+                  {b()}
+                </span>
               </span>
             </li>
           );
         })}
       </ol>
       <p className="mt-2 flex items-baseline gap-2 md:hidden">
-        <span className="font-mono text-[11px] tracking-wider text-fd-primary tabular-nums">
+        <span className="font-mono text-[0.6875rem] tracking-wider text-fd-primary tabular-nums">
           {m.docs_home_table_beat_counter({
             number: two(beat + 1),
             total: two(BEATS.length),
@@ -910,7 +914,7 @@ export function Trail({
         </span>
         <span
           key={beat}
-          className="font-serif text-[15px] text-fd-foreground italic motion-safe:animate-demo-pop"
+          className="font-serif text-[0.9375rem] text-fd-foreground italic motion-safe:animate-demo-pop"
         >
           {BEATS[beat]!()}
         </span>

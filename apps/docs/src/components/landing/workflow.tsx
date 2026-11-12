@@ -4,7 +4,8 @@
 // Each recording prerenders as its still, the poster. After mount, with
 // motion allowed, a step whose case has a clip mounts its <video> once it
 // comes near the viewport, and plays it while it crosses the middle band;
-// one loop plays at a time (./loop). Reduced motion keeps the still.
+// one loop plays at a time (./loop), and a button in its corner pauses it.
+// Reduced motion keeps the still.
 // @see apps/docs/DESIGN.md → Landing (Workflow)
 
 import { useEffect, useRef, useState } from "react";
@@ -13,7 +14,7 @@ import { DocsImage } from "@/components/docs-image";
 import { m } from "@/paraglide/messages.js";
 
 import { endTurn, takeTurn } from "./loop";
-import { LessonLink, SectionLabel } from "./parts";
+import { LessonLink, LoopToggle, SectionLabel } from "./parts";
 
 type Text = () => string;
 
@@ -105,6 +106,7 @@ function Recording({ id, alt }: { id: Case; alt: string }) {
   const frame = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [near, setNear] = useState(false);
+  const [paused, setPaused] = useState(false);
   const base = `/img/landing/${id}`;
 
   // Mount the clip once the frame comes near the viewport, with motion on.
@@ -124,10 +126,15 @@ function Recording({ id, alt }: { id: Case; alt: string }) {
     return () => io.disconnect();
   }, [id]);
 
-  // Play while the clip crosses the middle band of the viewport.
+  // Play while the clip crosses the middle band of the viewport, unless the
+  // reader paused it.
   useEffect(() => {
     const v = video.current;
     if (!near || !v) return;
+    if (paused) {
+      v.pause();
+      return;
+    }
     const me = Symbol(id);
     const rest = () => v.pause();
     const io = new IntersectionObserver(
@@ -148,7 +155,7 @@ function Recording({ id, alt }: { id: Case; alt: string }) {
       rest();
       endTurn(me);
     };
-  }, [near, id]);
+  }, [near, paused, id]);
 
   return (
     <div
@@ -177,6 +184,15 @@ function Recording({ id, alt }: { id: Case; alt: string }) {
           alt={alt}
           loading="lazy"
           className="size-full object-cover"
+        />
+      )}
+      {near && (
+        <LoopToggle
+          paused={paused}
+          onToggle={() => setPaused((p) => !p)}
+          pauseLabel={m.docs_home_clip_pause()}
+          playLabel={m.docs_home_clip_play()}
+          className="absolute end-3 bottom-3"
         />
       )}
     </div>
@@ -247,7 +263,7 @@ export function Workflow() {
           <SectionLabel>{m.docs_home_flow_label()}</SectionLabel>
           <h2
             id="landing-flow-title"
-            className="mt-3 font-serif text-3xl font-medium text-balance sm:text-5xl"
+            className="mt-3 font-serif text-3xl font-medium text-balance sm:text-5xl sm:leading-[1.06]"
           >
             {m.docs_home_flow_title()}
           </h2>

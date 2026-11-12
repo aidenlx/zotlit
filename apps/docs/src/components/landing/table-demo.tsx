@@ -10,16 +10,23 @@
 // shows. After mount, with motion on, the demo rewinds to the collection and
 // plays while at least half of it is on screen, one cycle after another; it
 // rewinds again once it has left the screen. One loop plays at a time
-// (./loop). The 768px split (the tree, the tool labels, the three columns
+// (./loop), and a button beside the caption trail pauses it on the finished
+// frame. The 768px split (the tree, the tool labels, the three columns
 // phones leave out) is CSS, so the server and the client agree.
 // @see apps/docs/DESIGN.md → Landing (Compare your papers)
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { m } from "@/paraglide/messages.js";
 
 import { endTurn, takeTurn } from "./loop";
-import { LessonLink, SectionLabel } from "./parts";
+import { LessonLink, LoopToggle, SectionLabel } from "./parts";
 import { DemoWindow, FINAL, Trail, makeFlip } from "./table-window";
 
 /** The beats: [ms from the cycle start, step]. */
@@ -50,54 +57,73 @@ function Demo() {
   const [cycle, setCycle] = useState(0);
   const [fading, setFading] = useState(false);
   const [active, setActive] = useState(false);
+  const [paused, setPaused] = useState(false);
   const figure = useRef<HTMLElement>(null);
   const stage = useRef<HTMLDivElement>(null);
+  /** At least half the demo is on screen. */
+  const inView = useRef(false);
   const [flip] = useState(makeFlip);
+  const [me] = useState(() => Symbol("table demo"));
 
-  // With motion on, rewind to the collection, play while at least half the
-  // demo is on screen, and rewind again once it has left the screen.
+  /** Rests on the finished frame: paused, or another loop took the turn. */
+  const rest = () => {
+    setActive(false);
+    setStep(FINAL);
+    setFading(false);
+  };
+  /** Starts a cycle from the collection. */
+  const play = () => {
+    takeTurn(me, rest);
+    setStep(0);
+    setFading(false);
+    setCycle((c) => c + 1);
+    setActive(true);
+  };
+  const toggle = () => {
+    if (paused) {
+      setPaused(false);
+      if (inView.current) play();
+      else setStep(0);
+    } else {
+      setPaused(true);
+      endTurn(me);
+      rest();
+    }
+  };
+
+  // Plays while at least half the demo is on screen; off screen it waits at
+  // the collection. A paused demo stays on the finished frame.
+  const onView = useEffectEvent((entry: IntersectionObserverEntry) => {
+    if (entry.intersectionRatio >= 0.5) {
+      if (inView.current) return;
+      inView.current = true;
+      if (!paused) play();
+    } else if (!entry.isIntersecting) {
+      if (inView.current) {
+        inView.current = false;
+        endTurn(me);
+        setActive(false);
+      }
+      if (!paused) {
+        setStep(0);
+        setFading(false);
+      }
+    }
+  });
+
   useEffect(() => {
     const el = figure.current;
     if (!el) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const me = Symbol("table demo");
-    let seen = false;
-    // Another loop took the turn: rest on the finished frame.
-    const rest = () => {
-      setActive(false);
-      setStep(FINAL);
-      setFading(false);
-    };
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry) return;
-        if (entry.intersectionRatio >= 0.5) {
-          if (seen) return;
-          seen = true;
-          takeTurn(me, rest);
-          setStep(0);
-          setFading(false);
-          setCycle((c) => c + 1);
-          setActive(true);
-        } else if (!entry.isIntersecting) {
-          // Off screen, on load or after a cycle: wait at the collection.
-          if (seen) {
-            seen = false;
-            endTurn(me);
-            setActive(false);
-          }
-          setStep(0);
-          setFading(false);
-        }
-      },
-      { threshold: [0, 0.5] },
-    );
+    const io = new IntersectionObserver(([entry]) => entry && onView(entry), {
+      threshold: [0, 0.5],
+    });
     io.observe(el);
     return () => {
       io.disconnect();
       endTurn(me);
     };
-  }, []);
+  }, [me]);
 
   useLayoutEffect(() => {
     flip.play(stage.current);
@@ -128,7 +154,21 @@ function Demo() {
         <DemoWindow step={step} fading={fading} stageRef={stage} />
       </div>
       <figcaption className="sr-only">{m.docs_home_table_alt()}</figcaption>
-      <Trail step={step} cycle={cycle} playing={active} />
+      <div className="mt-4 flex items-start gap-4">
+        <Trail
+          step={step}
+          cycle={cycle}
+          playing={active}
+          className="min-w-0 flex-1"
+        />
+        <LoopToggle
+          paused={paused}
+          onToggle={toggle}
+          pauseLabel={m.docs_home_table_pause()}
+          playLabel={m.docs_home_table_play()}
+          className="shrink-0"
+        />
+      </div>
     </figure>
   );
 }
@@ -150,7 +190,7 @@ export function TableDemo() {
           <SectionLabel>{m.docs_home_table_label()}</SectionLabel>
           <h2
             id="landing-table-title"
-            className="mt-3 font-serif text-3xl font-medium text-balance sm:text-5xl"
+            className="mt-3 font-serif text-3xl font-medium text-balance sm:text-5xl sm:leading-[1.06]"
           >
             {m.docs_home_table_title()}
           </h2>

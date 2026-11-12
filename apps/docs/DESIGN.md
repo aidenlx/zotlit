@@ -220,7 +220,9 @@ Values follow the `better-ui` skill.
   landing recording or the landing's table demo: a recording runs while it
   crosses the middle band of the viewport, and the demo while half of it is
   on screen; each rests elsewhere, and a loop that starts rests the one that
-  played. With reduced motion, each shows its finished frame.
+  played. A landing loop that lasts more than 5 seconds carries a visible
+  pause button (WCAG 2.2.2). With reduced motion, each shows its finished
+  frame.
 - **Scroll.** The page scrolls as a document, with no scroll-linked movement.
   The landing's desk drifts with the pointer only (see Landing).
 
@@ -310,8 +312,9 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   3.75rem from 640px) with the highlighter on "research desk", the
   supporting line (sans 20px, muted, 34rem), **Install ZotLit** and **Start
   the tutorial**, and the requirements line in muted 14px. From 1280px the
-  hero fills the viewport below the nav (at least 720px) and the text sits a
-  little above centre.
+  hero is at least as tall as the viewport below the nav, held between 720px
+  and the desk's scaled height, and grows with its text when a larger font
+  needs the room; the text sits a little above centre.
 - **The desk (from 1280px).** Six objects lie around the headline on a
   1440 × 832 stage, built in HTML on the docs Fixture's data, each named by
   a strip of washi tape (mono uppercase 10.5px on `--desk-tape`, rotated
@@ -331,8 +334,9 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
 - **Hero motion, once.** The objects drop onto the desk in order (library,
   table, PDF, note card, draft, references; 100–1100 ms delays): a 38px
   fall with a 5° turn and a 7% shrink over 780 ms. Then the ratings fill in,
-  the table's cell focus lands, the citation picker opens and the
-  highlighter sweeps across "research desk" (at 2.3 s). From 1280px the
+  the table's cell focus lands, the citation picker opens, the draft's caret
+  blinks three times and the highlighter sweeps across "research desk" (at
+  2.3 s). From 1280px the
   objects drift with a fine pointer, each by its depth, up to 8px. All of it
   is CSS under `motion-safe:`, except the drift, which writes `translate` on
   each object in one animation frame. The prerendered page and reduced
@@ -371,7 +375,9 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   650 ms. The page prerenders the finished frame, which reduced motion
   keeps. With motion on, the demo waits at the collection while it is off
   screen, plays while at least half of it is on screen, and starts again
-  from the collection once it has left. Rows and cells move by FLIP
+  from the collection once it has left. A pause button sits at the end of
+  the caption trail; pausing rests the demo on its finished frame, and play
+  starts it again from the collection. Rows and cells move by FLIP
   (transform and opacity); the tree collapses by width.
 - **Trust row.** Three items on the ground under the section's hairline, in
   three columns from 640px: a serif lead (20px) and a muted line —
@@ -388,8 +394,11 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   ring. The page prerenders the still. After mount, with motion on, a clip
   mounts once its frame comes within 300px of the viewport (muted, looping,
   inline, `preload="none"`, the still as its poster) and plays while it
-  crosses the middle band. Reduced motion keeps the still. The alt text
-  says what the recording shows.
+  crosses the middle band, with a pause button in its lower corner. Reduced
+  motion keeps the still. The alt text says what the recording shows.
+- **Pause buttons.** A 36px round button on the surface with the shadow
+  ring, a Lucide Pause or Play icon and a label that names the loop ("Pause
+  the demo", "Play the recording"); hidden under reduced motion.
 - **Inside the app windows.** The desk's sheets and the demo's window use
   ZotLit's own labels (the plugin's `m.*` messages) and Lucide icons on the
   site tokens; the Zotero annotation colours and Obsidian's purple
@@ -402,7 +411,10 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   accent text tone and carries the text-on-accent tone; **Start the
   tutorial** (to `/learn`) is the surface with the shadow ring. Both are
   44px tall, 10px radius, sans semibold 15px; side by side from 640px,
-  stacked full-width below.
+  stacked full-width below. Keyboard focus on the landing's actions, links
+  and pause buttons draws a 2px outline in the accent text tone at 2px
+  offset, which keeps 4.5:1 on the quiet fill of the closing band where the
+  brighter ring falls below 3:1.
 - **Type.** Display headings take the serif at weight 500 (the type
   system), not the prototype's semibold; section labels are mono uppercase
   at 13px, muted, 0.12em tracking.

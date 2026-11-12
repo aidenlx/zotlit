@@ -1,7 +1,8 @@
 // Small shared parts of the landing: the action buttons, the tutorial link,
-// the highlighter, and the section label.
+// the highlighter, the section label, and the pause button every loop has.
 // @see apps/docs/DESIGN.md → Landing, Surfaces and elevation
 
+import { Pause, Play } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
@@ -27,7 +28,7 @@ export function ActionLink({
     <a
       href={localizeHref(href)}
       className={cn(
-        "inline-flex h-11 items-center justify-center rounded-[10px] border border-transparent px-5 text-[15px] font-semibold transition-[background-color,box-shadow,scale] duration-150 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-96",
+        "inline-flex h-11 items-center justify-center rounded-[10px] border border-transparent px-5 text-[0.9375rem] font-semibold transition-[background-color,box-shadow,scale] duration-150 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary motion-safe:active:scale-96",
         primary
           ? "bg-fd-primary text-fd-primary-foreground hover:bg-fd-primary/90"
           : "bg-fd-card text-fd-foreground shadow-ring hover:shadow-ring-hover",
@@ -60,7 +61,7 @@ export function LessonLink({ lesson }: { lesson: string }) {
   return (
     <a
       href={localizeHref(`${TUTORIAL_HREF}/${lesson}`)}
-      className="inline-flex items-center gap-1 rounded-sm text-base font-medium text-fd-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
+      className="inline-flex items-center gap-1 rounded-sm text-base font-medium text-fd-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary"
     >
       {m.docs_home_learn_link()}
       <span aria-hidden>→</span>
@@ -79,12 +80,46 @@ export function SectionLabel({
   return (
     <p
       className={cn(
-        "font-mono text-[13px] font-medium tracking-[0.12em] text-fd-muted-foreground uppercase",
+        "font-mono text-[0.8125rem] font-medium tracking-[0.12em] text-fd-muted-foreground uppercase",
         className,
       )}
     >
       {children}
     </p>
+  );
+}
+
+/**
+ * Pauses or plays a loop (WCAG 2.2.2): a 36px round button on the raised
+ * surface, in a corner of the loop's frame. Hidden under reduced motion,
+ * where no loop plays.
+ */
+export function LoopToggle({
+  paused,
+  onToggle,
+  pauseLabel,
+  playLabel,
+  className,
+}: {
+  paused: boolean;
+  onToggle: () => void;
+  pauseLabel: string;
+  playLabel: string;
+  className?: string;
+}) {
+  const Icon = paused ? Play : Pause;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={paused ? playLabel : pauseLabel}
+      className={cn(
+        "flex size-9 items-center justify-center rounded-full border border-transparent bg-fd-card text-fd-foreground shadow-ring transition-[box-shadow] duration-150 ease-out hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary motion-reduce:hidden",
+        className,
+      )}
+    >
+      <Icon aria-hidden className="size-4" strokeWidth={2.25} />
+    </button>
   );
 }
 

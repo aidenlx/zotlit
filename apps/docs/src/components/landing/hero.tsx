@@ -64,13 +64,15 @@ export function Hero() {
       ref={ref}
       aria-labelledby="landing-title"
       // The desk is designed at 1440 × 832 and scales in steps with the
-      // window; the text scales with it.
-      className="relative overflow-hidden [--desk-s:1] min-[1280px]:max-[1360px]:[--desk-s:0.88] min-[1360px]:max-[1440px]:[--desk-s:0.94] min-[1800px]:[--desk-s:1.08] xl:h-[calc(100svh-56px)] xl:max-h-[calc(832px*var(--desk-s))] xl:min-h-[720px]"
+      // window; the text scales with it. The hero fills the viewport below
+      // the nav, between 720px and the desk's height, and grows with its
+      // text when a larger font needs the room.
+      className="relative overflow-hidden [--desk-s:1] min-[1280px]:max-[1360px]:[--desk-s:0.88] min-[1360px]:max-[1440px]:[--desk-s:0.94] min-[1800px]:[--desk-s:1.08] xl:flex xl:min-h-[max(720px,min(calc(100svh-56px),calc(832px*var(--desk-s))))] xl:flex-col"
     >
       <Desk />
-      <div className="relative z-20 mx-auto flex max-w-[640px] flex-col items-center px-4 pt-9 text-center sm:px-8 xl:h-full xl:max-w-none xl:justify-center xl:px-0 xl:pt-0 xl:pb-[110px]">
+      <div className="relative z-20 mx-auto flex max-w-[640px] flex-col items-center px-4 pt-9 text-center sm:px-8 xl:w-full xl:max-w-none xl:flex-1 xl:justify-center xl:px-0 xl:pt-0 xl:pb-[110px]">
         <div className="flex w-full max-w-[640px] flex-col items-center xl:[zoom:var(--desk-s)]">
-          <p className="font-mono text-[11px] font-medium tracking-[0.1em] text-fd-muted-foreground uppercase sm:text-[12px] sm:tracking-[0.14em]">
+          <p className="font-mono text-[0.6875rem] font-medium tracking-[0.1em] text-fd-muted-foreground uppercase sm:text-xs sm:tracking-[0.14em]">
             {m.docs_home_eyebrow()}
           </p>
           <h1
