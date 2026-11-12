@@ -197,9 +197,12 @@ async function lookAtTable(vaultId: string, label = ""): Promise<void> {
             (l) => (l.view as QueryFileView).file?.path === file,
           ) as TableLeaf
       ).view.contentEl;
-      const head = [...el.querySelectorAll<HTMLTableCellElement>("th")].find(
-        (th) => th.textContent.trim() === label,
-      );
+      // The first header cell, over the row toggles, has no name.
+      const head = label
+        ? [...el.querySelectorAll<HTMLTableCellElement>("th")].find(
+            (th) => th.textContent.trim() === label,
+          )
+        : undefined;
       const parts: Element[] = head
         ? [
             head,
