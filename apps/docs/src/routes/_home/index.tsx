@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { LandingPage } from "@/components/landing/landing-page";
-import { RepoDatum, loadRepoStats } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
 import { appDescription, HOME_OG_ALT, pageHead } from "@/lib/seo";
 import {
@@ -13,7 +12,6 @@ import { m } from "@/paraglide/messages.js";
 
 export const Route = createFileRoute("/_home/")({
   component: Home,
-  loader: () => loadRepoStats(),
   head: () =>
     pageHead({
       fullTitle: m.docs_home_document_title(),
@@ -25,8 +23,5 @@ export const Route = createFileRoute("/_home/")({
 });
 
 function Home() {
-  const stats = Route.useLoaderData();
-  return (
-    <LandingPage repo={<RepoDatum stats={stats} />} footer={<SiteFooter />} />
-  );
+  return <LandingPage footer={<SiteFooter />} />;
 }

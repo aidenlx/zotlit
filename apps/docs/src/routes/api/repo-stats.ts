@@ -1,4 +1,4 @@
-// The landing and community pages' live counters, served as JSON for
+// The community page's live counters, served as JSON for
 // `useBakedThenFresh`.
 //
 // A route file whose only `createFileRoute` property is `server` is pruned from
