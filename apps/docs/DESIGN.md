@@ -13,8 +13,9 @@ Use [the brand specification](../../docs/brand.md) for logo and wordmark assets.
 Visual references: the landing at
 `prototypes/landing-prototype/prototype-landing.html` on
 `prototype/landing-desk` (see Landing), and
-the lesson step at `apps/docs/lesson-prototype/learn-lesson.html` on
-`prototype/lesson-shell`.
+the `/learn` checklist from the lesson prototype's round 1 on
+`prototype/lesson-shell` (variant D, opened by variant B's today and
+instead lists).
 Where this spec and a prototype differ, this spec wins.
 
 ## Key points
@@ -235,8 +236,9 @@ heading, one caption and one check line.
 
 - **Lessons show recordings.** Each `/learn` step shows a short recording of
   the real app doing that step: about 3–8 seconds, looping, resting on the
-  result. Reduced motion shows the last frame. A static screenshot of the
-  result is the poster and the fallback. The reader then does the step once,
+  result. Reduced motion shows the last frame. The clip's final frame,
+  framed on the result, is its poster; the step's screenshot stands in until
+  a poster exists. The reader then does the step once,
   in their own Obsidian, so a lesson ends with a working setup on their own
   library.
 - **The landing shows recordings and enacted windows.** Each workflow step
@@ -428,60 +430,86 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
 
 ### Learn (`/learn`)
 
-Target. Prototype: `apps/docs/lesson-prototype/learn-lesson.html` on
-`prototype/lesson-shell`.
+Target. Prototype: round 1 of the lesson prototype on
+`prototype/lesson-shell` — variant D's course page and checklist, opened by
+variant B's today and instead lists.
 
-A lesson walks a non-technical researcher through one job in the real app,
-one step per screen. The reader keeps Obsidian open on the other half of the
-screen and does each step there.
+The course page lets a non-technical researcher pick the chore they want
+gone; a lesson is a checklist they follow in the real app. The reader keeps
+Obsidian open on the other half of the screen, so every layout is drawn
+first for a 700px window, then checked at 390px and 1440px.
 
-- **Shell.** The lesson sits outside the docs layout: a top bar (the
+- **Shell.** The course sits outside the docs layout: a top bar (the
   wordmark, a mono "Learn" label, then "All lessons" and "Docs" as muted
   links, over a hairline) and one centred column, 720px at most, with 20px
-  side padding and 18px between blocks. The column stays narrow so the page
-  reads at half a screen.
-- **Strip.** The lesson's steps as a row of equal segments at the column top,
-  a `nav` labelled "Steps of this lesson": each a 4px bar over its one-word
-  name (sans 12px, muted). Done steps fill with the accent, the current step
-  with ink and its name in ink semibold (`aria-current="step"`), later steps
-  with the line colour. Each segment is a 44px-tall button that jumps to its
-  step. Below 560px the names drop and the bars stay.
-- **Step.** In order: a mono label "Step 2 of 6"; the step title (serif 500,
-  30px / 1.15); the picture; the caption; the check line; the two buttons.
-  The step body fades and rises 6px over 220 ms when it changes (none under
-  reduced motion).
-- **Picture.** One recording of the step in the real app (see Illustration),
-  10px radius, with the shadow ring. Numbered marks sit on the controls the
-  caption names: 26px circles in the accent text tone with numerals in the
-  text-on-accent tone (sans 600) and a 3px surface-coloured halo. Where a step changes one screen into
-  another, a before/after pair with a muted arrow between (stacked below
-  560px).
-- **Caption.** The action, sans 19px / 1.5, naming each control as a UI chip
-  (sans semibold on the quiet fill, 5px radius) and referring to the marks by
-  the same numerals inline (22px circles).
-- **Check line.** "✓" and what the reader should now see, in a 10px-radius
-  band: dark green `#1f5c39` text on `#e9f3ec` (7.0:1) in light; `#7cc79a`
-  on `#17261d` (7.9:1) in dark².
-- **Buttons.** **I see it. Next** (**I see it. Finish** on the last step)
-  as the leading action — ink fill, ground text, 46px tall, 10px radius,
-  semibold — and **I see something else** as a quiet button: transparent with
-  a 1px line ring, muted text, ink on hover. A 2px accent outline at 2px
-  offset marks keyboard focus.
-- **Fix panel.** **I see something else** toggles (`aria-expanded`) a panel
-  below the buttons on the warm tint, 10px radius, 14px padding: each likely
-  failure as a sans-semibold 17px heading, an optional picture, and the fix
-  in one or two sentences; it closes on "None of these. Ask in the community
-  →" in the accent text tone.
-- **Cover.** The lesson label ("Lesson 1 of 6 · about 10 minutes · 6 steps"),
-  the lesson title (serif, 36px), a map of where things live (two raised
-  boxes, Zotero and Obsidian, joined by an arrow labelled with what ZotLit
-  does), a "You need" table on hairline rows, the **Start** button filled
-  with the accent text tone, and the mono reminder "Keep Obsidian open beside
-  this page."
-- **End.** A "Lesson 1 complete" label in the check green (`#2f7d4f`, 4.6:1
-  on ground), the outcome as the title, the finished result as the picture,
-  one caption, a raised link card to the next lesson (title semibold, one
-  muted line), and **Start again** as a quiet button.
+  side padding.
+- **Course page.** The question as the H1 (serif 500, 34px, 42px from
+  561px) over a sans lede; a **Continue Lesson N** button (ink fill) once
+  the reader has progress. Then **Start here**: lesson 1 as a raised card
+  with a 4px accent bar on its leading edge — a mono "Start here" label in
+  the accent text tone, the chore as a serif title, one muted line on why
+  every lesson needs it, the minutes, the start button and the result
+  picture beside it from 561px (above it below). Once lesson 1 is done, the
+  card becomes a strip on the check tint: a check disc, "Start here · Done",
+  the chore, and an **Open it again** link. Then "Then pick a chore" with
+  "In any order" as a mono label, and one raised card per chore: the
+  minutes and the progress (a "Done" badge, or "N of M done" in the accent
+  text tone), the chore in the reader's words as a quoted serif title that
+  links the whole card, a "Today you …" line in muted sans, and the
+  lesson's result picture.
+- **Result picture.** The lesson's last step: its poster
+  (`step-<n>.poster.webp`, the clip's final frame framed on the result) or,
+  until one exists, its screenshot. On a card it fills a window-shaped
+  frame from the top.
+- **Opener.** The lesson label ("Lesson 1 of 6 · about 10 minutes · 6
+  steps"), the lesson title as the H1 (serif 500, 34px, 38px from 561px),
+  then a raised panel of two halves — "What you do today" on the quiet fill
+  in muted text, a bulleted list with no numbers, and "What you'll do
+  instead" on the surface with the one action — side by side from 561px.
+  Below it the result: the last step's recording, captioned with a mono
+  "You end with" label in the accent text tone and the outcome. Then "You
+  need" as one line, and the lesson's note with an info mark, in muted
+  text.
+- **Progress bar.** Sticky under the banner as the checklist scrolls: the
+  lesson title, truncated, and "N of M done" as a mono label (check green
+  when all are done) over one segment per step — check green when ticked,
+  ink for the open row, the line colour otherwise.
+- **Row.** Each step is a row: a 28px checkbox (a 1.5px muted ring, filled
+  check green with a ground-coloured check when ticked), then a disclosure
+  button holding a mono "Step 2 of 6" label and the step title (sans 18px,
+  semibold; muted and regular once ticked) with a chevron. Closed rows sit
+  on hairlines. The open row is a raised card (14px radius) and, below the
+  title, shows the action, the picture, the check line, any figure and
+  **Not what you see?**. Ticking a row closes it and opens the next row not
+  ticked; any row reopens from its title. The body fades and rises 6px over
+  220 ms when it opens (none under reduced motion).
+- **Picture.** One recording of the step in the real app (see
+  Illustration), 10px radius, with the shadow ring, at most 560px or 70% of
+  the window tall. Only the open row's clip and the opener's result load;
+  each plays while it crosses the middle of the window, one at a time, and
+  carries a 36px pause and play button at its bottom corner. There is no
+  zoom control: the recordings frame the action themselves.
+- **Action.** Sans 18px / 1.5, naming each control as a UI chip (sans
+  semibold on the quiet fill, 5px radius).
+- **Check line.** A mono "In Obsidian you should see" label with an eye
+  mark over what the reader should now see, in a 10px-radius band: dark
+  green `#1f5c39` text on `#e9f3ec` (7.0:1) in light; `#7cc79a` on `#17261d`
+  (7.9:1) in dark².
+- **Fix panel.** **Not what you see?** — a muted underlined link-style
+  button with a chevron — toggles (`aria-expanded`) a panel on the warm
+  tint, 10px radius, 14px padding: each likely failure as a sans-semibold
+  17px heading and the fix in one or two sentences; it closes on "None of
+  these. Ask in the community →" in the accent text tone.
+- **End.** Until every step is ticked, a line-ringed box with how many
+  steps are left. Then a raised card: a check disc, a "Lesson 1 complete"
+  label in the check green (`#2f7d4f`, 4.6:1 on ground), "All 6 done" as the
+  serif title, one line on what ZotLit now does, "Two more chores" — small
+  cards with the result picture, the minutes and the quoted chore, lesson 1
+  first while it is not done — and **See all chores** in the accent text
+  tone.
+- **Focus and state.** Every control is a button, link or checkbox with a
+  2px accent outline at 2px offset on keyboard focus. Ticked state shows as
+  a check and as the count text, never by colour alone.
 
 ² The dark check-line pair is derived for this spec; the prototype draws the
 light scheme only.
@@ -574,7 +602,7 @@ Structural chrome overrides live in the owned layout slots. CSS in
   exact id, no className hook). Re-check on bumps.
 
 Surface component styles (the landing's desk and table demo, the lesson
-strip) live with their components as Tailwind utilities and arbitrary
+checklist) live with their components as Tailwind utilities and arbitrary
 variants; `src/styles.css` holds only their tokens and their `@theme`
 animations (`animate-desk-*`, `animate-demo-*`).
 
