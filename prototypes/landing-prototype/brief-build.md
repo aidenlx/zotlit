@@ -18,7 +18,7 @@ The page, top to bottom:
    (index card), "Cite while you write" (draft + picker), "Export and submit" (references).
    Full desk from 1280px; below it the fanned stack. Drop-in order, pointer parallax, soft
    clearing, reduced motion = final state.
-2. **"Compare your papers side by side."** — `function SQ_Section` and its `SQS_*` helpers:
+2. (MOVED: now after item 3, before the trust row) **"Compare your papers side by side."** — `function SQ_Section` and its `SQS_*` helpers:
    eyebrow "Before you write", the lede, "Learn in the tutorial →"
    (`/learn/literature-review-table-from-zotero`), the enacted demo (collection → Save as query
    file → fixed column tracks filling left to right → sort by year → rating typed for the two

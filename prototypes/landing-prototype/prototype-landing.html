@@ -23,6 +23,7 @@
       section." Later: the demo shows Zotero fields beside a note property, with two papers
       that have no note ("No note", Create); its copy is workflow-based ("Compare your papers
       side by side."), and "And when your reading grows." is gone as a duplicate of it.
+      Then: the table demo moves after the workflow (its animation takes a while).
       Hero = H_MX (library sheet + live table from 7, PDF, note card, draft,
       references from 2); collection-to-table demo = SQ_Section in the body.
       PROTOTYPE — throwaway. Question: which landing layout tells a first-time
@@ -5761,8 +5762,6 @@ function H_LV() {
             {/* Hero */}
             <H_Hero />
 
-            <SQ_Section />
-
             {/* Workflow */}
             <section className="border-t border-line bg-card/40 py-20 sm:py-28">
               <div className="mx-auto max-w-6xl px-4 sm:px-8">
@@ -5789,6 +5788,8 @@ function H_LV() {
                 </div>
               </div>
             </section>
+
+            <SQ_Section />
 
             {/* Trust */}
             <section className="border-t border-line py-16">
