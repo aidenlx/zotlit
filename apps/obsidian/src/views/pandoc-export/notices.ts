@@ -90,6 +90,11 @@ export function exportFailureMessage(failure: ExportProblem): DocumentFragment {
           m.pandoc_export_error_zotero_unreachable({ port: failure.port }),
         );
         break;
+      case "zotero-timeout":
+        renderer.addText(
+          m.pandoc_export_error_zotero_timeout({ seconds: failure.seconds }),
+        );
+        break;
       case "zotero-port-automatic":
         renderer.addText(
           m.pandoc_export_error_zotero_port_automatic({

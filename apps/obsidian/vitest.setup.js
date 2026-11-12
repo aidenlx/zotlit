@@ -162,6 +162,13 @@ if (typeof HTMLElement !== "undefined") {
   HTMLElement.prototype.toggle ??= function (visible) {
     this.style.display = visible ? "" : "none";
   };
+  // Obsidian answers whether the element lays out; happy-dom lays nothing
+  // out, so an element shows unless it or an ancestor is `display: none`.
+  HTMLElement.prototype.isShown ??= function () {
+    for (let el = this; el; el = el.parentElement)
+      if (el.style.display === "none") return false;
+    return true;
+  };
   HTMLElement.prototype.setCssProps ??= function (props) {
     for (const [name, value] of Object.entries(props))
       this.style.setProperty(name, value);

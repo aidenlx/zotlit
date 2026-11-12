@@ -98,6 +98,8 @@ export type ExportFailure =
   | { kind: "zotero-port-automatic"; pref: string }
   /** Nothing answered on the active profile's Zotero HTTP port. */
   | { kind: "zotero-unreachable"; port: number }
+  /** Zotero gave the bibliography no answer in time. */
+  | { kind: "zotero-timeout"; seconds: number }
   /** Zotero runs with its local API pref off. */
   | { kind: "local-api-disabled"; pref: string }
   /** The bibliography source answered, and refused. */
@@ -421,6 +423,8 @@ function toExportFailure(
       return { kind: "zotero-port-automatic", pref: failure.pref };
     case "zotero-unreachable":
       return { kind: "zotero-unreachable", port: failure.port };
+    case "zotero-timeout":
+      return { kind: "zotero-timeout", seconds: failure.seconds };
     case "local-api-disabled":
       return { kind: "local-api-disabled", pref: failure.pref };
     case "source-failed":
