@@ -312,7 +312,8 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   3.75rem from 640px) with the highlighter on "research desk", the
   supporting line (sans 20px, muted, 34rem), **Install ZotLit** and **Start
   the tutorial**, and the requirements line in muted 14px. From 1280px the
-  hero is at least as tall as the viewport below the nav, held between 720px
+  hero is at least as tall as the viewport below the nav and the banner
+  (`--fd-banner-height`), held between 720px
   and the desk's scaled height, and grows with its text when a larger font
   needs the room; the text sits a little above centre.
 - **The desk (from 1280px).** Six objects lie around the headline on a

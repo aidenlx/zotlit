@@ -65,9 +65,9 @@ export function Hero() {
       aria-labelledby="landing-title"
       // The desk is designed at 1440 × 832 and scales in steps with the
       // window; the text scales with it. The hero fills the viewport below
-      // the nav, between 720px and the desk's height, and grows with its
-      // text when a larger font needs the room.
-      className="relative overflow-hidden [--desk-s:1] min-[1280px]:max-[1360px]:[--desk-s:0.88] min-[1360px]:max-[1440px]:[--desk-s:0.94] min-[1800px]:[--desk-s:1.08] xl:flex xl:min-h-[max(720px,min(calc(100svh-56px),calc(832px*var(--desk-s))))] xl:flex-col"
+      // the nav and the banner, between 720px and the desk's height, and
+      // grows with its text when a larger font needs the room.
+      className="relative overflow-hidden [--desk-s:1] min-[1280px]:max-[1360px]:[--desk-s:0.88] min-[1360px]:max-[1440px]:[--desk-s:0.94] min-[1800px]:[--desk-s:1.08] xl:flex xl:min-h-[max(720px,min(calc(100svh-56px-var(--fd-banner-height,0px)),calc(832px*var(--desk-s))))] xl:flex-col"
     >
       <Desk />
       <div className="relative z-20 mx-auto flex max-w-[640px] flex-col items-center px-4 pt-9 text-center sm:px-8 xl:w-full xl:max-w-none xl:flex-1 xl:justify-center xl:px-0 xl:pt-0 xl:pb-[110px]">
