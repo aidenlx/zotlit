@@ -401,7 +401,7 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
     await walk.compose("step-2");
   });
 
-  it('step 3: select Properties, type reading-status, and select the second entry, Add "reading-status" vault property; a column reading-status (note), each cell reads No note', async () => {
+  it('step 3: select Properties, type reading-status, and select the second entry, Add "reading-status" vault property; a column reading-status (note); papers without a literature note read No note, and Sandve et al. 2013 an empty cell', async () => {
     const entries = await walk.record("step-3", () =>
       obRun(
         walk.vaultId,
@@ -549,9 +549,8 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
     expect(table.header).toContain(
       m.query_view_vault_property_label({ name: PROPERTY }),
     );
-    // OUTLINE-MISMATCH: "Each cell reads No note" holds for the papers with
-    // no literature note. Sandve et al. 2013 has the note from Lesson 1, so
-    // its cell is empty, ready for a value.
+    // Papers without a literature note read No note. Sandve et al. 2013 has
+    // the note from Lesson 1, so its cell is empty, ready for a value.
     for (const paper of ["munafo", "wilson", "rougier", "ioannidis"] as const)
       expect(table.cells[PAPERS[paper].key]).toBe(m.query_view_vault_no_note());
     expect(table.cells[PAPERS.sandve.key]).toBe("");
@@ -560,8 +559,10 @@ describe.skipIf(!reachable)("Lesson 5: Track what you have read", () => {
   });
 
   it("step 4: select a cell, type to-read, and press Enter; the notice Literature note created. and the cell shows to-read", async () => {
-    const suggested = await walk.record("step-4", () =>
-      mark("wilson", "to-read"),
+    const suggested = await walk.record(
+      "step-4",
+      () => mark("wilson", "to-read"),
+      { notices: true },
     );
     expect(suggested).toEqual([]);
     const note = await obRunUntil(

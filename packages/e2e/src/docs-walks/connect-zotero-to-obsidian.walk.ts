@@ -603,55 +603,71 @@ describe.skipIf(!reachable)(
     });
 
     it("step 5: go back to the Zotero library tab and select Write literature note; the notice Literature note created. and the note in a new tab", async () => {
-      const written = await walk.record("step-5", () =>
-        obRun(
-          walk.vaultId,
-          async ({ app, page }, { note }) => {
-            const pointer = page.scratch.docsWalkPointer;
-            const leaf = app.workspace.getLeavesOfType(
-              "zotlit-library",
-            )[0] as LibraryLeaf;
-            const card = leaf.view.contentEl.querySelector<HTMLElement>(
-              "[data-library-card]",
-            )!;
-            const tab = (leaf as unknown as { tabHeaderEl: HTMLElement })
-              .tabHeaderEl;
-            await pointer?.point(tab);
-            app.workspace.setActiveLeaf(leaf, { focus: true });
-            await page.until(
-              "library in front",
-              () => card.checkVisibility(),
-              5000,
-            );
-            const button = card.querySelector<HTMLElement>(
-              '[data-library-card-action="note"]',
-            )!;
-            const label = button.innerText.trim();
-            await pointer?.point(button);
-            page.press(button, "Write literature note");
-            await page.until(
-              "note",
-              () => app.workspace.getActiveFile()?.path === note,
-              20000,
-            );
-            const noteLeaf = app.workspace.getMostRecentLeaf()!;
-            if (pointer) {
-              const b = noteLeaf.view.containerEl.getBoundingClientRect();
-              await pointer.park(b.right - 40, b.bottom - 60);
-            }
-            return {
-              label,
-              active: app.workspace.getActiveFile()?.path ?? null,
-              ownTab:
-                noteLeaf !== leaf &&
-                !app.workspace.getLeavesOfType("pdf").includes(noteLeaf) &&
-                leaf.view.getViewType() === "zotlit-library",
-              prompt: !!document.querySelector(".prompt"),
-            };
-          },
-          { note: NOTE },
-          STEP,
-        ),
+      const written = await walk.record(
+        "step-5",
+        () =>
+          obRun(
+            walk.vaultId,
+            async ({ app, page }, { note }) => {
+              const pointer = page.scratch.docsWalkPointer;
+              const leaf = app.workspace.getLeavesOfType(
+                "zotlit-library",
+              )[0] as LibraryLeaf;
+              const card = leaf.view.contentEl.querySelector<HTMLElement>(
+                "[data-library-card]",
+              )!;
+              const tab = (leaf as unknown as { tabHeaderEl: HTMLElement })
+                .tabHeaderEl;
+              await pointer?.point(tab);
+              app.workspace.setActiveLeaf(leaf, { focus: true });
+              await page.until(
+                "library in front",
+                () => card.checkVisibility(),
+                5000,
+              );
+              const button = card.querySelector<HTMLElement>(
+                '[data-library-card-action="note"]',
+              )!;
+              const label = button.innerText.trim();
+              await pointer?.point(button);
+              page.press(button, "Write literature note");
+              await page.until(
+                "note",
+                () => app.workspace.getActiveFile()?.path === note,
+                20000,
+              );
+              const noteLeaf = app.workspace.getMostRecentLeaf()!;
+              // The annotation sidebar lists the note's highlights.
+              await page.until(
+                "the highlights in the annotation sidebar",
+                () =>
+                  app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .some(
+                      (l) =>
+                        l.view.containerEl.querySelectorAll(".zt-annot-card")
+                          .length > 0,
+                    ),
+                10000,
+              );
+              if (pointer) {
+                const b = noteLeaf.view.containerEl.getBoundingClientRect();
+                await pointer.park(b.right - 40, b.bottom - 60);
+              }
+              return {
+                label,
+                active: app.workspace.getActiveFile()?.path ?? null,
+                ownTab:
+                  noteLeaf !== leaf &&
+                  !app.workspace.getLeavesOfType("pdf").includes(noteLeaf) &&
+                  leaf.view.getViewType() === "zotlit-library",
+                prompt: !!document.querySelector(".prompt"),
+              };
+            },
+            { note: NOTE },
+            STEP,
+          ),
+        { notices: true },
       );
       expect(written).toEqual({
         label: m.library_view_menu_write_note(),
@@ -661,20 +677,6 @@ describe.skipIf(!reachable)(
       });
       expect(await readNotices(walk.vaultId)).toContain(
         m.notice_created_note(),
-      );
-      // The annotation sidebar lists the note's highlights.
-      await obRunUntil(
-        walk.vaultId,
-        ({ app }) =>
-          app.workspace
-            .getLeavesOfType("zotero-annotation-view")
-            .some(
-              (l) =>
-                l.view.containerEl.querySelectorAll(".zt-annot-card").length >
-                0,
-            ),
-        undefined,
-        { what: "the highlights in the annotation sidebar" },
       );
       await walk.capture("step-5", { notices: true });
       await walk.compose("step-5");

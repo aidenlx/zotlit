@@ -161,8 +161,15 @@ export interface DocsWalk extends AsyncDisposable {
    * clip `name`: `<name>.webm` and `<name>.mp4` beside the step's image. The
    * window shows a drawn pointer while it records, and the clip rests on the
    * result for 1.5 s. Without `DOCS_WALK_RECORD=1`, it only runs `actions`.
+   * With `notices`, for a step whose check is a notice, the layer `name` is
+   * captured with its notices as soon as `actions` end, while the notice
+   * still shows; the step's later `capture(name)` then keeps that layer.
    */
-  record<T>(name: string, actions: () => Promise<T>): Promise<T>;
+  record<T>(
+    name: string,
+    actions: () => Promise<T>,
+    options?: { notices?: boolean },
+  ): Promise<T>;
   /**
    * Run `actions` in Zotero and record the Paired Zotero window whose title
    * matches `title` with macOS window capture, as {@link record} does for
@@ -233,29 +240,51 @@ export async function openDocsWalk(
     options.collection,
   );
 
+  /** Layers a recording already captured while its notice showed. */
+  const taken = new Set<string>();
+  const shoot = async (layer: string, notices: boolean) => {
+    await mkdir(captures, { recursive: true });
+    // A notice is transient: the walk asserts it, and the image leaves it
+    // out unless the notice is what the step shows.
+    if (!notices) await clearNotices(vaultId);
+    else
+      // A new notice slides in from the window's right edge.
+      await obRun(vaultId, async ({ page }) => {
+        // The image is taken either way; a notice still moving shows cut.
+        await page
+          .until(
+            "notices in place",
+            () =>
+              [...document.querySelectorAll(".notice")].every(
+                (n) => n.getBoundingClientRect().right <= window.innerWidth,
+              ),
+            2000,
+          )
+          .catch(() => undefined);
+      });
+    // A capture taken in the frame after a change can show the old DOM.
+    await obRun(
+      vaultId,
+      () =>
+        new Promise<void>((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => r())),
+        ),
+    );
+    await cli([
+      `vault=${vaultId}`,
+      "dev:screenshot",
+      `path=${join(captures, `${layer}.png`)}`,
+    ]);
+  };
+
   const owned = stack.move();
   return {
     vaultId,
     zotero,
     async capture(layer, { notices = false } = {}) {
       if (!captureRequested()) return;
-      await mkdir(captures, { recursive: true });
-      // A notice is transient: the walk asserts it, and the image leaves it
-      // out unless the notice is what the step shows.
-      if (!notices) await clearNotices(vaultId);
-      // A capture taken in the frame after a change can show the old DOM.
-      await obRun(
-        vaultId,
-        () =>
-          new Promise<void>((r) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => r())),
-          ),
-      );
-      await cli([
-        `vault=${vaultId}`,
-        "dev:screenshot",
-        `path=${join(captures, `${layer}.png`)}`,
-      ]);
+      if (taken.delete(layer)) return;
+      await shoot(layer, notices);
     },
     async compose(name) {
       if (!captureRequested()) return;
@@ -282,7 +311,7 @@ export async function openDocsWalk(
         { windowsHide: true },
       );
     },
-    async record(name, actions) {
+    async record(name, actions, { notices = false } = {}) {
       if (!recordRequested()) return actions();
       const frames = join(captures, `${name}.frames`);
       await rm(frames, { recursive: true, force: true });
@@ -290,6 +319,24 @@ export async function openDocsWalk(
       let result: Awaited<ReturnType<typeof actions>>;
       try {
         result = await actions();
+        if (notices && captureRequested()) {
+          // The notice lasts a few seconds, less than the clip's rest and
+          // its end; the image leaves the drawn pointer out.
+          await obRun(vaultId, () => {
+            for (const el of document.querySelectorAll<HTMLElement>(
+              "[data-docs-walk-pointer]",
+            ))
+              el.style.visibility = "hidden";
+          });
+          await shoot(name, true);
+          taken.add(name);
+          await obRun(vaultId, () => {
+            for (const el of document.querySelectorAll<HTMLElement>(
+              "[data-docs-walk-pointer]",
+            ))
+              el.style.visibility = "";
+          });
+        }
         await new Promise((r) => setTimeout(r, RECORD_REST * 1000));
       } finally {
         const recorded = await obRun(vaultId, async ({ page }) => {

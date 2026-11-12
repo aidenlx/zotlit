@@ -124,6 +124,62 @@ function tableWhen(
   ) as Promise<Table>;
 }
 
+/**
+ * Whether the table shows the text of the Title column (its name and each
+ * paper's title) and of the rating column (its name and each rating) whole
+ * inside its tab.
+ */
+function columnsWhole(
+  vaultId: string,
+): Promise<{ title: boolean; rating: boolean }> {
+  return obRun(
+    vaultId,
+    ({ app }, { file, titleLabel, ratingLabel }) => {
+      const leaf = app.workspace
+        .getLeavesOfType("zotlit-query-file")
+        .find(
+          (l) => (l.view as QueryFileView).file?.path === file,
+        ) as TableLeaf;
+      const el = leaf.view.contentEl;
+      const pane = el.getBoundingClientRect();
+      /** Each box of the text in `cell`, without its padding and icon. */
+      const whole = (cell: Element) => {
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        const boxes: DOMRect[] = [];
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (!n.textContent?.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(n);
+          const box = range.getBoundingClientRect();
+          // Text that does not render has an empty box.
+          if (box.width > 0 && box.height > 0) boxes.push(box);
+        }
+        return (
+          boxes.length > 0 &&
+          boxes.every(
+            (b) => b.left >= pane.left - 1 && b.right <= pane.right + 1,
+          )
+        );
+      };
+      const heads = [...el.querySelectorAll<HTMLTableCellElement>("th")];
+      const column = (label: string) => {
+        const head = heads.find((th) => th.textContent.trim() === label);
+        if (!head) return false;
+        const cells = [
+          ...el.querySelectorAll<HTMLTableRowElement>("tbody tr"),
+        ].map((row) => row.cells[head.cellIndex]!);
+        return [head, ...cells].every(whole);
+      };
+      return { title: column(titleLabel), rating: column(ratingLabel) };
+    },
+    {
+      file: FILE,
+      titleLabel: m.query_view_property_title(),
+      ratingLabel: m.query_view_vault_property_label({ name: PROPERTY }),
+    },
+  );
+}
+
 /** Opens the Properties menu of the table and answers once its search shows. */
 async function openProperties(vaultId: string): Promise<void> {
   await obRun(
@@ -511,6 +567,31 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
       );
     const before = await modified();
     const { entries, added } = await walk.record("step-4", async () => {
+      // The new column takes the table past the tab's width, so the reader
+      // first closes both sidebars with their buttons: then every column fits
+      // beside the titles. The sidebars stay closed for the rest of the lesson.
+      await obRun(
+        walk.vaultId,
+        async ({ app, page }) => {
+          const pointer = page.scratch.docsWalkPointer;
+          for (const side of ["right", "left"] as const) {
+            const split =
+              side === "right"
+                ? app.workspace.rightSplit
+                : app.workspace.leftSplit;
+            if (split.collapsed) continue;
+            const toggle = document.querySelector<HTMLElement>(
+              `.sidebar-toggle-button.mod-${side} .clickable-icon`,
+            )!;
+            await pointer?.point(toggle);
+            await page.trusted(window).click(toggle);
+            await page.until(`${side} sidebar closed`, () => split.collapsed);
+            await new Promise((r) => setTimeout(r, pointer ? 500 : 100));
+          }
+        },
+        undefined,
+        STEP,
+      );
       await openProperties(walk.vaultId);
       const entries = await searchProperties(walk.vaultId, PROPERTY, {
         action: "add-vault-property",
@@ -589,6 +670,10 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
     expect(await readNotices(walk.vaultId)).toContain(m.notice_created_note());
     await obRun(walk.vaultId, () => {
       (activeDocument.activeElement as HTMLElement | null)?.blur();
+    });
+    expect(await columnsWhole(walk.vaultId)).toEqual({
+      title: true,
+      rating: true,
     });
     await walk.capture("step-4");
     await walk.compose("step-4");
@@ -669,6 +754,10 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
       PAPERS.wilson.key,
       PAPERS.munafo.key,
     ]);
+    expect(await columnsWhole(walk.vaultId)).toEqual({
+      title: true,
+      rating: true,
+    });
     await walk.capture("step-5");
     await walk.compose("step-5");
   });

@@ -330,42 +330,45 @@ describe.skipIf(!reachable)(
     });
 
     it("step 4: select Export; a notice with the file name and the style", async () => {
-      const notices = await walk.record("step-4", () =>
-        obRun(
-          walk.vaultId,
-          async ({ page }, { title, done, failed }) => {
-            const pointer = page.scratch.docsWalkPointer;
-            const dialog = [...document.querySelectorAll(".modal")].find(
-              (d) => d.querySelector(".modal-title")?.textContent === title,
-            );
-            const button = await page.stands(
-              dialog?.querySelector<HTMLElement>("button.mod-cta"),
-              "Export",
-            );
-            await pointer?.point(button);
-            const at = button.getBoundingClientRect();
-            page.press(button, "Export");
-            await page.until(
-              "export ends",
-              () =>
-                page.scratch.docsWalkNotices!.some(
-                  (t) => t.startsWith(done) || t.startsWith(failed),
-                ),
-              60000,
-            );
-            // The pointer leaves the notice in the top right corner clear.
-            await pointer?.park(at.left, at.bottom);
-            return page.scratch.docsWalkNotices!;
-          },
-          {
-            title: m.pandoc_export_title(),
-            done: m
-              .notice_pandoc_export_done({ file: "", style: "" })
-              .split(" ")[0]!,
-            failed: m.notice_pandoc_export_failed(),
-          },
-          { timeoutMs: 90000 },
-        ),
+      const notices = await walk.record(
+        "step-4",
+        () =>
+          obRun(
+            walk.vaultId,
+            async ({ page }, { title, done, failed }) => {
+              const pointer = page.scratch.docsWalkPointer;
+              const dialog = [...document.querySelectorAll(".modal")].find(
+                (d) => d.querySelector(".modal-title")?.textContent === title,
+              );
+              const button = await page.stands(
+                dialog?.querySelector<HTMLElement>("button.mod-cta"),
+                "Export",
+              );
+              await pointer?.point(button);
+              const at = button.getBoundingClientRect();
+              page.press(button, "Export");
+              await page.until(
+                "export ends",
+                () =>
+                  page.scratch.docsWalkNotices!.some(
+                    (t) => t.startsWith(done) || t.startsWith(failed),
+                  ),
+                60000,
+              );
+              // The pointer leaves the notice in the top right corner clear.
+              await pointer?.park(at.left, at.bottom);
+              return page.scratch.docsWalkNotices!;
+            },
+            {
+              title: m.pandoc_export_title(),
+              done: m
+                .notice_pandoc_export_done({ file: "", style: "" })
+                .split(" ")[0]!,
+              failed: m.notice_pandoc_export_failed(),
+            },
+            { timeoutMs: 90000 },
+          ),
+        { notices: true },
       );
       expect(notices).toContain(
         m.notice_pandoc_export_done({ file: EXPORTED_NAME, style: APA_TITLE }),
