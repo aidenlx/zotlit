@@ -640,10 +640,20 @@ async function startRecording(
           const targets = (
             Array.isArray(target) ? target : [target]
           ) as readonly LookTarget[];
+          // Only the part of each target inside the window counts: a hidden
+          // or scrolled-out target would pull the view off the subject.
           const rect = around(
-            targets.map((x) =>
-              rectOf(x instanceof Element ? x.getBoundingClientRect() : x),
-            ),
+            targets
+              .map((x) => {
+                const b = x instanceof Element ? x.getBoundingClientRect() : x;
+                return rectOf({
+                  left: Math.max(b.left, 0),
+                  top: Math.max(b.top, 0),
+                  right: Math.min(b.right, window.innerWidth),
+                  bottom: Math.min(b.bottom, window.innerHeight),
+                });
+              })
+              .filter((r) => r.w > 0 && r.h > 0),
           );
           if (!rect) return;
           events.push({
