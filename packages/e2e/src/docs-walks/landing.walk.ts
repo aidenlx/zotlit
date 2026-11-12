@@ -210,6 +210,8 @@ describe.skipIf(!reachable)("Landing page clips", () => {
       collection: SLUG,
       vaultCase: "docs",
       window: WINDOW,
+      // The landing clips keep the whole window.
+      camera: false,
     });
     // `setSize` sets the outer size; the clip needs the content area itself.
     const size = await obRun(
