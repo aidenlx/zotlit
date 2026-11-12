@@ -180,6 +180,43 @@ function columnsWhole(
   );
 }
 
+/**
+ * Ends a recorded clip on the table's header row, or on the header and cells
+ * of the column `label` names.
+ */
+async function lookAtTable(vaultId: string, label = ""): Promise<void> {
+  await obRun(
+    vaultId,
+    async ({ app, page }, { file, label }) => {
+      const pointer = page.scratch.docsWalkPointer;
+      if (!pointer) return;
+      const el = (
+        app.workspace
+          .getLeavesOfType("zotlit-query-file")
+          .find(
+            (l) => (l.view as QueryFileView).file?.path === file,
+          ) as TableLeaf
+      ).view.contentEl;
+      // The first header cell, over the row toggles, has no name.
+      const head = label
+        ? [...el.querySelectorAll<HTMLTableCellElement>("th")].find(
+            (th) => th.textContent.trim() === label,
+          )
+        : undefined;
+      const parts: Element[] = head
+        ? [
+            head,
+            ...[...el.querySelectorAll<HTMLTableRowElement>("tbody tr")].map(
+              (row) => row.cells[head.cellIndex]!,
+            ),
+          ]
+        : [...el.querySelectorAll("th")];
+      if (parts.length > 0) await pointer.look(parts);
+    },
+    { file: FILE, label },
+  );
+}
+
 /** Opens the Properties menu of the table and answers once its search shows. */
 async function openProperties(vaultId: string): Promise<void> {
   await obRun(
@@ -398,6 +435,8 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
             const t = modal.querySelector("[role=status]")!.textContent;
             return t.includes(file) && t;
           });
+          // The camera shows the file the dialog will create.
+          await pointer?.look(modal.querySelector("[role=status]")!);
           const title = modal.querySelector(".modal-title")!.textContent;
           // The folder field suggests folders as the reader types.
           const suggestions = document.querySelectorAll(
@@ -413,10 +452,14 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
           );
           if (pointer) {
             await new Promise((r) => setTimeout(r, 500));
-            const b = app.workspace
-              .getMostRecentLeaf()!
-              .view.containerEl.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.bottom - 24);
+            // The step ends on the new tab and its papers.
+            const opened = app.workspace.getMostRecentLeaf()!;
+            await pointer.look([
+              (opened as unknown as { tabHeaderEl: HTMLElement }).tabHeaderEl,
+              ...opened.view.containerEl.querySelectorAll(
+                "[data-query-papers-row]",
+              ),
+            ]);
           }
           return {
             title,
@@ -493,10 +536,9 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
             () => !document.querySelector("[data-query-view-list]"),
           );
           await view.query.settled;
-          if (pointer) {
-            const b = el.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.bottom - 24);
-          }
+          // The step ends on the table.
+          const table = el.querySelector("table");
+          if (table) await pointer?.look(table);
         },
         { file: FILE },
         STEP,
@@ -534,6 +576,8 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
         path: "dateModified",
       });
       await closeMenus(walk.vaultId);
+      // The step ends on the columns.
+      await lookAtTable(walk.vaultId);
       return offered;
     });
     expect(offered[0]).toBe(m.query_view_properties_add({ name: "creators" }));
@@ -650,6 +694,11 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
           (t) => t.ratings[key] === value,
         );
       }
+      // The step ends on the rating column.
+      await lookAtTable(
+        walk.vaultId,
+        m.query_view_vault_property_label({ name: PROPERTY }),
+      );
       return { entries, added };
     });
     expect(entries).toContain(
@@ -683,7 +732,7 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
     const sorted = await walk.record("step-5", () =>
       obRun(
         walk.vaultId,
-        async ({ app, page }, { file }) => {
+        async ({ app, page }, { file, titleLabel, yearLabel }) => {
           const pointer = page.scratch.docsWalkPointer;
           const leaf = app.workspace
             .getLeavesOfType("zotlit-query-file")
@@ -726,13 +775,26 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
               ? (shown.selectedOptions[0]?.text ?? "")
               : (shown?.innerText.trim() ?? "");
           await page.closeToolbarPopover(el, "sort");
-          if (pointer) {
-            const b = el.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.bottom - 24);
-          }
+          // The step ends on the titles and years in their new order.
+          const heads = [...el.querySelectorAll<HTMLTableCellElement>("th")];
+          const columns = heads.filter((th) =>
+            [titleLabel, yearLabel].includes(th.textContent.trim()),
+          );
+          await pointer?.look(
+            columns.flatMap((head) => [
+              head,
+              ...[...el.querySelectorAll<HTMLTableRowElement>("tbody tr")].map(
+                (row) => row.cells[head.cellIndex]!,
+              ),
+            ]),
+          );
           return { name, names, by };
         },
-        { file: FILE },
+        {
+          file: FILE,
+          titleLabel: m.query_view_property_title(),
+          yearLabel: m.query_view_property_year(),
+        },
         STEP,
       ),
     );
@@ -857,10 +919,11 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
           heading?.scrollIntoView({ block: "start", behavior: "instant" });
           editor.setCursor({ line: 0, ch: 0 });
           await new Promise((r) => setTimeout(r, 500));
-          if (pointer) {
-            const b = leaf.view.contentEl.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.bottom - 24);
-          }
+          // The step ends on the heading and the pasted table.
+          const table = leaf.view.contentEl.querySelector("table");
+          await pointer?.look(
+            [heading, table].filter((e) => e !== null && e !== undefined),
+          );
           return app.vault.read(leaf.view.file!);
         },
         { draftPath: DRAFT },

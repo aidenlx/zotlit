@@ -162,6 +162,8 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
             (b) => b.textContent === install,
           );
           if (press) page.press(press, "Install");
+          // The step ends on the row, where the status appears.
+          await pointer?.look(row);
           return { buttons, pressed: !!press };
         },
         {
@@ -298,6 +300,8 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
           await new Promise((r) => setTimeout(r, 500));
           const caret = cm.coordsAtPos(cm.state.selection.main.head)!;
           const box = popup.getBoundingClientRect();
+          // The step ends on the typed text and the list under it.
+          await pointer?.look([popup, caret]);
           return {
             rows: [
               ...popup.querySelectorAll<HTMLElement>(".suggestion-item"),
@@ -344,6 +348,20 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
             () => editor.getValue().includes(`[@${citekey}]`),
             5000,
           );
+          const pointer = page.scratch.docsWalkPointer;
+          if (pointer) {
+            // The step ends on the citation in the draft.
+            const at = editor.getValue().indexOf(`[@${citekey}]`);
+            const from = editor.cm.coordsAtPos(at);
+            const to = editor.cm.coordsAtPos(at + `[@${citekey}]`.length);
+            if (from && to)
+              await pointer.look({
+                left: from.left,
+                right: to.right,
+                top: Math.min(from.top, to.top),
+                bottom: Math.max(from.bottom, to.bottom),
+              });
+          }
           return editor
             .getValue()
             .split("\n")
@@ -422,8 +440,8 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
           });
           if (pointer) {
             await new Promise((r) => setTimeout(r, 700));
-            const b = draft.view.contentEl.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.top + b.height * 0.7);
+            // The step ends on the formatted citation.
+            await pointer.look(cite);
           }
           return { line, cites };
         },
@@ -483,6 +501,8 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
             },
             10000,
           );
+          // The step ends on the citation and its reference.
+          await pointer?.look([cite, pop.hoverEl]);
           await new Promise((r) => setTimeout(r, 800));
           return pop.hoverEl.innerText;
         },
@@ -629,9 +649,10 @@ describe.skipIf(!reachable)("Lesson 3: Cite while you write", () => {
           side!.querySelector(card)!.scrollIntoView({ block: "center" });
           await new Promise((r) => setTimeout(r, 1200));
           if (pointer) {
-            // The pointer leaves the quote for the empty foot of the draft.
-            const b = beside.view.contentEl.getBoundingClientRect();
-            await pointer.park(b.right - 14, b.bottom - 24);
+            // The pointer steps left of the drop, off the quote, and the step
+            // ends on the quote block.
+            await pointer.park(rect.left - 35, (rect.top + rect.bottom) / 2);
+            if (box) await pointer.look(box);
           }
           return { label, doc: editor.getValue(), rendered: !!box };
         },

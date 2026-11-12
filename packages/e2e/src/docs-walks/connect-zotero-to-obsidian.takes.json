@@ -1,0 +1,852 @@
+{
+  "step-2": {
+    "recordedAt": "2026-11-12T17:16:56.715714111Z",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 2: look at the first line of the tab, then close the setup section with its × button; Connect to Zotero has a green check and your item count, and then your papers fill the tab",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-2 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-2.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-2.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 6.3,
+    "outputs": {
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2.webm": 359013,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2.mp4": 350462,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-2.poster.webp": 57622
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "park",
+          "t": 1.6038200855255127,
+          "x": 1029,
+          "y": 198.1875
+        },
+        {
+          "kind": "look",
+          "t": 1.6039202213287354,
+          "rect": {
+            "x": 355,
+            "y": 130.1875,
+            "w": 734,
+            "h": 44
+          }
+        },
+        {
+          "kind": "point",
+          "t": 3.712120294570923,
+          "x": 1068,
+          "y": 106,
+          "rect": {
+            "x": 1054,
+            "y": 94.1875,
+            "w": 28,
+            "h": 24
+          }
+        },
+        {
+          "kind": "look",
+          "t": 4.190120220184326,
+          "rect": {
+            "x": 572,
+            "y": 177.5859375,
+            "w": 516,
+            "h": 226.4609375
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.6039202213287354,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 2.2039202213287354,
+          "view": {
+            "x": 323,
+            "y": 0,
+            "w": 798,
+            "h": 476.5833333333333
+          }
+        },
+        {
+          "t": 2.962120294570923,
+          "view": {
+            "x": 323,
+            "y": 0,
+            "w": 798,
+            "h": 476.5833333333333
+          }
+        },
+        {
+          "t": 3.562120294570923,
+          "view": {
+            "x": 708,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.190120220184326,
+          "view": {
+            "x": 708,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.790120220184326,
+          "view": {
+            "x": 470,
+            "y": 75.81640625,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 6.310020208358765,
+          "view": {
+            "x": 470,
+            "y": 75.81640625,
+            "w": 720,
+            "h": 430
+          }
+        }
+      ]
+    }
+  },
+  "step-3": {
+    "recordedAt": "2026-11-12T17:17:08.788320068Z",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 3: type a few words of a title into Search papers and select the paper; a card under the list with the authors, the journal, and the buttons Open PDF and Write literature note",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-3 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-3.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-3.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 7.467,
+    "outputs": {
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3.webm": 377409,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3.mp4": 349850,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-3.poster.webp": 40812
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.6085340976715088,
+          "x": 668,
+          "y": 101,
+          "rect": {
+            "x": 608,
+            "y": 86.1875,
+            "w": 452,
+            "h": 30
+          }
+        },
+        {
+          "kind": "type",
+          "t": 1.7596337795257568,
+          "end": 4.592334032058716,
+          "rect": {
+            "x": 608,
+            "y": 86.1875,
+            "w": 452,
+            "h": 30
+          }
+        },
+        {
+          "kind": "point",
+          "t": 5.194833993911743,
+          "x": 612,
+          "y": 215,
+          "rect": {
+            "x": 572,
+            "y": 193.1796875,
+            "w": 516,
+            "h": 44.4921875
+          }
+        },
+        {
+          "kind": "look",
+          "t": 5.361433982849121,
+          "rect": {
+            "x": 344,
+            "y": 604,
+            "w": 756,
+            "h": 256
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8585340976715089,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4585340976715089,
+          "view": {
+            "x": 474,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 4.444833993911743,
+          "view": {
+            "x": 474,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.044833993911743,
+          "view": {
+            "x": 470,
+            "y": 0.42578125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.361433982849121,
+          "view": {
+            "x": 470,
+            "y": 0.42578125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 5.961433982849121,
+          "view": {
+            "x": 312,
+            "y": 370.27777777777777,
+            "w": 820,
+            "h": 489.72222222222223
+          }
+        },
+        {
+          "t": 7.481534004211426,
+          "view": {
+            "x": 312,
+            "y": 370.27777777777777,
+            "w": 820,
+            "h": 489.72222222222223
+          }
+        }
+      ]
+    }
+  },
+  "step-4": {
+    "recordedAt": "2026-11-12T17:17:15.984878906Z",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 4: select Open PDF; the PDF in a new tab, with your highlights in their original colours",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-4 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-4.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-4.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 4.133,
+    "outputs": {
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4.webm": 930521,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4.mp4": 786089,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-4.poster.webp": 178836
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.6055700778961182,
+          "x": 414,
+          "y": 809,
+          "rect": {
+            "x": 360,
+            "y": 793.6953125,
+            "w": 107.171875,
+            "h": 30
+          }
+        },
+        {
+          "kind": "look",
+          "t": 2.014969825744629,
+          "rect": {
+            "x": 832.6510009765625,
+            "y": 108,
+            "w": 595.3489990234375,
+            "h": 598.6875
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8555700778961183,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4555700778961183,
+          "view": {
+            "x": 53.5859375,
+            "y": 430,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.014969825744629,
+          "view": {
+            "x": 53.5859375,
+            "y": 430,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.614969825744629,
+          "view": {
+            "x": 330.3837209302326,
+            "y": 76,
+            "w": 1109.6162790697674,
+            "h": 662.6875
+          }
+        },
+        {
+          "t": 4.148969888687134,
+          "view": {
+            "x": 330.3837209302326,
+            "y": 76,
+            "w": 1109.6162790697674,
+            "h": 662.6875
+          }
+        }
+      ]
+    }
+  },
+  "step-5": {
+    "recordedAt": "2026-11-12T17:17:24.020948975Z",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 5: go back to the Zotero library tab and select Write literature note; the notice Literature note created. and the note in a new tab",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-5 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-5.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-5.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 4.767,
+    "outputs": {
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5.webm": 1001887,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5.mp4": 684278,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-5.poster.webp": 71484
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.603283166885376,
+          "x": 452,
+          "y": 23,
+          "rect": {
+            "x": 352,
+            "y": 6,
+            "w": 200,
+            "h": 34
+          }
+        },
+        {
+          "kind": "point",
+          "t": 2.3608829975128174,
+          "x": 554,
+          "y": 732,
+          "rect": {
+            "x": 471.171875,
+            "y": 717.1953125,
+            "w": 166.625,
+            "h": 30
+          }
+        },
+        {
+          "kind": "look",
+          "t": 2.6484830379486084,
+          "rect": {
+            "x": 376,
+            "y": 32,
+            "w": 1054,
+            "h": 585.5078125
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8532831668853761,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.453283166885376,
+          "view": {
+            "x": 92,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 1.6108829975128174,
+          "view": {
+            "x": 92,
+            "y": 0,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.2108829975128175,
+          "view": {
+            "x": 194.484375,
+            "y": 430,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.6484830379486084,
+          "view": {
+            "x": 194.484375,
+            "y": 430,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 3.2484830379486085,
+          "view": {
+            "x": 322,
+            "y": 0,
+            "w": 1118,
+            "h": 667.6944444444445
+          }
+        },
+        {
+          "t": 4.7644829750061035,
+          "view": {
+            "x": 322,
+            "y": 0,
+            "w": 1118,
+            "h": 667.6944444444445
+          }
+        }
+      ]
+    }
+  },
+  "step-6": {
+    "recordedAt": "2026-11-12T17:17:38.169441895Z",
+    "step": "Lesson 1: Connect Zotero to Obsidian and write your first literature note > step 6: under the line with the Zotero and PDF links, type a heading and your own thoughts; your text above the Annotations section",
+    "recipe": {
+      "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
+      "record": "DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=step-6 pnpm --filter @zotlit/e2e docs-walk src/docs-walks/connect-zotero-to-obsidian.walk.ts",
+      "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/connect-zotero-to-obsidian/step-6.frames apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6"
+    },
+    "env": {
+      "DOCS_WALK_RECORD": "1"
+    },
+    "versionGateBypass": true,
+    "recorder": {
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
+      "edited": false
+    },
+    "apps": {
+      "obsidian": "1.15.1 (installer 1.15.1)",
+      "obsidianPin": "1.14.5 (installer 1.14.5)",
+      "zotero": "10.0"
+    },
+    "vaultCase": "docs",
+    "window": {
+      "width": 1440,
+      "height": 860
+    },
+    "source": "obsidian-screencast",
+    "frames": ".scratch/docs-walks/connect-zotero-to-obsidian/step-6.frames",
+    "settings": {
+      "camera": true,
+      "zoom": 2,
+      "openHold": 0.7,
+      "lead": 0.15,
+      "ease": 0.6,
+      "minEase": 0.35,
+      "central": 0.6,
+      "padding": 32,
+      "opening": 1,
+      "rest": 1.5,
+      "glide": 0.6,
+      "typing": 1,
+      "width": 1440,
+      "fps": 30,
+      "posterQuality": 82,
+      "vp9Crf": 42,
+      "h264Crf": 32
+    },
+    "duration": 9.3,
+    "outputs": {
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6.webm": 557162,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6.mp4": 430917,
+      "apps/docs/public/img/learn/connect-zotero-to-obsidian/step-6.poster.webp": 47130
+    },
+    "camera": {
+      "track": "planned",
+      "viewport": {
+        "width": 1440,
+        "height": 860
+      },
+      "events": [
+        {
+          "kind": "point",
+          "t": 1.5966529846191406,
+          "x": 1081.671875,
+          "y": 513.4453125
+        },
+        {
+          "kind": "park",
+          "t": 2.351552963256836,
+          "x": 1115.671875,
+          "y": 513.4453125
+        },
+        {
+          "kind": "keys",
+          "t": 2.353452682495117,
+          "end": 4.391152858734131,
+          "rect": {
+            "x": 376,
+            "y": 501.4453125,
+            "w": 692,
+            "h": 164.0625
+          }
+        },
+        {
+          "kind": "keys",
+          "t": 4.391152858734131,
+          "end": 7.168352842330933,
+          "rect": {
+            "x": 376,
+            "y": 641.5078125,
+            "w": 692,
+            "h": 45.5
+          }
+        },
+        {
+          "kind": "look",
+          "t": 7.1691529750823975,
+          "rect": {
+            "x": 376,
+            "y": 589.4453125,
+            "w": 692,
+            "h": 167.5625
+          }
+        }
+      ],
+      "keyframes": [
+        {
+          "t": 0,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 0.8466529846191407,
+          "view": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 860
+          }
+        },
+        {
+          "t": 1.4466529846191407,
+          "view": {
+            "x": 720,
+            "y": 298.4453125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 1.6034526824951172,
+          "view": {
+            "x": 720,
+            "y": 298.4453125,
+            "w": 720,
+            "h": 430
+          }
+        },
+        {
+          "t": 2.2034526824951173,
+          "view": {
+            "x": 344,
+            "y": 357.7265625,
+            "w": 756,
+            "h": 451.5
+          }
+        },
+        {
+          "t": 3.6411528587341304,
+          "view": {
+            "x": 344,
+            "y": 357.7265625,
+            "w": 756,
+            "h": 451.5
+          }
+        },
+        {
+          "t": 4.2411528587341305,
+          "view": {
+            "x": 344,
+            "y": 408.5,
+            "w": 756,
+            "h": 451.5
+          }
+        },
+        {
+          "t": 9.29105281829834,
+          "view": {
+            "x": 344,
+            "y": 408.5,
+            "w": 756,
+            "h": 451.5
+          }
+        }
+      ]
+    }
+  }
+}

@@ -3,14 +3,32 @@
 // walks".
 
 import { prepareRunWindow } from "@e2e/background-throttling.ts";
+import type { CameraEvent, Rect } from "@e2e/docs-walks/camera.ts";
+import {
+  encodeClip,
+  encodeMovie,
+  readTrack,
+} from "@e2e/docs-walks/clip-encode.ts";
+import type { CameraLog, RecordedFrame } from "@e2e/docs-walks/clip-encode.ts";
+import { clipSettings } from "@e2e/docs-walks/clip-settings.ts";
+import type { ClipSettings } from "@e2e/docs-walks/clip-settings.ts";
+import {
+  outputSizes,
+  takeRecipe,
+  takeRun,
+  videoLength,
+  writeTake,
+} from "@e2e/docs-walks/takes.ts";
+import type { TakeRun } from "@e2e/docs-walks/takes.ts";
 import { clearNotices, cli, obRun } from "@e2e/obsidian-cli.ts";
 import { openPairedEnvironment } from "@e2e/paired-environment.ts";
 import { openZoteroRdp } from "@e2e/paired-zotero.ts";
 import type { ZoteroRdp } from "@e2e/paired-zotero.ts";
 import { execFile, spawn } from "node:child_process";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { promisify } from "node:util";
+import { expect } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
@@ -28,7 +46,12 @@ declare module "../page-helpers.ts" {
      */
     docsWalkPointer?: DocsWalkPointer;
     /** Ends the screencast that {@link DocsWalk.record} started. */
-    docsWalkStopRecording?: () => Promise<RecordedFrame[]>;
+    /** Hides the notices a recording held on screen, and stops holding. */
+    docsWalkReleaseNotices?: () => void;
+    docsWalkStopRecording?: () => Promise<{
+      frames: RecordedFrame[];
+      camera: CameraLog;
+    }>;
   }
 }
 
@@ -41,7 +64,10 @@ export interface DocsWalkPointer {
   point(el: Element, options?: { inset?: number }): Promise<void>;
   /** Glide to the point `x`, `y` in CSS px and show a click mark there. */
   pointAt(x: number, y: number): Promise<void>;
-  /** Glide to the point `x`, `y` without a click, to clear what it hides. */
+  /**
+   * Glide to the point `x`, `y` without a click, to clear what it hides. The
+   * camera does not follow it.
+   */
   park(x: number, y: number): Promise<void>;
   /** Type `text` into `input` one key at a time, as a person types. */
   type(input: HTMLInputElement, text: string): Promise<void>;
@@ -54,16 +80,21 @@ export interface DocsWalkPointer {
     put: (key: string) => void,
     options?: { speed?: number },
   ): Promise<void>;
+  /**
+   * Frame `target` with the camera, without a pointer move: an element, a
+   * box in CSS px, or several, framed together with `padding` px about them.
+   * A step ends on a look at what its check names.
+   */
+  look(
+    target: LookTarget | readonly LookTarget[],
+    options?: { padding?: number },
+  ): Promise<void>;
 }
 
-/** One screencast frame on disk, at its capture time in epoch seconds. */
-interface RecordedFrame {
-  file: string;
-  t: number;
-}
-
-/** How long a recording rests on the result after the last action, in seconds. */
-const RECORD_REST = 1.5;
+/** What {@link DocsWalkPointer.look} frames: an element or a box in CSS px. */
+export type LookTarget =
+  | Element
+  | { left: number; top: number; right: number; bottom: number };
 
 /**
  * Record the text of every notice the window shows from now on, for
@@ -117,9 +148,15 @@ export function captureRequested(): boolean {
   return process.env.DOCS_WALK_CAPTURE === "1";
 }
 
-/** `DOCS_WALK_RECORD=1` turns a walk's planned clips into docs videos. */
-export function recordRequested(): boolean {
-  return process.env.DOCS_WALK_RECORD === "1";
+/**
+ * `DOCS_WALK_RECORD=1` turns a walk's planned clips into docs videos; with
+ * `name`, `DOCS_WALK_ONLY` (clip names, comma-separated) narrows them to the
+ * clips it names, while the walk still runs every step.
+ */
+export function recordRequested(name?: string): boolean {
+  if (process.env.DOCS_WALK_RECORD !== "1") return false;
+  const only = process.env.DOCS_WALK_ONLY;
+  return !name || !only || only.split(",").includes(name);
 }
 
 export interface DocsWalkOptions {
@@ -135,6 +172,11 @@ export interface DocsWalkOptions {
    * @default { width: 1440, height: 860 }
    */
   window?: { width: number; height: number };
+  /**
+   * The walk's own clip settings, over the defaults and under the run's
+   * `DOCS_WALK_CLIP` overrides (`clip-settings.ts`).
+   */
+  clip?: Partial<ClipSettings>;
 }
 
 /** One open walk: a Paired Run on its Vault Case and its capture tools. */
@@ -160,7 +202,11 @@ export interface DocsWalk extends AsyncDisposable {
    * Run `actions`, the reader's actions of one step, and record them as the
    * clip `name`: `<name>.webm` and `<name>.mp4` beside the step's image. The
    * window shows a drawn pointer while it records, and the clip rests on the
-   * result for 1.5 s. Without `DOCS_WALK_RECORD=1`, it only runs `actions`.
+   * result. A camera planned from the pointer's actions, or the track
+   * `<slug>.camera/<name>.json` beside the walk, frames each part of the
+   * clip; its last frame is `<name>.poster.webp`, and its take goes into
+   * `<slug>.takes.json`. Without `DOCS_WALK_RECORD=1`, or with a
+   * `DOCS_WALK_ONLY` that leaves it out, it only runs `actions`.
    * With `notices`, for a step whose check is a notice, the layer `name` is
    * captured with its notices as soon as `actions` end, while the notice
    * still shows; the step's later `capture(name)` then keeps that layer.
@@ -231,6 +277,19 @@ export async function openDocsWalk(
 
   const captures = join(root, ".scratch", "docs-walks", options.slug);
   const layouts = join(import.meta.dirname, `${options.slug}.layouts`);
+  const tracks = join(import.meta.dirname, `${options.slug}.camera`);
+  const settings = clipSettings(options.clip);
+  const takes = join(import.meta.dirname, `${options.slug}.takes.json`);
+  let run: TakeRun | undefined;
+  /** The facts every take of this walk repeats, read once. */
+  const runFacts = async () =>
+    (run ??= await takeRun(root, {
+      slug: options.slug,
+      running: (await cli(["version"])).trim(),
+      zotero: await zotero.json<string>("Zotero.version"),
+      vaultCase: options.vaultCase ?? "demo",
+      window: { width, height },
+    }));
   const images = join(
     root,
     "apps",
@@ -312,10 +371,43 @@ export async function openDocsWalk(
       );
     },
     async record(name, actions, { notices = false } = {}) {
-      if (!recordRequested()) return actions();
+      if (!recordRequested(name)) return actions();
       const frames = join(captures, `${name}.frames`);
       await rm(frames, { recursive: true, force: true });
-      await startRecording(vaultId, frames);
+      await startRecording(vaultId, frames, settings);
+      if (notices)
+        // The notice the step checks stays on screen to the clip's end, so
+        // the clip rests on it.
+        await obRun(vaultId, ({ page }) => {
+          // A notice that leaves the page is put back where it was.
+          const held = new Set<Element>();
+          const observer = new MutationObserver((records) => {
+            for (const record of records)
+              for (const node of record.removedNodes) {
+                if (
+                  !(node instanceof Element) ||
+                  !(node.matches(".notice") || node.querySelector(".notice"))
+                )
+                  continue;
+                // Undo the fade and the slide up that hide it.
+                for (const n of [node, ...node.querySelectorAll(".notice")])
+                  if (n instanceof HTMLElement) {
+                    n.style.transition = "none";
+                    n.style.opacity = "1";
+                    n.style.marginTop = "";
+                  }
+                // A container that leaves next holds the notice again, and is
+                // put back in turn.
+                record.target.appendChild(node);
+                held.add(node);
+              }
+          });
+          observer.observe(document.body, { childList: true, subtree: true });
+          page.scratch.docsWalkReleaseNotices = () => {
+            observer.disconnect();
+            for (const node of held) node.remove();
+          };
+        });
       let result: Awaited<ReturnType<typeof actions>>;
       try {
         result = await actions();
@@ -337,7 +429,7 @@ export async function openDocsWalk(
               el.style.visibility = "";
           });
         }
-        await new Promise((r) => setTimeout(r, RECORD_REST * 1000));
+        await new Promise((r) => setTimeout(r, settings.rest * 1000));
       } finally {
         const recorded = await obRun(vaultId, async ({ page }) => {
           const stop = page.scratch.docsWalkStopRecording;
@@ -347,21 +439,50 @@ export async function openDocsWalk(
             "[data-docs-walk-pointer]",
           ))
             el.remove();
-          return stop ? await stop() : [];
+          const done = stop ? await stop() : undefined;
+          page.scratch.docsWalkReleaseNotices?.();
+          delete page.scratch.docsWalkReleaseNotices;
+          return done;
         });
         await writeFile(
           join(frames, "frames.json"),
-          JSON.stringify(recorded, null, 2),
+          JSON.stringify(recorded?.frames ?? [], null, 2),
         );
+        if (recorded)
+          await writeFile(
+            join(frames, "camera.json"),
+            JSON.stringify({ ...recorded.camera, settings }, null, 2),
+          );
       }
       await mkdir(images, { recursive: true });
-      await encodeClip(frames, join(images, name));
+      const out = join(images, name);
+      const override = settings.camera
+        ? await readTrack(join(tracks, `${name}.json`))
+        : undefined;
+      const cut = await encodeClip(frames, out, { track: override, settings });
+      await writeTake(takes, name, {
+        recordedAt: Temporal.Now.instant().toString(),
+        step: expect.getState().currentTestName ?? "",
+        recipe: takeRecipe(root, { slug: options.slug, name, out, frames }),
+        ...(await runFacts()),
+        source: "obsidian-screencast",
+        frames: relative(root, frames),
+        settings,
+        duration: await videoLength(`${out}.mp4`),
+        outputs: await outputSizes(root, out),
+        camera: {
+          track: !settings.camera ? "whole" : override ? "override" : "planned",
+          viewport: cut.log.viewport,
+          events: cut.log.events,
+          keyframes: cut.track.keyframes,
+        },
+      });
       return result;
     },
     async recordZotero(name, title, actions) {
       const pointAt = (window: string, element: string) =>
         zoteroPointer(zotero, window, element);
-      if (!recordRequested())
+      if (!recordRequested(name))
         return actions(
           async () => {},
           async () => {},
@@ -393,7 +514,7 @@ export async function openDocsWalk(
       const stop = async () => {
         if (stopped) return;
         stopped = true;
-        await new Promise((r) => setTimeout(r, RECORD_REST * 1000));
+        await new Promise((r) => setTimeout(r, settings.rest * 1000));
         capture.kill("SIGINT");
         await ended;
       };
@@ -409,7 +530,19 @@ export async function openDocsWalk(
           .catch(() => false);
       }
       await mkdir(images, { recursive: true });
-      await encodeMovie(movie, join(images, name), dialog ? 24 : 0);
+      const out = join(images, name);
+      await encodeMovie(movie, out, { inset: dialog ? 24 : 0, settings });
+      await writeTake(takes, name, {
+        recordedAt: Temporal.Now.instant().toString(),
+        step: expect.getState().currentTestName ?? "",
+        recipe: takeRecipe(root, { slug: options.slug, name, out }),
+        ...(await runFacts()),
+        source: "zotero-window",
+        frames: relative(root, movie),
+        settings,
+        duration: await videoLength(`${out}.mp4`),
+        outputs: await outputSizes(root, out),
+      });
       return result;
     },
     [Symbol.asyncDispose]: () => owned.disposeAsync(),
@@ -418,12 +551,17 @@ export async function openDocsWalk(
 
 /**
  * Start a CDP screencast of the vault's window into `dir`, one PNG per
- * frame with its timestamp, and draw the pointer the walk's steps use.
+ * frame with its timestamp, and draw the pointer the walk's steps use. Each
+ * pointer action is logged for the camera, on the frames' clock.
  */
-async function startRecording(vaultId: string, dir: string): Promise<void> {
+async function startRecording(
+  vaultId: string,
+  dir: string,
+  settings: ClipSettings,
+): Promise<void> {
   await obRun(
     vaultId,
-    async ({ page }, { dir }) => {
+    async ({ page }, { dir, opening, glideMs, typing, lookMs }) => {
       const fs = require("fs") as typeof import("node:fs");
       const path = require("path") as typeof import("node:path");
       fs.mkdirSync(dir, { recursive: true });
@@ -462,8 +600,7 @@ async function startRecording(vaultId: string, dir: string): Promise<void> {
       const pointer = document.body.createDiv({
         attr: { "data-docs-walk-pointer": "" },
       });
-      pointer.style.cssText =
-        "position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform 550ms cubic-bezier(.4,0,.2,1);";
+      pointer.style.cssText = `position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;transition:transform ${Math.max(0, glideMs - 50)}ms cubic-bezier(.4,0,.2,1);`;
       pointer.innerHTML =
         '<svg width="22" height="26" viewBox="0 0 22 26" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))"><path d="M2 1.5v20.2l5.3-5.1 3.4 7.8 3.4-1.5-3.3-7.6 7.4-.2z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
       const ring = document.body.createDiv({
@@ -478,8 +615,11 @@ async function startRecording(vaultId: string, dir: string): Promise<void> {
       };
       pointer.style.transform = `translate(${start.x}px,${start.y}px)`;
       const glide = async (x: number, y: number) => {
-        pointer.style.transform = `translate(${x}px,${y}px)`;
-        await wait(600);
+        // The arrow stays whole inside the window.
+        const cx = Math.min(Math.max(x, 0), window.innerWidth - 22);
+        const cy = Math.min(Math.max(y, 0), window.innerHeight - 26);
+        pointer.style.transform = `translate(${cx}px,${cy}px)`;
+        await wait(glideMs);
       };
       const mark = async (x: number, y: number) => {
         ring.style.left = `${x}px`;
@@ -493,7 +633,7 @@ async function startRecording(vaultId: string, dir: string): Promise<void> {
         );
         await wait(150);
       };
-      const keys = async (
+      const typeKeys = async (
         text: string,
         put: (key: string) => void,
         { speed = 1 }: { speed?: number } = {},
@@ -502,9 +642,67 @@ async function startRecording(vaultId: string, dir: string): Promise<void> {
         for (const ch of text) {
           put(ch);
           // A typist's rhythm: about eight keys a second, a little uneven.
-          await wait((ch === " " ? 150 : 85 + (n++ % 3) * 20) / speed);
+          await wait(
+            (ch === " " ? 150 : 85 + (n++ % 3) * 20) / (speed * typing),
+          );
         }
       };
+
+      // The camera's log: each action's time, on the frames' clock, and
+      // where it happens, in CSS px.
+      const events: CameraEvent[] = [];
+      const now = () => (performance.timeOrigin + performance.now()) / 1000;
+      const rectOf = (b: {
+        left: number;
+        top: number;
+        right: number;
+        bottom: number;
+      }): Rect => ({
+        x: b.left,
+        y: b.top,
+        w: b.right - b.left,
+        h: b.bottom - b.top,
+      });
+      const around = (rects: Rect[]): Rect | undefined => {
+        if (rects.length === 0) return undefined;
+        const x = Math.min(...rects.map((r) => r.x));
+        const y = Math.min(...rects.map((r) => r.y));
+        return {
+          x,
+          y,
+          w: Math.max(...rects.map((r) => r.x + r.w)) - x,
+          h: Math.max(...rects.map((r) => r.y + r.h)) - y,
+        };
+      };
+      /** The caret's box, or the focused field's. */
+      const caret = (): Rect | undefined => {
+        const el = document.activeElement;
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
+          return rectOf(el.getBoundingClientRect());
+        const selection = document.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          const boxes = range.getClientRects();
+          const b =
+            boxes.item(boxes.length - 1) ?? range.getBoundingClientRect();
+          if (b.height > 0) return rectOf(b);
+          // A caret on an empty line has no box: its line has one.
+          const node = selection.focusNode;
+          // A caret between elements points at the element after it.
+          const at =
+            node instanceof Element
+              ? (node.childNodes[selection.focusOffset] ?? node)
+              : node;
+          const line = (
+            at instanceof Element ? at : at?.parentElement
+          )?.closest(".cm-line, p, li");
+          if (line) return rectOf(line.getBoundingClientRect());
+        }
+        return el && el !== document.body
+          ? rectOf(el.getBoundingClientRect())
+          : undefined;
+      };
+
       page.scratch.docsWalkPointer = {
         async point(el, { inset } = {}) {
           el.scrollIntoView({ block: "nearest", behavior: "instant" });
@@ -512,70 +710,103 @@ async function startRecording(vaultId: string, dir: string): Promise<void> {
           const x = Math.round(b.left + (inset ?? Math.min(b.width / 2, 120)));
           const y = Math.round(b.top + b.height / 2);
           await glide(x, y);
+          events.push({ kind: "point", t: now(), x, y, rect: rectOf(b) });
           await mark(x, y);
         },
         async pointAt(x, y) {
           await glide(Math.round(x), Math.round(y));
+          events.push({ kind: "point", t: now(), x, y });
           await mark(Math.round(x), Math.round(y));
         },
-        park: (x, y) => glide(Math.round(x), Math.round(y)),
+        async park(x, y) {
+          await glide(Math.round(x), Math.round(y));
+          events.push({ kind: "park", t: now(), x, y });
+        },
         async type(input, text) {
           // The typist moves the pointer off the field, so it hides no letter.
           const b = input.getBoundingClientRect();
           pointer.style.transform = `translate(${Math.round(b.right - 40)}px,${Math.round(b.bottom + 16)}px)`;
           input.focus();
-          await keys(text, (ch) => {
+          const t = now();
+          await typeKeys(text, (ch) => {
             input.value += ch;
             input.dispatchEvent(new Event("input", { bubbles: true }));
           });
+          events.push({ kind: "type", t, end: now(), rect: rectOf(b) });
         },
-        keys,
+        async keys(text, put, options) {
+          const t = now();
+          const before = caret();
+          await typeKeys(text, put, options);
+          const rect = around(
+            [before, caret()].filter((r): r is Rect => r !== undefined),
+          );
+          events.push({ kind: "keys", t, end: now(), ...(rect && { rect }) });
+        },
+        async look(target, { padding } = {}) {
+          const targets = (
+            Array.isArray(target) ? target : [target]
+          ) as readonly LookTarget[];
+          // Only the part of each target inside the window counts: a hidden
+          // or scrolled-out target would pull the view off the subject.
+          const rect = around(
+            targets
+              .map((x) => {
+                const b = x instanceof Element ? x.getBoundingClientRect() : x;
+                return rectOf({
+                  left: Math.max(b.left, 0),
+                  top: Math.max(b.top, 0),
+                  right: Math.min(b.right, window.innerWidth),
+                  bottom: Math.min(b.bottom, window.innerHeight),
+                });
+              })
+              .filter((r) => r.w > 0 && r.h > 0),
+          );
+          if (!rect) return;
+          events.push({
+            kind: "look",
+            t: now(),
+            rect,
+            ...(padding !== undefined && { padding }),
+          });
+          // The camera's move to the look ends before the clip's rest.
+          await wait(lookMs);
+        },
       };
       page.scratch.docsWalkStopRecording = async () => {
         await cdp.sendCommand("Page.stopScreencast");
         cdp.removeListener("message", onMessage);
         // The clip's end, in the frames' clock: the last frame stands until now.
-        const end = (performance.timeOrigin + performance.now()) / 1000;
-        return [...frames, { file: "", t: end }];
+        const end = now();
+        const origin = frames[0]?.t ?? end;
+        return {
+          frames: [...frames, { file: "", t: end }],
+          camera: {
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+            events: events.map((e) =>
+              "end" in e
+                ? { ...e, t: e.t - origin, end: e.end - origin }
+                : { ...e, t: e.t - origin },
+            ),
+          },
+        };
       };
       await cdp.sendCommand("Page.startScreencast", {
         format: "png",
         everyNthFrame: 1,
       });
       // The clip opens on the scene before the first action.
-      await wait(300);
+      await wait(opening);
     },
-    { dir },
+    {
+      dir,
+      opening: settings.opening * 1000,
+      glideMs: settings.glide * 1000,
+      typing: settings.typing,
+      // With the camera off, a look moves nothing, so it does not wait.
+      lookMs: settings.camera ? settings.ease * 1000 : 0,
+    },
     { timeoutMs: 30000 },
-  );
-}
-
-/**
- * Encode the frames in `dir` at their real timing as `<out>.webm` (VP9) and
- * `<out>.mp4` (H.264), 1440 px wide at most, 30 frames a second, no audio.
- */
-async function encodeClip(dir: string, out: string): Promise<void> {
-  const frames = JSON.parse(
-    await readFile(join(dir, "frames.json"), "utf8"),
-  ) as RecordedFrame[];
-  const shown = frames.filter((f) => f.file);
-  if (shown.length === 0) throw new Error(`no frames recorded in ${dir}`);
-  const lines: string[] = [];
-  shown.forEach((frame, i) => {
-    const next = frames[i + 1] ?? frame;
-    lines.push(
-      `file '${frame.file}'`,
-      `duration ${Math.max(next.t - frame.t, 0.001).toFixed(4)}`,
-    );
-  });
-  // The concat demuxer drops the last duration unless the file repeats.
-  lines.push(`file '${shown.at(-1)!.file}'`);
-  const list = join(dir, "frames.txt");
-  await writeFile(list, `${lines.join("\n")}\n`);
-  await encodeBoth(
-    ["-y", "-f", "concat", "-safe", "0", "-i", list],
-    "scale='min(1440,iw)':-2:flags=lanczos,format=yuv420p",
-    out,
   );
 }
 
@@ -669,76 +900,4 @@ async function zoteroPointer(
     r.style.cssText='position:fixed;left:'+x+'px;top:'+y+'px;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;border:2px solid #7c5cff;background:rgba(124,92,255,.18);z-index:2147483646;pointer-events:none;';
     d.documentElement.appendChild(r);r.animate([{opacity:1,transform:'scale(.5)'},{opacity:0,transform:'scale(1.4)'}],{duration:450,easing:'ease-out',fill:'forwards'});
     await wait(200);return true;})()`);
-}
-
-/**
- * Encode a screen capture as {@link encodeClip} encodes a screencast, with
- * `inset` px cut from each edge.
- */
-async function encodeMovie(
-  movie: string,
-  out: string,
-  inset: number,
-): Promise<void> {
-  const crop = inset > 0 ? `crop=iw-${2 * inset}:ih-${2 * inset},` : "";
-  await encodeBoth(
-    ["-y", "-i", movie],
-    `${crop}scale='min(1440,iw)':-2:flags=lanczos,format=yuv420p`,
-    out,
-  );
-}
-
-/**
- * Encode `input` through `filter` as `<out>.webm` (VP9) and `<out>.mp4`
- * (H.264), 30 frames a second, no audio, tuned for sharp UI text.
- */
-async function encodeBoth(
-  input: string[],
-  filter: string,
-  out: string,
-): Promise<void> {
-  const shared = [
-    ...input,
-    "-vf",
-    filter,
-    "-fps_mode",
-    "cfr",
-    "-r",
-    "30",
-    "-an",
-  ];
-  await execFileAsync("ffmpeg", [
-    ...shared,
-    "-c:v",
-    "libvpx-vp9",
-    "-crf",
-    "30",
-    "-b:v",
-    "0",
-    "-deadline",
-    "good",
-    "-cpu-used",
-    "1",
-    "-row-mt",
-    "1",
-    "-tune-content",
-    "screen",
-    `${out}.webm`,
-  ]);
-  await execFileAsync("ffmpeg", [
-    ...shared,
-    "-c:v",
-    "libx264",
-    "-preset",
-    "slow",
-    "-crf",
-    "20",
-    "-tune",
-    "stillimage",
-    "-profile:v",
-    "high",
-    "-movflags",
-    "+faststart",
-    `${out}.mp4`,
-  ]);
 }
