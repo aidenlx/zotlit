@@ -230,6 +230,7 @@ describe.skipIf(!reachable)(
               )!;
               const b = first.getBoundingClientRect();
               await pointer.park(b.right - 60, b.bottom + 24);
+              await pointer.look(first);
               await new Promise((r) => setTimeout(r, 900));
             }
             const close = el.querySelector<HTMLElement>(
@@ -243,10 +244,8 @@ describe.skipIf(!reachable)(
               10000,
             );
             await new Promise((r) => setTimeout(r, 300));
-            if (pointer) {
-              const b = el.getBoundingClientRect();
-              await pointer.park(b.right - 40, b.bottom - 40);
-            }
+            // The step ends on the papers that now fill the tab.
+            await pointer?.look(el);
             const shell = el
               .querySelector("[data-library-shell]")!
               .getBoundingClientRect();
@@ -404,10 +403,8 @@ describe.skipIf(!reachable)(
             const list = el
               .querySelector("[data-query-item-row]")!
               .getBoundingClientRect();
-            if (pointer) {
-              // The pointer leaves the card, so it hides none of its text.
-              await pointer.park(tab.right - 30, list.top + 10);
-            }
+            // The step ends on the card.
+            await pointer?.look(card);
             return {
               placeholder,
               rows: [...el.querySelectorAll("[data-query-item-row]")].map((n) =>
@@ -580,15 +577,18 @@ describe.skipIf(!reachable)(
               value !== null && value.active && value.marks >= 2,
           },
         );
-        // The pointer rests at the tab's edge, clear of the highlights.
+        // The step ends on the highlights and the sidebar that lists them.
         await obRun(walk.vaultId, async ({ app, page }) => {
-          const body = app.workspace
-            .getLeavesOfType("pdf")[0]!
-            .view.containerEl.getBoundingClientRect();
-          await page.scratch.docsWalkPointer?.park(
-            body.right - 14,
-            body.bottom - 24,
-          );
+          const pdf = app.workspace.getLeavesOfType("pdf")[0]!;
+          await page.scratch.docsWalkPointer?.look([
+            ...pdf.view.containerEl.querySelectorAll(".zt-pdf-annotation-mark"),
+            ...app.workspace
+              .getLeavesOfType("zotero-annotation-view")
+              .flatMap((l) => [
+                ...l.view.containerEl.querySelectorAll(".zt-annot-card"),
+              ])
+              .filter((c) => c.checkVisibility()),
+          ]);
         });
         return opened!;
       });
@@ -651,8 +651,18 @@ describe.skipIf(!reachable)(
                 10000,
               );
               if (pointer) {
-                const b = noteLeaf.view.containerEl.getBoundingClientRect();
-                await pointer.park(b.right - 40, b.bottom - 60);
+                // The step ends on the notice and the new note: its title,
+                // its links, and its Annotations heading.
+                const content = noteLeaf.view.containerEl;
+                await pointer.look(
+                  [
+                    ...document.querySelectorAll(".notice"),
+                    content.querySelector(".inline-title"),
+                    [...content.querySelectorAll(".cm-line")].find(
+                      (l) => l.textContent === "Annotations",
+                    ),
+                  ].filter((e) => e !== null && e !== undefined),
+                );
               }
               return {
                 label,
@@ -735,9 +745,8 @@ describe.skipIf(!reachable)(
             const box = cm.coordsAtPos(at);
             if (pointer && box) {
               await pointer.pointAt(box.right + 6, (box.top + box.bottom) / 2);
-              // Then it rests at the note's right edge, clear of the text.
-              const pane = leaf.view.contentEl.getBoundingClientRect();
-              await pointer.park(pane.right - 14, box.bottom + 70);
+              // Then it steps right, off the lines the typing adds below.
+              await pointer.park(box.right + 40, (box.top + box.bottom) / 2);
             }
             cm.dispatch({ selection: { anchor: at } });
             const put = (text: string) =>
@@ -754,6 +763,20 @@ describe.skipIf(!reachable)(
               else put(text);
             }
             await leaf.view.save();
+            if (pointer) {
+              // The step ends on the new text above the Annotations heading.
+              const text = cm.state.doc.toString();
+              const from = cm.coordsAtPos(text.indexOf(heading));
+              const to = cm.coordsAtPos(text.indexOf("## Annotations"));
+              const lines = cm.contentDOM.getBoundingClientRect();
+              if (from && to)
+                await pointer.look({
+                  left: lines.left,
+                  right: lines.right,
+                  top: from.top,
+                  bottom: to.bottom,
+                });
+            }
             return app.vault.read(leaf.view.file!);
           },
           {

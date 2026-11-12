@@ -270,8 +270,8 @@ describe.skipIf(!reachable)(
             );
             const view = pdf.view.containerEl.getBoundingClientRect();
             const box = tools[0]!.getBoundingClientRect();
-            // The pointer rests in the tab's right margin, off the page text.
-            await pointer?.park(view.right - 8, view.top + view.height * 0.6);
+            // The step ends on the dimmed tools and the sidebar's heading.
+            await pointer?.look([...tools, header]);
             return {
               tools: tools.map((t) => t.dataset.ztTool),
               disabled: tools.map((t) => t.getAttribute("aria-disabled")),
@@ -352,11 +352,10 @@ describe.skipIf(!reachable)(
                 )?.innerText,
               10000,
             );
-            if (pointer) {
-              // The pointer leaves the sidebar's cards for the tab's margin.
-              const view = pdf.view.containerEl.getBoundingClientRect();
-              await pointer.park(view.right - 8, view.top + view.height * 0.6);
-            }
+            // The step ends on the toolbar's status.
+            const shown =
+              pdf.view.containerEl.querySelector(".zt-pdf-capability");
+            if (shown) await pointer?.look(shown);
             return { menu, status };
           },
           { file: PAPER.file, enable: m.capability_enable_editing() },
@@ -499,11 +498,8 @@ describe.skipIf(!reachable)(
               5000,
             );
             const box = row.getBoundingClientRect();
-            if (pointer) {
-              // Then it moves off the passage, so the clip shows all of it.
-              const view = pdf.view.containerEl.getBoundingClientRect();
-              await pointer.park(view.right - 8, box.bottom + 40);
-            }
+            // The step ends on the passage and the toolbar under it.
+            await pointer?.look([...rects, row]);
             return {
               verbs: [...row.querySelectorAll("[data-zt-verb]")].map((b) =>
                 b.getAttribute("aria-label"),
@@ -635,11 +631,8 @@ describe.skipIf(!reachable)(
               : mark.querySelector("[fill],[stroke]");
             card.scrollIntoView({ block: "center" });
             await new Promise((r) => setTimeout(r, 500));
-            if (pointer) {
-              // The pointer leaves the new highlight and its card in view.
-              const view = pdf.view.containerEl.getBoundingClientRect();
-              await pointer.park(view.right - 8, view.top + view.height * 0.6);
-            }
+            // The step ends on the yellow passage and its new card.
+            await pointer?.look([mark, card]);
             return {
               key,
               text: card.innerText,
@@ -757,12 +750,6 @@ describe.skipIf(!reachable)(
               () => app.workspace.getActiveFile()?.path === note,
               10000,
             );
-            if (pointer) {
-              const b = app.workspace
-                .getMostRecentLeaf()!
-                .view.containerEl.getBoundingClientRect();
-              await pointer.park(b.right - 14, b.top + b.height * 0.6);
-            }
             // The popup hides while the note's tab covers the PDF.
             return {
               before,
@@ -804,6 +791,8 @@ describe.skipIf(!reachable)(
             });
             await new Promise((r) => setTimeout(r, 900));
             await page.until("settled", () => true);
+            // The step ends on the new card in the Annotations section.
+            await page.scratch.docsWalkPointer?.look(card);
             return {
               cards: leaf.view.contentEl.querySelectorAll(
                 ".zt-annot-card[data-zotero-annotation-key]",
