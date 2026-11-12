@@ -1,6 +1,6 @@
 {
   "step-1": {
-    "recordedAt": "2026-11-12T17:01:02.274580078Z",
+    "recordedAt": "2026-11-12T17:22:40.15087793Z",
     "step": "Lesson 2: Read and annotate a paper in Obsidian > step 1: open the paper's PDF from its card; annotation tools at the top right are dimmed",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -13,7 +13,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -49,8 +49,8 @@
     },
     "duration": 4.767,
     "outputs": {
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-1.webm": 397310,
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-1.mp4": 391097,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-1.webm": 384443,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-1.mp4": 364372,
       "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-1.poster.webp": 60208
     },
     "camera": {
@@ -62,7 +62,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.5957069396972656,
+          "t": 1.6122758388519287,
           "x": 312,
           "y": 245,
           "rect": {
@@ -74,7 +74,7 @@
         },
         {
           "kind": "point",
-          "t": 2.372006893157959,
+          "t": 2.3907759189605713,
           "x": 786,
           "y": 283,
           "rect": {
@@ -86,7 +86,7 @@
         },
         {
           "kind": "look",
-          "t": 2.6027071475982666,
+          "t": 2.614475965499878,
           "rect": {
             "x": 770,
             "y": 48,
@@ -106,7 +106,7 @@
           }
         },
         {
-          "t": 0.8457069396972657,
+          "t": 0.8622758388519288,
           "view": {
             "x": 0,
             "y": 0,
@@ -115,7 +115,7 @@
           }
         },
         {
-          "t": 1.4457069396972657,
+          "t": 1.4622758388519288,
           "view": {
             "x": 128,
             "y": 30.32421875,
@@ -124,7 +124,7 @@
           }
         },
         {
-          "t": 1.622006893157959,
+          "t": 1.6407759189605713,
           "view": {
             "x": 128,
             "y": 30.32421875,
@@ -133,7 +133,7 @@
           }
         },
         {
-          "t": 2.222006893157959,
+          "t": 2.2407759189605714,
           "view": {
             "x": 425.5859375,
             "y": 68,
@@ -142,7 +142,7 @@
           }
         },
         {
-          "t": 2.6027071475982666,
+          "t": 2.614475965499878,
           "view": {
             "x": 425.5859375,
             "y": 68,
@@ -151,7 +151,7 @@
           }
         },
         {
-          "t": 3.2027071475982667,
+          "t": 3.214475965499878,
           "view": {
             "x": 713.6171875,
             "y": 0,
@@ -160,7 +160,7 @@
           }
         },
         {
-          "t": 4.724207162857056,
+          "t": 4.765876054763794,
           "view": {
             "x": 713.6171875,
             "y": 0,
@@ -172,7 +172,7 @@
     }
   },
   "step-2": {
-    "recordedAt": "2026-11-12T17:01:10.817271973Z",
+    "recordedAt": "2026-11-12T17:22:48.48375293Z",
     "step": "Lesson 2: Read and annotate a paper in Obsidian > step 2: select the heading of the Zotero annotations sidebar and choose Allow editing; the toolbar shows Waiting for approval in Zotero",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -185,7 +185,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -219,11 +219,11 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 4.7,
+    "duration": 4.633,
     "outputs": {
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-2.webm": 706838,
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-2.mp4": 413825,
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-2.poster.webp": 64574
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-2.webm": 711372,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-2.mp4": 443520,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-2.poster.webp": 64624
     },
     "camera": {
       "track": "planned",
@@ -234,7 +234,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.6005089282989502,
+          "t": 1.6112980842590332,
           "x": 1228,
           "y": 60,
           "rect": {
@@ -246,7 +246,7 @@
         },
         {
           "kind": "point",
-          "t": 2.3559088706970215,
+          "t": 2.3666977882385254,
           "x": 1235,
           "y": 274,
           "rect": {
@@ -258,7 +258,7 @@
         },
         {
           "kind": "look",
-          "t": 2.5161092281341553,
+          "t": 2.5270979404449463,
           "rect": {
             "x": 865.8203125,
             "y": 87.4375,
@@ -278,7 +278,7 @@
           }
         },
         {
-          "t": 0.8505089282989503,
+          "t": 0.8612980842590333,
           "view": {
             "x": 0,
             "y": 0,
@@ -287,7 +287,7 @@
           }
         },
         {
-          "t": 1.4505089282989503,
+          "t": 1.4612980842590333,
           "view": {
             "x": 720,
             "y": 0,
@@ -296,7 +296,7 @@
           }
         },
         {
-          "t": 1.6059088706970215,
+          "t": 1.6166977882385254,
           "view": {
             "x": 720,
             "y": 0,
@@ -305,7 +305,7 @@
           }
         },
         {
-          "t": 2.2059088706970216,
+          "t": 2.2166977882385255,
           "view": {
             "x": 720,
             "y": 59,
@@ -314,7 +314,7 @@
           }
         },
         {
-          "t": 2.5161092281341553,
+          "t": 2.5270979404449463,
           "view": {
             "x": 720,
             "y": 59,
@@ -323,7 +323,7 @@
           }
         },
         {
-          "t": 3.1161092281341554,
+          "t": 3.1270979404449464,
           "view": {
             "x": 616.91015625,
             "y": 0,
@@ -332,7 +332,7 @@
           }
         },
         {
-          "t": 4.6226091384887695,
+          "t": 4.634497880935669,
           "view": {
             "x": 616.91015625,
             "y": 0,
@@ -344,7 +344,7 @@
     }
   },
   "step-3": {
-    "recordedAt": "2026-11-12T17:01:16.776888916Z",
+    "recordedAt": "2026-11-12T17:22:54.285551025Z",
     "step": "Lesson 2: Read and annotate a paper in Obsidian > step 3: in Zotero, choose Always Allow (not Allow); a notice that editing is on, and the tools are in colour",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -356,7 +356,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -390,15 +390,15 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 4.133,
+    "duration": 3.1,
     "outputs": {
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-3.webm": 22239,
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-3.mp4": 16829,
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-3.poster.webp": 14264
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-3.webm": 20561,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-3.mp4": 15669,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-3.poster.webp": 14258
     }
   },
   "step-4": {
-    "recordedAt": "2026-11-12T17:01:26.373158936Z",
+    "recordedAt": "2026-11-12T17:23:02.590947998Z",
     "step": "Lesson 2: Read and annotate a paper in Obsidian > step 4: drag across a passage in the PDF; a small toolbar under the passage",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -411,7 +411,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -445,10 +445,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 5.767,
+    "duration": 5.033,
     "outputs": {
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-4.webm": 989034,
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-4.mp4": 611615,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-4.webm": 983028,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-4.mp4": 571474,
       "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-4.poster.webp": 100000
     },
     "camera": {
@@ -460,19 +460,19 @@
       "events": [
         {
           "kind": "point",
-          "t": 2.8393938541412354,
+          "t": 2.1216766834259033,
           "x": 335.25274658203125,
           "y": 488.28125
         },
         {
           "kind": "park",
-          "t": 3.591794013977051,
+          "t": 2.875776767730713,
           "x": 225.30027770996094,
           "y": 540.8984375
         },
         {
           "kind": "look",
-          "t": 3.616893768310547,
+          "t": 2.9009768962860107,
           "rect": {
             "x": 160.71875,
             "y": 477.78125,
@@ -492,7 +492,7 @@
           }
         },
         {
-          "t": 2.0893938541412354,
+          "t": 1.3716766834259033,
           "view": {
             "x": 0,
             "y": 0,
@@ -501,7 +501,7 @@
           }
         },
         {
-          "t": 2.6893938541412354,
+          "t": 1.9716766834259034,
           "view": {
             "x": 0,
             "y": 273.28125,
@@ -510,7 +510,7 @@
           }
         },
         {
-          "t": 3.6168937683105464,
+          "t": 2.9009768962860107,
           "view": {
             "x": 0,
             "y": 273.28125,
@@ -519,7 +519,7 @@
           }
         },
         {
-          "t": 4.2168937683105465,
+          "t": 3.500976896286011,
           "view": {
             "x": 0,
             "y": 326.58984375,
@@ -528,7 +528,7 @@
           }
         },
         {
-          "t": 5.741293907165527,
+          "t": 5.041676759719849,
           "view": {
             "x": 0,
             "y": 326.58984375,
@@ -540,7 +540,7 @@
     }
   },
   "step-5": {
-    "recordedAt": "2026-11-12T17:01:40.92689502Z",
+    "recordedAt": "2026-11-12T17:23:16.356974121Z",
     "step": "Lesson 2: Read and annotate a paper in Obsidian > step 5: select Add comment, type a comment, and select Highlight; the passage turns yellow and a card appears in the sidebar",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -553,7 +553,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -587,10 +587,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 9.133,
+    "duration": 8.467,
     "outputs": {
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-5.webm": 1067384,
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-5.mp4": 674380,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-5.webm": 957728,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-5.mp4": 694743,
       "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-5.poster.webp": 87094
     },
     "camera": {
@@ -602,7 +602,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.597264051437378,
+          "t": 1.6129918098449707,
           "x": 363,
           "y": 588,
           "rect": {
@@ -614,14 +614,14 @@
         },
         {
           "kind": "park",
-          "t": 2.358464002609253,
+          "t": 2.373891830444336,
           "x": 375.046875,
           "y": 655.296875
         },
         {
           "kind": "keys",
-          "t": 2.358464002609253,
-          "end": 4.987963914871216,
+          "t": 2.3739919662475586,
+          "end": 5.010191917419434,
           "rect": {
             "x": 181.046875,
             "y": 608.3984375,
@@ -631,7 +631,7 @@
         },
         {
           "kind": "point",
-          "t": 5.592963933944702,
+          "t": 5.6147918701171875,
           "x": 214,
           "y": 691,
           "rect": {
@@ -643,7 +643,7 @@
         },
         {
           "kind": "look",
-          "t": 6.311464071273804,
+          "t": 6.334791898727417,
           "rect": {
             "x": 1112,
             "y": 703.6875,
@@ -663,7 +663,7 @@
           }
         },
         {
-          "t": 0.847264051437378,
+          "t": 0.8629918098449708,
           "view": {
             "x": 0,
             "y": 0,
@@ -672,7 +672,7 @@
           }
         },
         {
-          "t": 1.447264051437378,
+          "t": 1.4629918098449708,
           "view": {
             "x": 3,
             "y": 373,
@@ -681,7 +681,7 @@
           }
         },
         {
-          "t": 4.842963933944702,
+          "t": 4.8647918701171875,
           "view": {
             "x": 3,
             "y": 373,
@@ -690,7 +690,7 @@
           }
         },
         {
-          "t": 5.442963933944702,
+          "t": 5.464791870117187,
           "view": {
             "x": 0,
             "y": 430,
@@ -699,7 +699,7 @@
           }
         },
         {
-          "t": 6.311464071273804,
+          "t": 6.334791898727417,
           "view": {
             "x": 0,
             "y": 430,
@@ -708,7 +708,7 @@
           }
         },
         {
-          "t": 6.911464071273803,
+          "t": 6.934791898727417,
           "view": {
             "x": 720,
             "y": 430,
@@ -717,7 +717,7 @@
           }
         },
         {
-          "t": 8.44866394996643,
+          "t": 8.475691795349121,
           "view": {
             "x": 720,
             "y": 430,
@@ -729,7 +729,7 @@
     }
   },
   "step-7": {
-    "recordedAt": "2026-11-12T17:01:57.909162109Z",
+    "recordedAt": "2026-11-12T17:23:33.033293945Z",
     "step": "Lesson 2: Read and annotate a paper in Obsidian > step 7: open your literature note from Lesson 1; the new highlight is in the Annotations section, with no update",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -742,7 +742,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -776,10 +776,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 5.967,
+    "duration": 5.933,
     "outputs": {
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-7.webm": 812575,
-      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-7.mp4": 749251,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-7.webm": 805268,
+      "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-7.mp4": 726393,
       "apps/docs/public/img/learn/annotate-pdfs-in-obsidian/step-7.poster.webp": 29394
     },
     "camera": {
@@ -791,8 +791,8 @@
       "events": [
         {
           "kind": "type",
-          "t": 1.0121560096740723,
-          "end": 2.0631561279296875,
+          "t": 1.0257396697998047,
+          "end": 2.085939884185791,
           "rect": {
             "x": 371,
             "y": 130,
@@ -802,7 +802,7 @@
         },
         {
           "kind": "point",
-          "t": 2.6664557456970215,
+          "t": 2.6889400482177734,
           "x": 423,
           "y": 207,
           "rect": {
@@ -814,7 +814,7 @@
         },
         {
           "kind": "look",
-          "t": 3.7914557456970215,
+          "t": 3.809839963912964,
           "rect": {
             "x": 578,
             "y": 420.7578125,
@@ -852,7 +852,7 @@
           }
         },
         {
-          "t": 1.9164557456970215,
+          "t": 1.9389400482177734,
           "view": {
             "x": 339,
             "y": 0,
@@ -861,7 +861,7 @@
           }
         },
         {
-          "t": 2.5164557456970216,
+          "t": 2.5389400482177735,
           "view": {
             "x": 63,
             "y": 0,
@@ -870,7 +870,7 @@
           }
         },
         {
-          "t": 3.791455745697021,
+          "t": 3.8098399639129634,
           "view": {
             "x": 63,
             "y": 0,
@@ -879,7 +879,7 @@
           }
         },
         {
-          "t": 4.391455745697021,
+          "t": 4.4098399639129635,
           "view": {
             "x": 384,
             "y": 254.1484375,
@@ -888,7 +888,7 @@
           }
         },
         {
-          "t": 5.940255880355835,
+          "t": 5.93563985824585,
           "view": {
             "x": 384,
             "y": 254.1484375,

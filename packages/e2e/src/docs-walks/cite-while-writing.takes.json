@@ -1,6 +1,6 @@
 {
   "step-1": {
-    "recordedAt": "2026-11-12T16:54:20.110269043Z",
+    "recordedAt": "2026-11-12T17:18:05.94138501Z",
     "step": "Lesson 3: Cite while you write > step 1: in Settings, ZotLit, Citations, select Install at Pandoc engine; Pandoc … is installed",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -12,7 +12,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -46,10 +46,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 5.567,
+    "duration": 5.2,
     "outputs": {
-      "apps/docs/public/img/learn/cite-while-writing/step-1.webm": 437950,
-      "apps/docs/public/img/learn/cite-while-writing/step-1.mp4": 359533,
+      "apps/docs/public/img/learn/cite-while-writing/step-1.webm": 440138,
+      "apps/docs/public/img/learn/cite-while-writing/step-1.mp4": 357431,
       "apps/docs/public/img/learn/cite-while-writing/step-1.poster.webp": 38658
     },
     "camera": {
@@ -61,7 +61,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 2.65869402885437,
+          "t": 2.3297269344329834,
           "x": 555,
           "y": 430,
           "rect": {
@@ -73,13 +73,13 @@
         },
         {
           "kind": "park",
-          "t": 3.417894124984741,
+          "t": 3.0891268253326416,
           "x": 1229,
           "y": 505.921875
         },
         {
           "kind": "look",
-          "t": 3.418194055557251,
+          "t": 3.0894269943237305,
           "rect": {
             "x": 495,
             "y": 383.8359375,
@@ -99,7 +99,7 @@
           }
         },
         {
-          "t": 1.9086940288543701,
+          "t": 1.5797269344329834,
           "view": {
             "x": 0,
             "y": 0,
@@ -108,7 +108,7 @@
           }
         },
         {
-          "t": 2.50869402885437,
+          "t": 2.1797269344329835,
           "view": {
             "x": 195,
             "y": 215,
@@ -117,7 +117,7 @@
           }
         },
         {
-          "t": 3.4181940555572505,
+          "t": 3.0894269943237305,
           "view": {
             "x": 195,
             "y": 215,
@@ -126,7 +126,7 @@
           }
         },
         {
-          "t": 4.018194055557251,
+          "t": 3.6894269943237306,
           "view": {
             "x": 463,
             "y": 201.74001736111111,
@@ -135,7 +135,7 @@
           }
         },
         {
-          "t": 5.53369402885437,
+          "t": 5.20492696762085,
           "view": {
             "x": 463,
             "y": 201.74001736111111,
@@ -147,7 +147,7 @@
     }
   },
   "step-2": {
-    "recordedAt": "2026-11-12T16:54:32.059134033Z",
+    "recordedAt": "2026-11-12T17:18:13.73123999Z",
     "step": "Lesson 3: Cite while you write > step 2: in your draft, type [@sandve; a list of matching papers under the cursor",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -159,7 +159,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -193,10 +193,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 5.333,
+    "duration": 5.067,
     "outputs": {
-      "apps/docs/public/img/learn/cite-while-writing/step-2.webm": 445206,
-      "apps/docs/public/img/learn/cite-while-writing/step-2.mp4": 331012,
+      "apps/docs/public/img/learn/cite-while-writing/step-2.webm": 430977,
+      "apps/docs/public/img/learn/cite-while-writing/step-2.mp4": 308996,
       "apps/docs/public/img/learn/cite-while-writing/step-2.poster.webp": 38898
     },
     "camera": {
@@ -208,14 +208,14 @@
       "events": [
         {
           "kind": "park",
-          "t": 1.599761962890625,
+          "t": 1.6030709743499756,
           "x": 1065.59375,
           "y": 536.875
         },
         {
           "kind": "keys",
-          "t": 1.5998620986938477,
-          "end": 2.4494619369506836,
+          "t": 1.6031711101531982,
+          "end": 2.4563710689544678,
           "rect": {
             "x": 392,
             "y": 574.375,
@@ -225,7 +225,7 @@
         },
         {
           "kind": "look",
-          "t": 2.952362060546875,
+          "t": 2.9598710536956787,
           "rect": {
             "x": 905.59375,
             "y": 600.875,
@@ -245,7 +245,7 @@
           }
         },
         {
-          "t": 0.8498620986938478,
+          "t": 0.8531711101531984,
           "view": {
             "x": 0,
             "y": 0,
@@ -254,7 +254,7 @@
           }
         },
         {
-          "t": 1.4498620986938477,
+          "t": 1.4531711101531983,
           "view": {
             "x": 360,
             "y": 358.2361111111111,
@@ -263,7 +263,7 @@
           }
         },
         {
-          "t": 2.952362060546875,
+          "t": 2.9598710536956787,
           "view": {
             "x": 360,
             "y": 358.2361111111111,
@@ -272,7 +272,7 @@
           }
         },
         {
-          "t": 3.552362060546875,
+          "t": 3.559871053695679,
           "view": {
             "x": 720,
             "y": 430,
@@ -281,7 +281,7 @@
           }
         },
         {
-          "t": 5.068262100219727,
+          "t": 5.075571060180664,
           "view": {
             "x": 720,
             "y": 430,
@@ -293,7 +293,7 @@
     }
   },
   "step-3": {
-    "recordedAt": "2026-11-12T16:54:40.129647949Z",
+    "recordedAt": "2026-11-12T17:18:19.486964111Z",
     "step": "Lesson 3: Cite while you write > step 3: press Enter; [@sandve2013] in your draft",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -305,7 +305,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -339,10 +339,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 4.6,
+    "duration": 4.133,
     "outputs": {
-      "apps/docs/public/img/learn/cite-while-writing/step-3.webm": 308502,
-      "apps/docs/public/img/learn/cite-while-writing/step-3.mp4": 200985,
+      "apps/docs/public/img/learn/cite-while-writing/step-3.webm": 267355,
+      "apps/docs/public/img/learn/cite-while-writing/step-3.mp4": 202663,
       "apps/docs/public/img/learn/cite-while-writing/step-3.poster.webp": 41292
     },
     "camera": {
@@ -354,7 +354,7 @@
       "events": [
         {
           "kind": "look",
-          "t": 2.0257019996643066,
+          "t": 2.021146059036255,
           "rect": {
             "x": 905.59375,
             "y": 576.875,
@@ -374,7 +374,7 @@
           }
         },
         {
-          "t": 2.0257019996643066,
+          "t": 2.021146059036255,
           "view": {
             "x": 0,
             "y": 0,
@@ -383,7 +383,7 @@
           }
         },
         {
-          "t": 2.6257019996643067,
+          "t": 2.621146059036255,
           "view": {
             "x": 602.54296875,
             "y": 371.375,
@@ -392,7 +392,7 @@
           }
         },
         {
-          "t": 4.133601903915405,
+          "t": 4.130146026611328,
           "view": {
             "x": 602.54296875,
             "y": 371.375,
@@ -404,7 +404,7 @@
     }
   },
   "step-4": {
-    "recordedAt": "2026-11-12T16:54:56.724888916Z",
+    "recordedAt": "2026-11-12T17:18:29.695686035Z",
     "step": "Lesson 3: Cite while you write > step 4: before the bracket, type , p. 2 and move the cursor away; (Sandve et al. 2013, 2)",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -416,7 +416,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -450,10 +450,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 7.167,
+    "duration": 6.7,
     "outputs": {
-      "apps/docs/public/img/learn/cite-while-writing/step-4.webm": 797288,
-      "apps/docs/public/img/learn/cite-while-writing/step-4.mp4": 727671,
+      "apps/docs/public/img/learn/cite-while-writing/step-4.webm": 797214,
+      "apps/docs/public/img/learn/cite-while-writing/step-4.mp4": 737168,
       "apps/docs/public/img/learn/cite-while-writing/step-4.poster.webp": 39724
     },
     "camera": {
@@ -465,20 +465,20 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.6020841598510742,
+          "t": 1.6011910438537598,
           "x": 1013.6953125,
           "y": 586.375
         },
         {
           "kind": "park",
-          "t": 2.3532841205596924,
+          "t": 2.3536908626556396,
           "x": 1053.6953125,
           "y": 635.875
         },
         {
           "kind": "keys",
-          "t": 2.3544840812683105,
-          "end": 3.0765841007232666,
+          "t": 2.3546910285949707,
+          "end": 3.077491044998169,
           "rect": {
             "x": 1013.6953125,
             "y": 576.875,
@@ -488,13 +488,13 @@
         },
         {
           "kind": "point",
-          "t": 3.67708420753479,
+          "t": 3.6794910430908203,
           "x": 396,
           "y": 183.9375
         },
         {
           "kind": "look",
-          "t": 4.602084159851074,
+          "t": 4.580790996551514,
           "rect": {
             "x": 905.59375,
             "y": 459.375,
@@ -514,7 +514,7 @@
           }
         },
         {
-          "t": 0.8520841598510743,
+          "t": 0.8511910438537599,
           "view": {
             "x": 0,
             "y": 0,
@@ -523,7 +523,7 @@
           }
         },
         {
-          "t": 1.4520841598510743,
+          "t": 1.4511910438537599,
           "view": {
             "x": 653.6953125,
             "y": 371.375,
@@ -532,7 +532,7 @@
           }
         },
         {
-          "t": 2.3270842075347904,
+          "t": 2.3294910430908207,
           "view": {
             "x": 653.6953125,
             "y": 371.375,
@@ -541,7 +541,7 @@
           }
         },
         {
-          "t": 2.92708420753479,
+          "t": 2.9294910430908203,
           "view": {
             "x": 33.92905159883719,
             "y": 0,
@@ -550,7 +550,7 @@
           }
         },
         {
-          "t": 3.52708420753479,
+          "t": 3.5294910430908204,
           "view": {
             "x": 36,
             "y": 0,
@@ -559,7 +559,7 @@
           }
         },
         {
-          "t": 4.602084159851074,
+          "t": 4.580790996551514,
           "view": {
             "x": 36,
             "y": 0,
@@ -568,7 +568,7 @@
           }
         },
         {
-          "t": 5.202084159851074,
+          "t": 5.180790996551513,
           "view": {
             "x": 626.765625,
             "y": 253.875,
@@ -577,7 +577,7 @@
           }
         },
         {
-          "t": 6.718184232711792,
+          "t": 6.70029091835022,
           "view": {
             "x": 626.765625,
             "y": 253.875,
@@ -589,7 +589,7 @@
     }
   },
   "step-5": {
-    "recordedAt": "2026-11-12T16:55:06.404500977Z",
+    "recordedAt": "2026-11-12T17:18:36.470865967Z",
     "step": "Lesson 3: Cite while you write > step 5: point at the citation; the paper's full reference",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -601,7 +601,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -635,10 +635,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 5.3,
+    "duration": 4.833,
     "outputs": {
-      "apps/docs/public/img/learn/cite-while-writing/step-5.webm": 313451,
-      "apps/docs/public/img/learn/cite-while-writing/step-5.mp4": 192121,
+      "apps/docs/public/img/learn/cite-while-writing/step-5.webm": 310020,
+      "apps/docs/public/img/learn/cite-while-writing/step-5.mp4": 199231,
       "apps/docs/public/img/learn/cite-while-writing/step-5.poster.webp": 39436
     },
     "camera": {
@@ -650,13 +650,13 @@
       "events": [
         {
           "kind": "park",
-          "t": 1.6017122268676758,
+          "t": 1.6006879806518555,
           "x": 1064.9375,
           "y": 475.375
         },
         {
           "kind": "look",
-          "t": 1.9222121238708496,
+          "t": 1.9161880016326904,
           "rect": {
             "x": 905.59375,
             "y": 459.375,
@@ -676,7 +676,7 @@
           }
         },
         {
-          "t": 1.9222121238708496,
+          "t": 1.9161880016326904,
           "view": {
             "x": 0,
             "y": 0,
@@ -685,7 +685,7 @@
           }
         },
         {
-          "t": 2.5222121238708497,
+          "t": 2.5161880016326905,
           "view": {
             "x": 720,
             "y": 307.6875,
@@ -694,7 +694,7 @@
           }
         },
         {
-          "t": 4.833112001419067,
+          "t": 4.835088014602661,
           "view": {
             "x": 720,
             "y": 307.6875,
@@ -706,7 +706,7 @@
     }
   },
   "step-6": {
-    "recordedAt": "2026-11-12T16:55:31.286315918Z",
+    "recordedAt": "2026-11-12T17:18:52.620993896Z",
     "step": "Lesson 3: Cite while you write > step 6: open the PDF beside the draft and drag a highlight's page label, such as p. 2, into the draft; a quote block with the passage, its citation and page, and your comment",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -718,7 +718,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -754,9 +754,9 @@
     },
     "duration": 9.667,
     "outputs": {
-      "apps/docs/public/img/learn/cite-while-writing/step-6.webm": 1967541,
-      "apps/docs/public/img/learn/cite-while-writing/step-6.mp4": 1726067,
-      "apps/docs/public/img/learn/cite-while-writing/step-6.poster.webp": 92918
+      "apps/docs/public/img/learn/cite-while-writing/step-6.webm": 1899250,
+      "apps/docs/public/img/learn/cite-while-writing/step-6.mp4": 1736937,
+      "apps/docs/public/img/learn/cite-while-writing/step-6.poster.webp": 92944
     },
     "camera": {
       "track": "planned",
@@ -767,19 +767,19 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.6555089950561523,
+          "t": 1.6549551486968994,
           "x": 312,
           "y": 200,
           "rect": {
             "x": 272,
             "y": 177.5859375,
-            "w": 522.5546875,
+            "w": 511.1875,
             "h": 44.4921875
           }
         },
         {
           "kind": "point",
-          "t": 2.4318089485168457,
+          "t": 2.432655096054077,
           "x": 786,
           "y": 283,
           "rect": {
@@ -791,25 +791,25 @@
         },
         {
           "kind": "point",
-          "t": 4.051609039306641,
+          "t": 4.053455114364624,
           "x": 1150.8515625,
           "y": 605.3125
         },
         {
           "kind": "park",
-          "t": 4.812708854675293,
+          "t": 4.805955171585083,
           "x": 77,
           "y": 706.375
         },
         {
           "kind": "park",
-          "t": 7.490208864212036,
+          "t": 7.4838550090789795,
           "x": 41,
           "y": 706.375
         },
         {
           "kind": "look",
-          "t": 7.490309000015259,
+          "t": 7.483955144882202,
           "rect": {
             "x": 76,
             "y": 386.875,
@@ -829,7 +829,7 @@
           }
         },
         {
-          "t": 0.9055089950561525,
+          "t": 0.9049551486968995,
           "view": {
             "x": 0,
             "y": 0,
@@ -838,25 +838,25 @@
           }
         },
         {
-          "t": 1.5055089950561524,
+          "t": 1.5049551486968995,
           "view": {
-            "x": 173.27734375,
+            "x": 167.59375,
             "y": 0,
             "w": 720,
             "h": 430
           }
         },
         {
-          "t": 1.6818089485168457,
+          "t": 1.6826550960540771,
           "view": {
-            "x": 173.27734375,
+            "x": 167.59375,
             "y": 0,
             "w": 720,
             "h": 430
           }
         },
         {
-          "t": 2.281808948516846,
+          "t": 2.2826550960540772,
           "view": {
             "x": 425.5859375,
             "y": 68,
@@ -865,7 +865,7 @@
           }
         },
         {
-          "t": 3.3016090393066406,
+          "t": 3.303455114364624,
           "view": {
             "x": 425.5859375,
             "y": 68,
@@ -874,7 +874,7 @@
           }
         },
         {
-          "t": 3.9016090393066407,
+          "t": 3.903455114364624,
           "view": {
             "x": 720,
             "y": 390.3125,
@@ -883,7 +883,7 @@
           }
         },
         {
-          "t": 6.890309000015258,
+          "t": 6.883955144882202,
           "view": {
             "x": 720,
             "y": 390.3125,
@@ -892,7 +892,7 @@
           }
         },
         {
-          "t": 7.490309000015258,
+          "t": 7.483955144882201,
           "view": {
             "x": 0,
             "y": 0,
@@ -901,7 +901,7 @@
           }
         },
         {
-          "t": 8.090309000015258,
+          "t": 8.083955144882202,
           "view": {
             "x": 0,
             "y": 254.2734375,
@@ -910,7 +910,7 @@
           }
         },
         {
-          "t": 9.624109029769897,
+          "t": 9.671755313873291,
           "view": {
             "x": 0,
             "y": 254.2734375,

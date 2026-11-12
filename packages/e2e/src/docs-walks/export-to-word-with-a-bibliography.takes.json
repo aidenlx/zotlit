@@ -1,6 +1,6 @@
 {
   "step-1": {
-    "recordedAt": "2026-11-12T16:51:57.864018066Z",
+    "recordedAt": "2026-11-12T17:15:49.271678955Z",
     "step": "Lesson 4: Export your draft to Word with a reference list > step 1: remove lines meant only for you, such as a to-do list; a draft you can send",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -12,7 +12,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -46,10 +46,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 5.967,
+    "duration": 5.2,
     "outputs": {
-      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-1.webm": 430981,
-      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-1.mp4": 319483,
+      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-1.webm": 419713,
+      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-1.mp4": 316490,
       "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-1.poster.webp": 54544
     },
     "camera": {
@@ -61,19 +61,19 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.8998191356658936,
+          "t": 1.636275053024292,
           "x": 222,
           "y": 652.125
         },
         {
           "kind": "park",
-          "t": 2.6518192291259766,
+          "t": 2.390275001525879,
           "x": 222,
           "y": 755.21875
         },
         {
           "kind": "look",
-          "t": 3.3687191009521484,
+          "t": 3.1077749729156494,
           "rect": {
             "x": 222,
             "y": 484.8125,
@@ -93,7 +93,7 @@
           }
         },
         {
-          "t": 1.1498191356658936,
+          "t": 0.8862750530242921,
           "view": {
             "x": 0,
             "y": 0,
@@ -102,7 +102,7 @@
           }
         },
         {
-          "t": 1.7498191356658936,
+          "t": 1.486275053024292,
           "view": {
             "x": 0,
             "y": 430,
@@ -111,7 +111,7 @@
           }
         },
         {
-          "t": 3.3687191009521484,
+          "t": 3.1077749729156494,
           "view": {
             "x": 0,
             "y": 430,
@@ -120,7 +120,7 @@
           }
         },
         {
-          "t": 3.9687191009521485,
+          "t": 3.7077749729156495,
           "view": {
             "x": 190,
             "y": 324.2048611111111,
@@ -129,7 +129,7 @@
           }
         },
         {
-          "t": 5.481119394302368,
+          "t": 5.2165749073028564,
           "view": {
             "x": 190,
             "y": 324.2048611111111,
@@ -141,7 +141,7 @@
     }
   },
   "step-2": {
-    "recordedAt": "2026-11-12T16:52:06.6208479Z",
+    "recordedAt": "2026-11-12T17:15:58.166218994Z",
     "step": "Lesson 4: Export your draft to Word with a reference list > step 2: open the command palette and run Export note with citations; a dialog, and Format is Word document",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -153,7 +153,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -187,10 +187,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 5.767,
+    "duration": 5.733,
     "outputs": {
-      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-2.webm": 349536,
-      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-2.mp4": 324385,
+      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-2.webm": 361249,
+      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-2.mp4": 324432,
       "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-2.poster.webp": 49796
     },
     "camera": {
@@ -202,14 +202,14 @@
       "events": [
         {
           "kind": "park",
-          "t": 1.6105382442474365,
+          "t": 1.6097931861877441,
           "x": 1109,
           "y": 130
         },
         {
           "kind": "keys",
-          "t": 1.610637903213501,
-          "end": 3.1062381267547607,
+          "t": 1.6097931861877441,
+          "end": 3.1039931774139404,
           "rect": {
             "x": 371,
             "y": 130,
@@ -219,7 +219,7 @@
         },
         {
           "kind": "look",
-          "t": 3.6159379482269287,
+          "t": 3.6113929748535156,
           "rect": {
             "x": 457,
             "y": 287.5859375,
@@ -239,7 +239,7 @@
           }
         },
         {
-          "t": 0.8606379032135011,
+          "t": 0.8597931861877443,
           "view": {
             "x": 0,
             "y": 0,
@@ -248,7 +248,7 @@
           }
         },
         {
-          "t": 1.460637903213501,
+          "t": 1.4597931861877442,
           "view": {
             "x": 339,
             "y": 0,
@@ -257,7 +257,7 @@
           }
         },
         {
-          "t": 3.6159379482269283,
+          "t": 3.611392974853515,
           "view": {
             "x": 339,
             "y": 0,
@@ -266,7 +266,7 @@
           }
         },
         {
-          "t": 4.215937948226928,
+          "t": 4.211392974853515,
           "view": {
             "x": 360,
             "y": 114.20703125,
@@ -275,7 +275,7 @@
           }
         },
         {
-          "t": 5.728538274765015,
+          "t": 5.719293117523193,
           "view": {
             "x": 360,
             "y": 114.20703125,
@@ -287,7 +287,7 @@
     }
   },
   "step-3": {
-    "recordedAt": "2026-11-12T16:52:13.242125Z",
+    "recordedAt": "2026-11-12T17:16:05.030037109Z",
     "step": "Lesson 4: Export your draft to Word with a reference list > step 3: choose the citation style you need, such as APA 7th edition; Only this export uses this style.",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -299,7 +299,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -333,10 +333,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 4.533,
+    "duration": 4.467,
     "outputs": {
-      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-3.webm": 229762,
-      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-3.mp4": 161305,
+      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-3.webm": 230057,
+      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-3.mp4": 159504,
       "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-3.poster.webp": 50026
     },
     "camera": {
@@ -348,7 +348,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.5992941856384277,
+          "t": 1.5953853130340576,
           "x": 871,
           "y": 403,
           "rect": {
@@ -360,13 +360,13 @@
         },
         {
           "kind": "park",
-          "t": 2.354694128036499,
+          "t": 2.350985050201416,
           "x": 898.5,
           "y": 424.03125
         },
         {
           "kind": "look",
-          "t": 2.3548941612243652,
+          "t": 2.3511850833892822,
           "rect": {
             "x": 457,
             "y": 363.03125,
@@ -386,7 +386,7 @@
           }
         },
         {
-          "t": 0.8492941856384278,
+          "t": 0.8453853130340577,
           "view": {
             "x": 0,
             "y": 0,
@@ -395,7 +395,7 @@
           }
         },
         {
-          "t": 1.4492941856384278,
+          "t": 1.4453853130340577,
           "view": {
             "x": 511,
             "y": 188,
@@ -404,7 +404,7 @@
           }
         },
         {
-          "t": 2.3548941612243652,
+          "t": 2.3511850833892822,
           "view": {
             "x": 511,
             "y": 188,
@@ -413,7 +413,7 @@
           }
         },
         {
-          "t": 2.9548941612243653,
+          "t": 2.9511850833892823,
           "view": {
             "x": 360,
             "y": 190.57421875,
@@ -422,7 +422,7 @@
           }
         },
         {
-          "t": 4.474794387817383,
+          "t": 4.463785171508789,
           "view": {
             "x": 360,
             "y": 190.57421875,
@@ -434,7 +434,7 @@
     }
   },
   "step-4": {
-    "recordedAt": "2026-11-12T16:52:19.94939502Z",
+    "recordedAt": "2026-11-12T17:16:12.019684082Z",
     "step": "Lesson 4: Export your draft to Word with a reference list > step 4: select Export; a notice with the file name and the style",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -446,7 +446,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -480,10 +480,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 4.867,
+    "duration": 4.733,
     "outputs": {
-      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-4.webm": 206364,
-      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-4.mp4": 205443,
+      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-4.webm": 206863,
+      "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-4.mp4": 202257,
       "apps/docs/public/img/learn/export-to-word-with-a-bibliography/step-4.poster.webp": 25710
     },
     "camera": {
@@ -495,7 +495,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.5950849056243896,
+          "t": 1.5979468822479248,
           "x": 951,
           "y": 565,
           "rect": {
@@ -507,13 +507,13 @@
         },
         {
           "kind": "park",
-          "t": 2.5945849418640137,
+          "t": 2.6187469959259033,
           "x": 919.4765625,
           "y": 580.203125
         },
         {
           "kind": "look",
-          "t": 2.594785213470459,
+          "t": 2.618847131729126,
           "rect": {
             "x": 1130,
             "y": 32,
@@ -533,7 +533,7 @@
           }
         },
         {
-          "t": 0.8450849056243898,
+          "t": 0.8479468822479249,
           "view": {
             "x": 0,
             "y": 0,
@@ -542,7 +542,7 @@
           }
         },
         {
-          "t": 1.4450849056243897,
+          "t": 1.447946882247925,
           "view": {
             "x": 591.23828125,
             "y": 350,
@@ -551,7 +551,7 @@
           }
         },
         {
-          "t": 2.594785213470459,
+          "t": 2.618847131729126,
           "view": {
             "x": 591.23828125,
             "y": 350,
@@ -560,7 +560,7 @@
           }
         },
         {
-          "t": 3.194785213470459,
+          "t": 3.218847131729126,
           "view": {
             "x": 720,
             "y": 0,
@@ -569,7 +569,7 @@
           }
         },
         {
-          "t": 4.711785078048706,
+          "t": 4.726646900177002,
           "view": {
             "x": 720,
             "y": 0,

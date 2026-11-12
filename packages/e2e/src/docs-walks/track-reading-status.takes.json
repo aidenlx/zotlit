@@ -1,6 +1,6 @@
 {
   "step-1": {
-    "recordedAt": "2026-11-12T16:59:33.544205078Z",
+    "recordedAt": "2026-11-12T17:19:23.133702881Z",
     "step": "Lesson 5: Track what you have read > step 1: in the Zotero library tab, select Save as query file and name it Reading plan; Reading plan.zotquery opens and lists your papers",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -12,7 +12,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -46,11 +46,11 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 7.333,
+    "duration": 7.3,
     "outputs": {
-      "apps/docs/public/img/learn/track-reading-status/step-1.webm": 410018,
-      "apps/docs/public/img/learn/track-reading-status/step-1.mp4": 423324,
-      "apps/docs/public/img/learn/track-reading-status/step-1.poster.webp": 47396
+      "apps/docs/public/img/learn/track-reading-status/step-1.webm": 402156,
+      "apps/docs/public/img/learn/track-reading-status/step-1.mp4": 461118,
+      "apps/docs/public/img/learn/track-reading-status/step-1.poster.webp": 47416
     },
     "camera": {
       "track": "planned",
@@ -61,7 +61,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.569216012954712,
+          "t": 1.5936260223388672,
           "x": 1080,
           "y": 140,
           "rect": {
@@ -73,14 +73,14 @@
         },
         {
           "kind": "park",
-          "t": 3.049816131591797,
+          "t": 3.074725866317749,
           "x": 963,
           "y": 414.078125
         },
         {
           "kind": "keys",
-          "t": 3.0499160289764404,
-          "end": 4.3706159591674805,
+          "t": 3.0748260021209717,
+          "end": 4.395225763320923,
           "rect": {
             "x": 457,
             "y": 360.078125,
@@ -90,7 +90,7 @@
         },
         {
           "kind": "point",
-          "t": 4.973315954208374,
+          "t": 4.9974260330200195,
           "x": 883,
           "y": 539,
           "rect": {
@@ -102,7 +102,7 @@
         },
         {
           "kind": "look",
-          "t": 5.151616096496582,
+          "t": 5.176525831222534,
           "rect": {
             "x": 348,
             "y": 6,
@@ -122,7 +122,7 @@
           }
         },
         {
-          "t": 0.819216012954712,
+          "t": 0.8436260223388673,
           "view": {
             "x": 0,
             "y": 0,
@@ -131,7 +131,7 @@
           }
         },
         {
-          "t": 1.419216012954712,
+          "t": 1.4436260223388673,
           "view": {
             "x": 720,
             "y": 0,
@@ -140,7 +140,7 @@
           }
         },
         {
-          "t": 2.2999160289764404,
+          "t": 2.3248260021209717,
           "view": {
             "x": 720,
             "y": 0,
@@ -149,7 +149,7 @@
           }
         },
         {
-          "t": 2.8999160289764405,
+          "t": 2.9248260021209718,
           "view": {
             "x": 360,
             "y": 160.078125,
@@ -158,7 +158,7 @@
           }
         },
         {
-          "t": 4.223315954208374,
+          "t": 4.2474260330200195,
           "view": {
             "x": 360,
             "y": 160.078125,
@@ -167,7 +167,7 @@
           }
         },
         {
-          "t": 4.823315954208374,
+          "t": 4.847426033020019,
           "view": {
             "x": 522.83984375,
             "y": 324,
@@ -176,7 +176,7 @@
           }
         },
         {
-          "t": 5.151616096496582,
+          "t": 5.176525831222534,
           "view": {
             "x": 522.83984375,
             "y": 324,
@@ -185,7 +185,7 @@
           }
         },
         {
-          "t": 5.751616096496582,
+          "t": 5.776525831222534,
           "view": {
             "x": 316,
             "y": 0,
@@ -194,7 +194,7 @@
           }
         },
         {
-          "t": 7.27181601524353,
+          "t": 7.293325901031494,
           "view": {
             "x": 316,
             "y": 0,
@@ -206,7 +206,7 @@
     }
   },
   "step-2": {
-    "recordedAt": "2026-11-12T16:59:44.28287793Z",
+    "recordedAt": "2026-11-12T17:19:32.417313965Z",
     "step": "Lesson 5: Track what you have read > step 2: select Views, Configure view, and set Layout to Table; your papers as rows",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -218,7 +218,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -252,10 +252,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 6.167,
+    "duration": 6.133,
     "outputs": {
-      "apps/docs/public/img/learn/track-reading-status/step-2.webm": 336939,
-      "apps/docs/public/img/learn/track-reading-status/step-2.mp4": 334625,
+      "apps/docs/public/img/learn/track-reading-status/step-2.webm": 349275,
+      "apps/docs/public/img/learn/track-reading-status/step-2.mp4": 332392,
       "apps/docs/public/img/learn/track-reading-status/step-2.poster.webp": 44622
     },
     "camera": {
@@ -267,7 +267,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.601166009902954,
+          "t": 1.6000680923461914,
           "x": 397,
           "y": 98,
           "rect": {
@@ -279,7 +279,7 @@
         },
         {
           "kind": "point",
-          "t": 2.378566026687622,
+          "t": 2.3788681030273438,
           "x": 531,
           "y": 175,
           "rect": {
@@ -291,7 +291,7 @@
         },
         {
           "kind": "point",
-          "t": 3.156266212463379,
+          "t": 3.1553683280944824,
           "x": 481,
           "y": 340,
           "rect": {
@@ -303,7 +303,7 @@
         },
         {
           "kind": "look",
-          "t": 4.017865896224976,
+          "t": 4.021667957305908,
           "rect": {
             "x": 344,
             "y": 118.1171875,
@@ -323,7 +323,7 @@
           }
         },
         {
-          "t": 0.8511660099029542,
+          "t": 0.8500680923461915,
           "view": {
             "x": 0,
             "y": 0,
@@ -332,7 +332,7 @@
           }
         },
         {
-          "t": 1.4511660099029542,
+          "t": 1.4500680923461915,
           "view": {
             "x": 36.85546875,
             "y": 0,
@@ -341,7 +341,7 @@
           }
         },
         {
-          "t": 2.406266212463379,
+          "t": 2.4053683280944824,
           "view": {
             "x": 36.85546875,
             "y": 0,
@@ -350,7 +350,7 @@
           }
         },
         {
-          "t": 3.006266212463379,
+          "t": 3.0053683280944825,
           "view": {
             "x": 152,
             "y": 125,
@@ -359,7 +359,7 @@
           }
         },
         {
-          "t": 4.017865896224976,
+          "t": 4.021667957305908,
           "view": {
             "x": 152,
             "y": 125,
@@ -368,7 +368,7 @@
           }
         },
         {
-          "t": 4.617865896224975,
+          "t": 4.621667957305908,
           "view": {
             "x": 312,
             "y": 0,
@@ -377,7 +377,7 @@
           }
         },
         {
-          "t": 6.132666110992432,
+          "t": 6.141268014907837,
           "view": {
             "x": 312,
             "y": 0,
@@ -389,7 +389,7 @@
     }
   },
   "step-3": {
-    "recordedAt": "2026-11-12T16:59:56.532998047Z",
+    "recordedAt": "2026-11-12T17:19:44.645068115Z",
     "step": "Lesson 5: Track what you have read > step 3: select Properties, type reading-status, and select the second entry, Add \"reading-status\" vault property; a column reading-status (note); papers without a literature note read No note, and Sandve et al. 2013 an empty cell",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -401,7 +401,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -437,8 +437,8 @@
     },
     "duration": 8.367,
     "outputs": {
-      "apps/docs/public/img/learn/track-reading-status/step-3.webm": 378670,
-      "apps/docs/public/img/learn/track-reading-status/step-3.mp4": 354160,
+      "apps/docs/public/img/learn/track-reading-status/step-3.webm": 380253,
+      "apps/docs/public/img/learn/track-reading-status/step-3.mp4": 353858,
       "apps/docs/public/img/learn/track-reading-status/step-3.poster.webp": 44538
     },
     "camera": {
@@ -450,7 +450,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.596208095550537,
+          "t": 1.6036672592163086,
           "x": 970,
           "y": 98,
           "rect": {
@@ -462,14 +462,14 @@
         },
         {
           "kind": "park",
-          "t": 2.3643078804016113,
+          "t": 2.3741672039031982,
           "x": 1267.0625,
           "y": 140.1640625
         },
         {
           "kind": "keys",
-          "t": 2.364408016204834,
-          "end": 3.8535077571868896,
+          "t": 2.3741672039031982,
+          "end": 3.8645670413970947,
           "rect": {
             "x": 924.3359375,
             "y": 125.1640625,
@@ -479,7 +479,7 @@
         },
         {
           "kind": "point",
-          "t": 4.456507921218872,
+          "t": 4.4669671058654785,
           "x": 968,
           "y": 234,
           "rect": {
@@ -491,7 +491,7 @@
         },
         {
           "kind": "look",
-          "t": 6.216408014297485,
+          "t": 6.2296671867370605,
           "rect": {
             "x": 337,
             "y": 118.1171875,
@@ -511,7 +511,7 @@
           }
         },
         {
-          "t": 0.8462080955505372,
+          "t": 0.8536672592163087,
           "view": {
             "x": 0,
             "y": 0,
@@ -520,7 +520,7 @@
           }
         },
         {
-          "t": 1.4462080955505372,
+          "t": 1.4536672592163087,
           "view": {
             "x": 609.609375,
             "y": 0,
@@ -529,7 +529,7 @@
           }
         },
         {
-          "t": 1.614408016204834,
+          "t": 1.6241672039031982,
           "view": {
             "x": 609.609375,
             "y": 0,
@@ -538,7 +538,7 @@
           }
         },
         {
-          "t": 2.214408016204834,
+          "t": 2.2241672039031983,
           "view": {
             "x": 720,
             "y": 0,
@@ -547,7 +547,7 @@
           }
         },
         {
-          "t": 6.216408014297485,
+          "t": 6.2296671867370605,
           "view": {
             "x": 720,
             "y": 0,
@@ -556,7 +556,7 @@
           }
         },
         {
-          "t": 6.816408014297485,
+          "t": 6.82966718673706,
           "view": {
             "x": 305,
             "y": 0,
@@ -565,7 +565,7 @@
           }
         },
         {
-          "t": 8.341507911682129,
+          "t": 8.350667238235474,
           "view": {
             "x": 305,
             "y": 0,
@@ -577,7 +577,7 @@
     }
   },
   "step-4": {
-    "recordedAt": "2026-11-12T17:00:05.370881104Z",
+    "recordedAt": "2026-11-12T17:19:53.515297119Z",
     "step": "Lesson 5: Track what you have read > step 4: select a cell, type to-read, and press Enter; the notice Literature note created. and the cell shows to-read",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -589,7 +589,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -623,10 +623,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 6.367,
+    "duration": 6.333,
     "outputs": {
-      "apps/docs/public/img/learn/track-reading-status/step-4.webm": 200683,
-      "apps/docs/public/img/learn/track-reading-status/step-4.mp4": 166004,
+      "apps/docs/public/img/learn/track-reading-status/step-4.webm": 200972,
+      "apps/docs/public/img/learn/track-reading-status/step-4.mp4": 160565,
       "apps/docs/public/img/learn/track-reading-status/step-4.poster.webp": 31652
     },
     "camera": {
@@ -638,7 +638,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.606553077697754,
+          "t": 1.6038219928741455,
           "x": 955,
           "y": 253,
           "rect": {
@@ -650,14 +650,14 @@
         },
         {
           "kind": "park",
-          "t": 2.8025529384613037,
+          "t": 2.7943220138549805,
           "x": 1136.5234375,
           "y": 298.1171875
         },
         {
           "kind": "keys",
-          "t": 2.8026530742645264,
-          "end": 3.2911529541015625,
+          "t": 2.7945220470428467,
+          "end": 3.2841219902038574,
           "rect": {
             "x": 942.1953125,
             "y": 238.1171875,
@@ -667,7 +667,7 @@
         },
         {
           "kind": "look",
-          "t": 4.206053018569946,
+          "t": 4.199321985244751,
           "rect": {
             "x": 941.1953125,
             "y": 32,
@@ -687,7 +687,7 @@
           }
         },
         {
-          "t": 0.856553077697754,
+          "t": 0.8538219928741456,
           "view": {
             "x": 0,
             "y": 0,
@@ -696,7 +696,7 @@
           }
         },
         {
-          "t": 1.456553077697754,
+          "t": 1.4538219928741456,
           "view": {
             "x": 657.359375,
             "y": 38,
@@ -705,7 +705,7 @@
           }
         },
         {
-          "t": 4.206053018569946,
+          "t": 4.199321985244751,
           "view": {
             "x": 657.359375,
             "y": 38,
@@ -714,7 +714,7 @@
           }
         },
         {
-          "t": 4.806053018569946,
+          "t": 4.799321985244751,
           "view": {
             "x": 720,
             "y": 0,
@@ -723,7 +723,7 @@
           }
         },
         {
-          "t": 6.329552888870239,
+          "t": 6.324022054672241,
           "view": {
             "x": 720,
             "y": 0,
@@ -735,7 +735,7 @@
     }
   },
   "step-5": {
-    "recordedAt": "2026-11-12T17:00:22.671346924Z",
+    "recordedAt": "2026-11-12T17:20:08.652198975Z",
     "step": "Lesson 5: Track what you have read > step 5: mark a paper you started reading and a finished one done; the cell suggests the statuses you used",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -747,7 +747,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -781,10 +781,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 11.1,
+    "duration": 10.667,
     "outputs": {
-      "apps/docs/public/img/learn/track-reading-status/step-5.webm": 263919,
-      "apps/docs/public/img/learn/track-reading-status/step-5.mp4": 266020,
+      "apps/docs/public/img/learn/track-reading-status/step-5.webm": 262676,
+      "apps/docs/public/img/learn/track-reading-status/step-5.mp4": 267151,
       "apps/docs/public/img/learn/track-reading-status/step-5.poster.webp": 32452
     },
     "camera": {
@@ -796,7 +796,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.6017301082611084,
+          "t": 1.601402997970581,
           "x": 955,
           "y": 193,
           "rect": {
@@ -808,14 +808,14 @@
         },
         {
           "kind": "park",
-          "t": 2.7795300483703613,
+          "t": 2.778502941131592,
           "x": 1136.5234375,
           "y": 238.1171875
         },
         {
           "kind": "keys",
-          "t": 2.779629945755005,
-          "end": 3.2698299884796143,
+          "t": 2.7786028385162354,
+          "end": 3.268203020095825,
           "rect": {
             "x": 942.1953125,
             "y": 178.1171875,
@@ -825,7 +825,7 @@
         },
         {
           "kind": "point",
-          "t": 4.784430027008057,
+          "t": 4.7908031940460205,
           "x": 955,
           "y": 163,
           "rect": {
@@ -837,14 +837,14 @@
         },
         {
           "kind": "park",
-          "t": 5.96382999420166,
+          "t": 5.968903064727783,
           "x": 1136.5234375,
           "y": 208.1171875
         },
         {
           "kind": "keys",
-          "t": 5.96382999420166,
-          "end": 6.236429929733276,
+          "t": 5.968903064727783,
+          "end": 6.242602825164795,
           "rect": {
             "x": 942.1953125,
             "y": 148.1171875,
@@ -854,7 +854,7 @@
         },
         {
           "kind": "point",
-          "t": 7.751629829406738,
+          "t": 7.762702941894531,
           "x": 955,
           "y": 283,
           "rect": {
@@ -866,13 +866,13 @@
         },
         {
           "kind": "park",
-          "t": 8.529929876327515,
+          "t": 8.539303064346313,
           "x": 911.1953125,
           "y": 328.1171875
         },
         {
           "kind": "look",
-          "t": 8.53012990951538,
+          "t": 8.539702892303467,
           "rect": {
             "x": 941.1953125,
             "y": 268.1171875,
@@ -892,7 +892,7 @@
           }
         },
         {
-          "t": 0.8517301082611085,
+          "t": 0.8514029979705812,
           "view": {
             "x": 0,
             "y": 0,
@@ -901,7 +901,7 @@
           }
         },
         {
-          "t": 1.4517301082611085,
+          "t": 1.4514029979705811,
           "view": {
             "x": 657.359375,
             "y": 0,
@@ -910,7 +910,7 @@
           }
         },
         {
-          "t": 8.53012990951538,
+          "t": 8.539702892303467,
           "view": {
             "x": 657.359375,
             "y": 0,
@@ -919,7 +919,7 @@
           }
         },
         {
-          "t": 9.13012990951538,
+          "t": 9.139702892303466,
           "view": {
             "x": 663.859375,
             "y": 122.46484375,
@@ -928,7 +928,7 @@
           }
         },
         {
-          "t": 10.644829988479614,
+          "t": 10.659502983093262,
           "view": {
             "x": 663.859375,
             "y": 122.46484375,
@@ -940,7 +940,7 @@
     }
   },
   "step-6": {
-    "recordedAt": "2026-11-12T17:00:35.656305908Z",
+    "recordedAt": "2026-11-12T17:20:20.596824951Z",
     "step": "Lesson 5: Track what you have read > step 6: select Filter and choose reading-status (note), is, to-read; only the papers still to read",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -952,7 +952,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -986,10 +986,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 8.433,
+    "duration": 8.033,
     "outputs": {
-      "apps/docs/public/img/learn/track-reading-status/step-6.webm": 378046,
-      "apps/docs/public/img/learn/track-reading-status/step-6.mp4": 392350,
+      "apps/docs/public/img/learn/track-reading-status/step-6.webm": 378395,
+      "apps/docs/public/img/learn/track-reading-status/step-6.mp4": 395714,
       "apps/docs/public/img/learn/track-reading-status/step-6.poster.webp": 25878
     },
     "camera": {
@@ -1001,7 +1001,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.600785255432129,
+          "t": 1.606090784072876,
           "x": 889,
           "y": 98,
           "rect": {
@@ -1013,7 +1013,7 @@
         },
         {
           "kind": "point",
-          "t": 2.37068510055542,
+          "t": 2.3746910095214844,
           "x": 1024,
           "y": 255,
           "rect": {
@@ -1025,7 +1025,7 @@
         },
         {
           "kind": "point",
-          "t": 3.1399850845336914,
+          "t": 3.1403908729553223,
           "x": 1019,
           "y": 566,
           "rect": {
@@ -1037,7 +1037,7 @@
         },
         {
           "kind": "point",
-          "t": 3.898085117340088,
+          "t": 3.8987910747528076,
           "x": 1201,
           "y": 255,
           "rect": {
@@ -1049,7 +1049,7 @@
         },
         {
           "kind": "point",
-          "t": 4.65228533744812,
+          "t": 4.653690814971924,
           "x": 1236,
           "y": 255,
           "rect": {
@@ -1061,14 +1061,14 @@
         },
         {
           "kind": "park",
-          "t": 5.405585050582886,
+          "t": 5.407890796661377,
           "x": 1287.84375,
           "y": 293.9609375
         },
         {
           "kind": "keys",
-          "t": 5.405585050582886,
-          "end": 5.89848518371582,
+          "t": 5.4079909324646,
+          "end": 5.898190975189209,
           "rect": {
             "x": 1205.5625,
             "y": 239.9609375,
@@ -1078,7 +1078,7 @@
         },
         {
           "kind": "look",
-          "t": 5.898585081100464,
+          "t": 5.898291110992432,
           "rect": {
             "x": 344,
             "y": 118.1171875,
@@ -1098,7 +1098,7 @@
           }
         },
         {
-          "t": 0.850785255432129,
+          "t": 0.8560907840728761,
           "view": {
             "x": 0,
             "y": 0,
@@ -1107,7 +1107,7 @@
           }
         },
         {
-          "t": 1.450785255432129,
+          "t": 1.456090784072876,
           "view": {
             "x": 529.08984375,
             "y": 0,
@@ -1116,7 +1116,7 @@
           }
         },
         {
-          "t": 1.62068510055542,
+          "t": 1.6246910095214844,
           "view": {
             "x": 529.08984375,
             "y": 0,
@@ -1125,7 +1125,7 @@
           }
         },
         {
-          "t": 2.22068510055542,
+          "t": 2.2246910095214845,
           "view": {
             "x": 664.40234375,
             "y": 40,
@@ -1134,7 +1134,7 @@
           }
         },
         {
-          "t": 2.3899850845336914,
+          "t": 2.3903908729553223,
           "view": {
             "x": 664.40234375,
             "y": 40,
@@ -1143,7 +1143,7 @@
           }
         },
         {
-          "t": 2.9899850845336915,
+          "t": 2.9903908729553224,
           "view": {
             "x": 720,
             "y": 351,
@@ -1152,7 +1152,7 @@
           }
         },
         {
-          "t": 3.148085117340088,
+          "t": 3.1487910747528076,
           "view": {
             "x": 720,
             "y": 351,
@@ -1161,7 +1161,7 @@
           }
         },
         {
-          "t": 3.748085117340088,
+          "t": 3.7487910747528077,
           "view": {
             "x": 720,
             "y": 40,
@@ -1170,7 +1170,7 @@
           }
         },
         {
-          "t": 5.898585081100464,
+          "t": 5.898291110992432,
           "view": {
             "x": 720,
             "y": 40,
@@ -1179,7 +1179,7 @@
           }
         },
         {
-          "t": 6.4985850811004635,
+          "t": 6.498291110992431,
           "view": {
             "x": 312,
             "y": 0,
@@ -1188,7 +1188,7 @@
           }
         },
         {
-          "t": 8.013885021209717,
+          "t": 8.019590854644775,
           "view": {
             "x": 312,
             "y": 0,

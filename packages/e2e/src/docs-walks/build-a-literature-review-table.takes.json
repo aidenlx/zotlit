@@ -1,6 +1,6 @@
 {
   "step-1": {
-    "recordedAt": "2026-11-12T16:57:21.083579102Z",
+    "recordedAt": "2026-11-12T17:20:54.923535889Z",
     "step": "Lesson 6: Build a literature review table > step 1: select the collection, select Save as query file, type Thesis as the folder, and save; Thesis/Reproducibility.zotquery opens",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -12,7 +12,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -46,10 +46,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 9.6,
+    "duration": 9.567,
     "outputs": {
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-1.webm": 481217,
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-1.mp4": 447212,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-1.webm": 487753,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-1.mp4": 458516,
       "apps/docs/public/img/learn/build-a-literature-review-table/step-1.poster.webp": 41402
     },
     "camera": {
@@ -61,7 +61,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 2.602174997329712,
+          "t": 2.597608804702759,
           "x": 470,
           "y": 199,
           "rect": {
@@ -73,7 +73,7 @@
         },
         {
           "kind": "point",
-          "t": 3.3850748538970947,
+          "t": 3.380409002304077,
           "x": 1080,
           "y": 140,
           "rect": {
@@ -85,7 +85,7 @@
         },
         {
           "kind": "point",
-          "t": 4.163574934005737,
+          "t": 4.1592090129852295,
           "x": 487,
           "y": 444,
           "rect": {
@@ -97,14 +97,14 @@
         },
         {
           "kind": "park",
-          "t": 4.915475130081177,
+          "t": 4.913408994674683,
           "x": 963,
           "y": 412.9765625
         },
         {
           "kind": "keys",
-          "t": 4.91557502746582,
-          "end": 5.5631749629974365,
+          "t": 4.913609027862549,
+          "end": 5.564108848571777,
           "rect": {
             "x": 457,
             "y": 428.9765625,
@@ -114,7 +114,7 @@
         },
         {
           "kind": "look",
-          "t": 5.563575029373169,
+          "t": 5.564509153366089,
           "rect": {
             "x": 457,
             "y": 474.9765625,
@@ -124,7 +124,7 @@
         },
         {
           "kind": "point",
-          "t": 6.769175052642822,
+          "t": 6.770809173583984,
           "x": 883,
           "y": 539,
           "rect": {
@@ -136,7 +136,7 @@
         },
         {
           "kind": "look",
-          "t": 7.44837498664856,
+          "t": 7.446708917617798,
           "rect": {
             "x": 348,
             "y": 6,
@@ -156,7 +156,7 @@
           }
         },
         {
-          "t": 1.852174997329712,
+          "t": 1.8476088047027588,
           "view": {
             "x": 0,
             "y": 0,
@@ -165,7 +165,7 @@
           }
         },
         {
-          "t": 2.452174997329712,
+          "t": 2.447608804702759,
           "view": {
             "x": 110.21875,
             "y": 0,
@@ -174,7 +174,7 @@
           }
         },
         {
-          "t": 2.6350748538970947,
+          "t": 2.630409002304077,
           "view": {
             "x": 110.21875,
             "y": 0,
@@ -183,7 +183,7 @@
           }
         },
         {
-          "t": 3.235074853897095,
+          "t": 3.2304090023040772,
           "view": {
             "x": 720,
             "y": 0,
@@ -192,7 +192,7 @@
           }
         },
         {
-          "t": 3.413574934005737,
+          "t": 3.409209012985229,
           "view": {
             "x": 720,
             "y": 0,
@@ -201,7 +201,7 @@
           }
         },
         {
-          "t": 4.013574934005737,
+          "t": 4.009209012985229,
           "view": {
             "x": 360,
             "y": 229,
@@ -210,7 +210,7 @@
           }
         },
         {
-          "t": 5.563575029373169,
+          "t": 5.564509153366089,
           "view": {
             "x": 360,
             "y": 229,
@@ -219,7 +219,7 @@
           }
         },
         {
-          "t": 6.163575029373169,
+          "t": 6.1645091533660885,
           "view": {
             "x": 360,
             "y": 267.7734375,
@@ -228,7 +228,7 @@
           }
         },
         {
-          "t": 6.163575029373169,
+          "t": 6.1645091533660885,
           "view": {
             "x": 360,
             "y": 267.7734375,
@@ -237,7 +237,7 @@
           }
         },
         {
-          "t": 6.619175052642822,
+          "t": 6.620809173583984,
           "view": {
             "x": 522.83984375,
             "y": 324,
@@ -246,7 +246,7 @@
           }
         },
         {
-          "t": 7.44837498664856,
+          "t": 7.446708917617798,
           "view": {
             "x": 522.83984375,
             "y": 324,
@@ -255,7 +255,7 @@
           }
         },
         {
-          "t": 8.04837498664856,
+          "t": 8.046708917617797,
           "view": {
             "x": 316,
             "y": 0,
@@ -264,7 +264,7 @@
           }
         },
         {
-          "t": 9.56237506866455,
+          "t": 9.567108869552612,
           "view": {
             "x": 316,
             "y": 0,
@@ -276,7 +276,7 @@
     }
   },
   "step-2": {
-    "recordedAt": "2026-11-12T16:57:30.363236084Z",
+    "recordedAt": "2026-11-12T17:21:04.035311035Z",
     "step": "Lesson 6: Build a literature review table > step 2: select Views, Configure view, and set Layout to Table; the papers as rows",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -288,7 +288,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -322,10 +322,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 6.2,
+    "duration": 6.167,
     "outputs": {
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-2.webm": 291866,
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-2.mp4": 304069,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-2.webm": 289572,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-2.mp4": 294227,
       "apps/docs/public/img/learn/build-a-literature-review-table/step-2.poster.webp": 39908
     },
     "camera": {
@@ -337,7 +337,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.5984899997711182,
+          "t": 1.6073148250579834,
           "x": 397,
           "y": 98,
           "rect": {
@@ -349,7 +349,7 @@
         },
         {
           "kind": "point",
-          "t": 2.3784899711608887,
+          "t": 2.3865151405334473,
           "x": 531,
           "y": 175,
           "rect": {
@@ -361,7 +361,7 @@
         },
         {
           "kind": "point",
-          "t": 3.1564900875091553,
+          "t": 3.165515184402466,
           "x": 481,
           "y": 340,
           "rect": {
@@ -373,7 +373,7 @@
         },
         {
           "kind": "look",
-          "t": 4.018089771270752,
+          "t": 4.033814907073975,
           "rect": {
             "x": 344,
             "y": 118.1171875,
@@ -393,7 +393,7 @@
           }
         },
         {
-          "t": 0.8484899997711183,
+          "t": 0.8573148250579835,
           "view": {
             "x": 0,
             "y": 0,
@@ -402,7 +402,7 @@
           }
         },
         {
-          "t": 1.4484899997711183,
+          "t": 1.4573148250579835,
           "view": {
             "x": 36.85546875,
             "y": 0,
@@ -411,7 +411,7 @@
           }
         },
         {
-          "t": 2.4064900875091553,
+          "t": 2.415515184402466,
           "view": {
             "x": 36.85546875,
             "y": 0,
@@ -420,7 +420,7 @@
           }
         },
         {
-          "t": 3.0064900875091554,
+          "t": 3.015515184402466,
           "view": {
             "x": 152,
             "y": 125,
@@ -429,7 +429,7 @@
           }
         },
         {
-          "t": 4.018089771270752,
+          "t": 4.033814907073975,
           "view": {
             "x": 152,
             "y": 125,
@@ -438,7 +438,7 @@
           }
         },
         {
-          "t": 4.618089771270752,
+          "t": 4.633814907073974,
           "view": {
             "x": 312,
             "y": 0,
@@ -447,7 +447,7 @@
           }
         },
         {
-          "t": 6.179789781570435,
+          "t": 6.1576149463653564,
           "view": {
             "x": 312,
             "y": 0,
@@ -459,7 +459,7 @@
     }
   },
   "step-3": {
-    "recordedAt": "2026-11-12T17:04:27.438593018Z",
+    "recordedAt": "2026-11-12T17:21:25.403412109Z",
     "step": "Lesson 6: Build a literature review table > step 3: select Properties, add Year, Publication, and creators, and clear Item Type and Modified; authors, year, and journal beside each title",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -467,12 +467,11 @@
       "recut": "node packages/e2e/src/docs-walks/clip-encode.ts .scratch/docs-walks/build-a-literature-review-table/step-3.frames apps/docs/public/img/learn/build-a-literature-review-table/step-3"
     },
     "env": {
-      "DOCS_WALK_ONLY": "step-3",
       "DOCS_WALK_RECORD": "1"
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -506,10 +505,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 14.267,
+    "duration": 14.3,
     "outputs": {
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-3.webm": 541786,
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-3.mp4": 561510,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-3.webm": 526642,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-3.mp4": 559933,
       "apps/docs/public/img/learn/build-a-literature-review-table/step-3.poster.webp": 32868
     },
     "camera": {
@@ -521,7 +520,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.6019299030303955,
+          "t": 1.601457118988037,
           "x": 970,
           "y": 98,
           "rect": {
@@ -533,14 +532,14 @@
         },
         {
           "kind": "park",
-          "t": 2.3927299976348877,
+          "t": 2.399756908416748,
           "x": 1267.0625,
           "y": 140.1640625
         },
         {
           "kind": "keys",
-          "t": 2.3927299976348877,
-          "end": 2.5346298217773438,
+          "t": 2.399756908416748,
+          "end": 2.54095721244812,
           "rect": {
             "x": 924.3359375,
             "y": 125.1640625,
@@ -550,7 +549,7 @@
         },
         {
           "kind": "point",
-          "t": 3.1372299194335938,
+          "t": 3.142756938934326,
           "x": 970,
           "y": 175,
           "rect": {
@@ -562,14 +561,14 @@
         },
         {
           "kind": "park",
-          "t": 4.1978302001953125,
+          "t": 4.202357053756714,
           "x": 1193.3359375,
           "y": 140.1640625
         },
         {
           "kind": "keys",
-          "t": 4.197929859161377,
-          "end": 4.599529981613159,
+          "t": 4.202357053756714,
+          "end": 4.603857040405273,
           "rect": {
             "x": 924.3359375,
             "y": 125.1640625,
@@ -579,7 +578,7 @@
         },
         {
           "kind": "point",
-          "t": 5.200929880142212,
+          "t": 5.204556941986084,
           "x": 970,
           "y": 478,
           "rect": {
@@ -591,14 +590,14 @@
         },
         {
           "kind": "park",
-          "t": 6.256629943847656,
+          "t": 6.260657072067261,
           "x": 1193.3359375,
           "y": 140.1640625
         },
         {
           "kind": "keys",
-          "t": 6.256629943847656,
-          "end": 6.549230098724365,
+          "t": 6.260657072067261,
+          "end": 6.55295729637146,
           "rect": {
             "x": 924.3359375,
             "y": 125.1640625,
@@ -608,7 +607,7 @@
         },
         {
           "kind": "point",
-          "t": 7.1507298946380615,
+          "t": 7.155457258224487,
           "x": 968,
           "y": 209,
           "rect": {
@@ -620,14 +619,14 @@
         },
         {
           "kind": "park",
-          "t": 8.209330081939697,
+          "t": 8.21455693244934,
           "x": 1193.3359375,
           "y": 140.1640625
         },
         {
           "kind": "keys",
-          "t": 8.209330081939697,
-          "end": 8.550430059432983,
+          "t": 8.21455693244934,
+          "end": 8.556756973266602,
           "rect": {
             "x": 924.3359375,
             "y": 125.1640625,
@@ -637,7 +636,7 @@
         },
         {
           "kind": "point",
-          "t": 9.15353012084961,
+          "t": 9.159557104110718,
           "x": 970,
           "y": 175,
           "rect": {
@@ -649,14 +648,14 @@
         },
         {
           "kind": "park",
-          "t": 10.211430072784424,
+          "t": 10.217556953430176,
           "x": 1193.3359375,
           "y": 140.1640625
         },
         {
           "kind": "keys",
-          "t": 10.211430072784424,
-          "end": 10.505630016326904,
+          "t": 10.217556953430176,
+          "end": 10.508857011795044,
           "rect": {
             "x": 924.3359375,
             "y": 125.1640625,
@@ -666,7 +665,7 @@
         },
         {
           "kind": "point",
-          "t": 11.108330011367798,
+          "t": 11.111356973648071,
           "x": 970,
           "y": 175,
           "rect": {
@@ -678,7 +677,7 @@
         },
         {
           "kind": "look",
-          "t": 12.169029951095581,
+          "t": 12.17415714263916,
           "rect": {
             "x": 344,
             "y": 118.1171875,
@@ -698,7 +697,7 @@
           }
         },
         {
-          "t": 0.8519299030303956,
+          "t": 0.8514571189880372,
           "view": {
             "x": 0,
             "y": 0,
@@ -707,7 +706,7 @@
           }
         },
         {
-          "t": 1.4519299030303956,
+          "t": 1.4514571189880372,
           "view": {
             "x": 609.609375,
             "y": 0,
@@ -716,7 +715,7 @@
           }
         },
         {
-          "t": 1.6427299976348877,
+          "t": 1.649756908416748,
           "view": {
             "x": 609.609375,
             "y": 0,
@@ -725,7 +724,7 @@
           }
         },
         {
-          "t": 2.242729997634888,
+          "t": 2.249756908416748,
           "view": {
             "x": 720,
             "y": 0,
@@ -734,7 +733,7 @@
           }
         },
         {
-          "t": 4.450929880142212,
+          "t": 4.454556941986084,
           "view": {
             "x": 720,
             "y": 0,
@@ -743,7 +742,7 @@
           }
         },
         {
-          "t": 5.050929880142212,
+          "t": 5.054556941986084,
           "view": {
             "x": 683.3359375,
             "y": 263,
@@ -752,7 +751,7 @@
           }
         },
         {
-          "t": 5.506629943847656,
+          "t": 5.510657072067261,
           "view": {
             "x": 683.3359375,
             "y": 263,
@@ -761,7 +760,7 @@
           }
         },
         {
-          "t": 6.106629943847656,
+          "t": 6.11065707206726,
           "view": {
             "x": 683.3359375,
             "y": 0,
@@ -770,7 +769,7 @@
           }
         },
         {
-          "t": 12.169029951095581,
+          "t": 12.17415714263916,
           "view": {
             "x": 683.3359375,
             "y": 0,
@@ -779,7 +778,7 @@
           }
         },
         {
-          "t": 12.76902995109558,
+          "t": 12.77415714263916,
           "view": {
             "x": 280,
             "y": 0,
@@ -788,7 +787,7 @@
           }
         },
         {
-          "t": 14.27983021736145,
+          "t": 14.288157224655151,
           "view": {
             "x": 280,
             "y": 0,
@@ -800,7 +799,7 @@
     }
   },
   "step-4": {
-    "recordedAt": "2026-11-12T16:58:16.197394043Z",
+    "recordedAt": "2026-11-12T17:21:50.270086914Z",
     "step": "Lesson 6: Build a literature review table > step 4: type rating, select Add \"rating\" vault property, and type a rating in each cell; your ratings in a column of your own",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -812,7 +811,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -848,9 +847,9 @@
     },
     "duration": 17.267,
     "outputs": {
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-4.webm": 509056,
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-4.mp4": 494756,
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-4.poster.webp": 31236
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-4.webm": 498998,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-4.mp4": 459518,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-4.poster.webp": 31590
     },
     "camera": {
       "track": "planned",
@@ -861,7 +860,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.5993077754974365,
+          "t": 1.602787971496582,
           "x": 1418,
           "y": 20,
           "rect": {
@@ -873,7 +872,7 @@
         },
         {
           "kind": "point",
-          "t": 2.8921077251434326,
+          "t": 2.8972878456115723,
           "x": 322,
           "y": 20,
           "rect": {
@@ -885,7 +884,7 @@
         },
         {
           "kind": "point",
-          "t": 4.174807786941528,
+          "t": 4.173988103866577,
           "x": 1310,
           "y": 98,
           "rect": {
@@ -897,14 +896,14 @@
         },
         {
           "kind": "park",
-          "t": 4.969307899475098,
+          "t": 4.971287965774536,
           "x": 1459.7265625,
           "y": 140.1640625
         },
         {
           "kind": "keys",
-          "t": 4.969407796859741,
-          "end": 5.192607879638672,
+          "t": 4.9714882373809814,
+          "end": 5.193988084793091,
           "rect": {
             "x": 1117,
             "y": 125.1640625,
@@ -914,7 +913,7 @@
         },
         {
           "kind": "point",
-          "t": 5.794307708740234,
+          "t": 5.796288013458252,
           "x": 1185,
           "y": 285,
           "rect": {
@@ -926,7 +925,7 @@
         },
         {
           "kind": "point",
-          "t": 7.458607912063599,
+          "t": 7.4629881381988525,
           "x": 1331,
           "y": 223,
           "rect": {
@@ -938,13 +937,13 @@
         },
         {
           "kind": "park",
-          "t": 8.338107824325562,
+          "t": 8.341588020324707,
           "x": 1470,
           "y": 258.1171875
         },
         {
           "kind": "point",
-          "t": 9.506107807159424,
+          "t": 9.517388105392456,
           "x": 1331,
           "y": 253,
           "rect": {
@@ -956,13 +955,13 @@
         },
         {
           "kind": "park",
-          "t": 10.381707668304443,
+          "t": 10.396687984466553,
           "x": 1470,
           "y": 288.1171875
         },
         {
           "kind": "point",
-          "t": 11.577907800674438,
+          "t": 11.595688104629517,
           "x": 1331,
           "y": 163,
           "rect": {
@@ -974,13 +973,13 @@
         },
         {
           "kind": "park",
-          "t": 12.455507755279541,
+          "t": 12.47458791732788,
           "x": 1470,
           "y": 198.1171875
         },
         {
           "kind": "point",
-          "t": 13.649207592010498,
+          "t": 13.664688110351562,
           "x": 1331,
           "y": 193,
           "rect": {
@@ -992,13 +991,13 @@
         },
         {
           "kind": "park",
-          "t": 14.52590799331665,
+          "t": 14.54368805885315,
           "x": 1470,
           "y": 228.1171875
         },
         {
           "kind": "look",
-          "t": 15.113707780838013,
+          "t": 15.13588809967041,
           "rect": {
             "x": 1311.4453125,
             "y": 118.1171875,
@@ -1018,7 +1017,7 @@
           }
         },
         {
-          "t": 0.8493077754974366,
+          "t": 0.8527879714965821,
           "view": {
             "x": 0,
             "y": 0,
@@ -1027,7 +1026,7 @@
           }
         },
         {
-          "t": 1.4493077754974366,
+          "t": 1.4527879714965821,
           "view": {
             "x": 720,
             "y": 0,
@@ -1036,7 +1035,7 @@
           }
         },
         {
-          "t": 2.1421077251434326,
+          "t": 2.1472878456115723,
           "view": {
             "x": 720,
             "y": 0,
@@ -1045,7 +1044,7 @@
           }
         },
         {
-          "t": 2.7421077251434327,
+          "t": 2.7472878456115724,
           "view": {
             "x": 0,
             "y": 0,
@@ -1054,7 +1053,7 @@
           }
         },
         {
-          "t": 3.424807786941528,
+          "t": 3.4239881038665767,
           "view": {
             "x": 0,
             "y": 0,
@@ -1063,7 +1062,7 @@
           }
         },
         {
-          "t": 4.024807786941528,
+          "t": 4.023988103866577,
           "view": {
             "x": 720,
             "y": 0,
@@ -1072,7 +1071,7 @@
           }
         },
         {
-          "t": 5.044307708740234,
+          "t": 5.046288013458252,
           "view": {
             "x": 720,
             "y": 0,
@@ -1081,7 +1080,7 @@
           }
         },
         {
-          "t": 5.644307708740234,
+          "t": 5.646288013458252,
           "view": {
             "x": 720,
             "y": 70,
@@ -1090,7 +1089,7 @@
           }
         },
         {
-          "t": 6.708607912063599,
+          "t": 6.7129881381988525,
           "view": {
             "x": 720,
             "y": 70,
@@ -1099,7 +1098,7 @@
           }
         },
         {
-          "t": 7.308607912063598,
+          "t": 7.312988138198852,
           "view": {
             "x": 720,
             "y": 8,
@@ -1108,7 +1107,7 @@
           }
         },
         {
-          "t": 8.756107807159424,
+          "t": 8.767388105392456,
           "view": {
             "x": 720,
             "y": 8,
@@ -1117,7 +1116,7 @@
           }
         },
         {
-          "t": 9.356107807159423,
+          "t": 9.367388105392456,
           "view": {
             "x": 720,
             "y": 38,
@@ -1126,7 +1125,7 @@
           }
         },
         {
-          "t": 10.827907800674438,
+          "t": 10.845688104629517,
           "view": {
             "x": 720,
             "y": 38,
@@ -1135,7 +1134,7 @@
           }
         },
         {
-          "t": 11.427907800674438,
+          "t": 11.445688104629516,
           "view": {
             "x": 720,
             "y": 0,
@@ -1144,7 +1143,7 @@
           }
         },
         {
-          "t": 17.232207775115967,
+          "t": 17.25488805770874,
           "view": {
             "x": 720,
             "y": 0,
@@ -1156,7 +1155,7 @@
     }
   },
   "step-5": {
-    "recordedAt": "2026-11-12T16:58:26.594153076Z",
+    "recordedAt": "2026-11-12T17:22:00.604895996Z",
     "step": "Lesson 6: Build a literature review table > step 5: select Sort, Add sort, and choose Date, old to new; the papers in order of year",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -1168,7 +1167,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -1202,11 +1201,11 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 7.133,
+    "duration": 7.067,
     "outputs": {
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-5.webm": 337236,
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-5.mp4": 266573,
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-5.poster.webp": 32760
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-5.webm": 256073,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-5.mp4": 241626,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-5.poster.webp": 38026
     },
     "camera": {
       "track": "planned",
@@ -1217,7 +1216,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.5965967178344727,
+          "t": 1.6001410484313965,
           "x": 1083,
           "y": 98,
           "rect": {
@@ -1229,7 +1228,7 @@
         },
         {
           "kind": "point",
-          "t": 2.3518967628479004,
+          "t": 2.355440855026245,
           "x": 1165,
           "y": 176,
           "rect": {
@@ -1241,7 +1240,7 @@
         },
         {
           "kind": "point",
-          "t": 3.132396936416626,
+          "t": 3.1367409229278564,
           "x": 1109,
           "y": 175,
           "rect": {
@@ -1253,7 +1252,7 @@
         },
         {
           "kind": "point",
-          "t": 3.8944969177246094,
+          "t": 3.8986411094665527,
           "x": 1205,
           "y": 175,
           "rect": {
@@ -1265,11 +1264,11 @@
         },
         {
           "kind": "look",
-          "t": 4.956396818161011,
+          "t": 4.960641145706177,
           "rect": {
-            "x": 44,
+            "x": 74,
             "y": 118.1171875,
-            "w": 1396,
+            "w": 648.4765625,
             "h": 150
           }
         }
@@ -1285,7 +1284,7 @@
           }
         },
         {
-          "t": 0.8465967178344728,
+          "t": 0.8501410484313966,
           "view": {
             "x": 0,
             "y": 0,
@@ -1294,7 +1293,7 @@
           }
         },
         {
-          "t": 1.4465967178344727,
+          "t": 1.4501410484313966,
           "view": {
             "x": 720,
             "y": 0,
@@ -1303,7 +1302,7 @@
           }
         },
         {
-          "t": 4.956396818161011,
+          "t": 4.960641145706177,
           "view": {
             "x": 720,
             "y": 0,
@@ -1312,28 +1311,28 @@
           }
         },
         {
-          "t": 5.55639681816101,
+          "t": 5.560641145706176,
           "view": {
-            "x": 0,
+            "x": 38.23828125,
             "y": 0,
-            "w": 1440,
-            "h": 860
+            "w": 720,
+            "h": 430
           }
         },
         {
-          "t": 7.075896739959717,
+          "t": 7.080541133880615,
           "view": {
-            "x": 0,
+            "x": 38.23828125,
             "y": 0,
-            "w": 1440,
-            "h": 860
+            "w": 720,
+            "h": 430
           }
         }
       ]
     }
   },
   "step-6": {
-    "recordedAt": "2026-11-12T16:58:37.770737061Z",
+    "recordedAt": "2026-11-12T17:22:11.10850708Z",
     "step": "Lesson 6: Build a literature review table > step 6: select the result count, choose Copy to clipboard, and paste into your draft; the table in your chapter",
     "recipe": {
       "build": "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
@@ -1345,7 +1344,7 @@
     },
     "versionGateBypass": true,
     "recorder": {
-      "commit": "e9f9c578b7d82d63e0a37fdd989bdea67b702053",
+      "commit": "9bf4c443b8a6844ba050fd2b6458934e27a37f2c",
       "edited": false
     },
     "apps": {
@@ -1379,10 +1378,10 @@
       "vp9Crf": 42,
       "h264Crf": 32
     },
-    "duration": 7.2,
+    "duration": 7.133,
     "outputs": {
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-6.webm": 457828,
-      "apps/docs/public/img/learn/build-a-literature-review-table/step-6.mp4": 465421,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-6.webm": 457281,
+      "apps/docs/public/img/learn/build-a-literature-review-table/step-6.mp4": 459169,
       "apps/docs/public/img/learn/build-a-literature-review-table/step-6.poster.webp": 64142
     },
     "camera": {
@@ -1394,7 +1393,7 @@
       "events": [
         {
           "kind": "point",
-          "t": 1.5977089405059814,
+          "t": 1.6028311252593994,
           "x": 175,
           "y": 98,
           "rect": {
@@ -1406,7 +1405,7 @@
         },
         {
           "kind": "point",
-          "t": 2.368208885192871,
+          "t": 2.360631227493286,
           "x": 191,
           "y": 228,
           "rect": {
@@ -1418,7 +1417,7 @@
         },
         {
           "kind": "look",
-          "t": 5.011908769607544,
+          "t": 5.020831108093262,
           "rect": {
             "x": 392,
             "y": 419.3125,
@@ -1438,7 +1437,7 @@
           }
         },
         {
-          "t": 0.8477089405059816,
+          "t": 0.8528311252593995,
           "view": {
             "x": 0,
             "y": 0,
@@ -1447,7 +1446,7 @@
           }
         },
         {
-          "t": 1.4477089405059815,
+          "t": 1.4528311252593995,
           "view": {
             "x": 0,
             "y": 0,
@@ -1456,7 +1455,7 @@
           }
         },
         {
-          "t": 1.618208885192871,
+          "t": 1.6106312274932861,
           "view": {
             "x": 0,
             "y": 0,
@@ -1465,7 +1464,7 @@
           }
         },
         {
-          "t": 2.218208885192871,
+          "t": 2.210631227493286,
           "view": {
             "x": 0,
             "y": 13,
@@ -1474,7 +1473,7 @@
           }
         },
         {
-          "t": 5.011908769607544,
+          "t": 5.020831108093262,
           "view": {
             "x": 0,
             "y": 13,
@@ -1483,7 +1482,7 @@
           }
         },
         {
-          "t": 5.611908769607544,
+          "t": 5.620831108093261,
           "view": {
             "x": 319.47093023255815,
             "y": 355.3125,
@@ -1492,7 +1491,7 @@
           }
         },
         {
-          "t": 7.127408742904663,
+          "t": 7.137231111526489,
           "view": {
             "x": 319.47093023255815,
             "y": 355.3125,
