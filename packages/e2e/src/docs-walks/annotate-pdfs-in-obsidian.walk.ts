@@ -386,7 +386,9 @@ describe.skipIf(!reachable)(
       const title = await walk.zotero.json<string>(
         `${FIND_DIALOG}.document.title`,
       );
-      await walk.recordZotero(
+      // The image is taken before the clip encodes: the notice lasts only a
+      // few seconds.
+      const granted = await walk.recordZotero(
         "step-3",
         exactly(title),
         async (pointAt, stop) => {
@@ -396,30 +398,31 @@ describe.skipIf(!reachable)(
           );
           await stop();
           await clickAuthorizationDialog(walk.zotero, "cancel");
-        },
-      );
-      const granted = await obRunUntil(
-        walk.vaultId,
-        ({ app }, { file }) => {
-          const pdf = (app.workspace.getLeavesOfType("pdf") as PdfLeaf[]).find(
-            (l) => decodeURI(l.view.file?.path ?? "").endsWith(file),
-          )!;
-          return [
-            ...pdf.view.containerEl.querySelectorAll("[data-zt-tool]"),
-          ].map((t) => t.getAttribute("aria-disabled"));
-        },
-        { file: PAPER.file },
-        {
-          what: "tools on",
-          ready: (value) => value.length > 0 && !value.includes("true"),
+          const granted = await obRunUntil(
+            walk.vaultId,
+            ({ app }, { file }) => {
+              const pdf = (
+                app.workspace.getLeavesOfType("pdf") as PdfLeaf[]
+              ).find((l) => decodeURI(l.view.file?.path ?? "").endsWith(file))!;
+              return [
+                ...pdf.view.containerEl.querySelectorAll("[data-zt-tool]"),
+              ].map((t) => t.getAttribute("aria-disabled"));
+            },
+            { file: PAPER.file },
+            {
+              what: "tools on",
+              ready: (value) => value.length > 0 && !value.includes("true"),
+            },
+          );
+          await raiseWindow(walk.vaultId);
+          await walk.capture("step-3", { notices: true });
+          return granted;
         },
       );
       expect(granted).not.toContain("true");
       expect(await readNotices(walk.vaultId)).toContain(
         m.notice_zotero_editing_enabled(),
       );
-      await raiseWindow(walk.vaultId);
-      await walk.capture("step-3", { notices: true });
       await walk.compose("step-3");
     });
 
