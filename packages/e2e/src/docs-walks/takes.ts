@@ -1,12 +1,12 @@
 // The take record of the docs-walk clips: how each clip was recorded, kept
-// in git beside the walk as `<slug>.takes.json`, while the footage stays out.
+// in the private `video/` submodule, while the footage stays out of git.
 // A take holds what a new encode or a longer edit needs: the logged actions,
 // the camera track the clip was cut with, the recorder's commit, the app
 // versions, the command, and the clip's length and output sizes.
 
 import { execFile } from "node:child_process";
-import { access, readFile, stat, writeFile } from "node:fs/promises";
-import { relative } from "node:path";
+import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 
 import type { CameraEvent, CameraTrack } from "./camera.ts";
@@ -173,12 +173,25 @@ export async function videoLength(file: string): Promise<number> {
   return Math.round(Number(stdout.trim()) * 1000) / 1000;
 }
 
+/** The take record of `slug`: in `video/` when checked out, else in `.scratch/`. */
+export async function takeRecordFile(
+  root: string,
+  slug: string,
+): Promise<string> {
+  const video = join(root, "video");
+  return access(join(video, ".git")).then(
+    () => join(video, "docs-walks", "takes", `${slug}.takes.json`),
+    () => join(root, ".scratch", "docs-walks", slug, "takes.json"),
+  );
+}
+
 /** Write `take` as the clip `name` into the take record `file`. */
 export async function writeTake(
   file: string,
   name: string,
   take: Take,
 ): Promise<void> {
+  await mkdir(dirname(file), { recursive: true });
   const takes: Record<string, Take> = await access(file).then(
     async () =>
       JSON.parse(await readFile(file, "utf8")) as Record<string, Take>,
