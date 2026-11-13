@@ -127,6 +127,17 @@ function canonicalUrl(path: string): string {
 }
 
 /**
+ * The dates of a docs page or lesson. Its last commit day is the one date the
+ * site keeps for it, the same day the sitemap's `lastmod` carries, so it
+ * stands as the publication day too.
+ */
+function commitDates(modified: string | undefined) {
+  return modified === undefined
+    ? {}
+    : { datePublished: modified, dateModified: modified };
+}
+
+/**
  * A docs page as a TechArticle, the Article type schema.org gives technical
  * documentation and how-to guides.
  *
@@ -137,6 +148,8 @@ export function docsArticleSchema(input: {
   description?: string;
   modified?: string;
   url: string;
+  /** Root-relative path of the page's social card. */
+  image: string;
 }): WithContext<TechArticle> {
   const localeState = getPageLocaleState(input.url, getLocale());
   const url = absoluteUrl(localeState.canonicalPath);
@@ -147,11 +160,13 @@ export function docsArticleSchema(input: {
     ...(input.description !== undefined && {
       description: input.description,
     }),
-    ...(input.modified !== undefined && { dateModified: input.modified }),
+    ...commitDates(input.modified),
     inLanguage: localeState.contentLocale,
+    author: organization,
     publisher: organization,
     url,
     mainEntityOfPage: url,
+    image: absoluteUrl(input.image),
   };
 }
 
@@ -194,7 +209,8 @@ export function lessonArticleSchema(input: {
     "@type": "Article",
     headline: input.title,
     description: input.description,
-    ...(input.modified !== undefined && { dateModified: input.modified }),
+    ...commitDates(input.modified),
+    author: organization,
     publisher: organization,
     url: absoluteUrl(input.url),
     image: absoluteUrl(input.image),

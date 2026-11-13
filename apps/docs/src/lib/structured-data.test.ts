@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { docsArticleSchema, faqPageSchema } from "./structured-data";
+import {
+  docsArticleSchema,
+  faqPageSchema,
+  lessonArticleSchema,
+} from "./structured-data";
 
 const publisher = {
   "@type": "Organization",
@@ -13,36 +17,73 @@ const publisher = {
   ],
 };
 
-// schema.org: TechArticle is an Article; headline, description and
-// dateModified are CreativeWork properties, and dateModified takes an ISO
-// Date. Google reads `mainEntityOfPage` to tie the article to its page.
+// schema.org: TechArticle is an Article; headline, description,
+// datePublished, dateModified, author and image are CreativeWork properties,
+// and the dates take an ISO Date. Google reads `mainEntityOfPage` to tie the
+// article to its page, and lists datePublished, author and image among an
+// Article's recommended properties.
 describe("docsArticleSchema", () => {
-  it("names the page's canonical URL, headline, description and last-commit day", () => {
+  it("names the page's canonical URL, headline, description, card, author and last-commit day", () => {
     expect(
       docsArticleSchema({
         title: "Insert citations",
         description: "Insert Markdown citations while typing.",
         modified: "2026-11-09",
         url: "/docs/how-to/insert-citations",
+        image: "/og/docs/how-to/insert-citations.webp",
       }),
     ).toEqual({
       "@context": "https://schema.org",
       "@type": "TechArticle",
       headline: "Insert citations",
       description: "Insert Markdown citations while typing.",
+      datePublished: "2026-11-09",
       dateModified: "2026-11-09",
       inLanguage: "en",
+      author: publisher,
       publisher,
       url: "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
       mainEntityOfPage:
         "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
+      image: "https://zotlit.aidenlx.site/og/docs/how-to/insert-citations.webp",
     });
   });
 
   it("leaves out the fields a page does not have", () => {
-    const schema = docsArticleSchema({ title: "Docs", url: "/docs" });
+    const schema = docsArticleSchema({
+      title: "Docs",
+      url: "/docs",
+      image: "/og/docs.webp",
+    });
     expect(schema).not.toHaveProperty("description");
+    expect(schema).not.toHaveProperty("datePublished");
     expect(schema).not.toHaveProperty("dateModified");
+  });
+});
+
+describe("lessonArticleSchema", () => {
+  it("names the lesson's author and last-commit day as its dates", () => {
+    expect(
+      lessonArticleSchema({
+        title: "Cite Zotero sources as you write in Obsidian",
+        description: "Type [@ and pick a paper.",
+        modified: "2026-11-12",
+        url: "/learn/cite-in-obsidian-with-zotero",
+        image: "/og/learn/cite-in-obsidian-with-zotero.webp",
+      }),
+    ).toEqual({
+      "@context": "https://schema.org",
+      "@type": "Article",
+      headline: "Cite Zotero sources as you write in Obsidian",
+      description: "Type [@ and pick a paper.",
+      datePublished: "2026-11-12",
+      dateModified: "2026-11-12",
+      author: publisher,
+      publisher,
+      url: "https://zotlit.aidenlx.site/learn/cite-in-obsidian-with-zotero",
+      image:
+        "https://zotlit.aidenlx.site/og/learn/cite-in-obsidian-with-zotero.webp",
+    });
   });
 });
 
