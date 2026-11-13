@@ -78,26 +78,6 @@ export function LessonLink({
   );
 }
 
-/** A section's apparatus label: mono uppercase, muted. */
-export function SectionLabel({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <p
-      className={cn(
-        "font-mono text-[0.8125rem] font-medium tracking-[0.12em] text-fd-muted-foreground uppercase",
-        className,
-      )}
-    >
-      {children}
-    </p>
-  );
-}
-
 /**
  * Pauses or plays a loop (WCAG 2.2.2): a 36px round button on the raised
  * surface, in a corner of the loop's frame. Hidden under reduced motion,
