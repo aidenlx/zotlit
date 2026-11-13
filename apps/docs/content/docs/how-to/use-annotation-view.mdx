@@ -6,11 +6,12 @@ description: "Bring a Zotero paper's highlights and annotations into your Obsidi
 
 import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Before you pull highlights into your notes, try the guided lesson [Annotate Zotero PDFs in Obsidian](/learn/annotate-zotero-pdfs-in-obsidian) (about 10 minutes).
+Before you pull highlights into your notes, try the guided lesson <LessonLink slug="annotate-zotero-pdfs-in-obsidian" />.
 
 1. Run <Command inline name={m.command_open_annot_view_name()} /> from the command palette, or select the highlighter icon in the ribbon. The <UiLabel name={m.annot_view_name()} /> panel opens in the right sidebar.
 2. Open the paper's literature note or its PDF. The panel lists that paper's highlights.

@@ -6,11 +6,12 @@ description: "Refresh one literature note or a batch when a paper's Zotero data 
 
 import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-To make your first connected note, try [Connect Zotero to Obsidian: your first literature note](/learn/connect-zotero-to-obsidian) (about 12 minutes).
+To make your first connected note, try <LessonLink slug="connect-zotero-to-obsidian" />.
 
 1. Open the literature note.
 2. Press `Ctrl+P` (`Cmd+P` on macOS) and run <Command inline name={m.command_update_notes_name()} />.

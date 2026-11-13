@@ -2315,6 +2315,7 @@
   "docs_learn_open_again": "Open it again",
   "docs_learn_pick_chore": "Then pick a chore",
   "docs_learn_minutes": "About {minutes} minutes",
+  "docs_learn_link_minutes": "(about {minutes} minutes)",
   "docs_learn_chore_quote": "“{chore}”",
   "docs_learn_count_done": "{count} of {total} done",
   "docs_learn_check_label": "You should see",

@@ -6,9 +6,12 @@ description: "Change what a Zotero paper's literature note holds in Obsidian: it
 
 import { Accordion, Accordions } from "fumadocs-ui/components/accordion";
 import { Command } from "@/components/command";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
+
+To make a literature note before changing its template, start with <LessonLink slug="connect-zotero-to-obsidian" />.
 
 1. Open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select the pencil button, <UiLabel name={m.settings_profile_edit()} />.
 2. Pick a paper to preview with <UiLabel name={m.workbench_choose_item()} />.

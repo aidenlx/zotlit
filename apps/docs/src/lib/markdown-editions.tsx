@@ -18,6 +18,7 @@ import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
 import { ContractTable } from "@/components/contract-table";
 import { lessonMarkdownComponents } from "@/components/learn/lesson-mdx";
+import { LessonLink } from "@/components/lesson-link";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import * as m from "@/paraglide/messages.js";
@@ -53,6 +54,7 @@ const mdxComponents: Record<string, ElementType> = {
   Callout,
   Command,
   ContractTable,
+  LessonLink,
   SettingsPath,
   UiLabel,
 };
