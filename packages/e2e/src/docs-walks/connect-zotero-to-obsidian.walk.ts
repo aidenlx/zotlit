@@ -830,18 +830,15 @@ describe.skipIf(!reachable)(
         // each move held `hold` after its `ease` before the next one.
         const calm = clipSettings();
         const settle = (calm.ease + calm.hold) * 1000;
-        /** Waits until `settle` has passed since `since`, the time of a move. */
+        const movedAt = () => Temporal.Now.instant().epochMilliseconds;
+        /**
+         * Waits until `settle` has passed since a move.
+         * @param since the time of the move, from `movedAt`, in epoch ms.
+         */
         const holdSince = (
           shot: { wait(ms: number): Promise<void> },
           since: number,
-        ) =>
-          shot.wait(
-            Math.max(
-              0,
-              since + settle - Temporal.Now.instant().epochMilliseconds,
-            ),
-          );
-        const movedAt = () => Temporal.Now.instant().epochMilliseconds;
+        ) => shot.wait(Math.max(0, since + settle - movedAt()));
         /** A view of the region's ratio about `r`, inside `within`, `zoom`× at most. */
         const view = (r: Rect, within: Rect, zoom = calm.zoom): Rect => {
           const ratio = region.w / region.h;
@@ -1004,8 +1001,7 @@ describe.skipIf(!reachable)(
                       );
                       await holdSince(shot, moved);
                       shot.frame(view(opened.window, below, 1));
-                      moved = movedAt();
-                      await holdSince(shot, moved);
+                      await shot.wait(settle);
                       const gear = centre(opened.gear!);
                       shot.frame(
                         view(
