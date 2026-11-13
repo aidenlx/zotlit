@@ -5,7 +5,8 @@
 // without JavaScript get the whole lesson. Once it runs, at most one row is
 // open: the row the URL hash names (`#3`), or the first one not ticked for a
 // reader who began. A new reader starts with every row closed, on the
-// outcome, until they press Start or open a row themselves. Ticks
+// outcome, until they press Start or open a row themselves. A row open on
+// load shows its recording at rest until the reader acts on the page. Ticks
 // are saved per step for this browser, and the course page reads them. Until
 // the page runs, CSS alone opens the row the hash targets — see `preHydration`.
 
@@ -63,7 +64,6 @@ export interface LessonViewData {
   slug: string;
   title: string;
   lesson: number;
-  lessonCount: number;
   minutes: number;
   note?: string;
   media: string;
@@ -112,6 +112,9 @@ export function LessonView({
   const [open, setOpen] = useState<number | null>(null);
   // The row the reader opened with Start, whose recording plays at once.
   const [launched, setLaunched] = useState<number | null>(null);
+  // The reader has opened, closed or ticked a row in this page view; until
+  // then the row open on load shows its recording at rest.
+  const [acted, setActed] = useState(false);
   const [progress, setProgress] = useState<Record<string, LessonProgress>>({});
   const [say, setSay] = useState("");
   // The hash this page wrote itself, which the hash effect leaves alone.
@@ -166,6 +169,7 @@ export function LessonView({
   function show(n: number | null, into: number | null = n) {
     setOpen(n);
     setLaunched(null);
+    setActed(true);
     reveal.current = into;
     const next = n === null ? "" : String(n);
     written.current = next;
@@ -250,6 +254,7 @@ export function LessonView({
           go: (n) => (n > total ? show(null, n) : show(n)),
           wide,
           launched,
+          acted,
         }
       : null,
   };
@@ -326,6 +331,7 @@ export function LessonView({
             open={open}
             ticks={ticks}
             launched={launched}
+            acted={acted}
           >
             {startButton}
           </MediaPanel>
@@ -427,13 +433,14 @@ function Outcome({
  * From `xl`: the open row's recording beside the checklist, or, while no row
  * is open, the outcome at rest over the Start button. The open row's
  * recording plays at once after Start, and otherwise while it crosses the
- * middle of the window.
+ * middle of the window once the reader has acted on the page.
  */
 function MediaPanel({
   lesson,
   open,
   ticks,
   launched,
+  acted,
   children,
 }: {
   lesson: LessonViewData;
@@ -442,6 +449,8 @@ function MediaPanel({
   ticks: ReadonlySet<number>;
   /** The row the reader opened with Start. */
   launched: number | null;
+  /** The reader has acted on the page, so the open row's recording may play on its own. */
+  acted: boolean;
   /** The Start button, while no row is open. */
   children: ReactNode;
 }) {
@@ -482,6 +491,7 @@ function MediaPanel({
             n={open}
             alt={step.alt}
             active
+            autoplay={acted}
             playNow={launched === open}
           />
         </>

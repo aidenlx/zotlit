@@ -317,6 +317,7 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
             n={n}
             alt={meta.alt}
             active={live?.open === n && !live.wide}
+            autoplay={live?.acted ?? false}
             playNow={live?.launched === n}
           />
         </div>

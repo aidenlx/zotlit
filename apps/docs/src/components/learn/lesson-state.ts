@@ -30,6 +30,8 @@ export interface LessonState {
     wide: boolean;
     /** The row the reader opened with the Start button, whose recording plays at once. */
     launched: number | null;
+    /** The reader has opened, closed or ticked a row in this page view; until then the open row's recording rests. */
+    acted: boolean;
   } | null;
 }
 

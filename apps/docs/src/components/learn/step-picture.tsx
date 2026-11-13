@@ -73,8 +73,8 @@ export function StepPicture({
     >
       {active && entry.clip && !thumb ? (
         <Recording
-          // A player starts in its autoplay mode, so a change of mode remounts it.
-          key={`${entry.base}:${autoplay}`}
+          // A change of `autoplay` reaches the mounted player, which keeps a play or pause the reader chose.
+          key={entry.base}
           base={entry.base}
           poster={entry.still.src}
           alt={alt}

@@ -12,9 +12,9 @@ needs:
   - item: Lesson 1
     detail: Completed
   - item: Zotero collection
-    detail: Reproducibility, with your papers
+    detail: One of your collections with your papers, such as Reproducibility
   - item: Obsidian folder
-    detail: Thesis
+    detail: A folder of your choice, such as Thesis
 steps:
   - title: Save the collection as a table file
     alt: The new tab Reproducibility.zotquery opens in Obsidian, listing papers from the collection.
@@ -40,14 +40,14 @@ import { m } from "@/paraglide/messages.js";
 
 <Step n={1}>
 
-In <UiLabel name={m.library_view_name()} />, select `Reproducibility`, then <UiLabel name={m.annot_view_save_as_query_file()} /> (page-plus icon, top right of the list). Type `Thesis` as the folder and select <UiLabel name={m.annot_view_save_action()} />.
+In <UiLabel name={m.library_view_name()} />, select a collection of yours, such as `Reproducibility`, then <UiLabel name={m.annot_view_save_as_query_file()} /> (page-plus icon, top right of the list). Type a folder of your choice, such as `Thesis`, and select <UiLabel name={m.annot_view_save_action()} />.
 
 <Check>
-  The dialog reads{" "}
+  The dialog shows the file it creates from your folder and collection (here{" "}
   <UiLabel
     name={m.annot_view_save_file({ file: "Thesis/Reproducibility.zotquery" })}
   />
-  , and the file opens in a new tab listing your papers.
+  ), and the file opens in a new tab listing your papers.
 </Check>
 
 </Step>
@@ -96,7 +96,7 @@ Select <UiLabel name={m.query_view_sort()} /> > <UiLabel name={m.query_view_sort
 
 <Step n={6}>
 
-Select the result count, such as <UiLabel name={m.query_view_results({ count: 4 })} />, then <UiLabel name={m.query_view_copy()} />. Paste the table into your Chapter 3 draft.
+Select the result count, such as <UiLabel name={m.query_view_results({ count: 4 })} />, then <UiLabel name={m.query_view_copy()} />. Paste the table into your draft.
 
 <Check>The table appears in the draft with all its columns.</Check>
 

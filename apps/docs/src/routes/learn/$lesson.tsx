@@ -46,7 +46,6 @@ const getLesson = createServerFn({ method: "GET" })
         slug,
         title: data.title,
         lesson: data.lesson,
-        lessonCount: pages.length,
         minutes: data.minutes,
         note: data.note,
         media: data.media,
