@@ -15,9 +15,7 @@ needs:
 steps:
   - title: Open the paper's PDF
     alt: The PDF opens in Obsidian with dimmed annotation tools and the sidebar heading Following the active tab · Reading only.
-  - title: Ask to edit
-    alt: The PDF toolbar reads Waiting for approval in Zotero while Zotero displays a dialog with Always Allow.
-  - title: Choose Always Allow in Zotero
+  - title: Allow editing in Zotero
     alt: Obsidian displays Zotero editing is enabled. and the annotation tools at the top right appear in colour.
   - title: Select a passage
     alt: A floating toolbar beneath the selected sentence shows Highlight, Underline, four colours, and Add comment.
@@ -51,31 +49,21 @@ In <UiLabel name={m.library_view_name()} />, select Sandve et al. 2013, then <Ui
 
 <Step n={2}>
 
-Select the sidebar heading, then <UiLabel name={m.capability_enable_editing()} />.
+Select the sidebar heading, then <UiLabel name={m.capability_enable_editing()} />. Switch to Zotero. In the dialog, select **Always Allow**.
 
 <Check>
-  The PDF toolbar reads <UiLabel name={m.capability_authorizing()} />, and
-  Zotero displays a dialog with **Always Allow**.
-</Check>
-
-</Step>
-
-<Step n={3}>
-
-In the dialog, select **Always Allow**.
-
-<Check>
-  The notice <UiLabel name={m.notice_zotero_editing_enabled()} /> appears, and
-  the tools appear in colour.
+  Back in Obsidian, the notice appears:{" "}
+  <UiLabel name={m.notice_zotero_editing_enabled()} /> The tools appear in
+  colour.
 </Check>
 
 <Fix title="The tools stay dimmed">
-  Repeat Step 2 and select **Always Allow**.
+  Do this step again and select **Always Allow**.
 </Fix>
 
 </Step>
 
-<Step n={4}>
+<Step n={3}>
 
 Drag across a sentence in the PDF.
 
@@ -88,7 +76,7 @@ Drag across a sentence in the PDF.
 
 </Step>
 
-<Step n={5}>
+<Step n={4}>
 
 Select <UiLabel name={m.annot_view_card_add_comment()} />, type a comment for Chapter 3, and select <UiLabel name={m.pdf_toolbar_highlight()} />.
 
@@ -99,7 +87,7 @@ Select <UiLabel name={m.annot_view_card_add_comment()} />, type a comment for Ch
 
 </Step>
 
-<Step n={6}>
+<Step n={5}>
 
 Switch to Zotero and open the same PDF.
 
@@ -107,7 +95,7 @@ Switch to Zotero and open the same PDF.
 
 </Step>
 
-<Step n={7}>
+<Step n={6}>
 
 In Obsidian, open the note for Sandve et al. 2013.
 
