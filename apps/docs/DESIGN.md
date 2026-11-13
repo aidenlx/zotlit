@@ -223,9 +223,10 @@ Values follow the `better-ui` skill.
   landing recording or the landing's table demo: a recording runs while it
   crosses the middle band of the viewport, and the demo while half of it is
   on screen; each rests elsewhere, and a loop that starts rests the one that
-  played. A landing loop that lasts more than 5 seconds carries a visible
-  pause button (WCAG 2.2.2). With reduced motion, each shows its finished
-  frame.
+  played. A recording plays in the recording player, whose play button
+  pauses it; the table demo carries a visible pause button (WCAG 2.2.2).
+  With reduced motion, a recording rests on its poster until the reader
+  plays it, and the table demo shows its finished frame.
 - **Scroll.** The page scrolls as a document, with no scroll-linked movement.
   The landing's desk drifts with the pointer only (see Landing).
 
@@ -253,6 +254,23 @@ heading, one caption and one check line.
   a draft, pick a paper, and the formatted citation appears. Further
   candidates: drag a highlight into a draft so the quote arrives with its
   page; mark a paper "to-read" in the reading table.
+- **The recording player.** Every recording on the site plays in one
+  Video.js player (`src/components/recording-player.tsx`, composed from
+  Video.js UI components), loaded on demand: the page prerenders the still,
+  which stays until the player arrives. Its control bar floats 10px inside
+  the frame's bottom edge: a pill on the surface with the shadow ring,
+  holding a 36px round play/pause button, the seek bar (a 4px track in ink
+  at 15%, the fill and a 14px thumb in the accent through
+  `--media-accent-color`, a 36px tall hit area, half-second arrow steps),
+  the current and total time (mono 12px, muted, tabular; hidden when the
+  player is under 18rem wide) and a 36px fullscreen button. The clips are
+  silent, so there is no volume control. Lucide icons swap in place on the
+  control's state. The bar shows while the clip is paused or the reader is
+  active, and fades out over 150 ms during playback; keyboard focus brings
+  it back. The player is a focusable group named by the recording's alt
+  text; Space plays or pauses and the arrow keys seek while it has focus.
+  A clip plays muted and looping while it crosses the middle of the
+  viewport; once the reader plays or pauses it, the reader's choice holds.
 - **Words stay page text.** Captions, numbered-mark references and check lines
   are HTML beside the picture, so they translate, wrap and reach screen
   readers. The picture carries a text alternative that says what it shows.
@@ -398,14 +416,13 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   1600 × 1000 WebP still and, where the case has one, an MP4 and a WebM
   clip; `CLIPS` in `workflow.tsx` names the cases with a clip. The frame is
   16:10 (`object-fit: cover`), 12px radius, on the surface with the shadow
-  ring. The page prerenders the still. After mount, with motion on, a clip
-  mounts once its frame comes within 300px of the viewport (muted, looping,
-  inline, `preload="none"`, the still as its poster) and plays while it
-  crosses the middle band, with a pause button in its lower corner. Reduced
-  motion keeps the still. The alt text says what the recording shows.
-- **Pause buttons.** A 36px round button on the surface with the shadow
-  ring, a Lucide Pause or Play icon and a label that names the loop ("Pause
-  the demo", "Play the recording"); hidden under reduced motion.
+  ring. The page prerenders the still. After mount, the recording player
+  (see Illustration) mounts once its frame comes within 300px of the
+  viewport (`preload="metadata"`, the still as its poster) and plays while
+  it crosses the middle band. The alt text says what the recording shows.
+- **Pause buttons.** The table demo's pause button: 36px round on the
+  surface with the shadow ring, a Lucide Pause or Play icon and a label
+  that names the loop ("Pause the demo"); hidden under reduced motion.
 - **Inside the app windows.** The desk's sheets and the demo's window use
   ZotLit's own labels (the plugin's `m.*` messages) and Lucide icons on the
   site tokens; the Zotero annotation colours and Obsidian's purple
@@ -443,7 +460,9 @@ first for a 700px window, then checked at 390px and 1440px.
 - **Shell.** The course sits outside the docs layout: a top bar (the
   wordmark, a mono "Learn" label, then "All lessons" and "Docs" as muted
   links, over a hairline) and one centred column, 720px at most, with 20px
-  side padding.
+  side padding. From 1280px (`xl`) the course page widens to 1180px and a
+  running lesson to 1400px with its media panel; below that, every page
+  keeps the one column.
 - **Course page.** The question as the H1 (serif 500, 34px, 42px from
   561px) over a sans lede; a **Continue Lesson N** button (ink fill) once
   the reader has progress. Then **Start here**: lesson 1 as a raised card
@@ -457,7 +476,9 @@ first for a 700px window, then checked at 390px and 1440px.
   minutes and the progress (a "Done" badge, or "N of M done" in the accent
   text tone), the chore in the reader's words as a quoted serif title that
   links the whole card, a "Today you …" line in muted sans, and the
-  lesson's result picture.
+  lesson's result picture. From 1280px the header keeps 680px, and the
+  chore cards sit in a six-column grid, three cards over two (spans 2, 2,
+  2, 3, 3), each with its picture on top.
 - **Result picture.** The lesson's last step: its poster
   (`step-<n>.poster.webp`, the clip's final frame framed on the result) or,
   until one exists, its screenshot. On a card it fills a window-shaped
@@ -480,18 +501,33 @@ first for a 700px window, then checked at 390px and 1440px.
   button holding a mono "Step 2 of 6" label and the step title (sans 18px,
   semibold; muted and regular once ticked) with a chevron. Closed rows sit
   on hairlines. The open row is a raised card (14px radius) and, below the
-  title, shows the action, the picture, the check line, any figure and
-  **Not what you see?**. Ticking a row closes it and opens the next row not
-  ticked; any row reopens from its title. The body fades and rises 6px over
-  220 ms when it opens (none under reduced motion).
-- **Picture.** One recording of the step in the real app (see
-  Illustration), 10px radius, with the shadow ring, at most 560px or 70% of
-  the window tall. Only the open row's clip and the opener's result load;
-  each plays while it crosses the middle of the window, one at a time, and
-  carries a 36px pause and play button at its bottom corner. There is no
-  zoom control: the recordings frame the action themselves.
+  title, shows the action, the picture, the check line, any figure, then
+  **Tick step N** (the ink-filled leading action, with a check) beside
+  **Not what you see?**. Ticking a row, by its checkbox or by Tick step N,
+  closes it and opens the next row not ticked; any row reopens from its
+  title. A ticked row opened again shows a check with "Ticked" in check
+  green and **Go to step N** (**See the end** once every step is ticked)
+  on the surface with the shadow ring. After either button, focus moves to
+  the title of the row that opens, or to the end. The body fades and rises
+  6px over 220 ms when it opens (none under reduced motion).
+- **Media panel.** From 1280px, on a running page, the lesson is a 580px
+  checklist column and, 48px beside it, a sticky panel that follows the
+  open row: its step label (accent text tone; check green with a check and
+  "Done" once ticked), its title in serif 24px, its recording and one muted
+  line on what to do. With no row open, the panel shows the result picture
+  under "You end with". The rows then show no picture of their own, so one
+  player mounts per step. The prerendered page and a reader without
+  JavaScript keep the one column, with every picture in its row.
+- **Picture.** One recording of the step in the real app, in the recording
+  player (see Illustration), 10px radius, with the shadow ring, at most
+  560px or 70% of the window tall. Only the open row's clip and the
+  opener's result load; each plays while it crosses the middle of the
+  window, one at a time. There is no zoom control: the recordings frame the
+  action themselves.
 - **Action.** Sans 18px / 1.5, naming each control as a UI chip (sans
-  semibold on the quiet fill, 5px radius).
+  semibold on the quiet fill, 5px radius); a link, such as the
+  `obsidian://` shortcut in lesson 1, is underlined in the accent text
+  tone.
 - **Check line.** A mono "In Obsidian you should see" label with an eye
   mark over what the reader should now see, in a 10px-radius band: dark
   green `#1f5c39` text on `#e9f3ec` (7.0:1) in light; `#7cc79a` on `#17261d`

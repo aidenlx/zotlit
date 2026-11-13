@@ -16,7 +16,13 @@
 // the same parts to the lesson through `lessonMarkdownComponents`.
 
 import { asMarkdown, md } from "fumadocs-core/server";
-import { Check as CheckIcon, ChevronDown, Eye } from "lucide-react";
+import {
+  ArrowDown,
+  Check as CheckIcon,
+  ChevronDown,
+  CircleCheck,
+  Eye,
+} from "lucide-react";
 import { Children, isValidElement, use, useId, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -24,8 +30,8 @@ import { cn } from "@/lib/cn";
 import * as m from "@/paraglide/messages.js";
 import { localizeHref } from "@/paraglide/runtime.js";
 
-import { LessonContext } from "./lesson-state";
-import type { LessonStepMeta } from "./lesson-state";
+import { LessonContext, nextOpenStep } from "./lesson-state";
+import type { LessonState, LessonStepMeta } from "./lesson-state";
 import { stepMedia, StepPicture } from "./step-picture";
 
 /**
@@ -49,12 +55,16 @@ export const preHydration = {
 export const labelClass =
   "font-mono text-[11px] leading-tight font-medium tracking-[0.08em] text-fd-muted-foreground uppercase";
 
-/** Action text: sans 18px, each ZotLit label as a UI chip. */
+/** Action text: sans 18px, each ZotLit label as a UI chip, links in the accent text tone. */
 const captionClass =
-  "text-lg leading-normal [&_code]:rounded-sm [&_code]:bg-fd-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.84em] [&_p+p]:mt-3 [&_strong]:rounded-[5px] [&_strong]:bg-fd-muted [&_strong]:px-1.5 [&_strong]:py-px [&_strong]:text-[0.94em] [&_strong]:font-semibold [&_strong]:[box-decoration-break:clone]";
+  "text-lg leading-normal [&_a]:rounded-sm [&_a]:font-medium [&_a]:text-fd-primary [&_a]:underline [&_a]:decoration-fd-primary/40 [&_a]:underline-offset-4 [&_a]:hover:decoration-fd-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-offset-2 [&_a]:focus-visible:outline-fd-ring [&_code]:rounded-sm [&_code]:bg-fd-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.84em] [&_p+p]:mt-3 [&_strong]:rounded-[5px] [&_strong]:bg-fd-muted [&_strong]:px-1.5 [&_strong]:py-px [&_strong]:text-[0.94em] [&_strong]:font-semibold [&_strong]:[box-decoration-break:clone]";
 
 export const buttonClass =
   "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-fd-foreground px-5 py-2.5 font-semibold text-fd-background transition-[background-color,scale] duration-150 hover:bg-fd-foreground/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]";
+
+/** The secondary action: the raised surface with the shadow ring. */
+const secondaryButtonClass =
+  "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-transparent bg-fd-background px-5 py-2.5 font-semibold text-fd-foreground shadow-ring transition-[box-shadow,scale] duration-150 hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]";
 
 export const focusClass =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring";
@@ -216,6 +226,7 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
         <h2 className="min-w-0 flex-1">
           {live ? (
             <button
+              id={`step-${n}-toggle`}
               type="button"
               aria-expanded={open}
               aria-controls={bodyId}
@@ -249,26 +260,90 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
         )}
       >
         <div className={captionClass}>{caption}</div>
-        <StepPicture
-          media={lesson.media}
-          n={n}
-          alt={meta.alt}
-          active={live?.open === n}
-        />
+        {/* From `xl` the media panel beside the checklist shows this picture instead. */}
+        <div className="empty:hidden [html[data-lesson-js]_&]:xl:hidden">
+          <StepPicture
+            media={lesson.media}
+            n={n}
+            alt={meta.alt}
+            active={live?.open === n && !live.wide}
+          />
+        </div>
         {check}
         {figure}
-        <StepFixes ready={live !== null}>{fixes}</StepFixes>
+        <StepFixes
+          ready={live !== null}
+          action={live && <TickAction n={n} total={total} live={live} />}
+        >
+          {fixes}
+        </StepFixes>
       </div>
     </li>
   );
 }
 
-/** "Not what you see?": a disclosure that holds the step's fixes. */
+/** Moves focus to row `n`'s title, or to the end, once the row it left has closed. */
+function focusPart(n: number, total: number) {
+  requestAnimationFrame(() => {
+    const id = n > total ? "done" : `step-${n}-toggle`;
+    document.getElementById(id)?.focus({ preventScroll: true });
+  });
+}
+
+/** The open row's tick in place: "Tick step N", or "Ticked" and the way on once it is ticked. */
+function TickAction({
+  n,
+  total,
+  live,
+}: {
+  n: number;
+  total: number;
+  live: NonNullable<LessonState["live"]>;
+}) {
+  if (!live.ticks.has(n)) {
+    return (
+      <button
+        type="button"
+        onClick={() => focusPart(live.tick(n, true), total)}
+        className={buttonClass}
+      >
+        <CheckIcon aria-hidden strokeWidth={3} className="size-4" />
+        {m.docs_learn_tick_step({ number: n })}
+      </button>
+    );
+  }
+  const next = nextOpenStep(live.ticks, n, total) ?? total + 1;
+  return (
+    <>
+      <span className="inline-flex items-center gap-1.5 text-base font-semibold text-check-label">
+        <CircleCheck aria-hidden strokeWidth={2.25} className="size-[18px]" />
+        {m.docs_learn_ticked()}
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          live.go(next);
+          focusPart(next, total);
+        }}
+        className={secondaryButtonClass}
+      >
+        {next > total
+          ? m.docs_learn_see_end()
+          : m.docs_learn_go_to_step({ number: next })}
+        <ArrowDown aria-hidden strokeWidth={2.25} className="size-4" />
+      </button>
+    </>
+  );
+}
+
+/** "Not what you see?": a disclosure that holds the step's fixes, after the row's tick in place. */
 function StepFixes({
   ready,
+  action,
   children,
 }: {
   ready: boolean;
+  action: ReactNode;
   children: ReactNode[];
 }) {
   const [open, setOpen] = useState(false);
@@ -276,7 +351,13 @@ function StepFixes({
 
   return (
     <div className="grid gap-3">
-      <div className={preHydration.scripted}>
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-x-5 gap-y-3",
+          preHydration.scripted,
+        )}
+      >
+        {action}
         <button
           type="button"
           aria-expanded={open}

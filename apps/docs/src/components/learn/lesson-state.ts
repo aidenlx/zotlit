@@ -21,8 +21,13 @@ export interface LessonState {
     /** The open row, or null when every row is closed. */
     open: number | null;
     ticks: ReadonlySet<number>;
-    tick: (n: number, done: boolean) => void;
+    /** Ticks or unticks row `n`, and returns the part it opens: a row, or `steps.length + 1` for the end. */
+    tick: (n: number, done: boolean) => number;
     toggle: (n: number) => void;
+    /** Opens row `n`, or brings the end into view for `steps.length + 1`. */
+    go: (n: number) => void;
+    /** The window is wide enough for the media panel, which shows the open row's recording. */
+    wide: boolean;
   } | null;
 }
 
@@ -91,6 +96,16 @@ export function saveTicks(
   } catch {
     // Without storage the lesson still works; it only forgets the ticks.
   }
+}
+
+/** The first step after `n` not ticked, then the first one before it, or undefined when every step is ticked. */
+export function nextOpenStep(
+  ticks: ReadonlySet<number>,
+  n: number,
+  total: number,
+) {
+  for (let k = n + 1; k <= total; k++) if (!ticks.has(k)) return k;
+  return firstOpenStep(ticks, total);
 }
 
 /** The first step not ticked, or undefined when every step is. */

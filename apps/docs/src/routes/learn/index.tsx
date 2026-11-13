@@ -91,8 +91,8 @@ function Course() {
     course.length > 0 && course.every((entry) => progress[entry.slug]?.done);
 
   return (
-    <div className="mx-auto grid w-full max-w-[720px] grid-cols-[minmax(0,1fr)] gap-10 px-5 pt-8 pb-24">
-      <header className="grid gap-4">
+    <div className="mx-auto grid w-full max-w-[720px] grid-cols-[minmax(0,1fr)] gap-10 px-5 pt-8 pb-24 xl:max-w-[1180px]">
+      <header className="grid max-w-[680px] gap-4">
         <h1 className="font-serif text-[34px] leading-[1.1] font-medium tracking-[-0.01em] text-balance min-[561px]:text-[42px]">
           {m.docs_learn_heading()}
         </h1>
@@ -133,9 +133,13 @@ function Course() {
           </h2>
           <p className={labelClass}>{m.docs_learn_any_order()}</p>
         </div>
-        <ul className="grid gap-4">
-          {chores.map((lesson) => (
-            <li key={lesson.slug}>
+        {/* From `xl`, three cards over two, as in the prototype's chore grid. */}
+        <ul className="grid gap-4 xl:grid-cols-6">
+          {chores.map((lesson, index) => (
+            <li
+              key={lesson.slug}
+              className={index < 3 ? "xl:col-span-2" : "xl:col-span-3"}
+            >
               <ChoreCard lesson={lesson} progress={progress[lesson.slug]} />
             </li>
           ))}
@@ -275,7 +279,7 @@ function ChoreCard({
   }).format(lesson.today);
 
   return (
-    <div className="relative grid gap-4 rounded-[14px] border border-transparent bg-fd-card p-4 shadow-ring transition-shadow duration-150 hover:shadow-ring-hover min-[561px]:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] min-[561px]:items-start min-[561px]:p-5">
+    <div className="relative grid h-full gap-4 rounded-[14px] border border-transparent bg-fd-card p-4 shadow-ring transition-shadow duration-150 hover:shadow-ring-hover min-[561px]:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] min-[561px]:items-start min-[561px]:p-5 xl:grid-cols-1 xl:content-start">
       <div className="grid min-w-0 gap-2.5">
         <Meta lesson={lesson} progress={progress} />
         <h3 className="font-serif text-[22px] leading-snug font-medium text-balance">
@@ -294,7 +298,7 @@ function ChoreCard({
           {m.docs_learn_today_you({ chores: today })}
         </p>
       </div>
-      <div className="max-[560px]:order-first">
+      <div className="max-[560px]:order-first xl:order-first">
         <StepPicture
           media={lesson.media}
           n={lesson.steps}
