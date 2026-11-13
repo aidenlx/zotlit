@@ -103,7 +103,7 @@ export default function RecordingPlayer({
   );
   // A clip that plays once has reached its end, and rests there until the reader plays it again.
   const [ended, setEnded] = useState(false);
-  // "auto" plays mid-viewport, "manual" plays from the reader's press until it leaves view, "paused" stays still.
+  // "auto" plays mid-viewport, "manual" plays from the reader's press while any of it is in view, "paused" stays still.
   const mode = ended ? "paused" : (chosen ?? (reduced ? "paused" : "auto"));
   // The reader has played or paused the clip, so its changes are announced.
   const [touched, setTouched] = useState(false);
@@ -118,6 +118,14 @@ export default function RecordingPlayer({
     askedPause.current = true;
     v.pause();
   }, []);
+
+  // How the clip plays again once a loop that rested it in view rests, while its mode lets it play.
+  const resume = useRef<(() => void) | null>(null);
+  // Rests the clip for a loop that takes the turn, and queues it to play again when that loop rests.
+  const yieldTurn = useCallback(() => {
+    rest();
+    if (resume.current) awaitTurn(me, resume.current);
+  }, [me, rest]);
 
   useEffect(() => {
     const v = video.current;
@@ -134,10 +142,7 @@ export default function RecordingPlayer({
       if (!v) return;
       stopWaiting(me);
       // A loop that takes the turn while this clip is in view leaves it waiting to play again.
-      const started = askTurn(me, () => {
-        rest();
-        awaitTurn(me, play);
-      });
+      const started = askTurn(me, yieldTurn);
       // A clip the reader paused in view holds the turn, so this one waits for it to leave.
       if (!started) {
         awaitTurn(me, play);
@@ -155,18 +160,20 @@ export default function RecordingPlayer({
           rest();
           stopWaiting(me);
           endTurn(me);
-        } else if (mode === "auto") {
+        } else {
           play();
         }
       },
       mode === "auto" ? { rootMargin: "-40% 0px -40% 0px" } : undefined,
     );
     observer.observe(v);
+    resume.current = play;
     return () => {
+      resume.current = null;
       observer.disconnect();
       stopWaiting(me);
     };
-  }, [mode, me, rest]);
+  }, [mode, me, rest, yieldTurn]);
 
   useEffect(
     () => () => {
@@ -180,12 +187,12 @@ export default function RecordingPlayer({
   useEffect(() => {
     const v = video.current;
     if (!v || !playNow || reduced) return;
-    takeTurn(me, rest);
+    takeTurn(me, yieldTurn);
     askedPlay.current = true;
     void v.play().catch(() => {
       askedPlay.current = false;
     });
-  }, [playNow, reduced, me, rest]);
+  }, [playNow, reduced, me, yieldTurn]);
 
   function onPlay() {
     setEnded(false);
@@ -193,7 +200,7 @@ export default function RecordingPlayer({
       askedPlay.current = false;
       return;
     }
-    takeTurn(me, rest);
+    takeTurn(me, yieldTurn);
     setTouched(true);
     setChosen("manual");
   }

@@ -156,6 +156,41 @@ describe("a lesson's recordings", () => {
     expect(outcome.loop).toBe(true);
   });
 
+  it("plays the step from Start again once the outcome that crossed the middle of the window on the way to it leaves", async () => {
+    using page = await mountLesson();
+    const outcome = await page.player(outcomeScope);
+    page.act(() =>
+      page
+        .buttonNamed(m.docs_learn_start_step({ number: 1, begun: "no" }))[0]!
+        .click(),
+    );
+    const step = await page.player("#step-1-body");
+
+    // The scroll to the opened row carries the outcome through the middle of the window.
+    page.show(outcome, 1);
+    expect(outcome.paused).toBe(false);
+    expect(step.paused).toBe(true);
+    page.show(outcome, 0);
+
+    expect(step.paused).toBe(false);
+  });
+
+  it("plays the step from Start once the scroll to its row brings it into view", async () => {
+    using page = await mountLesson();
+    page.act(() =>
+      page
+        .buttonNamed(m.docs_learn_start_step({ number: 1, begun: "no" }))[0]!
+        .click(),
+    );
+    const step = await page.player("#step-1-body");
+
+    // In a narrow window the opened row's picture starts below the fold.
+    page.show(step, 0);
+    page.show(step, 0.5);
+
+    expect(step.paused).toBe(false);
+  });
+
   it("plays a step once from Start, then dims it under a replay button and gives the turn back", async () => {
     using page = await mountLesson();
     const outcome = await page.player(outcomeScope);
