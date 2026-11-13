@@ -77,6 +77,7 @@
   "command_update_all_notes_name": "Create or update all literature notes",
   "command_import_all_notes_name": "Import all child and standalone notes",
   "command_open_pdf_name": "Open PDF",
+  "command_open_pdf_literature_note_name": "Open or write literature note for this PDF",
   "notice_no_pdf_attachment": "This item has no PDF attachment.",
   "notice_pdf_file_missing": "The PDF file is missing.",
   "notice_attachment_open_failed": "Could not open the attachment.",
