@@ -1,3 +1,5 @@
+// The Desktop Slot admission of a docs-walk run, before its walks open.
+
 import { assertDevBundleFresh } from "@e2e/bundle-freshness.ts";
 import { isObsidianReachable } from "@e2e/vault-script.ts";
 
@@ -8,13 +10,14 @@ import {
 } from "@zotlit/scripts/desktop-slot";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { captureRequested } from "./docs-walk.ts";
+import { exclusiveHoldRequested } from "./docs-walk.ts";
 
 /**
  * The global setup of `pnpm --filter @zotlit/e2e docs-walk`: one Desktop Slot
- * for the run, or an Exclusive Hold of every slot when the run captures
- * screenshots, so no other run's window moves while a capture lands. A run
- * without a reachable Obsidian skips its walks and takes no slot.
+ * for the run, or an Exclusive Hold of every slot when the run captures or
+ * records ({@link exclusiveHoldRequested}): a recording brings apps to the
+ * front, hides Obsidian and can send real input. A run without a reachable
+ * Obsidian skips its walks and takes no slot.
  */
 export default async function setup() {
   const cwd = await getWorkspaceRoot(import.meta.dirname);
@@ -24,7 +27,7 @@ export default async function setup() {
   const slot = await acquireDesktopSlotOrExit({
     cwd,
     command: "pnpm docs-walk",
-    exclusive: captureRequested(),
+    exclusive: exclusiveHoldRequested(),
     leaseMs: automatedLease(DEFAULT_LEASE_MS.e2e),
   });
   return () => slot.release();

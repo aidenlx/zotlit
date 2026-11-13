@@ -362,7 +362,23 @@ describe.skipIf(!reachable)("Lesson 6: Build a literature review table", () => {
               el.querySelector("[data-library-label]"),
             20000,
           );
-          await new Promise((r) => setTimeout(r, 1000));
+          // The tree's toggle for this pane width says whether it shows.
+          await page.until(
+            "the tree toggle that agrees with the tree",
+            () => {
+              const toggle = [
+                ...el.querySelectorAll<HTMLElement>(
+                  "[data-library-tree-toggle], [data-library-tree-collapse]",
+                ),
+              ].find((b) => b.checkVisibility());
+              return (
+                toggle !== undefined &&
+                (toggle.getAttribute("aria-pressed") === "true") ===
+                  !!label()?.checkVisibility()
+              );
+            },
+            20000,
+          );
           const treeShown = !!label()?.checkVisibility();
           if (!treeShown)
             page.press(

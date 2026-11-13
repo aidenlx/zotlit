@@ -789,7 +789,11 @@ describe.skipIf(!reachable)(
           height: 860,
           downloads: DOWNLOADS,
         });
-        await browser.open(`${DOCS_URL}/docs/install-companion`);
+        // The guide's heading, its download section and its link show.
+        await browser.open(
+          `${DOCS_URL}/docs/install-companion`,
+          `document.querySelector("h1") && document.getElementById("download-the-xpi-file") && [...document.querySelectorAll('a[href$=".xpi"]')].some((l) => l.checkVisibility())`,
+        );
         const pid = await walk.zotero.json<number>(
           "Services.appinfo.processID",
         );
@@ -1139,7 +1143,7 @@ describe.skipIf(!reachable)(
                       await walk.zotero.json<boolean>(
                         `(async () => {
                         const { AddonManager } = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
-                        const file = new FileUtils.File(${JSON.stringify(join(DOWNLOADS, "zotlit-zotero-2.2.2.xpi"))});
+                        const file = new FileUtils.File(${JSON.stringify(join(DOWNLOADS, file))});
                         const install = await AddonManager.getInstallForFile(file);
                         await install.install();
                         return true;
@@ -1213,7 +1217,7 @@ describe.skipIf(!reachable)(
         const downloaded = await readdir(DOWNLOADS);
         console.log("[walk] downloaded", JSON.stringify(downloaded));
         // The browser saved the release file the guide links to.
-        if (!downloaded.includes("zotlit-zotero-2.2.2.xpi"))
+        if (!result.file || !downloaded.includes(result.file))
           throw new Error(`the guide downloaded ${String(result.file)}`);
       } else {
         // Without the clip: the guide button, then the Paired Run's own
