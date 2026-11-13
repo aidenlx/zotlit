@@ -33,6 +33,7 @@ import {
   getChangelogPages,
   getLessonPages,
   learn,
+  lessonFurther,
   source,
 } from "./source";
 
@@ -106,11 +107,13 @@ async function renderLessonPage(
   const nextLine = next
     ? `[${m.docs_learn_next_lesson({ number: next.data.lesson, title: next.data.title }, { locale })}](${next.url}.md)`
     : `[${m.docs_learn_how_to_guides({}, { locale })}](/docs/how-to.md)`;
-  const further = data.further
+  const further = lessonFurther(data.further, locale)
     .map(({ title, href, when }) => `- [${title}](${href}.md): ${when}`)
     .join("\n");
 
-  return `# ${data.title} (${page.url})
+  // The links built here, beside the rendered body, follow the edition's locale too.
+  return localizeMarkdownLinks(
+    `# ${data.title} (${page.url})
 
 ${[data.lede, data.note].filter(Boolean).join("\n\n")}
 
@@ -131,7 +134,9 @@ ${nextLine}: ${data.end.next}
 ## ${m.docs_learn_go_further({}, { locale })}
 
 ${further}
-`;
+`,
+    locale,
+  );
 }
 
 /** Title line, page URL, then the rendered Markdown body. */

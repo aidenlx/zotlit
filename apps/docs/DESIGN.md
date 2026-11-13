@@ -639,7 +639,7 @@ explains, and each fact appears once (see The label voice).
 - **Go further.** Under the checklist (and the end card), always shown and
   prerendered: "Go further" in serif at the title size, then two to five
   docs pages from the lesson's `further` frontmatter, one per line at body
-  size: the page's title as a semibold link in the accent text tone, then a
+  size: the page's own title as a semibold link in the accent text tone, then a
   muted phrase on when the reader needs it.
 - **Focus and state.** Every control is a button, link or checkbox with a
   2px accent outline at 2px offset on keyboard focus. Ticked state shows as

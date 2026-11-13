@@ -32,6 +32,26 @@ describe("docs page titles in the Markdown surface", () => {
     expect(getLlmsIndex().slice(0, expected.length)).toBe(expected);
   });
 
+  it.each([
+    ["en", ""],
+    ["zh-CN", "/zh-CN"],
+  ] as const)(
+    "names a lesson's Go further pages by their own titles, linked in %s",
+    async (locale, prefix) => {
+      const edition = await getMarkdownEdition(
+        { section: "learn", slugs: ["cite-in-obsidian-with-zotero"] },
+        { locale },
+      );
+      const further = edition?.split(/^## .+$/m).at(-1);
+      expect(further).toContain(
+        `- [Insert Zotero citations in Obsidian: every way to do it](${prefix}/docs/how-to/insert-citations.md): `,
+      );
+      expect(edition).toContain(
+        `](${prefix}/learn/export-obsidian-to-word-with-citations.md): `,
+      );
+    },
+  );
+
   it("heads a page's edition with its own title", async () => {
     const page = retitled[0]!;
     const edition = await getMarkdownEdition({

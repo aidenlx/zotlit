@@ -13,7 +13,7 @@ import { getPageLocaleState } from "@/lib/locale-state";
 import { getReleaseSnapshot } from "@/lib/release-data";
 import { pageHead } from "@/lib/seo";
 import { appName, learnRoute, ogImageUrl } from "@/lib/shared";
-import { getLessonPages, learn } from "@/lib/source";
+import { getLessonPages, learn, lessonFurther } from "@/lib/source";
 import {
   breadcrumbListSchema,
   lessonArticleSchema,
@@ -54,7 +54,7 @@ const getLesson = createServerFn({ method: "GET" })
         needs: data.needs,
         steps: data.steps,
         end: { title: data.end.title, caption: data.end.caption },
-        further: data.further,
+        further: lessonFurther(data.further, locale),
         others: pages
           .filter((entry) => entry.url !== page.url)
           .map((entry) => ({

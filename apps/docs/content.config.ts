@@ -121,9 +121,8 @@ export const learnSchema = v.object({
   further: v.pipe(
     v.array(
       v.object({
-        /** The page's shown title, so the link names it. */
-        title: v.string(),
-        href: v.pipe(v.string(), v.startsWith("/docs/")),
+        /** The docs page's slug under `/docs/`; the link shows that page's own title. */
+        slug: v.pipe(v.string(), v.regex(/^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/)),
         /** When the reader needs the page, as a phrase after the title. */
         when: v.string(),
       }),
