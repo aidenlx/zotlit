@@ -65,9 +65,17 @@ describe("Markdown edition rules", () => {
   });
 
   it("leaves the editions the Worker answers to the Worker", () => {
-    expect(rules.map((rule) => rule.source)).not.toContain(
-      "/docs/how-to/insert-citations.md",
-    );
-    expect(rules).toHaveLength(buildHeaderRules().length + 5);
+    expect(
+      rules
+        .filter((rule) => "Link" in rule.headers)
+        .map((rule) => rule.source)
+        .toSorted(),
+    ).toEqual([
+      "/docs.md",
+      "/llms.mdx/:p1/:p2/:p3/content.md",
+      "/llms.mdx/:p1/:p2/content.md",
+      "/llms.mdx/:p1/content.md",
+      "/zh-CN/llms.mdx/:p1/:p2/:p3/content.md",
+    ]);
   });
 });

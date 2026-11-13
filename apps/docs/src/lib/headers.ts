@@ -6,7 +6,7 @@ import { regex } from "arkregex";
 
 import { chinesePrefix, unlocalizedPath } from "./i18n.js";
 import { htmlPagePath } from "./markdown-routes.js";
-import { baseURL } from "./shared.js";
+import { markdownEditionHeaders } from "./shared.js";
 
 /** One `_headers` block: a path pattern and the headers it adds. */
 export interface HeaderRule {
@@ -47,10 +47,7 @@ function markdownEditionRules(pages: readonly string[]): HeaderRule[] {
   }
   return [...canonicalBySource].map(([source, page]) => ({
     source,
-    headers: {
-      "X-Robots-Tag": "noindex",
-      Link: `<${baseURL}${page}>; rel="canonical"`,
-    },
+    headers: markdownEditionHeaders(page),
   }));
 }
 

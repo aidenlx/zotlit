@@ -16,7 +16,7 @@ import { localizedPath } from "./lib/i18n";
 import type { SiteLocale } from "./lib/i18n";
 import { getPageLocaleState } from "./lib/locale-state";
 import { negotiatedContentRoute } from "./lib/markdown-routes";
-import { baseURL } from "./lib/shared";
+import { markdownEditionHeaders } from "./lib/shared";
 import { buildV1Redirects } from "./lib/v1-redirects";
 import { deLocalizeUrl } from "./paraglide/runtime.js";
 import { paraglideMiddleware } from "./paraglide/server";
@@ -102,11 +102,10 @@ export default createServerEntry({
         headers.append("vary", "Accept");
       // A Markdown answer repeats its HTML page: the page is the one to index.
       if (response.ok && isMarkdown(headers)) {
-        headers.set("x-robots-tag", "noindex");
-        headers.set(
-          "link",
-          `<${baseURL}${state.canonicalPath}>; rel="canonical"`,
-        );
+        for (const [name, value] of Object.entries(
+          markdownEditionHeaders(state.canonicalPath),
+        ))
+          headers.set(name, value);
       }
       return new Response(response.body, {
         status: response.status,
