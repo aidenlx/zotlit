@@ -5,9 +5,10 @@
 // without JavaScript get the whole lesson. Once it runs, at most one row is
 // open: the row the URL hash names (`#3`), or the first one not ticked for a
 // reader who began. A new reader starts with every row closed, on the
-// outcome, until they press Start or open a row themselves. A row open on
-// load shows its recording at rest until the reader acts on the page. Ticks
-// are saved per step for this browser, and the course page reads them. Until
+// outcome, until they press Start or open a row themselves. The outcome's
+// recording loops; a step's plays once and ends dimmed under its replay and
+// tick buttons. Ticks are saved per step for this browser, and the course
+// page reads them. Until
 // the page runs, CSS alone opens the row the hash targets — see `preHydration`.
 
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -32,6 +33,7 @@ import {
   focusPart,
   labelClass,
   metaClass,
+  TickButton,
   titleClass,
 } from "./lesson-mdx";
 import {
@@ -112,9 +114,6 @@ export function LessonView({
   const [open, setOpen] = useState<number | null>(null);
   // The row the reader opened with Start, whose recording plays at once.
   const [launched, setLaunched] = useState<number | null>(null);
-  // The reader has opened, closed or ticked a row in this page view; until
-  // then the row open on load shows its recording at rest.
-  const [acted, setActed] = useState(false);
   const [progress, setProgress] = useState<Record<string, LessonProgress>>({});
   const [say, setSay] = useState("");
   // The hash this page wrote itself, which the hash effect leaves alone.
@@ -169,7 +168,6 @@ export function LessonView({
   function show(n: number | null, into: number | null = n) {
     setOpen(n);
     setLaunched(null);
-    setActed(true);
     reveal.current = into;
     const next = n === null ? "" : String(n);
     written.current = next;
@@ -254,7 +252,6 @@ export function LessonView({
           go: (n) => (n > total ? show(null, n) : show(n)),
           wide,
           launched,
-          acted,
         }
       : null,
   };
@@ -325,14 +322,8 @@ export function LessonView({
           </div>
           {(!ready || allDone) && <End lesson={lesson} progress={progress} />}
         </div>
-        {ready && wide && (
-          <MediaPanel
-            lesson={lesson}
-            open={open}
-            ticks={ticks}
-            launched={launched}
-            acted={acted}
-          >
+        {state.live?.wide && (
+          <MediaPanel lesson={lesson} live={state.live}>
             {startButton}
           </MediaPanel>
         )}
@@ -383,7 +374,7 @@ function Opener({ lesson }: { lesson: LessonViewData }) {
 
 /**
  * Below `xl`, the result once, above the checklist: its title, the Start
- * button while no row is open, and the last step's recording at rest. From
+ * button while no row is open, and the last step's recording in a loop. From
  * `xl` a running page shows it in the panel.
  */
 function Outcome({
@@ -423,7 +414,6 @@ function Outcome({
         n={total}
         alt={last.alt}
         active={active}
-        autoplay={false}
       />
     </section>
   );
@@ -431,29 +421,21 @@ function Outcome({
 
 /**
  * From `xl`: the open row's recording beside the checklist, or, while no row
- * is open, the outcome at rest over the Start button. The open row's
+ * is open, the outcome in a loop over the Start button. The open row's
  * recording plays at once after Start, and otherwise while it crosses the
- * middle of the window once the reader has acted on the page.
+ * middle of the window; it plays once and ends under the row's tick action.
  */
 function MediaPanel({
   lesson,
-  open,
-  ticks,
-  launched,
-  acted,
+  live,
   children,
 }: {
   lesson: LessonViewData;
-  /** The row to show, or null for the outcome. */
-  open: number | null;
-  ticks: ReadonlySet<number>;
-  /** The row the reader opened with Start. */
-  launched: number | null;
-  /** The reader has acted on the page, so the open row's recording may play on its own. */
-  acted: boolean;
+  live: NonNullable<LessonState["live"]>;
   /** The Start button, while no row is open. */
   children: ReactNode;
 }) {
+  const { open, ticks, launched } = live;
   const total = lesson.steps.length;
   const step = open === null ? undefined : lesson.steps[open - 1];
   const last = lesson.steps[total - 1];
@@ -491,7 +473,8 @@ function MediaPanel({
             n={open}
             alt={step.alt}
             active
-            autoplay={acted}
+            loop={false}
+            endActions={<TickButton n={open} total={total} live={live} />}
             playNow={launched === open}
           />
         </>
@@ -511,13 +494,7 @@ function MediaPanel({
                 {lesson.end.title}
               </p>
             </div>
-            <StepPicture
-              media={lesson.media}
-              n={total}
-              alt={last.alt}
-              active
-              autoplay={false}
-            />
+            <StepPicture media={lesson.media} n={total} alt={last.alt} active />
             {children}
           </>
         )

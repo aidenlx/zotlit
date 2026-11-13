@@ -3,55 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { m } from "@/paraglide/messages.js";
 
+import { FakeIntersectionObserver } from "./__fixtures__/media-boundary";
+
 // The turn lives in module state, so each case loads a fresh copy of the
 // module and of everything that imports it.
 beforeEach(() => {
   vi.resetModules();
 });
-
-/**
- * IntersectionObserver at the browser boundary, which happy-dom lacks. `show`
- * reports a target's visible ratio to every observer that watches it.
- */
-class FakeIntersectionObserver {
-  static readonly live = new Set<FakeIntersectionObserver>();
-  readonly #targets = new Set<Element>();
-  readonly #callback: IntersectionObserverCallback;
-
-  constructor(callback: IntersectionObserverCallback) {
-    this.#callback = callback;
-    FakeIntersectionObserver.live.add(this);
-  }
-
-  observe(target: Element) {
-    this.#targets.add(target);
-  }
-
-  unobserve(target: Element) {
-    this.#targets.delete(target);
-  }
-
-  disconnect() {
-    this.#targets.clear();
-    FakeIntersectionObserver.live.delete(this);
-  }
-
-  takeRecords() {
-    return [];
-  }
-
-  static show(target: Element, ratio: number) {
-    for (const observer of [...FakeIntersectionObserver.live]) {
-      if (!observer.#targets.has(target)) continue;
-      const entry = {
-        target,
-        isIntersecting: ratio > 0,
-        intersectionRatio: ratio,
-      } as IntersectionObserverEntry;
-      observer.#callback([entry], observer as unknown as IntersectionObserver);
-    }
-  }
-}
 
 /** A landing recording beside the table demo, both on the page's real modules. */
 async function mountRecordingAndDemo() {

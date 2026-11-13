@@ -317,7 +317,8 @@ export function Step({ n, children }: { n: number; children: ReactNode }) {
             n={n}
             alt={meta.alt}
             active={live?.open === n && !live.wide}
-            autoplay={live?.acted ?? false}
+            loop={false}
+            endActions={live && <TickButton n={n} total={total} live={live} />}
             playNow={live?.launched === n}
           />
         </div>
@@ -352,6 +353,37 @@ function TickAction({
   total: number;
   live: NonNullable<LessonState["live"]>;
 }) {
+  return (
+    <>
+      {live.ticks.has(n) && (
+        <span
+          className={cn(
+            metaClass,
+            "inline-flex items-center gap-1.5 font-semibold text-check-label",
+          )}
+        >
+          <CircleCheck aria-hidden strokeWidth={2.25} className="size-[18px]" />
+          {m.docs_learn_ticked()}
+        </span>
+      )}
+      <TickButton n={n} total={total} live={live} />
+    </>
+  );
+}
+
+/**
+ * Row `n`'s leading action, which the row and its ended recording share:
+ * "Tick step N", or the way on once the row is ticked.
+ */
+export function TickButton({
+  n,
+  total,
+  live,
+}: {
+  n: number;
+  total: number;
+  live: NonNullable<LessonState["live"]>;
+}) {
   if (!live.ticks.has(n)) {
     return (
       <button
@@ -366,30 +398,19 @@ function TickAction({
   }
   const next = nextOpenStep(live.ticks, n, total) ?? total + 1;
   return (
-    <>
-      <span
-        className={cn(
-          metaClass,
-          "inline-flex items-center gap-1.5 font-semibold text-check-label",
-        )}
-      >
-        <CircleCheck aria-hidden strokeWidth={2.25} className="size-[18px]" />
-        {m.docs_learn_ticked()}
-      </span>
-      <button
-        type="button"
-        onClick={() => {
-          live.go(next);
-          focusPart(next, total);
-        }}
-        className={secondaryButtonClass}
-      >
-        {next > total
-          ? m.docs_learn_see_end()
-          : m.docs_learn_go_to_step({ number: next })}
-        <ArrowDown aria-hidden strokeWidth={2.25} className="size-4" />
-      </button>
-    </>
+    <button
+      type="button"
+      onClick={() => {
+        live.go(next);
+        focusPart(next, total);
+      }}
+      className={secondaryButtonClass}
+    >
+      {next > total
+        ? m.docs_learn_see_end()
+        : m.docs_learn_go_to_step({ number: next })}
+      <ArrowDown aria-hidden strokeWidth={2.25} className="size-4" />
+    </button>
   );
 }
 

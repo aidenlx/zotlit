@@ -1,5 +1,6 @@
 // A recording in a Video.js player: play, seek, time and fullscreen, and no volume control because the clips are silent.
-// It loops in the middle of the viewport one at a time, obeys the reader once they play or pause, and rests under reduced motion or when its page turns autoplay off.
+// It plays in the middle of the viewport one at a time, in a loop or once, obeys the reader once they play or pause, and rests under reduced motion.
+// A clip that plays once ends on its last frame, dimmed, under a replay button and any actions its page adds.
 // @see apps/docs/DESIGN.md → Illustration (The recording player)
 
 import {
@@ -21,9 +22,9 @@ import {
   timeFeature,
 } from "@videojs/react";
 import { Video } from "@videojs/react/video";
-import { Maximize, Minimize, Pause, Play } from "lucide-react";
+import { Maximize, Minimize, Pause, Play, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import {
   askTurn,
@@ -58,8 +59,14 @@ export interface RecordingPlayerProps {
   fit: "contain" | "cover";
   /** How much of the clip loads before it plays, with motion on. */
   preload: "auto" | "metadata";
-  /** Plays on its own while it crosses the middle of the viewport; false rests it on its poster until the reader plays it. */
-  autoplay?: boolean;
+  /**
+   * Plays the clip in a loop; false plays it once, then rests it on its last
+   * frame, dimmed, under a replay button, until the reader plays it again.
+   * @default true
+   */
+  loop?: boolean;
+  /** Controls the dimmed last frame shows before the replay button, for a clip that plays once. */
+  endActions?: ReactNode;
   /** The reader asked for this clip with a press elsewhere, so it plays at once, as if they had pressed play (not under reduced motion). */
   playNow?: boolean;
 }
@@ -80,22 +87,24 @@ export default function RecordingPlayer({
   alt,
   fit,
   preload,
-  autoplay = true,
+  loop = true,
+  endActions,
   playNow = false,
 }: RecordingPlayerProps) {
   const video = useRef<HTMLVideoElement>(null);
+  const frame = useRef<HTMLDivElement>(null);
   // This mounts after hydration only, so the preference is safe to read here.
   const [reduced] = useState(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
-  // A clip that waits for the reader rests on its poster, as under reduced motion.
-  const still = reduced || (!autoplay && !playNow);
-  // The reader's choice for this clip, a play or pause here or a press elsewhere (`playNow`). It holds when the page later lets the clip start on its own.
+  // The reader's choice for this clip, a play or pause here or a press elsewhere (`playNow`).
   const [chosen, setChosen] = useState<"manual" | "paused" | null>(() =>
     playNow && !reduced ? "manual" : null,
   );
+  // A clip that plays once has reached its end, and rests there until the reader plays it again.
+  const [ended, setEnded] = useState(false);
   // "auto" plays mid-viewport, "manual" plays from the reader's press until it leaves view, "paused" stays still.
-  const mode = chosen ?? (still ? "paused" : "auto");
+  const mode = ended ? "paused" : (chosen ?? (reduced ? "paused" : "auto"));
   // The reader has played or paused the clip, so its changes are announced.
   const [touched, setTouched] = useState(false);
   // The play and the pause this player asked for itself, which the reader did not.
@@ -179,6 +188,7 @@ export default function RecordingPlayer({
   }, [playNow, reduced, me, rest]);
 
   function onPlay() {
+    setEnded(false);
     if (askedPlay.current) {
       askedPlay.current = false;
       return;
@@ -193,15 +203,25 @@ export default function RecordingPlayer({
       askedPause.current = false;
       return;
     }
+    // The browser pauses a clip that reaches its end; `onEnded` follows.
+    if (video.current?.ended) return;
     holdTurn(me);
     setTouched(true);
     setChosen("paused");
+  }
+
+  // A clip that plays once gives its turn back at its end, so a waiting loop can start.
+  function onEnded() {
+    setEnded(true);
+    stopWaiting(me);
+    endTurn(me);
   }
 
   return (
     <I18nProvider locale={getLocale()}>
       <Player>
         <Container
+          ref={frame}
           aria-label={alt}
           className="group/player @container relative size-full bg-fd-card outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-fd-ring"
           style={
@@ -212,11 +232,12 @@ export default function RecordingPlayer({
             ref={video}
             poster={poster}
             muted
-            loop
+            loop={loop}
             playsInline
-            preload={still ? "metadata" : preload}
+            preload={reduced ? "metadata" : preload}
             onPlay={onPlay}
             onPause={onPause}
+            onEnded={onEnded}
             className={cn(
               "size-full",
               fit === "cover"
@@ -226,6 +247,23 @@ export default function RecordingPlayer({
           >
             <source src={videoSrc(`${base}.mp4`)} type="video/mp4" />
           </Video>
+          {ended && (
+            <div className="pointer-events-none absolute inset-0 flex flex-wrap content-center items-center justify-center gap-3 bg-black/55 p-4 transition-opacity duration-150 ease-out *:pointer-events-auto starting:opacity-0">
+              {endActions}
+              <button
+                type="button"
+                onClick={() => {
+                  // The button leaves with the end, so focus stays on the player, where Space pauses.
+                  frame.current?.focus({ preventScroll: true });
+                  void video.current?.play().catch(() => {});
+                }}
+                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-transparent bg-fd-background px-5 py-2.5 text-[0.9375rem] leading-[1.45] font-semibold text-fd-foreground shadow-ring transition-[box-shadow,scale] duration-150 ease-out hover:shadow-ring-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]"
+              >
+                <RotateCcw aria-hidden strokeWidth={2.25} className="size-4" />
+                {m.docs_learn_recording_replay()}
+              </button>
+            </div>
+          )}
           <Controls.Root>
             <Controls.Content className="pointer-events-none absolute inset-x-2.5 bottom-2.5 transition-opacity duration-150 ease-out not-data-visible:not-has-focus-visible:opacity-0">
               <Controls.Group
