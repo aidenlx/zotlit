@@ -56,7 +56,7 @@ function markdownEditionRules(pages: readonly string[]): HeaderRule[] {
  * Pre-release Docs repeats the production pages, so the beta line keeps every
  * file out of the search index. Cloudflare joins the values of a header that
  * two rules set, so the narrower `X-Robots-Tag` rules give way to this one.
- * `src/server.ts` gives the pages the Worker answers the same header.
+ * @see src/server.ts for the same header on the pages the Worker answers.
  */
 function betaLineRules(rules: HeaderRule[]): HeaderRule[] {
   return [
@@ -74,11 +74,11 @@ function betaLineRules(rules: HeaderRule[]): HeaderRule[] {
 
 /**
  * @param pages every prerendered path, from `prerenderPages`.
- * @param docsLine the line this build deploys to.
+ * @param options.docsLine the line this build deploys to.
  */
 export function buildHeaderRules(
   pages: readonly string[] = [],
-  docsLine: DocsLine = "production",
+  { docsLine = "production" }: { docsLine?: DocsLine } = {},
 ): HeaderRule[] {
   const rules = siteRules(pages);
   return docsLine === "beta" ? betaLineRules(rules) : rules;

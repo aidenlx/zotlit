@@ -19,25 +19,12 @@ export function scanFirstCommitDays(
   packageRoot: string,
 ): Record<string, string> {
   let shallow: string;
+  let log: string;
   try {
     shallow = execFileSync("git", ["rev-parse", "--is-shallow-repository"], {
       cwd: packageRoot,
       encoding: "utf8",
     }).trim();
-  } catch (cause) {
-    throw new Error(
-      `Pages' first commit days need the git history of ${packageRoot}/content`,
-      { cause },
-    );
-  }
-  if (shallow === "true") {
-    throw new Error(
-      "Pages' first commit days need the whole git history, and this clone is shallow. Run `git fetch --unshallow`, or check out with `fetch-depth: 0`.",
-    );
-  }
-
-  let log: string;
-  try {
     log = execFileSync(
       "git",
       [
@@ -65,6 +52,11 @@ export function scanFirstCommitDays(
     throw new Error(
       `Pages' first commit days need the git history of ${packageRoot}/content`,
       { cause },
+    );
+  }
+  if (shallow === "true") {
+    throw new Error(
+      "Pages' first commit days need the whole git history, and this clone is shallow. Run `git fetch --unshallow`, or check out with `fetch-depth: 0`.",
     );
   }
 

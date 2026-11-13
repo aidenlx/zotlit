@@ -65,8 +65,8 @@ export const Route = createFileRoute("/_home/changelog/")({
   },
 });
 
-type HeadingLevel = "h2" | "h3" | "h4" | "h5" | "h6";
-const headingLevels: HeadingLevel[] = ["h2", "h3", "h4", "h5", "h6"];
+const headingLevels = ["h2", "h3", "h4", "h5", "h6"] as const;
+type HeadingLevel = (typeof headingLevels)[number];
 
 /**
  * One release's notes on the shared index. Every release repeats headings such

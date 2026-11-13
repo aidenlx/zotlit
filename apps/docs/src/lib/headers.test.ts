@@ -33,7 +33,7 @@ describe("renderHeadersFile", () => {
 // Pre-release Docs repeats the production pages; search engines list the
 // production line alone.
 describe("beta line", () => {
-  const file = renderHeadersFile(buildHeaderRules([], "beta"));
+  const file = renderHeadersFile(buildHeaderRules([], { docsLine: "beta" }));
 
   it("keeps every file out of the search index", () => {
     expect(file.startsWith("/*\n  X-Robots-Tag: noindex\n")).toBe(true);
@@ -85,9 +85,9 @@ describe("Markdown edition rules", () => {
     });
   });
 
-  it("keeps the canonical link on the beta line and sends noindex once", () => {
+  it("keeps the canonical link on the beta line", () => {
     const beta = new Map(
-      buildHeaderRules(["/docs.md"], "beta").map((rule) => [
+      buildHeaderRules(["/docs.md"], { docsLine: "beta" }).map((rule) => [
         rule.source,
         rule.headers,
       ]),

@@ -99,7 +99,7 @@ function cloudflareAssetRules(): Plugin {
         source: renderHeadersFile(
           buildHeaderRules(
             prerenderPages(packageRoot).map(({ path }) => path),
-            resolvedDocsLine(),
+            { docsLine: resolvedDocsLine() },
           ),
         ),
       });
