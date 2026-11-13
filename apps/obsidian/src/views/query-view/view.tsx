@@ -62,6 +62,7 @@ import { CardsLayout } from "./cards-layout";
 import { contextHint } from "./context-hint";
 import type { ContextSource } from "./context-hint";
 import { datasetSpec, grouping } from "./datasets";
+import { DrawLatch } from "./draw-latch";
 import { FilterButton } from "./filter-popover";
 import { GroupEditor } from "./group-control";
 import type { ItemRowGestures } from "./item-rows";
@@ -524,14 +525,14 @@ export class QueryView extends Component implements HistorySurface {
   #subscriptions: DisposableStack | null = null;
   /** Whether the view draws into an element; until then no card waits to show. */
   #rendered = false;
-  /** The cards the list last drew, as the layout's store held them. */
-  #drawnCards: AnnotState["annotations"] | undefined = undefined;
-  /** What waits for the list to draw the cards the store holds now. */
-  #drawWaiters: (() => void)[] = [];
-  /** The records an Items layout last drew. */
-  #drawnRecords: ResultSnapshot["records"] | undefined = undefined;
-  /** What waits for an Items layout to draw the records of the last run. */
-  #recordWaiters: (() => void)[] = [];
+  /** A print's wait for the list to draw the cards the store holds now. */
+  readonly #cards = new DrawLatch(
+    () => this.#layout.store.getState().annotations,
+  );
+  /** A print's wait for an Items layout to draw the records of the last run. */
+  readonly #records = new DrawLatch(
+    () => (this.state.getState().results ?? NO_RESULTS).records,
+  );
   #rerunTimer: { id: number; win: Window } | null = null;
   /** The element the view draws into, once it draws. */
   #el: HTMLElement | null = null;
@@ -646,9 +647,9 @@ export class QueryView extends Component implements HistorySurface {
    */
   async shownIn(el: HTMLElement): Promise<void> {
     await this.settled;
-    if (el.closest(".print") === null) return;
-    if (this.#cardsShown) await this.#cardsDrawn();
-    else await this.#recordsDrawn();
+    // A view that does not draw has nothing to wait for.
+    if (el.closest(".print") === null || !this.#rendered) return;
+    await (this.#cardsShown ? this.#cards : this.#records).drawn();
   }
 
   /**
@@ -657,22 +658,7 @@ export class QueryView extends Component implements HistorySurface {
    * read them.
    */
   drewRecords(records: ResultSnapshot["records"]): void {
-    this.#drawnRecords = records;
-    if (records !== (this.state.getState().results ?? NO_RESULTS).records)
-      return;
-    const waiters = this.#recordWaiters;
-    this.#recordWaiters = [];
-    for (const resolve of waiters) resolve();
-  }
-
-  #recordsDrawn(): Promise<void> {
-    if (
-      !this.#rendered ||
-      this.#drawnRecords ===
-        (this.state.getState().results ?? NO_RESULTS).records
-    )
-      return Promise.resolve();
-    return new Promise((resolve) => this.#recordWaiters.push(resolve));
+    this.#records.drew(records);
   }
 
   /**
@@ -681,20 +667,7 @@ export class QueryView extends Component implements HistorySurface {
    * than the read that made it.
    */
   drewCards(cards: AnnotState["annotations"]): void {
-    this.#drawnCards = cards;
-    if (cards !== this.#layout.store.getState().annotations) return;
-    const waiters = this.#drawWaiters;
-    this.#drawWaiters = [];
-    for (const resolve of waiters) resolve();
-  }
-
-  #cardsDrawn(): Promise<void> {
-    if (
-      !this.#rendered ||
-      this.#drawnCards === this.#layout.store.getState().annotations
-    )
-      return Promise.resolve();
-    return new Promise((resolve) => this.#drawWaiters.push(resolve));
+    this.#cards.drew(cards);
   }
 
   override onload(): void {
@@ -770,10 +743,8 @@ export class QueryView extends Component implements HistorySurface {
     this.#runRequest = null;
     this.#rendered = false;
     this.#el = null;
-    const waiters = [...this.#drawWaiters, ...this.#recordWaiters];
-    this.#drawWaiters = [];
-    this.#recordWaiters = [];
-    for (const resolve of waiters) resolve();
+    this.#cards.release();
+    this.#records.release();
   }
 
   /** Whether the view draws for Export to PDF, which prints every row. */

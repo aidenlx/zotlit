@@ -7,8 +7,13 @@
 // draws every entry for a print.
 //
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
-import { useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { NO_ROWS } from "./item-rows";
 import type { QueryView } from "./view";
