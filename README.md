@@ -30,7 +30,7 @@
 </div>
 
 > [!WARNING]
-> **Update the Obsidian installer first.** ZotLit needs Obsidian 1.14.5 or newer, and the **installer version** must also be 1.14.5 or newer. Obsidian's in-app update does not replace the installer. Check yours in **Settings → About**.
+> **Update the Obsidian installer first.** ZotLit needs Obsidian 1.15.1 or newer, and the **installer version** must be 1.13.4 or newer. Obsidian's in-app update does not replace the installer. Check yours in **Settings → About**.
 >
 > If the installer is older, ZotLit does not load. Obsidian shows _Failed to load plugin "zotlit"_, and the developer console shows a `SyntaxError`.
 >
