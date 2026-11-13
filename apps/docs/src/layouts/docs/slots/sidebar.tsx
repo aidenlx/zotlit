@@ -341,6 +341,9 @@ function SidebarSeparator({
     <Base.SidebarSeparator
       className={cn(
         "mt-6 mb-1 inline-flex items-center gap-2 px-2 empty:mb-0 [&_svg]:size-4 [&_svg]:shrink-0",
+        // Subheadings inside an open section take the muted `links` label
+        // voice: grey sets them apart from orange folder rows, caps from links.
+        "font-mono text-[0.72rem] font-medium tracking-[0.08em] text-fd-muted-foreground uppercase",
         depth === 0 && "first:mt-0",
         className,
       )}
