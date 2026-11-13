@@ -85,7 +85,7 @@ export const learnSchema = v.object({
   /** Position in the course, from 1. */
   lesson: v.pipe(v.number(), v.integer(), v.minValue(1)),
   minutes: v.pipe(v.number(), v.integer(), v.minValue(1)),
-  /** Folder under `public/img/learn/` holding `step-<n>.webp` and any `step-<n>.webm`/`.mp4` clip. */
+  /** Folder under `public/img/learn/` holding `step-<n>.webp` and any `step-<n>.mp4` clip. */
   media: v.pipe(v.string(), v.regex(/^[a-z0-9-]+$/)),
   /** The chore in the reader's own words: the course page's card title. */
   chore: v.string(),

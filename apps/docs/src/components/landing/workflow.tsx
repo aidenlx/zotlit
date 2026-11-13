@@ -19,7 +19,7 @@ type Text = () => string;
 /** The recordings under public/img/landing/, in step order. */
 type Case = "find" | "read" | "note" | "cite" | "word";
 
-/** Which cases have a clip (`.webm` and `.mp4`); the others show their still. */
+/** Which cases have a clip (`.mp4`); the others show their still. */
 const CLIPS: Readonly<Record<Case, boolean>> = {
   find: true,
   read: true,
@@ -146,8 +146,6 @@ function Recording({ id, alt }: { id: Case; alt: string }) {
       {near ? (
         <RecordingPlayer
           base={base}
-          webm
-          mp4
           poster={`${base}.webp`}
           alt={alt}
           fit="cover"

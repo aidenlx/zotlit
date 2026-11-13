@@ -250,7 +250,7 @@ export interface DocsWalk extends AsyncDisposable {
   compose(name: string): Promise<void>;
   /**
    * Run `actions`, the reader's actions of one step, and record them as the
-   * clip `name`: `<name>.webm` and `<name>.mp4` beside the step's image. The
+   * clip `name`: `<name>.mp4` beside the step's image. The
    * window shows a drawn pointer while it records, and the clip rests on the
    * result. A camera planned from the pointer's actions, or the track
    * `<slug>.camera/<name>.json` beside the walk, frames each part of the

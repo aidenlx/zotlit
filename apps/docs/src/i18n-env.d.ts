@@ -5,4 +5,6 @@ declare global {
   const __DOCS_CHINESE_PAGES__: string[];
   /** Replaced by Vite with the `/learn` step media found on disk. @see src/lib/learn-media.ts */
   const __LEARN_MEDIA__: import("./lib/learn-media").LearnMedia;
+  /** Replaced by Vite with each video's media-store URL by its `/img/...` path; empty without a media origin. @see src/lib/media-store.ts */
+  const __MEDIA_URLS__: Record<string, string>;
 }

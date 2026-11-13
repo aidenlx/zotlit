@@ -33,7 +33,7 @@ describe("clipSettings", () => {
       camera: false,
       fps: 25,
       width: 1280,
-      vp9Crf: 30,
+      h264Crf: 30,
     };
 
     it("cuts with today's camera and pads, not the recorded ones", () => {
@@ -48,8 +48,14 @@ describe("clipSettings", () => {
         camera: false,
         fps: 25,
         width: 1280,
-        vp9Crf: 30,
+        h264Crf: 30,
       });
+    });
+
+    it("leaves out a setting of the retired WebM encode that an older clip recorded", () => {
+      const older = { ...recorded, vp9Crf: 42 };
+      expect(recutSettings(older)).not.toHaveProperty("vp9Crf");
+      expect(recutSettings(older)).toMatchObject({ fps: 25, h264Crf: 30 });
     });
 
     it("lays the run's overrides over today's camera", () => {

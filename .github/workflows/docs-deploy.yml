@@ -126,6 +126,22 @@ jobs:
           # site serves no beacon. Each line reports to its own site, so the
           # two lines' numbers stay apart.
           VITE_CF_BEACON_TOKEN: ${{ github.ref_name == 'next' && vars.CF_BEACON_TOKEN_BETA || vars.CF_BEACON_TOKEN }}
+          # The recordings' videos play from the media store, the R2 bucket
+          # `zotlit-docs-media` on this domain, which both lines share; the
+          # build points the players there and leaves the videos out of the
+          # Worker's assets.
+          VITE_MEDIA_ORIGIN: https://zotlit-media.aidenlx.site
+
+      # The built pages name each video by a content-hashed key, so every key
+      # must be in the bucket before the deploy makes those pages live. The
+      # step sends only the keys the bucket lacks, with a token scoped to that
+      # bucket.
+      - name: Upload media
+        run: pnpm --filter @zotlit/docs upload:media
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy
         run: |
