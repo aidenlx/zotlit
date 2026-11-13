@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { WorkspaceLeaf, MarkdownView, WorkspaceSidedock } from "obsidian";
 import { describe, expect, it } from "vitest";
 
-import { ATTACHMENTS } from "@zotlit/scripts/fixture";
+import { ATTACHMENTS, ITEMS } from "@zotlit/scripts/fixture";
 
 import type { AnnotationView as AnnotView } from "@/views/annot-view/view";
 import type { LibraryView } from "@/views/library/view";
@@ -20,6 +20,7 @@ import {
 import { activeTab, pdfOpened } from "./e2e-run-helpers.ts";
 import type { ActiveTab } from "./e2e-run-helpers.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
+import { pressPromptKey, selectSuggestion } from "./e2e-run-note-helpers.ts";
 import * as suite from "./e2e-run-suite-helpers.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import { readUntil, waitFor } from "./obsidian-cli.ts";
@@ -1497,5 +1498,319 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       stacked: true,
       inView: { pdf: true, note: true },
     });
+  }, 180000);
+
+  it("offers a PDF view's literature note only where its Zotero Attachment has a parent Item, writes the note from the header action through Profile selection for a PDF in Zotero storage, opens it beside the PDF, then names the action Open literature note, brings the same tab forward from the action, the command and More options, and names it Write literature note again once the note is gone", async () => {
+    // A PDF in Zotero's storage folder, outside the vault, as a new user's are.
+    const pdf = ATTACHMENTS.find(({ key }) => key === "IANPDF25")!;
+    expect(pdf.linkMode).toBe("imported_file");
+    const itemKey = ITEMS.find(
+      ({ itemID }) => itemID === pdf.parentItemID,
+    )!.key;
+    // A PDF in the vault that no Zotero Attachment keeps.
+    const loosePdf = "attachments/excerpt-acceptance/excerpt-rendering.pdf";
+    const write = run.m.library_view_menu_write_note();
+    const open = run.m.library_view_menu_open_note();
+    const labels = [write, open];
+
+    const saved = await obRun(
+      run.vaultId,
+      async ({ app }, { key }) => {
+        const note = app.vault
+          .getMarkdownFiles()
+          .find(
+            (file) =>
+              app.metadataCache.getFileCache(file)?.frontmatter?.[
+                "zotero-key"
+              ] === key,
+          )!;
+        return {
+          layout: JSON.stringify(app.workspace.getLayout()),
+          path: note.path,
+          source: await app.vault.read(note),
+        };
+      },
+      { key: itemKey },
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        async ({ app }, { saved, key }) => {
+          for (const file of app.vault.getMarkdownFiles())
+            if (
+              app.metadataCache.getFileCache(file)?.frontmatter?.[
+                "zotero-key"
+              ] === key
+            )
+              await app.vault.delete(file);
+          await app.vault.create(saved.path, saved.source);
+          await app.workspace.changeLayout(JSON.parse(saved.layout));
+        },
+        { saved, key: itemKey },
+      );
+    });
+
+    // The PDF no Attachment keeps carries no control once it has resolved.
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { path: loosePdf },
+    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }, { path, labels }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("pdf")
+            .find((leaf) => leaf.getViewState().state?.file === path)!;
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          const binding = zotlit.services.bridge.runSync(
+            zotlit.services.pdfAnnotationEditor.bindingFor(leaf.view),
+          );
+          if (!binding || binding.attachment.kind === "pending") return null;
+          const shown = [
+            ...leaf.view.containerEl.querySelectorAll<HTMLElement>(
+              ".view-action",
+            ),
+          ].filter(
+            (el) =>
+              labels.includes(el.getAttribute("aria-label") ?? "") &&
+              el.style.display !== "none",
+          ).length;
+          // What the command palette asks before it lists the command.
+          const command =
+            app.commands.commands["zotlit:open-pdf-literature-note"]!
+              .checkCallback!(true);
+          return { kind: binding.attachment.kind, shown, command };
+        },
+        { path: loosePdf, labels },
+        {
+          what: "the loose PDF's binding to resolve",
+          ready: (value) => value !== null,
+        },
+      ),
+    ).toEqual({ kind: "unresolved", shown: 0, command: false });
+
+    // The paper has no literature note yet, and its PDF is the only tab.
+    await obRun(
+      run.vaultId,
+      async ({ app, zotlit }, { path, attachmentKey }) => {
+        await app.vault.delete(app.vault.getFileByPath(path)!);
+        const tab = app.workspace.getLeaf("tab");
+        app.workspace.setActiveLeaf(tab, { focus: true });
+        for (const leaf of [
+          ...app.workspace.getLeavesOfType("pdf"),
+          ...app.workspace.getLeavesOfType("markdown"),
+        ])
+          leaf.detach();
+        // The PDF takes the empty tab, the active leaf.
+        return await zotlit.services.bridge.runPromise(
+          zotlit.services.targetOpener.open(
+            { kind: "attachment", attachmentKey },
+            false,
+          ),
+        );
+      },
+      { path: saved.path, attachmentKey: pdf.key },
+    ).then((outcome) => expect(outcome).toEqual({ kind: "reader" }));
+
+    /** The header action's label once it reads `expected`. */
+    const actionLabel = (expected: string) =>
+      actionLabelUntil(expected).catch(async (error: unknown) => {
+        const state = await obRun(
+          run.vaultId,
+          async ({ app, zotlit }) => {
+            return JSON.stringify(
+              app.workspace.getLeavesOfType("pdf").map((leaf) => ({
+                file: leaf.getViewState().state?.file,
+                target:
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.pdfAnnotationEditor.bindingFor(leaf.view),
+                  )?.session.target ?? null,
+                actions: [
+                  ...leaf.view.containerEl.querySelectorAll<HTMLElement>(
+                    ".view-action",
+                  ),
+                ].map((el) => [
+                  el.getAttribute("aria-label"),
+                  el.style.display,
+                ]),
+              })),
+            );
+          },
+          undefined,
+        );
+        throw new Error(`PDF views: ${state}`, { cause: error });
+      });
+    const actionLabelUntil = (expected: string) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }, { attachmentKey, labels }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("pdf")
+            .find(
+              (leaf) =>
+                zotlit.services.bridge.runSync(
+                  zotlit.services.pdfAnnotationEditor.bindingFor(leaf.view),
+                )?.session.target?.attachmentKey === attachmentKey,
+            );
+          const action = [
+            ...(leaf?.view.containerEl.querySelectorAll<HTMLElement>(
+              ".view-action",
+            ) ?? []),
+          ].find((el) => labels.includes(el.getAttribute("aria-label") ?? ""));
+          return action && action.style.display !== "none"
+            ? action.getAttribute("aria-label")
+            : null;
+        },
+        { attachmentKey: pdf.key, labels },
+        {
+          what: `the PDF view's header action to read ${expected}`,
+          ready: (label) => label === expected,
+          tries: 120,
+        },
+      );
+    /**
+     * Makes the PDF view active, then runs `gesture` on it: a press of the
+     * header action, the command, or the More options entry.
+     */
+    const onPdf = (gesture: "action" | "command" | "menu", label: string) =>
+      obRun(
+        run.vaultId,
+        async ({ app, zotlit, page }, { attachmentKey, gesture, label }) => {
+          const leaf = app.workspace
+            .getLeavesOfType("pdf")
+            .find(
+              (leaf) =>
+                zotlit.services.bridge.runSync(
+                  zotlit.services.pdfAnnotationEditor.bindingFor(leaf.view),
+                )?.session.target?.attachmentKey === attachmentKey,
+            )!;
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          const { containerEl } = leaf.view;
+          if (gesture === "command")
+            return app.commands.executeCommandById(
+              "zotlit:open-pdf-literature-note",
+            );
+          if (gesture === "action") {
+            page.press(
+              containerEl.querySelector<HTMLElement>(
+                `.view-action[aria-label="${label}"]`,
+              ),
+              label,
+            );
+            return true;
+          }
+          page.press(
+            containerEl.querySelector<HTMLElement>(
+              '.view-action[aria-label="More options"]',
+            ),
+            "More options",
+          );
+          await page.menuReady();
+          const entry = [
+            ...activeDocument.body.querySelectorAll<HTMLElement>(
+              ":scope > .menu .menu-item",
+            ),
+          ].find(
+            (item) =>
+              item.querySelector(".menu-item-title")?.textContent === label,
+          );
+          if (!entry) {
+            activeDocument.body.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+            );
+            return false;
+          }
+          entry.click();
+          return true;
+        },
+        { attachmentKey: pdf.key, gesture, label },
+      );
+    /**
+     * The tabs that show the paper's note once one of them is active, which
+     * the gesture before it causes: the PDF was active as it ran.
+     */
+    const panes = (what: string) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }, { attachmentKey, key }) => {
+          const pdfLeaf = app.workspace
+            .getLeavesOfType("pdf")
+            .find(
+              (leaf) =>
+                zotlit.services.bridge.runSync(
+                  zotlit.services.pdfAnnotationEditor.bindingFor(leaf.view),
+                )?.session.target?.attachmentKey === attachmentKey,
+            )!;
+          const notes = app.workspace
+            .getLeavesOfType("markdown")
+            .filter(
+              (leaf) =>
+                app.metadataCache.getCache(
+                  String(leaf.getViewState().state?.file),
+                )?.frontmatter?.["zotero-key"] === key,
+            );
+          if (!notes.includes(app.workspace.activeLeaf!)) return null;
+          return {
+            notes: notes.length,
+            noteShown: notes.every((leaf) => leaf.view.containerEl.isShown()),
+            besidePdf: notes.every((leaf) => leaf.parent !== pdfLeaf.parent),
+            pdfShown: pdfLeaf.view.containerEl.isShown(),
+          };
+        },
+        { attachmentKey: pdf.key, key: itemKey },
+        { what, ready: (value) => value !== null, tries: 120 },
+      );
+    const oneNoteBeside = {
+      notes: 1,
+      noteShown: true,
+      besidePdf: true,
+      pdfShown: true,
+    };
+
+    expect(await actionLabel(write)).toBe(write);
+    expect(await onPdf("action", write)).toBe(true);
+    await selectSuggestion(run.vaultId, run.m.modal_profile_preselected());
+    await pressPromptKey(run.vaultId, "Enter");
+    expect(await panes("the written note to open beside the PDF")).toEqual(
+      oneNoteBeside,
+    );
+    expect(await actionLabel(open)).toBe(open);
+
+    // Each gesture brings the same tab forward and opens no other.
+    expect(await onPdf("action", open)).toBe(true);
+    expect(await panes("the action to bring the note forward")).toEqual(
+      oneNoteBeside,
+    );
+    expect(await onPdf("command", open)).toBe(true);
+    expect(await panes("the command to bring the note forward")).toEqual(
+      oneNoteBeside,
+    );
+    expect(await onPdf("menu", open)).toBe(true);
+    expect(await panes("More options to bring the note forward")).toEqual(
+      oneNoteBeside,
+    );
+
+    // Once the note is gone, the action offers to write it again.
+    await obRun(
+      run.vaultId,
+      async ({ app }, { key }) => {
+        for (const file of app.vault.getMarkdownFiles())
+          if (
+            app.metadataCache.getFileCache(file)?.frontmatter?.[
+              "zotero-key"
+            ] === key
+          )
+            await app.vault.delete(file);
+      },
+      { key: itemKey },
+    );
+    expect(await actionLabel(write)).toBe(write);
   }, 180000);
 });
