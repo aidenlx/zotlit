@@ -589,105 +589,115 @@ export function Desk() {
       className="pointer-events-none absolute inset-0 hidden select-none xl:block"
     >
       <div className="absolute top-0 left-1/2 h-[832px] w-[1440px] origin-top -translate-x-1/2 scale-(--desk-s)">
-        {/* Sheets underneath, for depth. */}
-        <Piece x={-712} y={56} w={380} r={-6} d={0} depth={0.3}>
-          <div
-            className={cn(
-              PAPER,
-              "h-[340px] rounded-[3px] border border-fd-border/70 bg-fd-card",
-            )}
-          />
-        </Piece>
-        <Piece x={326} y={48} w={380} r={4.5} d={200} depth={0.35}>
-          <div
-            className={cn(
-              PAPER,
-              "h-[230px] rounded-[3px] border border-fd-border/70 bg-fd-card",
-            )}
-          />
-        </Piece>
-
-        <Piece
-          x={-722}
-          y={34}
-          w={412}
-          r={-2.5}
-          d={100}
-          depth={0.6}
-          tape={<Tape>{m.docs_home_desk_library()}</Tape>}
-        >
-          <LibrarySheet />
-        </Piece>
-        <Piece
-          x={306}
-          y={30}
-          w={412}
-          r={1.8}
-          d={300}
-          depth={0.8}
-          tape={
-            <Tape side="right" inset={24}>
-              {m.docs_home_desk_table()}
-            </Tape>
-          }
-        >
-          <TableSheet />
-        </Piece>
-        <Piece
-          x={-668}
-          y={446}
-          w={316}
-          r={2.5}
-          d={500}
-          depth={1.2}
-          tape={
-            <Tape side="right" inset={18}>
-              {m.docs_home_desk_read()}
-            </Tape>
-          }
-        >
-          <PdfPage />
-        </Piece>
-        <Piece
-          x={-312}
-          y={604}
-          w={292}
-          r={-3}
-          d={700}
-          depth={0.9}
-          tape={<Tape>{m.docs_home_desk_notes()}</Tape>}
-        >
-          <NoteCard />
-        </Piece>
-        <Piece
-          x={328}
-          y={384}
-          w={364}
-          r={-2}
-          d={900}
-          depth={1.1}
-          tape={
-            <Tape side="right" inset={22}>
-              {m.docs_home_desk_cite()}
-            </Tape>
-          }
-        >
-          <DraftSheet />
-        </Piece>
-        <Piece
-          x={14}
-          y={618}
-          w={330}
-          r={1.5}
-          d={1100}
-          depth={0.5}
-          tape={<Tape inset={26}>{m.docs_home_desk_export()}</Tape>}
-        >
-          <WordPage />
-        </Piece>
+        {/* Each group of objects is drawn at 0.84 towards its own outer edge, so
+            the objects keep at least 72px clear of the text (which keeps its
+            size) and the table's last column stays on screen. */}
+        {/* Left of the text: the library sheet over a blank sheet, and the PDF. */}
+        <div className="absolute inset-0 origin-[0_40%] scale-[0.84]">
+          <Piece x={-712} y={56} w={380} r={-6} d={0} depth={0.3}>
+            <div
+              className={cn(
+                PAPER,
+                "h-[340px] rounded-[3px] border border-fd-border/70 bg-fd-card",
+              )}
+            />
+          </Piece>
+          <Piece
+            x={-722}
+            y={34}
+            w={412}
+            r={-2.5}
+            d={100}
+            depth={0.6}
+            tape={<Tape>{m.docs_home_desk_library()}</Tape>}
+          >
+            <LibrarySheet />
+          </Piece>
+          <Piece
+            x={-668}
+            y={446}
+            w={316}
+            r={2.5}
+            d={500}
+            depth={1.2}
+            tape={
+              <Tape side="right" inset={18}>
+                {m.docs_home_desk_read()}
+              </Tape>
+            }
+          >
+            <PdfPage />
+          </Piece>
+        </div>
+        {/* Right of the text: the table over a blank sheet, and the draft. */}
+        <div className="absolute inset-0 origin-[100%_40%] scale-[0.84]">
+          <Piece x={326} y={48} w={380} r={4.5} d={200} depth={0.35}>
+            <div
+              className={cn(
+                PAPER,
+                "h-[230px] rounded-[3px] border border-fd-border/70 bg-fd-card",
+              )}
+            />
+          </Piece>
+          <Piece
+            x={306}
+            y={30}
+            w={412}
+            r={1.8}
+            d={300}
+            depth={0.8}
+            tape={
+              <Tape side="right" inset={24}>
+                {m.docs_home_desk_table()}
+              </Tape>
+            }
+          >
+            <TableSheet />
+          </Piece>
+          <Piece
+            x={328}
+            y={384}
+            w={364}
+            r={-2}
+            d={900}
+            depth={1.1}
+            tape={
+              <Tape side="right" inset={22}>
+                {m.docs_home_desk_cite()}
+              </Tape>
+            }
+          >
+            <DraftSheet />
+          </Piece>
+        </div>
+        {/* Below the text: the note card and the Word page. */}
+        <div className="absolute inset-0 origin-bottom -translate-y-[44px] scale-[0.84]">
+          <Piece
+            x={-312}
+            y={604}
+            w={292}
+            r={-3}
+            d={700}
+            depth={0.9}
+            tape={<Tape>{m.docs_home_desk_notes()}</Tape>}
+          >
+            <NoteCard />
+          </Piece>
+          <Piece
+            x={14}
+            y={618}
+            w={330}
+            r={1.5}
+            d={1100}
+            depth={0.5}
+            tape={<Tape inset={26}>{m.docs_home_desk_export()}</Tape>}
+          >
+            <WordPage />
+          </Piece>
+        </div>
 
         {/* A clearing on the desk, so nothing crowds the headline. */}
-        <div className="absolute top-[43%] left-1/2 h-[440px] w-[680px] -translate-1/2 bg-[radial-gradient(closest-side,var(--color-fd-background)_60%,transparent)]" />
+        <div className="absolute top-[43%] left-1/2 h-[460px] w-[760px] -translate-1/2 bg-[radial-gradient(closest-side,var(--color-fd-background)_60%,transparent)]" />
       </div>
     </div>
   );

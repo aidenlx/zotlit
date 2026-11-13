@@ -334,8 +334,8 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   the shared copyright footer.
 - **Hero.** Centred text on a research desk. A mono label ("An Obsidian
   plugin · free and open source", 12px, 0.14em tracking, muted), the H1 "A
-  research desk for Zotero in Obsidian." (display, 2.6rem / 1.06 on phones,
-  3.75rem from 640px) with the highlighter on "research desk", the
+  research desk for Zotero in Obsidian." (display, 2.6rem on phones, 3.75rem from 640px, at
+  1.12 leading) with the highlighter on "research desk", the
   supporting line (sans 20px, muted, 34rem), **Install ZotLit** and **Start
   the tutorial**, and the requirements line in muted 14px. From 1280px the
   hero is at least as tall as the viewport below the nav and the banner
@@ -351,7 +351,10 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   literature-note index card ("Take literature notes"), the draft with its
   citation picker ("Cite as you write") and the Word reference page
   ("Export and submit") lie below. Two blank sheets under the leads give
-  depth; a soft clearing of the ground colour keeps the headline clear. The
+  depth. Each group (left, right, below) is drawn at 0.84 towards its own
+  outer edge, so every object keeps at least 72px clear of the text at every
+  width while the text keeps its size; a soft clearing of the ground colour
+  sits behind the headline. The
   stage scales in steps with the window — 0.88 from 1280px, 0.94 from
   1360px, 1 from 1440px, 1.08 from 1800px — and the text zooms with it.
   Each object casts `--desk-shadow`. The desk is `aria-hidden`: the

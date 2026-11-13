@@ -3179,14 +3179,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ...init,
             }),
           );
-        const pressRow = (el: HTMLElement | null, what: string) => {
+        const pressRow = async (el: HTMLElement | null, what: string) => {
           if (!el) throw new Error(`Missing: ${what}`);
           el.scrollIntoView({ block: "center", behavior: "instant" });
-          const r = el.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + 24,
-            r.top + r.height / 2,
-          );
+          // A row scrolled into view draws its content at the next frame
+          // (`content-visibility: auto`); until then a hit lands on the
+          // row's list item.
+          const hitAt = () => {
+            const r = el.getBoundingClientRect();
+            return el.ownerDocument.elementFromPoint(
+              r.left + 24,
+              r.top + r.height / 2,
+            );
+          };
+          let hit = hitAt();
+          for (
+            let frame = 0;
+            frame < 10 && !(hit && el.contains(hit));
+            frame++
+          ) {
+            await new Promise((resolve) =>
+              el.win.requestAnimationFrame(resolve),
+            );
+            hit = hitAt();
+          }
           if (!hit || !el.contains(hit))
             throw new Error(
               `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
@@ -3195,7 +3211,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return el;
         };
         await until("rows", () => row(readingKey), 10000);
-        pressRow(row(readingKey), "reading row");
+        await pressRow(row(readingKey), "reading row");
         const keys = [
           ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
         ].map((n) => n.getAttribute("data-query-item-row")!);
@@ -3238,14 +3254,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ...init,
             }),
           );
-        const pressRow = (el: HTMLElement | null, what: string) => {
+        const pressRow = async (el: HTMLElement | null, what: string) => {
           if (!el) throw new Error(`Missing: ${what}`);
           el.scrollIntoView({ block: "center", behavior: "instant" });
-          const r = el.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + 24,
-            r.top + r.height / 2,
-          );
+          // A row scrolled into view draws its content at the next frame
+          // (`content-visibility: auto`); until then a hit lands on the
+          // row's list item.
+          const hitAt = () => {
+            const r = el.getBoundingClientRect();
+            return el.ownerDocument.elementFromPoint(
+              r.left + 24,
+              r.top + r.height / 2,
+            );
+          };
+          let hit = hitAt();
+          for (
+            let frame = 0;
+            frame < 10 && !(hit && el.contains(hit));
+            frame++
+          ) {
+            await new Promise((resolve) =>
+              el.win.requestAnimationFrame(resolve),
+            );
+            hit = hitAt();
+          }
           if (!hit || !el.contains(hit))
             throw new Error(
               `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
@@ -3253,7 +3285,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           press(hit as HTMLElement, what);
           return el;
         };
-        pressRow(row(readingKey), "reading row");
+        await pressRow(row(readingKey), "reading row");
         keydown(row(readingKey)!, { key: "Enter" });
       },
       { readingKey: reading.key },
@@ -3286,14 +3318,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ...init,
             }),
           );
-        const pressRow = (el: HTMLElement | null, what: string) => {
+        const pressRow = async (el: HTMLElement | null, what: string) => {
           if (!el) throw new Error(`Missing: ${what}`);
           el.scrollIntoView({ block: "center", behavior: "instant" });
-          const r = el.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + 24,
-            r.top + r.height / 2,
-          );
+          // A row scrolled into view draws its content at the next frame
+          // (`content-visibility: auto`); until then a hit lands on the
+          // row's list item.
+          const hitAt = () => {
+            const r = el.getBoundingClientRect();
+            return el.ownerDocument.elementFromPoint(
+              r.left + 24,
+              r.top + r.height / 2,
+            );
+          };
+          let hit = hitAt();
+          for (
+            let frame = 0;
+            frame < 10 && !(hit && el.contains(hit));
+            frame++
+          ) {
+            await new Promise((resolve) =>
+              el.win.requestAnimationFrame(resolve),
+            );
+            hit = hitAt();
+          }
           if (!hit || !el.contains(hit))
             throw new Error(
               `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
@@ -3301,7 +3349,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           press(hit as HTMLElement, what);
           return el;
         };
-        pressRow(row(readingKey), "reading row");
+        await pressRow(row(readingKey), "reading row");
         keydown(row(readingKey)!, { key: "Enter", shiftKey: true });
       },
       { readingKey: reading.key },
@@ -3333,14 +3381,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ...init,
             }),
           );
-        const pressRow = (el: HTMLElement | null, what: string) => {
+        const pressRow = async (el: HTMLElement | null, what: string) => {
           if (!el) throw new Error(`Missing: ${what}`);
           el.scrollIntoView({ block: "center", behavior: "instant" });
-          const r = el.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + 24,
-            r.top + r.height / 2,
-          );
+          // A row scrolled into view draws its content at the next frame
+          // (`content-visibility: auto`); until then a hit lands on the
+          // row's list item.
+          const hitAt = () => {
+            const r = el.getBoundingClientRect();
+            return el.ownerDocument.elementFromPoint(
+              r.left + 24,
+              r.top + r.height / 2,
+            );
+          };
+          let hit = hitAt();
+          for (
+            let frame = 0;
+            frame < 10 && !(hit && el.contains(hit));
+            frame++
+          ) {
+            await new Promise((resolve) =>
+              el.win.requestAnimationFrame(resolve),
+            );
+            hit = hitAt();
+          }
           if (!hit || !el.contains(hit))
             throw new Error(
               `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
@@ -3367,7 +3431,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             row(unwrittenkey),
           10000,
         );
-        pressRow(row(unwrittenkey), "unwritten row");
+        await pressRow(row(unwrittenkey), "unwritten row");
         keydown(row(unwrittenkey)!, { key: "Enter" });
       },
       {

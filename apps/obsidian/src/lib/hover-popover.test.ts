@@ -58,7 +58,7 @@ afterEach(() => {
 });
 
 describe("HoverPopover", () => {
-  it("stays hidden after hide() cancels a show timer armed on a popout window", () => {
+  it("stays hidden after hide() cancels the show timer while a popout owns focus", () => {
     using h = setup();
     vi.advanceTimersByTime(100);
     h.popover.hide();
@@ -67,7 +67,7 @@ describe("HoverPopover", () => {
     expect(h.popover.hoverEl.isConnected).toBe(false);
   });
 
-  it("keeps the off-target grace when the hide timer was armed on a popout window", () => {
+  it("keeps the off-target grace while a popout owns focus", () => {
     using h = setup();
     vi.advanceTimersByTime(300);
     h.target.dispatchEvent(new MouseEvent("mouseout"));
@@ -79,6 +79,16 @@ describe("HoverPopover", () => {
     expect(h.popover.hoverEl.isConnected).toBe(true);
     vi.advanceTimersByTime(100);
     expect(h.popover.hoverEl.isConnected).toBe(false);
+  });
+
+  it("opens once through showNow() while a popout owns focus", () => {
+    using h = setup();
+    const hide = vi.spyOn(h.popover, "hide");
+    h.popover.showNow();
+    vi.advanceTimersByTime(300);
+    expect(hide).not.toHaveBeenCalled();
+    expect(h.parent.hoverPopover).toBe(h.popover);
+    expect(h.popover.hoverEl.isConnected).toBe(true);
   });
 
   it("stays in the popout it opened in when focus moves to another window", () => {

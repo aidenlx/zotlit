@@ -190,11 +190,11 @@ export function TableDemo() {
           <SectionLabel>{m.docs_home_table_label()}</SectionLabel>
           <h2
             id="landing-table-title"
-            className="mt-3 font-serif text-3xl font-medium text-balance sm:text-5xl sm:leading-[1.06]"
+            className="mt-4 font-serif text-3xl leading-[1.2] font-medium text-balance sm:text-5xl sm:leading-[1.15]"
           >
             {m.docs_home_table_title()}
           </h2>
-          <p className="mt-4 text-lg text-pretty text-fd-muted-foreground">
+          <p className="mt-6 text-lg text-pretty text-fd-muted-foreground">
             {m.docs_home_table_lede()}
           </p>
           <div className="mt-4">
