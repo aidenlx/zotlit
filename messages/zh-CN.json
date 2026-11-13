@@ -2907,8 +2907,6 @@
   "docs_not_found_title": "Page not found",
   "docs_not_found_description": "That page has moved or never existed. Start from the {link}.",
   "docs_not_found_docs": "documentation",
-  "docs_legacy_banner": "You’re reading the ZotLit v2 docs. Still on v1?",
-  "docs_legacy_docs_link": "Read the v1 docs",
   "docs_license": "AGPL-3.0 Licensed",
   "docs_companion_release": "Companion {version} released alongside.",
   "docs_release_channel_prerelease": "Pre-release",

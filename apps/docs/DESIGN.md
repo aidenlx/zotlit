@@ -56,7 +56,10 @@ Owned layout slots:
 - `src/components/banner.tsx` — vendored fumadocs `Banner`: `height` is a floor
   (`min-height`), so the strip wraps instead of overflowing on narrow
   viewports, and a resize-synced `--fd-banner-height` keeps sticky offsets
-  tracking the wrapped height. Consumed by `src/components/legacy-banner.tsx`.
+  tracking the wrapped height. Consumed by
+  `src/components/locale-fallback-notice.tsx`: on a `/zh-CN` page with no
+  Chinese file, the strip says English is shown and links to the English page.
+  It has no close button, since it belongs to that page.
 
 ## Tokens
 
@@ -178,7 +181,7 @@ weight — micro-apparatus inside the sans body rather than marketing display, b
 the same mono-uppercase register.
 
 **Running prose stays in normal case**, even in chrome: full sentences read as
-text, not labels — so the v2 banner notice, tooltips, figure captions, lesson
+text, not labels — so the locale fallback strip, tooltips, figure captions, lesson
 captions and check lines, and any sentence-shaped copy keep their upright case
 and sans body voice. The Archivo wordmark likewise stays outside label
 treatment.
