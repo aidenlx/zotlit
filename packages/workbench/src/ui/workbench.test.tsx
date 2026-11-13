@@ -262,7 +262,7 @@ it("links each tab to the docs page that shows how to write it", () => {
     screen.getByRole("link", { name: m.workbench_docs_annotation() }),
   ).toHaveProperty(
     "href",
-    "https://example.invalid/docs/tutorial/customize-template",
+    "https://example.invalid/docs/how-to/customize-template",
   );
 });
 
