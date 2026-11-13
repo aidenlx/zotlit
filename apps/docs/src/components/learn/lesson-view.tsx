@@ -468,6 +468,8 @@ function MediaPanel({
             <span className="min-w-0">{step.title}</span>
           </p>
           <StepPicture
+            // The last step shares its clip with the outcome; the key mounts a fresh player when the panel turns.
+            key="step"
             media={lesson.media}
             n={open}
             alt={step.alt}
@@ -493,7 +495,13 @@ function MediaPanel({
                 {lesson.end.title}
               </p>
             </div>
-            <StepPicture media={lesson.media} n={total} alt={last.alt} active />
+            <StepPicture
+              key="outcome"
+              media={lesson.media}
+              n={total}
+              alt={last.alt}
+              active
+            />
             {children}
           </>
         )

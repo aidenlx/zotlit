@@ -43,9 +43,27 @@ const [first, second] = lesson.steps as [
 
 const outcomeScope = '[aria-labelledby="lesson-outcome"]';
 
-/** The lesson page on its real modules, below `xl`, for a reader with `ticks` saved. */
-async function mountLesson(ticks: number[] = []) {
+/** happy-dom's control of the window size, which `matchMedia` reads. */
+const browser = (
+  window as unknown as {
+    happyDOM: { setViewport(viewport: { width: number }): void };
+  }
+).happyDOM;
+
+/**
+ * The lesson page on its real modules for a reader with `ticks` saved, in a
+ * window `width` pixels wide: below `xl` unless it says otherwise.
+ */
+async function mountLesson(
+  ticks: number[] = [],
+  { width }: { width?: number } = {},
+) {
   using cleanup = new DisposableStack();
+  if (width !== undefined) {
+    const before = window.innerWidth;
+    browser.setViewport({ width });
+    cleanup.defer(() => browser.setViewport({ width: before }));
+  }
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const {
@@ -225,5 +243,26 @@ describe("a lesson's recordings", () => {
 
     expect(step.paused).toBe(false);
     expect(step.loop).toBe(false);
+  });
+
+  it("turns the media panel from the ended last step to the looping outcome, which shares its clip", async () => {
+    using page = await mountLesson([1], { width: 1440 });
+    const panel = `aside[aria-label="${CSS.escape(m.docs_learn_panel_label())}"]`;
+    const step = await page.player(panel);
+    page.show(step, 1);
+    page.act(() => endPlayback(step));
+
+    page.act(() =>
+      page
+        .buttonNamed(
+          m.docs_learn_tick_step({ number: 2 }),
+          step.closest(`[aria-label="${CSS.escape(second.alt)}"]`)!,
+        )[0]!
+        .click(),
+    );
+
+    const outcome = await page.player(panel);
+    expect(outcome.loop).toBe(true);
+    expect(page.buttonNamed(m.docs_learn_recording_replay())).toHaveLength(0);
   });
 });

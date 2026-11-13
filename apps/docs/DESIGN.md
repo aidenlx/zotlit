@@ -284,7 +284,8 @@ heading, one caption and one check line.
   it stops on its last frame under a scrim (black at 55%) with a **Replay**
   button at the centre (the secondary action: 44px tall, the surface with
   the shadow ring, a Lucide rotate icon), after any actions the page adds
-  (`endActions`); it gives its turn back, and plays again only on the
+  (`endActions`); on the scrim their focus ring is white (4.7:1 or more on
+  the dimmed frame). It gives its turn back, and plays again only on the
   reader's press, not when it comes back into view. Once the reader plays
   or pauses a clip, the reader's choice holds.
   A clip rested by another loop while still in view plays again when that

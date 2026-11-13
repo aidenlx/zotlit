@@ -248,7 +248,7 @@ export default function RecordingPlayer({
             <source src={videoSrc(`${base}.mp4`)} type="video/mp4" />
           </Video>
           {ended && (
-            <div className="pointer-events-none absolute inset-0 flex flex-wrap content-center items-center justify-center gap-3 bg-black/55 p-4 transition-opacity duration-150 ease-out *:pointer-events-auto starting:opacity-0">
+            <div className="pointer-events-none absolute inset-0 flex flex-wrap content-center items-center justify-center gap-3 bg-black/55 p-4 transition-opacity duration-150 ease-out *:pointer-events-auto *:focus-visible:outline-white! starting:opacity-0">
               {endActions}
               <button
                 type="button"
