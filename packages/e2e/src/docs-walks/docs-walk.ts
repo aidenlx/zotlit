@@ -664,9 +664,8 @@ export async function openDocsWalk(
         { stdio: "ignore" },
       );
       const ended = new Promise((r) => capture.once("exit", r));
-      // No signal is known that tells when `screencapture -v` starts to
-      // record, so this waits. A desktop probe must check whether the
-      // `.mov` appears when the recording starts.
+      // `screencapture -v` writes the `.mov` only when it stops, so nothing
+      // tells when it starts to record: this waits.
       await new Promise((r) => setTimeout(r, 800));
       let stopped = false;
       const stop = async () => {
