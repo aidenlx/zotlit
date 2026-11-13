@@ -187,6 +187,210 @@ describe("planCamera", () => {
     const track = plan([{ kind: "park", t: 2, x: 1400, y: 840 }]);
     expect(viewAt(track, 8)).toEqual(full);
   });
+
+  it("widens a zoomed shot to one still view of both ends of a far drag", () => {
+    // The click at the centre zooms in to 720 x 430. The drag starts there
+    // and drops at the bottom left, outside that shot.
+    const track = plan(
+      [
+        { kind: "point", t: 3.5, x: 720, y: 430 },
+        {
+          kind: "drag",
+          t: 7,
+          end: 8,
+          from: { x: 720, y: 430 },
+          to: { x: 60, y: 800 },
+        },
+      ],
+      10,
+    );
+    expect(viewAt(track, 3.5)).toEqual({ x: 360, y: 215, w: 720, h: 430 });
+    // The drop's mark with its context reaches the window's left and bottom
+    // edges; with the zoomed shot, the view spans x 0-1080 and y 215-860.
+    const view = { x: 0, y: 215, w: 1080, h: 645 };
+    // The view is in place `lead` before the press and stays to the release.
+    for (let t = 6.5; t <= 8; t += 0.01) expect(viewAt(track, t)).toEqual(view);
+    expect(shows(view, 720, 430)).toBe(true);
+    expect(shows(view, 60, 800)).toBe(true);
+  });
+
+  it("frames a drag whose ends fit the zoom in one still zoomed shot", () => {
+    const track = plan([
+      {
+        kind: "drag",
+        t: 4,
+        end: 5,
+        from: { x: 600, y: 400 },
+        to: { x: 840, y: 460 },
+      },
+    ]);
+    // Both marks with their context span x 402-1038 and y 202-658, 636 x 456
+    // px: at the window's ratio, 763.5 x 456 px, centred on (720, 430).
+    const w = (456 * 1440) / 860;
+    expect(moves(track)).toEqual([2.5]);
+    for (let t = 3.5; t <= 5; t += 0.01) {
+      const v = viewAt(track, t);
+      expect(v.x).toBeCloseTo(720 - w / 2);
+      expect(v.y).toBeCloseTo(202);
+      expect(v.w).toBeCloseTo(w);
+      expect(v.h).toBeCloseTo(456);
+    }
+    expect(shows(viewAt(track, 4), 600, 400)).toBe(true);
+    expect(shows(viewAt(track, 4), 840, 460)).toBe(true);
+  });
+});
+
+// PR #2012: a drag's view stands from `lead` before the press to the release.
+describe("planCamera, a drag at the clip defaults", () => {
+  /** The defaults of clip-settings.ts, written out so these cases hold. */
+  const calm: Required<CameraPlanOptions> = {
+    zoom: 1.4,
+    hold: 2.5,
+    openHold: 1.5,
+    lead: 0.5,
+    ease: 1,
+    minEase: 0.6,
+    central: 1,
+    context: 160,
+    padding: 32,
+  };
+  /** The 1.4x shot of a click at the centre: x 205.7-1234.3, y 122.9-737.1. */
+  const centre: Rect = {
+    x: 720 - 1440 / 1.4 / 2,
+    y: 430 - 860 / 1.4 / 2,
+    w: 1440 / 1.4,
+    h: 860 / 1.4,
+  };
+  /**
+   * That shot widened to the window's left and bottom edges, where the
+   * context of a drop at the bottom left reaches: x 0-1234.3, y 122.9-860.
+   */
+  const widened: Rect = {
+    x: 0,
+    y: centre.y,
+    w: centre.x + centre.w,
+    h: 860 - centre.y,
+  };
+
+  function planCalm(events: CameraEvent[], duration: number): CameraTrack {
+    return planCamera({ viewport, duration, events }, calm);
+  }
+
+  /** Assert that the view is `view` at every 10 ms from `from` to `to`. */
+  function holds(
+    track: CameraTrack,
+    [from, to]: readonly [number, number],
+    view: Rect,
+  ) {
+    for (let t = from; t <= to + 1e-9; t += 0.01) {
+      const v = viewAt(track, t);
+      expect(v.x).toBeCloseTo(view.x, 3);
+      expect(v.y).toBeCloseTo(view.y, 3);
+      expect(v.w).toBeCloseTo(view.w, 3);
+      expect(v.h).toBeCloseTo(view.h, 3);
+    }
+  }
+
+  it("widens before a drag that comes after typing ends late", () => {
+    const track = planCalm(
+      [
+        {
+          kind: "type",
+          t: 4,
+          end: 8.8,
+          rect: { x: 650, y: 380, w: 140, h: 60 },
+        },
+        {
+          kind: "drag",
+          t: 9,
+          end: 10,
+          from: { x: 720, y: 430 },
+          to: { x: 60, y: 800 },
+        },
+      ],
+      12,
+    );
+    // The field with its padding and context is centred on (720, 410): a
+    // 1.4x shot at y 102.9-717.1.
+    const typing = { ...centre, y: 410 - 860 / 1.4 / 2 };
+    holds(track, [4, 4], typing);
+    // Widened to the left and bottom edges: x 0-1234.3, y 102.9-860, 757.1
+    // tall, so 1267.8 wide at the window's ratio.
+    const h = 860 - typing.y;
+    const view = { x: 0, y: typing.y, w: (h * 1440) / 860, h };
+    holds(track, [8.5, 10], view);
+    expect(shows(view, 720, 430)).toBe(true);
+    expect(shows(view, 60, 800)).toBe(true);
+  });
+
+  it("widens before a drag pressed soon after a click, as with a short glide", () => {
+    // With `glide` 0.2 s, the press comes 0.35 s after the click before it
+    // (the glide and the click mark), less than `minEase`.
+    const track = planCalm(
+      [
+        { kind: "point", t: 3.5, x: 720, y: 430 },
+        { kind: "point", t: 7.3, x: 700, y: 450 },
+        {
+          kind: "drag",
+          t: 7.65,
+          end: 8,
+          from: { x: 700, y: 450 },
+          to: { x: 60, y: 800 },
+        },
+      ],
+      10,
+    );
+    holds(track, [3.5, 3.5], centre);
+    holds(track, [7.15, 8], widened);
+  });
+
+  it("widens for a drag whose ends show but whose context does not", () => {
+    const track = planCalm(
+      [
+        { kind: "point", t: 4, x: 720, y: 430 },
+        {
+          kind: "drag",
+          t: 10,
+          end: 11,
+          from: { x: 300, y: 250 },
+          to: { x: 1140, y: 650 },
+        },
+      ],
+      12,
+    );
+    holds(track, [4, 4], centre);
+    // Both ends with their context span x 92-1348 and y 42-858, 1256 x 816
+    // px: at the window's ratio, 1366.3 x 816, centred on x 720.
+    const w = (816 * 1440) / 860;
+    holds(track, [9.5, 11], { x: 720 - w / 2, y: 42, w, h: 816 });
+  });
+
+  it("folds a move that cannot arrive before the press into the shot before it", () => {
+    // The typing at the centre ends at 7.3 s, so the widening for the click
+    // at the bottom left starts then and arrives at 7.9 s: after 7.45 s,
+    // `lead` before the press of the drag that follows the click.
+    const track = planCalm(
+      [
+        {
+          kind: "type",
+          t: 4,
+          end: 7.3,
+          rect: { x: 650, y: 400, w: 140, h: 60 },
+        },
+        { kind: "point", t: 7.6, x: 60, y: 800 },
+        {
+          kind: "drag",
+          t: 7.95,
+          end: 8.3,
+          from: { x: 60, y: 800 },
+          to: { x: 400, y: 800 },
+        },
+      ],
+      10,
+    );
+    // The centre shot of the typing takes the widened view at once.
+    holds(track, [3.5, 8.3], widened);
+  });
 });
 
 describe("closingPad", () => {

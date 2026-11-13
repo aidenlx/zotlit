@@ -620,8 +620,10 @@ describe.skipIf(!reachable)("Landing page clips", () => {
           const x = first.left + 2;
           const y = first.top + first.height / 2;
           if (pointer) {
-            await pointer.pointAt(x, y);
-            await pointer.park(last.right, last.top + last.height / 2);
+            await pointer.drag(
+              { x, y },
+              { x: last.right, y: last.top + last.height / 2 },
+            );
           }
           const pressed = page.fire("pointerdown", x, y);
           getSelection()!.removeAllRanges();
