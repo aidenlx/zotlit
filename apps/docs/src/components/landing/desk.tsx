@@ -272,7 +272,7 @@ function LibrarySheet({ compact = false }: { compact?: boolean }) {
                 </p>
                 <p className="mt-px flex items-center gap-1 text-[10.5px] leading-[1.35] text-fd-foreground/75">
                   <Clock className="size-[9px] shrink-0 text-fd-muted-foreground" />
-                  <span className="min-w-0 truncate">{p.why}</span>
+                  <span className="line-clamp-2 min-w-0">{p.why}</span>
                 </p>
               </li>
             ))}
