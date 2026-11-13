@@ -43,14 +43,14 @@ import { m } from "@/paraglide/messages.js";
 
 <Step n={1}>
 
-In <UiLabel name={m.library_view_name()} />, select the `Reproducibility` collection, then <UiLabel name={m.annot_view_save_as_query_file()} /> (page-plus icon, top right of the list). Type `Thesis` as the folder and select <UiLabel name={m.annot_view_save_action()} />.
+In <UiLabel name={m.library_view_name()} />, select `Reproducibility`, then <UiLabel name={m.annot_view_save_as_query_file()} /> (page-plus icon, top right of the list). Type `Thesis` as the folder and select <UiLabel name={m.annot_view_save_action()} />.
 
 <Check>
   The dialog reads{" "}
   <UiLabel
     name={m.annot_view_save_file({ file: "Thesis/Reproducibility.zotquery" })}
   />
-  , and the file opens in a new tab listing your collection’s papers.
+  , and the file opens in a new tab listing your papers.
 </Check>
 
 </Step>
@@ -68,7 +68,7 @@ Select <UiLabel name={m.query_view_views()} /> at the top left, then the arrow a
 
 <Step n={3}>
 
-Select <UiLabel name={m.query_view_properties()} /> and clear the check boxes for **Item Type** and **Modified**. Type each name and select its entry: `year` for **Year**, `publication` for **Publication**, and `creators` for <UiLabel name={m.query_view_properties_add({ name: "creators" })} />.
+Select <UiLabel name={m.query_view_properties()} /> and clear the boxes for **Item Type** and **Modified**. Type and select each entry: `year` for **Year**, `publication` for **Publication**, and `creators` for <UiLabel name={m.query_view_properties_add({ name: "creators" })} />.
 
 <Check>
   The visible columns are **Title**,{" "}
@@ -80,10 +80,10 @@ Select <UiLabel name={m.query_view_properties()} /> and clear the check boxes fo
 
 <Step n={4}>
 
-Select <UiLabel name={m.query_view_properties()} />, type `rating`, and select <UiLabel name={m.query_view_properties_add_vault({ name: "rating" })} />. Under the new column, type a rating such as `5` in each cell and press Enter.
+Select <UiLabel name={m.query_view_properties()} />, type `rating`, and select <UiLabel name={m.query_view_properties_add_vault({ name: "rating" })} />. In each cell under the new column, type a rating such as `5` and press Enter.
 
 <Check>
-  A new column named **rating (note)** shows your ratings, and entering a rating
+  The column **rating (note)** shows your ratings, and entering a rating
   displays <UiLabel name={m.notice_created_note()} />
 </Check>
 
@@ -99,7 +99,7 @@ Select <UiLabel name={m.query_view_sort()} /> > <UiLabel name={m.query_view_sort
 
 <Step n={6}>
 
-Select the result count in the toolbar, such as <UiLabel name={m.query_view_results({ count: 4 })} />, then <UiLabel name={m.query_view_copy()} />. Paste the table into your Chapter 3 draft.
+Select the result count, such as <UiLabel name={m.query_view_results({ count: 4 })} />, then <UiLabel name={m.query_view_copy()} />. Paste the table into your Chapter 3 draft.
 
 <Check>The table appears in the draft with all its columns.</Check>
 
