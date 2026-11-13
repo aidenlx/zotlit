@@ -54,7 +54,7 @@ export const FINAL = 17;
 
 /** Obsidian's accent: only inside the enacted window. */
 const PURPLE = "text-(--desk-purple)";
-const TINT = "bg-[rgb(138_92_245/0.14)]";
+const TINT = "bg-(--desk-selected)";
 const EASE = "cubic-bezier(.2,.75,.25,1)";
 
 const BEATS = [
@@ -447,7 +447,7 @@ function SaveDialog({ step }: { step: number }) {
           <span
             key={saving ? "s" : "w"}
             className={cn(
-              "rounded-[5px] bg-[#8a5cf5] px-3 py-1 font-medium text-white",
+              "rounded-[5px] bg-(--desk-purple) px-3 py-1 font-medium text-fd-primary-foreground",
               saving && "motion-safe:animate-demo-press",
             )}
           >

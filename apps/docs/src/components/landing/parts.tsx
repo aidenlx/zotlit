@@ -11,8 +11,10 @@ import { localizeHref } from "@/paraglide/runtime.js";
 
 /** Where Install leads: the install page in the docs. */
 export const INSTALL_HREF = "/docs/install-zotlit";
-/** The guided first run. A plain path: the route belongs to another track. */
+/** The course. A plain path: the route belongs to another track. */
 export const TUTORIAL_HREF = "/learn";
+/** Where the tutorial starts: lesson 1, which installs ZotLit as its first step. */
+const FIRST_LESSON_HREF = `${TUTORIAL_HREF}/connect-zotero-to-obsidian`;
 
 /** The landing's 44px actions: the accent fill for the leading one, the raised surface for the other. */
 export function ActionLink({
@@ -39,7 +41,7 @@ export function ActionLink({
   );
 }
 
-/** Install and the tutorial, side by side from 640px, stacked full-width below. */
+/** The tutorial, then Install: side by side from 640px, stacked full-width below. */
 export function Actions({ className }: { className?: string }) {
   return (
     <div
@@ -48,10 +50,10 @@ export function Actions({ className }: { className?: string }) {
         className,
       )}
     >
-      <ActionLink href={INSTALL_HREF} primary>
-        {m.docs_home_install()}
+      <ActionLink href={FIRST_LESSON_HREF} primary>
+        {m.docs_home_tutorial()}
       </ActionLink>
-      <ActionLink href={TUTORIAL_HREF}>{m.docs_home_tutorial()}</ActionLink>
+      <ActionLink href={INSTALL_HREF}>{m.docs_home_install()}</ActionLink>
     </div>
   );
 }

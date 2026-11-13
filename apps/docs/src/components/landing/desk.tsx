@@ -27,6 +27,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 
 import { BY_YEAR, COLLECTION, QUERY_FOLDER, TAGS } from "./papers";
 
@@ -155,27 +156,30 @@ const FACETS = [
 
 /** The Library View: the tree with Recent first, then the papers you last touched and why. */
 function LibrarySheet({ compact = false }: { compact?: boolean }) {
+  // Worded as the plugin words a Last Activity, in the page's locale.
+  // @see apps/obsidian/src/views/library/reason.ts
+  const ago = new Intl.RelativeTimeFormat(getLocale(), { numeric: "always" });
   const recent = [
     {
       title: "Ten Simple Rules for Reproducible Computational Research",
       meta: "Sandve, Nekrutenko, Taylor et al. · 2013",
-      why: m.library_recent_read_obsidian({ time: "2 h ago" }),
+      why: m.library_recent_read_obsidian({ time: ago.format(-2, "hour") }),
       selected: true,
     },
     {
       title: "Why Most Published Research Findings Are False",
       meta: "Ioannidis · 2005",
-      why: m.library_recent_cited({ time: "yesterday" }),
+      why: m.library_recent_cited({ time: ago.format(-1, "day") }),
     },
     {
       title: "A manifesto for reproducible science",
       meta: "Munafò, Nosek, Bishop et al. · 2017",
-      why: m.library_recent_notes_edited({ time: "yesterday" }),
+      why: m.library_recent_notes_edited({ time: ago.format(-1, "day") }),
     },
     {
       title: "Ten Simple Rules for Better Figures",
       meta: "Rougier, Droettboom, Bourne · 2014",
-      why: m.library_recent_added({ time: "yesterday" }),
+      why: m.library_recent_added({ time: ago.format(-1, "day") }),
     },
   ].slice(0, compact ? 2 : 4);
   const row =
@@ -268,7 +272,7 @@ function LibrarySheet({ compact = false }: { compact?: boolean }) {
                 </p>
                 <p className="mt-px flex items-center gap-1 text-[10.5px] leading-[1.35] text-fd-foreground/75">
                   <Clock className="size-[9px] shrink-0 text-fd-muted-foreground" />
-                  <span className="min-w-0 truncate">{p.why}</span>
+                  <span className="line-clamp-2 min-w-0">{p.why}</span>
                 </p>
               </li>
             ))}

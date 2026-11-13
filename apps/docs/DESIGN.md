@@ -237,7 +237,9 @@ Values follow the `better-ui` skill.
   play button until the reader plays it. Each loop rests elsewhere, and a loop that starts rests the one that
   played. A recording plays in the recording player, whose play button
   pauses it; a recording the reader paused holds the turn while it stays in
-  view, so no other loop starts behind the pause. The table demo carries a
+  view, so no other loop starts behind the pause, and the loop that wanted
+  to start plays once the paused one leaves view. The reader's own play,
+  on any loop, still takes the turn. The table demo carries a
   visible pause button (WCAG 2.2.2).
   With reduced motion, a recording rests on its poster until the reader
   plays it, and the table demo shows its finished frame.
@@ -262,12 +264,6 @@ heading, one caption and one check line.
   small app windows built in HTML from the real app's labels and the open
   Lucide icons, on real-looking research data, inside a plain window frame of
   our own. Obsidian's own stylesheet and window chrome stay out.
-- **The landing lets a visitor try one moment** (Target). Inside a window, a
-  visitor tries a signature moment in about 20 seconds before any install,
-  and the moment hands them to Install and Lesson 1. The first: type `[@` in
-  a draft, pick a paper, and the formatted citation appears. Further
-  candidates: drag a highlight into a draft so the quote arrives with its
-  page; mark a paper "to-read" in the reading table.
 - **The recording player.** Every recording on the site plays in one
   Video.js player (`src/components/recording-player.tsx`, composed from
   Video.js UI components), loaded on demand: the page prerenders the still,
@@ -298,8 +294,9 @@ heading, one caption and one check line.
   are HTML beside the picture, so they translate, wrap and reach screen
   readers. The picture carries a text alternative that says what it shows.
 
-The reader's path: search → landing (try one moment in the web) → Install →
-`/learn` (watch a step, do it in your Obsidian).
+The reader's path: search → landing (watch the desk, the workflow
+recordings and the table demo) → Lesson 1, whose first step installs ZotLit
+(watch a step, do it in your Obsidian).
 
 ## Font loading
 
@@ -355,8 +352,8 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
 - **Hero.** Centred text on a research desk. The H1 "A
   research desk for Zotero in Obsidian." (display, 2.6rem on phones, 3.75rem from 640px, at
   1.12 leading) with the highlighter on "research desk", the
-  supporting line (sans 20px, muted, 34rem), **Install ZotLit** and **Start
-  the tutorial**, and the requirements line in muted 14px. From 1280px the
+  supporting line (sans 20px, muted, 34rem), **Start the tutorial** and
+  **Install ZotLit**, and the requirements line in muted 14px. From 1280px the
   hero is at least as tall as the viewport below the nav and the banner
   (`--fd-banner-height`), held between 720px
   and the desk's scaled height, and grows with its text when a larger font
@@ -459,9 +456,11 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   research data — titles, authors, citation keys, the chapter text, the
   references — stays as data in `papers.ts` and the components, not as
   messages.
-- **Actions.** **Install ZotLit** (to the install page) fills with the
-  accent text tone and carries the text-on-accent tone; **Start the
-  tutorial** (to `/learn`) is the surface with the shadow ring. Both are
+- **Actions.** **Start the tutorial** (to Lesson 1,
+  `/learn/connect-zotero-to-obsidian`, whose first step installs ZotLit)
+  comes first, fills with the accent text tone and carries the
+  text-on-accent tone; **Install ZotLit** (to the install page) is the
+  surface with the shadow ring. Both are
   44px tall, 10px radius, sans semibold 15px; side by side from 640px,
   stacked full-width below. Keyboard focus on the landing's actions, links
   and pause buttons draws a 2px outline in the accent text tone at 2px
@@ -582,14 +581,17 @@ explains, and each fact appears once (see The label voice).
   recording, which plays at once after Start and otherwise while it
   crosses the middle of the window. A reader with ticks saved starts on the
   first step not ticked, and one who follows a link to a step starts
-  there. The rows then show no picture of their own, so one player
+  there; that row's recording rests on its poster with its play button
+  until the reader acts on the page: Start, a row's title, a tick, **Go to
+  step N** or the play button. The rows then show no picture of their own, so one player
   mounts per step. The prerendered page and a reader without JavaScript
   keep the one column, with every picture in its row.
 - **Picture.** One recording of the step in the real app, in the recording
   player (see Illustration), 10px radius, with the shadow ring, at most
   560px or 70% of the window tall. Only the open row's clip and the
   outcome load. The open row's clip plays at once after Start, and
-  otherwise while it crosses the middle of the window; the outcome waits
+  otherwise while it crosses the middle of the window once the reader has
+  acted on the page (a row open on load rests, see Media panel); the outcome waits
   for the reader's play; one plays at a time. There is no zoom control: the recordings frame the action
   themselves.
 - **Action.** Body size, each control named in semibold at the text's size;

@@ -26,11 +26,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
 import {
+  askTurn,
   awaitTurn,
   endTurn,
+  holdTurn,
   stopWaiting,
   takeTurn,
-} from "@/components/landing/loop";
+} from "@/components/recording-turn";
 import { cn } from "@/lib/cn";
 import * as m from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
@@ -88,10 +90,12 @@ export default function RecordingPlayer({
   );
   // A clip that waits for the reader rests on its poster, as under reduced motion.
   const still = reduced || (!autoplay && !playNow);
-  // "auto" plays mid-viewport, "manual" plays from the reader's press until it leaves view, "paused" stays still.
-  const [mode, setMode] = useState<"auto" | "manual" | "paused">(() =>
-    still ? "paused" : playNow ? "manual" : "auto",
+  // The reader's choice for this clip, a play or pause here or a press elsewhere (`playNow`). It holds when the page later lets the clip start on its own.
+  const [chosen, setChosen] = useState<"manual" | "paused" | null>(() =>
+    playNow && !reduced ? "manual" : null,
   );
+  // "auto" plays mid-viewport, "manual" plays from the reader's press until it leaves view, "paused" stays still.
+  const mode = chosen ?? (still ? "paused" : "auto");
   // The reader has played or paused the clip, so its changes are announced.
   const [touched, setTouched] = useState(false);
   // The play and the pause this player asked for itself, which the reader did not.
@@ -121,10 +125,15 @@ export default function RecordingPlayer({
       if (!v) return;
       stopWaiting(me);
       // A loop that takes the turn while this clip is in view leaves it waiting to play again.
-      takeTurn(me, () => {
+      const started = askTurn(me, () => {
         rest();
         awaitTurn(me, play);
       });
+      // A clip the reader paused in view holds the turn, so this one waits for it to leave.
+      if (!started) {
+        awaitTurn(me, play);
+        return;
+      }
       if (!v.paused) return;
       askedPlay.current = true;
       void v.play().catch(() => {
@@ -176,7 +185,7 @@ export default function RecordingPlayer({
     }
     takeTurn(me, rest);
     setTouched(true);
-    setMode("manual");
+    setChosen("manual");
   }
 
   function onPause() {
@@ -184,8 +193,9 @@ export default function RecordingPlayer({
       askedPause.current = false;
       return;
     }
+    holdTurn(me);
     setTouched(true);
-    setMode("paused");
+    setChosen("paused");
   }
 
   return (
