@@ -14,6 +14,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Check } from "lucide-react";
 import {
+  use,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -322,10 +323,8 @@ export function LessonView({
           </div>
           {(!ready || allDone) && <End lesson={lesson} progress={progress} />}
         </div>
-        {state.live?.wide && (
-          <MediaPanel lesson={lesson} live={state.live}>
-            {startButton}
-          </MediaPanel>
+        {ready && wide && (
+          <MediaPanel lesson={lesson}>{startButton}</MediaPanel>
         )}
       </div>
     </LessonContext>
@@ -427,14 +426,14 @@ function Outcome({
  */
 function MediaPanel({
   lesson,
-  live,
   children,
 }: {
   lesson: LessonViewData;
-  live: NonNullable<LessonState["live"]>;
   /** The Start button, while no row is open. */
   children: ReactNode;
 }) {
+  const live = use(LessonContext)?.live;
+  if (!live) return null;
   const { open, ticks, launched } = live;
   const total = lesson.steps.length;
   const step = open === null ? undefined : lesson.steps[open - 1];
