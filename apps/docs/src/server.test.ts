@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { assetsFetch, ssrFetch } = vi.hoisted(() => ({
-  assetsFetch: vi.fn(),
-  ssrFetch: vi.fn(),
-}));
+const { assetsFetch, ssrFetch, workerEnv } = vi.hoisted(() => {
+  const assetsFetch = vi.fn();
+  return {
+    assetsFetch,
+    ssrFetch: vi.fn(),
+    workerEnv: { ASSETS: { fetch: assetsFetch }, DOCS_LINE: "production" },
+  };
+});
 
-vi.mock("cloudflare:workers", () => ({
-  env: { ASSETS: { fetch: assetsFetch } },
-}));
+vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
 vi.mock("@tanstack/react-start/server-entry", () => ({
   default: { fetch: ssrFetch },
   createServerEntry: (entry: unknown) => entry,
@@ -17,6 +19,7 @@ import server from "./server";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  workerEnv.DOCS_LINE = "production";
   assetsFetch.mockResolvedValue(new Response("Not found", { status: 404 }));
   ssrFetch.mockResolvedValue(new Response("Rendered before assets exist"));
 });
@@ -133,6 +136,21 @@ describe("Markdown answers", () => {
     async (path) => {
       const response = await fetchPage(path, "text/markdown");
       expect(response.headers.get("vary")).toBeNull();
+    },
+  );
+});
+
+// Pre-release Docs repeats the production pages; search engines list the
+// production line alone.
+describe("beta line", () => {
+  it.each(["/docs/how-to/insert-citations", "/zh-CN/learn"])(
+    "keeps the Worker's answer for %s out of the index",
+    async (path) => {
+      workerEnv.DOCS_LINE = "beta";
+      const response = await server.fetch(
+        new Request(`https://zotlit-beta.aidenlx.site${path}`),
+      );
+      expect(response.headers.get("x-robots-tag")).toBe("noindex");
     },
   );
 });
