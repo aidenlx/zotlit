@@ -166,6 +166,25 @@ export function closingPad(
     : Math.max(endPad, hold - (duration - arrival));
 }
 
+/**
+ * How long the encoder holds the first frame of a clip cut with `track`:
+ * `openPad`, or longer, so the opening shot rests `hold` at least before the
+ * first move starts.
+ */
+export function openingPad(
+  track: CameraTrack,
+  { openPad, hold }: Pick<ClipSettings, "openPad" | "hold">,
+): number {
+  const keys = track.keyframes;
+  for (let i = 1; i < keys.length; i++)
+    if (
+      keys[i]!.t > keys[i - 1]!.t &&
+      !sameView(keys[i - 1]!.view, keys[i]!.view)
+    )
+      return Math.max(openPad, hold - keys[i - 1]!.t);
+  return openPad;
+}
+
 /** The view of `track` at `t` clip seconds. */
 export function viewAt(track: CameraTrack, t: number): Rect {
   const keys = track.keyframes;

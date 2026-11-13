@@ -7,7 +7,7 @@
 //
 //   node packages/e2e/src/docs-walks/clip-encode.ts <frames-dir> <out> [<track.json>|whole]
 //
-// writes <out>.webm, <out>.mp4 and <out>.poster.webp, with the planned track
+// writes <out>.mp4 and <out>.poster.webp, with the planned track
 // unless a track file, or `whole` for the whole window, is named. The
 // recording's own settings are those the clip was recorded with; the camera
 // and the pads are those of this run, today's defaults under the overrides
@@ -18,10 +18,16 @@ import { access, link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import sharp from "sharp";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
 
-import { closingPad, planCamera, viewAt } from "./camera.ts";
+import { closingPad, openingPad, planCamera, viewAt } from "./camera.ts";
 import type { CameraEvent, CameraTrack } from "./camera.ts";
-import { recutSettings } from "./clip-settings.ts";
+import {
+  cutKeys,
+  defaultClipSettings,
+  recutSettings,
+} from "./clip-settings.ts";
 import type { ClipSettings } from "./clip-settings.ts";
 
 const execFileAsync = promisify(execFile);
@@ -112,16 +118,17 @@ async function readShot(dir: string) {
 }
 
 /**
- * Encode the frames in `dir` as `<out>.webm` (VP9), `<out>.mp4` (H.264) and
- * the final frame `<out>.poster.webp`, at their real timing, through the
+ * Encode the frames in `dir` as `<out>.mp4` (H.264) and the final frame
+ * `<out>.poster.webp`, at their real timing, through the
  * camera track: `track` when given, `"whole"` for the whole window
  * throughout, or the plan of the clip's `camera.json`. `settings` default to
  * the recording's own settings with this run's camera and pads
  * ({@link recutSettings}); with the camera off, the clip keeps the whole
- * window and has no poster. The first image holds `openPad` before the clip
- * and the last `endPad` after it, or longer, so the shot after the last move
- * rests `hold` ({@link closingPad}); the track's times stay those of the
- * frames. The track
+ * window and has no poster. The first image holds `openPad` before the clip,
+ * or longer, so the opening shot rests `hold` ({@link openingPad}), and the
+ * last `endPad` after it, or longer, so the shot after the last move rests
+ * `hold` ({@link closingPad}); the track's times stay those of the frames.
+ * The track
  * used is written to `dir/track.json` and answered with the clip's log.
  * A `dir` with a `sequence.json` is a clip of several shots
  * ({@link ClipSequence}); it answers the track and log of its last shot.
@@ -157,6 +164,7 @@ export async function encodeClip(
   await mkdir(baked, { recursive: true });
   let size: { outW: number; outH: number } | undefined;
   let tick = 0;
+  let openTicks = 0;
   let image = 0;
   let last: Awaited<ReturnType<typeof bakeShot>> | undefined;
   let s: ClipSettings | undefined;
@@ -171,8 +179,6 @@ export async function encodeClip(
       const first = await sharp(join(shot.dir, read.shown[0]!.file)).metadata();
       const outW = Math.min(s.width, first.width);
       size = { outW, outH: 2 * Math.round((outW * H) / W / 2) };
-      // The clip's first ticks are the open pad, after the shots.
-      tick = Math.round(s.openPad * s.fps);
     }
     const used =
       shot.track === "whole" || !s.camera
@@ -190,6 +196,12 @@ export async function encodeClip(
       join(shot.dir, "track.json"),
       `${JSON.stringify(used, null, 2)}\n`,
     );
+    // The clip's first ticks are the open pad, after the shots, long enough
+    // that the opening shot rests `hold`.
+    if (shot === shots[0]) {
+      openTicks = Math.ceil(openingPad(used, s) * s.fps - 1e-6);
+      tick = openTicks;
+    }
     last = await bakeShot({
       dir: shot.dir,
       read,
@@ -206,7 +218,7 @@ export async function encodeClip(
   }
   // The open pad holds the clip's first image, and the end pad its last,
   // long enough that the closing shot rests `hold`.
-  for (let n = 0; n < Math.round(s!.openPad * s!.fps); n++)
+  for (let n = 0; n < openTicks; n++)
     await link(
       join(baked, "b00000.png"),
       join(baked, `t${String(n).padStart(5, "0")}.png`),
@@ -217,7 +229,7 @@ export async function encodeClip(
       join(baked, last!.lastFile),
       join(baked, `t${String(tick++).padStart(5, "0")}.png`),
     );
-  await encodeBoth(
+  await encodeMp4(
     {
       input: [
         "-y",
@@ -378,7 +390,7 @@ export async function encodeMovie(
   const filter = `${crop}scale='min(${s.width},iw)':-2:flags=lanczos`;
   // The open pad holds the first frame, and the end pad the last.
   const pads = `tpad=start_mode=clone:start_duration=${s.openPad}:stop_mode=clone:stop_duration=${s.endPad}`;
-  await encodeBoth(
+  await encodeMp4(
     {
       input: ["-y", "-i", movie],
       filter: `${filter},${pads},format=yuv420p`,
@@ -406,16 +418,15 @@ export async function encodeMovie(
 }
 
 /**
- * Encode `input` through `filter` as `<out>.webm` (VP9) and `<out>.mp4`
- * (H.264) at the settings' frame rate and quality, no audio, tuned for sharp
- * UI text.
+ * Encode `input` through `filter` as `<out>.mp4` (H.264) at the settings'
+ * frame rate and quality, no audio, tuned for sharp UI text.
  */
-async function encodeBoth(
+async function encodeMp4(
   { input, filter }: { input: string[]; filter: string },
   out: string,
   s: ClipSettings,
 ): Promise<void> {
-  const shared = [
+  await execFileAsync("ffmpeg", [
     ...input,
     "-vf",
     filter,
@@ -424,27 +435,6 @@ async function encodeBoth(
     "-r",
     String(s.fps),
     "-an",
-  ];
-  await execFileAsync("ffmpeg", [
-    ...shared,
-    "-c:v",
-    "libvpx-vp9",
-    "-crf",
-    String(s.vp9Crf),
-    "-b:v",
-    "0",
-    "-deadline",
-    "good",
-    "-cpu-used",
-    "1",
-    "-row-mt",
-    "1",
-    "-tune-content",
-    "screen",
-    `${out}.webm`,
-  ]);
-  await execFileAsync("ffmpeg", [
-    ...shared,
     "-c:v",
     "libx264",
     "-preset",
@@ -472,11 +462,50 @@ export async function readTrack(
 }
 
 if (import.meta.main) {
-  const [dir, out, trackFile] = process.argv.slice(2);
-  if (!dir || !out)
-    throw new Error(
-      "usage: clip-encode.ts <frames-dir> <out> [<track.json>|whole]",
-    );
+  const recorded = Object.keys(defaultClipSettings).filter(
+    (key) => !(cutKeys as readonly string[]).includes(key),
+  );
+  const {
+    dir,
+    out,
+    track: trackFile,
+  } = await yargs(hideBin(process.argv))
+    .scriptName("clip-encode.ts")
+    .usage(
+      "$0 <dir> <out> [track]\n\nCut a docs-walk clip again from its saved frames, without a new recording.",
+    )
+    .positional("dir", {
+      describe:
+        "The clip's frames folder, .scratch/docs-walks/<slug>/step-<n>.frames",
+      type: "string",
+      demandOption: true,
+    })
+    .positional("out", {
+      describe:
+        "The output path without its extension; writes <out>.mp4 and <out>.poster.webp",
+      type: "string",
+      demandOption: true,
+    })
+    .positional("track", {
+      describe:
+        "A camera track file in the format of <dir>/track.json, or `whole` for the whole window; the camera plans the track when it is left out",
+      type: "string",
+    })
+    .command("$0 <dir> <out> [track]", false)
+    .epilogue(
+      [
+        `Today's settings, from clip-settings.ts under the overrides below: ${cutKeys.join(", ")}.`,
+        `The recording's own settings, from <dir>/camera.json: ${recorded.join(", ")}.`,
+        "",
+        "DOCS_WALK_CLIP: a JSON object of settings that overrides both, such as '{\"zoom\":1.2}'.",
+        "DOCS_WALK_CLIP_FILE: a JSON file of the same, applied under DOCS_WALK_CLIP.",
+        "",
+        "The track used is written to <dir>/track.json. See packages/e2e/AGENTS.md, Docs walks.",
+      ].join("\n"),
+    )
+    .strict()
+    .version(false)
+    .parse();
   await encodeClip(dir, out, {
     track:
       trackFile === "whole"

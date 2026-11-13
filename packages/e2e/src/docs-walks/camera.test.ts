@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { closingPad, planCamera, viewAt } from "./camera.ts";
+import { closingPad, openingPad, planCamera, viewAt } from "./camera.ts";
 import type {
   CameraEvent,
   CameraPlanOptions,
@@ -223,6 +223,43 @@ describe("closingPad", () => {
       ],
     };
     expect(closingPad(still, 6, settings)).toBe(0.5);
+  });
+});
+
+describe("openingPad", () => {
+  const settings = { openPad: 0.8, hold: 2.5 };
+  const zoomed: Rect = { x: 360, y: 215, w: 720, h: 430 };
+
+  it("rests the opening shot at least the hold before the first move", () => {
+    // The first move starts at 1.5 s, so the pad grows from 0.8 s to 1 s.
+    const track: CameraTrack = {
+      keyframes: [
+        { t: 0, view: full },
+        { t: 1.5, view: full },
+        { t: 2.5, view: zoomed },
+        { t: 6, view: zoomed },
+      ],
+    };
+    expect(openingPad(track, settings)).toBeCloseTo(1);
+  });
+
+  it("keeps the open pad before a late first move or none", () => {
+    const late: CameraTrack = {
+      keyframes: [
+        { t: 0, view: full },
+        { t: 3, view: full },
+        { t: 4, view: zoomed },
+        { t: 6, view: zoomed },
+      ],
+    };
+    expect(openingPad(late, settings)).toBe(0.8);
+    const still: CameraTrack = {
+      keyframes: [
+        { t: 0, view: full },
+        { t: 6, view: full },
+      ],
+    };
+    expect(openingPad(still, settings)).toBe(0.8);
   });
 });
 
