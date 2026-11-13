@@ -155,8 +155,8 @@ stays legible at any size, including shrunk-down OG cards.
 On editorial and docs-chrome surfaces, apparatus labels are mono uppercase:
 
 - Home nav links
-- Landing labels ("The research sequence", "Literature review", "Step 1", the
-  desk's tape labels) and the `/learn` outcome label ("You end with")
+- The landing desk's tape labels and the `/learn` outcome label ("You end
+  with")
 - Changelog/blog dates and meta lines; version-ledger row labels
 - Docs sidebar folder + `links`-prop rows, the TOC "On this page" title, docs
   prose h4, and the command `Copy →` affordance
@@ -345,8 +345,7 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
 
 - **Header and footer.** The shared home nav (see Owned layout slots) and
   the shared copyright footer.
-- **Hero.** Centred text on a research desk. A mono label ("An Obsidian
-  plugin · free and open source", 12px, 0.14em tracking, muted), the H1 "A
+- **Hero.** Centred text on a research desk. The H1 "A
   research desk for Zotero in Obsidian." (display, 2.6rem on phones, 3.75rem from 640px, at
   1.12 leading) with the highlighter on "research desk", the
   supporting line (sans 20px, muted, 34rem), **Install ZotLit** and **Start
@@ -385,18 +384,16 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   each object in one animation frame. The prerendered page and reduced
   motion show the final state.
 - **Workflow: "From Zotero to finished chapter."** On the surface at 40%.
-  A centred head: the mono label "The research sequence", the H2, and one
-  line. Then five steps — Find a paper, Read and highlight, Write the
+  A centred H2. Then five steps — Find a paper, Read and highlight, Write the
   literature note, Cite as you draft, Export your chapter to Word — in a zig-zag from
   1024px around a vertical hairline, each numbered on the line by a 36px
-  circle (mono, accent text tone). Each step: "Step N" (mono uppercase,
-  accent text tone), the step title (display, 2.25rem from 640px), one
-  outcome line (sans 18px, muted), two points on hairlines (a semibold lead
-  and a muted sentence), an optional note on the quiet fill (the Better
-  BibTeX requirement), and a link to the step's lesson that names it
+  circle (mono, accent text tone); below 1024px the list order carries the
+  sequence. Each step: the step title (display, 2.25rem from 640px), one
+  outcome line (sans 18px, muted), an optional note on the quiet fill (the
+  Better BibTeX requirement), and a link to the step's lesson that names it
   ("Open the citation lesson →"); no two lesson links on the page share text.
   Beside it, the step's recording (see Recordings).
-- **Compare your papers.** The mono label "Literature review", the H2
+- **Compare your papers.** The H2
   "Compare your papers side by side.", one line and "Open the literature
   table lesson →" to `/learn/literature-review-table-from-zotero`. Then the
   demo, a figure: an Obsidian window (11px radius, `--desk-window-shadow`)
@@ -423,13 +420,14 @@ closing call. Sections run 1152px wide (`max-w-6xl`) with 32px side gutters
   the caption trail; pausing rests the demo on its finished frame, and play
   starts it again from the collection. Rows and cells move by FLIP
   (transform and opacity); the tree collapses by width.
-- **Trust row.** Three items on the ground under the section's hairline, in
-  three columns from 640px: a serif lead (20px) and a muted line —
-  "Private, on your computer.", "Free and open source.", "Works with Zotero
-  9 and 10.".
+- **Trust row.** Three serif statements (20px) on the ground under the
+  section's hairline, in three columns from 640px: "Private, on your
+  computer.", "Free and open source.", "Works with Zotero 9 and 10.".
 - **Closing call.** A band on the quiet fill: the H2 "Start your next
-  chapter with ZotLit.", one line, the two actions and the requirements
-  line, centred.
+  chapter with ZotLit." and the two actions, centred. The requirements line
+  appears once on the page, under the hero's actions.
+- **Labels.** The layout explains; a label or description appears only where
+  position and grouping cannot say it.
 - **Recordings.** Each workflow step shows a recording of the real app at
   `public/img/landing/<case>` — `find`, `read`, `note`, `cite`, `word` — a
   1600 × 1000 WebP still and, where the case has one, an MP4 and a WebM

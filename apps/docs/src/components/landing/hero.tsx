@@ -72,12 +72,9 @@ export function Hero() {
       <Desk />
       <div className="relative z-20 mx-auto flex max-w-[640px] flex-col items-center px-4 pt-9 text-center sm:px-8 xl:w-full xl:max-w-none xl:flex-1 xl:justify-center xl:px-0 xl:pt-0 xl:pb-[170px]">
         <div className="flex w-full max-w-[640px] flex-col items-center xl:[zoom:var(--desk-s)]">
-          <p className="font-mono text-[0.6875rem] font-medium tracking-[0.1em] text-fd-muted-foreground uppercase sm:text-xs sm:tracking-[0.14em]">
-            {m.docs_home_eyebrow()}
-          </p>
           <h1
             id="landing-title"
-            className="mt-6 font-serif text-[2.6rem] leading-[1.12] font-medium tracking-[-0.02em] text-balance text-fd-foreground sm:text-6xl"
+            className="font-serif text-[2.6rem] leading-[1.12] font-medium tracking-[-0.02em] text-balance text-fd-foreground sm:text-6xl"
           >
             <Message
               text={m.docs_home_title({ mark: "{mark}" })}
