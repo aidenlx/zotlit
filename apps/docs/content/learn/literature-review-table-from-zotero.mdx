@@ -4,20 +4,20 @@ description: Build a literature review table in Obsidian from a Zotero collectio
 lesson: 6
 minutes: 10
 media: build-a-literature-review-table
-lede: You will finish this lesson with a comparison table of your papers—showing authors, year, journal, and your own rating—pasted directly into Chapter 3.
-note: This table reads from Zotero each time it opens, and your ratings stay in your literature notes. The copy you paste into your draft does not update, so copy it again before you send the draft.
+lede: Build a comparison table of your papers and paste it into your chapter.
+note: The copy pasted into your draft does not update automatically, so copy it again before you send the draft.
 chore: I keep a spreadsheet of papers
 today:
   - copy each paper's year, journal, and method into a spreadsheet
   - update the sheet by hand when a record in Zotero changes
-instead: Open the table file. It reads the collection from Zotero each time.
+instead: Open the table file to read the latest collection from Zotero.
 needs:
   - item: Lesson 1
-    detail: Completed with ZotLit connected
+    detail: Completed
   - item: Zotero collection
     detail: Reproducibility, with your papers
   - item: Obsidian folder
-    detail: Thesis, for your chapter
+    detail: Thesis
 steps:
   - title: Save the collection as a table file
     alt: The new tab Reproducibility.zotquery opens in Obsidian, listing papers from the collection.
@@ -33,8 +33,8 @@ steps:
     alt: The literature review table is pasted into the chapter note with all columns preserved.
 end:
   title: A literature review table in your chapter
-  caption: You can now compare papers from your Zotero collections in a table and paste it into your draft.
-  next: Browse the how-to guides to adapt ZotLit to your research workflow.
+  caption: You can now compare papers from a Zotero collection in a table and paste the table into your draft.
+  next: Browse guides to adapt ZotLit to your workflow.
 ---
 
 import { Check, Step } from "@/components/learn/lesson-mdx";
@@ -43,71 +43,64 @@ import { m } from "@/paraglide/messages.js";
 
 <Step n={1}>
 
-In the <UiLabel name={m.library_view_name()} /> tab, select the `Reproducibility` collection in the list on the left. Select <UiLabel name={m.annot_view_save_as_query_file()} />, the page icon with a plus at the top right of the list. Type `Thesis` as the folder, then select <UiLabel name={m.annot_view_save_action()} />.
+In <UiLabel name={m.library_view_name()} />, select the `Reproducibility` collection, then <UiLabel name={m.annot_view_save_as_query_file()} /> (page-plus icon, top right of the list). Type `Thesis` as the folder and select <UiLabel name={m.annot_view_save_action()} />.
 
 <Check>
   The dialog reads{" "}
   <UiLabel
     name={m.annot_view_save_file({ file: "Thesis/Reproducibility.zotquery" })}
   />
-  . After selecting <UiLabel name={m.annot_view_save_action()} />, the file
-  opens in a new tab and lists the papers from your collection.
+  , and the file opens in a new tab listing your collection’s papers.
 </Check>
 
 </Step>
 
 <Step n={2}>
 
-Select <UiLabel name={m.query_view_views()} /> at the top left of the tab, then select <UiLabel name={m.query_view_configure_view()} />, the arrow at the end of the row. Set <UiLabel name={m.query_view_layout()} /> to <UiLabel name={m.query_view_layout_table()} />.
+Select <UiLabel name={m.query_view_views()} /> at the top left, then the arrow at the end of the row (<UiLabel name={m.query_view_configure_view()} />). Set <UiLabel name={m.query_view_layout()} /> to <UiLabel name={m.query_view_layout_table()} />.
 
 <Check>
-  The papers appear as rows with four columns: **Item Type**, **Title**,
-  **Modified**, and <UiLabel name={m.query_view_table_literature_note()} />.
+  The papers appear as rows with columns **Item Type**, **Title**, **Modified**,
+  and <UiLabel name={m.query_view_table_literature_note()} />.
 </Check>
 
 </Step>
 
 <Step n={3}>
 
-Select <UiLabel name={m.query_view_properties()} />. Clear the check boxes for **Item Type** and **Modified**. Type `year` and select **Year**. Type `publication` and select **Publication**, which holds the journal. Type `creators` and select <UiLabel name={m.query_view_properties_add({ name: "creators" })} />.
+Select <UiLabel name={m.query_view_properties()} /> and clear the check boxes for **Item Type** and **Modified**. Type each name and select its entry: `year` for **Year**, `publication` for **Publication**, and `creators` for <UiLabel name={m.query_view_properties_add({ name: "creators" })} />.
 
 <Check>
   The visible columns are **Title**,{" "}
   <UiLabel name={m.query_view_table_literature_note()} />, **Year**,
-  **Publication**, and **Creators** (the authors).
+  **Publication**, and **Creators**.
 </Check>
 
 </Step>
 
 <Step n={4}>
 
-Select <UiLabel name={m.query_view_properties()} /> and type `rating`. Select the second "Add" entry, <UiLabel name={m.query_view_properties_add_vault({ name: "rating" })} />. In each paper's cell under the new column, type a rating, such as `5`, and press Enter.
+Select <UiLabel name={m.query_view_properties()} />, type `rating`, and select <UiLabel name={m.query_view_properties_add_vault({ name: "rating" })} />. Under the new column, type a rating such as `5` in each cell and press Enter.
 
 <Check>
-  A new column named **rating (note)** shows your ratings. Entering the first
-  rating for a paper without a note displays the notice{" "}
-  <UiLabel name={m.notice_created_note()} />
+  A new column named **rating (note)** shows your ratings, and entering a rating
+  displays <UiLabel name={m.notice_created_note()} />
 </Check>
 
 </Step>
 
 <Step n={5}>
 
-Select <UiLabel name={m.query_view_sort()} />, then select <UiLabel name={m.query_view_sort_add()} />. Set the first box to <UiLabel name={m.query_view_property_date()} /> and the second box to <UiLabel name={m.query_view_sort_old_new()} />.
+Select <UiLabel name={m.query_view_sort()} /> > <UiLabel name={m.query_view_sort_add()} />, set the first box to <UiLabel name={m.query_view_property_date()} /> and the second to <UiLabel name={m.query_view_sort_old_new()} />.
 
-<Check>
-  The papers reorder from the oldest publication date to the newest.
-</Check>
+<Check>The table displays the papers sorted by date from old to new.</Check>
 
 </Step>
 
 <Step n={6}>
 
-Select the result count in the toolbar, such as <UiLabel name={m.query_view_results({ count: 4 })} />. Select <UiLabel name={m.query_view_copy()} />. Open your Chapter 3 draft and paste.
+Select the result count in the toolbar, such as <UiLabel name={m.query_view_results({ count: 4 })} />, then <UiLabel name={m.query_view_copy()} />. Paste the table into your Chapter 3 draft.
 
-<Check>
-  The table appears in the draft with all columns in the exact order you
-  arranged.
-</Check>
+<Check>The table appears in the draft with all its columns.</Check>
 
 </Step>
