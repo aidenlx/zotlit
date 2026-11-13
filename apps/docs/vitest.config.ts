@@ -5,6 +5,7 @@ import { defineConfig } from "vitest/config";
 import { testDefaults } from "@zotlit/config/vitest";
 
 import { scanChinesePages } from "./src/lib/content-scan.js";
+import { scanFirstCommitDays } from "./src/lib/first-commits.js";
 import { scanLearnMedia } from "./src/lib/learn-media.js";
 
 // Unit seam only — the app's own Vite config carries the Cloudflare and
@@ -16,6 +17,9 @@ export default defineConfig({
       scanChinesePages(import.meta.dirname),
     ),
     __LEARN_MEDIA__: JSON.stringify(scanLearnMedia(import.meta.dirname)),
+    __FIRST_COMMIT_DAYS__: JSON.stringify(
+      scanFirstCommitDays(import.meta.dirname),
+    ),
     // Tests play the clips from their site paths, as the dev server does.
     __MEDIA_URLS__: "{}",
   },

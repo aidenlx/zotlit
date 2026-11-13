@@ -23,11 +23,12 @@ const publisher = {
 // article to its page, and lists datePublished, author and image among an
 // Article's recommended properties.
 describe("docsArticleSchema", () => {
-  it("names the page's canonical URL, headline, description, card, author and last-commit day", () => {
+  it("names the page's canonical URL, headline, description, card, author and its first and last commit days", () => {
     expect(
       docsArticleSchema({
         title: "Insert citations",
         description: "Insert Markdown citations while typing.",
+        published: "2026-07-19",
         modified: "2026-11-09",
         url: "/docs/how-to/insert-citations",
         image: "/og/docs/how-to/insert-citations.webp",
@@ -37,7 +38,7 @@ describe("docsArticleSchema", () => {
       "@type": "TechArticle",
       headline: "Insert citations",
       description: "Insert Markdown citations while typing.",
-      datePublished: "2026-11-09",
+      datePublished: "2026-07-19",
       dateModified: "2026-11-09",
       inLanguage: "en",
       author: publisher,
@@ -62,11 +63,12 @@ describe("docsArticleSchema", () => {
 });
 
 describe("lessonArticleSchema", () => {
-  it("names the lesson's author and last-commit day as its dates", () => {
+  it("names the lesson's author and its first and last commit days", () => {
     expect(
       lessonArticleSchema({
         title: "Cite Zotero sources as you write in Obsidian",
         description: "Type [@ and pick a paper.",
+        published: "2026-10-02",
         modified: "2026-11-12",
         url: "/learn/cite-in-obsidian-with-zotero",
         image: "/og/learn/cite-in-obsidian-with-zotero.webp",
@@ -76,7 +78,7 @@ describe("lessonArticleSchema", () => {
       "@type": "Article",
       headline: "Cite Zotero sources as you write in Obsidian",
       description: "Type [@ and pick a paper.",
-      datePublished: "2026-11-12",
+      datePublished: "2026-10-02",
       dateModified: "2026-11-12",
       author: publisher,
       publisher,

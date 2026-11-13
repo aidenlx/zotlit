@@ -7,4 +7,6 @@ declare global {
   const __LEARN_MEDIA__: import("./lib/learn-media").LearnMedia;
   /** Replaced by Vite with each video's media-store URL by its `/img/...` path; empty without a media origin. @see src/lib/media-store.ts */
   const __MEDIA_URLS__: Record<string, string>;
+  /** Replaced by Vite with each content file's first commit day, by its path under `content/`. @see src/lib/first-commits.ts */
+  const __FIRST_COMMIT_DAYS__: Record<string, string>;
 }

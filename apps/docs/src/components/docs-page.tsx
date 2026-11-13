@@ -74,6 +74,7 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       slugs: page.slugs,
       title: docsPageTitle(page.data),
       description: page.data.description,
+      published: __FIRST_COMMIT_DAYS__[`docs/${page.path}`],
       modified: lastModified?.toISOString().slice(0, 10),
       faq: page.data.faq ?? [],
       trail,
@@ -164,6 +165,7 @@ export function docsPageHead(page: DocsPageData | undefined) {
       docsArticleSchema({
         title: page.title,
         description: page.description,
+        published: page.published,
         modified: page.modified,
         url: page.url,
         image: ogImageUrl("docs", page.slugs),

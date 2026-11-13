@@ -38,6 +38,7 @@ const getLesson = createServerFn({ method: "GET" })
       url: page.url,
       slugs: page.slugs,
       description: data.description,
+      published: __FIRST_COMMIT_DAYS__[`learn/${page.path}`],
       modified,
       snapshot: installLessonSlugs.includes(slug)
         ? await getReleaseSnapshot()
@@ -105,6 +106,7 @@ export const Route = createFileRoute("/learn/$lesson")({
             lessonArticleSchema({
               title: lesson.view.title,
               description: lesson.description,
+              published: lesson.published,
               modified: lesson.modified,
               url: getPageLocaleState(lesson.url, getLocale()).canonicalPath,
               image: ogImageUrl("learn", lesson.slugs),
