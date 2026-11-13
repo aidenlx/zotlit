@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { clipSettings, defaultClipSettings } from "./clip-settings.ts";
+import {
+  clipSettings,
+  defaultClipSettings,
+  recutSettings,
+} from "./clip-settings.ts";
 
 describe("clipSettings", () => {
   afterEach(() => {
@@ -32,19 +36,57 @@ describe("clipSettings", () => {
     expect(s.rest + s.endPad).toBeGreaterThanOrEqual(2.5);
   });
 
-  it("fills the settings a clip was recorded without from the defaults", () => {
+  describe("recutSettings", () => {
+    /** The settings of a clip recorded under the busy camera, without the newer keys. */
     const {
       hold: _,
       openPad: __,
       endPad: ___,
       context: ____,
-      ...recorded
+      ...older
     } = defaultClipSettings;
-    expect(clipSettings({ ...recorded, zoom: 2 })).toMatchObject({
+    const recorded = {
+      ...older,
       zoom: 2,
-      hold: defaultClipSettings.hold,
-      openPad: defaultClipSettings.openPad,
-      endPad: defaultClipSettings.endPad,
+      openHold: 0.7,
+      lead: 0.15,
+      ease: 0.6,
+      minEase: 0.35,
+      central: 0.6,
+      camera: false,
+      fps: 25,
+      width: 1280,
+      vp9Crf: 30,
+    };
+
+    it("cuts with today's camera and pads, not the recorded ones", () => {
+      const s = recutSettings(recorded);
+      expect(s).toMatchObject({
+        zoom: defaultClipSettings.zoom,
+        hold: defaultClipSettings.hold,
+        openHold: defaultClipSettings.openHold,
+        lead: defaultClipSettings.lead,
+        ease: defaultClipSettings.ease,
+        minEase: defaultClipSettings.minEase,
+        central: defaultClipSettings.central,
+        context: defaultClipSettings.context,
+        openPad: defaultClipSettings.openPad,
+        endPad: defaultClipSettings.endPad,
+      });
+    });
+
+    it("keeps the recording's own settings", () => {
+      expect(recutSettings(recorded)).toMatchObject({
+        camera: false,
+        fps: 25,
+        width: 1280,
+        vp9Crf: 30,
+      });
+    });
+
+    it("lays the run's overrides over today's camera", () => {
+      process.env.DOCS_WALK_CLIP = '{"zoom":1.2,"endPad":0}';
+      expect(recutSettings(recorded)).toMatchObject({ zoom: 1.2, endPad: 0 });
     });
   });
 

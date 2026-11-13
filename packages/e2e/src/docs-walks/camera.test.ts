@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { planCamera, viewAt } from "./camera.ts";
+import { closingPad, planCamera, viewAt } from "./camera.ts";
 import type { CameraEvent, CameraTrack, Rect } from "./camera.ts";
 import { defaultClipSettings } from "./clip-settings.ts";
 
@@ -318,6 +318,30 @@ describe("planCamera", () => {
     it("moves at most three times in the 20 s install", () => {
       expect(moves(plan(install, 20.67)).length).toBeLessThanOrEqual(3);
     });
+  });
+});
+
+describe("closingPad", () => {
+  const settings = { endPad: 1, hold: 2.5 };
+
+  it("rests the closing zoom onto a result at least the hold", () => {
+    // A look at 4 s of a 6 s clip: the zoom arrives 1 s before the end.
+    const duration = 6;
+    const track = plan(
+      [{ kind: "look", t: 4, rect: { x: 600, y: 300, w: 40, h: 20 } }],
+      duration,
+    );
+    const arrival = 5;
+    expect(viewAt(track, arrival).w).toBeCloseTo(tight);
+    const pad = closingPad(track, duration, settings);
+    expect(pad).toBeCloseTo(1.5);
+    expect(duration + pad - arrival).toBeGreaterThanOrEqual(2.5 - 1e-9);
+  });
+
+  it("keeps the end pad after a long closing shot or none", () => {
+    const track = plan([{ kind: "point", t: 4, x: 700, y: 400 }], 12);
+    expect(closingPad(track, 12, settings)).toBe(1);
+    expect(closingPad(plan([], 6), 6, settings)).toBe(1);
   });
 });
 

@@ -10,6 +10,7 @@ import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 
 import type { CameraEvent, CameraTrack } from "./camera.ts";
+import { cutSettings } from "./clip-settings.ts";
 import type { ClipSettings } from "./clip-settings.ts";
 
 const execFileAsync = promisify(execFile);
@@ -128,16 +129,28 @@ export async function takeRun(
  */
 export function takeRecipe(
   root: string,
-  options: { slug: string; name: string; out: string; frames?: string },
+  options: {
+    slug: string;
+    name: string;
+    out: string;
+    frames?: string;
+    /** The walk's own settings; its cut settings go into `recut`. */
+    clip?: Partial<ClipSettings>;
+  },
 ): Take["recipe"] {
   const { slug, name, out, frames } = options;
+  const cut = cutSettings(options.clip ?? {});
+  const recutEnv =
+    Object.keys(cut).length > 0
+      ? `DOCS_WALK_CLIP='${JSON.stringify(cut)}' `
+      : "";
   return {
     build:
       "pnpm exec turbo run build:dev --filter=@zotlit/obsidian --filter=@zotlit/zotero",
     // A clip with real desktop input records only under DOCS_WALK_NATIVE=1.
     record: `${process.env.DOCS_WALK_NATIVE === "1" ? "DOCS_WALK_NATIVE=1 " : ""}DOCS_WALK_RECORD=1 DOCS_WALK_ONLY=${name} pnpm --filter @zotlit/e2e docs-walk src/docs-walks/${slug}.walk.ts`,
     ...(frames && {
-      recut: `node packages/e2e/src/docs-walks/clip-encode.ts ${relative(root, frames)} ${relative(root, out)}`,
+      recut: `${recutEnv}node packages/e2e/src/docs-walks/clip-encode.ts ${relative(root, frames)} ${relative(root, out)}`,
     }),
   };
 }

@@ -143,6 +143,29 @@ export function planCamera(
   return { keyframes };
 }
 
+/**
+ * How long the encoder holds the last frame of a clip `duration` s long cut
+ * with `track`: `endPad`, or longer, so the shot after the last move rests
+ * `hold` at least.
+ */
+export function closingPad(
+  track: CameraTrack,
+  duration: number,
+  { endPad, hold }: Pick<ClipSettings, "endPad" | "hold">,
+): number {
+  const keys = track.keyframes;
+  let arrival: number | undefined;
+  for (let i = 1; i < keys.length; i++)
+    if (
+      keys[i]!.t > keys[i - 1]!.t &&
+      !sameView(keys[i - 1]!.view, keys[i]!.view)
+    )
+      arrival = keys[i]!.t;
+  return arrival === undefined
+    ? endPad
+    : Math.max(endPad, hold - (duration - arrival));
+}
+
 /** The view of `track` at `t` clip seconds. */
 export function viewAt(track: CameraTrack, t: number): Rect {
   const keys = track.keyframes;

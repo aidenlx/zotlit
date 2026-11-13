@@ -96,3 +96,43 @@ export function clipSettings(base: Partial<ClipSettings> = {}): ClipSettings {
       throw new Error(`unknown clip setting ${key}`);
   return settings;
 }
+
+/** The settings of the cut: the camera and the pads, not the recording. */
+const cutKeys = [
+  "zoom",
+  "hold",
+  "openHold",
+  "lead",
+  "ease",
+  "minEase",
+  "central",
+  "context",
+  "padding",
+  "openPad",
+  "endPad",
+] as const satisfies readonly (keyof ClipSettings)[];
+
+/** The cut settings among `settings`. */
+export function cutSettings(
+  settings: Partial<ClipSettings>,
+): Partial<ClipSettings> {
+  return Object.fromEntries(
+    Object.entries(settings).filter(([key]) =>
+      (cutKeys as readonly string[]).includes(key),
+    ),
+  );
+}
+
+/**
+ * The settings to cut a recorded clip again with: the recording's own
+ * settings from `recorded`, and the cut settings of this run
+ * ({@link clipSettings}), so a new cut follows today's camera.
+ */
+export function recutSettings(recorded: Partial<ClipSettings>): ClipSettings {
+  const cut = cutSettings(recorded);
+  return clipSettings(
+    Object.fromEntries(
+      Object.entries(recorded).filter(([key]) => !(key in cut)),
+    ),
+  );
+}
