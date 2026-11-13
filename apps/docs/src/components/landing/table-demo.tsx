@@ -99,6 +99,7 @@ function Demo() {
       else setStep(0);
     } else {
       setPaused(true);
+      stopWaiting(me);
       endTurn(me);
       rest();
     }
