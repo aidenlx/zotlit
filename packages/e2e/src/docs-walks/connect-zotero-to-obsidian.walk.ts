@@ -13,7 +13,7 @@ import { isObsidianReachable } from "@e2e/vault-script.ts";
 import { reloadWindow } from "@e2e/window-reload.ts";
 import { execFile } from "node:child_process";
 import { mkdir, readdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type {
   FileSystemAdapter,
@@ -1224,6 +1224,8 @@ describe.skipIf(!reachable)(
         // Companion build installed from a file, offline.
         const guide = await openGuide();
         const xpi = join(root, ".scratch", "docs-walks", SLUG, "companion.xpi");
+        // A new worktree has no folder for the walk yet.
+        await mkdir(dirname(xpi), { recursive: true });
         await rm(xpi, { force: true });
         await execFileAsync("zip", ["-qr", "-X", xpi, "."], {
           cwd: companionDir,
