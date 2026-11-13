@@ -14,7 +14,7 @@ import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
 import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
 import { chinesePagesPlugin } from "./src/lib/chinese-pages-plugin.js";
-import { renderHeadersFile } from "./src/lib/headers.js";
+import { buildHeaderRules, renderHeadersFile } from "./src/lib/headers.js";
 import { learnMediaPlugin } from "./src/lib/learn-media.js";
 import { mediaStorePlugin, scanVideos } from "./src/lib/media-store.js";
 import type { StoredVideo } from "./src/lib/media-store.js";
@@ -95,7 +95,9 @@ function cloudflareAssetRules(): Plugin {
       this.emitFile({
         type: "asset",
         fileName: "_headers",
-        source: renderHeadersFile(),
+        source: renderHeadersFile(
+          buildHeaderRules(prerenderPages(packageRoot).map(({ path }) => path)),
+        ),
       });
     },
   };
