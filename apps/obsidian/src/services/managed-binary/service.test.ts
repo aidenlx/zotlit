@@ -156,7 +156,7 @@ describe("Managed Binary with a bare .wasm pin", () => {
       const { service, handle } = opened;
       await handle.runPromise(service.install);
 
-      await handle.runPromise(service.getEngine);
+      await handle.runPromise(Effect.scoped(service.getEngine));
 
       const [passed] = createEngine.mock.calls[0]!;
       expect(new Uint8Array(await passed.arrayBuffer())).toEqual(

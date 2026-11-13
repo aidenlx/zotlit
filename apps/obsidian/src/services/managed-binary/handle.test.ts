@@ -45,7 +45,7 @@ it.effect(
       );
       const { handle, runtime, service } = binary;
       await handle.runPromise(service.install);
-      await handle.runPromise(service.getEngine);
+      await handle.runPromise(Effect.scoped(service.getEngine));
       const snapshot = handle.runSync(service.getStatus);
       let changes = 0;
       const unsubscribe = subscribe(
@@ -58,7 +58,9 @@ it.effect(
       await binary[Symbol.asyncDispose]();
       expect(releases).toBe(1);
       expect(handle.runSync(service.getStatus)).toBe(snapshot);
-      await expect(handle.runPromise(service.getEngine)).resolves.toBeNull();
+      await expect(
+        handle.runPromise(Effect.scoped(service.getEngine)),
+      ).resolves.toBeNull();
       await expect(handle.runPromise(service.install)).resolves.toBeUndefined();
       await expect(
         handle.runPromise(service.uninstall),

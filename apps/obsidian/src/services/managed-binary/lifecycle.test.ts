@@ -67,8 +67,9 @@ it.effect("releases the shared engine when its layer scope closes", () =>
         const context = yield* Layer.build(layer);
         const binary = Context.get(context, TestBinary);
         yield* binary.install;
-        const engine = yield* binary.getEngine;
-        expect(yield* binary.getEngine).toBe(engine);
+        // Each borrow ends before the next; the engine stays between them.
+        const engine = yield* Effect.scoped(binary.getEngine);
+        expect(yield* Effect.scoped(binary.getEngine)).toBe(engine);
         expect(releases).toBe(0);
       }),
     );
@@ -253,28 +254,11 @@ it.effect(
   () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const device = memoryDevice();
-        const clearing = Promise.withResolvers<void>();
-        const cleared = Promise.withResolvers<void>();
-        const context = yield* Layer.build(
-          testLayer({
-            ...device,
-            openStore: (directory) => {
-              const store = device.openStore(directory);
-              // The directory goes at once; the clear itself ends later, as
-              // a slow device's does.
-              return {
-                ...store,
-                clear: async () => {
-                  await store.clear();
-                  clearing.resolve();
-                  await cleared.promise;
-                },
-              };
-            },
-          }),
+        const device = slowClearDevice();
+        const binary = Context.get(
+          yield* Layer.build(testLayer(device)),
+          TestBinary,
         );
-        const binary = Context.get(context, TestBinary);
         yield* binary.install;
         const statuses = yield* Queue.unbounded<ManagedBinaryStatus>();
         yield* Effect.forkScoped(
@@ -288,18 +272,212 @@ it.effect(
         const uninstall = yield* Effect.forkChild(binary.uninstall, {
           startImmediately: true,
         });
-        yield* Effect.promise(() => clearing.promise);
-        const start = yield* Effect.flip(binary.getEngine);
-        cleared.resolve();
+        yield* Effect.promise(() => device.clearing.promise);
+        const start = yield* Effect.forkChild(
+          Effect.flip(Effect.scoped(binary.getEngine)),
+          { startImmediately: true },
+        );
+        device.cleared.resolve();
         yield* Fiber.join(uninstall);
+        const error = yield* Fiber.join(start);
 
         expect(yield* Queue.take(statuses)).toEqual({ kind: "absent" });
         expect(yield* Queue.size(statuses)).toBe(0);
         expect(yield* binary.getStatus).toEqual({ kind: "absent" });
-        expect(start.message).toBe("The Test binary is not installed");
+        expect(error.message).toBe("The Test binary is not installed");
       }),
     ),
 );
+
+it.effect("installs again after an uninstall that an install overlaps", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const files = new Map<string, Uint8Array<ArrayBuffer>>();
+      const layer = layerManagedBinary(TestBinary, {
+        id: "test-binary",
+        label: "Test binary",
+        logCategory: ["managed-binary"],
+        pin: PIN,
+        createEngine: () => Promise.resolve({ [Symbol.dispose]: () => {} }),
+      }).pipe(
+        Layer.provide(
+          Layer.succeed(ManagedBinaryPlatform, {
+            openStore: () =>
+              Effect.succeed({
+                list: Effect.sync(() => [...files.keys()]),
+                read: (name: string) =>
+                  Effect.sync(() =>
+                    files.has(name) ? new Blob([files.get(name)!]) : undefined,
+                  ),
+                write: (name: string, bytes: Uint8Array<ArrayBuffer>) =>
+                  Effect.sync(() => {
+                    files.set(name, bytes);
+                  }),
+                rename: (from: string, to: string) =>
+                  Effect.sync(() => {
+                    files.set(to, files.get(from)!);
+                    files.delete(from);
+                  }),
+                remove: (name: string) =>
+                  Effect.sync(() => {
+                    files.delete(name);
+                  }),
+                // A slow device: the files go as the clear ends.
+                clear: Effect.sleep("1 second").pipe(
+                  Effect.andThen(Effect.sync(() => files.clear())),
+                ),
+              }),
+            download: () => Effect.succeed(BYTES),
+            consent: {
+              loadLocalStorage: () => Effect.succeed(null),
+              saveLocalStorage: () => Effect.void,
+            },
+          }),
+        ),
+      );
+      const binary = Context.get(yield* Layer.build(layer), TestBinary);
+      yield* binary.install;
+
+      const uninstall = yield* Effect.forkChild(binary.uninstall, {
+        startImmediately: true,
+      });
+      const install = yield* Effect.forkChild(binary.install, {
+        startImmediately: true,
+      });
+      yield* TestClock.adjust("1 second");
+      yield* Fiber.join(uninstall);
+      yield* Fiber.join(install);
+
+      expect((yield* binary.getStatus).kind).toBe("installed");
+      expect([...files.keys()]).toEqual([`${PIN.sha256}.wasm`]);
+    }),
+  ),
+);
+
+it.effect("keeps a borrowed engine usable until its borrower ends", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let releases = 0;
+      const binary = Context.get(
+        yield* Layer.build(
+          testLayer(memoryDevice(), {
+            createEngine: () =>
+              Promise.resolve({
+                [Symbol.dispose]: () => {
+                  releases++;
+                },
+              }),
+          }),
+        ),
+        TestBinary,
+      );
+      yield* binary.install;
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* binary.getEngine;
+          yield* binary.uninstall;
+          expect(yield* binary.getStatus).toEqual({ kind: "absent" });
+          expect(releases).toBe(0);
+        }),
+      );
+
+      expect(releases).toBe(1);
+    }),
+  ),
+);
+
+it.effect("keeps an engine whose first borrower left while it started", () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>();
+    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    let starts = 0;
+    let releases = 0;
+    const binary = Context.get(
+      yield* Layer.build(
+        testLayer(memoryDevice(), {
+          createEngine: () =>
+            runPromise(
+              Effect.gen(function* () {
+                starts++;
+                yield* Deferred.succeed(started, undefined);
+                yield* Effect.sleep("1 second");
+                return {
+                  [Symbol.dispose]: () => {
+                    releases++;
+                  },
+                };
+              }),
+            ),
+        }),
+      ),
+      TestBinary,
+    );
+    yield* binary.install;
+
+    // A render that is cancelled while the engine starts.
+    const first = yield* Effect.forkChild(Effect.scoped(binary.getEngine));
+    yield* Deferred.await(started);
+    const cancel = yield* Effect.forkChild(Fiber.interrupt(first));
+    yield* TestClock.adjust("1 second");
+    yield* Fiber.join(cancel);
+    const second = yield* Effect.forkChild(Effect.scoped(binary.getEngine));
+    yield* TestClock.adjust("1 second");
+    yield* Fiber.join(second);
+
+    expect(starts).toBe(1);
+    expect(releases).toBe(0);
+  }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "offers the install again when the cached binary is gone from the device",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const device = memoryDevice();
+        const binary = Context.get(
+          yield* Layer.build(testLayer(device)),
+          TestBinary,
+        );
+        yield* binary.install;
+        // Another vault on this device removed the shared cache.
+        device.files("test-binary").clear();
+
+        const error = yield* Effect.flip(Effect.scoped(binary.getEngine));
+
+        expect(error.message).toBe("The cached Test binary binary is gone");
+        expect(yield* binary.getStatus).toEqual({ kind: "absent" });
+      }),
+    ),
+);
+
+/**
+ * A device whose cache clear removes the files at once and ends only when the
+ * test resolves `cleared`, as a slow device's does; `clearing` resolves as the
+ * files go.
+ */
+function slowClearDevice() {
+  const device = memoryDevice();
+  const clearing = Promise.withResolvers<void>();
+  const cleared = Promise.withResolvers<void>();
+  return {
+    ...device,
+    clearing,
+    cleared,
+    openStore: (directory: string) => {
+      const store = device.openStore(directory);
+      return {
+        ...store,
+        clear: async () => {
+          await store.clear();
+          clearing.resolve();
+          await cleared.promise;
+        },
+      };
+    },
+  };
+}
 
 function testLayer(
   device: ReturnType<typeof memoryDevice>,

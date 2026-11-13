@@ -3,17 +3,17 @@
 import {
   Cause,
   Deferred,
+  Duration,
   Effect,
-  Exit,
   Fiber,
   Layer,
-  Predicate,
   PubSub,
+  RcRef,
   Schema,
-  Scope,
+  Semaphore,
   SubscriptionRef,
 } from "effect";
-import type { Context, Stream } from "effect";
+import type { Context, Scope, Stream } from "effect";
 
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
@@ -55,7 +55,11 @@ export interface ManagedBinary<Engine extends AsyncDisposable | Disposable> {
   readonly extract?: (
     asset: Uint8Array<ArrayBuffer>,
   ) => Uint8Array<ArrayBuffer>;
-  /** Starts the engine over the verified binary, streamed rather than materialized. */
+  /**
+   * Starts the engine over the verified binary, streamed rather than
+   * materialized. It reads all of `binary` before it resolves: an uninstall
+   * clears the cache while engines that callers borrowed still run.
+   */
   readonly createEngine: (binary: Blob) => Promise<Engine>;
   /**
    * Start the engine once after each install, then release it, so a binary
@@ -118,7 +122,15 @@ function cachedBinaryName(pin: BinaryPin): string {
 export interface ManagedBinaryApi<Engine extends Disposable | AsyncDisposable> {
   readonly getStatus: Effect.Effect<ManagedBinaryStatus>;
   readonly changes: Stream.Stream<ManagedBinaryStatus>;
-  readonly getEngine: Effect.Effect<Engine | null, ManagedBinaryError>;
+  /**
+   * Borrow the shared engine for the caller's Scope. The engine stays usable
+   * until that Scope closes, even when an uninstall runs meanwhile.
+   */
+  readonly getEngine: Effect.Effect<
+    Engine | null,
+    ManagedBinaryError,
+    Scope.Scope
+  >;
   readonly install: Effect.Effect<void, ManagedBinaryError | HashMismatchError>;
   readonly uninstall: Effect.Effect<void, ManagedBinaryError>;
   readonly decline: Effect.Effect<void>;
@@ -158,8 +170,12 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     ),
   );
   let closed = false;
-  /** An uninstall is dropping the engine and clearing the cache, so no start may begin. */
-  let uninstalling = false;
+  /**
+   * The one lane for every step that reads or writes the cache: discovery, an
+   * install, an uninstall, and an engine start. Each step reads the status again
+   * inside it, so no step acts on a status that another step is changing.
+   */
+  const lane = yield* Semaphore.make(1);
   const setStatus = (next: ManagedBinaryStatus) =>
     SubscriptionRef.set(status, Object.freeze(next));
   const log = (
@@ -207,7 +223,7 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
   );
 
   yield* startupBarrier(
-    discoverCache,
+    lane.withPermit(discoverCache),
     log(
       "Binary cache discovery is still running; using initial status",
       {},
@@ -225,17 +241,21 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     yield* log("The binary did not start", { failure, error }, "error");
     yield* setStatus({ kind: "failed", failure });
   });
+  const notInstalled = () =>
+    new ManagedBinaryError({ message: `The ${binary.label} is not installed` });
   const startEngine = Effect.fn("ManagedBinary.startEngine")(function* () {
-    const blob = yield* store.read(name).pipe(
-      Effect.filterOrFail(
-        Predicate.isNotUndefined,
-        () =>
-          new ManagedBinaryError({
-            message: `The cached ${binary.label} binary is gone`,
-          }),
-      ),
-      Effect.tapError((error) => failInit(error)),
-    );
+    const blob = yield* store
+      .read(name)
+      .pipe(Effect.tapError((error) => failInit(error)));
+    // Something outside this process cleared the store, such as another vault
+    // on this device: the binary is absent, and the install offer stands again.
+    if (blob === undefined) {
+      yield* log("The cached binary is gone", { name }, "warn");
+      yield* setStatus({ kind: "absent" });
+      return yield* new ManagedBinaryError({
+        message: `The cached ${binary.label} binary is gone`,
+      });
+    }
     return yield* attempt(() => binary.createEngine(blob)).pipe(
       Effect.catch(
         Effect.fn("ManagedBinary.failedStart")(function* (error) {
@@ -270,48 +290,28 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
       ),
     ),
   );
-  let engine:
-    | {
-        fiber: Fiber.Fiber<Engine, ManagedBinaryError>;
-        scope: Scope.Closeable;
-      }
-    | undefined;
-  const dropEngine = Effect.fn("ManagedBinary.dropEngine")(function* () {
-    const pending = engine;
-    engine = undefined;
-    if (pending) {
-      yield* Fiber.await(pending.fiber);
-      yield* Scope.close(pending.scope, Exit.void);
-    }
+  // One engine shared by every borrower. It stays after its last borrower
+  // leaves, until an uninstall invalidates it or the layer closes. An
+  // invalidated engine closes when its last borrower leaves: no engine reads
+  // the cache after it starts, so the uninstall clears the cache at once.
+  const engines = yield* RcRef.make({
+    acquire: lane.withPermit(
+      Effect.gen(function* () {
+        if ((yield* SubscriptionRef.get(status)).kind !== "installed")
+          return yield* notInstalled();
+        return yield* acquireEngine;
+      }).pipe(Effect.uninterruptible),
+    ),
+    idleTimeToLive: Duration.infinity,
   });
-  yield* Effect.addFinalizer(() => dropEngine());
   const getEngine = Effect.gen(function* () {
     if (closed) return null;
-    if (!engine) {
-      if (
-        uninstalling ||
-        (yield* SubscriptionRef.get(status)).kind !== "installed"
-      )
-        return yield* new ManagedBinaryError({
-          message: `The ${binary.label} is not installed`,
-        });
-      const engineScope = yield* Scope.make();
-      const fiber = yield* Effect.forkIn(
-        acquireEngine.pipe(Effect.provideService(Scope.Scope, engineScope)),
-        scope,
-        { uninterruptible: true },
-      );
-      engine = { fiber, scope: engineScope };
-    }
-    const pending = engine;
-    return yield* Fiber.join(pending.fiber).pipe(
-      Effect.tapError(() =>
-        Effect.gen(function* () {
-          if (engine === pending) engine = undefined;
-          yield* Scope.close(pending.scope, Exit.void);
-        }),
-      ),
-    );
+    // Fail at once rather than wait in the lane behind an install.
+    if ((yield* SubscriptionRef.get(status)).kind !== "installed")
+      return yield* notInstalled();
+    // A borrower that leaves while the engine starts would abandon the start,
+    // and the next borrower would start the engine again; it waits for it.
+    return yield* Effect.uninterruptible(RcRef.get(engines));
   }).pipe(Effect.withSpan("ManagedBinary.getEngine"));
   const fetchBinary = Effect.fn("ManagedBinary.fetchBinary")(function* () {
     const { url, sha256 } = binary.pin;
@@ -378,55 +378,47 @@ const makeManagedBinary = Effect.fn("ManagedBinary.make")(function* <
     if (current.kind === "installing")
       return yield* Deferred.await(current.done);
     yield* consent.saveLocalStorage(declinedKey, null);
-    const done = yield* Deferred.make<
-      void,
-      ManagedBinaryError | HashMismatchError
-    >();
-    // The status names the install before its fiber starts, and nothing can
-    // interrupt in between, so `done` always completes.
-    const fiber = yield* Effect.uninterruptible(
-      Effect.gen(function* () {
-        yield* setStatus({
-          kind: "installing",
-          done,
-          binary: current.kind === "installed" ? current.binary : null,
-        });
-        return yield* Effect.forkIn(
-          runInstall().pipe(Effect.onExit((exit) => Deferred.done(done, exit))),
-          scope,
-          { uninterruptible: true },
-        );
-      }),
+    // The install names itself in the status as it enters the lane, and
+    // nothing can interrupt it there, so `done` always completes.
+    const fiber = yield* Effect.forkIn(
+      lane.withPermit(
+        Effect.gen(function* () {
+          const before = yield* SubscriptionRef.get(status);
+          const done = yield* Deferred.make<
+            void,
+            ManagedBinaryError | HashMismatchError
+          >();
+          yield* setStatus({
+            kind: "installing",
+            done,
+            binary: before.kind === "installed" ? before.binary : null,
+          });
+          yield* runInstall().pipe(
+            Effect.onExit((exit) => Deferred.done(done, exit)),
+          );
+        }),
+      ),
+      scope,
+      { uninterruptible: true, startImmediately: true },
     );
     yield* Fiber.join(fiber);
   }).pipe(Effect.withSpan("ManagedBinary.install"));
   const uninstall = Effect.gen(function* () {
     if (closed) return;
     const fiber = yield* Effect.forkIn(
-      Effect.gen(function* () {
-        const current = yield* SubscriptionRef.get(status);
-        if (current.kind === "installing")
-          yield* Deferred.await(current.done).pipe(Effect.ignore);
-        yield* Effect.acquireUseRelease(
-          Effect.sync(() => {
-            uninstalling = true;
-          }),
-          () =>
-            Effect.gen(function* () {
-              yield* dropEngine();
-              yield* store.clear;
-              yield* consent.saveLocalStorage(declinedKey, null);
-              yield* log("Removed the binary cache", { pin: binary.pin });
-              yield* setStatus({ kind: "absent" });
-            }),
-          () =>
-            Effect.sync(() => {
-              uninstalling = false;
-            }),
-        );
-      }),
+      lane.withPermit(
+        Effect.gen(function* () {
+          yield* RcRef.invalidate(engines);
+          yield* store.clear;
+          yield* consent.saveLocalStorage(declinedKey, null);
+          yield* log("Removed the binary cache", { pin: binary.pin });
+          yield* setStatus({ kind: "absent" });
+        }),
+      ),
       scope,
-      { uninterruptible: true },
+      // It takes its place in the lane as it is called, so the calls that
+      // follow it run after it.
+      { uninterruptible: true, startImmediately: true },
     );
     yield* Fiber.join(fiber);
   }).pipe(Effect.withSpan("ManagedBinary.uninstall"));
