@@ -102,6 +102,9 @@ describe("planCamera", () => {
     const shot = viewAt(track, 8);
     expect(shows(shot, 900, 200)).toBe(true);
     expect(shows(shot, 1140, 280)).toBe(true);
+    // The five frames with their context span 636 x 476 px, wider than a
+    // shot of the first click alone.
+    expect(shot.w).toBeCloseTo((476 * 1440) / 860);
   });
 
   it("keeps the whole window for clicks spread across it", () => {
@@ -110,6 +113,7 @@ describe("planCamera", () => {
       { kind: "point", t: 5, x: 1300, y: 700 },
     ]);
     expect(viewAt(track, 8)).toEqual(full);
+    expect(moves(track)).toEqual([]);
   });
 
   it("widens to a view of both for an action outside the view", () => {
@@ -149,10 +153,7 @@ describe("planCamera", () => {
 
   it("frames a look from its call and holds it to the clip's end", () => {
     const track = plan(
-      [
-        { kind: "point", t: 2, x: 700, y: 400 },
-        { kind: "look", t: 4, rect: { x: 100, y: 100, w: 1000, h: 300 } },
-      ],
+      [{ kind: "look", t: 4, rect: { x: 100, y: 100, w: 1000, h: 300 } }],
       7,
     );
     expect(viewAt(track, 4)).toEqual(full);
