@@ -14,6 +14,8 @@ import { describe, expect, it } from "vitest";
 
 import { scanLearnMedia, webpSize } from "./learn-media";
 import { mp4Size } from "./media-store";
+import { docsPageTitle } from "./shared";
+import { source } from "./source";
 
 import { learnSchema } from "#content-config";
 
@@ -61,6 +63,20 @@ describe("the lessons", () => {
       expect([...inner.matchAll(/<Check>/g)].length, `step ${n}`).toBe(1);
     }
   });
+
+  // A "Go further" link names its page by the page's own title, so a renamed
+  // or moved page shows up here rather than as a stale link on the lesson.
+  it.each(lessons)(
+    "$file links each Go further page by its shown title",
+    ({ data }) => {
+      expect(
+        data.further.map(({ href }) => {
+          const page = source.getPage(href.split("/").slice(2));
+          return page && docsPageTitle(page.data);
+        }),
+      ).toEqual(data.further.map(({ title }) => title));
+    },
+  );
 
   it("name a different chore each", () => {
     const chores = lessons.map(({ data }) => data.chore);

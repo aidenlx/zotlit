@@ -522,16 +522,19 @@ explains, and each fact appears once (see The label voice).
   side padding. From 1280px (`xl`) the course page widens to 1180px and a
   running lesson to 1400px with its media panel; below that, every page
   keeps the one column.
-- **Course page.** The question as the H1 over a muted lede; a **Continue
+- **Course page.** The course name as the H1 over a muted lede; a **Continue
   Lesson N** button (ink fill) once the reader has progress. Then lesson 1
   as a raised card with a 4px accent bar on its leading edge — the chore as
-  a serif title, the minutes, the start button and the result picture
+  a serif title, the lesson's title under it (sans semibold at body size,
+  the card's heading), the minutes, the start button and the result picture
   beside it from 561px (above it below); its place and width say "start
   here". Once lesson 1 is done, the card becomes a strip on the check tint:
   a check disc, the chore and an **Open it again** link. Then the section
   heading "Then pick a chore" and one raised card per chore: the lesson's
-  result picture, the chore in the reader's words as a quoted serif title
-  that links the whole card, and one muted meta line with the minutes and
+  result picture, the chore in the reader's words as a quoted serif title,
+  the lesson's title under it (sans semibold at body size, the card's
+  heading) as the link that covers the whole card, so the link names the
+  lesson, and one muted meta line with the minutes and
   the progress ("Done" with a check in the check green, `#2f7d4f`, 4.6:1 on ground, or "N of M done"
   in the accent text tone). From 1280px the header keeps 680px, and the
   chore cards sit in a six-column grid, three cards over two (spans 2, 2,
@@ -548,7 +551,9 @@ explains, and each fact appears once (see The label voice).
 - **Outcome.** Below 1280px, and on the prerendered page, the result shows
   once, directly above the checklist: the mono "You end with" label in the
   accent text tone and the outcome as a serif title beside the last step's
-  recording from 561px (above it below). The recording plays on its own in
+  recording from 561px (above it below). It is the page's first picture,
+  so its still loads at once with high fetch priority; every other picture
+  loads lazily. The recording plays on its own in
   a loop while it crosses the middle of the window. While no
   row is open, the Start button sits under the title (see Start).
 - **Start.** A new reader — no ticks, no `#n` in the address — finds every
@@ -627,9 +632,15 @@ explains, and each fact appears once (see The label voice).
 - **End.** Once every step is ticked, a raised card: a check disc beside
   "Lesson 1 complete" (the row title style), one line on what ZotLit now
   does, "Two more chores" in muted semibold meta — small cards with the
-  result picture, the quoted chore and the minutes, lesson 1 first while it
+  result picture, the quoted chore, the lesson's title as the card's link
+  (sans semibold at meta size) and the minutes, lesson 1 first while it
   is not done — and **See all chores** in the accent text tone. Until then
   the checklist ends on its last row.
+- **Go further.** Under the checklist (and the end card), always shown and
+  prerendered: "Go further" in serif at the title size, then two to five
+  docs pages from the lesson's `further` frontmatter, one per line at body
+  size: the page's title as a semibold link in the accent text tone, then a
+  muted phrase on when the reader needs it.
 - **Focus and state.** Every control is a button, link or checkbox with a
   2px accent outline at 2px offset on keyboard focus. Ticked state shows as
   a check and as the count text, never by colour alone.

@@ -117,6 +117,20 @@ export const learnSchema = v.object({
     /** The Markdown edition's line beside the link to the next lesson, or to the how-to guides after the last one. */
     next: v.string(),
   }),
+  /** "Go further" after the checklist: the docs pages for the other ways to do the task. */
+  further: v.pipe(
+    v.array(
+      v.object({
+        /** The page's shown title, so the link names it. */
+        title: v.string(),
+        href: v.pipe(v.string(), v.startsWith("/docs/")),
+        /** When the reader needs the page, as a phrase after the title. */
+        when: v.string(),
+      }),
+    ),
+    v.minLength(2),
+    v.maxLength(5),
+  ),
 });
 
 export const blogSchema = v.object({

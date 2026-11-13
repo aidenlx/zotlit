@@ -106,6 +106,9 @@ async function renderLessonPage(
   const nextLine = next
     ? `[${m.docs_learn_next_lesson({ number: next.data.lesson, title: next.data.title }, { locale })}](${next.url}.md)`
     : `[${m.docs_learn_how_to_guides({}, { locale })}](/docs/how-to.md)`;
+  const further = data.further
+    .map(({ title, href, when }) => `- [${title}](${href}.md): ${when}`)
+    .join("\n");
 
   return `# ${data.title} (${page.url})
 
@@ -124,6 +127,10 @@ ${body}
 **${data.end.title}** ${data.end.caption}
 
 ${nextLine}: ${data.end.next}
+
+## ${m.docs_learn_go_further({}, { locale })}
+
+${further}
 `;
 }
 

@@ -53,11 +53,13 @@ const getLesson = createServerFn({ method: "GET" })
         needs: data.needs,
         steps: data.steps,
         end: { title: data.end.title, caption: data.end.caption },
+        further: data.further,
         others: pages
           .filter((entry) => entry.url !== page.url)
           .map((entry) => ({
             slug: entry.slugs.join("/"),
             lesson: entry.data.lesson,
+            title: entry.data.title,
             chore: entry.data.chore,
             minutes: entry.data.minutes,
             media: entry.data.media,
