@@ -57,7 +57,7 @@ export const labelClass =
 
 /** Action text: sans 18px, each ZotLit label as a UI chip, links in the accent text tone. */
 const captionClass =
-  "text-lg leading-normal [&_a]:rounded-sm [&_a]:font-medium [&_a]:text-fd-primary [&_a]:underline [&_a]:decoration-fd-primary/40 [&_a]:underline-offset-4 [&_a]:hover:decoration-fd-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-offset-2 [&_a]:focus-visible:outline-fd-ring [&_code]:rounded-sm [&_code]:bg-fd-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.84em] [&_p+p]:mt-3 [&_strong]:rounded-[5px] [&_strong]:bg-fd-muted [&_strong]:px-1.5 [&_strong]:py-px [&_strong]:text-[0.94em] [&_strong]:font-semibold [&_strong]:[box-decoration-break:clone]";
+  "text-lg leading-normal [&_a]:rounded-sm [&_a]:font-medium [&_a]:text-fd-primary [&_a]:underline [&_a]:decoration-fd-primary/40 [&_a]:underline-offset-4 [&_a]:hover:decoration-fd-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-offset-2 [&_a]:focus-visible:outline-fd-ring [&_code]:rounded-sm [&_code]:bg-fd-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.84em] [&_p+p]:mt-3 [&>:not(:first-child)]:mt-3 [&_strong]:rounded-[5px] [&_strong]:bg-fd-muted [&_strong]:px-1.5 [&_strong]:py-px [&_strong]:text-[0.94em] [&_strong]:font-semibold [&_strong]:[box-decoration-break:clone]";
 
 export const buttonClass =
   "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-fd-foreground px-5 py-2.5 font-semibold text-fd-background transition-[background-color,scale] duration-150 hover:bg-fd-foreground/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring motion-safe:active:scale-[0.96]";

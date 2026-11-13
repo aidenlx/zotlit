@@ -2335,7 +2335,7 @@
   "docs_learn_go_to_step": "Go to step {number}",
   "docs_learn_see_end": "See the end",
   "docs_learn_panel_label": "Recording of the open step",
-  "docs_learn_panel_hint": "Watch it here, then do it in Obsidian and tick the step.",
+  "docs_learn_panel_hint": "Watch it here, then do the step and tick it.",
   "docs_learn_recording_controls": "Recording controls",
   "docs_site_description": "Your Zotero research desk in Obsidian: browse and query your library, read and annotate PDFs, take literature notes, cite as you write, and export to Word.",
   "docs_og_home_alt": "ZotLit — Zotero × Obsidian",

@@ -26,3 +26,6 @@ export function assetUrl(tag: string, asset: string) {
  * `/api/release-snapshot`.
  */
 export const installPageSlugs = ["install-zotlit", "install-companion"];
+
+/** The lessons whose body carries the direct `.xpi` link, baked and refreshed the same way. */
+export const installLessonSlugs = ["connect-zotero-to-obsidian"];

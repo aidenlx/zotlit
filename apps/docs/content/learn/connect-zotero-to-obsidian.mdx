@@ -2,9 +2,9 @@
 title: Connect Zotero to Obsidian and write a literature note
 description: Learn how to connect Zotero to Obsidian and create your first literature note from a paper's highlights.
 lesson: 1
-minutes: 10
+minutes: 12
 media: connect-zotero-to-obsidian
-lede: In about 10 minutes, you will connect ZotLit to your Zotero library and create a literature note for a paper, ready for your Chapter 3 notes.
+lede: In about 12 minutes, you will connect ZotLit to your Zotero library and create a literature note for a paper, ready for your Chapter 3 notes.
 note: Zotero can stay closed while ZotLit reads your library locally on this computer, and nothing changes in your Zotero library.
 chore: Connect Zotero once
 today:
@@ -23,7 +23,9 @@ steps:
   - title: Install ZotLit
     alt: The Zotero library tab opens showing the Let's get started badge and four setup steps above the paper list.
   - title: Check that ZotLit found Zotero
-    alt: Connect to Zotero displays a green check with the data folder and item count above the full paper list.
+    alt: The setup section shows Connect to Zotero with a green check, the data folder and the item count, and Install ZotLit Companion marked Recommended.
+  - title: Install the Zotero add-on
+    alt: With the setup section closed, the tab lists your Zotero papers with their authors, year, and journal.
   - title: Find a paper
     alt: A card below the paper list displays the selected item's details alongside Open PDF and Write literature note buttons.
   - title: Open the PDF
@@ -41,13 +43,14 @@ end:
 import { ActionLink } from "@/components/action-link";
 import { Check, Figure, Fix, Step } from "@/components/learn/lesson-mdx";
 import { UiLabel } from "@/components/ui-label";
+import { XpiDownload } from "@/components/xpi-download";
 import { m } from "@/paraglide/messages.js";
 
 <Step n={1}>
 
-In Obsidian, open **Settings**, select **Community plugins**, and choose **Browse**. Search for `ZotLit`. Select **Install**, then select **Enable**. If Obsidian asks, select **Turn on community plugins**.
+In Obsidian, open **Settings** and select **Community plugins**. If Obsidian shows Restricted mode, select **Exit Restricted mode**. Select **Browse** and search for `ZotLit`. Choose the ZotLit card by Aiden Liu, then select **Install** and **Enable**.
 
-As a shortcut, open ZotLit's page in Obsidian directly, then select **Install** and **Enable**:
+As a shortcut, open ZotLit's page in Obsidian directly, then select **Install** and **Enable**. If Obsidian opens on Restricted mode instead, select **Exit Restricted mode** and select the link again.
 
 <ActionLink href="obsidian://show-plugin?id=zotlit" kind="obsidian">
   Show ZotLit in Obsidian
@@ -72,12 +75,11 @@ As a shortcut, open ZotLit's page in Obsidian directly, then select **Install** 
 
 <Step n={2}>
 
-Look at the first setup step, <UiLabel name={m.welcome_step_connect_title()} />. Once you see a green check, close the setup section by selecting the × button at its top right. Leave the other three setup items as they are.
+Look at the first setup step, <UiLabel name={m.welcome_step_connect_title()} />, and wait for its green check. Keep the setup section open for the next step.
 
 <Check>
   <UiLabel name={m.welcome_step_connect_title()} /> shows a green check
-  alongside your Zotero data folder (such as `~/Zotero`) and item count. After
-  closing the setup section, your Zotero papers fill the tab.
+  alongside your Zotero data folder (such as `~/Zotero`) and the item count.
 </Check>
 
 <Fix title={<>The tab reads <UiLabel name={m.library_view_not_found()} /></>}>Open Zotero, go to **Settings** > **Advanced**, and check the path under **Data Directory Location**. Return to Obsidian, select <UiLabel name={m.library_view_locate()} />, and choose that folder.</Fix>
@@ -85,6 +87,32 @@ Look at the first setup step, <UiLabel name={m.welcome_step_connect_title()} />.
 </Step>
 
 <Step n={3}>
+
+ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to ZotLit. Download the add-on file:
+
+<XpiDownload channel="stable" />
+
+The <UiLabel name={m.welcome_action_install_companion()} /> button in the setup section leads to the same file.
+
+In Zotero, open **Tools** > **Plugins**. In **Plugins Manager**, select the gear button, then **Install Plugin From File…**. Choose the `.xpi` file you downloaded and select **Open**.
+
+Back in Obsidian, close the setup section by selecting the × button at its top right.
+
+<Check>
+  In Zotero, **ZotLit** appears in the list of plugins. In Obsidian,{" "}
+  <UiLabel name={m.welcome_step_companion_title()} /> reads{" "}
+  <UiLabel name={m.welcome_step_companion_installed()} />. After you close the
+  setup section, your Zotero papers fill the tab.
+</Check>
+
+<Fix title="Firefox opens the file instead of saving it">
+  Right-click the download link and select **Save Link As…**, then install the
+  saved file in Zotero.
+</Fix>
+
+</Step>
+
+<Step n={4}>
 
 Click into <UiLabel name={m.library_view_search_placeholder()} /> and type a few words from the title, such as `reproducible`. Select the paper from the search results.
 
@@ -102,7 +130,7 @@ Click into <UiLabel name={m.library_view_search_placeholder()} /> and type a few
 
 </Step>
 
-<Step n={4}>
+<Step n={5}>
 
 On the paper's card, select <UiLabel name={m.library_view_menu_open_pdf()} />. ZotLit opens the PDF directly from where Zotero stores it without making a duplicate copy.
 
@@ -113,12 +141,12 @@ On the paper's card, select <UiLabel name={m.library_view_menu_open_pdf()} />. Z
 
 <Fix title="No highlights show">
   Scroll to a page containing highlights. If the paper has none in Zotero yet,
-  proceed to Step 5; you will add them in Lesson 2.
+  proceed to Step 6; you will add them in Lesson 2.
 </Fix>
 
 </Step>
 
-<Step n={5}>
+<Step n={6}>
 
 Switch back to the <UiLabel name={m.library_view_name()} /> tab. On the paper's card, select <UiLabel name={m.library_view_menu_write_note()} />.
 
@@ -141,7 +169,7 @@ Switch back to the <UiLabel name={m.library_view_name()} /> tab. On the paper's 
 
 </Step>
 
-<Step n={6}>
+<Step n={7}>
 
 Click directly beneath the line containing the two links. Type a heading, such as `My thoughts`, and write how this paper supports your thesis chapter.
 
