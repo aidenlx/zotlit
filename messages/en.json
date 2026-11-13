@@ -2327,7 +2327,6 @@
   "docs_og_blog_description": "Release notes, deep dives, and notes from building ZotLit.",
   "docs_og_changelog_description": "Every ZotLit release, newest first.",
   "docs_og_documentation_kind": "Documentation",
-  "docs_home_eyebrow": "An Obsidian plugin · Free and open source",
   "docs_home_title": "A {mark} for Zotero in Obsidian.",
   "docs_home_title_mark": "research desk",
   "docs_home_lede": "Browse your Zotero library in Obsidian, read your papers beside your notes, cite sources as you draft, and compare collections in live tables.",
